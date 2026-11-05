@@ -19,8 +19,6 @@ const (
 	muxRegistrationPingTimeout = 3 * time.Second
 )
 
-// dial opens a stream for the session client. Callers that found the tunnel during the register handshake
-// wait for the session to start.
 func (m *muxSession) dial(ctx context.Context) (net.Conn, error) {
 	select {
 	case <-m.ready:
@@ -28,9 +26,7 @@ func (m *muxSession) dial(ctx context.Context) (net.Conn, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	m.mu.Lock()
-	session := m.session
-	m.mu.Unlock()
+	session := m.session.Load()
 	if session == nil {
 		return nil, ErrTunnelConnectionClosed
 	}
@@ -47,8 +43,7 @@ func (m *muxSession) close() {
 	m.closeOnce.Do(func() {
 		m.mu.Lock()
 		close(m.closed)
-		session := m.session
-		m.session = nil
+		session := m.session.Swap(nil)
 		m.mu.Unlock()
 		if session != nil {
 			_ = session.Close()
@@ -57,9 +52,7 @@ func (m *muxSession) close() {
 }
 
 func (m *muxSession) alive(ctx context.Context, timeout time.Duration) bool {
-	m.mu.Lock()
-	session := m.session
-	m.mu.Unlock()
+	session := m.session.Load()
 	if session == nil {
 		return true
 	}
@@ -98,12 +91,11 @@ func (m *muxSession) recordRTT(rtt time.Duration) {
 }
 
 func (m *muxSession) traffic() (int64, int64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.conn == nil {
+	conn := m.conn.Load()
+	if conn == nil {
 		return 0, 0
 	}
-	return m.conn.rx.Load(), m.conn.tx.Load()
+	return conn.rx.Load(), conn.tx.Load()
 }
 
 // start publishes session to waiting dials. It reports false when the tunnel already closed.
@@ -114,8 +106,8 @@ func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 	case <-m.closed:
 		return false
 	default:
-		m.session = session
-		m.conn = conn
+		m.conn.Store(conn)
+		m.session.Store(session)
 		close(m.ready)
 		return true
 	}
@@ -136,14 +128,12 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 	callbackCtx := context.WithoutCancel(ctx)
 	s.updateConnectionStatus(callbackCtx, tunnel, true)
 
-	// Agents open streams to post events; the manager serves nothing else on its end.
 	events := &http.Server{
 		Handler:           s.muxEventHandler(callbackCtx, tunnel.EnvironmentID),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 	}
 	go func() {
-		// Closing the server or the session ends Serve normally; anything else is a real failure.
 		serveErr := events.Serve(session)
 		if !errors.Is(serveErr, http.ErrServerClosed) && !errors.Is(serveErr, yamux.ErrSessionShutdown) {
 			slog.WarnContext(callbackCtx, "Agent tunnel event server stopped", "environmentId", tunnel.EnvironmentID, "error", serveErr)
@@ -189,14 +179,12 @@ func (s *TunnelServer) muxEventHandler(ctx context.Context, envID string) http.H
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if s.EventCallback != nil {
-			eventCtx, cancel := context.WithTimeout(ctx, agentEventTimeout)
-			defer cancel()
-			if err := s.EventCallback(eventCtx, envID, &event); err != nil {
-				slog.WarnContext(eventCtx, "Failed to process agent event", "environmentId", envID, "type", event.Type, "error", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+		eventCtx, cancel := context.WithTimeout(ctx, agentEventTimeout)
+		defer cancel()
+		if err := s.eventCallback(eventCtx, envID, &event); err != nil {
+			slog.WarnContext(eventCtx, "Failed to process agent event", "environmentId", envID, "type", event.Type, "error", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

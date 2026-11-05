@@ -73,7 +73,7 @@ func TestGRPCAgentTunnelConn_ReceiveSkipsUnknownPayload(t *testing.T) {
 			RegisterResponse: tunnelpb.RegisterResponse_builder{Id: "reg-2"}.Build(),
 		}.Build(),
 	}}
-	conn := NewGRPCAgentTunnelConn(stream)
+	conn := NewGRPCAgentTunnelConn(stream, func() {})
 
 	msg, err := conn.Receive()
 	require.NoError(t, err)

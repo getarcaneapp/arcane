@@ -90,7 +90,7 @@
 		</div>
 	</header>
 
-	<div class="md:-mx-5 md:-mb-5 md:px-2 md:pb-2">
+	<div class="md:-mb-5 md:pb-2">
 		{@render mainContent()}
 
 		{#if additionalContent}

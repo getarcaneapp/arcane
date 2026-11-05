@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/federated"
@@ -58,6 +59,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/internal/webhook"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	libpodman "getarcane.dev/arcane/v3/pkg/podman"
 	"getarcane.dev/arcane/v3/resources"
 	"getarcane.dev/types/v3"
@@ -117,6 +119,7 @@ var (
 			network.NewNetworkService,
 			port.NewPortService,
 			swarm.NewSwarmService,
+			enrollment.NewEnrollmentService,
 			template.NewTemplateService,
 			oidc.NewOidcService,
 			fx.Annotate(provideSystemService, fx.As(fx.Self()), fx.As(new(updater.SelfUpgrader))),
@@ -228,6 +231,7 @@ var (
 			image.New,
 			container.New,
 			swarm.New,
+			enrollment.New,
 			podman.New,
 			system.New,
 			volume.New,
@@ -256,8 +260,14 @@ var (
 			func(service *imageupdate.ImageUpdateService, imageService *image.ImageService) *imageupdate.Module {
 				return imageupdate.New(service, imageService.GetUpdateInfoByImageRefs)
 			},
-			func(service *settings.SettingsService, search *settings.SettingsSearchService, localEnvironment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
-				return settings.New(service, search, localEnvironment.ProxyJSONRequest, cfg)
+			func(service *settings.SettingsService, search *settings.SettingsSearchService, localEnvironment *environment.EnvironmentService, cfg *config.Config, mtls *agent.MTLS) *settings.Module {
+				return settings.New(settings.ModuleParams{
+					Service:         service,
+					Search:          search,
+					ProxyRemoteJSON: localEnvironment.ProxyJSONRequest,
+					Config:          cfg,
+					MTLS:            mtls,
+				})
 			},
 			func(service *s3domain.S3DestinationService, localEnvironment *environment.EnvironmentService) *s3domain.Module {
 				return s3domain.New(service, func(ctx context.Context) {

@@ -91,26 +91,16 @@
 		return queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'nodes') });
 	}
 
-	async function loadAgentDeployment(node: NodeRow, rotate = false) {
+	async function loadAgentDeployment(node: NodeRow) {
 		if (isAgentDeploymentLoading) return;
 
 		isAgentDeploymentLoading = true;
 		agentDeploymentError = '';
-
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					agentDeployment = await swarmService.getNodeAgentDeployment(node.id, rotate, node.environmentId);
-					await refreshNodes();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				agentDeployment = null;
-				agentDeploymentError = extractApiErrorMessage(error);
-				throw error;
-			}
+			const result = await tryCatch(swarmService.createNodeAgentDeployment(node.id, node.environmentId));
+			agentDeployment = result.data ?? null;
+			agentDeploymentError = result.error ? extractApiErrorMessage(result.error) : '';
+			await refreshNodes();
 		} finally {
 			isAgentDeploymentLoading = false;
 		}
@@ -125,7 +115,7 @@
 
 	function provisionNodeEnvironment() {
 		if (!selectedNode) return;
-		void tryCatch(loadAgentDeployment(selectedNode)).then((result) => (result.error ? undefined : result.data));
+		void loadAgentDeployment(selectedNode);
 	}
 
 	async function attachEnvironment(environmentId: string) {
@@ -198,32 +188,17 @@
 		});
 	}
 
-	function refreshAgentDeployment() {
-		if (!selectedNode) return;
-		void tryCatch(loadAgentDeployment(selectedNode)).then((result) => (result.error ? undefined : result.data));
-	}
-
-	function regenerateAgentDeployment() {
+	function generateEnrollmentToken() {
 		const node = selectedNode;
 		if (!node) return;
 
 		openConfirmDialog({
-			title: m.environments_regenerate_dialog_title(),
-			message: m.environments_regenerate_dialog_message(),
+			title: m.generate_enrollment_token(),
+			message: m.generate_enrollment_token_dialog_message(),
 			confirm: {
-				label: m.environments_regenerate_api_key(),
+				label: m.generate_enrollment_token(),
 				destructive: true,
-				action: async () => {
-					const operationResult = await tryCatch(
-						(async () => {
-							await loadAgentDeployment(node, true);
-							toast.success(m.environments_regenerate_key_success());
-						})()
-					);
-					if (operationResult.error !== null) {
-						toast.error(m.environments_regenerate_key_failed());
-					}
-				}
+				action: () => loadAgentDeployment(node)
 			}
 		});
 	}
@@ -534,8 +509,8 @@
 	deployment={agentDeployment}
 	errorMessage={agentDeploymentError}
 	isLoading={isAgentDeploymentLoading}
-	onRefresh={refreshAgentDeployment}
-	onRegenerate={regenerateAgentDeployment}
+	onRefresh={refreshNodes}
+	onGenerateEnrollmentToken={generateEnrollmentToken}
 	onProvision={provisionNodeEnvironment}
 	onAttach={attachEnvironment}
 	onDetach={detachEnvironment}

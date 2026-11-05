@@ -32,6 +32,7 @@ type TunnelServerParams struct {
 	Lifecycle           fx.Lifecycle
 	Config              *config.Config
 	Registry            *agent.TunnelRegistry
+	MTLS                *agent.MTLS
 	EnvironmentService  *environment.EnvironmentService
 	EventService        *event.EventService
 	NotificationService *notification.NotificationService
@@ -47,28 +48,9 @@ func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
 		StatusCallback: func(ctx context.Context, envID string, connected bool) {
 			handleAgentStatusChange(ctx, p.EnvironmentService, p.EventService, envID, connected)
 		},
-		Config: &agent.Config{
-			AgentMTLSMode:       p.Config.AgentMTLSMode,
-			AgentMTLSCAFile:     p.Config.AgentMTLSCAFile,
-			AgentMTLSCertFile:   p.Config.AgentMTLSCertFile,
-			AgentMTLSKeyFile:    p.Config.AgentMTLSKeyFile,
-			AgentMTLSServerName: p.Config.AgentMTLSServerName,
-			AgentMTLSAssetsDir:  p.Config.AgentMTLSAssetsDir,
-			AppURL:              p.Config.GetAppURL(),
-			ManagerApiUrl:       p.Config.ManagerApiUrl,
-		},
-		NameResolver: func(ctx context.Context, envID string) (string, error) {
-			env, err := p.EnvironmentService.GetEnvironmentByID(ctx, envID)
-			if err != nil {
-				return "", err
-			}
-			return env.Name, nil
-		},
+		MTLS: p.MTLS,
 		EventCallback: func(ctx context.Context, envID string, evt *agent.TunnelEvent) error {
 			return handleAgentEvent(ctx, envID, evt, p.EventService, p.NotificationService)
-		},
-		EnrollmentCallback: func(ctx context.Context, envID, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
-			handleAgentEnrollment(ctx, p.EnvironmentService, p.EventService, envID, remoteAddr, certIssued, caGenerated, reenrolled)
 		},
 	})
 
@@ -105,57 +87,6 @@ func tunnelRoutes(server *agent.TunnelServer) []middleware.EchoRoute {
 		Handler:     server.HandleConnect,
 		Middlewares: []echo.MiddlewareFunc{middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3)},
 	}}
-}
-
-func handleAgentEnrollment(
-	ctx context.Context,
-	environmentService *environment.EnvironmentService,
-	eventService *event.EventService,
-	envID, remoteAddr string,
-	certIssued, caGenerated, reenrolled bool,
-) {
-	env, err := environmentService.GetEnvironmentByID(ctx, envID)
-	if err != nil {
-		env = &environment.Environment{}
-	}
-
-	_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          event.EventTypeEnvironmentMTLSEnroll,
-		Severity:      kit.Ternary(reenrolled, event.EventSeverityWarning, event.EventSeverityInfo),
-		Title:         "Agent mTLS enrollment",
-		Description:   "Agent completed mTLS enrollment from " + remoteAddr,
-		ResourceType:  new("environment"),
-		ResourceID:    &envID,
-		ResourceName:  &env.Name,
-		EnvironmentID: &envID,
-		Metadata:      database.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
-	})
-	createAgentMTLSIssueEvents(ctx, eventService, envID, env.Name, remoteAddr, certIssued, caGenerated, reenrolled)
-}
-
-func createAgentMTLSIssueEvents(ctx context.Context, eventService *event.EventService, envID, envName, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
-	if caGenerated {
-		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:        event.EventTypeEnvironmentMTLSCAGenerated,
-			Severity:    event.EventSeverityInfo,
-			Title:       "Agent mTLS CA generated",
-			Description: "Arcane generated a new agent mTLS certificate authority",
-			Metadata:    database.JSON{"remoteAddr": remoteAddr, "kind": "ca"},
-		})
-	}
-	if certIssued {
-		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:          event.EventTypeEnvironmentMTLSCertIssued,
-			Severity:      kit.Ternary(reenrolled, event.EventSeverityWarning, event.EventSeverityInfo),
-			Title:         "Agent mTLS certificate issued",
-			Description:   fmt.Sprintf("Arcane issued an agent mTLS client certificate for environment '%s'", envName),
-			ResourceType:  new("environment"),
-			ResourceID:    &envID,
-			ResourceName:  &envName,
-			EnvironmentID: &envID,
-			Metadata:      database.JSON{"remoteAddr": remoteAddr, "kind": "client", "reenrollment": reenrolled},
-		})
-	}
 }
 
 // handleAgentStatusChange stores the tunnel state, logs real transitions, and wakes status streams.

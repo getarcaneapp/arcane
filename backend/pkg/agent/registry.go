@@ -1,21 +1,22 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
-	"sync"
 	"time"
+	"uuid"
 
 	"github.com/samber/mo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 )
 
 type (
-	// TunnelMetadataSnapshot is a consistent copy of a tunnel's mutable metadata.
 	TunnelMetadataSnapshot struct {
 		ConnectedAt      time.Time
 		LastHeartbeat    time.Time
@@ -29,63 +30,67 @@ type (
 		Capabilities     []string
 	}
 
+	AgentTunnelConfig struct {
+		Conn          TunnelConnection
+		Host          *AgentHostInfo
+		EnvironmentID string
+		SessionID     string
+		AgentInstance string
+		SecurityMode  string
+		RemoteAddr    string
+		Capabilities  []string
+	}
+
+	RegisterResult struct {
+		Reason        string
+		Accepted      bool
+		DrainPrevious bool
+	}
+
 	registerSessionResult struct {
-		previous      *AgentTunnel
-		reason        string
-		accepted      bool
-		stored        bool
-		drainPrevious bool
+		previous *AgentTunnel
+		RegisterResult
+
+		stored bool
 	}
 )
 
-var (
-	defaultRegistryMu sync.RWMutex
-	defaultRegistry   = NewTunnelRegistry()
-)
-
-// NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection. Its mux session
-// exists before registration so callers that find the tunnel mid-handshake wait for it.
-func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
+func NewAgentTunnel(cfg AgentTunnelConfig) *AgentTunnel {
 	now := time.Now()
-	mux := &muxSession{ready: make(chan struct{}), closed: make(chan struct{})}
+	mux := &muxSession{
+		ready:  make(chan struct{}),
+		closed: make(chan struct{}),
+	}
 	return &AgentTunnel{
-		EnvironmentID: envID,
-		Conn:          conn,
 		ConnectedAt:   now,
 		LastHeartbeat: now,
-		State:         "connected",
+		Conn:          cfg.Conn,
 		HTTPClient:    newMuxHTTPClient(mux.dial),
 		done:          make(chan struct{}),
 		mux:           mux,
+		Host:          cfg.Host,
+		EnvironmentID: cfg.EnvironmentID,
+		SessionID:     cmp.Or(cfg.SessionID, uuid.New().String()),
+		AgentInstance: cfg.AgentInstance,
+		SecurityMode:  cfg.SecurityMode,
+		State:         "connected",
+		RemoteAddr:    cfg.RemoteAddr,
+		Capabilities:  cfg.Capabilities,
 	}
 }
 
-// UpdateHeartbeat updates the last heartbeat timestamp
 func (t *AgentTunnel) UpdateHeartbeat() {
 	t.mu.Lock()
 	t.LastHeartbeat = time.Now()
 	t.mu.Unlock()
 }
 
-// openStreams counts open mux streams.
-func (t *AgentTunnel) openStreams() int {
-	t.mux.mu.Lock()
-	defer t.mux.mu.Unlock()
-	if t.mux.session == nil {
-		return 0
-	}
-	return t.mux.session.NumStreams()
-}
-
-// GetLastHeartbeat returns the last heartbeat time
 func (t *AgentTunnel) GetLastHeartbeat() time.Time {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.LastHeartbeat
 }
 
-// MetadataSnapshot returns the tunnel's mutable metadata under one read lock, so readers never race
-// heartbeat, registration, or close writers.
 func (t *AgentTunnel) MetadataSnapshot() TunnelMetadataSnapshot {
 	if t == nil {
 		return TunnelMetadataSnapshot{}
@@ -108,28 +113,28 @@ func (t *AgentTunnel) MetadataSnapshot() TunnelMetadataSnapshot {
 	}
 }
 
-// CloseWithReason closes the tunnel connection and records the disconnect
-// reason. Pass "" when there is no reason to record.
 func (t *AgentTunnel) CloseWithReason(reason string) error {
 	if t == nil {
 		return nil
 	}
 	t.mu.Lock()
 	t.State = "closed"
-	if reason != "" {
-		t.DisconnectErr = reason
-	}
+	t.DisconnectErr = cmp.Or(reason, t.DisconnectErr)
 	t.mu.Unlock()
-	t.closeOnce.Do(func() {
-		if t.done != nil {
-			close(t.done)
-		}
-	})
+	t.closeOnce.Do(func() { close(t.done) })
 	t.mux.close()
 	if t.Conn == nil {
 		return nil
 	}
 	return t.Conn.Close()
+}
+
+func NewTunnelRegistry() *TunnelRegistry {
+	return &TunnelRegistry{
+		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
+		history:    concurrency.NewStateMap[string, TunnelHistory](),
+		registered: concurrency.NewSignal[string](),
+	}
 }
 
 // Active returns the environment's tunnel when its connection is still open.
@@ -170,13 +175,49 @@ func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeou
 	}
 }
 
-// NewTunnelRegistry creates a new tunnel registry
-func NewTunnelRegistry() *TunnelRegistry {
-	return &TunnelRegistry{
-		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
-		history:    concurrency.NewStateMap[string, TunnelHistory](),
-		registered: concurrency.NewSignal[string](),
+func (r *TunnelRegistry) Get(envID string) mo.Option[*AgentTunnel] {
+	tunnel, ok := r.tunnels.Get(envID)
+	return mo.TupleToOption(tunnel, ok)
+}
+
+func (r *TunnelRegistry) History(envID string) mo.Option[TunnelHistory] {
+	history, ok := r.history.Get(envID)
+	return mo.TupleToOption(history, ok)
+}
+
+func (r *TunnelRegistry) RuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
+	tunnel, ok := r.Active(envID).Get()
+	if !ok {
+		return mo.None[*TunnelRuntimeState]()
 	}
+	meta := tunnel.MetadataSnapshot()
+	rtt := time.Duration(tunnel.mux.rtt.Load())
+	rttCount := tunnel.mux.rttCount.Load()
+	bytesIn, bytesOut := tunnel.mux.traffic()
+	openStreams := 0
+	if session := tunnel.mux.session.Load(); session != nil {
+		openStreams = session.NumStreams()
+	}
+	return mo.Some(&TunnelRuntimeState{
+		RoundTripTime: kit.Ternary(rtt > 0, &rtt, nil),
+		RTTMin:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMin.Load())), nil),
+		RTTAvg:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttSum.Load()/max(rttCount, 1))), nil),
+		RTTMax:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMax.Load())), nil),
+		OpenStreams:   openStreams,
+		BytesIn:       bytesIn,
+		BytesOut:      bytesOut,
+		StreamsOpened: tunnel.mux.opened.Load(),
+		Host:          meta.Host,
+		RemoteAddr:    meta.RemoteAddr,
+		Transport:     tunnel.Conn.Transport(),
+		ConnectedAt:   new(meta.ConnectedAt),
+		LastHeartbeat: new(meta.LastHeartbeat),
+		SessionID:     meta.SessionID,
+		AgentInstance: meta.AgentInstance,
+		SecurityMode:  meta.SecurityMode,
+		Capabilities:  meta.Capabilities,
+		State:         meta.State,
+	})
 }
 
 func (r *TunnelRegistry) recordSession(ctx context.Context, envID string) {
@@ -207,80 +248,40 @@ func (r *TunnelRegistry) recordDisconnect(ctx context.Context, tunnel *AgentTunn
 	}
 }
 
-// Get retrieves a tunnel by environment ID
-func (r *TunnelRegistry) Get(envID string) mo.Option[*AgentTunnel] {
-	tunnel, ok := r.tunnels.Get(envID)
-	return mo.TupleToOption(tunnel, ok)
-}
-
-// Register adds a tunnel to the registry, closing any existing tunnel for the same env
-func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
-	ctx := context.Background() //nolint:forbidigo // Legacy registration path runs outside any request context.
-	if r == nil || tunnel == nil {
-		slog.ErrorContext(ctx, "Failed to register agent tunnel", "environmentId", envID, "error", "tunnel is required")
-		return
-	}
-	previous, err := r.tunnels.ApplyTyped(ctx, "register agent tunnel", func(tunnels map[string]*AgentTunnel) (*AgentTunnel, bool, error) {
-		if r.stopped.Load() {
-			return nil, false, errors.New("agent tunnel registry stopped")
-		}
-		previous := tunnels[envID]
-		tunnels[envID] = tunnel
-		return previous, true, nil
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to register agent tunnel", "environmentId", envID, "error", err)
-		return
-	}
-	if previous != nil && previous != tunnel {
-		slog.InfoContext(ctx, "Replacing existing agent tunnel")
-		_ = previous.CloseWithReason("")
-	}
-	r.registered.Publish(envID)
-	slog.InfoContext(ctx, "Agent tunnel registered")
-}
-
-// RegisterSession adds a tunnel with duplicate-session handling.
-func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunnel, staleAfter time.Duration) (bool, bool, string, error) {
-	if r == nil || tunnel == nil {
-		return false, false, "tunnel is required", nil
-	}
-
+func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunnel) (RegisterResult, error) {
 	envID := tunnel.EnvironmentID
 	if envID == "" {
-		return false, false, "environment ID is required", nil
+		return RegisterResult{Reason: "environment ID is required"}, nil
 	}
-	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && (existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()) && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
+	if existing, ok := r.Active(envID).Get(); ok && existing != tunnel && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
 		slog.InfoContext(ctx, "Existing agent tunnel session failed a liveness ping; replacing it", "environmentId", envID)
 		_ = existing.CloseWithReason("agent tunnel liveness ping failed")
 	}
 
 	result, err := r.tunnels.ApplyTyped(ctx, "register agent tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResult, bool, error) {
-		if r.stopped.Load() {
-			return registerSessionResult{}, false, errors.New("agent tunnel registry stopped")
-		}
 		existing := tunnels[envID]
-		if existing == tunnel {
-			return registerSessionResult{accepted: true}, false, nil
-		}
-
 		existingMetadata := existing.MetadataSnapshot()
 		sameAgentInstance := existingMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnel.MetadataSnapshot().AgentInstance
-		if existing != nil && existing.Conn != nil && !existing.Conn.IsClosed() &&
-			(staleAfter <= 0 || time.Since(existingMetadata.LastHeartbeat) <= staleAfter) && !sameAgentInstance {
-			return registerSessionResult{reason: "another agent session is already active"}, false, nil
+		switch {
+		case r.stopped.Load():
+			return registerSessionResult{}, false, errors.New("agent tunnel registry stopped")
+		case existing == tunnel:
+			return registerSessionResult{Accepted: true}, false, nil
+		case existing != nil && existing.Conn != nil && !existing.Conn.IsClosed() &&
+			time.Since(existingMetadata.LastHeartbeat) <= TunnelStaleTimeout && !sameAgentInstance:
+			return registerSessionResult{Reason: "another agent session is already active"}, false, nil
 		}
 
 		tunnels[envID] = tunnel
 		return registerSessionResult{
+			Accepted:      true,
+			DrainPrevious: sameAgentInstance,
 			previous:      existing,
-			accepted:      true,
 			stored:        true,
-			drainPrevious: sameAgentInstance,
 		}, true, nil
 	})
 	if err != nil {
-		return false, false, "", err
+		return RegisterResult{}, err
 	}
 	if result.previous != nil {
 		_ = result.previous.CloseWithReason("replaced by newer agent tunnel session")
@@ -292,59 +293,45 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	}
 	metadata := tunnel.MetadataSnapshot()
 	slog.InfoContext(ctx, "Agent tunnel registered", "environmentId", envID, "sessionId", metadata.SessionID, "securityMode", metadata.SecurityMode)
-	return result.accepted, result.drainPrevious, result.reason, nil
+	return result.RegisterResult, nil
 }
 
-// Unregister removes a tunnel from the registry
 func (r *TunnelRegistry) Unregister(envID string) {
 	ctx := context.Background() //nolint:forbidigo // Legacy unregistration path runs outside any request context.
 	tunnel, removed, err := r.tunnels.Remove(ctx, "unregister agent tunnel", envID)
-	if err != nil {
+	switch {
+	case err != nil:
 		slog.ErrorContext(ctx, "Failed to unregister agent tunnel", "environmentId", envID, "error", err)
-		return
-	}
-	if removed {
+	case removed:
 		_ = tunnel.CloseWithReason("")
 		r.recordDisconnect(ctx, tunnel)
 		slog.InfoContext(ctx, "Agent tunnel unregistered")
 	}
 }
 
-// UnregisterCurrent removes the environment's tunnel only if it is still current. It reports whether it was
-// removed and whether another live session already replaced it.
-func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, current *AgentTunnel) (bool, bool) {
-	if r == nil || current == nil {
-		return false, false
-	}
-
-	type unregisterResult struct {
-		removed           bool
-		activeReplacement bool
-	}
-	result, err := r.tunnels.ApplyTyped(ctx, "unregister current agent tunnel", func(tunnels map[string]*AgentTunnel) (unregisterResult, bool, error) {
-		existing := tunnels[envID]
-		if existing != current {
-			return unregisterResult{activeReplacement: existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()}, false, nil
+func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, current *AgentTunnel) bool {
+	envID := current.EnvironmentID
+	removed, err := r.tunnels.ApplyTyped(ctx, "unregister current agent tunnel", func(tunnels map[string]*AgentTunnel) (bool, bool, error) {
+		if tunnels[envID] != current {
+			return false, false, nil
 		}
 		delete(tunnels, envID)
-		return unregisterResult{removed: true}, true, nil
+		return true, true, nil
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to unregister current agent tunnel", "environmentId", envID, "error", err)
-		return false, false
+		return false
 	}
-	if !result.removed {
-		return false, result.activeReplacement
+	if !removed {
+		return false
 	}
 
 	_ = current.CloseWithReason("")
 	r.recordDisconnect(ctx, current)
-	metadata := current.MetadataSnapshot()
-	slog.InfoContext(ctx, "Agent tunnel unregistered", "environmentId", envID, "sessionId", metadata.SessionID)
-	return true, false
+	slog.InfoContext(ctx, "Agent tunnel unregistered", "environmentId", envID, "sessionId", current.MetadataSnapshot().SessionID)
+	return true
 }
 
-// CleanupStale removes tunnels that haven't had a heartbeat within the given duration.
 func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration) []*AgentTunnel {
 	now := time.Now()
 	removed, err := r.tunnels.RemoveWhere(ctx, "clean up stale agent tunnels", func(_ string, tunnel *AgentTunnel) bool {
@@ -377,9 +364,7 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 		removed = fallback
 	}
 	for _, tunnel := range removed {
-		if tunnel != nil {
-			err = errors.Join(err, tunnel.CloseWithReason("agent tunnel registry stopped"))
-		}
+		err = errors.Join(err, tunnel.CloseWithReason("agent tunnel registry stopped"))
 	}
 	return err
 }
@@ -405,32 +390,4 @@ func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration,
 		}
 		return nil
 	}, gauge)
-}
-
-// GetRegistry returns the global tunnel registry
-func GetRegistry() *TunnelRegistry {
-	defaultRegistryMu.RLock()
-	registry := defaultRegistry
-	defaultRegistryMu.RUnlock()
-	return registry
-}
-
-// SetDefaultRegistry replaces the process-wide default tunnel registry.
-func SetDefaultRegistry(registry *TunnelRegistry) {
-	if registry == nil {
-		registry = NewTunnelRegistry()
-	}
-
-	defaultRegistryMu.Lock()
-	defaultRegistry = registry
-	defaultRegistryMu.Unlock()
-}
-
-// ClearDefaultRegistry replaces registry only when it is still the active default.
-func ClearDefaultRegistry(registry *TunnelRegistry) {
-	defaultRegistryMu.Lock()
-	if defaultRegistry == registry {
-		defaultRegistry = NewTunnelRegistry()
-	}
-	defaultRegistryMu.Unlock()
 }

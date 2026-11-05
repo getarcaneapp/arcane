@@ -26,6 +26,7 @@ func TestSettingsHandlerRuntimeSettings(t *testing.T) {
 			UIConfigurationDisabled: true,
 			BackupVolumeName:        "custom-backups",
 		},
+		mtls: agent.NewMTLS(agent.MTLSConfig{}),
 	}
 
 	publicRuntime := handler.runtimeSettings(false)
@@ -47,6 +48,10 @@ func TestSettingsHandlerRuntimeSettingsDoesNotGenerateAgentMTLSCA(t *testing.T) 
 			AgentMTLSMode:      agent.MTLSModeRequired,
 			AgentMTLSAssetsDir: assetsDir,
 		},
+		mtls: agent.NewMTLS(agent.MTLSConfig{
+			Mode:      agent.MTLSModeRequired,
+			AssetsDir: assetsDir,
+		}),
 	}
 
 	require.False(t, handler.runtimeSettings(true).AgentMTLSManagerCAAvailable)

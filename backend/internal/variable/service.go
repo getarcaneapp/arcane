@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
@@ -46,6 +47,7 @@ type (
 	VariableService struct {
 		db              *database.DB
 		environments    environment.RemoteProxy
+		tunnels         *agent.TunnelRegistry
 		settingsService *settings.SettingsService
 		kvService       *kv.KVService
 		syncStatus      map[string]types.EnvironmentSyncStatus
@@ -56,6 +58,16 @@ type (
 		syncGate concurrency.SyncGate
 
 		statusMu sync.RWMutex
+	}
+
+	VariableServiceParams struct {
+		fx.In
+
+		DB              *database.DB
+		Environments    environment.RemoteProxy
+		Tunnels         *agent.TunnelRegistry
+		SettingsService *settings.SettingsService
+		KVService       *kv.KVService
 	}
 )
 
@@ -77,13 +89,14 @@ func validateVariableKey(key string) error {
 	return common.Classify(common.ErrInvalidEnvKey, &types.FieldError{Field: "key", Err: fmt.Errorf("invalid key %q: use letters, numbers, and underscores, and do not start with a number", key)})
 }
 
-func NewVariableService(db *database.DB, environments environment.RemoteProxy, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
+func NewVariableService(p VariableServiceParams) *VariableService {
 	return &VariableService{
 		syncGate:        concurrency.SyncGate{Expiry: environment.SyncDeliveryExpiry},
-		db:              db,
-		environments:    environments,
-		settingsService: settingsService,
-		kvService:       kvService,
+		db:              p.DB,
+		environments:    p.Environments,
+		tunnels:         p.Tunnels,
+		settingsService: p.SettingsService,
+		kvService:       p.KVService,
 		syncStatus:      make(map[string]types.EnvironmentSyncStatus),
 	}
 }
@@ -411,11 +424,9 @@ func (s *VariableService) syncEnvironments(ctx context.Context, targets []string
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target != environment.LocalEnvironmentID && !agent.GetRegistry().Active(target).IsPresent() {
-				if _, ok := agent.GetRegistry().WaitForActive(syncCtx, target, agent.DefaultTunnelAcquireTimeout).Get(); !ok {
-					s.recordSyncPending(target)
-					return
-				}
+			if target != environment.LocalEnvironmentID && s.tunnels.WaitForActive(syncCtx, target, agent.DefaultTunnelAcquireTimeout).IsAbsent() {
+				s.recordSyncPending(target)
+				return
 			}
 			if err := s.SyncEnvironment(syncCtx, target); err != nil {
 				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", target, "error", err)

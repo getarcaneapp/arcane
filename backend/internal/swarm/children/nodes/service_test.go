@@ -16,16 +16,35 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
+
+type swarmTestScheduler struct{}
+
+func (swarmTestScheduler) Submit(context.Context, types.SchedulerRequest) (types.SchedulerRun, error) {
+	return types.SchedulerRun{}, nil
+}
+
+func (swarmTestScheduler) AddJob(context.Context, types.SchedulerJob) error { return nil }
+
+func (swarmTestScheduler) RemoveJob(context.Context, string) {}
+
+func (swarmTestScheduler) HasJob(string) bool { return false }
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -47,6 +66,36 @@ func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *datab
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
 	return svc, err
+}
+
+func startSwarmTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID string, handler http.Handler) {
+	t.Helper()
+	manager := echo.New()
+	manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: func(context.Context, string) (string, error) {
+			return envID, nil
+		},
+		MTLS: agent.NewMTLS(agent.MTLSConfig{}),
+	}).HandleConnect)
+	managerServer := httptest.NewServer(manager)
+	t.Cleanup(managerServer.Close)
+	agentCtx, cancelAgent := context.WithCancel(t.Context())
+	t.Cleanup(func() {
+		cancelAgent()
+		tunnels.Unregister(envID)
+	})
+	_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+		Config: &agent.Config{
+			MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
+			AgentEnabled:   true,
+			AgentTransport: agent.TransportWebSocket,
+			AgentToken:     "agent-token",
+		},
+		Handler: handler,
+	}).Start(agentCtx)
+	require.NoError(t, startErr)
+	require.True(t, tunnels.WaitForActive(t.Context(), envID, 5*time.Second).IsPresent())
 }
 
 func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, status string, accessToken *string) {
@@ -109,14 +158,16 @@ func TestDescribeSwarmJoinFailure(t *testing.T) {
 }
 
 func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *testing.T) {
+	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 	envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		Tunnels:         tunnels,
 		DB:              db,
 		SettingsService: settingsSvc,
-		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc),
+		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc, tunnels),
 	})
 
 	accessToken := "token-123"
@@ -137,25 +188,7 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"node-1","hostname":"worker-1","role":"worker","engineVersion":"29.3.1","swarmActive":true}}`))
 	})
-	manager := echo.New()
-	manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
-		Registry: agent.GetRegistry(),
-		Resolver: func(context.Context, string) (string, error) {
-			return "env-1", nil
-		},
-	}).HandleConnect)
-	managerServer := httptest.NewServer(manager)
-	defer managerServer.Close()
-	agentCtx, cancelAgent := context.WithCancel(t.Context())
-	defer cancelAgent()
-	defer agent.GetRegistry().Unregister("env-1")
-	go agent.NewTunnelClient(&agent.Config{
-		AgentEnabled:   true,
-		AgentTransport: agent.TransportWebSocket,
-		ManagerApiUrl:  managerServer.URL,
-		AgentToken:     "agent-token",
-	}, agentHandler).StartWithErrorChan(agentCtx, nil)
-	require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "env-1", 5*time.Second).IsPresent())
+	startSwarmTestAgent(t, tunnels, "env-1", agentHandler)
 
 	createSwarmTestEnvironment(
 		t,
@@ -167,6 +200,7 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 	)
 
 	svc := NewService(ServiceParams{
+		Tunnels:            tunnels,
 		EnvironmentService: envSvc,
 	})
 
@@ -266,4 +300,113 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 	require.EqualValues(t, 2, body.Pagination.TotalItems)
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func TestService_EnrollNodeAgent(t *testing.T) {
+	tunnels := agent.NewTunnelRegistry()
+	ctx := t.Context()
+	db := setupSwarmServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&apikey.ApiKey{}, &role.Role{}, &role.UserRoleAssignment{}, &role.ApiKeyPermission{}, &user.User{}, &event.Event{}))
+	sqlDB, err := db.DB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
+	require.NoError(t, err)
+	roleSvc := role.NewRoleService(db)
+	envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		Tunnels:         tunnels,
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		SettingsService: settingsSvc,
+		APIKeyService:   apikey.NewApiKeyService(db, user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB), roleSvc),
+		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc, tunnels),
+		Config:          &config.Config{},
+		Ctx:             ctx,
+		Scheduler:       swarmTestScheduler{},
+	})
+	svc := NewService(ServiceParams{
+		EnvironmentService: envSvc,
+		Tunnels:            tunnels,
+	})
+
+	worker1 := `{"success":true,"data":{"id":"workernode1","hostname":"worker-1","role":"worker","agent":{"state":"none"}}}`
+	parentNodes := map[string]string{
+		"managernode1": `{"success":true,"data":{"id":"managernode1","hostname":"manager-1","role":"manager","agent":{"state":"connected","bindingKind":"local"}}}`,
+		"workernode1":  worker1,
+		"w1":           worker1,
+		"workernode2":  `{"success":true,"data":{"id":"workernode2","hostname":"worker-2","role":"worker","agent":{"state":"none"}}}`,
+		"workernode3":  `{"success":true,"data":{"id":"workernode3","hostname":"worker-3","role":"worker","agent":{"state":"none"}}}`,
+	}
+	startSwarmTestAgent(t, tunnels, "parent", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := parentNodes[strings.TrimPrefix(r.URL.Path, "/api/environments/0/swarm/nodes/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	createSwarmTestEnvironment(t, db, "parent", "agent://parent", string(environment.EnvironmentStatusOnline), new("parent-token"))
+
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "../containers/json"})
+	require.ErrorIs(t, err, common.ErrBadRequest)
+
+	enrolled, err := svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "workernode1"})
+	require.NoError(t, err)
+	enrolledEnv, err := envSvc.GetEnvironmentByID(ctx, enrolled.EnvironmentID)
+	require.NoError(t, err)
+	assert.Equal(t, "worker-1", enrolledEnv.Name)
+	assert.Equal(t, "parent", kit.FromPtr(enrolledEnv.ParentEnvironmentID))
+	assert.Equal(t, "workernode1", kit.FromPtr(enrolledEnv.SwarmNodeID))
+	assert.Equal(t, enrolled.Token, kit.FromPtr(enrolledEnv.AccessToken))
+
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "w1"})
+	require.ErrorIs(t, err, common.ErrBadRequest, "node names and ID prefixes are refused")
+	unchanged, err := envSvc.GetEnvironmentByID(ctx, enrolled.EnvironmentID)
+	require.NoError(t, err)
+	assert.Equal(t, enrolled.Token, kit.FromPtr(unchanged.AccessToken))
+
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "workernode1"})
+	require.ErrorIs(t, err, common.ErrConflict, "an unbound token cannot take over an existing node environment")
+	kept, err := envSvc.GetEnvironmentByID(ctx, enrolled.EnvironmentID)
+	require.NoError(t, err)
+	assert.Equal(t, enrolled.Token, kit.FromPtr(kept.AccessToken), "a refused enrollment keeps the environment's key")
+
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "managernode1"})
+	require.ErrorIs(t, err, common.ErrConflict, "the parent's own node is already covered")
+
+	startSwarmTestAgent(t, tunnels, "worker2", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"workernode2","hostname":"worker-2","role":"worker","swarmActive":true}}`))
+	}))
+	createSwarmTestEnvironment(t, db, "worker2", "agent://worker2", string(environment.EnvironmentStatusOnline), new("worker2-token"))
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "workernode2"})
+	require.ErrorIs(t, err, common.ErrConflict, "a connected agent that is not bound yet still covers its node")
+	_, err = envSvc.BindSwarmNodeEnvironment(ctx, "parent", "workernode2", "worker2", false)
+	require.NoError(t, err)
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "workernode2"})
+	require.ErrorIs(t, err, common.ErrConflict, "a node with a connected agent is not taken over")
+	agentEnvs, err := envSvc.ListSwarmNodeAgentEnvironments(ctx, "parent")
+	require.NoError(t, err)
+	assert.Len(t, agentEnvs, 2, "no second environment is created for a covered node")
+
+	now := time.Now()
+	require.NoError(t, db.Create(&environment.Environment{
+		BaseModel: database.BaseModel{
+			ID:        "elsewhere",
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+		Name:                "elsewhere",
+		ApiUrl:              "agent://elsewhere",
+		Status:              string(environment.EnvironmentStatusOffline),
+		Hidden:              true,
+		ParentEnvironmentID: new("other-parent"),
+		SwarmNodeID:         new("workernode3"),
+	}).Error)
+	_, err = svc.EnrollNodeAgent(ctx, EnrollNodeAgentParams{ParentEnvironmentID: "parent", NodeID: "workernode3"})
+	require.ErrorIs(t, err, common.ErrConflict, "a disabled environment of the node under another manager blocks a second one")
+	var nodeEnvs int64
+	require.NoError(t, db.Model(&environment.Environment{}).Where("swarm_node_id = ?", "workernode3").Count(&nodeEnvs).Error)
+	assert.EqualValues(t, 1, nodeEnvs)
 }

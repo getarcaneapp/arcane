@@ -18,9 +18,10 @@ import (
 )
 
 func TestLister_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T) {
+	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	lister := NewLister(db)
+	lister := NewLister(db, tunnels)
 
 	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
 	createNamedTestEnvironment(t, db, "env-a", "Env A", "agent://a", new("token-a"))
@@ -61,9 +62,10 @@ func TestLister_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T
 }
 
 func TestLister_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
+	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	lister := NewLister(db)
+	lister := NewLister(db, tunnels)
 
 	now := time.Now()
 	envs := []Environment{
@@ -106,19 +108,21 @@ func TestLister_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(&envs).Error)
 
-	agent.GetRegistry().Unregister("env-grpc")
-	agent.GetRegistry().Unregister("env-websocket")
 	t.Cleanup(func() {
-		agent.GetRegistry().Unregister("env-grpc")
-		agent.GetRegistry().Unregister("env-websocket")
+		tunnels.Unregister("env-grpc")
+		tunnels.Unregister("env-websocket")
 	})
 
-	grpcTunnel := agent.NewAgentTunnelWithConn("env-grpc", agent.NewGRPCManagerTunnelConn(nil))
-	agent.GetRegistry().Register("env-grpc", grpcTunnel)
+	grpcTunnel := agent.NewAgentTunnel(agent.AgentTunnelConfig{EnvironmentID: "env-grpc", Conn: agent.NewGRPCManagerTunnelConn(nil)})
+	registered, registerErr := tunnels.RegisterSession(ctx, grpcTunnel)
+	require.NoError(t, registerErr)
+	require.True(t, registered.Accepted, registered.Reason)
 
 	websocketTunnel, closeWebSocketTunnel := newTestWebSocketTunnel(t, "env-websocket")
 	defer closeWebSocketTunnel()
-	agent.GetRegistry().Register("env-websocket", websocketTunnel)
+	registered, registerErr = tunnels.RegisterSession(ctx, websocketTunnel)
+	require.NoError(t, registerErr)
+	require.True(t, registered.Accepted, registered.Reason)
 
 	tests := []struct {
 		name       string
@@ -169,7 +173,7 @@ func newTestWebSocketTunnel(t *testing.T, envID string) (*agent.AgentTunnel, fun
 	require.NoError(t, err)
 
 	serverConn := <-connCh
-	return agent.NewAgentTunnelWithConn(envID, agent.NewTunnelConn(serverConn)), func() {
+	return agent.NewAgentTunnel(agent.AgentTunnelConfig{EnvironmentID: envID, Conn: agent.NewWebSocketTunnelConn(serverConn)}), func() {
 		_ = clientConn.CloseNow()
 		server.Close()
 	}

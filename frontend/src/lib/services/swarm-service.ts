@@ -113,10 +113,8 @@ class SwarmService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getNodeAgentDeployment(nodeId: string, rotate = false, environmentId: string): Promise<SwarmNodeAgentDeployment> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`, { rotate })
-		);
+	async createNodeAgentDeployment(nodeId: string, environmentId: string): Promise<SwarmNodeAgentDeployment> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
 	async reconcileNodeAgents(environmentId: string): Promise<NodeAgentReconcileResponse> {

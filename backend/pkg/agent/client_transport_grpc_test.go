@@ -23,18 +23,15 @@ import (
 
 func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {
 	t.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 
 	envID := "env-grpc-md-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
+	defer cancel()
 
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -72,18 +69,15 @@ func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {
 
 func TestGRPCTunnel_MetadataAPIKeyFallback(t *testing.T) {
 	t.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 
 	envID := "env-grpc-md-api-key-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
+	defer cancel()
 
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -120,18 +114,15 @@ func TestGRPCTunnel_MetadataAPIKeyFallback(t *testing.T) {
 
 func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 	t.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 
 	envID := "env-grpc-invalid-token-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
+	defer cancel()
 
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -167,18 +158,15 @@ func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 
 func TestGRPCTunnel_FirstMessageMustBeRegister(t *testing.T) {
 	t.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 
 	envID := "env-grpc-first-msg-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
+	defer cancel()
 
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -213,18 +201,15 @@ func TestGRPCTunnel_FirstMessageMustBeRegister(t *testing.T) {
 
 func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 	t.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 
 	envID := "env-grpc-eof-first-msg-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
+	defer tunnels.Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
+	defer cancel()
 
 	go func() {
 		_ = grpcServer.Serve(lis)
@@ -254,21 +239,21 @@ func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 	assert.Contains(t, st.Message(), "register message required")
 }
 
-func startTestGRPCTunnelServer(ctx context.Context, envID string) (*bufconn.Listener, *grpc.Server, *TunnelServer) {
+func startTestGRPCTunnelServer(tunnels *TunnelRegistry, envID string) (*bufconn.Listener, *grpc.Server) {
 	lis := bufconn.Listen(1024 * 1024)
 	tunnelServer := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
+		Registry: tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			if token != "valid-token" {
 				return "", errors.New("invalid token")
 			}
 			return envID, nil
 		},
+		MTLS: NewMTLS(MTLSConfig{}),
 	})
 	grpcServer := grpc.NewServer(tunnelServer.GRPCServerOptions()...)
-	go tunnelServer.StartCleanupLoop(ctx)
 	tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
-	return lis, grpcServer, tunnelServer
+	return lis, grpcServer
 }
 
 func testGRPCOutgoingContext(ctx context.Context, token string) context.Context {

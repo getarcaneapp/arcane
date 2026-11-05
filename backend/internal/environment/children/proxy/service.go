@@ -34,10 +34,17 @@ import (
 type (
 	Service struct {
 		db              *database.DB
-		client          *agent.RemoteClient
+		tunnels         *agent.TunnelRegistry
 		settingsService *settings.SettingsService
 		syncGate        *concurrency.SyncGate
 		syncLocks       concurrency.KeyedMutex
+	}
+
+	Config struct {
+		DB              *database.DB
+		Tunnels         *agent.TunnelRegistry
+		SettingsService *settings.SettingsService
+		SyncGate        *concurrency.SyncGate
 	}
 
 	// Target is a validated remote environment endpoint; build it with NewTarget.
@@ -48,12 +55,12 @@ type (
 	}
 )
 
-func New(db *database.DB, settingsService *settings.SettingsService, syncGate *concurrency.SyncGate) *Service {
+func New(cfg Config) *Service {
 	return &Service{
-		db:              db,
-		client:          agent.NewRemoteClient(agent.RemoteClientConfig{}),
-		settingsService: settingsService,
-		syncGate:        syncGate,
+		db:              cfg.DB,
+		tunnels:         cfg.Tunnels,
+		settingsService: cfg.SettingsService,
+		syncGate:        cfg.SyncGate,
 	}
 }
 
@@ -162,11 +169,11 @@ func (s *Service) execute(
 	}
 	agent.SetAgentToken(requestHeaders, kit.FromPtr(target.accessToken))
 
-	resp, err := s.client.Do(ctx, agent.RemoteRequest{
+	resp, err := s.tunnels.Do(ctx, agent.RemoteRequest{
+		Headers:       requestHeaders,
 		EnvironmentID: target.id,
 		Method:        method,
 		Path:          path,
-		Headers:       requestHeaders,
 		Body:          body,
 	})
 	if err != nil {
@@ -181,7 +188,7 @@ func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*ht
 	if err != nil {
 		return nil, err
 	}
-	tunnel, ok := agent.GetRegistry().WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
+	tunnel, ok := s.tunnels.WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
 	if !ok {
 		return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
 	}

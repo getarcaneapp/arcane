@@ -56,8 +56,8 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		}),
 	}
 
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl))), "https://") {
-		tlsConfig, err := buildManagerClientTLSConfig(c.cfg)
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(httpx.ManagerBaseURL(c.cfg.MTLS.ManagerURL))), "https://") {
+		tlsConfig, err := c.cfg.MTLS.clientTLS(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to configure agent gRPC TLS: %w", err)
 		}

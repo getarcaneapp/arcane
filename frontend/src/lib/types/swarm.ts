@@ -185,6 +185,7 @@ export interface SwarmNodeAgentDeployment {
 	agent: NodeAgentStatus;
 	dockerRun: string;
 	dockerCompose: string;
+	enrollmentToken: string;
 }
 
 export interface SwarmNode {

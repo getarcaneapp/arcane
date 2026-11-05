@@ -221,7 +221,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
 	}
 	w := c.Response()
-	agent.CopyResponseHeaders(resp.Header, w.Header(), agent.BuildHopByHopHeaders(resp.Header))
+	agent.CopyResponseHeaders(resp.Header, w.Header())
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
 		if copyErr := agent.CopyResponseBody(w, resp); copyErr != nil {

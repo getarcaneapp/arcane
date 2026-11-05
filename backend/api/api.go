@@ -21,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/federated"
@@ -72,6 +73,7 @@ type (
 		User              *user.Module
 		Project           *project.Module
 		Environment       *environment.Module
+		Enrollment        *enrollment.Module
 		Settings          *settings.Module
 		JobSchedule       *job.Module
 		Search            *search.Module
@@ -219,6 +221,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.Activity.RegisterRoutes(api)
 	oidc.RegisterOidc(api, p.Deps.Auth.Service(), p.Deps.Passkey, p.Deps.Oidc, p.Deps.Role.Service(), p.Deps.User.Service(), p.Config)
 	p.Deps.Environment.RegisterRoutes(api, p.AppContext, p.Deps.Version.GetAppVersionInfo)
+	p.Deps.Enrollment.RegisterRoutes(api, p.Config)
 	p.Deps.ContainerRegistry.RegisterRoutes(api)
 	p.Deps.Template.RegisterRoutes(api)
 	p.Deps.Variable.RegisterRoutes(api, p.Config)
@@ -249,20 +252,6 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 
 	if !p.Config.AgentEnabled {
 		telemetry.RegisterRoutes(api, telemetry.NewService())
-		huma.Register(api, huma.Operation{
-			OperationID: "enroll-agent-mtls",
-			Method:      http.MethodPost,
-			Path:        "/tunnel/mtls/enroll",
-			Summary:     "Enroll an agent mTLS certificate",
-			Tags:        []string{"Environments"},
-			Hidden:      true,
-			Security:    []map[string][]string{},
-			Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessAgentToken},
-			Middlewares: huma.Middlewares{
-				middleware.EchoMiddleware(middleware.PerIPRateLimit(10, 3)),
-				middleware.EchoMiddleware(middleware.PerAgentTokenRateLimit(10, 3)),
-			},
-		}, middleware.EchoHandler(p.Tunnel.HandleMTLSEnroll))
 	}
 	for _, register := range featureRoutes {
 		register(api, p)

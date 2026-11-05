@@ -2,11 +2,6 @@ package agent
 
 import (
 	"strings"
-	"time"
-
-	"github.com/samber/mo"
-
-	"kit.getarcane.app"
 )
 
 const (
@@ -50,61 +45,4 @@ func NormalizeMTLSMode(value string) string {
 	default:
 		return MTLSModeDisabled
 	}
-}
-
-// UseGRPCTransport reports whether gRPC managed tunnel mode should be attempted.
-func UseGRPCTransport(cfg *Config) bool {
-	if cfg == nil {
-		return false
-	}
-	transport := NormalizeTransport(cfg.AgentTransport)
-	return transport == TransportGRPC || transport == TransportAuto
-}
-
-// UseWebSocketTransport reports whether websocket managed tunnel mode is allowed.
-func UseWebSocketTransport(cfg *Config) bool {
-	if cfg == nil {
-		return false
-	}
-	transport := NormalizeTransport(cfg.AgentTransport)
-	return transport == TransportWebSocket || transport == TransportAuto
-}
-
-// GetTunnelRuntimeState returns live metadata for an active tunnel.
-func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
-	tunnel, ok := GetRegistry().Active(envID).Get()
-	if !ok {
-		return mo.None[*TunnelRuntimeState]()
-	}
-	// One snapshot under a single read lock keeps the fields consistent and race-free.
-	meta := tunnel.MetadataSnapshot()
-
-	rtt := time.Duration(tunnel.mux.rtt.Load())
-	rttCount := tunnel.mux.rttCount.Load()
-	bytesIn, bytesOut := tunnel.mux.traffic()
-	return mo.Some(&TunnelRuntimeState{
-		RoundTripTime: kit.Ternary(rtt > 0, &rtt, nil),
-		RTTMin:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMin.Load())), nil),
-		RTTAvg:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttSum.Load()/max(rttCount, 1))), nil),
-		RTTMax:        kit.Ternary(rttCount > 0, new(time.Duration(tunnel.mux.rttMax.Load())), nil),
-		OpenStreams:   tunnel.openStreams(),
-		BytesIn:       bytesIn,
-		BytesOut:      bytesOut,
-		StreamsOpened: tunnel.mux.opened.Load(),
-		Host:          meta.Host,
-		RemoteAddr:    meta.RemoteAddr,
-		Transport:     tunnel.Conn.Transport(),
-		ConnectedAt:   new(meta.ConnectedAt),
-		LastHeartbeat: new(meta.LastHeartbeat),
-		SessionID:     meta.SessionID,
-		AgentInstance: meta.AgentInstance,
-		SecurityMode:  meta.SecurityMode,
-		Capabilities:  meta.Capabilities,
-		State:         meta.State,
-	})
-}
-
-func GetTunnelHistory(envID string) mo.Option[TunnelHistory] {
-	history, ok := GetRegistry().history.Get(envID)
-	return mo.TupleToOption(history, ok)
 }

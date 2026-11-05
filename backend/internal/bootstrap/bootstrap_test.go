@@ -1,11 +1,11 @@
 package bootstrap
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -31,210 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/httpx"
-	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
 )
-
-func TestProxyProtocolListener(t *testing.T) {
-	acceptRemoteAddr := func(t *testing.T, trustedProxies, payload string) string {
-		t.Helper()
-		raw, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		listener := proxyProtocolListener(t.Context(), raw, trustedProxies)
-		t.Cleanup(func() { _ = listener.Close() })
-
-		client, err := net.Dial("tcp", raw.Addr().String())
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = client.Close() })
-		_, err = client.Write([]byte(payload))
-		require.NoError(t, err)
-
-		conn, err := listener.Accept()
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = conn.Close() })
-		buf := make([]byte, len("hello"))
-		_, err = io.ReadFull(conn, buf)
-		require.NoError(t, err)
-		require.Equal(t, "hello", string(buf))
-
-		host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
-		require.NoError(t, err)
-		return host
-	}
-
-	t.Run("trusted proxy header sets the client address", func(t *testing.T) {
-		host := acceptRemoteAddr(t, "127.0.0.1/32", "PROXY TCP4 203.0.113.9 127.0.0.1 4567 3552\r\nhello")
-		assert.Equal(t, "203.0.113.9", host)
-	})
-
-	t.Run("trusted proxy without header keeps the peer address", func(t *testing.T) {
-		host := acceptRemoteAddr(t, "127.0.0.1/32", "hello")
-		assert.Equal(t, "127.0.0.1", host)
-	})
-
-	t.Run("no trusted proxies leaves the listener unwrapped", func(t *testing.T) {
-		raw, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = raw.Close() })
-		assert.Same(t, raw, proxyProtocolListener(t.Context(), raw, ""))
-	})
-}
-
-func TestWithClientRemoteAddr(t *testing.T) {
-	_, proxyNet, err := net.ParseCIDR("10.0.0.0/8")
-	require.NoError(t, err)
-	extractIP := echo.ExtractIPFromXFFHeader(
-		echo.TrustLoopback(false),
-		echo.TrustLinkLocal(false),
-		echo.TrustPrivateNet(false),
-		echo.TrustIPRange(proxyNet),
-	)
-
-	t.Run("trusted proxy forwards the client address", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
-		req.RemoteAddr = "10.1.2.3:4567"
-		req.Header.Set("X-Forwarded-For", "203.0.113.9")
-
-		assert.Equal(t, "203.0.113.9:4567", withClientRemoteAddr(req, extractIP).RemoteAddr)
-	})
-
-	t.Run("untrusted peer keeps its own address", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
-		req.RemoteAddr = "198.51.100.7:4567"
-		req.Header.Set("X-Forwarded-For", "203.0.113.9")
-
-		assert.Equal(t, "198.51.100.7:4567", withClientRemoteAddr(req, extractIP).RemoteAddr)
-	})
-}
-
-func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
-	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-
-	t.Run("nil request", func(t *testing.T) {
-		assert.Nil(t, normalizeTunnelGRPCRequestPath(nil))
-	})
-
-	t.Run("path without prefix remains unchanged", func(t *testing.T) {
-		req := httptest.NewRequest("POST", fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPath(req)
-
-		assert.Same(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-	})
-
-	t.Run("api prefix is removed", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/api"+fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPath(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
-	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/agent/proxy/api"+fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPath(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
-	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
-		// Agents use /api/tunnel/connect as their gRPC method path so reverse proxies
-		// can route tunnel traffic on a stable URL.
-		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPath(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
-	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/agent/proxy/api/tunnel/connect", http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPath(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-}
-
-func TestIsTunnelGRPCRequest(t *testing.T) {
-	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-
-	t.Run("detects by grpc content-type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/any/path", http.NoBody)
-		req.Header.Set("Content-Type", "application/grpc")
-		assert.True(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("detects by grpc-web content-type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/any/path", http.NoBody)
-		req.Header.Set("Content-Type", "application/grpc-web+proto")
-		assert.True(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("detects by method path without grpc content-type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, fullMethodPath, http.NoBody)
-		assert.True(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("does not match regular api requests", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/environments/pair", http.NoBody)
-		req.Header.Set("Content-Type", "application/json")
-		assert.False(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("requires post", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, fullMethodPath, http.NoBody)
-		req.Header.Set("Content-Type", "application/grpc")
-		assert.False(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("does not match http2 post with te trailers and json content-type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", http.NoBody)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Te", "trailers")
-		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequest(req))
-	})
-
-	t.Run("does not match http2 post with te trailers and form content-type", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/logout", http.NoBody)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Te", "trailers")
-		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequest(req))
-	})
-}
-
-func TestConfigureHTTPProtocols(t *testing.T) {
-	handler := http.NewServeMux()
-
-	t.Run("tls enables http1 and http2", func(t *testing.T) {
-		configuredHandler, protocols := configureHTTPProtocols(true, handler)
-
-		assert.Same(t, handler, configuredHandler)
-		require.NotNil(t, protocols)
-		assert.True(t, protocols.HTTP1())
-		assert.True(t, protocols.HTTP2())
-		assert.False(t, protocols.UnencryptedHTTP2())
-	})
-
-	t.Run("plain enables http1 and unencrypted http2", func(t *testing.T) {
-		configuredHandler, protocols := configureHTTPProtocols(false, handler)
-
-		// The plain path wraps the handler to clear the stale h2c read
-		// deadline, so it is deliberately not the same handler.
-		assert.NotNil(t, configuredHandler)
-		require.NotNil(t, protocols)
-		assert.True(t, protocols.HTTP1())
-		assert.False(t, protocols.HTTP2())
-		assert.True(t, protocols.UnencryptedHTTP2())
-	})
-}
 
 func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 	t.Helper()
@@ -255,7 +52,65 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 	t.Cleanup(func() {
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
 	})
-	return settings.New(settingsService, nil, nil, cfg)
+	return settings.New(settings.ModuleParams{
+		Service: settingsService,
+		Config:  cfg,
+		MTLS:    agent.NewMTLS(agent.MTLSConfig{}),
+	})
+}
+
+func startTestHTTPServer(t *testing.T, cfg *config.Config, router *echo.Echo) string {
+	t.Helper()
+	lc := fxtest.NewLifecycle(t)
+	srv, err := NewHTTPServer(lc, HTTPServerParams{
+		AppCtx:       t.Context(),
+		Config:       cfg,
+		Router:       router,
+		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
+	})
+	require.NoError(t, err)
+	lc.RequireStart()
+	t.Cleanup(func() { lc.RequireStop() })
+	return srv.Addr
+}
+
+func TestHTTPServerProxyProtocol(t *testing.T) {
+	router := echo.New()
+	router.GET("/addr", func(c *echo.Context) error {
+		host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+		if err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, host)
+	})
+	addr := startTestHTTPServer(t, &config.Config{
+		Listen:         "127.0.0.1",
+		Port:           "0",
+		TrustedProxies: "127.0.0.1/32",
+	}, router)
+
+	for _, tt := range []struct {
+		name   string
+		prefix string
+		want   string
+	}{
+		{name: "trusted proxy header sets the client address", prefix: "PROXY TCP4 203.0.113.9 127.0.0.1 4567 3552\r\n", want: "203.0.113.9"},
+		{name: "trusted proxy without header keeps the peer address", want: "127.0.0.1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			conn, err := net.Dial("tcp", addr)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			_, err = conn.Write([]byte(tt.prefix + "GET /addr HTTP/1.1\r\nHost: arcane\r\nConnection: close\r\n\r\n"))
+			require.NoError(t, err)
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(body))
+		})
+	}
 }
 
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
@@ -278,24 +133,10 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
-	handler, protocols := configureHTTPProtocols(false, router)
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	server := &http.Server{
-		Handler:           handler,
-		Protocols:         protocols,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		require.NoError(t, server.Shutdown(context.WithoutCancel(t.Context())))
-		require.ErrorIs(t, <-errCh, http.ErrServerClosed)
-	})
+	addr := startTestHTTPServer(t, &config.Config{
+		Listen: "127.0.0.1",
+		Port:   "0",
+	}, router)
 
 	clientProtocols := &http.Protocols{}
 	clientProtocols.SetUnencryptedHTTP2(true)
@@ -304,7 +145,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 
 	for _, path := range []string{"/api/health", "/api/openapi.json"} {
 		t.Run(path, func(t *testing.T) {
-			req, requestErr := http.NewRequest(http.MethodGet, "http://"+listener.Addr().String()+path, http.NoBody)
+			req, requestErr := http.NewRequest(http.MethodGet, "http://"+addr+path, http.NoBody)
 			require.NoError(t, requestErr)
 			req.Header.Set("Accept-Encoding", "gzip")
 
@@ -329,49 +170,32 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 }
 
 func TestH2CStreamSurvivesPastReadHeaderTimeout(t *testing.T) {
-	// go1.26.6 arms ReadHeaderTimeout before the h2c preface sniff and never clears it, so
-	// without ClearReadDeadline every h2c stream dies ReadHeaderTimeout after accept.
-	const readHeaderTimeout = 250 * time.Millisecond
-
 	release := make(chan struct{})
-	streamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
+	router := echo.New()
+	router.GET("/stream", func(c *echo.Context) error {
+		c.Response().WriteHeader(http.StatusOK)
+		if err := http.NewResponseController(c.Response()).Flush(); err != nil {
+			return err
+		}
 		<-release
-		_, _ = w.Write([]byte("done"))
+		_, err := c.Response().Write([]byte("done"))
+		return err
 	})
-	handler, protocols := configureHTTPProtocols(false, streamHandler)
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	server := &http.Server{
-		Handler:           handler,
-		Protocols:         protocols,
-		ReadHeaderTimeout: readHeaderTimeout,
-		ConnContext:       httpx.WithConn,
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(listener)
-	}()
-	t.Cleanup(func() {
-		require.NoError(t, server.Shutdown(context.WithoutCancel(t.Context())))
-		require.ErrorIs(t, <-errCh, http.ErrServerClosed)
-	})
+	addr := startTestHTTPServer(t, &config.Config{
+		Listen: "127.0.0.1",
+		Port:   "0",
+	}, router)
 
 	clientProtocols := &http.Protocols{}
 	clientProtocols.SetUnencryptedHTTP2(true)
-	transport := &http.Transport{Protocols: clientProtocols}
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: &http.Transport{Protocols: clientProtocols}}
 
-	resp, err := client.Get("http://" + listener.Addr().String() + "/stream")
+	resp, err := client.Get("http://" + addr + "/stream")
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, "HTTP/2.0", resp.Proto)
 
-	// Idle past ReadHeaderTimeout; a stale deadline would fail the read below.
-	time.Sleep(4 * readHeaderTimeout)
+	time.Sleep(6 * time.Second)
 	close(release)
 
 	body, err := io.ReadAll(resp.Body)
@@ -390,7 +214,7 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 		AppCtx:       t.Context(),
 		Config:       cfg,
 		Router:       echo.New(),
-		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{}),
+		TunnelServer: agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
 	})
 	require.Error(t, err)
 }
@@ -425,14 +249,15 @@ func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 		EncryptionKey:      "test-encryption-key-for-agent-mtls-32bytes-min",
 	}
 
-	useTLS, tlsCertFile, tlsKeyFile, agentCfg, err := prepareServerTLS(t.Context(), cfg)
+	mtls := buildAgentRuntimeConfig(cfg, "", agent.AgentHostInfo{}).MTLS
+	useTLS, tlsCertFile, tlsKeyFile, agentTLSConfig, err := prepareServerTLS(t.Context(), cfg, mtls)
 	require.NoError(t, err)
 	assert.False(t, useTLS)
 	assert.Empty(t, tlsCertFile)
 	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, agentCfg)
-	assert.Equal(t, "required", agentCfg.AgentMTLSMode)
-	require.FileExists(t, agentCfg.AgentMTLSCAFile)
+	require.NotNil(t, agentTLSConfig)
+	assert.Equal(t, agent.MTLSModeRequired, mtls.Mode)
+	require.FileExists(t, mtls.CAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
 }

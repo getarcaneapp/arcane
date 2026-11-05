@@ -222,6 +222,9 @@ func newRouter(p RouterParams) *echo.Echo {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
 	))
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/agents/enroll"}, 30, 10,
+	))
 	// Keyed per token for stored tokens, per source IP for everything else.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,

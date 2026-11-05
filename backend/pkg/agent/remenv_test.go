@@ -98,11 +98,16 @@ func TestSetAgentToken(t *testing.T) {
 	require.Empty(t, headers.Get(HeaderAuthorization))
 }
 
-func TestBuildHopByHopHeaders_AddsConnectionTokens(t *testing.T) {
-	hop := BuildHopByHopHeaders(http.Header{"Connection": {"X-Foo, keep-alive", "x-bar"}})
-	require.Contains(t, hop, http.CanonicalHeaderKey("X-Foo"))
-	require.Contains(t, hop, http.CanonicalHeaderKey("Keep-Alive"))
-	require.Contains(t, hop, http.CanonicalHeaderKey("X-Bar"))
+func TestCopyResponseHeaders_SkipsConnectionTokens(t *testing.T) {
+	to := http.Header{}
+	CopyResponseHeaders(http.Header{
+		"Connection": {"X-Foo, keep-alive", "x-bar"},
+		"X-Foo":      {"1"},
+		"Keep-Alive": {"timeout=5"},
+		"X-Bar":      {"2"},
+		"X-Baz":      {"3"},
+	}, to)
+	require.Equal(t, http.Header{"X-Baz": {"3"}}, to)
 }
 
 func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T) {
@@ -113,9 +118,8 @@ func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T
 		"Connection":        {"X-Foo"},
 	}
 
-	hop := BuildHopByHopHeaders(from)
 	to := http.Header{}
-	CopyResponseHeaders(from, to, hop)
+	CopyResponseHeaders(from, to)
 
 	require.Equal(t, "application/json", to.Get("Content-Type"))
 	require.Empty(t, to.Get("Transfer-Encoding"))

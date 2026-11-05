@@ -32,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/internal/version"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
@@ -1015,7 +1016,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 			}).Error)
 			s := &AuthService{
 				userService:       userSvc,
-				environmentLister: environment.NewLister(db),
+				environmentLister: environment.NewLister(db, agent.NewTunnelRegistry()),
 				versionService:    newBootstrapTestVersionService(t, db),
 			}
 
@@ -1038,7 +1039,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 		db := setupAuthServiceTestDB(t)
 		s := &AuthService{
 			userService:       user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB),
-			environmentLister: environment.NewLister(db),
+			environmentLister: environment.NewLister(db, agent.NewTunnelRegistry()),
 			versionService:    newBootstrapTestVersionService(t, db),
 		}
 

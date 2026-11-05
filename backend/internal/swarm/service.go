@@ -9,17 +9,22 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -32,6 +37,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/swarm/children/secrets"
 	"getarcane.dev/arcane/v3/internal/swarm/children/services"
 	"getarcane.dev/arcane/v3/internal/swarm/children/stacks"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/jsonx"
@@ -43,14 +49,22 @@ type (
 	// SwarmService provides Docker Swarm cluster operations and coordinates its
 	// services, nodes, stacks, configs, and secrets features.
 	SwarmService struct {
-		dockerService *docker.DockerClientService
-		kvService     *kv.KVService
+		dockerService      *docker.DockerClientService
+		kvService          *kv.KVService
+		environmentService *environment.EnvironmentService
+		tunnels            *agent.TunnelRegistry
 
 		services *services.Service
 		nodes    *nodes.Service
 		stacks   *stacks.Service
 		configs  *configs.Service
 		secrets  *secrets.Service
+	}
+
+	EnrollNodeAgentParams struct {
+		EnrollmentRequestHash *string
+		ParentEnvironmentID   string
+		NodeID                string
 	}
 
 	SwarmServiceParams struct {
@@ -61,33 +75,44 @@ type (
 		KVService          *kv.KVService
 		RegistryService    *registry.ContainerRegistryService
 		EnvironmentService *environment.EnvironmentService
+		Tunnels            *agent.TunnelRegistry
 	}
 )
 
 const (
 	KVKeySwarmEnabled      = "swarm.enabled"
 	defaultSwarmListenAddr = "0.0.0.0:2377"
+	clusterProbeTimeout    = 5 * time.Second
 )
 
-var taskPagination = pagination.Config[types.SwarmTaskSummary]{
-	SearchAccessors: []pagination.SearchAccessor[types.SwarmTaskSummary]{
-		func(task types.SwarmTaskSummary) (string, error) { return task.Name, nil },
-		func(task types.SwarmTaskSummary) (string, error) { return task.ServiceName, nil },
-		func(task types.SwarmTaskSummary) (string, error) { return task.NodeName, nil },
-		func(task types.SwarmTaskSummary) (string, error) { return task.ID, nil },
-		func(task types.SwarmTaskSummary) (string, error) { return task.CurrentState, nil },
-	},
-	SortBindings: []pagination.SortBinding[types.SwarmTaskSummary]{
-		{Key: "service", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
-		{Key: "node", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
-		{Key: "state", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
-		{Key: "created", Fn: func(a, b types.SwarmTaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-		{Key: "updated", Fn: func(a, b types.SwarmTaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-	},
-}
+var (
+	ErrClusterManagerUnreachable = common.Classify(common.ErrUnavailable, errors.New("a swarm manager environment is unreachable; retry enrollment"))
+
+	taskPagination = pagination.Config[types.SwarmTaskSummary]{
+		SearchAccessors: []pagination.SearchAccessor[types.SwarmTaskSummary]{
+			func(task types.SwarmTaskSummary) (string, error) { return task.Name, nil },
+			func(task types.SwarmTaskSummary) (string, error) { return task.ServiceName, nil },
+			func(task types.SwarmTaskSummary) (string, error) { return task.NodeName, nil },
+			func(task types.SwarmTaskSummary) (string, error) { return task.ID, nil },
+			func(task types.SwarmTaskSummary) (string, error) { return task.CurrentState, nil },
+		},
+		SortBindings: []pagination.SortBinding[types.SwarmTaskSummary]{
+			{Key: "service", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
+			{Key: "node", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
+			{Key: "state", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
+			{Key: "created", Fn: func(a, b types.SwarmTaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+			{Key: "updated", Fn: func(a, b types.SwarmTaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+		},
+	}
+)
 
 func NewSwarmService(p SwarmServiceParams) *SwarmService {
-	s := &SwarmService{dockerService: p.DockerService, kvService: p.KVService}
+	s := &SwarmService{
+		dockerService:      p.DockerService,
+		kvService:          p.KVService,
+		environmentService: p.EnvironmentService,
+		tunnels:            p.Tunnels,
+	}
 
 	s.services = services.NewService(p.DockerService, s.ensureSwarmManager, s.listTasksPaginatedWithFilters)
 	s.nodes = nodes.NewService(nodes.ServiceParams{
@@ -96,6 +121,7 @@ func NewSwarmService(p SwarmServiceParams) *SwarmService {
 		ListTasks:          s.listTasksPaginatedWithFilters,
 		LocalJoinTokens:    s.GetSwarmJoinTokens,
 		EnvironmentService: p.EnvironmentService,
+		Tunnels:            p.Tunnels,
 	})
 	s.stacks = stacks.NewService(stacks.ServiceParams{
 		DockerService:    p.DockerService,
@@ -113,6 +139,60 @@ func NewSwarmService(p SwarmServiceParams) *SwarmService {
 // DeployStack deploys a swarm stack; GitOps sync uses it as the domain API.
 func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 	return s.stacks.DeployStack(ctx, environmentID, req)
+}
+
+func (s *SwarmService) EnrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) (*types.AgentEnrollResponse, error) {
+	return s.nodes.EnrollNodeAgent(ctx, nodes.EnrollNodeAgentParams{
+		ParentEnvironmentID:   p.ParentEnvironmentID,
+		NodeID:                p.NodeID,
+		EnrollmentRequestHash: p.EnrollmentRequestHash,
+	})
+}
+
+func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, clusterID string) (mo.Option[string], error) {
+	local, err := s.GetStatus(ctx)
+	if err != nil {
+		return mo.None[string](), err
+	}
+	if local.ClusterID == clusterID {
+		return mo.Some(types.LocalDockerEnvironmentID), nil
+	}
+
+	remotes, err := s.environmentService.ListActiveRemoteEnvironments(ctx)
+	if err != nil {
+		return mo.None[string](), err
+	}
+	remotes = slices.DeleteFunc(remotes, func(env environment.Environment) bool {
+		return !s.tunnels.Active(env.ID).IsPresent()
+	})
+	clusterIDs := make([]string, len(remotes))
+	probeErrs := make([]error, len(remotes))
+	var probes errgroup.Group
+	for index, env := range remotes {
+		probes.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "swarm cluster probe")
+			probeCtx, cancel := context.WithTimeout(ctx, clusterProbeTimeout)
+			defer cancel()
+			var remote types.ApiResponse[types.SwarmRuntimeStatus]
+			probeErr := s.environmentService.ProxyJSONRequest(probeCtx, env.ID, http.MethodGet, "/api/environments/0/swarm/status", nil, &remote)
+			statusErr, rejected := errors.AsType[*agent.StatusError](probeErr)
+			probeErrs[index] = kit.Ternary(rejected && statusErr.StatusCode < http.StatusInternalServerError, nil, probeErr)
+			clusterIDs[index] = remote.Data.ClusterID
+			return nil
+		})
+	}
+	if waitErr := probes.Wait(); waitErr != nil {
+		return mo.None[string](), waitErr
+	}
+	if index := slices.Index(clusterIDs, clusterID); index >= 0 {
+		parentID := kit.FromPtr(remotes[index].ParentEnvironmentID)
+		return mo.Some(kit.Ternary(parentID == types.LocalDockerEnvironmentID || s.tunnels.Active(parentID).IsPresent(), parentID, remotes[index].ID)), nil
+	}
+	if probeErr := errors.Join(probeErrs...); probeErr != nil {
+		slog.WarnContext(ctx, "Could not reach every environment while matching a swarm cluster", "clusterId", clusterID, "error", probeErr)
+		return mo.None[string](), ErrClusterManagerUnreachable
+	}
+	return mo.None[string](), nil
 }
 
 // StreamServiceLogs streams swarm service logs for the WebSocket log endpoint.

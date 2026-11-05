@@ -319,11 +319,8 @@ func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
 	for i := range routes {
 		route := &routes[i]
 		key := commandRouteKey{Method: kit.Ternary(route.Stream, "", route.Method), Stream: route.Stream}
+		index[key] = cmp.Or(index[key], &commandRouteNode{})
 		current := index[key]
-		if current == nil {
-			current = &commandRouteNode{}
-			index[key] = current
-		}
 		for part := range strings.SplitSeq(strings.Trim(route.PathPattern, "/"), "/") {
 			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
 				current.param = cmp.Or(current.param, &commandRouteNode{})
@@ -333,9 +330,7 @@ func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
 			if current.static == nil {
 				current.static = make(map[string]*commandRouteNode)
 			}
-			if current.static[part] == nil {
-				current.static[part] = &commandRouteNode{}
-			}
+			current.static[part] = cmp.Or(current.static[part], &commandRouteNode{})
 			current = current.static[part]
 		}
 		if current.route != nil {

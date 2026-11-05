@@ -935,29 +935,36 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 					_, _ = w.Write([]byte(`{"success":true}`))
 				}
 			})
+			tunnels := agent.NewTunnelRegistry()
 			manager := echo.New()
 			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
-				Registry: agent.GetRegistry(),
+				Registry: tunnels,
 				Resolver: func(context.Context, string) (string, error) {
 					return "remote", nil
 				},
+				MTLS: agent.NewMTLS(agent.MTLSConfig{}),
 			}).HandleConnect)
 			managerServer := httptest.NewServer(manager)
 			defer managerServer.Close()
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
-			defer agent.GetRegistry().Unregister("remote")
-			go agent.NewTunnelClient(&agent.Config{
-				AgentEnabled:   true,
-				AgentTransport: agent.TransportWebSocket,
-				ManagerApiUrl:  managerServer.URL,
-				AgentToken:     "agent-token",
-			}, agentHandler).StartWithErrorChan(agentCtx, nil)
-			require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
+			defer tunnels.Unregister("remote")
+			_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+				Config: &agent.Config{
+					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
+					AgentEnabled:   true,
+					AgentTransport: agent.TransportWebSocket,
+					AgentToken:     "agent-token",
+				},
+				Handler: agentHandler,
+			}).Start(agentCtx)
+			require.NoError(t, startErr)
+			require.True(t, tunnels.WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
 			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "agent://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
 			service := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
 				DB:              db,
-				RemoteTransport: environment.NewRemoteTransport(db, nil),
+				Tunnels:         tunnels,
+				RemoteTransport: environment.NewRemoteTransport(db, nil, tunnels),
 				VariableSyncer:  activityTestVariableSyncer{},
 			})
 			activityService := NewActivityService(db, nil)

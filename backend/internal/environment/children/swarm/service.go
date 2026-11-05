@@ -12,8 +12,6 @@ import (
 
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/types/v3"
 )
@@ -71,19 +69,12 @@ func (s *Service) AuthorizeBinding(
 	return nil
 }
 
-// EnsureApiKey returns the agent's existing token unless rotate is set or none
-// exists; otherwise it creates a key, links it via link, and deletes the previous key.
-func (s *Service) EnsureApiKey(
+func (s *Service) RotateApiKey(
 	ctx context.Context,
 	environmentID string,
-	accessToken, previousApiKeyID *string,
-	rotate bool,
+	previousApiKeyID *string,
 	link func(ctx context.Context, apiKeyID, apiKey string) error,
 ) (string, error) {
-	if !rotate && strings.TrimSpace(kit.FromPtr(accessToken)) != "" {
-		return strings.TrimSpace(*accessToken), nil
-	}
-
 	apiKeyDto, err := s.apiKeys.CreateEnvironmentApiKey(ctx, environmentID)
 	if err != nil {
 		return "", fmt.Errorf("failed to create environment API key: %w", err)

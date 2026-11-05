@@ -1,16 +1,13 @@
 package agent
 
 import (
+	"cmp"
 	"context"
-	"crypto/x509"
-	"encoding/json/v2"
-	"encoding/pem"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +20,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
 )
 
 type (
@@ -33,6 +32,7 @@ type (
 )
 
 func TestTunnelServer_HandleConnect(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token == "valid-token" {
 			return "env-connected", nil
@@ -51,9 +51,10 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	}
 
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry:       GetRegistry(),
+		Registry:       tunnels,
 		Resolver:       resolver,
 		StatusCallback: callback,
+		MTLS:           NewMTLS(MTLSConfig{}),
 	})
 
 	router := echo.New()
@@ -88,12 +89,10 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	assert.True(t, registerResp.Accepted)
 	assert.Contains(t, registerResp.Capabilities, tunnelCapabilityMuxGrant)
 
-	// Check registry
-	reg := GetRegistry()
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = reg.Get("env-connected").Get()
+		tunnel, ok = tunnels.Get("env-connected").Get()
 		return ok && tunnel != nil && tunnel.SessionID != ""
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "agent-connected", tunnel.AgentInstance)
@@ -108,22 +107,20 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	// Clean up; close the client first so the server-side close handshake
 	// does not wait on a peer that is no longer reading.
 	_ = conn.CloseNow()
-	reg.Unregister("env-connected")
+	tunnels.Unregister("env-connected")
 }
 
 func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
+		Registry: tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			if token == "valid-token" {
 				return "env-proxy-mtls", nil
 			}
 			return "", errors.New("invalid token")
 		},
-		Config: &Config{
-			AgentMTLSMode: MTLSModeRequired,
-			AppURL:        "https://manager.example.com",
-		},
+		MTLS: NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	router := echo.New()
@@ -157,15 +154,20 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 	require.Equal(t, "token", registerResp.SecurityMode)
 
 	_ = conn.CloseNow()
-	GetRegistry().Unregister("env-proxy-mtls")
+	tunnels.Unregister("env-proxy-mtls")
 }
 
 func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	resolver := func(ctx context.Context, token string) (string, error) {
 		return "", errors.New("invalid")
 	}
 
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -193,6 +195,7 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 }
 
 func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	var resolvedToken string
 	resolver := func(ctx context.Context, token string) (string, error) {
 		resolvedToken = token
@@ -202,7 +205,11 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 		return "", errors.New("invalid token")
 	}
 
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: tunnels,
+		Resolver: resolver,
+		MTLS:     NewMTLS(MTLSConfig{}),
+	})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -229,11 +236,12 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	require.Equal(t, "valid-token", resolvedToken)
 
 	_ = conn.CloseNow()
-	GetRegistry().Unregister("env-header-token")
+	tunnels.Unregister("env-header-token")
 }
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	tunnels := NewTunnelRegistry()
+	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
@@ -258,143 +266,16 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	require.Equal(t, "agent token required", registerResp.Error)
 }
 
-func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Resolver: func(ctx context.Context, token string) (string, error) {
-			if token != "valid-token" {
-				return "", errors.New("invalid token")
-			}
-			return "env-mtls", nil
-		},
-		NameResolver: func(ctx context.Context, environmentID string) (string, error) {
-			require.Equal(t, "env-mtls", environmentID)
-			return "Lab Server", nil
-		},
-		Config: &Config{
-			AgentMTLSMode:      MTLSModeRequired,
-			AgentMTLSAssetsDir: t.TempDir(),
-		},
-	})
-
-	router := echo.New()
-	router.POST("/enroll", server.HandleMTLSEnroll)
-
-	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
-	req.Header.Set(HeaderAgentToken, "valid-token")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
-	require.Equal(t, "no-cache", w.Header().Get("Pragma"))
-
-	var resp enrollMTLSResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Len(t, resp.Files, 3)
-	assert.Equal(t, "ca.crt", resp.Files[0].Name)
-	assert.Contains(t, resp.Files[0].Content, "BEGIN CERTIFICATE")
-	assert.Equal(t, "agent.key", resp.Files[2].Name)
-	assert.Contains(t, resp.Files[2].Content, "BEGIN PRIVATE KEY")
-
-	certBlock, _ := pem.Decode([]byte(resp.Files[1].Content))
-	require.NotNil(t, certBlock)
-
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
-	require.NoError(t, err)
-	assert.Equal(t, "Lab-Server-env-mtls", cert.Subject.CommonName)
-}
-
-func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Resolver: func(ctx context.Context, token string) (string, error) {
-			if token != "valid-token" {
-				return "", errors.New("invalid token")
-			}
-			return "env-repeat", nil
-		},
-		Config: &Config{
-			AgentMTLSMode:      MTLSModeRequired,
-			AgentMTLSAssetsDir: t.TempDir(),
-		},
-	})
-
-	router := echo.New()
-	router.POST("/enroll", server.HandleMTLSEnroll)
-
-	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
-	req.Header.Set(HeaderAgentToken, "valid-token")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var firstResp enrollMTLSResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &firstResp))
-	require.Len(t, firstResp.Files, 3)
-
-	req = httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
-	req.Header.Set(HeaderAgentToken, "valid-token")
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-
-	var secondResp enrollMTLSResponse
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &secondResp))
-	require.Equal(t, firstResp.Files, secondResp.Files)
-}
-
-func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenrollment(t *testing.T) {
-	cfg := &Config{
-		AgentMTLSMode:      MTLSModeRequired,
-		AgentMTLSAssetsDir: t.TempDir(),
-	}
-	reenrolled := make(chan bool, 2)
-	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
-		Resolver: func(ctx context.Context, token string) (string, error) {
-			if token != "valid-token" {
-				return "", errors.New("invalid token")
-			}
-			return "env-repeat-old", nil
-		},
-		Config: cfg,
-		EnrollmentCallback: func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, wasReenrolled bool) {
-			require.Equal(t, "env-repeat-old", environmentID)
-			reenrolled <- wasReenrolled
-		},
-	})
-
-	router := echo.New()
-	router.POST("/enroll", server.HandleMTLSEnroll)
-
-	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
-	req.Header.Set(HeaderAgentToken, "valid-token")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	require.False(t, <-reenrolled)
-
-	markerPath := filepath.Join(cfg.AgentMTLSAssetsDir, generatedClientMTLSSubdir, "env-repeat-old", generatedMTLSEnrolledName)
-	oldEnrollment := time.Now().Add(-(managerMTLSReenrollCooldown + time.Minute)).UTC().Format(time.RFC3339Nano) + "\n"
-	require.NoError(t, os.WriteFile(markerPath, []byte(oldEnrollment), 0o600))
-
-	req = httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
-	req.Header.Set(HeaderAgentToken, "valid-token")
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	require.True(t, <-reenrolled)
-}
-
 func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	var resolvedToken string
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: GetRegistry(),
+		Registry: tunnels,
 		Resolver: func(ctx context.Context, token string) (string, error) {
 			resolvedToken = token
 			return "env-trimmed", nil
 		},
+		MTLS: NewMTLS(MTLSConfig{}),
 	})
 
 	envID, err := server.resolveEnvironment(t.Context(), "  valid-token  ")
@@ -404,8 +285,9 @@ func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
 }
 
 func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	t.Run("missing resolver", func(t *testing.T) {
-		server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+		server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 		_, err := server.resolveEnvironment(t.Context(), "token")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent resolver is not configured")
@@ -413,10 +295,11 @@ func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 
 	t.Run("missing token", func(t *testing.T) {
 		server := NewTunnelServer(TunnelServerOptions{
-			Registry: GetRegistry(),
+			Registry: tunnels,
 			Resolver: func(ctx context.Context, token string) (string, error) {
 				return "env", nil
 			},
+			MTLS: NewMTLS(MTLSConfig{}),
 		})
 
 		_, err := server.resolveEnvironment(t.Context(), "   ")
@@ -518,9 +401,9 @@ func (f *registerResponseOrderConn) IsClosed() bool { return false }
 func (f *registerResponseOrderConn) Transport() string { return TransportGRPC }
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	tunnels := NewTunnelRegistry()
+	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: NewMTLS(MTLSConfig{})})
 	envID := "env-grpc-register-order"
-	server.registry.Unregister(envID)
 	t.Cleanup(func() { server.registry.Unregister(envID) })
 
 	conn := &registerResponseOrderConn{recvErr: io.EOF}
@@ -531,7 +414,11 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 		return nil
 	}
 
-	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token", "")
+	server.manageConnectedTunnel(t.Context(), &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, AgentTunnelConfig{
+		Conn:          conn,
+		EnvironmentID: envID,
+		SecurityMode:  "token",
+	})
 
 	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
@@ -539,13 +426,17 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 
 func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellation(t *testing.T) {
 	registry := NewTunnelRegistry()
-	server := NewTunnelServer(TunnelServerOptions{Registry: registry})
+	server := NewTunnelServer(TunnelServerOptions{Registry: registry, MTLS: NewMTLS(MTLSConfig{})})
 	envID := "env-cancelled-disconnect"
 	conn := &registerResponseOrderConn{recvErr: context.Canceled}
 
 	connectionCtx, cancelConnection := context.WithCancel(t.Context())
 	cancelConnection()
-	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token", "")
+	server.manageConnectedTunnel(connectionCtx, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, AgentTunnelConfig{
+		Conn:          conn,
+		EnvironmentID: envID,
+		SecurityMode:  "token",
+	})
 
 	_, ok := registry.Get(envID).Get()
 	require.False(t, ok)
@@ -553,4 +444,183 @@ func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCan
 	stopCtx, cancelStop := context.WithTimeout(t.Context(), time.Second)
 	defer cancelStop()
 	require.NoError(t, registry.Stop(stopCtx))
+}
+
+func TestGRPCTunnelHandler(t *testing.T) {
+	_, proxyNet, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
+
+	tests := []struct {
+		headers        http.Header
+		name           string
+		method         string
+		path           string
+		remoteAddr     string
+		wantPath       string
+		wantRemoteAddr string
+		protoMajor     int
+		wantGRPC       bool
+		wantSame       bool
+	}{
+		{
+			name:     "grpc content-type",
+			method:   http.MethodPost,
+			path:     "/any/path",
+			headers:  http.Header{"Content-Type": {"application/grpc"}},
+			wantGRPC: true,
+			wantPath: "/any/path",
+			wantSame: true,
+		},
+		{
+			name:     "grpc-web content-type",
+			method:   http.MethodPost,
+			path:     "/any/path",
+			headers:  http.Header{"Content-Type": {"application/grpc-web+proto"}},
+			wantGRPC: true,
+			wantPath: "/any/path",
+			wantSame: true,
+		},
+		{
+			name:     "method path without grpc content-type keeps the request",
+			method:   http.MethodPost,
+			path:     fullMethodPath,
+			wantGRPC: true,
+			wantPath: fullMethodPath,
+			wantSame: true,
+		},
+		{
+			name:     "api prefix is removed",
+			method:   http.MethodPost,
+			path:     "/api" + fullMethodPath,
+			wantGRPC: true,
+			wantPath: fullMethodPath,
+		},
+		{
+			name:     "nested proxy prefix is removed up to method path",
+			method:   http.MethodPost,
+			path:     "/agent/proxy/api" + fullMethodPath,
+			wantGRPC: true,
+			wantPath: fullMethodPath,
+		},
+		{
+			name:     "tunnel connect path is rewritten to the gRPC method",
+			method:   http.MethodPost,
+			path:     "/api/tunnel/connect",
+			headers:  http.Header{"Content-Type": {"application/grpc"}},
+			wantGRPC: true,
+			wantPath: fullMethodPath,
+		},
+		{
+			name:     "nested proxy tunnel connect path is rewritten",
+			method:   http.MethodPost,
+			path:     "/agent/proxy/api/tunnel/connect",
+			headers:  http.Header{"Content-Type": {"application/grpc"}},
+			wantGRPC: true,
+			wantPath: fullMethodPath,
+		},
+		{
+			name:   "trusted proxy forwards the client address",
+			method: http.MethodPost,
+			path:   fullMethodPath,
+			headers: http.Header{
+				"Content-Type":    {"application/grpc"},
+				"X-Forwarded-For": {"203.0.113.9"},
+			},
+			remoteAddr:     "10.1.2.3:4567",
+			wantGRPC:       true,
+			wantPath:       fullMethodPath,
+			wantRemoteAddr: "203.0.113.9:4567",
+		},
+		{
+			name:   "untrusted peer keeps its own address",
+			method: http.MethodPost,
+			path:   fullMethodPath,
+			headers: http.Header{
+				"Content-Type":    {"application/grpc"},
+				"X-Forwarded-For": {"203.0.113.9"},
+			},
+			remoteAddr:     "198.51.100.7:4567",
+			wantGRPC:       true,
+			wantPath:       fullMethodPath,
+			wantRemoteAddr: "198.51.100.7:4567",
+			wantSame:       true,
+		},
+		{
+			name:    "regular api request",
+			method:  http.MethodPost,
+			path:    "/api/environments/pair",
+			headers: http.Header{"Content-Type": {"application/json"}},
+		},
+		{
+			name:    "requires post",
+			method:  http.MethodGet,
+			path:    fullMethodPath,
+			headers: http.Header{"Content-Type": {"application/grpc"}},
+		},
+		{
+			name:   "http2 post with te trailers and json content-type",
+			method: http.MethodPost,
+			path:   "/api/auth/login",
+			headers: http.Header{
+				"Content-Type": {"application/json"},
+				"Te":           {"trailers"},
+			},
+			protoMajor: 2,
+		},
+		{
+			name:   "http2 post with te trailers and form content-type",
+			method: http.MethodPost,
+			path:   "/logout",
+			headers: http.Header{
+				"Content-Type": {"application/x-www-form-urlencoded"},
+				"Te":           {"trailers"},
+			},
+			protoMajor: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, http.NoBody)
+			for key, values := range tt.headers {
+				req.Header[key] = values
+			}
+			req.RemoteAddr = cmp.Or(tt.remoteAddr, req.RemoteAddr)
+			req.ProtoMajor = cmp.Or(tt.protoMajor, req.ProtoMajor)
+			wantRemoteAddr := cmp.Or(tt.wantRemoteAddr, req.RemoteAddr)
+
+			var grpcReq, nextReq *http.Request
+			GRPCTunnelHandler(GRPCTunnelHandlerConfig{
+				GRPC: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+					grpcReq = r
+				}),
+				Next: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+					nextReq = r
+				}),
+				ExtractIP: echo.ExtractIPFromXFFHeader(
+					echo.TrustLoopback(false),
+					echo.TrustLinkLocal(false),
+					echo.TrustPrivateNet(false),
+					echo.TrustIPRange(proxyNet),
+				),
+			}).ServeHTTP(httptest.NewRecorder(), req)
+
+			if !tt.wantGRPC {
+				assert.Nil(t, grpcReq)
+				assert.Same(t, req, nextReq)
+				return
+			}
+			assert.Nil(t, nextReq)
+			require.NotNil(t, grpcReq)
+			assert.Equal(t, tt.wantPath, grpcReq.URL.Path)
+			assert.Equal(t, wantRemoteAddr, grpcReq.RemoteAddr)
+			if tt.wantSame {
+				assert.Same(t, req, grpcReq)
+				return
+			}
+			assert.NotSame(t, req, grpcReq)
+			assert.Equal(t, tt.wantPath, grpcReq.RequestURI)
+		})
+	}
 }

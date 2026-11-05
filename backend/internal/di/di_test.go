@@ -62,6 +62,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/internal/webhook"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	arcaneoidc "getarcane.dev/arcane/v3/pkg/oidc"
 )
 
@@ -138,6 +139,7 @@ func TestOptionsValidate(t *testing.T) {
 			settings.Env{},
 			(*database.DB)(nil),
 			&http.Client{},
+			&agent.MTLS{},
 			fx.Annotated{Name: "encryptionKey", Target: "test-encryption-key"},
 		),
 		fx.Provide(func() context.Context { return t.Context() }),

@@ -7,6 +7,7 @@
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertTriangleIcon, AgentConnectionIcon } from '#lib/icons/index.js';
@@ -23,7 +24,7 @@
 		errorMessage?: string;
 		isLoading?: boolean;
 		onRefresh?: () => void | Promise<void>;
-		onRegenerate?: () => void | Promise<void>;
+		onGenerateEnrollmentToken?: () => void | Promise<void>;
 		onProvision?: () => void | Promise<void>;
 		onAttach?: (environmentId: string) => void | Promise<void>;
 		onDetach?: () => void | Promise<void>;
@@ -37,14 +38,14 @@
 		errorMessage = '',
 		isLoading = false,
 		onRefresh,
-		onRegenerate,
+		onGenerateEnrollmentToken,
 		onProvision,
 		onAttach,
 		onDetach,
 		onRemoveDeployment
 	}: SwarmNodeAgentDialogProps = $props();
 
-	const agentStatus = $derived(deployment?.agent ?? node?.agent ?? { state: 'none' as const });
+	const agentStatus = $derived(node?.agent ?? deployment?.agent ?? { state: 'none' as const });
 	const agentStatusLabel = $derived(getSwarmNodeAgentLabel(agentStatus.state));
 	const isReady = $derived(!!deployment && !isLoading);
 	const isVisibleEnvironment = $derived(agentStatus.bindingKind === 'environment' && !!agentStatus.environmentId);
@@ -178,7 +179,13 @@
 				<Spinner class="size-6" />
 			</div>
 		{:else if isReady && deployment}
-			<div class="space-y-4">
+			<div class="space-y-3">
+				<p class="text-sm font-medium">{m.enrollment_token()}</p>
+				<div class="flex items-center gap-2">
+					<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">{deployment.enrollmentToken}</code>
+					<CopyButton text={deployment.enrollmentToken} size="icon" class="size-8 shrink-0" />
+				</div>
+				<p class="text-sm text-muted-foreground">{m.enrollment_token_single_use_description()}</p>
 				<AgentCommandBlock
 					dockerRunLabel={m.docker_run_command()}
 					dockerRun={deployment.dockerRun}
@@ -209,9 +216,9 @@
 				</div>
 				<ArcaneButton
 					class="mt-3"
-					action="inspect"
-					customLabel={m.swarm_node_agent_show_deployment()}
-					onclick={onProvision}
+					action="base"
+					customLabel={m.generate_enrollment_token()}
+					onclick={onGenerateEnrollmentToken}
 					disabled={isLoading}
 				/>
 			</div>
@@ -224,8 +231,8 @@
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					customLabel={m.environments_regenerate_api_key()}
-					onclick={onRegenerate}
+					customLabel={m.generate_enrollment_token()}
+					onclick={onGenerateEnrollmentToken}
 					loading={isLoading}
 					disabled={!node || isLoading}
 				/>

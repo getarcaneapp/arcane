@@ -48,6 +48,7 @@ const (
 	APIErrorCodeDockerAPIError      APIErrorCode = "DOCKER_API_ERROR"
 	APIErrorCodeValidationError     APIErrorCode = "VALIDATION_ERROR"
 	APIErrorCodeTimeout             APIErrorCode = "TIMEOUT"
+	APIErrorCodeTooManyRequests     APIErrorCode = "TOO_MANY_REQUESTS"
 )
 
 func (e *APIError) Error() string {

@@ -143,11 +143,6 @@ type (
 
 		AgentTunnelStats *AgentTunnelStats `json:"agentTunnelStats,omitempty" readOnly:"true"`
 
-		// ApiKey is returned only when creating or regenerating
-		//
-		// Required: false
-		ApiKey *string `json:"apiKey,omitempty" readOnly:"true"`
-
 		// ID of the environment.
 		//
 		// Required: true
@@ -177,11 +172,6 @@ type (
 		//
 		// Required: false
 		Enabled bool `json:"enabled" required:"false"`
-
-		// RegenerateApiKey indicates whether to regenerate the API key on update.
-		//
-		// Required: false
-		RegenerateApiKey bool `json:"regenerateApiKey,omitempty" writeOnly:"true"`
 	}
 
 	// EnvironmentStreamEvent is one line of the environment stream. A "snapshot" event carries
@@ -214,9 +204,10 @@ type (
 	}
 
 	DeploymentSnippet struct {
-		MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for agents"`
-		DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
-		DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+		MTLS            *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for agents"`
+		DockerRun       string                 `json:"dockerRun" doc:"Docker run command snippet"`
+		DockerCompose   string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+		EnrollmentToken string                 `json:"enrollmentToken" doc:"Single-use enrollment token the agent uses to join this environment, shown only once"`
 	}
 
 	DeploymentSnippetMTLS struct {

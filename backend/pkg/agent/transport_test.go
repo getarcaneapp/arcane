@@ -37,42 +37,28 @@ func TestNormalizeMTLSMode(t *testing.T) {
 	assert.Equal(t, MTLSModeDisabled, NormalizeMTLSMode("invalid"))
 }
 
-func TestUseGRPCTransport(t *testing.T) {
-	assert.False(t, UseGRPCTransport(nil))
-	assert.True(t, UseGRPCTransport(&Config{AgentTransport: TransportAuto}))
-	assert.True(t, UseGRPCTransport(&Config{AgentTransport: "grpc"}))
-	assert.True(t, UseGRPCTransport(&Config{AgentTransport: ""}))
-	assert.False(t, UseGRPCTransport(&Config{AgentTransport: "websocket"}))
-}
-
-func TestUseWebSocketTransport(t *testing.T) {
-	assert.False(t, UseWebSocketTransport(nil))
-	assert.True(t, UseWebSocketTransport(&Config{AgentTransport: TransportAuto}))
-	assert.True(t, UseWebSocketTransport(&Config{AgentTransport: ""}))
-	assert.False(t, UseWebSocketTransport(&Config{AgentTransport: "grpc"}))
-	assert.True(t, UseWebSocketTransport(&Config{AgentTransport: "websocket"}))
-}
-
-func TestGetTunnelRuntimeState(t *testing.T) {
+func TestTunnelRegistryRuntimeState(t *testing.T) {
+	tunnels := NewTunnelRegistry()
 	t.Run("returns false when tunnel is missing", func(t *testing.T) {
-		state, ok := GetTunnelRuntimeState("env-missing-runtime").Get()
+		state, ok := tunnels.RuntimeState("env-missing-runtime").Get()
 		assert.False(t, ok)
 		assert.Nil(t, state)
 	})
 
 	t.Run("returns runtime metadata for active tunnel", func(t *testing.T) {
 		envID := "env-runtime-live"
-		GetRegistry().Unregister(envID)
-		defer GetRegistry().Unregister(envID)
+		defer tunnels.Unregister(envID)
 
-		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
-		tunnel.SessionID = "session-1"
-		tunnel.AgentInstance = "agent-1"
-		tunnel.SecurityMode = "mtls"
-		tunnel.Capabilities = []string{"container.list"}
-		GetRegistry().Register(envID, tunnel)
+		registerTestTunnel(t, tunnels, NewAgentTunnel(AgentTunnelConfig{
+			Conn:          NewGRPCManagerTunnelConn(nil),
+			EnvironmentID: envID,
+			SessionID:     "session-1",
+			AgentInstance: "agent-1",
+			SecurityMode:  "mtls",
+			Capabilities:  []string{"container.list"},
+		}))
 
-		state, ok := GetTunnelRuntimeState(envID).Get()
+		state, ok := tunnels.RuntimeState(envID).Get()
 		assert.True(t, ok)
 		if assert.NotNil(t, state) {
 			assert.Equal(t, TransportGRPC, state.Transport)
@@ -87,18 +73,20 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 
 	t.Run("returns host and tunnel stats for active tunnel", func(t *testing.T) {
 		envID := "env-runtime-stats"
-		GetRegistry().Unregister(envID)
-		defer GetRegistry().Unregister(envID)
+		defer tunnels.Unregister(envID)
 
-		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
-		tunnel.RemoteAddr = "203.0.113.7"
-		tunnel.Host = &AgentHostInfo{Hostname: "edge-1", CPUs: 4}
+		tunnel := NewAgentTunnel(AgentTunnelConfig{
+			Conn:          NewGRPCManagerTunnelConn(nil),
+			Host:          &AgentHostInfo{Hostname: "edge-1", CPUs: 4},
+			EnvironmentID: envID,
+			RemoteAddr:    "203.0.113.7",
+		})
 		tunnel.mux.recordRTT(10 * time.Millisecond)
 		tunnel.mux.recordRTT(30 * time.Millisecond)
 		tunnel.mux.opened.Add(2)
-		GetRegistry().Register(envID, tunnel)
+		registerTestTunnel(t, tunnels, tunnel)
 
-		state, ok := GetTunnelRuntimeState(envID).Get()
+		state, ok := tunnels.RuntimeState(envID).Get()
 		require.True(t, ok)
 		assert.Equal(t, "203.0.113.7", state.RemoteAddr)
 		assert.Equal(t, tunnel.Host, state.Host)
@@ -115,12 +103,11 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 
 	t.Run("omits round trip stats before the first ping", func(t *testing.T) {
 		envID := "env-runtime-no-ping"
-		GetRegistry().Unregister(envID)
-		defer GetRegistry().Unregister(envID)
+		defer tunnels.Unregister(envID)
 
-		GetRegistry().Register(envID, NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil)))
+		registerTestTunnel(t, tunnels, NewAgentTunnel(AgentTunnelConfig{EnvironmentID: envID, Conn: NewGRPCManagerTunnelConn(nil)}))
 
-		state, ok := GetTunnelRuntimeState(envID).Get()
+		state, ok := tunnels.RuntimeState(envID).Get()
 		require.True(t, ok)
 		assert.Nil(t, state.RTTMin)
 		assert.Nil(t, state.RTTAvg)
@@ -129,14 +116,13 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 
 	t.Run("returns false for closed tunnel", func(t *testing.T) {
 		envID := "env-runtime-closed"
-		GetRegistry().Unregister(envID)
-		defer GetRegistry().Unregister(envID)
+		defer tunnels.Unregister(envID)
 
-		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
+		tunnel := NewAgentTunnel(AgentTunnelConfig{EnvironmentID: envID, Conn: NewGRPCManagerTunnelConn(nil)})
 		_ = tunnel.Conn.Close()
-		GetRegistry().Register(envID, tunnel)
+		registerTestTunnel(t, tunnels, tunnel)
 
-		state, ok := GetTunnelRuntimeState(envID).Get()
+		state, ok := tunnels.RuntimeState(envID).Get()
 		assert.False(t, ok)
 		assert.Nil(t, state)
 	})
@@ -152,39 +138,44 @@ func BenchmarkAgentTunnelProxyRequest(b *testing.B) {
 	payloadSizes := []int{64, 1024, 4096, 64 << 10, 1 << 20, 16 << 20}
 	for _, payloadSize := range payloadSizes {
 		b.Run(fmt.Sprintf("grpc_payload_%d", payloadSize), func(b *testing.B) {
-			tunnel, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
+			tunnels, envID, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
 			defer cleanup()
-			runProxyRequestBenchmark(b, tunnel, payloadSize)
+			runProxyRequestBenchmark(b, tunnels, envID, payloadSize)
 		})
 
 		b.Run(fmt.Sprintf("websocket_payload_%d", payloadSize), func(b *testing.B) {
-			tunnel, cleanup := setupWebSocketBenchmarkTunnel(b, payloadSize)
+			tunnels, envID, cleanup := setupWebSocketBenchmarkTunnel(b, payloadSize)
 			defer cleanup()
-			runProxyRequestBenchmark(b, tunnel, payloadSize)
+			runProxyRequestBenchmark(b, tunnels, envID, payloadSize)
 		})
 	}
 
 	for _, payloadSize := range []int{1024, 1 << 20} {
 		b.Run(fmt.Sprintf("grpc_parallel_payload_%d", payloadSize), func(b *testing.B) {
-			tunnel, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
+			tunnels, envID, cleanup := setupGRPCBenchmarkTunnel(b, payloadSize)
 			defer cleanup()
-			runParallelProxyRequestBenchmark(b, tunnel, payloadSize)
+			runParallelProxyRequestBenchmark(b, tunnels, envID, payloadSize)
 		})
 
 		b.Run(fmt.Sprintf("websocket_parallel_payload_%d", payloadSize), func(b *testing.B) {
-			tunnel, cleanup := setupWebSocketBenchmarkTunnel(b, payloadSize)
+			tunnels, envID, cleanup := setupWebSocketBenchmarkTunnel(b, payloadSize)
 			defer cleanup()
-			runParallelProxyRequestBenchmark(b, tunnel, payloadSize)
+			runParallelProxyRequestBenchmark(b, tunnels, envID, payloadSize)
 		})
 	}
 }
 
-func runParallelProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int) {
+func runParallelProxyRequestBenchmark(b *testing.B, tunnels *TunnelRegistry, envID string, payloadSize int) {
 	b.Helper()
 
 	ctx := b.Context()
-	body := make([]byte, payloadSize)
-	headers := http.Header{"Content-Type": {"application/octet-stream"}}
+	req := RemoteRequest{
+		Headers:       http.Header{"Content-Type": {"application/octet-stream"}},
+		EnvironmentID: envID,
+		Method:        http.MethodPost,
+		Path:          "/api/environments/0/images/upload",
+		Body:          make([]byte, payloadSize),
+	}
 
 	b.ReportAllocs()
 	b.SetBytes(int64(payloadSize))
@@ -192,50 +183,47 @@ func runParallelProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payload
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", headers, body)
-			if err != nil || statusCode != http.StatusOK || len(respBody) != payloadSize {
-				b.Errorf("proxy request failed: status=%d len=%d err=%v", statusCode, len(respBody), err)
+			resp, err := tunnels.Do(ctx, req)
+			if err != nil || resp.StatusCode != http.StatusOK || len(resp.Body) != payloadSize {
+				b.Errorf("proxy request failed: response=%v err=%v", resp, err)
 				return
 			}
 		}
 	})
 }
 
-func runProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int) {
+func runProxyRequestBenchmark(b *testing.B, tunnels *TunnelRegistry, envID string, payloadSize int) {
 	b.Helper()
 
 	ctx := b.Context()
-	body := make([]byte, payloadSize)
-	headers := http.Header{"Content-Type": {"application/octet-stream"}}
+	req := RemoteRequest{
+		Headers:       http.Header{"Content-Type": {"application/octet-stream"}},
+		EnvironmentID: envID,
+		Method:        http.MethodPost,
+		Path:          "/api/environments/0/images/upload",
+		Body:          make([]byte, payloadSize),
+	}
 
 	b.ReportAllocs()
 	b.SetBytes(int64(payloadSize))
 	b.ResetTimer()
 
 	for b.Loop() {
-		statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", headers, body)
-
-		require.NoError(b, err,
-			"proxy request failed: %v", err)
-
-		require.Equal(b, http.StatusOK, statusCode,
-			"unexpected status code: %d", statusCode)
-
-		if len(respBody) != payloadSize {
-			require.Len(b, respBody, payloadSize,
-				"unexpected response length: got %d want %d", len(respBody), payloadSize)
-		}
+		resp, err := tunnels.Do(ctx, req)
+		require.NoError(b, err, "proxy request failed: %v", err)
+		require.Equal(b, http.StatusOK, resp.StatusCode, "unexpected status code: %d", resp.StatusCode)
+		require.Len(b, resp.Body, payloadSize, "unexpected response length: got %d want %d", len(resp.Body), payloadSize)
 	}
 }
 
-func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func()) {
+func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegistry, string, func()) {
 	b.Helper()
+	tunnels := NewTunnelRegistry()
 
 	ctx, cancel := context.WithCancel(b.Context())
 	envID := fmt.Sprintf("bench-grpc-%d", time.Now().UnixNano())
-	GetRegistry().Unregister(envID)
 
-	lis, grpcServer, tunnelServer := startTestGRPCTunnelServer(ctx, envID)
+	lis, grpcServer := startTestGRPCTunnelServer(tunnels, envID)
 	go func() {
 		_ = grpcServer.Serve(lis)
 	}()
@@ -248,7 +236,6 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	)
 	if err != nil {
 		cancel()
-		tunnelServer.WaitForCleanupDone()
 		require.FailNowf(b, "unexpected failure", "failed to create gRPC client: %v", err)
 	}
 
@@ -257,7 +244,6 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	if err != nil {
 		_ = conn.Close()
 		cancel()
-		tunnelServer.WaitForCleanupDone()
 		require.FailNowf(b, "unexpected failure", "failed to open gRPC stream: %v", err)
 	}
 
@@ -269,14 +255,12 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	}.Build()); sendErr != nil {
 		_ = conn.Close()
 		cancel()
-		tunnelServer.WaitForCleanupDone()
 		require.FailNowf(b, "unexpected failure", "failed to send register message: %v", sendErr)
 	}
 
 	if _, recvErr := stream.Recv(); recvErr != nil {
 		_ = conn.Close()
 		cancel()
-		tunnelServer.WaitForCleanupDone()
 		require.FailNowf(b, "unexpected failure", "failed to receive register response: %v", recvErr)
 	}
 
@@ -284,27 +268,26 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	agent := &TunnelClient{handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(responseBody)
 	})}
-	agentConn := NewGRPCAgentTunnelConn(stream)
+	agentConn := NewGRPCAgentTunnelConn(stream, func() {})
 	agentDone := make(chan struct{})
 	go func() {
 		defer close(agentDone)
 		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx))
 	}()
 
-	tunnel := waitForBenchmarkTunnel(b, envID)
+	waitForBenchmarkTunnel(b, tunnels, envID)
 
-	return tunnel, func() {
+	return tunnels, envID, func() {
 		cancel()
 		<-agentDone
 		_ = stream.CloseSend()
 		_ = conn.Close()
 		grpcServer.GracefulStop()
-		tunnelServer.WaitForCleanupDone()
-		GetRegistry().Unregister(envID)
+		tunnels.Unregister(envID)
 	}
 }
 
-func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func()) {
+func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegistry, string, func()) {
 	b.Helper()
 
 	responseBody := make([]byte, payloadSize)
@@ -316,7 +299,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewTunnelConn(conn).muxConn(r.Context()))
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()))
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -327,14 +310,16 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	}
 
 	ctx, cancel := context.WithCancel(b.Context())
-	tunnel := NewAgentTunnelWithConn("bench-websocket", NewTunnelConn(conn))
+	tunnel := NewAgentTunnel(AgentTunnelConfig{EnvironmentID: "bench-websocket", Conn: NewWebSocketTunnelConn(conn)})
+	tunnels := NewTunnelRegistry()
+	registerTestTunnel(b, tunnels, tunnel)
 	serveDone := make(chan struct{})
 	go func() {
 		defer close(serveDone)
 		_ = (&TunnelServer{}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 	}()
 
-	return tunnel, func() {
+	return tunnels, tunnel.EnvironmentID, func() {
 		cancel()
 		_ = tunnel.CloseWithReason("")
 		<-serveDone
@@ -342,17 +327,15 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	}
 }
 
-func waitForBenchmarkTunnel(b *testing.B, envID string) *AgentTunnel {
+func waitForBenchmarkTunnel(b *testing.B, tunnels *TunnelRegistry, envID string) {
 	b.Helper()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		tunnel, ok := GetRegistry().Get(envID).Get()
-		if ok && tunnel != nil {
-			return tunnel
+		if tunnels.Active(envID).IsPresent() {
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	require.FailNowf(b, "unexpected failure", "timed out waiting for tunnel registration for env %s", envID)
-	return nil
 }
