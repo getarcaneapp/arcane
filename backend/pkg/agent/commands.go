@@ -222,6 +222,7 @@ var (
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}", CommandName: "swarm.stack.inspect"},
 		{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/stacks/{name}", CommandName: "swarm.stack.delete"},
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/down", CommandName: "swarm.stack.down"},
+		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/up", CommandName: "swarm.stack.up"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/source", CommandName: "swarm.stack.source.get"},
 		{Method: http.MethodPatch, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/source", CommandName: "swarm.stack.source.update"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/services", CommandName: "swarm.stack.services"},

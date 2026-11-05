@@ -3469,6 +3469,8 @@
   "swarm_stacks_down_confirm_message": "Remove this stack's services, networks, configs and secrets? Its saved compose files are kept so it can be deployed again.",
   "swarm_stacks_down_success": "Stack \"{name}\" brought down",
   "swarm_stacks_down_failed": "Failed to bring down stack \"{name}\"",
+  "swarm_stacks_up_success": "Stack \"{name}\" brought up",
+  "swarm_stacks_up_failed": "Failed to bring up stack \"{name}\"",
   "environments_agent_desc": "Agent connects outbound to the manager. No exposed ports required - ideal for firewalled environments.",
   "environments_agent_mtls_enable": "Enable manager mTLS",
   "environments_agent_mtls_desc": "Use Arcane-generated agent mTLS assets when they are available on the manager.",

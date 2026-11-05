@@ -12,7 +12,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { LayersIcon, InspectIcon, TrashIcon, StopIcon } from '#lib/icons/index.js';
+	import { LayersIcon, InspectIcon, TrashIcon, StopIcon, StartIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
@@ -70,6 +70,19 @@
 						}
 					});
 				}
+			}
+		});
+	}
+
+	async function handleUp(stack: StackRow) {
+		isLoading = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(swarmService.upStack(stack.name, stack.environmentId)),
+			message: m.swarm_stacks_up_failed({ name: stack.name }),
+			setLoadingState: (v) => (isLoading = v),
+			onSuccess: async () => {
+				toast.success(m.swarm_stacks_up_success({ name: stack.name }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
 			}
 		});
 	}
@@ -176,14 +189,19 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		{#if item.services > 0}
-			<IfPermitted perm="swarm-stacks:update" envId={item.environmentId}>
+		<IfPermitted perm="swarm-stacks:update" envId={item.environmentId}>
+			{#if item.services > 0}
 				<DropdownMenu.Item onclick={() => handleDown(item)} disabled={isLoading}>
 					<StopIcon class="size-4" />
 					{m.common_down()}
 				</DropdownMenu.Item>
-			</IfPermitted>
-		{/if}
+			{:else if item.hasSource}
+				<DropdownMenu.Item onclick={() => handleUp(item)} disabled={isLoading}>
+					<StartIcon class="size-4" />
+					{m.common_up()}
+				</DropdownMenu.Item>
+			{/if}
+		</IfPermitted>
 		<IfPermitted perm="swarm-stacks:delete" envId={item.environmentId}>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>

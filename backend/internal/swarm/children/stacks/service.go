@@ -541,6 +541,25 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	return nil
 }
 
+func (s *Service) UpStack(ctx context.Context, environmentID, stackName string) error {
+	stackName = strings.TrimSpace(stackName)
+	source, err := s.GetStackSource(ctx, environmentID, stackName)
+	if err != nil {
+		return err
+	}
+
+	_, err = deployStackAfterSourceUpdate(s, ctx, environmentID, types.SwarmStackDeployRequest{
+		Name:             stackName,
+		ComposeContent:   source.ComposeContent,
+		OverrideContent:  source.OverrideContent,
+		EnvContent:       source.EnvContent,
+		Files:            source.Files,
+		Prune:            true,
+		WithRegistryAuth: true,
+	})
+	return err
+}
+
 func (s *Service) DownStack(ctx context.Context, environmentID, stackName string) error {
 	return s.removeStackRuntime(ctx, environmentID, strings.TrimSpace(stackName), true)
 }
@@ -600,7 +619,7 @@ func (s *Service) removeStackServices(ctx context.Context, stackName string, ser
 	return nil
 }
 
-func (s *Service) ListStackServicesPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
+func (s *Service) ListStackServicesPaginated(ctx context.Context, environmentID, stackName string, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -610,13 +629,13 @@ func (s *Service) ListStackServicesPaginated(ctx context.Context, stackName stri
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		return nil, pagination.Response{}, errdefs.ErrNotFound
+		return []types.SwarmServiceSummary{}, pagination.Response{}, s.emptyStackPageErr(ctx, environmentID, stackName)
 	}
 
 	return s.paginateServices(ctx, services, params)
 }
 
-func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
+func (s *Service) ListStackTasksPaginated(ctx context.Context, environmentID, stackName string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -626,7 +645,7 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string,
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		return nil, pagination.Response{}, errdefs.ErrNotFound
+		return []types.SwarmTaskSummary{}, pagination.Response{}, s.emptyStackPageErr(ctx, environmentID, stackName)
 	}
 
 	filters := make(client.Filters)
@@ -635,6 +654,11 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, stackName string,
 	}
 
 	return s.listTasks(ctx, filters, params)
+}
+
+func (s *Service) emptyStackPageErr(ctx context.Context, environmentID, stackName string) error {
+	_, err := s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
+	return err
 }
 
 func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, req types.SwarmStackRenderConfigRequest) (*types.SwarmStackRenderConfigResponse, error) {

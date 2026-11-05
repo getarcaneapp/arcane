@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -323,4 +324,35 @@ func TestAggregateKeepsSourceOwningManagerPerCluster(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{"a/api", "b/web", "b/saved", "c/web"}, rows)
 	require.EqualValues(t, 4, body.Pagination.TotalItems)
+}
+
+func TestService_UpStack_DeploysSavedSource(t *testing.T) {
+	ctx := t.Context()
+	db := setupSwarmServiceTestDB(t)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
+	require.NoError(t, err)
+
+	svc := NewService(ServiceParams{SettingsService: settingsSvc})
+	deployRec := stubStackSourceUpdateDeploy(t)
+
+	require.ErrorIs(t, svc.UpStack(ctx, "0", "demo-stack"), errdefs.ErrNotFound)
+	require.Equal(t, 0, deployRec.calls)
+
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			EnvContent:     "FOO=bar\n",
+		},
+		Submitted: fullStackSourceSubmitted,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpStack(ctx, "0", " demo-stack "))
+	require.Equal(t, 2, deployRec.calls)
+	require.Equal(t, "demo-stack", deployRec.lastReq.Name)
+	require.Equal(t, "services:\n  web:\n    image: nginx:alpine\n", deployRec.lastReq.ComposeContent)
+	require.Equal(t, "FOO=bar\n", deployRec.lastReq.EnvContent)
+	require.True(t, deployRec.lastReq.WithRegistryAuth)
 }

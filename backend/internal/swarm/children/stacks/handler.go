@@ -234,6 +234,19 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput)
 	return handlerutil.MessageOutput("Swarm stack removed successfully", ""), nil
 }
 
+func (h *Handler) UpStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.service.UpStack(ctx, input.EnvironmentID, input.Name); err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Swarm stack not found")
+		}
+		return nil, h.mapError(err, "Failed to bring up swarm stack")
+	}
+
+	h.audit(ctx, input.EnvironmentID, "stack.up", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
+
+	return handlerutil.MessageOutput("Swarm stack brought up successfully", ""), nil
+}
+
 func (h *Handler) DownStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.DownStack(ctx, input.EnvironmentID, input.Name); err != nil {
 		if errdefs.IsNotFound(err) {
@@ -260,7 +273,7 @@ func (h *Handler) DownStack(ctx context.Context, input *DeleteSwarmStackInput) (
 // error when the lookup fails.
 func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
-	items, paginationResp, err := h.service.ListStackServicesPaginated(ctx, input.Name, params)
+	items, paginationResp, err := h.service.ListStackServicesPaginated(ctx, input.EnvironmentID, input.Name, params)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm stack not found")
@@ -284,7 +297,7 @@ func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackSe
 // error when the lookup fails.
 func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
-	items, paginationResp, err := h.service.ListStackTasksPaginated(ctx, input.Name, params)
+	items, paginationResp, err := h.service.ListStackTasksPaginated(ctx, input.EnvironmentID, input.Name, params)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm stack not found")

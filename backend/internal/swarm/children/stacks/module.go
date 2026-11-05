@@ -121,6 +121,21 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
+			OperationID: "up-swarm-stack",
+			Method:      http.MethodPost,
+			Path:        "/environments/{id}/swarm/stacks/{name}/up",
+			Summary:     "Bring up swarm stack",
+			Tags: []string{
+				"Swarm",
+			},
+			Security: handlerutil.DefaultOperationSecurity(),
+		},
+		authz.PermSwarmStacksUpdate,
+		h.UpStack,
+	)
+	middleware.RegisterWithPermission(
+		api,
+		huma.Operation{
 			OperationID: "list-swarm-stack-services",
 			Method:      http.MethodGet,
 			Path:        "/environments/{id}/swarm/stacks/{name}/services",
