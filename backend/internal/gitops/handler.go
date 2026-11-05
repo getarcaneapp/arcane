@@ -275,6 +275,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 // DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsRemoveStackConditions, "removeStack", strconv.FormatBool(input.RemoveStack)); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
 		return nil, err
 	}
