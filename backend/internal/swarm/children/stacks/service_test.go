@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
@@ -355,4 +356,19 @@ func TestService_UpStack_DeploysSavedSource(t *testing.T) {
 	require.Equal(t, "services:\n  web:\n    image: nginx:alpine\n", deployRec.lastReq.ComposeContent)
 	require.Equal(t, "FOO=bar\n", deployRec.lastReq.EnvContent)
 	require.True(t, deployRec.lastReq.WithRegistryAuth)
+}
+
+func TestService_DownStack_RequiresSavedSource(t *testing.T) {
+	ctx := t.Context()
+	db := setupSwarmServiceTestDB(t)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
+	require.NoError(t, err)
+
+	svc := NewService(ServiceParams{SettingsService: settingsSvc})
+
+	err = svc.DownStack(ctx, "0", "demo-stack")
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.False(t, errdefs.IsNotFound(err))
 }

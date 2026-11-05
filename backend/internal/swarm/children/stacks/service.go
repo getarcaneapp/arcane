@@ -561,7 +561,20 @@ func (s *Service) UpStack(ctx context.Context, environmentID, stackName string) 
 }
 
 func (s *Service) DownStack(ctx context.Context, environmentID, stackName string) error {
-	return s.removeStackRuntime(ctx, environmentID, strings.TrimSpace(stackName), true)
+	stackName = strings.TrimSpace(stackName)
+	source, err := s.GetStackSource(ctx, environmentID, stackName)
+	if err != nil {
+		return common.Classify(common.ErrValidation, fmt.Errorf("swarm stack %s has no saved source to bring it back up: %v", stackName, err))
+	}
+	if _, err := s.RenderStackConfig(ctx, environmentID, types.SwarmStackRenderConfigRequest{
+		Name:            stackName,
+		ComposeContent:  source.ComposeContent,
+		OverrideContent: source.OverrideContent,
+		EnvContent:      source.EnvContent,
+	}); err != nil {
+		return common.Classify(common.ErrValidation, fmt.Errorf("swarm stack %s cannot be brought back up from its saved source: %v", stackName, err))
+	}
+	return s.removeStackRuntime(ctx, environmentID, stackName, true)
 }
 
 func (s *Service) removeStackRuntime(ctx context.Context, environmentID, stackName string, requireServices bool) error {
