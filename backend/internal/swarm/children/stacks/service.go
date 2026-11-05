@@ -529,11 +529,27 @@ func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSou
 }
 
 func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName string) error {
+	stackName = strings.TrimSpace(stackName)
+	if err := s.removeStackRuntime(ctx, environmentID, stackName, false); err != nil {
+		return err
+	}
+
+	if deleteStackSourceErr := s.deleteStackSource(ctx, environmentID, stackName); deleteStackSourceErr != nil {
+		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", deleteStackSourceErr)
+	}
+
+	return nil
+}
+
+func (s *Service) DownStack(ctx context.Context, environmentID, stackName string) error {
+	return s.removeStackRuntime(ctx, environmentID, strings.TrimSpace(stackName), true)
+}
+
+func (s *Service) removeStackRuntime(ctx context.Context, environmentID, stackName string, requireServices bool) error {
 	if err := s.ensureManager(ctx); err != nil {
 		return err
 	}
 
-	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return errors.New("stack name is required")
 	}
@@ -542,11 +558,14 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	if err != nil {
 		return err
 	}
-	if len(services) == 0 {
+	switch {
+	case len(services) == 0 && requireServices:
+		return common.Classify(common.ErrValidation, fmt.Errorf("swarm stack %s is not running", stackName))
+	case len(services) == 0:
 		if _, persistedErr := s.getPersistedStackSourceSummary(ctx, environmentID, stackName); persistedErr != nil {
 			return persistedErr
 		}
-	} else {
+	default:
 		if removeStackServicesErr := s.removeStackServices(ctx, stackName, services); removeStackServicesErr != nil {
 			return removeStackServicesErr
 		}
@@ -560,11 +579,6 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	if removeStackResourcesErr := libswarm.RemoveStackResources(ctx, dockerClient, stackName); removeStackResourcesErr != nil {
 		return classifySwarmStackError(removeStackResourcesErr)
 	}
-
-	if deleteStackSourceErr := s.deleteStackSource(ctx, environmentID, stackName); deleteStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", deleteStackSourceErr)
-	}
-
 	return nil
 }
 

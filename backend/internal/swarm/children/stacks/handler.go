@@ -234,6 +234,19 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput)
 	return handlerutil.MessageOutput("Swarm stack removed successfully", ""), nil
 }
 
+func (h *Handler) DownStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.service.DownStack(ctx, input.EnvironmentID, input.Name); err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Swarm stack not found")
+		}
+		return nil, h.mapError(err, "Failed to bring down swarm stack")
+	}
+
+	h.audit(ctx, input.EnvironmentID, "stack.down", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
+
+	return handlerutil.MessageOutput("Swarm stack brought down successfully", ""), nil
+}
+
 // ListStackServices lists services belonging to a swarm stack.
 //
 // It applies search, sort, and pagination options, ensures the response uses an

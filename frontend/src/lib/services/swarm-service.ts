@@ -204,6 +204,10 @@ class SwarmService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/stacks/${name}`));
 	}
 
+	async downStack(name: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks/${name}/down`));
+	}
+
 	async getStackServices(
 		name: string,
 		options: SearchPaginationSortRequest | undefined,

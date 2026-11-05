@@ -141,6 +141,10 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
 
+func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName string) error {
+	return s.stacks.RemoveStack(ctx, environmentID, stackName)
+}
+
 func (s *SwarmService) EnrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) (*types.AgentEnrollResponse, error) {
 	return s.nodes.EnrollNodeAgent(ctx, nodes.EnrollNodeAgentParams{
 		ParentEnvironmentID:   p.ParentEnvironmentID,

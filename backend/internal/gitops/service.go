@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -829,13 +830,22 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor types.Actor) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, removeStack bool, actor types.Actor) error {
 	// Even a row that can no longer be loaded must stop firing; an in-flight run re-reads it and skips.
 	s.jobs.Unregister(ctx, id)
 	s.backups.cancel(id)
 
 	// The row is loaded only for the audit event, so a corrupt or environment-mismatched row is still deletable.
 	syncRecord, loadErr := s.getSyncByID(ctx, environmentID, id, false)
+
+	if removeStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
+		if stackErr := s.swarmService.RemoveStack(ctx, syncRecord.EnvironmentID, syncRecord.ProjectName); stackErr != nil && !errdefs.IsNotFound(stackErr) {
+			if syncRecord.AutoSync {
+				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+			}
+			return fmt.Errorf("failed to remove swarm stack %s: %w", syncRecord.ProjectName, stackErr)
+		}
+	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Keyed on the sync ID, so orphaned managed flags clear even when the row could not be loaded.

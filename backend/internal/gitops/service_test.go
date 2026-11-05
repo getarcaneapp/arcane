@@ -552,7 +552,7 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	require.NoError(t, svc.DeleteSync(ctx, "0", syncRecord.ID, types.Actor{}))
+	require.NoError(t, svc.DeleteSync(ctx, "0", syncRecord.ID, false, types.Actor{}))
 
 	var count int64
 	require.NoError(t, db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Count(&count).Error)
@@ -576,7 +576,7 @@ func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testi
 	}
 	require.NoError(t, db.Create(syncRecord).Error)
 
-	require.NoError(t, svc.DeleteSync(ctx, "0", syncRecord.ID, types.Actor{}))
+	require.NoError(t, svc.DeleteSync(ctx, "0", syncRecord.ID, false, types.Actor{}))
 
 	var count int64
 	require.NoError(t, db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Count(&count).Error)
@@ -608,7 +608,7 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	}
 	require.NoError(t, db.Create(managed).Error)
 
-	require.NoError(t, svc.DeleteSync(ctx, "0", syncID, types.Actor{}))
+	require.NoError(t, svc.DeleteSync(ctx, "0", syncID, false, types.Actor{}))
 
 	var got projectpkg.Project
 	require.NoError(t, db.Where("id = ?", managed.ID).First(&got).Error)
