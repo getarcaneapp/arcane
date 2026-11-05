@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Agordu la fenestrojn de la tunela bufro de la agento por traireco kaj memora uzo.",
   "buffer_windows": "Tamponaj fenestroj",
   "http2_receive_window": "HTTP/2 Riceva Fenestro (Nur por Administranto)",
-  "http2_receive_window_description": "HTTP/2 riceva bufro po fluo. Validas nur por la servilo de la Arcane-administrilo. Valoroj agorditaj en agentaj medioj ne efikas. Pli grandaj valoroj akcelas agentajn transdonojn sur ligoj kun alta latenteco. Ĉiu HTTP/2-kliento povas igi la administrilan bufron atingi ĝis duoble ĉi tiun valoron po konekto.",
-  "http2_receive_window_restart": "Ekvalidas post la rekomenco de la administranto.",
+  "http2_receive_window_description": "Per-flua HTTP/2-bufro ĉe la administranto. Pli alta valoro estas pli rapida ĉe konektoj kun alta latenteco, sed uzas pli da memoro.",
+  "http2_receive_window_restart": "Aplikiĝas post restartigo de administranto.",
   "agent_tunnel_stream_window": "Agenta tunela fluo-fenestro",
-  "agent_tunnel_stream_window_description": "Fenestra grandeco por ĉiu transdono super la agenta tunelo de ĉi tiu medio. La agento sendas ĝin al la administranto kiam la tunelo konektiĝas, kaj ambaŭ flankoj uzas ĝin. Pli grandaj valoroj akcelas transdonojn sur ligoj kun alta latenteco, sed ĉiu flanko povas teni en RAM ĝis ĉi tiu kvanto da datumoj por ĉiu aktiva transdono.",
-  "agent_tunnel_stream_window_reconnect": "Ekvalidas la sekvan fojon, kiam la agenta tunelo rekonektiĝas. Malfermitaj tuneloj konservas sian aktualan fenestron.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Per-transfera bufro sur la agenta tunelo. Pli alta valoro estas pli rapida ĉe ligoj kun alta latenteco, sed uzas pli da memoro.",
+  "agent_tunnel_stream_window_reconnect": "Validas kiam la tunelo rekonektiĝas.",
+  "value_in_mib": "Valoro en MiB ({range})"
 }
