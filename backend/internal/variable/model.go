@@ -17,9 +17,7 @@ type (
 		IsSecret     bool                      `json:"isSecret" gorm:"column:is_secret"`
 		// No gorm default tag: a default:true tag would make GORM omit false on
 		// insert and the column default would silently win.
-		AllEnvironments bool `json:"allEnvironments" gorm:"column:all_environments"`
-		// When false the variable is only available for ${VAR} interpolation and
-		// is not added to every container's environment.
+		AllEnvironments      bool `json:"allEnvironments" gorm:"column:all_environments"`
 		InjectIntoContainers bool `json:"injectIntoContainers" gorm:"column:inject_into_containers"`
 	}
 )

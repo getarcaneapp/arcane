@@ -86,7 +86,6 @@ func TestLoadEnvironment_SkipsInjectionForNoInjectGlobalKeys(t *testing.T) {
 	assert.Equal(t, "secret", envMap["DB_PASSWORD"])
 	assert.Equal(t, EnvMap{"PUID": "1000"}, injectionVars)
 
-	// Marks after the first variable line are ignored, so a value can never act as one.
 	require.NoError(t, os.WriteFile(globalEnvPath, []byte("PUID=1000\n# arcane:noinject DB_PASSWORD\nDB_PASSWORD=secret\n"), fs.FilePerm))
 	_, injectionVars, err = NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
 	require.NoError(t, err)

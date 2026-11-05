@@ -281,17 +281,15 @@ func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 }
 
 // resolveEffectiveVariables computes the variable set for one
-// environment: all-environment variables first, env-scoped variables override
-// (including their injection flag). Secret values are decrypted; variables
-// that fail to decrypt are skipped.
+// environment: all-environment variables first, env-scoped variables override.
+// Secret values are decrypted; variables that fail to decrypt are skipped.
 func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID string) ([]types.EnvVariable, error) {
 	variables, err := s.loadVariables(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	effective := make(map[string]string)
-	injected := make(map[string]bool)
+	effective := make(map[string]types.EnvVariable)
 	for _, scoped := range []bool{false, true} {
 		for _, variable := range variables {
 			if variable.AllEnvironments == scoped {
@@ -310,16 +308,17 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 				}
 				value = decrypted
 			}
-			effective[variable.Key] = value
-			injected[variable.Key] = variable.InjectIntoContainers
+			effective[variable.Key] = types.EnvVariable{
+				Key:      variable.Key,
+				Value:    value,
+				NoInject: !variable.InjectIntoContainers,
+			}
 		}
 	}
 
-	keys := slices.Sorted(maps.Keys(effective))
-
 	result := make([]types.EnvVariable, 0, len(effective))
-	for _, key := range keys {
-		result = append(result, types.EnvVariable{Key: key, Value: effective[key], NoInject: !injected[key]})
+	for _, key := range slices.Sorted(maps.Keys(effective)) {
+		result = append(result, effective[key])
 	}
 	return result, nil
 }
@@ -540,11 +539,10 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 			}
 		}
 
-		_, marked := noInject[key]
 		vars = append(vars, types.EnvVariable{
 			Key:      key,
 			Value:    value,
-			NoInject: marked,
+			NoInject: noInject[key],
 		})
 	}
 
@@ -555,9 +553,6 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 	return vars, nil
 }
 
-// WriteLocalEnvFile materializes vars into .env.global. Interpolation-only
-// keys are marked in the header and the file is replaced atomically, so values
-// and marks are always read from one consistent snapshot.
 func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.EnvVariable) error {
 	envPath, err := s.localEnvFilePath(ctx)
 	if err != nil {
@@ -678,7 +673,6 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 			continue
 		}
 
-		// Unmarked legacy entries were always injected into every container.
 		variable := GlobalVariable{
 			Key:                  key,
 			Value:                entry.Value,

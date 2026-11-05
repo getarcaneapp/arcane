@@ -14,8 +14,6 @@ ALTER TABLE global_variables DROP COLUMN inject_into_containers;
 `
 )
 
-// Migration 105 makes new global variables interpolation-only by default while
-// existing ones, which were always injected into every container, keep it.
 func init() {
 	goose.AddMigrationContext(run(v105Up, v105Up), run(v105Down, v105Down))
 }

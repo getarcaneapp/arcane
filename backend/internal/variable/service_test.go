@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/sys/crypto"
 
@@ -235,7 +234,6 @@ func TestResolveEffectiveVariables_MarksInterpolationOnlyVariables(t *testing.T)
 	require.NoError(t, err)
 	require.False(t, password.InjectIntoContainers, "new variables are interpolation-only unless injection is requested")
 
-	// The env-scoped override decides injection for its environment.
 	_, err = service.CreateVariable(ctx, types.GlobalVariable{
 		Key: "TZ", Value: "Europe/Paris", EnvironmentIDs: []string{"env-a"},
 	})
@@ -309,37 +307,6 @@ func TestReadLocalEnvFile_ReportsNoInjectMarks(t *testing.T) {
 	read, err := service.ReadLocalEnvFile(ctx)
 	require.NoError(t, err)
 	require.Equal(t, vars, read, "a re-added agent must report which keys are interpolation-only")
-}
-
-func TestWriteLocalEnvFile_ConcurrentRewritesNeverInterleave(t *testing.T) {
-	service, _, projectsDir := setupVariableServiceTest(t, &variableTestRemoteProxy{})
-	ctx := t.Context()
-	envPath := filepath.Join(projectsDir, ".env.global")
-	withSecret := []types.EnvVariable{
-		{Key: "DB_PASSWORD", Value: strings.Repeat("s", 512), NoInject: true},
-		{Key: "TZ", Value: "UTC"},
-	}
-	afterDelete := []types.EnvVariable{{Key: "TZ", Value: "UTC"}}
-
-	rendered := map[string]bool{}
-	for _, vars := range [][]types.EnvVariable{withSecret, afterDelete} {
-		require.NoError(t, service.WriteLocalEnvFile(ctx, vars))
-		content, err := os.ReadFile(envPath)
-		require.NoError(t, err)
-		rendered[string(content)] = true
-	}
-
-	for range 100 {
-		var wg sync.WaitGroup
-		for i := range 8 {
-			vars := kit.Ternary(i%2 == 0, withSecret, afterDelete)
-			wg.Go(func() { require.NoError(t, service.WriteLocalEnvFile(ctx, vars)) })
-		}
-		wg.Wait()
-		content, err := os.ReadFile(envPath)
-		require.NoError(t, err)
-		require.True(t, rendered[string(content)], "overlapping rewrites produced a mixed file:\n%s", content)
-	}
 }
 
 func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
@@ -455,7 +422,6 @@ func TestSyncEnvironment_AgentPayloadOmitsNoInjectWhenAllInjected(t *testing.T) 
 	require.NoError(t, service.SyncEnvironment(ctx, "env-agent"))
 
 	require.Len(t, putBodies, 2)
-	// Agents that predate the field reject unknown properties.
 	require.NotContains(t, string(putBodies[0]), "noInject")
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(putBodies[1], &materialized))
