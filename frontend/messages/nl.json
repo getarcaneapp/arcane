@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Stel de tunnelbuffer-vensters van de Tune-agent af op doorvoercapaciteit en geheugengebruik",
   "buffer_windows": "Buffervenster",
   "http2_receive_window": "HTTP/2-ontvangstvenster (alleen voor beheerders)",
-  "http2_receive_window_description": "HTTP/2-ontvangstbuffer per stream. Dit geldt alleen voor de server van de Arcane-manager. Waarden die in de agentomgevingen zijn ingesteld, hebben geen effect. Hogere waarden versnellen de overdracht door de agent op verbindingen met een hoge latentie. Elke HTTP/2-client kan de manager ertoe brengen om per verbinding maximaal 2× deze waarde in de buffer op te slaan.",
-  "http2_receive_window_restart": "Dit wordt van kracht nadat de manager opnieuw is opgestart.",
+  "http2_receive_window_description": "HTTP/2-buffer per stream op de manager. Een hogere waarde zorgt voor meer snelheid bij verbindingen met hoge latentie, maar verbruikt meer geheugen.",
+  "http2_receive_window_restart": "Wordt toegepast nadat de manager opnieuw is opgestart.",
   "agent_tunnel_stream_window": "Venster 'Agent Tunnel Stream'",
-  "agent_tunnel_stream_window_description": "Ontvangstvenster voor elke overdracht via de agenttunnel van deze omgeving. De agent stuurt dit naar de manager zodra de tunnel verbinding maakt, en beide partijen maken er gebruik van. Hogere waarden versnellen overdrachten op verbindingen met een hoge latentie, maar elke partij moet voor elke actieve overdracht maximaal deze hoeveelheid gegevens in het RAM-geheugen vasthouden.",
-  "agent_tunnel_stream_window_reconnect": "Dit treedt in werking zodra de agenttunnel opnieuw verbinding maakt. Openstaande tunnels behouden hun huidige venster.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffer per overdracht op de agenttunnel. Een hogere waarde zorgt voor een hogere snelheid op verbindingen met een hoge latentie, maar neemt meer geheugen in beslag.",
+  "agent_tunnel_stream_window_reconnect": "Dit geldt wanneer de tunnel opnieuw verbinding maakt.",
+  "value_in_mib": "Waarde in MiB ({range})"
 }
