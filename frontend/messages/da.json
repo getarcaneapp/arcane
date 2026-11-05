@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Juster agenttunnelens buffervinduer med henblik på gennemstrømning og hukommelsesforbrug",
   "buffer_windows": "Buffervinduer",
   "http2_receive_window": "HTTP/2-modtagelsesvindue (kun Manager)",
-  "http2_receive_window_description": "HTTP/2-modtagelsesbuffer pr. strøm. Gælder kun for Arcane-managerens server. Værdier, der indstilles i agentmiljøerne, har ingen effekt. Større værdier fremskynder agentoverførsler på forbindelser med høj latenstid. Enhver HTTP/2-klient kan få manageren til at buffe op til 2 gange denne værdi pr. forbindelse.",
-  "http2_receive_window_restart": "Træder i kraft, når lederen genstarter.",
+  "http2_receive_window_description": "HTTP/2-buffer pr. strøm på manager-enheden. En højere værdi giver højere hastighed på forbindelser med høj latenstid, men bruger mere hukommelse.",
+  "http2_receive_window_restart": "Gælder efter en genstart af manager-programmet.",
   "agent_tunnel_stream_window": "Agent-tunnel-stream-vindue",
-  "agent_tunnel_stream_window_description": "Modtagelsesvindue for hver overførsel via denne miljøs agenttunnel. Agenten sender det til manager, når tunnelen oprettes, og begge sider bruger det. Større værdier fremskynder overførsler på forbindelser med høj latenstid, men hver side kan opbevare op til denne mængde data i RAM for hver aktiv overførsel.",
-  "agent_tunnel_stream_window_reconnect": "Træder i kraft, næste gang agenttunnelen genopretter forbindelsen. Åbne tunneler beholder deres nuværende vindue.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffer pr. overførsel i agenttunnelen. Jo højere værdi, desto hurtigere på forbindelser med høj latenstid, men det bruger mere hukommelse.",
+  "agent_tunnel_stream_window_reconnect": "Gælder, når tunnelforbindelsen genoprettes.",
+  "value_in_mib": "Værdi i MiB ({range})"
 }
