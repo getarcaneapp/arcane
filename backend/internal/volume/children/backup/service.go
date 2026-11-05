@@ -137,7 +137,7 @@ func NewService(deps Dependencies) *Service {
 			remote, err := s.remoteRusticRepository(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
 			return remote, entry.RemoteSnapshotID, err
 		}
-		return backup.Repository{}, "", errors.New("volume backup has no Rustic snapshot")
+		return backup.Repository{}, "", common.Classify(common.ErrBadRequest, errors.New("volume backup has no Rustic snapshot"))
 	}
 	s.policies = policies.NewService(policies.Dependencies{
 		DB:             deps.DB,
@@ -534,10 +534,10 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 		return nil, err
 	}
 	if entry.Status != types.VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
-		return nil, errors.New("only successful local volume backups can be uploaded")
+		return nil, common.Classify(common.ErrBadRequest, errors.New("only successful local volume backups can be uploaded"))
 	}
 	if entry.RemoteSnapshotID != "" {
-		return nil, errors.New("volume backup has already been uploaded")
+		return nil, common.Classify(common.ErrConflict, errors.New("volume backup has already been uploaded"))
 	}
 	if strings.TrimSpace(s3DestinationID) == "" {
 		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the upload"))
@@ -717,7 +717,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		return nil, 0, err
 	}
 	if entry.Format != types.VolumeBackupFormatArchive && entry.LocalSnapshotID == "" {
-		return nil, 0, errors.New("only local volume backups can be downloaded")
+		return nil, 0, common.Classify(common.ErrBadRequest, errors.New("only local volume backups can be downloaded"))
 	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
