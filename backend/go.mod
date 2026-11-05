@@ -53,7 +53,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
-	github.com/pires/go-proxyproto v0.15.0
+	github.com/pires/go-proxyproto v0.16.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/project-copacetic/copacetic v0.15.0
 	github.com/robfig/cron/v3 v3.0.1
