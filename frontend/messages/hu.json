@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Az ügynök alagútpuffer-ablakainak beállítása az átviteli sebesség és a memóriahasználat optimalizálása érdekében",
   "buffer_windows": "Pufferablakok",
   "http2_receive_window": "HTTP/2 fogadóablak (csak a menedzser számára)",
-  "http2_receive_window_description": "HTTP/2 vételi puffer adatfolyamonként. Csak az Arcane-kezelő szerverére vonatkozik. Az ügynökök környezetében beállított értékek nincs hatással. A nagyobb értékek felgyorsítják az ügynökök adatátvitelét nagy késleltetésű kapcsolatokon. Bármely HTTP/2-kliens elérheti, hogy a kezelő kapcsolatonként ennek az értéknek akár a kétszeresét is pufferelje.",
-  "http2_receive_window_restart": "A változás a rendszergazda újraindulása után lép hatályba.",
+  "http2_receive_window_description": "HTTP/2-puffer mérete adatfolyamonként a menedzseren. Magasabb érték gyorsabb a nagy késleltetésű kapcsolatok esetén, de több memóriát igényel.",
+  "http2_receive_window_restart": "A változás a rendszergazda által végzett újraindítás után lép érvénybe.",
   "agent_tunnel_stream_window": "Ügynök-alagút-adatfolyam-ablak",
-  "agent_tunnel_stream_window_description": "A környezet ügynöki alagútján keresztül történő minden adatátvitelhez tartozó fogadóablak. Az ügynök ezt elküldi a menedzsernek, amikor az alagút kapcsolatot létesít, és mindkét fél ezt használja. A nagyobb értékek felgyorsítják az adatátvitelt a nagy késleltetésű kapcsolatokon, de mindkét fél ennyi adatot tarthat a RAM-ban minden aktív adatátvitel során.",
-  "agent_tunnel_stream_window_reconnect": "A változás akkor lép hatályba, amikor az ügynök alagútja legközelebb újra csatlakozik. A nyitott alagutak megtartják a jelenlegi ablakukat.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Átvitelenkénti puffer az ügynöki alagútban. Magasabb érték gyorsabb a nagy késleltetésű kapcsolatokon, de több memóriát igényel.",
+  "agent_tunnel_stream_window_reconnect": "Akkor lép érvénybe, amikor az alagút újra csatlakozik.",
+  "value_in_mib": "Érték MiB-ben ({range})"
 }
