@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Ajustar las ventanas del búfer del túnel de Tune Agent para optimizar el rendimiento y el uso de memoria",
   "buffer_windows": "Ventanas de búfer",
   "http2_receive_window": "Ventana de recepción HTTP/2 (solo para el gestor)",
-  "http2_receive_window_description": "Búfer de recepción HTTP/2 por flujo. Solo se aplica al servidor del gestor de Arcane. Los valores configurados en los entornos de los agentes no tienen ningún efecto. Unos valores más altos aceleran las transferencias de los agentes en enlaces de alta latencia. Cualquier cliente HTTP/2 puede hacer que el gestor almacene en el búfer hasta el doble de este valor por conexión.",
-  "http2_receive_window_restart": "Entrará en vigor una vez que el gestor se haya reiniciado.",
+  "http2_receive_window_description": "Búfer HTTP/2 por flujo en el gestor. Cuanto mayor sea el valor, mayor será la velocidad en conexiones de alta latencia, pero se consumirá más memoria.",
+  "http2_receive_window_restart": "Se aplica tras reiniciar el gestor.",
   "agent_tunnel_stream_window": "Ventana «Agent Tunnel Stream»",
-  "agent_tunnel_stream_window_description": "Ventana de recepción para cada transferencia a través del túnel del agente de este entorno. El agente la envía al gestor cuando se establece la conexión del túnel, y ambas partes la utilizan. Los valores más altos aceleran las transferencias en enlaces de alta latencia, pero cada parte puede almacenar hasta esa cantidad de datos en la memoria RAM para cada transferencia activa.",
-  "agent_tunnel_stream_window_reconnect": "Entrará en vigor la próxima vez que el túnel del agente se vuelva a conectar. Los túneles abiertos conservan su ventana actual.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Búfer por transferencia en el túnel del agente. Cuanto mayor sea, más rápido será en enlaces de alta latencia, pero consumirá más memoria.",
+  "agent_tunnel_stream_window_reconnect": "Se aplica cuando el túnel se vuelve a conectar.",
+  "value_in_mib": "Valor en MiB ({range})"
 }
