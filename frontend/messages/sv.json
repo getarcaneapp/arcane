@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Justera fönstren för agenttunnelns buffert för att optimera genomströmning och minnesanvändning",
   "buffer_windows": "Buffertfönster",
   "http2_receive_window": "HTTP/2-mottagningsfönster (endast för Manager)",
-  "http2_receive_window_description": "HTTP/2-mottagningsbuffert per ström. Gäller endast Arcane-hanterarens server. Värden som anges i agentmiljöerna har ingen effekt. Högre värden påskyndar agentöverföringar på länkar med hög latens. Alla HTTP/2-klienter kan få hanteraren att buffra upp till 2× detta värde per anslutning.",
+  "http2_receive_window_description": "HTTP/2-buffert per ström på hanteraren. Ett högre värde ger högre hastighet på länkar med hög latens, men kräver mer minne.",
   "http2_receive_window_restart": "Träder i kraft efter att programmet har startats om.",
   "agent_tunnel_stream_window": "Agent-tunnel-ström-fönster",
-  "agent_tunnel_stream_window_description": "Mottagningsfönster för varje överföring via denna miljös agenttunnel. Agenten skickar det till hanteraren när tunneln ansluts, och båda sidor använder det. Högre värden påskyndar överföringar på länkar med hög latens, men varje sida kan lagra upp till denna mängd data i RAM-minnet för varje aktiv överföring.",
-  "agent_tunnel_stream_window_reconnect": "Träder i kraft nästa gång agenttunneln återansluts. Öppna tunnlar behåller sitt nuvarande fönster.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffert per överföring i agenttunneln. Ett högre värde ger snabbare överföring på länkar med hög latens, men kräver mer minne.",
+  "agent_tunnel_stream_window_reconnect": "Gäller när tunneln återansluts.",
+  "value_in_mib": "Värde i MiB ({range})"
 }
