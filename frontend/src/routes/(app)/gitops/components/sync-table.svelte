@@ -151,7 +151,7 @@
 			confirmLabel: m.common_remove(),
 			destructive: true,
 			checkboxes:
-				sync.targetType === 'swarm_stack' ? [{ id: 'removeStack', label: m.git_sync_remove_stack_label(), initialState: false }] : undefined,
+				sync.targetType === 'swarm_stack' ? [{ id: 'removeStack', label: m.also_remove_deployed_swarm_stack(), initialState: false }] : undefined,
 			setLoading: (loading) => (isLoading.removing = loading),
 			run: (checkboxStates) => gitOpsSyncService.deleteSync(sync.environmentId, sync.id, checkboxStates['removeStack'] === true),
 			failureMessage: m.common_delete_failed({ resource: safeName }),

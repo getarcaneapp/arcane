@@ -217,10 +217,10 @@
 		isLoading.up = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.upStack(stackName, envId)),
-			message: m.swarm_stacks_up_failed({ name: stackName }),
+			message: m.failed_to_bring_up_stack({ name: stackName }),
 			setLoadingState: (v) => (isLoading.up = v),
 			onSuccess: async () => {
-				toast.success(m.swarm_stacks_up_success({ name: stackName }));
+				toast.success(m.stack_brought_up({ name: stackName }));
 				await refresh();
 			}
 		});
@@ -228,8 +228,8 @@
 
 	function handleDown() {
 		openConfirmDialog({
-			title: m.swarm_stacks_down_confirm_title(),
-			message: m.swarm_stacks_down_confirm_message(),
+			title: m.bring_down_stack(),
+			message: m.bring_down_stack_confirm_message(),
 			confirm: {
 				label: m.common_down(),
 				destructive: true,
@@ -237,10 +237,10 @@
 					isLoading.down = true;
 					await handleApiResultWithCallbacks({
 						result: await tryCatch(swarmService.downStack(stackName, envId)),
-						message: m.swarm_stacks_down_failed({ name: stackName }),
+						message: m.failed_to_bring_down_stack({ name: stackName }),
 						setLoadingState: (v) => (isLoading.down = v),
 						onSuccess: async () => {
-							toast.success(m.swarm_stacks_down_success({ name: stackName }));
+							toast.success(m.stack_brought_down({ name: stackName }));
 							await refresh();
 						}
 					});

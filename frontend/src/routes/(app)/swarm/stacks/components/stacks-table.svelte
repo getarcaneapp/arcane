@@ -78,10 +78,10 @@
 		isLoading = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.upStack(stack.name, stack.environmentId)),
-			message: m.swarm_stacks_up_failed({ name: stack.name }),
+			message: m.failed_to_bring_up_stack({ name: stack.name }),
 			setLoadingState: (v) => (isLoading = v),
 			onSuccess: async () => {
-				toast.success(m.swarm_stacks_up_success({ name: stack.name }));
+				toast.success(m.stack_brought_up({ name: stack.name }));
 				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
 			}
 		});
@@ -89,8 +89,8 @@
 
 	function handleDown(stack: StackRow) {
 		openConfirmDialog({
-			title: m.swarm_stacks_down_confirm_title(),
-			message: m.swarm_stacks_down_confirm_message(),
+			title: m.bring_down_stack(),
+			message: m.bring_down_stack_confirm_message(),
 			confirm: {
 				label: m.common_down(),
 				destructive: true,
@@ -98,10 +98,10 @@
 					isLoading = true;
 					await handleApiResultWithCallbacks({
 						result: await tryCatch(swarmService.downStack(stack.name, stack.environmentId)),
-						message: m.swarm_stacks_down_failed({ name: stack.name }),
+						message: m.failed_to_bring_down_stack({ name: stack.name }),
 						setLoadingState: (v) => (isLoading = v),
 						onSuccess: async () => {
-							toast.success(m.swarm_stacks_down_success({ name: stack.name }));
+							toast.success(m.stack_brought_down({ name: stack.name }));
 							await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
 						}
 					});
