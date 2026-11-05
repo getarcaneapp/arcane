@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "根据吞吐量和内存使用情况调整代理隧道缓冲区窗口",
   "buffer_windows": "缓冲窗口",
   "http2_receive_window": "HTTP/2 接收窗口（仅限管理器）",
-  "http2_receive_window_description": "每个流的 HTTP/2 接收缓冲区。仅适用于 Arcane 管理器的服务器。在代理环境中设置的值无效。较大的数值可在高延迟链路上加快代理的传输速度。任何 HTTP/2 客户端均可使管理器为每个连接设置的最大缓冲区大小达到此值的 2 倍。",
-  "http2_receive_window_restart": "在管理员重启后生效。",
+  "http2_receive_window_description": "管理器上每个流的 HTTP/2 缓冲区大小。在高延迟链路上，数值越高速度越快，但会消耗更多内存。",
+  "http2_receive_window_restart": "在管理器重启后生效。",
   "agent_tunnel_stream_window": "代理隧道流窗口",
-  "agent_tunnel_stream_window_description": "通过该环境的代理隧道进行每次传输时对应的接收窗口。当隧道建立连接时，代理会将其发送给管理器，双方均使用该窗口。较大的数值可在高延迟链路上加快传输速度，但每侧在每次活跃传输中，内存中最多只能保留此数量的数据。",
-  "agent_tunnel_stream_window_reconnect": "该设置将在代理隧道下次重新连接时生效。已打开的隧道将保留其当前窗口。",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "代理隧道中的每次传输缓冲区大小。在高延迟链路上，该值越大速度越快，但会消耗更多内存。",
+  "agent_tunnel_stream_window_reconnect": "在隧道重新连接时生效。",
+  "value_in_mib": "值以 MiB 为单位（{range}）"
 }
