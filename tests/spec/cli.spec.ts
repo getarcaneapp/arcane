@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import playwrightConfig from '../playwright.config';
-import { createCLIConfig, runCLI, runCLIJSON, type CLIConfig } from '../utils/cli.util';
+import { buildCLI, createCLIConfig, runCLI, runCLIJSON, type CLIConfig } from '../utils/cli.util';
 import { createMockOidcIssuer } from '../utils/oidc.util';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
 
@@ -334,6 +334,11 @@ const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 		expectation: expectJsonValue
 	}
 ];
+
+test.beforeAll(async () => {
+	test.setTimeout(180_000);
+	await buildCLI();
+});
 
 test.describe('arcane-cli e2e', () => {
 	test.beforeAll(async () => {
