@@ -58,6 +58,7 @@ type (
 	DeleteGitOpsSyncInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		SyncID        string `path:"syncId" doc:"Sync ID"`
+		RemoveStack   bool   `query:"removeStack" doc:"Also remove the swarm stack a swarm_stack sync deployed"`
 	}
 
 	GitOpsSyncActionInput struct {
@@ -279,7 +280,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 	}
 	actor := handlerutil.CurrentActor(ctx)
 
-	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
+	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, input.RemoveStack, actor); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
