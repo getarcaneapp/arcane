@@ -1712,27 +1712,31 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 			slog.DebugContext(ctx, "failed to append update result activity message", "activityId", activityID, "resource", name, "error", appendErr)
 		}
 	}
-	evidenceErr := func() error {
-		if status != types.RunStatusSucceeded {
-			return nil
+	selfPending := func() bool {
+		progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress)
+		if !ok {
+			return false
 		}
-		if progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress); ok {
-			progress.mu.Lock()
-			selfPending := progress.selfTriggered && progress.selfID == result.ResourceID
-			progress.mu.Unlock()
-			if selfPending {
-				return nil
-			}
+		progress.mu.Lock()
+		defer progress.mu.Unlock()
+		return status == types.RunStatusSucceeded && progress.selfTriggered && progress.selfID == result.ResourceID
+	}()
+	evidenceErr := func() error {
+		if status != types.RunStatusSucceeded || selfPending {
+			return nil
 		}
 		return s.recovery.VerifyResult(ctx, result.ResourceID)
 	}()
 	err := errors.Join(recordErr, jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:           result.ResourceID,
 		ResourceType: string(result.ResourceType),
-		Status:       kit.Ternary(evidenceErr != nil, types.RunStatusNeedsAttention, status),
+		Status:       kit.Ternary(evidenceErr != nil || selfPending, types.RunStatusNeedsAttention, status),
 		Message: func() string {
-			if evidenceErr != nil {
+			switch {
+			case evidenceErr != nil:
 				return evidenceErr.Error()
+			case selfPending:
+				return "Self-update completion requires review"
 			}
 			return result.Error
 		}(),
