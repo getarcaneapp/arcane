@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Ajustar as janelas de buffer do túnel do agente para otimizar a taxa de transferência e o uso de memória",
   "buffer_windows": "Janelas de buffer",
   "http2_receive_window": "Janela de recepção HTTP/2 (somente para gerenciadores)",
-  "http2_receive_window_description": "Buffer de recepção HTTP/2 por fluxo. Aplica-se apenas ao servidor do Arcane Manager. Os valores definidos nos ambientes dos agentes não têm efeito. Valores maiores aceleram as transferências dos agentes em links de alta latência. Qualquer cliente HTTP/2 pode fazer com que o gerenciador armazene em buffer até 2× esse valor por conexão.",
+  "http2_receive_window_description": "Buffer HTTP/2 por fluxo no gerenciador. Um valor mais alto proporciona maior velocidade em conexões de alta latência, mas consome mais memória.",
   "http2_receive_window_restart": "Entra em vigor após a reinicialização do gerenciador.",
   "agent_tunnel_stream_window": "Janela do fluxo do túnel do agente",
-  "agent_tunnel_stream_window_description": "Janela de recepção para cada transferência realizada pelo túnel do agente deste ambiente. O agente a envia ao gerenciador quando o túnel se conecta, e ambos os lados a utilizam. Valores maiores aceleram as transferências em links de alta latência, mas cada lado pode manter até esse volume de dados na RAM para cada transferência ativa.",
-  "agent_tunnel_stream_window_reconnect": "Entra em vigor na próxima vez que o túnel do agente se reconectar. Os túneis abertos mantêm sua janela atual.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffer por transferência no túnel do agente. Um valor mais alto proporciona maior velocidade em links de alta latência, mas consome mais memória.",
+  "agent_tunnel_stream_window_reconnect": "Aplica-se quando o túnel se reconecta.",
+  "value_in_mib": "Valor em MiB ({range})"
 }
