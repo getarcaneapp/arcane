@@ -175,7 +175,7 @@ func NewContainerService(p ContainerServiceParams) *ContainerService {
 		stats: stats.New(stats.Params{
 			GetClient:  p.DockerService.GetClient,
 			DockerHost: p.DockerService.DockerHost,
-			CacheTTL:   stats.ContainerResourceSampleTTL,
+			CacheTTL:   stats.ContainerResourceBaselineTTL,
 		}),
 	}
 }
