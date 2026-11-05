@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "針對吞吐量與記憶體使用量，調整代理隧道緩衝區視窗",
   "buffer_windows": "緩衝視窗",
   "http2_receive_window": "HTTP/2 接收視窗（僅限管理員）",
-  "http2_receive_window_description": "每個串流的 HTTP/2 接收緩衝區。此設定僅適用於 Arcane 管理員的伺服器。在代理程式環境中設定的數值將不產生任何影響。較大的數值可在高延遲連線中加速代理程式的資料傳輸。任何 HTTP/2 客戶端均可使管理員在每個連線中將緩衝區大小設定為此數值的 2 倍。",
+  "http2_receive_window_description": "管理器上每個流的 HTTP/2 緩衝區大小。在高延遲連線中，數值越高速度越快，但會消耗更多記憶體。",
   "http2_receive_window_restart": "在管理員重新啟動後生效。",
   "agent_tunnel_stream_window": "代理隧道串流視窗",
-  "agent_tunnel_stream_window_description": "此環境中透過代理隧道進行的每次傳輸所對應的接收視窗。當隧道連線時，代理會將其傳送至管理員，雙方皆會使用此值。較大的數值可在高延遲鏈路上加速傳輸，但雙方在每次活躍傳輸中，都可能需在 RAM 中保留最多此數值份量的資料。",
-  "agent_tunnel_stream_window_reconnect": "將於代理隧道下次重新連線時生效。已開啟的隧道將保留其當前視窗。",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "代理隧道中的每次傳輸緩衝區大小。在高延遲鏈路上，數值越高速度越快，但會消耗更多記憶體。",
+  "agent_tunnel_stream_window_reconnect": "當隧道重新連線時適用。",
+  "value_in_mib": "值以 MiB 為單位（{range}）"
 }
