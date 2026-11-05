@@ -65,7 +65,7 @@ func newMuxConfig(keepAlive bool, streamWindowMiB int) *yamux.Config {
 func muxStreamWindowMiB(capabilities []string, fallback int) int {
 	for _, capability := range capabilities {
 		if value, ok := strings.CutPrefix(capability, tunnelCapabilityMuxWindowPrefix); ok {
-			if windowMiB, err := strconv.ParseUint(value, 10, 32); err == nil {
+			if windowMiB, err := strconv.ParseUint(value, 10, 16); err == nil {
 				return int(min(max(windowMiB, 1), 64))
 			}
 		}
