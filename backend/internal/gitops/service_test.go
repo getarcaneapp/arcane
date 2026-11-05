@@ -1894,11 +1894,12 @@ func TestAggregateSyncsSumsCounts(t *testing.T) {
 }
 
 func TestValidateSwarmStackName(t *testing.T) {
-	require.NoError(t, validateSwarmStackName("swarm_stack", "ungms-api"))
-	require.NoError(t, validateSwarmStackName("project", "ungms API"))
-	require.NoError(t, validateSwarmStackName("", "ungms API"))
+	require.NoError(t, validateSwarmStackName("swarm_stack", "my-app"))
+	require.NoError(t, validateSwarmStackName("swarm_stack", " my-app "))
+	require.NoError(t, validateSwarmStackName("project", "My App"))
+	require.NoError(t, validateSwarmStackName("", "My App"))
 
-	err := validateSwarmStackName("swarm_stack", "ungms API")
+	err := validateSwarmStackName("swarm_stack", "My App")
 	require.ErrorIs(t, err, common.ErrValidation)
 	var fieldErr *types.FieldError
 	require.ErrorAs(t, err, &fieldErr)

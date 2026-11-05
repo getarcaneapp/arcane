@@ -143,7 +143,7 @@ func validateSwarmStackName(targetType, stackName string) error {
 	if strings.TrimSpace(targetType) != "swarm_stack" {
 		return nil
 	}
-	if err := libswarm.ValidateStackName(stackName); err != nil {
+	if err := libswarm.ValidateStackName(strings.TrimSpace(stackName)); err != nil {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: err})
 	}
 	return nil
