@@ -13,7 +13,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
-	import { AddIcon, AlertTriangleIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
+	import { AddIcon, AlertIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { enrollmentTokensQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -151,7 +151,7 @@
 
 	{#if tokensQuery.isError}
 		<Alert.Root variant="destructive">
-			<AlertTriangleIcon class="size-4" />
+			<AlertIcon class="size-4" />
 			<Alert.Title>{m.common_load_failed({ resource: m.enrollment_tokens() })}</Alert.Title>
 			<Alert.Description>{extractApiErrorMessage(tokensQuery.error)}</Alert.Description>
 		</Alert.Root>

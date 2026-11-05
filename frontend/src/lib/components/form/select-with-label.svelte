@@ -18,6 +18,8 @@
 		hideLabel = false,
 		compact = false,
 		triggerSize = 'default',
+		'aria-describedby': ariaDescribedby,
+		'aria-errormessage': ariaErrormessage,
 		onValueChange
 	}: {
 		id: string;
@@ -33,10 +35,17 @@
 		hideLabel?: boolean;
 		compact?: boolean;
 		triggerSize?: 'sm' | 'default';
+		'aria-describedby'?: string;
+		'aria-errormessage'?: string;
 		onValueChange?: (value: string) => void;
 	} = $props();
 
+	const uid = $props.id();
 	const selected = $derived(options.find((o) => o.value === value));
+	const describedBy = $derived(
+		[ariaDescribedby, description && !hideLabel && `${uid}-description`, error && `${uid}-error`].filter(Boolean).join(' ') ||
+			undefined
+	);
 </script>
 
 {#snippet optionItems()}
@@ -68,13 +77,20 @@
 				{label}
 			</Label>
 			{#if description}
-				<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
+				<p id="{uid}-description" class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 			{/if}
 		</div>
 	{/if}
 
 	<Select.Root type="single" bind:value {name} {disabled} onValueChange={(v) => onValueChange?.(v)}>
-		<Select.Trigger size={triggerSize} class={compact ? 'w-40' : 'w-full'} aria-invalid={!!error} {id}>
+		<Select.Trigger
+			size={triggerSize}
+			class={compact ? 'w-40' : 'w-full'}
+			aria-invalid={!!error || !!ariaErrormessage}
+			aria-describedby={describedBy}
+			aria-errormessage={error ? `${uid}-error` : ariaErrormessage}
+			{id}
+		>
 			<span class="flex items-center gap-2">
 				{selected?.label ?? placeholder}
 				{#if selected?.badge}
@@ -96,6 +112,6 @@
 	</Select.Root>
 
 	{#if error}
-		<p class="text-xs font-medium text-destructive">{error}</p>
+		<p id="{uid}-error" class="text-xs font-medium text-destructive">{error}</p>
 	{/if}
 </div>

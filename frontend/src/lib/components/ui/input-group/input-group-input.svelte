@@ -23,6 +23,7 @@
 	class={cn(
 		'flex h-full w-full min-w-0 flex-1 bg-transparent px-3 py-1 text-base transition-all outline-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
 		size === 'sm' && 'text-xs md:text-xs',
+		'pointer-coarse:text-form-control',
 		mono && 'font-mono',
 		className
 	)}

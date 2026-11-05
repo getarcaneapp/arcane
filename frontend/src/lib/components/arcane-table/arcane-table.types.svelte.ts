@@ -1,5 +1,5 @@
 import type { ColumnFiltersState, ColumnVisibilityState, RowData } from '@tanstack/table-core';
-import type { Snippet } from 'svelte';
+import { createContext, type Snippet } from 'svelte';
 import type { Component } from 'svelte';
 
 import type { IconType } from '#lib/icons/index.js';
@@ -163,6 +163,14 @@ export type GroupedData<T> = {
 export type GroupSelectionState = 'none' | 'some' | 'all';
 
 export type SelectionModifiers = { shiftKey: boolean };
+
+export interface MobileRowSelection {
+	readonly enabled: boolean;
+	isSelected: (id: string) => boolean;
+	toggle: (id: string, selected: boolean, modifiers?: SelectionModifiers) => void;
+}
+
+export const [getMobileRowSelection, setMobileRowSelection, hasMobileRowSelection] = createContext<MobileRowSelection>();
 
 export function shouldIgnoreTableRowClick(event: MouseEvent): boolean {
 	const target = event.target as HTMLElement | null;

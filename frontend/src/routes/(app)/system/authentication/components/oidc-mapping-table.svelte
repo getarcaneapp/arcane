@@ -206,7 +206,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: OidcRoleMapping })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.claimValue}>
 		<DropdownMenu.Item disabled={item.source === 'env'} onclick={() => onEdit(item)}>
 			<EditIcon class="size-4" />
 			{m.common_edit()}

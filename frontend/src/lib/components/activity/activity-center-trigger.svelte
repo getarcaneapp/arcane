@@ -63,21 +63,14 @@
 				<ActivityIcon class={cn(collapsed ? 'size-4.5' : 'size-3.5')} aria-hidden="true" />
 			</span>
 			{#if !collapsed}
-				<span class="ml-2 min-w-0 flex-1 truncate text-left text-xs font-medium">{m.activity_center_title()}</span>
-				<span
-					class={cn(
-						'ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-3xs leading-none font-semibold tabular-nums',
-						isActive ? 'bg-primary text-primary-foreground' : 'bg-sidebar-accent text-sidebar-foreground/45'
-					)}
-				>
-					{#if !isActive}
-						0
-					{:else if activeCount > 9}
-						{m.activity_count_many()}
-					{:else}
-						{activeCount}
-					{/if}
-				</span>
+				<span class="ml-2 min-w-0 flex-1 truncate text-left text-sm">{m.activity_center_title()}</span>
+				{#if isActive}
+					<span
+						class="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sidebar-accent px-1.5 text-2xs leading-none font-semibold text-sidebar-foreground/70 tabular-nums"
+					>
+						{activeCount > 9 ? m.activity_count_many() : activeCount}
+					</span>
+				{/if}
 			{:else if isActive}
 				<span
 					class="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs leading-4 font-bold text-primary-foreground tabular-nums ring-2 ring-sidebar"

@@ -13,11 +13,9 @@
 		fill = false
 	}: {
 		activity: Activity;
-		/** Let the output grow into the remaining height instead of capping it. */
 		fill?: boolean;
 	} = $props();
 
-	// Prefer the freshest activity data from the store (messages stream may update it).
 	const liveActivity = $derived(activityStore.getActivity(activity.id) ?? activity);
 	const detail = $derived(activityStore.getDetail(activity.id));
 	const messages = $derived(detail?.messages ?? []);
@@ -53,7 +51,7 @@
 						<button
 							type="button"
 							onclick={() => activityStore.retryLoadDetail(activity.id)}
-							class="cursor-pointer text-xs text-primary hover:underline"
+							class="cursor-pointer text-xs text-primary-text hover:underline"
 						>
 							{m.common_retry()}
 						</button>

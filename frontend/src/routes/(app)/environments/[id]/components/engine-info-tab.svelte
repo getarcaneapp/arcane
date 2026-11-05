@@ -6,7 +6,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertIcon, AlertTriangleIcon, CheckIcon, CloseIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CheckIcon, CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
@@ -84,7 +84,7 @@
 {:else if view}
 	<div class="space-y-4">
 		{#if view.warnings.length > 0}
-			<Alert.Root variant="warning-subtle" icon={AlertTriangleIcon} heading={m.docker_info_warnings_section()}>
+			<Alert.Root variant="warning-subtle" icon={AlertIcon} heading={m.docker_info_warnings_section()}>
 				<ul class="space-y-1">
 					{#each withOccurrenceKeys(view.warnings) as { value: warning, key } (key)}
 						<li class="text-sm wrap-anywhere">{warning}</li>

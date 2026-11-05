@@ -20,13 +20,17 @@
 			lock={lock('dockerApiTimeout')}
 			mixed={mixed('dockerApiTimeout')}
 		>
-			<Input
-				id="docker-api-timeout"
-				type="number"
-				placeholder={mixed('dockerApiTimeout') ? m.mixed() : '30'}
-				bind:value={formInputs.dockerApiTimeout.value}
-				aria-invalid={!!formInputs.dockerApiTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="docker-api-timeout"
+					type="number"
+					placeholder={mixed('dockerApiTimeout') ? m.mixed() : '30'}
+					bind:value={formInputs.dockerApiTimeout.value}
+					aria-invalid={!!formInputs.dockerApiTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="docker-image-pull-timeout"
@@ -37,13 +41,17 @@
 			lock={lock('dockerImagePullTimeout')}
 			mixed={mixed('dockerImagePullTimeout')}
 		>
-			<Input
-				id="docker-image-pull-timeout"
-				type="number"
-				placeholder={mixed('dockerImagePullTimeout') ? m.mixed() : '600'}
-				bind:value={formInputs.dockerImagePullTimeout.value}
-				aria-invalid={!!formInputs.dockerImagePullTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="docker-image-pull-timeout"
+					type="number"
+					placeholder={mixed('dockerImagePullTimeout') ? m.mixed() : '600'}
+					bind:value={formInputs.dockerImagePullTimeout.value}
+					aria-invalid={!!formInputs.dockerImagePullTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="deploy-wait-timeout"
@@ -54,13 +62,17 @@
 			lock={lock('deployWaitTimeout')}
 			mixed={mixed('deployWaitTimeout')}
 		>
-			<Input
-				id="deploy-wait-timeout"
-				type="number"
-				placeholder={mixed('deployWaitTimeout') ? m.mixed() : '600'}
-				bind:value={formInputs.deployWaitTimeout.value}
-				aria-invalid={!!formInputs.deployWaitTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="deploy-wait-timeout"
+					type="number"
+					placeholder={mixed('deployWaitTimeout') ? m.mixed() : '600'}
+					bind:value={formInputs.deployWaitTimeout.value}
+					aria-invalid={!!formInputs.deployWaitTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="trivy-scan-timeout"
@@ -71,13 +83,17 @@
 			lock={lock('trivyScanTimeout')}
 			mixed={mixed('trivyScanTimeout')}
 		>
-			<Input
-				id="trivy-scan-timeout"
-				type="number"
-				placeholder={mixed('trivyScanTimeout') ? m.mixed() : '900'}
-				bind:value={formInputs.trivyScanTimeout.value}
-				aria-invalid={!!formInputs.trivyScanTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="trivy-scan-timeout"
+					type="number"
+					placeholder={mixed('trivyScanTimeout') ? m.mixed() : '900'}
+					bind:value={formInputs.trivyScanTimeout.value}
+					aria-invalid={!!formInputs.trivyScanTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 	<SettingsSection title={m.timeouts_git_operations()}>
@@ -90,13 +106,17 @@
 			lock={lock('gitOperationTimeout')}
 			mixed={mixed('gitOperationTimeout')}
 		>
-			<Input
-				id="git-operation-timeout"
-				type="number"
-				placeholder={mixed('gitOperationTimeout') ? m.mixed() : '300'}
-				bind:value={formInputs.gitOperationTimeout.value}
-				aria-invalid={!!formInputs.gitOperationTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="git-operation-timeout"
+					type="number"
+					placeholder={mixed('gitOperationTimeout') ? m.mixed() : '300'}
+					bind:value={formInputs.gitOperationTimeout.value}
+					aria-invalid={!!formInputs.gitOperationTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 	<SettingsSection title={m.timeouts_network_operations()}>
@@ -109,13 +129,17 @@
 			lock={lock('httpClientTimeout')}
 			mixed={mixed('httpClientTimeout')}
 		>
-			<Input
-				id="http-client-timeout"
-				type="number"
-				placeholder={mixed('httpClientTimeout') ? m.mixed() : '30'}
-				bind:value={formInputs.httpClientTimeout.value}
-				aria-invalid={!!formInputs.httpClientTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="http-client-timeout"
+					type="number"
+					placeholder={mixed('httpClientTimeout') ? m.mixed() : '30'}
+					bind:value={formInputs.httpClientTimeout.value}
+					aria-invalid={!!formInputs.httpClientTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="registry-timeout"
@@ -126,13 +150,17 @@
 			lock={lock('registryTimeout')}
 			mixed={mixed('registryTimeout')}
 		>
-			<Input
-				id="registry-timeout"
-				type="number"
-				placeholder={mixed('registryTimeout') ? m.mixed() : '30'}
-				bind:value={formInputs.registryTimeout.value}
-				aria-invalid={!!formInputs.registryTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="registry-timeout"
+					type="number"
+					placeholder={mixed('registryTimeout') ? m.mixed() : '30'}
+					bind:value={formInputs.registryTimeout.value}
+					aria-invalid={!!formInputs.registryTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="registry-tag-timeout"
@@ -143,13 +171,17 @@
 			lock={lock('registryTagTimeout')}
 			mixed={mixed('registryTagTimeout')}
 		>
-			<Input
-				id="registry-tag-timeout"
-				type="number"
-				placeholder={mixed('registryTagTimeout') ? m.mixed() : '120'}
-				bind:value={formInputs.registryTagTimeout.value}
-				aria-invalid={!!formInputs.registryTagTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="registry-tag-timeout"
+					type="number"
+					placeholder={mixed('registryTagTimeout') ? m.mixed() : '120'}
+					bind:value={formInputs.registryTagTimeout.value}
+					aria-invalid={!!formInputs.registryTagTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="proxy-request-timeout"
@@ -160,13 +192,17 @@
 			lock={lock('proxyRequestTimeout')}
 			mixed={mixed('proxyRequestTimeout')}
 		>
-			<Input
-				id="proxy-request-timeout"
-				type="number"
-				placeholder={mixed('proxyRequestTimeout') ? m.mixed() : '60'}
-				bind:value={formInputs.proxyRequestTimeout.value}
-				aria-invalid={!!formInputs.proxyRequestTimeout.error}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="proxy-request-timeout"
+					type="number"
+					placeholder={mixed('proxyRequestTimeout') ? m.mixed() : '60'}
+					bind:value={formInputs.proxyRequestTimeout.value}
+					aria-invalid={!!formInputs.proxyRequestTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 </div>

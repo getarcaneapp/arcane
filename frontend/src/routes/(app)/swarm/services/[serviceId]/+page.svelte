@@ -16,7 +16,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
-		DockIcon,
+		ContainersIcon,
 		FileTextIcon,
 		JobsIcon,
 		SettingsIcon,
@@ -238,7 +238,7 @@
 	const canViewServiceLogs = $derived(hasPermission('swarm-services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([
-		{ value: 'overview', label: m.common_overview(), icon: DockIcon },
+		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(canViewServiceLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		{ value: 'tasks', label: m.tasks(), icon: JobsIcon },
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
@@ -357,7 +357,7 @@
 		{#snippet headerInfo()}
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-					<DockIcon class="size-5 text-primary" />
+					<ContainersIcon class="size-5 text-primary" />
 				</div>
 				<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={serviceName}>
 					{serviceName}

@@ -16,7 +16,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { AlertTriangleIcon, BoxIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
+	import { AlertIcon, BoxIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -199,7 +199,7 @@
 	{#snippet subHeader()}
 		{#if quadletQuery.isError}
 			<Alert.Root variant="destructive" class="mt-3">
-				<AlertTriangleIcon class="size-4" />
+				<AlertIcon class="size-4" />
 				<Alert.Title>{m.podman_updates_paused()}</Alert.Title>
 				<Alert.Description>{extractApiErrorMessage(quadletQuery.error)}</Alert.Description>
 			</Alert.Root>
@@ -256,7 +256,7 @@
 
 		<Tabs.Content value="containers" class="h-full">
 			{#if containers.length === 0}
-				<EmptyState icon={ContainersIcon} title={m.podman_quadlet_no_containers()} variant="plain" />
+				<EmptyState icon={ContainersIcon} title={m.podman_quadlet_no_containers()} />
 			{:else}
 				<Card.Root>
 					<div class="divide-y">

@@ -17,7 +17,6 @@ const AVATAR_PATH = fileURLToPath(
 type UserPreferences = {
 	themeMode?: 'light' | 'dark' | 'system';
 	keyboardShortcutsEnabled?: boolean;
-	mobileNavigationMode?: 'floating' | 'docked';
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree';
 };
@@ -45,7 +44,7 @@ type Passkey = {
 
 async function login(page: Page, username: string, password: string, expectedPath = '/dashboard') {
 	await page.goto('/login');
-	await page.getByLabel('Username', { exact: true }).fill(username);
+	await page.getByLabel('Username or email', { exact: true }).fill(username);
 	await page.getByLabel('Password', { exact: true }).fill(password);
 	await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 	await expect(page).toHaveURL(expectedPath);
@@ -247,16 +246,6 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				preferences: { keyboardShortcutsEnabled }
 			});
 
-			const mobileNavigationMode =
-				original.preferences?.mobileNavigationMode === 'docked' ? 'floating' : 'docked';
-			const mobileNavigationLabel = mobileNavigationMode === 'docked' ? 'Docked' : 'Floating';
-			const mobileNavigationResponse = await waitForProfileUpdate(accountPage, () =>
-				accountPage.getByRole('button', { name: mobileNavigationLabel, exact: true }).click()
-			);
-			expect(mobileNavigationResponse.request().postDataJSON()).toEqual({
-				preferences: { mobileNavigationMode }
-			});
-
 			const persisted = await readApiData<AccountUser>(
 				await accountPage.request.get('/api/auth/me'),
 				'Verify persisted account preferences'
@@ -267,8 +256,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 					themeMode,
 					defaultLandingPage: landingPage,
 					defaultProjectEditorLayout: projectEditorLayout,
-					keyboardShortcutsEnabled,
-					mobileNavigationMode
+					keyboardShortcutsEnabled
 				}
 			});
 
@@ -277,9 +265,6 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				'data-state',
 				keyboardShortcutsEnabled ? 'checked' : 'unchecked'
 			);
-			await expect(
-				accountPage.getByRole('button', { name: mobileNavigationLabel, exact: true })
-			).toHaveAttribute('aria-pressed', 'true');
 
 			await accountPage.getByRole('tab', { name: 'Account', exact: true }).click();
 			const logoutOtherResponsePromise = accountPage.waitForResponse(

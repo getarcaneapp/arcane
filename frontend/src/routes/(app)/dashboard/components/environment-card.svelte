@@ -36,6 +36,7 @@
 		systemStats,
 		liveStatsStatus,
 		countsLoading,
+		attentionCount,
 		menuButtons,
 		debugUpgrade = false,
 		debugVersionInfo,
@@ -48,6 +49,7 @@
 		systemStats: SystemStats | null;
 		liveStatsStatus: DashboardLiveStatsStatus;
 		countsLoading: boolean;
+		attentionCount: number;
 		menuButtons: ActionButton[];
 		debugUpgrade?: boolean;
 		debugVersionInfo: VersionInfo;
@@ -68,7 +70,7 @@
 	const gpuMetric = $derived(getGpuMetric(systemStats));
 </script>
 
-<Card.Root interactive class="@container overflow-hidden">
+<Card.Root variant="embedded" class="@container overflow-hidden">
 	<Card.Content>
 		<div class="flex flex-col gap-4">
 			<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -119,7 +121,7 @@
 						{/if}
 					</div>
 
-					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/70">
+					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
 						{#if environment.id !== '0'}
 							<span>{getAgentTransportLabel(environment)}</span>
 							<span>•</span>
@@ -160,8 +162,8 @@
 						{/if}
 						<span class="text-border">·</span>
 						<span>
-							<span class="font-semibold text-foreground tabular-nums">{overview.actionItemCount}</span>
-							{String(m.dashboard_action_items_title()).toLowerCase()}
+							<span class="font-semibold text-foreground tabular-nums">{attentionCount}</span>
+							{String(m.needs_attention()).toLowerCase()}
 						</span>
 					</div>
 				{/if}
@@ -198,6 +200,7 @@
 							{:else}
 								<MetricTile
 									title={m.cpu_usage()}
+									variant="cpu"
 									icon={CpuIcon}
 									value={formatPercent(cpuMetric)}
 									label={getCpuMetricLabel(systemStats)}
@@ -205,6 +208,7 @@
 								/>
 								<MetricTile
 									title={m.memory_usage()}
+									variant="memory"
 									icon={MemoryStickIcon}
 									value={formatPercent(memoryMetric)}
 									label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
@@ -213,6 +217,7 @@
 								/>
 								<MetricTile
 									title={m.dashboard_meter_disk()}
+									variant="disk"
 									icon={VolumesIcon}
 									value={formatPercent(diskMetric)}
 									label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
@@ -222,6 +227,7 @@
 								{#if gpuMetric !== null}
 									<MetricTile
 										title={m.dashboard_meter_gpu()}
+										variant="cpu"
 										icon={GpuIcon}
 										value={formatPercent(gpuMetric)}
 										label={getGpuMetricLabel(systemStats)}
@@ -233,7 +239,7 @@
 						{#if liveStatsStatus === 'unavailable'}
 							<p class="mt-2 px-2.5 text-xs text-muted-foreground">{m.stats_unavailable()}</p>
 						{:else if liveStatsStatus === 'stale'}
-							<p class="mt-2 px-2.5 text-xs text-warning">{m.stats_stale()}</p>
+							<p class="mt-2 px-2.5 text-xs text-warning-foreground">{m.stats_stale()}</p>
 						{/if}
 					{/if}
 				</div>

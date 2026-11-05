@@ -121,37 +121,62 @@
 <div class="space-y-4">
 	<SettingsSection>
 		<SettingsRow label={m.containers()} description={m.scheduled_prune_containers_description()} layout="wide">
-			<PruneModePicker
-				modeOptions={containerModes}
-				bind:value={containerMode}
-				bind:untilValue={containerUntil}
-				disabled={isPruning}
-			/>
+			{#snippet children({ describedBy })}
+				<PruneModePicker
+					modeOptions={containerModes}
+					bind:value={containerMode}
+					bind:untilValue={containerUntil}
+					disabled={isPruning}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.images()} description={m.prune_images_dialog_description()} layout="wide">
-			<PruneModePicker modeOptions={imageModes} bind:value={imageMode} bind:untilValue={imageUntil} disabled={isPruning} />
+			{#snippet children({ describedBy })}
+				<PruneModePicker
+					modeOptions={imageModes}
+					bind:value={imageMode}
+					bind:untilValue={imageUntil}
+					disabled={isPruning}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.resource_networks_cap()} description={m.scheduled_prune_networks_description()} layout="wide">
-			<PruneModePicker modeOptions={networkModes} bind:value={networkMode} bind:untilValue={networkUntil} disabled={isPruning} />
+			{#snippet children({ describedBy })}
+				<PruneModePicker
+					modeOptions={networkModes}
+					bind:value={networkMode}
+					bind:untilValue={networkUntil}
+					disabled={isPruning}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.resource_volumes_cap()} description={m.prune_volumes_guidance()} layout="wide">
-			<PruneModePicker
-				modeOptions={volumeModes}
-				bind:value={volumeMode}
-				disabled={isPruning}
-				warningTitle={m.prune_volumes_warning_title()}
-				warningDescription={volumeMode === 'all'
-					? m.prune_volumes_warning_description_all()
-					: m.prune_volumes_warning_description()}
-			/>
+			{#snippet children({ describedBy })}
+				<PruneModePicker
+					modeOptions={volumeModes}
+					bind:value={volumeMode}
+					disabled={isPruning}
+					warningTitle={m.prune_volumes_warning_title()}
+					warningDescription={volumeMode === 'all'
+						? m.prune_volumes_warning_description_all()
+						: m.prune_volumes_warning_description()}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.build_cache()} description={m.scheduled_prune_build_cache_description()} layout="wide">
-			<PruneModePicker
-				modeOptions={buildCacheModes}
-				bind:value={buildCacheMode}
-				bind:untilValue={buildCacheUntil}
-				disabled={isPruning}
-			/>
+			{#snippet children({ describedBy })}
+				<PruneModePicker
+					modeOptions={buildCacheModes}
+					bind:value={buildCacheMode}
+					bind:untilValue={buildCacheUntil}
+					disabled={isPruning}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 

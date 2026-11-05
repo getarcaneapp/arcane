@@ -7,7 +7,7 @@ import {
 	CloseIcon,
 	CheckIcon,
 	UpdateIcon,
-	StartIcon,
+	PlayIcon,
 	StopIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
@@ -118,7 +118,7 @@ export const projectStatusFilters: FilterOption[] = [
 	{
 		value: 'running',
 		label: m.common_running(),
-		icon: StartIcon
+		icon: PlayIcon
 	},
 	{
 		value: 'stopped',

@@ -78,8 +78,7 @@
 	];
 
 	function resolveEnvironmentTransport(item: Environment): 'grpc' | 'websocket' | undefined {
-		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected agents still show what they connect with.
+		// Fall back to the last transport so disconnected agents still show one.
 		return (item.connected ? item.agentTransport : undefined) ?? item.lastAgentTransport;
 	}
 
@@ -329,12 +328,12 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: Environment) => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
+		href={(item: Environment) => resolve('/(app)/environments/[id]', { id: item.id })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name || item.id}>
 		<DropdownMenu.Item onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}>
 			<InspectIcon class="size-4" />
 			{m.common_view_details()}

@@ -12,7 +12,7 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		ActivityIcon,
-		AlertTriangleIcon,
+		AlertIcon,
 		CpuIcon,
 		MemoryStickIcon,
 		ClockIcon,
@@ -325,7 +325,6 @@
 <SettingsPageLayout
 	title={m.diagnostics()}
 	description={m.diagnostics_description()}
-	icon={ActivityIcon}
 	pageType="management"
 	statCards={headerStats}
 	{actionButtons}
@@ -345,7 +344,7 @@
 					<div class="space-y-8">
 						{#if diag.runtime.leakedGoroutines > 0}
 							<Alert.Root variant="destructive">
-								<AlertTriangleIcon class="size-4" />
+								<AlertIcon class="size-4" />
 								<Alert.Title>{m.diagnostics_leaks_count({ count: diag.runtime.leakedGoroutines })}</Alert.Title>
 								<Alert.Description>
 									<div class="flex flex-wrap items-center gap-3">

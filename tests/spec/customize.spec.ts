@@ -1,7 +1,7 @@
 import { setCodeMirrorValue, waitForDialogReady } from '../utils/playwright.util';
 import { expect, test, type Page } from '../fixtures/test.fixture';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 
 test.describe('Templates', () => {
 	type GlobalVariable = {
@@ -126,7 +126,7 @@ test.describe('Templates', () => {
 				'Get local environment for variable scope'
 			);
 
-			await page.goto('/customize/variables');
+			await page.goto('/projects/variables');
 			const publicVariable = await createSingleVariable(page, publicKey, publicValue);
 			expect(publicVariable).toMatchObject({
 				key: publicKey,
@@ -199,7 +199,7 @@ test.describe('Templates', () => {
 				expect.arrayContaining([expect.objectContaining({ environmentId: '0', status: 'synced' })])
 			);
 
-			await page.goto('/customize/templates/create');
+			await page.goto('/projects/templates/create');
 			await page.getByRole('button', { name: 'e.g. My Nginx Project', exact: true }).click();
 			const templateNameInput = page
 				.getByPlaceholder('e.g. My Nginx Project', { exact: true })
@@ -237,7 +237,7 @@ test.describe('Templates', () => {
 				`Create template ${templateName}`
 			);
 			templateId = template.id;
-			await expect(page).toHaveURL(`/customize/templates/${template.id}`);
+			await expect(page).toHaveURL(`/projects/templates/${template.id}`);
 
 			await page.getByRole('button', { name: templateName, exact: true }).click();
 			const editTemplateNameInput = page
@@ -343,7 +343,7 @@ test.describe('Templates', () => {
 			});
 			projectId = null;
 
-			await page.goto(`/customize/templates/${template.id}`);
+			await page.goto(`/projects/templates/${template.id}`);
 			await page.getByRole('button', { name: 'Open menu', exact: true }).click();
 			await page.getByRole('menuitem', { name: 'Delete Template', exact: true }).click();
 			const templateDeleteResponsePromise = page.waitForResponse(
@@ -356,7 +356,7 @@ test.describe('Templates', () => {
 				.getByRole('button', { name: 'Delete Template', exact: true })
 				.click();
 			expect((await templateDeleteResponsePromise).ok()).toBe(true);
-			await expect(page).toHaveURL((url) => url.pathname === '/customize/templates');
+			await expect(page).toHaveURL((url) => url.pathname === '/projects/templates');
 			templateId = null;
 		} finally {
 			if (projectId) {
@@ -380,7 +380,7 @@ test.describe('Templates', () => {
 });
 
 test.describe('Registries', () => {
-	const route = '/customize/registries';
+	const route = '/images/registries';
 	const TOKEN = process.env.REGISTRY_TEST_TOKEN ?? 'e2e-token';
 	const pullUsageRoute = /\/api\/registries\/usage(?:\?|$)/;
 	const registryListRoute = /\/api\/registries(?:\?|$)/;
@@ -596,7 +596,7 @@ test.describe('Registries', () => {
 			await page.goto(route);
 			const firstRowCheckbox = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.getByRole('checkbox')
 				.first();
 			await firstRowCheckbox.check();

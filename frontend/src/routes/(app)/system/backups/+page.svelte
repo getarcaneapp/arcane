@@ -598,7 +598,6 @@
 
 {#snippet backupsEmptyState()}
 	<EmptyState
-		variant="plain"
 		icon={BackupIcon}
 		title={m.system_backups_empty_title()}
 		description={m.system_backups_empty_description()}
@@ -871,7 +870,6 @@
 <SettingsPageLayout
 	title={m.system_backups_title()}
 	description={m.system_backups_description()}
-	icon={BackupIcon}
 	pageType="management"
 	showReadOnlyTag={isReadOnly}
 	{actionButtons}

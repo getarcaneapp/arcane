@@ -12,7 +12,7 @@
 	import type { FormInputs } from '#lib/types/ui/form.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
-	import EditableName from '../../../projects/components/editable-name.svelte';
+	import EditableName from '../../components/editable-name.svelte';
 
 	interface ValidationState {
 		composeHasErrors: boolean;
@@ -70,7 +70,7 @@
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}
-					onclick={() => goto(resolve('/(app)/customize/templates'))}
+					onclick={() => goto(resolve('/(app)/projects/templates'))}
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden min-w-0 items-center gap-3 sm:flex">

@@ -8,7 +8,7 @@
 	import StatCard from '#lib/components/stat-card.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
-	import { ResetIcon, type IconType } from '#lib/icons/index.js';
+	import { ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 
@@ -17,7 +17,6 @@
 	interface Props {
 		title: string;
 		description?: string | Snippet;
-		icon: IconType;
 		pageType?: SettingsPageType;
 		showReadOnlyTag?: boolean;
 		actionButtons?: ActionButton[];
@@ -30,7 +29,6 @@
 	let {
 		title,
 		description,
-		icon: Icon,
 		pageType = 'form',
 		showReadOnlyTag = false,
 		actionButtons = [],
@@ -46,44 +44,35 @@
 </script>
 
 <div class={cn('pt-3 pb-5 sm:pb-10 md:pt-5', className)}>
-	<div class="border-b border-border/50 pb-4 sm:pb-6">
-		<div class="flex flex-wrap items-center justify-between gap-4">
-			<div class="flex flex-1 items-start gap-3 sm:gap-4">
-				{#if Icon}
-					<div
-						class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
-					>
-						<Icon class="size-4 sm:size-5" />
+	<div>
+		<div class="flex flex-wrap items-start justify-between gap-4">
+			<div class="min-w-0 flex-1">
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+				{#if description}
+					<p class="mt-1 hidden text-sm text-muted-foreground sm:block">
+						{#if typeof description === 'function'}{@render description()}{:else}{description}{/if}
+					</p>
+				{/if}
+				{#if pageType === 'management' && statCards.length > 0}
+					<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+						{#each statCards as card, i (i)}
+							{#if i > 0}
+								<div class="h-4 w-px bg-border/50"></div>
+							{/if}
+							<StatCard
+								variant="mini"
+								title={card.title}
+								value={card.value}
+								icon={card.icon}
+								iconColor={card.iconColor}
+								class={card.class}
+							/>
+						{/each}
 					</div>
 				{/if}
-				<div class="min-w-0">
-					<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-					{#if description}
-						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">
-							{#if typeof description === 'function'}{@render description()}{:else}{description}{/if}
-						</p>
-					{/if}
-					{#if pageType === 'management' && statCards.length > 0}
-						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-							{#each statCards as card, i (i)}
-								{#if i > 0}
-									<div class="h-4 w-px bg-border/50"></div>
-								{/if}
-								<StatCard
-									variant="mini"
-									title={card.title}
-									value={card.value}
-									icon={card.icon}
-									iconColor={card.iconColor}
-									class={card.class}
-								/>
-							{/each}
-						</div>
-					{/if}
-				</div>
 			</div>
 
-			<div class="flex flex-1 items-center justify-end gap-2">
+			<div class="flex shrink-0 items-center justify-end gap-2">
 				{#if showReadOnlyTag}
 					<SettingLock />
 				{/if}
@@ -91,16 +80,15 @@
 				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag && !isMobile.current}
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						{#if formState.hasChanges}
-							<span class="mr-2 text-xs text-warning">{m.common_unsaved_changes()}</span>
-						{:else}
-							<span class="mr-2 text-xs text-success">{m.common_all_changes_saved()}</span>
+							<span class="mr-2 text-xs text-warning-foreground">{m.common_unsaved_changes()}</span>
+						{:else if formState.hasSaved}
+							<span class="mr-2 text-xs text-mint-foreground">{m.common_all_changes_saved()}</span>
 						{/if}
 
 						{#if formState.hasChanges && formState.resetFunction}
 							<ArcaneButton
 								action="base"
 								tone="outline"
-								size="sm"
 								onclick={() => formState?.resetFunction?.()}
 								disabled={formState.isLoading}
 								class="gap-2"
@@ -114,7 +102,6 @@
 							onclick={() => formState?.saveFunction?.()}
 							disabled={!formState.hasChanges}
 							loading={formState.isLoading}
-							size="sm"
 							class="min-w-20 gap-2"
 						/>
 					</div>
@@ -127,7 +114,7 @@
 		</div>
 	</div>
 
-	<div class="mt-6 sm:mt-8">
+	<div class="mt-5 md:mt-7">
 		{@render mainContent()}
 	</div>
 

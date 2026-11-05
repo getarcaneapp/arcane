@@ -125,7 +125,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: SecretRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.spec.name}>
 		{#if hasPermission('podman-secrets:read', item.environmentId)}
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />

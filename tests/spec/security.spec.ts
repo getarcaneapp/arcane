@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, sortByColumn } from '../utils/table-actions.util';
 
 const ROUTES = {
 	page: '/security',
@@ -346,8 +346,7 @@ test.describe('Security Page', () => {
 		refreshed = tableRequest(
 			(params) => params.get('sort') === 'imageName' && params.get('order') === 'desc'
 		);
-		await panel.getByRole('columnheader', { name: 'Image' }).getByRole('button').click();
-		await page.getByRole('menuitem', { name: 'Desc', exact: true }).click();
+		await sortByColumn(panel, 'Image', 'desc');
 		await refreshed;
 
 		refreshed = tableRequest((params) => params.get('start') === '20');
@@ -658,9 +657,9 @@ test.describe('Disabled vulnerability management', () => {
 		await page.goto('/images');
 		const row = page.getByRole('row').filter({ hasText: 'example/feature-test' });
 		await expect(row).toBeVisible();
-		await expect(
-			page.getByRole('columnheader', { name: 'Vulnerabilities', exact: true })
-		).toHaveCount(0);
+		await expect(page.getByRole('columnheader').filter({ hasText: 'Vulnerabilities' })).toHaveCount(
+			0
+		);
 		const menu = await openRowActionsMenu(page, row);
 		await expect(menu.getByRole('menuitem', { name: 'Scan', exact: true })).toHaveCount(0);
 		await expect(menu.getByRole('menuitem', { name: 'Patch', exact: true })).toBeVisible();

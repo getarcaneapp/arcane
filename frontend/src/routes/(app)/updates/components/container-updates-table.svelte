@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { TableViewMode } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
-	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import VersionCellView from '#lib/components/arcane-table/cells/version-cell.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import {
 		UniversalMobileCard,
@@ -18,6 +18,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import ResourceName from '#lib/components/resource-name.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -31,6 +32,7 @@
 	import type { ContainerPaginatedResponse, ContainerSummary } from '#lib/types/container.js';
 	import type { ImageUpdateInfo } from '#lib/types/image.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -154,17 +156,16 @@
 	const columns = $derived([
 		...environmentColumns<ContainerUpdateRow>(),
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
+		{ accessorKey: 'currentValue', id: 'version', title: m.common_version(), sortable: false, cell: VersionCell },
+		{ accessorKey: 'imageRef', title: m.common_image(), hidden: true, sortable: true, cell: ImageCell },
+		{ accessorKey: 'checkedAt', title: m.last_check(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ContainerUpdateRow>[]);
 
 	const mobileFields = [
-		{ id: 'imageRef', label: m.common_image(), defaultVisible: true },
 		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
 		{ id: 'latestValue', label: m.image_update_latest_label(), defaultVisible: true },
-		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
+		{ id: 'imageRef', label: m.common_image(), defaultVisible: true },
+		{ id: 'checkedAt', label: m.last_check(), defaultVisible: true }
 	];
 
 	async function refreshRows() {
@@ -188,10 +189,7 @@
 		});
 	}
 
-	// Disabling writes to the shared `autoUpdateExcludedContainers` setting, so the
-	// row stays listed (the list is driven by `updateInfo.hasUpdate`, and checks
-	// keep running) and only its rendering changes once the refreshed rows report
-	// the new status back.
+	// Disabling only updates the shared exclusion setting; the row stays listed.
 	async function handleToggleAutoUpdate(item: ContainerUpdateRow) {
 		const enable = item.autoUpdateDisabled;
 		togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [rowKey(item)]: true };
@@ -264,15 +262,24 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ContainerUpdateRow })}
-	<div class="flex items-center gap-2">
-		<a
-			class="font-medium hover:underline {item.autoUpdateDisabled ? 'text-muted-foreground' : ''}"
-			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
-				containerId: item.containerId
-			})}
-		>
-			{item.name}
-		</a>
+	<div class="flex min-w-0 items-center gap-2">
+		<div class="min-w-0">
+			<ResourceName
+				name={item.name}
+				href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+					containerId: item.containerId
+				})}
+				class={cn('font-medium', item.autoUpdateDisabled && 'text-muted-foreground')}
+			>
+				{#snippet tooltip()}
+					<span class="block max-w-tooltip">
+						<span class="block font-medium">{item.name}</span>
+						<code class="block">{item.imageRef}</code>
+					</span>
+				{/snippet}
+			</ResourceName>
+			<code class="block font-mono text-xs whitespace-nowrap text-muted-foreground">{item.imageRef}</code>
+		</div>
 		{#if item.autoUpdateDisabled}
 			<Badge
 				variant="gray"
@@ -291,14 +298,17 @@
 	</div>
 {/snippet}
 
+{#snippet VersionCell({ item, view }: { item: ContainerUpdateRow; view: TableViewMode })}
+	<VersionCellView current={item.currentValue} latest={item.latestValue} wrap={view === 'grid'} />
+{/snippet}
+
 {#snippet ImageCell({ item }: { item: ContainerUpdateRow })}
-	<!-- fallow-ignore-next-line code-duplication -- parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
-	<code class="text-xs">{item.imageRef}</code>
+	<code class="block font-mono text-xs whitespace-nowrap">{item.imageRef}</code>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
 	<IfPermitted perm={['image-updates:read', 'image-updates:apply', 'containers:autoupdate']} envId={item.environmentId}>
-		<RowActionsMenu>
+		<RowActionsMenu name={item.name}>
 			{#if item.updateInfo?.hasUpdate}
 				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
 					<DropdownMenu.Item
@@ -367,18 +377,15 @@
 				getValue: (item: ContainerUpdateRow) => item.latestValue
 			},
 			{
-				label: m.common_updated(),
+				label: m.last_check(),
 				getValue: (item: ContainerUpdateRow) => formatImageUpdateCheckedAt(item.checkedAt)
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: ContainerUpdateRow) => {
-			goto(
-				resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
-					containerId: item.containerId
-				})
-			);
-		}}
+		href={(item: ContainerUpdateRow) =>
+			resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+				containerId: item.containerId
+			})}
 	/>
 {/snippet}
 

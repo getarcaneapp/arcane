@@ -7,10 +7,12 @@
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {
+		name,
 		children,
 		triggerClass = 'size-8',
 		iconClass = 'size-4'
 	}: {
+		name?: string;
 		children: Snippet;
 		triggerClass?: string;
 		iconClass?: string;
@@ -21,7 +23,7 @@
 	<DropdownMenu.Trigger>
 		{#snippet child({ props })}
 			<ArcaneButton {...props} action="base" tone="ghost" size="icon" class={triggerClass}>
-				<span class="sr-only">{m.common_open_menu()}</span>
+				<span class="sr-only">{name ? m.actions_for_name({ name }) : m.common_open_menu()}</span>
 				<EllipsisIcon class={iconClass} />
 			</ArcaneButton>
 		{/snippet}

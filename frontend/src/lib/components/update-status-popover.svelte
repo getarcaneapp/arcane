@@ -7,6 +7,7 @@
 	type TooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
 	interface Props {
+		label: string;
 		open?: boolean;
 		interactive?: boolean;
 		directTrigger?: boolean;
@@ -17,6 +18,7 @@
 	}
 
 	let {
+		label,
 		open = $bindable(false),
 		interactive = false,
 		directTrigger = false,
@@ -31,11 +33,11 @@
 	{#if directTrigger}
 		<ArcaneTooltip.Trigger>
 			{#snippet child({ props })}
-				{@render trigger({ props })}
+				{@render trigger({ props: { ...props, 'aria-label': label } })}
 			{/snippet}
 		</ArcaneTooltip.Trigger>
 	{:else}
-		<ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Trigger aria-label={label} class="touch-hit relative">
 			{@render trigger({ props: {} })}
 		</ArcaneTooltip.Trigger>
 	{/if}

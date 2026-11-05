@@ -17,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const containerRequestOptions = ensureStandaloneContainerUpdatesFilter(
 		resolveInitialTableRequest('arcane-updates-container-table', {
-			pagination: { page: 1, limit: 100 },
+			pagination: { page: 1, limit: 20 },
 			sort: { column: 'created', direction: 'desc' }
 		} satisfies SearchPaginationSortRequest)
 	) as ContainerListRequestOptions;

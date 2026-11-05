@@ -91,7 +91,7 @@
 	>{/snippet}
 
 {#snippet RowActions({ item }: { item: BackupRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.resourceName}>
 		{#if item.resourceType === 'system'}
 			{#if canRestoreBackups}
 				<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}

@@ -41,70 +41,76 @@
 
 <SettingsSection title={m.environments_title()}>
 	<SettingsRow label={m.environment_label_style()} description={m.environment_label_style_description()} layout="switch">
-		<div class="w-52">
-			<SelectWithLabel
-				id="account-environment-label-style"
-				label={m.environment_label_style()}
-				hideLabel
-				triggerSize="sm"
-				value={labelStyle}
-				options={labelStyleOptions}
-				onValueChange={(value) => void saveUserPreferences({ environmentLabelStyle: value as EnvironmentLabelStyle })}
-			/>
-		</div>
+		{#snippet children({ describedBy })}
+			<div class="w-52">
+				<SelectWithLabel
+					id="account-environment-label-style"
+					label={m.environment_label_style()}
+					hideLabel
+					triggerSize="sm"
+					value={labelStyle}
+					options={labelStyleOptions}
+					onValueChange={(value) => void saveUserPreferences({ environmentLabelStyle: value as EnvironmentLabelStyle })}
+					aria-describedby={describedBy}
+				/>
+			</div>
+		{/snippet}
 	</SettingsRow>
 	<SettingsRow label={m.environment_colors()} description={m.environment_colors_description()} layout="wide">
-		<div class="grid gap-1">
-			{#each environments as env (env.id)}
-				{@const color = environmentColor(env.id) ?? ''}
-				{@const disabledColors = environments
-					.filter((other) => other.id !== env.id)
-					.map((other) => environmentColor(other.id))
-					.filter((other): other is string => Boolean(other))}
-				<div class="flex items-center gap-3">
-					<Popover.Root bind:open={() => openPickerId === env.id, (open) => (openPickerId = open ? env.id : null)}>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<button
-									{...props}
-									type="button"
-									class="group/swatch size-5 shrink-0 cursor-pointer"
-									aria-label={`${env.name} ${m.environment_colors()}`}
-								>
-									<span
-										class="block size-full rounded-full border-2 bg-(--swatch) transition-transform group-hover/swatch:scale-110"
-										style:--swatch={color}
-									></span>
-								</button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="start" class="w-auto max-w-80">
-							<AccentColorPicker
-								bind:selectedColor={() => color, (next) => pickColor(env.id, next)}
-								previousColor={color}
-								colors={swatches}
-								withTheme={false}
-								{disabledColors}
-								onCustomColor={() => {
-									openPickerId = null;
-									customColorEnvironmentId = env.id;
-								}}
-							/>
-						</Popover.Content>
-					</Popover.Root>
-					<span class="min-w-0 flex-1 truncate text-sm">{env.name}</span>
-					<ArcaneButton
-						action="base"
-						tone="ghost"
-						size="icon"
-						icon={ResetIcon}
-						showLabel={false}
-						customLabel={m.common_reset()}
-						onclick={() => pickColor(env.id, null)}
-					/>
-				</div>
-			{/each}
-		</div>
+		{#snippet children({ describedBy })}
+			<div class="grid gap-1">
+				{#each environments as env (env.id)}
+					{@const color = environmentColor(env.id) ?? ''}
+					{@const disabledColors = environments
+						.filter((other) => other.id !== env.id)
+						.map((other) => environmentColor(other.id))
+						.filter((other): other is string => Boolean(other))}
+					<div class="flex items-center gap-3">
+						<Popover.Root bind:open={() => openPickerId === env.id, (open) => (openPickerId = open ? env.id : null)}>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<button
+										{...props}
+										type="button"
+										class="group/swatch size-5 shrink-0 cursor-pointer"
+										aria-label={`${env.name} ${m.environment_colors()}`}
+										aria-describedby={describedBy}
+									>
+										<span
+											class="block size-full rounded-full border-2 bg-(--swatch) transition-transform group-hover/swatch:scale-110"
+											style:--swatch={color}
+										></span>
+									</button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-auto max-w-80">
+								<AccentColorPicker
+									bind:selectedColor={() => color, (next) => pickColor(env.id, next)}
+									previousColor={color}
+									colors={swatches}
+									withTheme={false}
+									{disabledColors}
+									onCustomColor={() => {
+										openPickerId = null;
+										customColorEnvironmentId = env.id;
+									}}
+								/>
+							</Popover.Content>
+						</Popover.Root>
+						<span class="min-w-0 flex-1 truncate text-sm">{env.name}</span>
+						<ArcaneButton
+							action="base"
+							tone="ghost"
+							size="icon"
+							icon={ResetIcon}
+							showLabel={false}
+							customLabel={m.common_reset()}
+							onclick={() => pickColor(env.id, null)}
+						/>
+					</div>
+				{/each}
+			</div>
+		{/snippet}
 	</SettingsRow>
 </SettingsSection>
 

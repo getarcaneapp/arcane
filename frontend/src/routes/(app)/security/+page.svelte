@@ -13,10 +13,10 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		ActivityIcon,
-		AlertTriangleIcon,
+		AlertIcon,
 		ImagesIcon,
 		InspectIcon,
-		ScanIcon,
+		SearchIcon,
 		ShieldAlertIcon,
 		ShieldCheckIcon
 	} from '#lib/icons/index.js';
@@ -97,7 +97,6 @@
 	const urlTab = useUrlTab({
 		validTabs: () => ['overview', 'vulnerabilities', 'patches'],
 		defaultTab: () => 'overview',
-		// Legacy /images/vulnerabilities?tab=ignored links open the vulnerability table.
 		aliases: () => ({ ignored: 'vulnerabilities' })
 	});
 	const securityTabItems: TabItem[] = [
@@ -192,16 +191,13 @@
 
 	function handleTabChange(value: string) {
 		urlTab.select(value);
-		// Ignores made in the table change the overview.
 		if (value === 'overview') void refreshOverview();
 	}
 
 	onMount(() => {
-		// Activity ID to type for the patches and scans still running.
 		let activeActivities = new Map<string, string>();
 		let observedScope: string | undefined;
 		return activityStore.subscribeActivities((activities) => {
-			// Patches and scans run in each row's own environment, so every shown one is watched.
 			const environmentIds = environmentStore.shown.map((env) => env.id);
 			const active = new Map(
 				activities
@@ -236,7 +232,6 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					// Walk the merged image list in fixed-size pages, up to a total cap.
 					const environments = vulnerabilityEnvironments().filter(
 						(env) => hasPermission('vulnerabilities:scan', env.id) && hasPermission('images:list', env.id)
 					);
@@ -308,7 +303,6 @@
 						);
 					}
 
-					// Show summary toast (scans run in background; this reflects requests started, not completed)
 					if (failed === 0 && skipped.length > 0) {
 						toast.warning(m.security_scan_all_success({ count: succeeded }));
 					} else if (failed === 0) {
@@ -355,9 +349,10 @@
 		if (canScanVuln) {
 			buttons.push({
 				id: 'scan-all',
-				action: 'base',
+				action: 'inspect',
 				placement: 'primary',
-				label: isLoading.scanningAll ? `${m.scanning()} (${scanProgress.current}/${scanProgress.total})` : m.security_scan_all(),
+				label: m.security_scan_all(),
+				loadingLabel: `${m.scanning()} (${scanProgress.current}/${scanProgress.total})`,
 				onclick: scanAllImages,
 				loading: isLoading.scanningAll,
 				disabled: isLoading.scanningAll || isLoading.refreshing,
@@ -381,7 +376,6 @@
 {#snippet vulnerabilitiesEmptyState()}
 	{#if overview?.drivers.imagesTotal === 0}
 		<EmptyState
-			variant="plain"
 			icon={ImagesIcon}
 			title={m.security_no_images_to_scan()}
 			description={m.security_no_images_description()}
@@ -389,23 +383,11 @@
 			actionHref="/images"
 		/>
 	{:else if overview?.drivers.imagesScanned === 0}
-		<EmptyState
-			variant="plain"
-			icon={ScanIcon}
-			title={m.security_not_scanned_title()}
-			description={m.security_not_scanned_description()}
-			actionLabel={canScanVuln && !isLoading.scanningAll ? m.security_scan_all() : undefined}
-			onAction={scanAllImages}
-		/>
+		<EmptyState icon={SearchIcon} title={m.security_not_scanned_title()} description={m.security_not_scanned_description()} />
 	{:else if !showIgnored && !fixAvailable && vulnerabilities.pagination.totalItems === 0}
-		<EmptyState
-			variant="plain"
-			icon={ShieldCheckIcon}
-			title={m.vuln_no_vulnerabilities()}
-			description={m.security_no_findings_description()}
-		/>
+		<EmptyState icon={ShieldCheckIcon} title={m.vuln_no_vulnerabilities()} description={m.security_no_findings_description()} />
 	{:else}
-		<EmptyState variant="plain" title={m.common_no_results_found()} description={m.common_no_results_hint()} />
+		<EmptyState title={m.common_no_results_found()} description={m.common_no_results_hint()} />
 	{/if}
 {/snippet}
 
@@ -426,7 +408,7 @@
 					{#if overview}
 						<SecurityOverview {overview} onRetry={refreshOverview} onSelectVulnerability={showVulnerability} />
 					{:else if overviewQuery.error}
-						<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+						<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 							<div class="flex flex-wrap items-center justify-between gap-2">
 								<Alert.Description>{extractApiErrorMessage(overviewQuery.error)}</Alert.Description>
 								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refreshOverview} />
@@ -468,7 +450,7 @@
 				</Tabs.Content>
 				<Tabs.Content value="patches" class="mt-4">
 					{#if patchTargetsQuery.error}
-						<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon} class="mb-3">
+						<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon} class="mb-3">
 							<div class="flex flex-wrap items-center justify-between gap-2">
 								<Alert.Description>{extractApiErrorMessage(patchTargetsQuery.error)}</Alert.Description>
 								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={loadPatches} />

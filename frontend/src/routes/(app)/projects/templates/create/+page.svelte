@@ -81,7 +81,7 @@
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async (created) => {
 				toast.success(m.templates_create_template_success({ name: validated.name }));
-				await goto(resolve('/(app)/customize/templates/[id]', { id: created.id }));
+				await goto(resolve('/(app)/projects/templates/[id]', { id: created.id }));
 			}
 		});
 	}
@@ -96,7 +96,7 @@
 	onSubmit={handleCreate}
 >
 	{#snippet toolbarActions()}
-		<ArcaneButton action="cancel" onclick={() => goto(resolve('/(app)/customize/templates'))} disabled={saving} />
+		<ArcaneButton action="cancel" onclick={() => goto(resolve('/(app)/projects/templates'))} disabled={saving} />
 		<ArcaneButton
 			action="create"
 			customLabel={m.templates_create_template()}

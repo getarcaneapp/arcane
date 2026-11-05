@@ -12,9 +12,10 @@
 	type Props = {
 		disabled?: boolean;
 		class?: string;
+		'aria-describedby'?: string;
 	};
 
-	let { disabled = false, class: className = '' }: Props = $props();
+	let { disabled = false, class: className = '', 'aria-describedby': ariaDescribedby }: Props = $props();
 
 	const options = $derived([
 		{ value: 'light', label: m.sidebar_light_mode(), icon: SunIcon },
@@ -38,7 +39,12 @@
 	}
 </script>
 
-<div class={cn('inline-flex rounded-lg bg-muted/40 p-0.5', className)} role="group" aria-label={m.common_toggle_theme()}>
+<div
+	class={cn('inline-flex rounded-lg bg-muted/40 p-0.5', className)}
+	role="group"
+	aria-label={m.common_toggle_theme()}
+	aria-describedby={ariaDescribedby}
+>
 	{#each options as option (option.value)}
 		{@const Icon = option.icon}
 		<button

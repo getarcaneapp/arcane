@@ -44,7 +44,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/role"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
-	"getarcane.dev/arcane/v3/internal/search"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
@@ -244,7 +243,6 @@ var (
 			gitops.New,
 			variable.New,
 			upload.New,
-			search.New,
 			health.New,
 			func(service *activity.ActivityService, localEnvironment *environment.EnvironmentService, eventService *event.EventService) *activity.Module {
 				return activity.New(service, activity.EnvironmentDependencies{

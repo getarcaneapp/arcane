@@ -31,50 +31,56 @@
 	error={errors['destinations']}
 	layout="wide"
 >
-	{#each destinations as destination, index (destination)}
-		<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
-			<div class="flex-1">
-				<TextInputWithLabel
-					id={`telegram-chat-id-${index}`}
-					value={destination.chatId}
-					onChange={(value) => (destination.chatId = value)}
-					label={m.notifications_telegram_chat_id_label()}
-					placeholder={m.notifications_telegram_chat_id_placeholder()}
-					error={errors[`destinations.${index}.chatId`]}
-					{disabled}
+	{#snippet children({ describedBy, errorId })}
+		{#each destinations as destination, index (destination)}
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+				<div class="flex-1">
+					<TextInputWithLabel
+						id={`telegram-chat-id-${index}`}
+						value={destination.chatId}
+						onChange={(value) => (destination.chatId = value)}
+						label={m.notifications_telegram_chat_id_label()}
+						placeholder={m.notifications_telegram_chat_id_placeholder()}
+						error={errors[`destinations.${index}.chatId`]}
+						{disabled}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				</div>
+				<div class="flex-1">
+					<TextInputWithLabel
+						id={`telegram-topic-id-${index}`}
+						value={destination.topicId}
+						onChange={(value) => (destination.topicId = value)}
+						label={m.notifications_telegram_topic_id_label()}
+						placeholder={m.notifications_telegram_topic_id_placeholder()}
+						error={errors[`destinations.${index}.topicId`]}
+						{disabled}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				</div>
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="icon"
+					onclick={() => removeDestination(index)}
+					disabled={disabled || destinations.length <= 1}
+					aria-label={m.common_remove()}
+					class="shrink-0 self-end text-destructive hover:text-destructive sm:mt-7 sm:self-auto"
+					icon={CloseIcon}
 				/>
 			</div>
-			<div class="flex-1">
-				<TextInputWithLabel
-					id={`telegram-topic-id-${index}`}
-					value={destination.topicId}
-					onChange={(value) => (destination.topicId = value)}
-					label={m.notifications_telegram_topic_id_label()}
-					placeholder={m.notifications_telegram_topic_id_placeholder()}
-					error={errors[`destinations.${index}.topicId`]}
-					{disabled}
-				/>
-			</div>
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="icon"
-				onclick={() => removeDestination(index)}
-				disabled={disabled || destinations.length <= 1}
-				aria-label={m.common_remove()}
-				class="shrink-0 self-end text-destructive hover:text-destructive sm:mt-7 sm:self-auto"
-				icon={CloseIcon}
-			/>
-		</div>
-	{/each}
-	<ArcaneButton
-		action="base"
-		tone="outline"
-		size="sm"
-		onclick={addDestination}
-		{disabled}
-		class="w-fit"
-		icon={AddIcon}
-		customLabel={m.notifications_telegram_add_destination()}
-	/>
+		{/each}
+		<ArcaneButton
+			action="base"
+			tone="outline"
+			size="sm"
+			onclick={addDestination}
+			{disabled}
+			class="w-fit"
+			icon={AddIcon}
+			customLabel={m.notifications_telegram_add_destination()}
+		/>
+	{/snippet}
 </SettingsRow>

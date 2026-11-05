@@ -38,15 +38,12 @@
 		containerId?: string;
 		environmentId: string;
 		tagUpdates?: boolean;
-		/** Image reference for ref-scoped checks when no local image ID exists (e.g. not-pulled refs) */
 		imageRef?: string;
 		repo?: string;
 		tag?: string;
 		isLocal?: boolean;
 		onUpdated?: (data: ImageUpdateResponse) => void;
-		/** Callback when user clicks "Update Container" button */
 		onUpdateContainer?: () => void;
-		/** Debug: force hasUpdate to true for testing */
 		debugHasUpdate?: boolean;
 	}
 
@@ -139,7 +136,6 @@
 		return getCheckTimeValue(propInfo) > getCheckTimeValue(checkInfo) ? propInfo : checkInfo;
 	});
 
-	// If debug is enabled, override hasUpdate to true
 	const effectiveUpdateInfo = $derived.by((): ImageUpdateResponse | undefined => {
 		if (!resolvedUpdateInfo) return undefined;
 		if (debugHasUpdate) {
@@ -178,7 +174,21 @@
 		return null;
 	});
 
+	const statusTriggerClass = 'mr-2 inline-flex h-5 min-w-4 items-center gap-1.5 text-left whitespace-nowrap';
+
 	const checkedLabel = $derived(formatRelativeTime(effectiveUpdateInfo?.checkTime));
+
+	const statusLabel = $derived.by((): string => {
+		if (isLocalImage) return m.image_update_local_title();
+		if (!effectiveUpdateInfo) {
+			return isLoadingInBackground || isChecking ? m.image_update_checking_title() : m.image_update_status_unknown();
+		}
+		if (hasError) return m.image_update_check_failed_title();
+		if (effectiveUpdateInfo.updateType === 'not_pulled') return m.image_update_not_pulled_title();
+		if (!effectiveUpdateInfo.hasUpdate) return m.image_update_up_to_date_title();
+		if (effectiveUpdateInfo.updateType === 'digest') return m.image_update_digest_title();
+		return m.image_update_version_title();
+	});
 
 	const currentVersion = $derived(
 		effectiveUpdateInfo?.currentVersion && effectiveUpdateInfo.currentVersion.trim() !== ''
@@ -384,6 +394,19 @@
 	/>
 {/snippet}
 
+{#snippet statusText()}
+	<span
+		class={[
+			'text-xs-plus leading-5',
+			hasError && 'text-destructive',
+			!hasError && effectiveUpdateInfo?.hasUpdate && 'text-update',
+			!hasError && !effectiveUpdateInfo?.hasUpdate && 'text-muted-foreground'
+		]}
+	>
+		{statusLabel}
+	</span>
+{/snippet}
+
 {#snippet unknownState()}
 	<UpdateStatusBanner
 		icon={AlertIcon}
@@ -395,14 +418,11 @@
 {/snippet}
 
 {#if isLocalImage}
-	<UpdateStatusPopover bind:open={isOpen}>
+	<UpdateStatusPopover bind:open={isOpen} label={statusLabel}>
 		{#snippet trigger({ props })}
-			<span
-				{...props}
-				class="mr-2 inline-flex size-4 items-center justify-center align-middle"
-				data-testid="image-update-trigger"
-			>
-				<BoxIcon class="size-4 text-muted-foreground" />
+			<span {...props} class={statusTriggerClass} data-testid="image-update-trigger">
+				<BoxIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+				{@render statusText()}
 			</span>
 		{/snippet}
 
@@ -413,24 +433,21 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else if effectiveUpdateInfo}
-	<UpdateStatusPopover bind:open={isOpen} contentWidth="xl">
+	<UpdateStatusPopover bind:open={isOpen} label={statusLabel} contentWidth="xl">
 		{#snippet trigger({ props })}
-			<span
-				{...props}
-				class="mr-2 inline-flex size-4 items-center justify-center align-middle"
-				data-testid="image-update-trigger"
-			>
+			<span {...props} class={statusTriggerClass} data-testid="image-update-trigger">
 				{#if hasError}
-					<AlertIcon class="size-4 text-destructive" />
+					<AlertIcon class="size-4 shrink-0 text-destructive" aria-hidden="true" />
 				{:else if effectiveUpdateInfo?.updateType === 'not_pulled'}
-					<DownloadIcon class="size-4 text-info" />
+					<DownloadIcon class="size-4 shrink-0 text-info" aria-hidden="true" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
-					<VerifiedCheckIcon class="size-4 text-success" />
+					<VerifiedCheckIcon class="size-4 shrink-0 text-success" aria-hidden="true" />
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
-					<CircleArrowUpIcon class="size-4 text-info" />
+					<CircleArrowUpIcon class="size-4 shrink-0 text-info" aria-hidden="true" />
 				{:else}
-					<CircleArrowUpIcon class="size-4 text-warning" />
+					<CircleArrowUpIcon class="size-4 shrink-0 text-warning" aria-hidden="true" />
 				{/if}
+				{@render statusText()}
 			</span>
 		{/snippet}
 
@@ -469,10 +486,11 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else if isLoadingInBackground || isChecking}
-	<UpdateStatusPopover contentWidth="sm">
+	<UpdateStatusPopover label={statusLabel} contentWidth="sm">
 		{#snippet trigger({ props })}
-			<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
-				<Spinner tone="info" class="size-4" />
+			<span {...props} class={statusTriggerClass} data-testid="image-update-trigger">
+				<Spinner tone="info" class="size-4 shrink-0" />
+				{@render statusText()}
 			</span>
 		{/snippet}
 
@@ -483,26 +501,28 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else}
-	<UpdateStatusPopover interactive directTrigger={canCheckUpdate} contentWidth="md">
+	<UpdateStatusPopover label={statusLabel} interactive directTrigger={canCheckUpdate} contentWidth="md">
 		{#snippet trigger({ props })}
 			{#if canCheckUpdate}
 				{@const triggerProps = mergeProps(props, {
 					onclick: checkImageUpdate,
 					class:
-						'mr-2 inline-flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-info disabled:cursor-not-allowed'
+						'relative touch-hit mr-2 inline-flex min-h-4 min-w-4 items-center gap-1.5 rounded-full text-left whitespace-nowrap text-muted-foreground transition-colors hover:text-info disabled:cursor-not-allowed'
 				})}
 				<button {...triggerProps} disabled={isChecking} data-testid="image-update-trigger">
 					{#if isChecking}
-						<Spinner tone="info" class="size-3" />
+						<Spinner tone="info" class="size-3 shrink-0" />
 					{:else}
 						<UncheckedRingIcon />
 					{/if}
+					{@render statusText()}
 				</button>
 			{:else}
-				<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
-					<div class="flex size-4 items-center justify-center text-muted-foreground opacity-30">
+				<span {...props} class={statusTriggerClass} data-testid="image-update-trigger">
+					<div class="flex size-4 shrink-0 items-center justify-center text-muted-foreground opacity-30" aria-hidden="true">
 						<UncheckedRingIcon />
 					</div>
+					{@render statusText()}
 				</span>
 			{/if}
 		{/snippet}

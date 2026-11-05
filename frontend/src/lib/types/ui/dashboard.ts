@@ -9,7 +9,6 @@ export interface DashboardEnvironmentOverview {
 	imageUsageCounts: ImageUsageCounts;
 	updates: number;
 	vulnerabilities: number;
-	actionItemCount: number;
 	versionInfo?: VersionInfo;
 	podCount?: number;
 	error?: string;

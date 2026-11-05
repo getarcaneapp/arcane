@@ -250,7 +250,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: User })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.username}>
 		<IfPermitted perm="users:update">
 			<DropdownMenu.Item onclick={() => onEditUser(item)}>
 				<EditIcon class="size-4" />

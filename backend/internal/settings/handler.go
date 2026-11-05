@@ -179,7 +179,7 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 	if err != nil {
 		return nil, err
 	}
-	results := search.Search(categories.Body, input.Body.Query, types.SearchProfileSettings)
+	results := search.Search(categories.Body, input.Body.Query)
 	return &SearchSettingsOutput{Body: results}, nil
 }
 

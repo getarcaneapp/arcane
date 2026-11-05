@@ -1,5 +1,7 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn, type WithElementRef } from '#lib/utils.js';
 
 	export const codeBlockVariants = tv({
 		base: 'rounded-lg text-sm data-[size=sm]:text-xs has-[>[data-slot=code-block-content]:focus-visible]:ring-3 has-[>[data-slot=code-block-content]:focus-visible]:ring-ring/50 group/code-block relative flex w-full min-w-0 flex-col overflow-hidden',
@@ -22,8 +24,6 @@
 
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-
-	import { cn, type WithElementRef } from '#lib/utils.js';
 
 	let {
 		ref = $bindable(null),

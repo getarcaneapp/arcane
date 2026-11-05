@@ -2,7 +2,7 @@ import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { removeApiResource, fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, sortByColumn } from '../utils/table-actions.util';
 
 let volumeCount: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
@@ -531,8 +531,7 @@ test.describe('Volumes shift-select', () => {
 			.click();
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toBeVisible();
 		await rowCheckbox(page, 4).click();
-		await page.getByRole('button', { name: 'Name', exact: true }).click();
-		await page.getByRole('menuitem', { name: 'Desc' }).click();
+		await sortByColumn(page, 'Name', 'desc');
 		await expect(page.getByRole('link', { name: mockVolume(30).name, exact: true })).toBeVisible();
 		await rowCheckbox(page, 12).click({ modifiers: ['Shift'] });
 		await expectSelected(page, [12], true);

@@ -17,7 +17,9 @@
 
 <SettingsSection>
 	<SettingsRow for="{id}-enabled" label={title} {description} layout="switch">
-		<Switch id="{id}-enabled" bind:checked={enabled} {disabled} />
+		{#snippet children({ describedBy })}
+			<Switch id="{id}-enabled" bind:checked={enabled} {disabled} aria-describedby={describedBy} />
+		{/snippet}
 	</SettingsRow>
 	{#if enabled && children}
 		{@render children()}

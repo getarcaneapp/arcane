@@ -214,7 +214,7 @@
 
 {#snippet RowActions({ item }: { item: FederatedCredential })}
 	{#if canUpdateFederatedCredentials || canDeleteFederatedCredentials}
-		<RowActionsMenu>
+		<RowActionsMenu name={item.name}>
 			{#if canUpdateFederatedCredentials}
 				<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
 					<EditIcon class="size-4" />

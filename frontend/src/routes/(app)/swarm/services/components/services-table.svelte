@@ -13,7 +13,7 @@
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
@@ -145,7 +145,7 @@
 {#snippet NameCell({ item }: { item: ServiceRow })}
 	<a
 		href={resolve(`/(app)/swarm/services/[serviceId]?env=${encodeURIComponent(item.environmentId)}`, { serviceId: item.id })}
-		class="text-sm font-medium text-primary hover:underline"
+		class="text-sm font-medium text-primary-text hover:underline"
 	>
 		{getShortName(item.name, item.stackName)}
 	</a>
@@ -208,7 +208,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={() => ({
-			component: DockIcon,
+			component: ContainersIcon,
 			variant: modeIconVariant(item.mode)
 		})}
 		title={(item: ServiceRow) => getShortName(item.name, item.stackName)}
@@ -257,7 +257,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ServiceRow })}
-	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+	<RowActionsMenu name={item.name} triggerClass="relative size-8 p-0" iconClass="">
 		<DropdownMenu.Item onclick={() => inspectService(item)}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}

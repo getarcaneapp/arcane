@@ -45,11 +45,14 @@
 		layout="switch"
 		mixed={mixed('lifecycleEnabled')}
 	>
-		<Switch
-			id="lifecycleEnabledSwitch"
-			bind:checked={formInputs.lifecycleEnabled.value}
-			data-mixed={!!mixed('lifecycleEnabled') || undefined}
-		/>
+		{#snippet children({ describedBy })}
+			<Switch
+				id="lifecycleEnabledSwitch"
+				bind:checked={formInputs.lifecycleEnabled.value}
+				data-mixed={!!mixed('lifecycleEnabled') || undefined}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	<SettingsRow
@@ -60,12 +63,16 @@
 		error={formInputs.lifecycleDefaultRunnerImage.error}
 		mixed={mixed('lifecycleDefaultRunnerImage')}
 	>
-		<Input
-			id="lifecycleDefaultRunnerImage"
-			bind:value={formInputs.lifecycleDefaultRunnerImage.value}
-			placeholder={mixed('lifecycleDefaultRunnerImage') ? m.mixed() : 'alpine:latest'}
-			aria-invalid={!!formInputs.lifecycleDefaultRunnerImage.error}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="lifecycleDefaultRunnerImage"
+				bind:value={formInputs.lifecycleDefaultRunnerImage.value}
+				placeholder={mixed('lifecycleDefaultRunnerImage') ? m.mixed() : 'alpine:latest'}
+				aria-invalid={!!formInputs.lifecycleDefaultRunnerImage.error}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	<SettingsRow
@@ -76,12 +83,16 @@
 		error={formInputs.lifecycleMaxTimeoutSec.error}
 		mixed={mixed('lifecycleMaxTimeoutSec')}
 	>
-		<Input
-			id="lifecycleMaxTimeoutSec"
-			type="number"
-			bind:value={formInputs.lifecycleMaxTimeoutSec.value}
-			aria-invalid={!!formInputs.lifecycleMaxTimeoutSec.error}
-			placeholder={mixed('lifecycleMaxTimeoutSec') ? m.mixed() : undefined}
-		/>
+		{#snippet children({ describedBy, errorId })}
+			<Input
+				id="lifecycleMaxTimeoutSec"
+				type="number"
+				bind:value={formInputs.lifecycleMaxTimeoutSec.value}
+				aria-invalid={!!formInputs.lifecycleMaxTimeoutSec.error}
+				placeholder={mixed('lifecycleMaxTimeoutSec') ? m.mixed() : undefined}
+				aria-describedby={describedBy}
+				aria-errormessage={errorId}
+			/>
+		{/snippet}
 	</SettingsRow>
 </SettingsSection>

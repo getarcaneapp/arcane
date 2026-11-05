@@ -29,7 +29,7 @@
 	};
 	const TONE_TEXT = {
 		default: 'text-foreground',
-		warning: 'text-warning',
+		warning: 'text-warning-foreground',
 		destructive: 'text-destructive'
 	};
 	const SPARK_HEIGHT = 32;
@@ -136,7 +136,7 @@
 )}
 	<div class="flex min-w-0 flex-col gap-3">
 		<div class="flex min-w-0 flex-col items-center gap-3 @md:flex-row">
-			<MetricRing percent={percent ?? 0} {variant} size={80} stroke={6}>
+			<MetricRing percent={percent ?? 0} {variant} tone={getUsageTone(percent ?? 0)} size={80} stroke={6}>
 				<span class={cn('text-lg font-semibold tabular-nums', TONE_TEXT[getUsageTone(percent ?? 0)])}>
 					{percent === undefined ? '--' : `${percent.toFixed(1)}%`}
 				</span>

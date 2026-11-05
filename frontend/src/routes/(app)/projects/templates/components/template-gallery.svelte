@@ -202,7 +202,7 @@
 			icon={TemplateIcon}
 			title={m.templates_no_templates()}
 			actionLabel={canCreateTemplate ? m.templates_create_template() : undefined}
-			actionHref={canCreateTemplate ? '/customize/templates/create' : undefined}
+			actionHref={canCreateTemplate ? '/projects/templates/create' : undefined}
 		/>
 	{/if}
 </div>

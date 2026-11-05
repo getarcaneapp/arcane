@@ -15,8 +15,6 @@ export interface NormalizedCategory {
 	title: string;
 	description: string;
 	icon: Component;
-	// Resolved navigation target (customize uses category.url directly,
-	// settings resolves some ids to a different url — both flatten to this).
 	href: string;
 	matchingItems?: CategoryMatchingItem[];
 }

@@ -80,7 +80,6 @@
 	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
 	const currentEnvId = $derived(data.envId);
-	// A volume opened from another environment follows that environment's settings.
 	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
 	const volumeSettings = $derived(environmentSettings.current?.runtime);
 	// Until the backup volume name is known, the volume cannot be removed.
@@ -874,7 +873,7 @@
 						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 							<a
 								href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: c.id })}
-								class="flex items-center text-primary hover:underline"
+								class="flex items-center text-primary-text hover:underline"
 							>
 								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 								{c.name}
@@ -892,14 +891,13 @@
 				{/each}
 			</div>
 		{:else if volume.containers && volume.containers.length > 0}
-			<!-- Fallback to IDs if names not resolved -->
 			<div class="divide-y rounded-lg border">
 				{#each volume.containers as id (id)}
 					<div class="flex items-center justify-between gap-3 p-3">
 						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
 						<a
 							href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: id })}
-							class="text-sm text-primary hover:underline">{m.common_view()}</a
+							class="text-sm text-primary-text hover:underline">{m.common_view()}</a
 						>
 					</div>
 				{/each}

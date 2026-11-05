@@ -11,7 +11,6 @@
 		...restProps
 	}: TabsPrimitive.TriggerProps & {
 		size?: 'default' | 'sm';
-		/** Tints the active state for options with destructive effects. */
 		variant?: 'default' | 'destructive' | 'underline';
 	} = $props();
 </script>
@@ -21,7 +20,7 @@
 	class={cn(
 		'inline-flex items-center justify-center gap-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
 		variant !== 'underline' &&
-			'rounded-lg px-3 py-1.5 hover:text-primary data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-primary/30 dark:hover:text-primary-tint dark:data-[state=active]:text-primary-tint',
+			'rounded-lg px-3 py-1.5 hover:text-primary-text data-[state=active]:bg-primary/15 data-[state=active]:text-primary-text data-[state=active]:ring-1 data-[state=active]:ring-primary/30',
 		variant === 'underline' &&
 			'border-b-2 border-transparent pt-1 pb-2 hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground',
 		size === 'sm' && 'text-xs',

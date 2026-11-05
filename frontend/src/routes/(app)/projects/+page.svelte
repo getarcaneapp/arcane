@@ -9,7 +9,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
+	import { BoxIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
@@ -112,10 +112,7 @@
 		projectTagsQuery.isError || projectTagsQuery.data?.value.failedEnvironments.length ? projectTagsQuery.refetch() : undefined;
 
 	async function updateEnvironmentProjects(requestedEnvId: string) {
-		// Refresh update info for all images, then redeploy only the projects the
-		// list reports as having updates. This avoids hitting every project (and
-		// its registry) when nothing has changed, which is especially expensive on
-		// instances with many projects.
+		// Refresh image updates, then redeploy only projects the list reports as outdated.
 		const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
 
 		// The updates filter is evaluated over every candidate in one pass, so a single unbounded request is cheapest.
@@ -132,8 +129,7 @@
 
 		const results = await Promise.allSettled(
 			projectsToUpdate.map(async (proj) => {
-				// deployProject with pullPolicy 'always' already pulls fresh images,
-				// so no separate pullProjectImages call is needed.
+				// pullPolicy always already pulls fresh images.
 				await projectService.deployProject(proj.id, 'up', { pullPolicy: 'always' }, requestedEnvId);
 				return proj.name;
 			})
@@ -273,7 +269,7 @@
 		{
 			title: m.common_running(),
 			value: runningCompose,
-			icon: StartIcon,
+			icon: PlayIcon,
 			iconColor: 'text-success'
 		},
 		{
@@ -292,14 +288,7 @@
 </script>
 
 {#snippet projectsEmptyState()}
-	<EmptyState
-		variant="plain"
-		icon={ProjectsIcon}
-		title={m.projects_empty_title()}
-		description={m.projects_empty_description()}
-		actionLabel={canCreateProject ? m.compose_create_project() : undefined}
-		actionHref="/projects/new"
-	/>
+	<EmptyState icon={ProjectsIcon} title={m.projects_empty_title()} description={m.projects_empty_description()} />
 {/snippet}
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>

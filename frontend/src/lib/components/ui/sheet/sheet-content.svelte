@@ -1,5 +1,7 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 	export const sheetVariants = tv({
 		base: 'text-foreground bg-white dark:bg-surface/10 backdrop-blur-md border border-border/70 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fill-mode-forwards fixed z-(--arcane-z-surface) flex flex-col gap-4 ease-in-out data-[state=closed]:animation-duration-300 data-[state=open]:animation-duration-500',
 		variants: {
@@ -26,7 +28,6 @@
 
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 
 	import SheetOverlay from './sheet-overlay.svelte';
 

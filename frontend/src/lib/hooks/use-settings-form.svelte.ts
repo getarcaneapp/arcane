@@ -18,6 +18,7 @@ export class UseSettingsForm<
 	TSaveData extends SettingsPayload
 > implements SettingsFormState {
 	#isLoading = $state(false);
+	#hasSaved = $state(false);
 	#formValues: () => TFormInputs;
 	#saveFunction: (() => Promise<void> | void) | null = null;
 	#resetFunction: (() => void) | null = null;
@@ -53,11 +54,12 @@ export class UseSettingsForm<
 	});
 
 	async updateSettings(updatedSettings: Partial<TSaveData>) {
-		if (!this.customOnSave) {
+		if (this.customOnSave) {
+			await this.customOnSave({ ...this.getCurrentSettings(), ...updatedSettings });
+		} else {
 			await settingsStore.save(updatedSettings);
-			return;
 		}
-		await this.customOnSave({ ...this.getCurrentSettings(), ...updatedSettings });
+		this.#hasSaved = true;
 	}
 
 	registerFormActions(saveFunction: () => Promise<void> | void, resetFunction: () => void) {
@@ -78,13 +80,15 @@ export class UseSettingsForm<
 		return this.#isLoading;
 	}
 
-	// Read through SettingsFormState by the settings layouts.
+	get hasSaved() {
+		return this.#hasSaved;
+	}
+
 	// fallow-ignore-next-line unused-class-member
 	get saveFunction() {
 		return this.#saveFunction ?? undefined;
 	}
 
-	// Read through SettingsFormState by the settings layouts.
 	// fallow-ignore-next-line unused-class-member
 	get resetFunction() {
 		return this.#resetFunction ?? undefined;

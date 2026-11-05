@@ -20,6 +20,8 @@
 		step,
 		autocomplete = 'off',
 		required = false,
+		'aria-describedby': ariaDescribedby,
+		'aria-errormessage': ariaErrormessage,
 		onChange
 	}: {
 		id?: string;
@@ -37,6 +39,8 @@
 		step?: HTMLInputAttributes['step'];
 		autocomplete?: HTMLInputElement['autocomplete'];
 		required?: boolean;
+		'aria-describedby'?: string;
+		'aria-errormessage'?: string;
 		onChange?: (value: string) => void;
 	} = $props();
 
@@ -75,7 +79,9 @@
 		{autocomplete}
 		{required}
 		oninput={handleInput}
-		aria-invalid={!!error}
+		aria-invalid={!!error || !!ariaErrormessage}
+		aria-describedby={ariaDescribedby}
+		aria-errormessage={ariaErrormessage}
 	/>
 
 	{#if error}

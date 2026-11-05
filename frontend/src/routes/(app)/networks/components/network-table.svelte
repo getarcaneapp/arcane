@@ -21,6 +21,7 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { DEFAULT_NETWORK_NAMES } from '#lib/constants.js';
@@ -126,16 +127,6 @@
 	const isAnyLoading = $derived(Object.values(isLoading).some((l) => l));
 	const canDeleteNetwork = $derived(hasShownPermission('networks:delete'));
 
-	function getDriverVariant(driver: string): 'blue' | 'purple' | 'red' | 'orange' | 'gray' {
-		const variantMap: Record<string, 'blue' | 'purple' | 'red' | 'orange' | 'gray'> = {
-			bridge: 'blue',
-			overlay: 'purple',
-			ipvlan: 'red',
-			macvlan: 'orange'
-		};
-		return variantMap[driver] || 'gray';
-	}
-
 	function getNetworkStatusBadge(
 		item: NetworkRow,
 		visible: boolean
@@ -211,11 +202,11 @@
 {/snippet}
 
 {#snippet DriverCell({ item }: { item: NetworkRow })}
-	<Badge variant={getDriverVariant(item.driver)} minWidth="20">{capitalizeFirstLetter(item.driver)}</Badge>
+	<span class="text-sm text-muted-foreground">{capitalizeFirstLetter(item.driver)}</span>
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: NetworkRow })}
-	<Badge variant={item.scope === 'local' ? 'green' : 'amber'} minWidth="20">{capitalizeFirstLetter(item.scope)}</Badge>
+	<span class="text-sm text-muted-foreground">{capitalizeFirstLetter(item.scope)}</span>
 {/snippet}
 
 {#snippet SubnetCell({ item }: { item: NetworkRow })}
@@ -268,8 +259,6 @@
 				getValue: (item: NetworkRow) => capitalizeFirstLetter(item.driver),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
-				type: 'badge' as const,
-				badgeVariant: getDriverVariant(item.driver),
 				show: mobileFieldVisibility['driver'] ?? true
 			},
 			{
@@ -277,8 +266,6 @@
 				getValue: (item: NetworkRow) => capitalizeFirstLetter(item.scope),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
-				type: 'badge' as const,
-				badgeVariant: item.scope === 'local' ? ('green' as const) : ('amber' as const),
 				show: mobileFieldVisibility['scope'] ?? true
 			},
 			{
@@ -299,13 +286,12 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id }))}
+		href={() => resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: NetworkRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() =>
 				goto(resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id }))}
@@ -343,4 +329,8 @@
 	{mobileFields}
 	rowActions={RowActions}
 	mobileCard={NetworkMobileCardSnippet}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={NetworksIcon} title={m.no_networks_yet()} description={m.create_network_to_connect_containers()} />
+	{/snippet}
+</ArcaneTable>

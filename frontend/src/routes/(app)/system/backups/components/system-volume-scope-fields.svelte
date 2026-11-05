@@ -67,14 +67,17 @@
 		label={m.system_volume_backups_selection_mode()}
 		description={m.system_volume_backups_selection_description()}
 	>
-		<SelectWithLabel
-			id={`${idPrefix}-selection-mode`}
-			hideLabel
-			value={selectionMode}
-			onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeSelectionMode })}
-			label={m.system_volume_backups_selection_mode()}
-			options={selectionOptions}
-		/>
+		{#snippet children({ describedBy })}
+			<SelectWithLabel
+				id={`${idPrefix}-selection-mode`}
+				hideLabel
+				value={selectionMode}
+				onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeSelectionMode })}
+				label={m.system_volume_backups_selection_mode()}
+				options={selectionOptions}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 
 	{#if selectionMode !== 'all'}
@@ -87,35 +90,38 @@
 				: m.system_volume_backups_blocklist_help()}
 			layout="wide"
 		>
-			<div class="space-y-2">
-				<Input bind:value={search} placeholder={m.system_volume_backups_search_volumes()} />
-				<div class="h-56 overflow-hidden rounded-md border">
-					<ScrollArea class="h-full">
-						{#if loading}
-							<div class="flex h-24 items-center justify-center"><LoadingSpinnerIcon class="size-5 animate-spin" /></div>
-						{:else}
-							<div class="divide-y divide-border/50">
-								{#each filteredOptions as option (option.name)}
-									<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
-										<Checkbox.Root
-											checked={volumeNames.includes(option.name)}
-											onCheckedChange={(value) => toggleVolume(option.name, value === true)}
-										/>
-										<span class="min-w-0 flex-1 truncate text-sm">{option.name}</span>
-										{#if option.anonymous}<Badge variant="amber" size="sm">{m.system_volume_backups_anonymous()}</Badge>{/if}
-										{#if !option.available}<Badge variant="gray" size="sm">{m.system_volume_backups_unavailable()}</Badge>{/if}
-									</label>
-								{/each}
-								{#if filteredOptions.length === 0}
-									<p class="px-3 py-8 text-center text-sm text-muted-foreground">
-										{m.system_volume_backups_no_matching_volumes()}
-									</p>
-								{/if}
-							</div>
-						{/if}
-					</ScrollArea>
+			{#snippet children({ describedBy })}
+				<div class="space-y-2">
+					<Input bind:value={search} placeholder={m.system_volume_backups_search_volumes()} aria-describedby={describedBy} />
+					<div class="h-56 overflow-hidden rounded-md border">
+						<ScrollArea class="h-full">
+							{#if loading}
+								<div class="flex h-24 items-center justify-center"><LoadingSpinnerIcon class="size-5 animate-spin" /></div>
+							{:else}
+								<div class="divide-y divide-border/50">
+									{#each filteredOptions as option (option.name)}
+										<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+											<Checkbox.Root
+												checked={volumeNames.includes(option.name)}
+												onCheckedChange={(value) => toggleVolume(option.name, value === true)}
+												aria-describedby={describedBy}
+											/>
+											<span class="min-w-0 flex-1 truncate text-sm">{option.name}</span>
+											{#if option.anonymous}<Badge variant="amber" size="sm">{m.system_volume_backups_anonymous()}</Badge>{/if}
+											{#if !option.available}<Badge variant="gray" size="sm">{m.system_volume_backups_unavailable()}</Badge>{/if}
+										</label>
+									{/each}
+									{#if filteredOptions.length === 0}
+										<p class="px-3 py-8 text-center text-sm text-muted-foreground">
+											{m.system_volume_backups_no_matching_volumes()}
+										</p>
+									{/if}
+								</div>
+							{/if}
+						</ScrollArea>
+					</div>
 				</div>
-			</div>
+			{/snippet}
 		</SettingsRow>
 	{/if}
 
@@ -125,10 +131,13 @@
 		description={m.system_volume_backups_ignore_anonymous_description()}
 		layout="switch"
 	>
-		<Switch
-			id={`${idPrefix}-ignore-anonymous`}
-			checked={ignoreAnonymous}
-			onCheckedChange={(value) => onChange({ ignoreAnonymous: value })}
-		/>
+		{#snippet children({ describedBy })}
+			<Switch
+				id={`${idPrefix}-ignore-anonymous`}
+				checked={ignoreAnonymous}
+				onCheckedChange={(value) => onChange({ ignoreAnonymous: value })}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
 	</SettingsRow>
 </SettingsSection>

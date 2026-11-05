@@ -23,6 +23,7 @@
 		olderThanMode?: string;
 		warningTitle?: string;
 		warningDescription?: string;
+		'aria-describedby'?: string;
 	}
 
 	let {
@@ -32,7 +33,8 @@
 		disabled = false,
 		olderThanMode = 'olderThan',
 		warningTitle,
-		warningDescription
+		warningDescription,
+		'aria-describedby': ariaDescribedby
 	}: Props = $props();
 
 	const defaultDurationAmountInternal = '24';
@@ -97,7 +99,7 @@
 
 <div class="flex flex-col gap-2.5">
 	<Tabs.Root {value} onValueChange={handleModeChange}>
-		<Tabs.List class="min-h-8 w-full sm:w-fit">
+		<Tabs.List class="min-h-8 w-full sm:w-fit" aria-describedby={ariaDescribedby}>
 			{#each modeOptions as option (option.value)}
 				<Tabs.Trigger
 					value={option.value}

@@ -95,7 +95,6 @@ export type UserPreferences = {
 	animationsEnabled?: boolean;
 	sidebarHoverExpansion?: boolean;
 	keyboardShortcutsEnabled?: boolean;
-	mobileNavigationMode?: 'floating' | 'docked';
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;

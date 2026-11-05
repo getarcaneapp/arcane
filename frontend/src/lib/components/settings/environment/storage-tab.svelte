@@ -19,12 +19,16 @@
 			error={formInputs.projectsDirectory.error}
 			mixed={mixed('projectsDirectory')}
 		>
-			<Input
-				id="projects-directory"
-				bind:value={formInputs.projectsDirectory.value}
-				aria-invalid={!!formInputs.projectsDirectory.error}
-				placeholder={mixed('projectsDirectory') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="projects-directory"
+					bind:value={formInputs.projectsDirectory.value}
+					aria-invalid={!!formInputs.projectsDirectory.error}
+					placeholder={mixed('projectsDirectory') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="templates-directory"
@@ -33,12 +37,16 @@
 			error={formInputs.templatesDirectory.error}
 			mixed={mixed('templatesDirectory')}
 		>
-			<Input
-				id="templates-directory"
-				bind:value={formInputs.templatesDirectory.value}
-				aria-invalid={!!formInputs.templatesDirectory.error}
-				placeholder={mixed('templatesDirectory') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="templates-directory"
+					bind:value={formInputs.templatesDirectory.value}
+					aria-invalid={!!formInputs.templatesDirectory.error}
+					placeholder={mixed('templatesDirectory') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="swarm-stack-sources-directory"
@@ -47,12 +55,16 @@
 			error={formInputs.swarmStackSourcesDirectory.error}
 			mixed={mixed('swarmStackSourcesDirectory')}
 		>
-			<Input
-				id="swarm-stack-sources-directory"
-				bind:value={formInputs.swarmStackSourcesDirectory.value}
-				aria-invalid={!!formInputs.swarmStackSourcesDirectory.error}
-				placeholder={mixed('swarmStackSourcesDirectory') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="swarm-stack-sources-directory"
+					bind:value={formInputs.swarmStackSourcesDirectory.value}
+					aria-invalid={!!formInputs.swarmStackSourcesDirectory.error}
+					placeholder={mixed('swarmStackSourcesDirectory') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="disk-usage-path"
@@ -61,12 +73,16 @@
 			error={formInputs.diskUsagePath.error}
 			mixed={mixed('diskUsagePath')}
 		>
-			<Input
-				id="disk-usage-path"
-				bind:value={formInputs.diskUsagePath.value}
-				aria-invalid={!!formInputs.diskUsagePath.error}
-				placeholder={mixed('diskUsagePath') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="disk-usage-path"
+					bind:value={formInputs.diskUsagePath.value}
+					aria-invalid={!!formInputs.diskUsagePath.error}
+					placeholder={mixed('diskUsagePath') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="follow-project-symlinks"
@@ -75,11 +91,14 @@
 			layout="switch"
 			mixed={mixed('followProjectSymlinks')}
 		>
-			<Switch
-				id="follow-project-symlinks"
-				bind:checked={formInputs.followProjectSymlinks.value}
-				data-mixed={!!mixed('followProjectSymlinks') || undefined}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="follow-project-symlinks"
+					bind:checked={formInputs.followProjectSymlinks.value}
+					data-mixed={!!mixed('followProjectSymlinks') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
@@ -91,13 +110,17 @@
 			error={formInputs.maxImageUploadSize.error}
 			mixed={mixed('maxImageUploadSize')}
 		>
-			<Input
-				id="max-upload-size"
-				type="number"
-				bind:value={formInputs.maxImageUploadSize.value}
-				aria-invalid={!!formInputs.maxImageUploadSize.error}
-				placeholder={mixed('maxImageUploadSize') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="max-upload-size"
+					type="number"
+					bind:value={formInputs.maxImageUploadSize.value}
+					aria-invalid={!!formInputs.maxImageUploadSize.error}
+					placeholder={mixed('maxImageUploadSize') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
@@ -109,13 +132,17 @@
 			error={formInputs.gitSyncMaxFiles.error}
 			mixed={mixed('gitSyncMaxFiles')}
 		>
-			<Input
-				id="git-sync-max-files"
-				type="number"
-				bind:value={formInputs.gitSyncMaxFiles.value}
-				aria-invalid={!!formInputs.gitSyncMaxFiles.error}
-				placeholder={mixed('gitSyncMaxFiles') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="git-sync-max-files"
+					type="number"
+					bind:value={formInputs.gitSyncMaxFiles.value}
+					aria-invalid={!!formInputs.gitSyncMaxFiles.error}
+					placeholder={mixed('gitSyncMaxFiles') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="git-sync-max-total-size"
@@ -124,13 +151,17 @@
 			error={formInputs.gitSyncMaxTotalSizeMb.error}
 			mixed={mixed('gitSyncMaxTotalSizeMb')}
 		>
-			<Input
-				id="git-sync-max-total-size"
-				type="number"
-				bind:value={formInputs.gitSyncMaxTotalSizeMb.value}
-				aria-invalid={!!formInputs.gitSyncMaxTotalSizeMb.error}
-				placeholder={mixed('gitSyncMaxTotalSizeMb') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="git-sync-max-total-size"
+					type="number"
+					bind:value={formInputs.gitSyncMaxTotalSizeMb.value}
+					aria-invalid={!!formInputs.gitSyncMaxTotalSizeMb.error}
+					placeholder={mixed('gitSyncMaxTotalSizeMb') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="git-sync-max-binary-size"
@@ -139,13 +170,17 @@
 			error={formInputs.gitSyncMaxBinarySizeMb.error}
 			mixed={mixed('gitSyncMaxBinarySizeMb')}
 		>
-			<Input
-				id="git-sync-max-binary-size"
-				type="number"
-				bind:value={formInputs.gitSyncMaxBinarySizeMb.value}
-				aria-invalid={!!formInputs.gitSyncMaxBinarySizeMb.error}
-				placeholder={mixed('gitSyncMaxBinarySizeMb') ? m.mixed() : undefined}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="git-sync-max-binary-size"
+					type="number"
+					bind:value={formInputs.gitSyncMaxBinarySizeMb.value}
+					aria-invalid={!!formInputs.gitSyncMaxBinarySizeMb.error}
+					placeholder={mixed('gitSyncMaxBinarySizeMb') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 </div>

@@ -23,9 +23,7 @@
 		children: Snippet;
 		showCloseButton?: boolean;
 		overlayClass?: string;
-		/** Flush layout for dialogs built from full-bleed sections; the footer becomes a ruled section. */
 		sectioned?: boolean;
-		/** `side-panel` docks a full-height glass panel to the right edge over a flat scrim. */
 		variant?: 'default' | 'side-panel';
 	} = $props();
 </script>

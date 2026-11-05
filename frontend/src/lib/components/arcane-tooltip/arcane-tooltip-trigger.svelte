@@ -14,12 +14,12 @@
 		children,
 		child: childSnippet,
 		class: className,
-		disabledChild = false
+		disabledChild = false,
+		'aria-label': ariaLabel
 	}: TooltipPrimitive.TriggerProps & { disabledChild?: boolean } = $props();
 
 	const ctx = getArcaneTooltipContext();
 
-	// Long press logic for interactive touch
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let isLongPressing = $state(false);
 
@@ -82,9 +82,13 @@
 		return (props as TriggerEventProps).onclick;
 	}
 
-	function handleDirectClick(event: MouseEvent) {
+	function handleDirectClick(event: MouseEvent, onclick?: (event: MouseEvent) => void) {
 		if (ctx.interactive) {
 			handleClick(event);
+		}
+		const target = event.currentTarget as HTMLElement;
+		if (!event.defaultPrevented && !target.matches('a[href], button, input, select, textarea, [role="button"]')) {
+			onclick?.(event);
 		}
 	}
 
@@ -97,7 +101,6 @@
 				onclick?.(event);
 			}
 		} else {
-			// Check if the click originated from an interactive element
 			let target = event.target as HTMLElement | null;
 			let isInteractive = false;
 
@@ -108,14 +111,11 @@
 					target.getAttribute('role') === 'button' ||
 					target.getAttribute('tabindex') === '0'
 				) {
-					// Check if it's disabled
 					if (
 						(target as HTMLButtonElement).disabled ||
 						target.getAttribute('aria-disabled') === 'true' ||
 						target.classList.contains('disabled')
 					) {
-						// If disabled, we treat it as non-interactive for the purpose of tooltip
-						// (i.e., we WANT the tooltip to show)
 						isInteractive = false;
 					} else {
 						isInteractive = true;
@@ -132,7 +132,7 @@
 	}
 
 	function getDirectTouchProps(props: Record<string, unknown>) {
-		const { onclick: _onclick, class: triggerClass, ...restProps } = props;
+		const { onclick, class: triggerClass, ...restProps } = props as Record<string, unknown> & TriggerEventProps;
 
 		return {
 			...restProps,
@@ -141,7 +141,7 @@
 			ontouchend: ctx.interactive ? handleTouchEnd : undefined,
 			ontouchcancel: ctx.interactive ? handleTouchCancel : undefined,
 			ontouchmove: ctx.interactive ? handleTouchMove : undefined,
-			onclick: handleDirectClick
+			onclick: (event: MouseEvent) => handleDirectClick(event, onclick)
 		};
 	}
 
@@ -168,6 +168,7 @@
 					ontouchmove={ctx.interactive ? handleTouchMove : undefined}
 					onclick={(event) => handleWrapperClick(event, props)}
 					role="button"
+					aria-label={ariaLabel}
 					data-disabled-child={disabledChild ? '' : undefined}
 					tabindex="0"
 				>
@@ -189,6 +190,7 @@
 				<div
 					{...props}
 					role="button"
+					aria-label={ariaLabel}
 					data-disabled-child={disabledChild ? '' : undefined}
 					tabindex="0"
 					class={cn('inline-flex max-w-full min-w-0 cursor-pointer', className)}

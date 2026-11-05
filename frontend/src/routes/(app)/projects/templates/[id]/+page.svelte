@@ -51,7 +51,6 @@
 	let services = $derived(data.templateData.services);
 	let envVars = $derived(data.templateData.envVariables);
 
-	// Edit state (custom templates only)
 	const status = $state({
 		saving: false,
 		isDeleting: false,
@@ -66,7 +65,6 @@
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
-	// Form schema for custom template editing
 	const formSchema = createNamedTemplateSchema();
 
 	let originalName = $derived(template.name);
@@ -166,7 +164,6 @@
 		]);
 	}
 
-	// Read-only view helpers (remote templates)
 	const localVersionOfRemote = $derived.by(() => {
 		if (!template.isRemote || !template.metadata?.remoteUrl) return null;
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
@@ -183,7 +180,7 @@
 					const downloadedTemplate = await templateService.download(template.id);
 					toast.success(m.templates_downloaded_success({ name: template.name }));
 					if (downloadedTemplate?.id) {
-						await goto(resolve('/(app)/customize/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
+						await goto(resolve('/(app)/projects/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
 					} else {
 						await Promise.all([
 							queryClient.invalidateQueries({
@@ -228,7 +225,7 @@
 									resource: `${m.resource_template()} "${template.name}"`
 								})
 							);
-							await goto(resolve('/(app)/customize/templates'));
+							await goto(resolve('/(app)/projects/templates'));
 						})()
 					);
 					if (operationResult.error !== null) {
@@ -276,7 +273,7 @@
 				action: 'base',
 				placement: 'secondary',
 				label: m.templates_view_local_version(),
-				onclick: () => goto(resolve('/(app)/customize/templates/[id]', { id: localVersionOfRemote.id }))
+				onclick: () => goto(resolve('/(app)/projects/templates/[id]', { id: localVersionOfRemote.id }))
 			});
 		}
 		return actions;
@@ -347,9 +344,8 @@
 		{/snippet}
 	</TemplateEditorWorkspace>
 {:else}
-	<!-- Marketplace-style read-only view for remote templates -->
 	<ResourceDetailLayout
-		backUrl="/customize/templates"
+		backUrl="/projects/templates"
 		backLabel={m.templates_title()}
 		title={template.name}
 		subtitle={template.description}
@@ -457,7 +453,7 @@
 										href={template.metadata.documentationUrl}
 										target="_blank"
 										rel="external noopener noreferrer"
-										class="inline-flex items-center gap-1 font-medium break-all text-primary hover:underline"
+										class="inline-flex items-center gap-1 font-medium break-all text-primary-text hover:underline"
 									>
 										{documentationHost}
 										<ExternalLinkIcon class="size-3.5 shrink-0" />

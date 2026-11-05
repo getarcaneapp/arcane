@@ -5,7 +5,7 @@
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { useEnvironmentSettingsScope } from '#lib/hooks/use-environment-settings-scope.svelte.js';
-	import { ConnectionIcon, type IconType } from '#lib/icons/index.js';
+	import { ConnectionIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -17,14 +17,12 @@
 	let {
 		title,
 		description,
-		icon,
 		keys,
 		permissions = [],
 		content
 	}: {
 		title: string;
 		description?: string;
-		icon: IconType;
 		keys: (keyof EnvironmentSettingsValues)[];
 		permissions?: string[];
 		content: Snippet<[EnvironmentSettingsContent, ReturnType<typeof useEnvironmentSettingsScope>]>;
@@ -38,7 +36,7 @@
 	);
 </script>
 
-<SettingsPageLayout {title} {description} {icon} showReadOnlyTag={readOnly}>
+<SettingsPageLayout {title} {description} showReadOnlyTag={readOnly}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<EnvironmentSettingsScopeBar

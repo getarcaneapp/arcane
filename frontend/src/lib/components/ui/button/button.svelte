@@ -2,12 +2,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { WithChildren } from 'bits-ui';
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
-	import { type VariantProps, tv } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
 
-	import { cn, type WithElementRef } from '#lib/utils.js';
+	import { tv, cn, type WithElementRef } from '#lib/utils.js';
 
 	export const buttonVariants = tv({
-		base: "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border text-sm font-medium outline-none transition duration-200 ease-out focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-98 disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:opacity-55 aria-disabled:saturate-[0.82] aria-disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+		base: "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border text-sm font-medium outline-none transition duration-200 ease-out focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-98 disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:opacity-55 aria-disabled:saturate-[0.82] aria-disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
 		variants: {
 			variant: {
 				default:
@@ -20,7 +20,7 @@
 					'border-border/70 bg-secondary text-secondary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_1px_2px_rgba(15,23,42,0.05)] hover:border-border hover:bg-secondary/85',
 				ghost:
 					'border-transparent bg-transparent text-foreground shadow-none hover:bg-accent/50 hover:text-accent-foreground dark:hover:bg-accent/30',
-				link: 'border-transparent bg-transparent text-primary shadow-none underline-offset-4 hover:bg-primary/5 hover:underline'
+				link: 'border-transparent bg-transparent text-primary-text shadow-none underline-offset-4 hover:bg-primary/5 hover:underline'
 			},
 			size: {
 				default: 'h-9 px-4 py-2 has-[svg]:px-3',

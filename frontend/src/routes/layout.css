@@ -29,6 +29,19 @@
 	--success: oklch(0.596 0.145 163.225);
 	--warning: oklch(0.666 0.179 58.318);
 	--info: oklch(0.546 0.245 262.881);
+	--mint-foreground: oklch(0.47 0.092 171.22);
+	--warning-foreground: oklch(0.479 0.112 59.929);
+	--sky-foreground: oklch(0.465 0.11 241.858);
+	--primary-text: oklch(from var(--primary) min(l, 0.491) c h);
+	--primary-tint: oklch(from var(--primary) l min(c, 0.21) h);
+	--destructive-foreground: oklch(0.48 0.245 27.325);
+	--orange-foreground: oklch(0.46 0.222 41.116);
+	--lime-foreground: oklch(0.46 0.2 131.684);
+	--teal-foreground: oklch(0.48 0.118 184.704);
+	--cyan-foreground: oklch(0.48 0.126 221.723);
+	--fuchsia-foreground: oklch(0.48 0.293 322.896);
+	--pink-foreground: oklch(0.48 0.249 0.584);
+	--rose-foreground: oklch(0.48 0.253 17.585);
 	--syntax-comment: #6e7781;
 	--syntax-keyword: #cf222e;
 	--syntax-property: #8250df;
@@ -51,7 +64,7 @@
 	--button-shadow-hover: inset 0 1px 0 rgb(255 255 255 / 0.24), 0 8px 20px -12px rgb(15 23 42 / 0.28);
 	--border: oklch(0.905 0 0);
 	--input: oklch(0.922 0 0);
-	--ring: oklch(0.606 0.25 292.717);
+	--ring: oklch(0.491 0.241 292.581);
 	--chart-1: oklch(0.811 0.111 293.571);
 	--chart-2: oklch(0.606 0.25 292.717);
 	--chart-3: oklch(0.541 0.281 293.009);
@@ -64,7 +77,7 @@
 	--sidebar-accent: oklch(0.97 0 0);
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.606 0.25 292.717);
+	--sidebar-ring: oklch(0.491 0.241 292.581);
 	--surface: oklch(0.985 0.006 285.885);
 	--bg-surface: var(--surface);
 
@@ -113,6 +126,19 @@
 	--success: oklch(0.765 0.177 163.223);
 	--warning: oklch(0.828 0.189 84.429);
 	--info: oklch(0.707 0.165 254.624);
+	--mint-foreground: var(--mint);
+	--warning-foreground: var(--warning);
+	--sky-foreground: var(--sky);
+	--primary-text: oklch(from var(--primary) max(l, 0.811) min(c, 0.101) h);
+	--primary-tint: var(--primary);
+	--destructive-foreground: var(--destructive);
+	--orange-foreground: var(--orange);
+	--lime-foreground: var(--lime);
+	--teal-foreground: var(--teal);
+	--cyan-foreground: var(--cyan);
+	--fuchsia-foreground: var(--fuchsia);
+	--pink-foreground: var(--pink);
+	--rose-foreground: var(--rose);
 	--syntax-comment: #8b949e;
 	--syntax-keyword: #ff7b72;
 	--syntax-property: #d2a8ff;
@@ -135,7 +161,7 @@
 	--button-shadow-hover: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 10px 24px -14px rgb(0 0 0 / 0.5);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.541 0.281 293.009);
+	--ring: oklch(0.811 0.101 293.571);
 
 	--sidebar: oklch(0.205 0 0);
 	--sidebar-foreground: oklch(0.985 0 0);
@@ -144,7 +170,7 @@
 	--sidebar-accent: oklch(0.269 0 0);
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.541 0.281 293.009);
+	--sidebar-ring: oklch(0.811 0.101 293.571);
 	--surface: oklch(0.205 0 0);
 
 	--bg-surface: oklch(0.205 0 0);
@@ -261,25 +287,47 @@ html.reduce-effects *::after {
 	--color-destructive-foreground: var(--destructive-foreground);
 	--color-success: var(--success);
 	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
 	--color-info: var(--info);
+	--color-update: var(--info);
 	--color-orange: var(--orange);
+	--color-orange-foreground: var(--orange-foreground);
 	--color-lime: var(--lime);
+	--color-lime-foreground: var(--lime-foreground);
 	--color-teal: var(--teal);
+	--color-teal-foreground: var(--teal-foreground);
 	--color-mint: var(--mint);
+	--color-mint-foreground: var(--mint-foreground);
 	--color-cyan: var(--cyan);
+	--color-cyan-foreground: var(--cyan-foreground);
 	--color-sky: var(--sky);
+	--color-sky-foreground: var(--sky-foreground);
 	--color-indigo: var(--indigo);
 	--color-violet: var(--violet);
 	--color-purple: var(--purple);
 	--color-fuchsia: var(--fuchsia);
+	--color-fuchsia-foreground: var(--fuchsia-foreground);
 	--color-pink: var(--pink);
+	--color-pink-foreground: var(--pink-foreground);
 	--color-rose: var(--rose);
-	--color-primary-tint: color-mix(in oklch, var(--primary) 55%, white);
+	--color-rose-foreground: var(--rose-foreground);
+	--color-primary-text: var(--primary-text);
+	--color-primary-tint: var(--primary-tint);
+	--color-metric-cpu: var(--info);
+	--color-metric-memory: var(--primary);
+	--color-metric-disk: var(--cyan);
+	--color-metric-backup: var(--success);
 
 	--text-2xs: 0.6875rem;
 	--text-3xs: 0.625rem;
 	--text-4xs: 0.5rem;
 	--text-xs-plus: 0.8125rem;
+	--text-form-control: 16px;
+	--spacing-touch-target: 44px;
+	--spacing-stat-ring: 38px;
+	--spacing-table-update: 8rem;
+	--spacing-table-security: 10rem;
+	--container-settings-description: 65ch;
 	--tracking-ultrawide: 0.2em;
 	--blur-2xs: 2px;
 
@@ -298,6 +346,7 @@ html.reduce-effects *::after {
 	--grid-template-columns-halves-action: repeat(2, minmax(0, 1fr)) auto;
 	--grid-template-columns-content-aside-48: minmax(0, 1fr) 12rem;
 	--grid-template-columns-label-value: minmax(6.5rem, 38%) minmax(0, 1fr);
+	--grid-template-columns-label-auto: auto minmax(0, 1fr);
 	--grid-template-columns-key-value: minmax(8.75rem, 11.25rem) minmax(0, 1fr);
 	--grid-template-columns-aside-28: 7rem minmax(0, 1fr);
 	--grid-template-columns-aside-35: 8.75rem minmax(0, 1fr);
@@ -333,6 +382,9 @@ html.reduce-effects *::after {
 	--width-activity-inspector: min(calc(100vw - 1rem), 62rem);
 	--max-height-activity-tray: min(calc(100vh - 2rem), 42rem);
 	--max-width-crumb: 28ch;
+	--max-width-event-summary: 24rem;
+	--max-width-image-reference: max(20rem, 36vw);
+	--max-width-resource-name: max(16rem, 30vw);
 	--max-width-7-10: 70%;
 	--max-width-tooltip: min(calc(100vw - 2rem), 20rem);
 	--inset-floating-nav: max(1.5rem, env(safe-area-inset-bottom));
@@ -356,7 +408,7 @@ html.reduce-effects *::after {
 
 @layer base {
 	* {
-		@apply border-border outline-ring/50;
+		@apply border-border outline-ring;
 	}
 
 	body {
@@ -369,7 +421,7 @@ html.reduce-effects *::after {
 
 	html {
 		@apply font-sans;
-		font-size: 14px;
+		font-size: 15px;
 	}
 
 	button {
@@ -377,7 +429,7 @@ html.reduce-effects *::after {
 	}
 
 	:where(a, button, [role='button'], input, select, textarea, [tabindex]):focus-visible {
-		outline: 2px solid color-mix(in oklch, var(--ring) 60%, transparent);
+		outline: 2px solid var(--ring);
 		outline-offset: 2px;
 		border-radius: var(--radius-sm);
 	}
@@ -441,6 +493,16 @@ html.reduce-effects *::after {
 			.overflow-x-scroll,
 			.arcane-code-editor .cm-scroller
 		):hover::-webkit-scrollbar-thumb {
+		background: var(--muted-foreground);
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+
+	[data-table-scroll] {
+		scrollbar-color: var(--muted-foreground) transparent;
+	}
+
+	[data-table-scroll]::-webkit-scrollbar-thumb {
 		background: var(--muted-foreground);
 		border: 2px solid transparent;
 		background-clip: content-box;
@@ -515,7 +577,6 @@ html.reduce-effects *::after {
 		}
 	}
 
-	/* Subtle press feedback for clickable controls */
 	.pressable {
 		transition: transform 110ms ease;
 	}
@@ -596,8 +657,8 @@ input:autofill:active {
 }
 
 @utility dashboard-grid {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 1rem;
 	@media (width >= 64rem) {
 		display: block;
@@ -608,6 +669,10 @@ input:autofill:active {
 }
 
 @utility dashboard-widget {
+	grid-column: span 2;
+	&[data-compact] {
+		grid-column: span 1;
+	}
 	@media (width >= 64rem) {
 		position: absolute;
 		top: calc(var(--widget-y) * 4rem);
@@ -671,14 +736,93 @@ input:autofill:active {
 	}
 }
 
+@utility scrollbar-visible {
+	scrollbar-color: var(--muted-foreground) transparent;
+	&::-webkit-scrollbar-thumb {
+		background: var(--muted-foreground);
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+}
+
+@utility touch-hit {
+	@media (pointer: coarse) {
+		&::after {
+			content: '';
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			width: max(100%, 44px);
+			height: max(100%, 44px);
+			translate: -50% -50%;
+		}
+	}
+}
+
+@utility stretched-link {
+	&::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+	}
+}
+
+@utility stretched-link-host {
+	& :is(a, button, [role='button'], [tabindex]):not(.stretched-link) {
+		position: relative;
+		z-index: 1;
+	}
+}
+
 @utility transition-stroke-dashoffset {
 	transition-property: stroke-dashoffset;
 }
 
-/* Skips layout and paint for off-screen rows in long lists. */
 @utility content-visibility-auto {
 	content-visibility: auto;
 	contain-intrinsic-size: auto 4rem;
+}
+
+@property --scroll-fade-b {
+	syntax: '<color>';
+	initial-value: #000;
+	inherits: false;
+}
+
+@property --scroll-fade-l {
+	syntax: '<color>';
+	initial-value: #000;
+	inherits: false;
+}
+
+@property --scroll-fade-r {
+	syntax: '<color>';
+	initial-value: #000;
+	inherits: false;
+}
+
+@utility scroll-fade-b {
+	--scroll-fade-b: transparent;
+	mask-image:
+		linear-gradient(to bottom, #000 calc(100% - 1.5rem), var(--scroll-fade-b)),
+		linear-gradient(to right, var(--scroll-fade-l), #000 1rem, #000 calc(100% - 1rem), var(--scroll-fade-r));
+	mask-composite: intersect;
+}
+
+@utility scroll-fade-l {
+	--scroll-fade-l: transparent;
+	mask-image:
+		linear-gradient(to bottom, #000 calc(100% - 1.5rem), var(--scroll-fade-b)),
+		linear-gradient(to right, var(--scroll-fade-l), #000 1rem, #000 calc(100% - 1rem), var(--scroll-fade-r));
+	mask-composite: intersect;
+}
+
+@utility scroll-fade-r {
+	--scroll-fade-r: transparent;
+	mask-image:
+		linear-gradient(to bottom, #000 calc(100% - 1.5rem), var(--scroll-fade-b)),
+		linear-gradient(to right, var(--scroll-fade-l), #000 1rem, #000 calc(100% - 1rem), var(--scroll-fade-r));
+	mask-composite: intersect;
 }
 
 @property --border-beam-angle {

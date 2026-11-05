@@ -282,7 +282,7 @@
 									href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(data.envId)}`, {
 										containerId: container.id
 									})}
-									class="flex items-center text-primary hover:underline"
+									class="flex items-center text-primary-text hover:underline"
 								>
 									<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 									{container.name}

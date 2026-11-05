@@ -13,10 +13,12 @@
 
 	let {
 		id = 'timeFormatPicker',
-		class: className = ''
+		class: className = '',
+		'aria-describedby': ariaDescribedby
 	}: {
 		id?: string;
 		class?: string;
+		'aria-describedby'?: string;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -51,7 +53,7 @@
 		value={timeFormatStore.current}
 		onValueChange={(value) => updateTimeFormatMutation.mutate(value as TimeFormat)}
 	>
-		<Select.Trigger {id} class="h-9 w-32" aria-label={m.time_format_select()}>
+		<Select.Trigger {id} class="h-9 w-32" aria-label={m.time_format_select()} aria-describedby={ariaDescribedby}>
 			<span class="truncate">{currentLabel}</span>
 		</Select.Trigger>
 		<Select.Content class="max-w-70 min-w-40">

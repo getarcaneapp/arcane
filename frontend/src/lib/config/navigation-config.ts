@@ -15,7 +15,6 @@ import {
 	NetworksIcon,
 	VolumesIcon,
 	HashIcon,
-	DockIcon,
 	JobsIcon,
 	LayersIcon,
 	EventsIcon,
@@ -85,7 +84,7 @@ export const navigationItems: NavigationSections = {
 			title: m.security(),
 			url: resolve('/(app)/security'),
 			requiredFeature: 'vulnerabilityManagement',
-			icon: ShieldAlertIcon,
+			icon: SecurityIcon,
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
 		{
@@ -106,15 +105,15 @@ export const navigationItems: NavigationSections = {
 			items: [
 				{
 					title: m.templates_title(),
-					url: resolve('/(app)/customize/templates'),
+					url: resolve('/(app)/projects/templates'),
 					icon: TemplateIcon,
-					accessSurfaceId: 'customize.category.templates'
+					accessSurfaceId: 'route.projects.templates'
 				},
 				{
 					title: m.variables_title(),
-					url: resolve('/(app)/customize/variables'),
+					url: resolve('/(app)/projects/variables'),
 					icon: VariableIcon,
-					accessSurfaceId: 'customize.category.variables'
+					accessSurfaceId: 'route.projects.variables'
 				}
 			]
 		},
@@ -127,9 +126,9 @@ export const navigationItems: NavigationSections = {
 			items: [
 				{
 					title: m.git_repositories_title(),
-					url: resolve('/(app)/customize/git-repositories'),
+					url: resolve('/(app)/gitops/repositories'),
 					icon: GitBranchIcon,
-					accessSurfaceId: 'customize.category.git-repositories'
+					accessSurfaceId: 'route.gitops.repositories'
 				}
 			]
 		}
@@ -152,9 +151,9 @@ export const navigationItems: NavigationSections = {
 				{ title: m.builds(), url: resolve('/(app)/images/builds'), icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
 				{
 					title: m.registries_title(),
-					url: resolve('/(app)/customize/registries'),
+					url: resolve('/(app)/images/registries'),
 					icon: RegistryIcon,
-					accessSurfaceId: 'customize.category.registries'
+					accessSurfaceId: 'route.images.registries'
 				}
 			]
 		},
@@ -183,7 +182,7 @@ export const navigationItems: NavigationSections = {
 		}
 	],
 	swarmItems: [
-		{ title: 'Services', url: resolve('/(app)/swarm/services'), icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: 'Services', url: resolve('/(app)/swarm/services'), icon: ContainersIcon, accessSurfaceId: 'route.swarm.services' },
 		{ title: 'Nodes', url: resolve('/(app)/swarm/nodes'), icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
 		{ title: 'Tasks', url: resolve('/(app)/swarm/tasks'), icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
 		{ title: 'Stacks', url: resolve('/(app)/swarm/stacks'), icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
@@ -350,7 +349,12 @@ export function filterByPermissions(
 	if (!user || !userHasAnyAccess(user)) return [];
 	const out: NavigationItem[] = [];
 	for (const item of items) {
-		if (!canSeeItem(item, user, accessManifest)) continue;
+		if (!canSeeItem(item, user, accessManifest)) {
+			if (item.items && (!item.requiredFeature || hasShownFeature(item.requiredFeature))) {
+				out.push(...filterByPermissions(item.items, user, accessManifest));
+			}
+			continue;
+		}
 		if (item.items && item.items.length > 0) {
 			const filteredChildren = filterByPermissions(item.items, user, accessManifest);
 			// Drop a parent group only when none of its children survived the
@@ -398,14 +402,6 @@ export function getSettingsSubpageUrlsInNavOrder(): string[] {
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 
-export function getCustomizeSubpageUrlsInNavOrder(): string[] {
-	return Object.values(navigationItems)
-		.flat()
-		.flatMap((item) => item.items ?? [])
-		.map((item) => item.url)
-		.filter((url) => url.startsWith('/customize/'));
-}
-
 const defaultMobilePinnedItems: NavigationItem[] = [
 	...navigationItems.overviewItems,
 	...navigationItems.deployItems,
@@ -448,9 +444,7 @@ export function getLandingPageNavItems(): NavigationItem[] {
 
 export type MobileNavigationSettings = {
 	pinnedItems: string[];
-	mode: 'floating' | 'docked';
 	showLabels: boolean;
-	scrollToHide: boolean;
 };
 
 export function getAvailableMobileNavItems(options?: {
@@ -478,7 +472,5 @@ export function getAvailableMobileNavItems(options?: {
 
 export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	pinnedItems: defaultMobilePinnedItems.map((item) => item.url),
-	mode: 'floating',
-	showLabels: true,
-	scrollToHide: true
+	showLabels: true
 };

@@ -42,7 +42,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/s3"
-	"getarcane.dev/arcane/v3/internal/search"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
@@ -76,7 +75,6 @@ type (
 		Enrollment        *enrollment.Module
 		Settings          *settings.Module
 		JobSchedule       *job.Module
-		Search            *search.Module
 		Container         *container.Module
 		Image             *image.Module
 		Build             *build.BuildService
@@ -241,7 +239,6 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.Notification.RegisterRoutes(api)
 	p.Deps.Apns.RegisterRoutes(api)
 	p.Deps.Updater.RegisterRoutes(api, p.AppContext)
-	p.Deps.Search.RegisterRoutes(api)
 	p.Deps.System.RegisterRoutes(api, p.AppContext)
 	handlers.RegisterDiagnostics(api, p.Deps.Diagnostics)
 	p.Deps.GitRepository.RegisterRoutes(api)

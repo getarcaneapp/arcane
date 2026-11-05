@@ -201,7 +201,7 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		{#if canBrowseRegistry}
-			<a class="font-medium hover:underline" href={resolve('/(app)/customize/registries/[id]', { id: item.id })}
+			<a class="font-medium hover:underline" href={resolve('/(app)/images/registries/[id]', { id: item.id })}
 				>{item.url || 'docker.io'}</a
 			>
 		{:else}
@@ -239,9 +239,7 @@
 		icon={{ component: RegistryIcon, variant: 'purple' as const }}
 		title={(item) => item.url}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		onclick={canBrowseRegistry
-			? (item: ContainerRegistry) => goto(resolve('/(app)/customize/registries/[id]', { id: item.id }))
-			: undefined}
+		href={canBrowseRegistry ? (item: ContainerRegistry) => resolve('/(app)/images/registries/[id]', { id: item.id }) : undefined}
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
@@ -272,9 +270,9 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerRegistry })}
-	<RowActionsMenu>
+	<RowActionsMenu name={getRegistryDisplayName(item)}>
 		{#if canBrowseRegistry}
-			<DropdownMenu.Item onclick={() => goto(resolve('/(app)/customize/registries/[id]', { id: item.id }))}>
+			<DropdownMenu.Item onclick={() => goto(resolve('/(app)/images/registries/[id]', { id: item.id }))}>
 				<FolderOpenIcon class="size-4" />
 				{m.registries_browse()}
 			</DropdownMenu.Item>

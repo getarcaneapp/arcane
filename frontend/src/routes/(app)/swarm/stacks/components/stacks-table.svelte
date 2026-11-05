@@ -97,7 +97,7 @@
 		href={resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(item.environmentId)}`, {
 			name: encodeURIComponent(item.name)
 		})}
-		class="text-sm font-medium text-primary hover:underline"
+		class="text-sm font-medium text-primary-text hover:underline"
 	>
 		{item.name}
 	</a>
@@ -148,7 +148,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: StackRow })}
-	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+	<RowActionsMenu name={item.name} triggerClass="relative size-8 p-0" iconClass="">
 		<DropdownMenu.Item onclick={() => inspectStack(item)}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}

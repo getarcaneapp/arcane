@@ -16,7 +16,7 @@
 	bind:this={ref}
 	data-slot="card-content"
 	class={cn(
-		'p-4 [[data-slot=card][data-size=sm]>&]:p-3',
+		'p-4 [[data-slot=card][data-size=sm]>&]:p-3 max-md:[[data-slot=card][data-variant=embedded]>&]:px-0',
 		'[[data-slot=card-header][data-variant=plain]~&]:px-6 [[data-slot=card-header][data-variant=plain]~&]:pt-0 [[data-slot=card-header][data-variant=plain]~&]:pb-6',
 		className
 	)}

@@ -9,7 +9,7 @@
 	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertTriangleIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
+	import { AlertIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
@@ -32,7 +32,7 @@
 
 {#if jobsQuery.error}
 	<Alert.Root variant="destructive-subtle" size="sm">
-		<AlertTriangleIcon class="size-4" />
+		<AlertIcon class="size-4" />
 		<Alert.Description>{extractApiErrorMessage(jobsQuery.error)}</Alert.Description>
 	</Alert.Root>
 {:else if jobsQuery.isPending}

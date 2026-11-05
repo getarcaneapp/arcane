@@ -808,7 +808,7 @@ test.describe('New Compose Project Page', () => {
 	}) => {
 		// Same wide viewport as the deploy options test so the header doesn't
 		// overlap the split-button trigger at the 1280px boundary.
-		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.setViewportSize({ width: 1920, height: 1080 });
 
 		const projectName = `test-redeploy-options-${Date.now()}`;
 

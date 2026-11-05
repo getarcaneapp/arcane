@@ -4,7 +4,7 @@
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ArrowDownIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, ClockIcon, AlertIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
@@ -88,7 +88,7 @@
 			{:else if result.status === 'skipped_offline' || result.status === 'triggered'}
 				<AlertIcon class="size-3.5" />
 			{:else if result.status === 'failed'}
-				<AlertTriangleIcon class="size-3.5" />
+				<AlertIcon class="size-3.5" />
 			{:else}
 				<ClockIcon class="size-3.5" />
 			{/if}

@@ -133,7 +133,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: KvRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.spec.Name}>
 		{#if hasPermission(resource.permissions.read, item.environmentId)}
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />

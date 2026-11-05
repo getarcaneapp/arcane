@@ -50,7 +50,7 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<a
-				href={resolve('/(app)/customize/templates/[id]', { id: template.id })}
+				href={resolve('/(app)/projects/templates/[id]', { id: template.id })}
 				class="block truncate font-medium after:absolute after:inset-0 hover:underline"
 			>
 				{template.name}
@@ -60,8 +60,8 @@
 			</p>
 		</div>
 		<div class="relative z-10 -mt-1 -mr-1 shrink-0">
-			<RowActionsMenu>
-				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/customize/templates/[id]', { id: template.id }))}>
+			<RowActionsMenu name={template.name}>
+				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/projects/templates/[id]', { id: template.id }))}>
 					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>

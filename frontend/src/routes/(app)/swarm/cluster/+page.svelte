@@ -6,7 +6,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { AlertTriangleIcon, SettingsIcon } from '#lib/icons/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -73,11 +73,11 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.cluster()} subtitle={m.swarm_cluster_subtitle()} icon={SettingsIcon} class="pb-6" {actionButtons}>
+<ResourcePageLayout title={m.cluster()} subtitle={m.swarm_cluster_subtitle()} class="pb-6" {actionButtons}>
 	{#snippet mainContent()}
 		<div class="space-y-4 pb-6">
 			{#if failedEnvironments.length > 0}
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 					<div class="flex flex-wrap items-center justify-between gap-2">
 						<Alert.Description>
 							{m.all_environments_unavailable({

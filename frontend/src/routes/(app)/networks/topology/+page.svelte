@@ -5,7 +5,7 @@
 	import NetworkDiagram from '#lib/components/network-diagram/network-diagram.svelte';
 	import { fetchEnvironmentTopology } from '#lib/components/network-diagram/topology.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -50,7 +50,7 @@
 		{#if topology}
 			<div class="space-y-4">
 				{#if topology.failedEnvironments.length > 0}
-					<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+					<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<Alert.Description>
 								{m.all_environments_unavailable({
@@ -70,7 +70,7 @@
 					</Alert.Root>
 				{/if}
 				{#if topology.excludedEnvironments.length > 0}
-					<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+					<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 						<Alert.Description>
 							{m.all_environments_excluded({
 								count: topology.excludedEnvironments.length,

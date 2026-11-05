@@ -187,7 +187,7 @@
 {/snippet}
 
 {#snippet rowActions({ item }: { item: PatchTargetRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.imageRef}>
 		<DropdownMenu.Item
 			onclick={() => handlePatchImage(item)}
 			disabled={item.localOnly || item.fixableCount === 0 || !hasPermission('images:patch', item.environmentId)}

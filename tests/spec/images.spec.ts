@@ -11,7 +11,7 @@ import {
 	type ImageUpdateInfo,
 	type ImageUpdateSummary
 } from '../types/image.type';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 import { waitForDialogReady } from '../utils/playwright.util';
 
 test.describe('Management', () => {
@@ -206,7 +206,7 @@ test.describe('Management', () => {
 			await route.continue();
 		});
 
-		return { imageId, repository, pinnedReference, alternateReference };
+		return { imageId, repository, digest, alternateDigest, pinnedReference, alternateReference };
 	}
 
 	let realImages: ImageSummary[] = [];
@@ -260,18 +260,17 @@ test.describe('Management', () => {
 		});
 
 		test('should display full pinned references without enabling tag actions', async ({ page }) => {
-			const { imageId, repository, pinnedReference, alternateReference } =
+			const { imageId, repository, digest, alternateDigest, pinnedReference, alternateReference } =
 				await mockPinnedImageFlow(page);
 			await page.reload();
 
 			const row = page.getByRole('row').filter({
 				has: page.getByRole('link', { name: repository, exact: true })
 			});
-			await expect(row.getByText(pinnedReference, { exact: true })).toBeVisible();
-
-			const overflow = row.getByText('+1', { exact: true });
-			await overflow.hover();
-			await expect(page.getByText(alternateReference, { exact: true })).toBeVisible();
+			await expect(row.getByText('2.1.3', { exact: true })).toBeVisible();
+			await expect(row.getByText(digest, { exact: true })).toBeVisible();
+			await expect(row.getByText('stable', { exact: true })).toBeVisible();
+			await expect(row.getByText(alternateDigest, { exact: true })).toBeVisible();
 
 			const menu = await openRowActionsMenu(page, row);
 			await expect(menu.getByRole('menuitem', { name: 'Pull', exact: true })).toBeDisabled();
@@ -294,7 +293,7 @@ test.describe('Management', () => {
 
 			const firstRow = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.first();
 			const menu = await openRowActionsMenu(page, firstRow);
 			await menu.getByRole('menuitem', { name: 'Inspect' }).click();

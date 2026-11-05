@@ -89,7 +89,8 @@
 		outlineOpen = $bindable(false),
 		diffOpen = $bindable(false),
 		commandPaletteOpen = $bindable(false),
-		statusBar = true
+		statusBar = true,
+		'aria-describedby': ariaDescribedby
 	}: {
 		value?: string;
 		language?: CodeLanguage;
@@ -109,6 +110,7 @@
 		diffOpen?: boolean;
 		commandPaletteOpen?: boolean;
 		statusBar?: boolean;
+		'aria-describedby'?: string;
 	} = $props();
 	void hasErrors;
 
@@ -779,7 +781,8 @@
 		...getLanguageExtension(language),
 		theme,
 		indentUnit.of(' '.repeat(tabWidth)),
-		EditorState.tabSize.of(tabWidth)
+		EditorState.tabSize.of(tabWidth),
+		...(ariaDescribedby ? [EditorView.contentAttributes.of({ 'aria-describedby': ariaDescribedby })] : [])
 	]);
 
 	const styles = $derived({
