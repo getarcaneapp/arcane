@@ -1467,7 +1467,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 		Outcome:      types.SchedulerOutcome{Targets: []types.TargetOutcome{{ID: "auto-update", RecoveryData: frozenPlan}}},
 	}, nil)
 	result, err := svc.ApplyPending(ctx, types.UpdaterOptions{})
-	require.ErrorContains(t, err, "self-update was triggered")
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")

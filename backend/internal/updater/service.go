@@ -1730,13 +1730,21 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	err := errors.Join(recordErr, jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:           result.ResourceID,
 		ResourceType: string(result.ResourceType),
-		Status:       kit.Ternary(evidenceErr != nil || selfPending, types.RunStatusNeedsAttention, status),
+		Status: func() types.RunStatus {
+			switch {
+			case evidenceErr != nil:
+				return types.RunStatusNeedsAttention
+			case selfPending:
+				return types.RunStatusRunning
+			}
+			return status
+		}(),
 		Message: func() string {
 			switch {
 			case evidenceErr != nil:
 				return evidenceErr.Error()
 			case selfPending:
-				return "Self-update completion requires review"
+				return "Arcane is restarting with the updated image"
 			}
 			return result.Error
 		}(),
@@ -1764,7 +1772,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 	}
 	status := func() types.RunStatus {
 		switch {
-		case recordingFailed || selfTriggered:
+		case recordingFailed:
 			return types.RunStatusNeedsAttention
 		case err != nil || out.Failed > 0:
 			return types.RunStatusPartial
@@ -1775,10 +1783,10 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 		err = errors.Join(err, jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           selfID,
 			ResourceType: "container",
-			Status:       types.RunStatusNeedsAttention,
+			Status:       types.RunStatusSucceeded,
 			ActivityID:   activityID,
-			Message:      "Self-update completion requires review",
-		}), errors.New("self-update was triggered but completion requires review"))
+			Message:      "Arcane restart triggered with the updated image",
+		}))
 	}
 	checkpointErr := jobcontext.Progress(ctx, types.TargetOutcome{
 		ID: "auto-update",
@@ -1808,7 +1816,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 		// keep: the caller's result reports the failed batch
 		out.Success = false
 	}
-	if recordingFailed || selfTriggered || checkpointErr != nil {
+	if recordingFailed || checkpointErr != nil {
 		return &types.SchedulerOutcomeError{
 			Outcome: types.SchedulerOutcome{
 				Status:     types.RunStatusNeedsAttention,
