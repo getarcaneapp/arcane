@@ -1716,6 +1716,14 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		if status != types.RunStatusSucceeded {
 			return nil
 		}
+		if progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress); ok {
+			progress.mu.Lock()
+			selfPending := progress.selfTriggered && progress.selfID == result.ResourceID
+			progress.mu.Unlock()
+			if selfPending {
+				return nil
+			}
+		}
 		return s.recovery.VerifyResult(ctx, result.ResourceID)
 	}()
 	err := errors.Join(recordErr, jobcontext.Progress(ctx, types.TargetOutcome{
