@@ -1914,7 +1914,7 @@ func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOp
 
 	var mu sync.Mutex
 	removed := []string{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		path := strings.TrimPrefix(r.URL.Path, "/v1.41")
 		switch {
@@ -1932,9 +1932,9 @@ func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOp
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(dockerServer.Close)
 
-	cli, err := mobyclient.New(mobyclient.WithHost(server.URL), mobyclient.WithAPIVersion("1.41"), mobyclient.WithHTTPClient(server.Client()))
+	cli, err := mobyclient.New(mobyclient.WithHost(dockerServer.URL), mobyclient.WithAPIVersion("1.41"), mobyclient.WithHTTPClient(dockerServer.Client()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
 
