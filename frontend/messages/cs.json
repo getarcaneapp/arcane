@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Nastavte okna vyrovnávací paměti tunelu agenta s ohledem na propustnost a využití paměti",
   "buffer_windows": "Okna vyrovnávací paměti",
   "http2_receive_window": "Příjmové okno HTTP/2 (pouze pro správce)",
-  "http2_receive_window_description": "Příjemní vyrovnávací paměť HTTP/2 pro každý proud. Platí pouze pro server správce Arcane. Hodnoty nastavené v prostředích agentů nemají žádný vliv. Vyšší hodnoty urychlují přenosy agentů na spojích s vysokou latencí. Jakýkoli klient HTTP/2 může přimět správce, aby na jedno připojení vyhradil vyrovnávací paměť až dvojnásobku této hodnoty.",
-  "http2_receive_window_restart": "Změna nabude účinnosti po restartu manažera.",
+  "http2_receive_window_description": "Velikost vyrovnávací paměti HTTP/2 pro jednotlivé proudy na správci. Čím vyšší hodnota, tím vyšší rychlost na spojích s vysokou latencí, ale zároveň se spotřebuje více paměti.",
+  "http2_receive_window_restart": "Změna se projeví až po restartu manažera.",
   "agent_tunnel_stream_window": "Okno „Agent Tunnel Stream“",
-  "agent_tunnel_stream_window_description": "Příjmové okno pro každý přenos přes tunel agenta v tomto prostředí. Agent jej odešle správci při navázání spojení tunelem a obě strany jej používají. Vyšší hodnoty urychlují přenosy na spojích s vysokou latencí, ale každá strana může při každém aktivním přenosu uchovávat v paměti RAM maximálně toto množství dat.",
-  "agent_tunnel_stream_window_reconnect": "Změna se projeví při příštím opětovném připojení tunelu agenta. Otevřené tunely si zachovají své aktuální okno.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Velikost vyrovnávací paměti na jeden přenos v tunelu agenta. Čím vyšší hodnota, tím rychlejší přenos na spojích s vysokou latencí, ale zároveň se spotřebuje více paměti.",
+  "agent_tunnel_stream_window_reconnect": "Platí v případě, že dojde k opětovnému připojení tunelu.",
+  "value_in_mib": "Hodnota v MiB ({range})"
 }
