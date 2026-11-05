@@ -41,23 +41,20 @@
 
 	let live = $derived(Boolean(environment.connected));
 
-	let status = $derived.by((): { label: string; dot: string; description?: string } => {
+	let status = $derived.by((): { label: string; description?: string } => {
 		if (live) {
 			return {
-				label: m.environments_agent_status_connected(),
-				dot: 'bg-success'
+				label: m.environments_agent_status_connected()
 			};
 		}
 		if (currentStatus === 'pending') {
 			return {
 				label: m.environments_agent_status_connecting(),
-				dot: 'bg-warning',
 				description: m.environments_agent_pending_description()
 			};
 		}
 		return {
 			label: m.disconnected(),
-			dot: 'bg-destructive',
 			description: m.environments_agent_disconnected_description()
 		};
 	});
@@ -149,7 +146,6 @@
 <div class="flex flex-col gap-6 px-1">
 	<div class="flex flex-col gap-1.5">
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-			<span class={cn('size-2 rounded-full', status.dot)}></span>
 			<span class="text-base font-semibold">{status.label}</span>
 			{#if environment.connected}
 				<Badge variant={heartbeatStale ? 'amber' : 'green'} size="sm" hoverEffect="none">
