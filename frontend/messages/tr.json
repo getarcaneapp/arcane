@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "İşlem hacmi ve bellek kullanımı için Tune ajanı tünel tampon pencerelerini ayarlayın",
   "buffer_windows": "Tampon Pencereler",
   "http2_receive_window": "HTTP/2 Alım Penceresi (Yalnızca Yönetici)",
-  "http2_receive_window_description": "Akış başına HTTP/2 alım arabelleği. Yalnızca Arcane yöneticisinin sunucusu için geçerlidir. Ajan ortamlarında ayarlanan değerlerin herhangi bir etkisi yoktur. Daha yüksek değerler, gecikme süresi uzun bağlantılarda ajan aktarımlarını hızlandırır. Herhangi bir HTTP/2 istemcisi, bağlantı başına bu değerin en fazla 2 katı kadar yönetici arabelleği oluşturabilir.",
-  "http2_receive_window_restart": "Yönetici sistemi yeniden başlattıktan sonra yürürlüğe girer.",
+  "http2_receive_window_description": "Yönetici üzerinde akış başına HTTP/2 arabelleği. Yüksek gecikmeli bağlantılarda bu değer ne kadar yüksek olursa o kadar hızlı olur, ancak daha fazla bellek kullanır.",
+  "http2_receive_window_restart": "Yönetici yeniden başlatıldıktan sonra geçerlidir.",
   "agent_tunnel_stream_window": "Ajan Tüneli Akış Penceresi",
-  "agent_tunnel_stream_window_description": "Bu ortamın aracı tüneli üzerinden gerçekleştirilen her aktarım için bir alıcı penceresi. Aracı, tünel bağlandığında bunu yöneticiye gönderir ve her iki taraf da bunu kullanır. Daha yüksek değerler, yüksek gecikmeli bağlantılarda aktarımları hızlandırır; ancak her iki taraf da aktif olan her aktarım için RAM’de en fazla bu kadar veri tutabilir.",
-  "agent_tunnel_stream_window_reconnect": "Bu değişiklik, aracının tüneli bir sonraki yeniden bağlanma sırasında yürürlüğe girer. Açık tüneller mevcut pencerelerini korur.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Ajan tünelinde aktarım başına tampon. Yüksek gecikmeli bağlantılarda bu değer ne kadar yüksekse o kadar hızlı olur, ancak daha fazla bellek kullanır.",
+  "agent_tunnel_stream_window_reconnect": "Tünel yeniden bağlandığında geçerlidir.",
+  "value_in_mib": "MiB cinsinden değer ({range})"
 }
