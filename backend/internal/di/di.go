@@ -18,7 +18,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
-	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -114,7 +113,6 @@ var (
 			build.NewBuildService,
 			project.NewLifecycleService,
 			container.NewContainerService,
-			dashboard.NewDashboardService,
 			network.NewNetworkService,
 			port.NewPortService,
 			swarm.NewSwarmService,

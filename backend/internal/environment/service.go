@@ -23,9 +23,6 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
@@ -56,7 +53,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
-	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/types/v3"
 )
 
@@ -283,47 +279,6 @@ func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 		snippets:   snippets.New(p.EventService),
 		swarm:      swarm.New(p.APIKeyService),
 		enrollment: enrollment.New(p.DB),
-	}
-}
-
-// RegisterMetrics reports the arcane.environments gauge; only the manager calls it.
-func (s *EnvironmentService) RegisterMetrics() {
-	meter := otel.Meter(logging.InstrumentationName)
-	statusGauge, err := meter.Int64ObservableGauge("arcane.environments",
-		metric.WithDescription("Visible environments by persisted status"),
-		metric.WithUnit("{environment}"),
-	)
-	if err == nil {
-		_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-			var rows []struct {
-				Status string
-				Count  int64
-			}
-			if scanErr := s.db.WithContext(ctx).Model(&Environment{}).
-				Select("status, COUNT(*) AS count").
-				Where("hidden = ?", false).
-				Group("status").
-				Scan(&rows).Error; scanErr != nil {
-				return fmt.Errorf("failed to count environments by status: %w", scanErr)
-			}
-			// Known statuses report zero so their series drop instead of going stale.
-			counts := map[string]int64{
-				string(EnvironmentStatusOnline):  0,
-				string(EnvironmentStatusOffline): 0,
-				string(EnvironmentStatusError):   0,
-				string(EnvironmentStatusPending): 0,
-			}
-			for _, row := range rows {
-				counts[row.Status] += row.Count
-			}
-			for status, count := range counts {
-				o.ObserveInt64(statusGauge, count, metric.WithAttributes(attribute.String("status", status)))
-			}
-			return nil
-		}, statusGauge)
-	}
-	if err != nil {
-		otel.Handle(err)
 	}
 }
 

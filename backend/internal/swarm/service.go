@@ -20,6 +20,8 @@ import (
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
@@ -80,9 +82,10 @@ type (
 )
 
 const (
-	KVKeySwarmEnabled      = "swarm.enabled"
-	defaultSwarmListenAddr = "0.0.0.0:2377"
-	clusterProbeTimeout    = 5 * time.Second
+	KVKeySwarmEnabled          = "swarm.enabled"
+	defaultSwarmListenAddr     = "0.0.0.0:2377"
+	clusterProbeTimeout        = 5 * time.Second
+	swarmMetricsCollectTimeout = 15 * time.Second
 )
 
 var (
@@ -613,4 +616,59 @@ func (s *SwarmService) persistSwarmEnabledState(ctx context.Context, enabled boo
 	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
 		slog.WarnContext(ctx, "Failed to persist swarm enabled state", "enabled", enabled, "error", err)
 	}
+}
+
+// ObserveMetrics reports nodes, services, and task counts when the local engine is a swarm manager; the ping keeps non-swarm hosts cheap.
+func (s *SwarmService) ObserveMetrics(meter metric.Meter) error {
+	swarmNodes, nodesErr := meter.Int64ObservableGauge("arcane.docker.swarm.nodes",
+		metric.WithDescription("Swarm nodes by role and state, reported by swarm managers"), metric.WithUnit("{node}"))
+	swarmServices, servicesErr := meter.Int64ObservableGauge("arcane.docker.swarm.services",
+		metric.WithDescription("Swarm services, reported by swarm managers"), metric.WithUnit("{service}"))
+	swarmTasks, tasksErr := meter.Int64ObservableGauge("arcane.docker.swarm.service.tasks",
+		metric.WithDescription("Running and desired tasks per swarm service, reported by swarm managers"), metric.WithUnit("{task}"))
+	if err := errors.Join(nodesErr, servicesErr, tasksErr); err != nil {
+		return err
+	}
+
+	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		ctx, cancel := context.WithTimeout(ctx, swarmMetricsCollectTimeout)
+		defer cancel()
+		ping, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
+			return cli.Ping(ctx, client.PingOptions{})
+		})
+		if err != nil || ping.SwarmStatus == nil || !ping.SwarmStatus.ControlAvailable {
+			return nil
+		}
+
+		if nodes, nodeErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NodeListResult, error) {
+			return cli.NodeList(ctx, client.NodeListOptions{})
+		}); nodeErr != nil {
+			slog.DebugContext(ctx, "Skipping swarm node metrics", "error", nodeErr)
+		} else {
+			counts := map[[2]string]int64{}
+			for _, node := range nodes.Items {
+				counts[[2]string{string(node.Spec.Role), string(node.Status.State)}]++
+			}
+			for key, n := range counts {
+				o.ObserveInt64(swarmNodes, n, metric.WithAttributes(attribute.String("swarm.node.role", key[0]), attribute.String("swarm.node.state", key[1])))
+			}
+		}
+
+		services, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServiceListResult, error) {
+			return cli.ServiceList(ctx, client.ServiceListOptions{Status: true})
+		})
+		if err != nil {
+			slog.DebugContext(ctx, "Skipping swarm service metrics", "error", err)
+			return nil
+		}
+		o.ObserveInt64(swarmServices, int64(len(services.Items)))
+		for _, service := range services.Items {
+			status := cmp.Or(service.ServiceStatus, &swarm.ServiceStatus{})
+			name := attribute.String("swarm.service.name", service.Spec.Name)
+			o.ObserveInt64(swarmTasks, int64(status.RunningTasks), metric.WithAttributes(name, attribute.String("swarm.task.state", "running")))
+			o.ObserveInt64(swarmTasks, int64(status.DesiredTasks), metric.WithAttributes(name, attribute.String("swarm.task.state", "desired")))
+		}
+		return nil
+	}, swarmNodes, swarmServices, swarmTasks)
+	return err
 }

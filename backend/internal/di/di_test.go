@@ -25,7 +25,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
-	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -106,7 +105,6 @@ type (
 		GitOpsSync        *gitops.GitOpsSyncService
 		Webhook           *webhook.Module
 		Vulnerability     *vulnerability.VulnerabilityService
-		Dashboard         *dashboard.DashboardService
 		Podman            *podman.Module
 		Role              *role.RoleService
 		Variable          *variable.VariableService

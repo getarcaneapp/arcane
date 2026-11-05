@@ -745,33 +745,6 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[types.Vo
 	}
 }
 
-// CountUsageFromSnapshot derives usage counts from fetched volumes and containers with ListVolumesPaginated's
-// semantics (internal volumes excluded, mounted means in use) so dashboard tiles match the volumes page.
-func (s *VolumeService) CountUsageFromSnapshot(dockerVolumes []volume.Volume, containers []container.Summary) types.VolumeUsageCounts {
-	inUse := make(map[string]struct{})
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && m.Name != "" {
-				inUse[m.Name] = struct{}{}
-			}
-		}
-	}
-
-	counts := types.VolumeUsageCounts{}
-	for _, v := range dockerVolumes {
-		if s.isInternalVolume(types.NewVolume(v)) {
-			continue
-		}
-		counts.Total++
-		if _, ok := inUse[v.Name]; ok {
-			counts.Inuse++
-		} else {
-			counts.Unused++
-		}
-	}
-	return counts
-}
-
 // IsBackupVolume reports whether name is the volume that stores this environment's backups.
 func (s *VolumeService) IsBackupVolume(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(s.backupVolumeName))

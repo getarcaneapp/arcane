@@ -29,7 +29,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
 	"getarcane.dev/arcane/v3/internal/container"
-	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/di"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -335,8 +334,8 @@ func applicationOptions(
 					},
 				})
 			},
-			func(lc fx.Lifecycle, dashboardService *dashboard.DashboardService) {
-				if err := dashboardService.ObserveInventory(otel.Meter(logging.InstrumentationName)); err != nil {
+			func(lc fx.Lifecycle, swarmService *swarm.SwarmService) {
+				if err := swarmService.ObserveMetrics(otel.Meter(logging.InstrumentationName)); err != nil {
 					otel.Handle(err)
 				}
 				if providers.meterProvider != nil {
@@ -393,7 +392,6 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {
 			slog.WarnContext(p.AppCtx, "Failed to reconcile agent environment statuses on startup", "error", err)
 		}
-		p.Environment.RegisterMetrics()
 	}
 
 	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,

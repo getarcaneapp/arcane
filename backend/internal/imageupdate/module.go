@@ -3,20 +3,14 @@ package imageupdate
 
 import (
 	"context"
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/types/v3"
 )
 
@@ -27,32 +21,7 @@ type (
 	}
 )
 
-// New wires image update routes and registers the arcane.image.updates gauges once.
 func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)) *Module {
-	if service != nil {
-		meter := otel.Meter(logging.InstrumentationName)
-		updates, updatesErr := meter.Int64ObservableGauge("arcane.image.updates",
-			metric.WithDescription("Local images with an available update by update type"), metric.WithUnit("{image}"))
-		checkErrors, checkErrorsErr := meter.Int64ObservableGauge("arcane.image.update.check_errors",
-			metric.WithDescription("Local images whose last update check failed"), metric.WithUnit("{image}"))
-		err := errors.Join(updatesErr, checkErrorsErr)
-		if err == nil {
-			_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-				summary, summaryErr := service.GetUpdateSummary(ctx)
-				if summaryErr != nil {
-					slog.DebugContext(ctx, "Skipping image update metrics", "error", summaryErr)
-					return nil
-				}
-				o.ObserveInt64(updates, int64(summary.DigestUpdates), metric.WithAttributes(attribute.String("image.update.type", "digest")))
-				o.ObserveInt64(updates, int64(summary.ImagesWithUpdates-summary.DigestUpdates), metric.WithAttributes(attribute.String("image.update.type", "tag")))
-				o.ObserveInt64(checkErrors, int64(summary.ErrorsCount))
-				return nil
-			}, updates, checkErrors)
-		}
-		if err != nil {
-			otel.Handle(err)
-		}
-	}
 	return &Module{service: service, getUpdateInfoByImageRefs: getUpdateInfo}
 }
 
