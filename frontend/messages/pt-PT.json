@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "Ajustar as janelas do buffer do túnel do agente para otimizar o débito e a utilização de memória",
   "buffer_windows": "Janelas de buffer",
   "http2_receive_window": "Janela de receção HTTP/2 (apenas para o gestor)",
-  "http2_receive_window_description": "Buffer de receção HTTP/2 por fluxo. Aplica-se apenas ao servidor do gestor Arcane. Os valores definidos nos ambientes dos agentes não têm qualquer efeito. Valores mais elevados aceleram as transferências dos agentes em ligações de alta latência. Qualquer cliente HTTP/2 pode fazer com que o gestor armazene no buffer até 2× este valor por ligação.",
-  "http2_receive_window_restart": "Entra em vigor após o reinício do gestor.",
+  "http2_receive_window_description": "Buffer HTTP/2 por fluxo no gestor. Um valor mais elevado proporciona maior velocidade em ligações de alta latência, mas consome mais memória.",
+  "http2_receive_window_restart": "Aplica-se após o reinício do gestor.",
   "agent_tunnel_stream_window": "Janela do Túnel do Agente Stream",
-  "agent_tunnel_stream_window_description": "Janela de receção para cada transferência através do túnel do agente deste ambiente. O agente envia-a ao gestor quando o túnel estabelece ligação, e ambos os lados utilizam-na. Valores mais elevados aceleram as transferências em ligações de alta latência, mas cada lado pode reter até este volume de dados na RAM para cada transferência ativa.",
-  "agent_tunnel_stream_window_reconnect": "Entra em vigor na próxima vez que o túnel do agente se voltar a ligar. Os túneis abertos mantêm a sua janela atual.",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "Buffer por transferência no túnel do agente. Um valor mais elevado proporciona maior velocidade em ligações de alta latência, mas consome mais memória.",
+  "agent_tunnel_stream_window_reconnect": "Aplica-se quando o túnel restabelece a ligação.",
+  "value_in_mib": "Valor em MiB ({range})"
 }
