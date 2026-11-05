@@ -645,7 +645,8 @@ func (s *Service) ListStackServicesPaginated(ctx context.Context, environmentID,
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		return []types.SwarmServiceSummary{}, pagination.Response{}, s.emptyStackPageErr(ctx, environmentID, stackName)
+		_, err = s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
+		return []types.SwarmServiceSummary{}, pagination.Response{}, err
 	}
 
 	return s.paginateServices(ctx, services, params)
@@ -661,7 +662,8 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, environmentID, st
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		return []types.SwarmTaskSummary{}, pagination.Response{}, s.emptyStackPageErr(ctx, environmentID, stackName)
+		_, err = s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
+		return []types.SwarmTaskSummary{}, pagination.Response{}, err
 	}
 
 	filters := make(client.Filters)
@@ -670,11 +672,6 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, environmentID, st
 	}
 
 	return s.listTasks(ctx, filters, params)
-}
-
-func (s *Service) emptyStackPageErr(ctx context.Context, environmentID, stackName string) error {
-	_, err := s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
-	return err
 }
 
 func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, req types.SwarmStackRenderConfigRequest) (*types.SwarmStackRenderConfigResponse, error) {
