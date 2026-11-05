@@ -715,11 +715,11 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	// Only checked when the name or target changes, so unrelated edits to an existing sync still save.
 	if change.Submitted["targetType"] || change.Submitted["projectName"] {
-		if err := validateSwarmStackName(
+		if nameErr := validateSwarmStackName(
 			kit.Ternary(change.Submitted["targetType"], change.Request.TargetType, syncRecord.TargetType),
 			kit.Ternary(change.Submitted["projectName"], change.Request.ProjectName, syncRecord.ProjectName),
-		); err != nil {
-			return nil, err
+		); nameErr != nil {
+			return nil, nameErr
 		}
 	}
 
