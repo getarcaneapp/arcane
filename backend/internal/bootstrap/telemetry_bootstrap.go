@@ -65,6 +65,7 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 	// persisted instance ID or mode that identify this installation.
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
+		resource.WithHost(),
 		resource.WithAttributes(semconv.ServiceName("arcane"), semconv.ServiceVersion(config.Version)),
 		resource.WithFromEnv(),
 		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.AgentEnabled, "agent", "manager"))),
