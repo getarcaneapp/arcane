@@ -4417,10 +4417,10 @@
   "agent_tunnel_settings_description": "スループットとメモリ使用量に合わせて、エージェントのトンネルバッファウィンドウを調整する",
   "buffer_windows": "バッファウィンドウ",
   "http2_receive_window": "HTTP/2 受信ウィンドウ（マネージャーのみ）",
-  "http2_receive_window_description": "ストリームごとのHTTP/2受信バッファ。Arcaneマネージャーのサーバーにのみ適用されます。エージェント環境で設定された値は影響しません。この値を大きくすると、遅延の大きい回線でのエージェント間の転送が高速化されます。どのHTTP/2クライアントでも、接続ごとにこの値の最大2倍までマネージャーのバッファを割り当てることができます。",
-  "http2_receive_window_restart": "マネージャーが再起動した後、有効になります。",
+  "http2_receive_window_description": "マネージャー上のストリームごとのHTTP/2バッファ。値が大きいほど、高遅延の通信回線では処理が高速になりますが、メモリ使用量も増えます。",
+  "http2_receive_window_restart": "マネージャーの再起動後に適用されます。",
   "agent_tunnel_stream_window": "エージェント・トンネル・ストリーム・ウィンドウ",
-  "agent_tunnel_stream_window_description": "この環境のエージェントトンネルを介する各転送に対する受信ウィンドウ。エージェントはトンネルが接続された際にこれをマネージャーに送信し、双方がこれを使用します。値を大きく設定すると、高遅延のリンクでの転送速度が向上しますが、各側はアクティブな転送ごとに、この量までのデータをRAMに保持することになります。",
-  "agent_tunnel_stream_window_reconnect": "エージェントのトンネルが次に再接続された時点で有効になります。開いているトンネルは、現在のウィンドウを維持します。",
-  "value_in_mib": "Value in MiB ({range})"
+  "agent_tunnel_stream_window_description": "エージェントトンネルにおける転送ごとのバッファサイズ。値が大きいほど、遅延の大きい回線では転送速度が向上しますが、メモリ使用量も増えます。",
+  "agent_tunnel_stream_window_reconnect": "トンネルが再接続された際に適用されます。",
+  "value_in_mib": "MiB単位の値（{range}）"
 }
