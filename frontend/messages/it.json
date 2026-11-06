@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Finestra \"Agent Tunnel Stream\"",
   "agent_tunnel_stream_window_description": "Buffer per trasferimento sul tunnel dell'agente. Un valore più alto garantisce una maggiore velocità su collegamenti ad alta latenza, ma richiede più memoria.",
   "agent_tunnel_stream_window_reconnect": "Si applica quando il tunnel si riconnette.",
-  "value_in_mib": "Valore in MiB ({range})"
+  "value_in_mib": "Valore in MiB ({range})",
+  "inject_into_all_containers": "Inserire in tutti i contenitori",
+  "inject_into_all_containers_description": "Aggiungi la variabile all'ambiente di ogni container. Se disattivata, è disponibile solo per la sostituzione delle variabili nei file Compose",
+  "injected": "Iniettato",
+  "built_on": "Costruito {date}"
 }
