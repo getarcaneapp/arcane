@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Ввести у всі контейнери",
   "inject_into_all_containers_description": "Додайте змінну до середовища кожного контейнера. Якщо ця опція вимкнена, змінна доступна для підстановки лише у файлах compose",
   "injected": "Введено",
-  "built_on": "Побудовано {date}"
+  "built_on": "Побудовано {date}",
+  "default_font": "За замовчуванням",
+  "system_ui": "Інтерфейс системи",
+  "interface_font": "Шрифт інтерфейсу",
+  "interface_font_description": "Шрифт для тексту інтерфейсу. Для китайських, японських та корейських символів використовуються встановлені системні шрифти.",
+  "monospace_font": "Шрифт Monospace",
+  "monospace_font_description": "Шрифт для заголовків, ідентифікаторів та іншого тексту з фіксованою шириною символів",
+  "code_font": "Шрифт коду",
+  "code_font_description": "Шрифт для редактора коду, блоків коду та терміналу. Термінал оновлюється при повторному відкритті.",
+  "custom_font": "Шрифт, створений на замовлення",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
