@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"path"
 	"slices"
 	"strings"
@@ -648,7 +647,7 @@ func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.Back
 	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
 		return nil
 	}
-	return s.deleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, _ []string) ([]string, error) {
+	return s.deleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, within []string) ([]string, error) {
 		var expired []string
 		for _, seriesID := range retention.SeriesIDs {
 			ids, err := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", seriesID, retention.Keep)
@@ -656,6 +655,16 @@ func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.Back
 				return nil, err
 			}
 			expired = append(expired, ids...)
+		}
+		if within != nil {
+			locked := make(map[string]struct{}, len(within))
+			for _, id := range within {
+				locked[id] = struct{}{}
+			}
+			expired = slices.DeleteFunc(expired, func(id string) bool {
+				_, ok := locked[id]
+				return !ok
+			})
 		}
 		return expired, nil
 	})
@@ -667,12 +676,7 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	if err != nil || len(ids) == 0 {
 		return err
 	}
-	// Bound the pass; drawing the batch at random keeps backups that keep failing from holding back the rest.
-	if len(ids) > backup.DeletionBatchSize {
-		rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
-		ids = ids[:backup.DeletionBatchSize]
-	}
-	entries, err := s.deps.Store.Runs(ctx, ids)
+	entries, err := s.backupsByID(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -713,7 +717,7 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	if ids, err = expired(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
-	if entries, err = s.deps.Store.Runs(ctx, ids); err != nil {
+	if entries, err = s.backupsByID(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
 	var rusticEntries []*types.VolumeBackup
@@ -734,6 +738,19 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	}
 	slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
 	return deleteErr
+}
+
+// backupsByID loads backups in bounded batches so a large deletion stays within SQL parameter limits.
+func (s *Service) backupsByID(ctx context.Context, ids []string) ([]*types.VolumeBackup, error) {
+	entries := make([]*types.VolumeBackup, 0, len(ids))
+	for batch := range slices.Chunk(ids, backup.DeletionBatchSize) {
+		batchEntries, err := s.deps.Store.Runs(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, batchEntries...)
+	}
+	return entries, nil
 }
 
 func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {

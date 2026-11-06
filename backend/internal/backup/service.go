@@ -509,24 +509,30 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	for _, snapshot := range snapshots {
 		existing[strings.ToLower(snapshot.ID)] = snapshot.ID
 	}
-	command := []string{"forget", "--prune"}
+	var listed []string
 	for _, id := range requested {
 		if listedID, found := existing[id]; found {
-			if len(command) == 2 {
-				command = append(command, "--")
-			}
-			command = append(command, listedID)
+			listed = append(listed, listedID)
 		}
 	}
-	if len(command) == 2 && len(requested) > 0 {
+	if len(listed) == 0 && len(requested) > 0 {
 		slog.DebugContext(ctx, "No requested snapshots found in repository; skipping forget", "repositoryId", repository.ID, "requested", requested)
 		return nil
 	}
-	if len(command) == 2 {
-		command = []string{"prune"}
+	if len(listed) == 0 {
+		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
+		return err
 	}
-	_, err = e.runContainer(ctx, dockerClient, repository, password, command)
-	return err
+	// Forget in bounded batches and prune only with the last one: every prune scans the whole repository and
+	// repacks partly used packs, so a large deletion must still prune once.
+	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
+	for i, batch := range batches {
+		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
+		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, currentPassword, newPassword string) error {
