@@ -453,8 +453,9 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
 		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
+		// This backup is still running, so it is not ranked yet; it takes one of the successful slots.
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, backup.RunRetention{
-			Succeeded: plan.Policy.RetentionCount,
+			Succeeded: plan.Policy.RetentionCount - 1,
 			Failed:    plan.Policy.RetentionCount,
 		})
 		if retentionErr == nil && len(expired) > 0 {
