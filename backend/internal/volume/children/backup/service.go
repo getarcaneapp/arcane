@@ -743,7 +743,10 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	if len(rusticEntries) > 0 {
 		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, includeRemote))
 	}
-	slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
+	// Callers log a failure; only a pass that fully succeeded reports what it freed.
+	if deleteErr == nil {
+		slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
+	}
 	return deleteErr
 }
 
