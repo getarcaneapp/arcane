@@ -16,7 +16,8 @@
 		'maxImageUploadSize',
 		'gitSyncMaxFiles',
 		'gitSyncMaxTotalSizeMb',
-		'gitSyncMaxBinarySizeMb'
+		'gitSyncMaxBinarySizeMb',
+		'unmanagedBackupRetentionDays'
 	]}
 >
 	{#snippet content({ formInputs, mixed })}

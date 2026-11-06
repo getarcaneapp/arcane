@@ -235,6 +235,13 @@ type (
 		ActivityID string `json:"activityId"`
 		Status     string `json:"status"`
 	}
+
+	// UnmanagedBackupSweep ages out safety backups and backups whose volume or schedule no longer exists.
+	UnmanagedBackupSweep struct {
+		Now                   time.Time
+		SystemVolumePolicyIDs []string
+		Retention             time.Duration
+	}
 )
 
 const (

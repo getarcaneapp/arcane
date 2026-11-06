@@ -213,6 +213,11 @@ func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
 	return s.backup.PruneLocalRepository(ctx)
 }
 
+// PruneUnmanagedBackups ages out safety backups and backups whose volume or schedule is gone.
+func (s *VolumeService) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	return s.backup.PruneUnmanagedBackups(ctx, sweep)
+}
+
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
 func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
 	return s.backup.MigrateRepositoryPasswords(ctx, previousKey, newKey)

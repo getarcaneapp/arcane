@@ -183,4 +183,27 @@
 			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
+
+	<SettingsSection title={m.backups()} description={m.backup_cleanup_description()}>
+		<SettingsRow
+			for="unmanaged-backup-retention-days"
+			label={m.unmanaged_backup_retention_days()}
+			description={m.unmanaged_backup_retention_days_description()}
+			helpText={m.unmanaged_backup_retention_days_help()}
+			error={formInputs.unmanagedBackupRetentionDays.error}
+			mixed={mixed('unmanagedBackupRetentionDays')}
+		>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="unmanaged-backup-retention-days"
+					type="number"
+					bind:value={formInputs.unmanagedBackupRetentionDays.value}
+					aria-invalid={!!formInputs.unmanagedBackupRetentionDays.error}
+					placeholder={mixed('unmanagedBackupRetentionDays') ? m.mixed() : undefined}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
+		</SettingsRow>
+	</SettingsSection>
 </div>

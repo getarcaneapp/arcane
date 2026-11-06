@@ -124,6 +124,12 @@ type (
 		destinationID string
 		instanceID    string
 	}
+
+	unmanagedCandidate struct {
+		ID         string
+		VolumeName string
+		PolicyID   string
+	}
 )
 
 func NewService(deps Dependencies) *Service {
@@ -586,24 +592,123 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	if entry.Format != types.VolumeBackupFormatArchive {
 		return s.deleteRusticBackups(ctx, []*types.VolumeBackup{entry}, user, true)
 	}
+	return s.deleteArchiveBackup(ctx, entry, user)
+}
+
+// deleteArchiveBackup removes a legacy archive backup; the caller holds the volume's run lease.
+func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBackup, user *types.Actor) error {
 	// Delete the row first: a failed file removal then only leaves an orphan file.
-	if deleteErr := s.deps.Store.Delete(ctx, backupID); deleteErr != nil {
+	if deleteErr := s.deps.Store.Delete(ctx, entry.ID); deleteErr != nil {
 		return deleteErr
 	}
 	containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backupId", backupID, "error", err.Error())
+		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backupId", entry.ID, "error", err.Error())
 	} else {
 		defer cleanup()
-		filename, filenameErr := backupArchiveFilename(backupID)
+		filename, filenameErr := backupArchiveFilename(entry.ID)
 		if filenameErr != nil {
-			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backupId", backupID, "error", filenameErr.Error())
+			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backupId", entry.ID, "error", filenameErr.Error())
 		} else if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
-			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backupId", backupID, "error", err.Error())
+			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backupId", entry.ID, "error", err.Error())
 		}
 	}
-	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": backupID})
+	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": entry.ID})
 	return nil
+}
+
+// PruneUnmanagedBackups deletes safety backups and backups whose volume or schedule is gone once they pass the
+// sweep's retention window. Backups discovered from other instances are never treated as orphaned.
+func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
+		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list Docker volumes: %w", err)
+	}
+	volumeNames := make([]string, 0, len(listed.Items))
+	for _, item := range listed.Items {
+		volumeNames = append(volumeNames, item.Name)
+	}
+	policyIDs, err := s.policies.IDs(ctx)
+	if err != nil {
+		return err
+	}
+	var candidates []unmanagedCandidate
+	if loadErr := s.deps.DB.WithContext(ctx).Table("volume_backups").
+		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id").
+		Where("status <> ? AND trigger <> ? AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerSafety).
+		Find(&candidates).Error; loadErr != nil {
+		return fmt.Errorf("failed to load volume backups: %w", loadErr)
+	}
+	expired, err := backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
+	if err != nil || len(expired) == 0 {
+		return err
+	}
+	entries, err := s.deps.Store.Runs(ctx, expired)
+	if err != nil {
+		return err
+	}
+	backupVolumes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		backupVolumes = append(backupVolumes, entry.VolumeName)
+	}
+	// Hold every affected volume's run lease so Rustic forgets all expired snapshots in one pass per repository.
+	leases := make(map[string]*runs.Lease)
+	defer func() {
+		for _, lease := range leases {
+			lease.Release(ctx)
+		}
+	}()
+	var deleteErr error
+	for _, volumeName := range kit.Unique(backupVolumes) {
+		lease, leaseErr := s.acquireVolumeRun(ctx, volumeName)
+		if errors.Is(leaseErr, s.deps.AlreadyRunning) {
+			slog.InfoContext(ctx, "Skipping unmanaged backup cleanup for a busy volume", "volume", volumeName)
+			continue
+		}
+		if leaseErr != nil {
+			deleteErr = errors.Join(deleteErr, leaseErr)
+			continue
+		}
+		leases[volumeName] = lease
+	}
+	// Re-read under the leases so a concurrent upload or delete is not undone.
+	if entries, err = s.deps.Store.Runs(ctx, expired); err != nil {
+		return errors.Join(deleteErr, err)
+	}
+	var rusticEntries []*types.VolumeBackup
+	for _, entry := range entries {
+		if _, ok := leases[entry.VolumeName]; !ok {
+			continue
+		}
+		if entry.Format == types.VolumeBackupFormatArchive {
+			deleteErr = errors.Join(deleteErr, s.deleteArchiveBackup(ctx, entry, nil))
+			continue
+		}
+		rusticEntries = append(rusticEntries, entry)
+	}
+	if len(rusticEntries) > 0 {
+		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, true))
+	}
+	slog.InfoContext(ctx, "Pruned unmanaged volume backups", "expired", len(expired), "volumes", len(leases))
+	return deleteErr
+}
+
+// orphanedVolumeBackupIDs returns backups whose volume no longer exists or whose schedule was deleted.
+func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
+	var orphaned []string
+	for _, candidate := range candidates {
+		managed := candidate.PolicyID == "" || slices.Contains(policyIDs, candidate.PolicyID)
+		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok {
+			owner, _, _ := strings.Cut(series, ":")
+			managed = slices.Contains(systemPolicyIDs, owner)
+		}
+		if !managed || !slices.Contains(volumeNames, candidate.VolumeName) {
+			orphaned = append(orphaned, candidate.ID)
+		}
+	}
+	return orphaned
 }
 
 // deleteRusticBackups forgets snapshots grouped by repository so each repository is pruned once.

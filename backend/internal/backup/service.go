@@ -952,3 +952,30 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 	}
 	return expired, nil
 }
+
+// ExpiredUnmanagedRunIDs starts the grace period of newly orphaned runs, ends it for runs managed again, and returns
+// finished safety runs and orphaned runs that are past the retention window.
+func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, orphanedIDs []string, sweep types.UnmanagedBackupSweep) ([]string, error) {
+	cutoff := sweep.Now.Add(-sweep.Retention)
+	var expired []string
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		managed := tx.Table(table).Where("orphaned_at IS NOT NULL")
+		if len(orphanedIDs) > 0 {
+			managed = managed.Where("id NOT IN ?", orphanedIDs)
+		}
+		if err := managed.Update("orphaned_at", nil).Error; err != nil {
+			return fmt.Errorf("clear backup orphan marks: %w", err)
+		}
+		if len(orphanedIDs) > 0 {
+			if err := tx.Table(table).Where("orphaned_at IS NULL AND id IN ?", orphanedIDs).Update("orphaned_at", sweep.Now).Error; err != nil {
+				return fmt.Errorf("mark orphaned backups: %w", err)
+			}
+		}
+		return tx.Table(table).
+			Where("status <> ?", "running").
+			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff)).
+			Order("created_at ASC").
+			Pluck("id", &expired).Error
+	})
+	return expired, err
+}

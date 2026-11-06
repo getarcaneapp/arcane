@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"time"
 
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system"
@@ -46,8 +47,16 @@ func (j *BackupRepositoryPruneJob) Schedule(ctx context.Context) string {
 
 func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	var pruneErr error
+	if days := j.settingsService.GetIntSetting(ctx, "unmanagedBackupRetentionDays"); days > 0 {
+		if err := j.systemService.PruneUnmanagedBackups(ctx, types.UnmanagedBackupSweep{
+			Now:       time.Now(),
+			Retention: time.Duration(days) * 24 * time.Hour,
+		}); err != nil {
+			pruneErr = fmt.Errorf("prune unmanaged backups: %w", err)
+		}
+	}
 	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
-		pruneErr = fmt.Errorf("prune system backup repository: %w", err)
+		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune system backup repository: %w", err))
 	}
 	if err := j.volumeService.PruneLocalBackupRepository(ctx); err != nil {
 		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune volume backup repository: %w", err))

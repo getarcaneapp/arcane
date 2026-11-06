@@ -197,6 +197,11 @@ func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
 	return s.backup.PruneLocalRepository(ctx)
 }
 
+// PruneUnmanagedBackups ages out safety backups and backups whose volume or schedule is gone.
+func (s *SystemService) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	return s.backup.PruneUnmanagedBackups(ctx, sweep)
+}
+
 func (s *SystemService) RegisterBackupJobOnStartup(ctx context.Context) {
 	s.backup.RegisterBackupJobOnStartup(ctx)
 }
@@ -584,6 +589,16 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		},
 		ExpiredRunIDs: func(ctx context.Context, policyID string, keep int) ([]string, error) {
 			return backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, keep)
+		},
+		ExpiredUnmanagedRunIDs: func(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
+			var orphanedIDs []string
+			if err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).
+				Where("status <> ? AND trigger <> ? AND COALESCE(policy_id, '') <> ''", SystemBackupStatusRunning, SystemBackupTriggerSafety).
+				Where("policy_id NOT IN (?)", s.db.Model(&SystemBackupPolicy{}).Select("id")).
+				Pluck("id", &orphanedIDs).Error; err != nil {
+				return nil, fmt.Errorf("failed to load orphaned system backups: %w", err)
+			}
+			return backup.ExpiredUnmanagedRunIDs(ctx, s.db, "system_backup_runs", orphanedIDs, sweep)
 		},
 		RunsByID: func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error) {
 			var records []SystemBackupRun

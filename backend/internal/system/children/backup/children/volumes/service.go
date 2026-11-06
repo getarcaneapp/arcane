@@ -84,6 +84,8 @@ const (
 	// systemVolumePlanTarget records a scheduled run's frozen selection.
 	systemVolumePlanTarget      = "system-volume-plan"
 	defaultSystemVolumeSchedule = "0 2 * * *"
+	// manualSeriesOwner owns the backup series of runs started without a saved policy.
+	manualSeriesOwner = "manual"
 )
 
 func NewService(deps Dependencies) *Service {
@@ -494,7 +496,7 @@ func (s *Service) executeSystemVolumeBackups(
 			continue
 		}
 		if backupErr == nil {
-			seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, "manual", input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
+			seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, manualSeriesOwner, input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
 			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, types.SystemUser, trigger, seriesID, policy)
 		}
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
@@ -782,6 +784,23 @@ func (s *Service) Start(ctx context.Context, user types.Actor, request types.Run
 }
 
 // RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
+// PruneUnmanagedBackups ages out volume backups, treating series of deleted system-managed policies as orphaned.
+func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	collection, err := s.loadSystemVolumeBackupPolicies()
+	if err != nil {
+		return err
+	}
+	owners := []string{manualSeriesOwner}
+	for _, policy := range collection.Policies {
+		owners = append(owners, policy.ID)
+	}
+	return s.volumes.PruneUnmanagedBackups(ctx, types.UnmanagedBackupSweep{
+		Now:                   sweep.Now,
+		SystemVolumePolicyIDs: owners,
+		Retention:             sweep.Retention,
+	})
+}
+
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
 	policies, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {

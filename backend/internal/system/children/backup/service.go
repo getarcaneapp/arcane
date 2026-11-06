@@ -71,6 +71,7 @@ type (
 		Run                       func(ctx context.Context, id string) (*types.SystemBackupRun, error)
 		ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error)
 		ExpiredRunIDs             func(ctx context.Context, policyID string, keep int) ([]string, error)
+		ExpiredUnmanagedRunIDs    func(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error)
 		RunsByID                  func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error)
 		LatestPolicyRun           func(ctx context.Context, policyID string) (*types.SystemBackupRun, error)
 		RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
@@ -1549,6 +1550,31 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 		return err
 	}
 	return s.deleteRuns(ctx, expiredRuns, "", includeRemote)
+}
+
+// PruneUnmanagedBackups ages out volume backups no schedule manages, then system safety backups and runs of deleted
+// schedules. A busy system backup defers its own cleanup to the next sweep.
+func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	volumeErr := s.volumes.PruneUnmanagedBackups(ctx, sweep)
+	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, sweep)
+	if err != nil || len(expired) == 0 {
+		return errors.Join(volumeErr, err)
+	}
+	lease, err := s.acquireRun(ctx)
+	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
+		slog.InfoContext(ctx, "Skipping unmanaged system backup cleanup while a system backup runs")
+		return volumeErr
+	}
+	if err != nil {
+		return errors.Join(volumeErr, err)
+	}
+	defer lease.Release(ctx)
+	expiredRuns, err := s.store.RunsByID(ctx, expired)
+	if err != nil {
+		return errors.Join(volumeErr, err)
+	}
+	slog.InfoContext(ctx, "Pruning unmanaged system backups", "expired", len(expiredRuns))
+	return errors.Join(volumeErr, s.deleteRuns(ctx, expiredRuns, "", true))
 }
 
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {

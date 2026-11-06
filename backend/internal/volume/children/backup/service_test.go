@@ -214,3 +214,23 @@ func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
 	require.Equal(t, int64(2048), snapshot.Summary.TotalBytesProcessed)
 	require.False(t, snapshot.Time.IsZero())
 }
+
+func TestOrphanedVolumeBackupIDs(t *testing.T) {
+	systemSeries := func(owner string) string {
+		return types.SystemVolumePolicyPrefix + owner + ":" + kit.SHA256Hex("app-data")[:16]
+	}
+	candidates := []unmanagedCandidate{
+		{ID: "manual", VolumeName: "app-data"},
+		{ID: "volume-policy", VolumeName: "app-data", PolicyID: "policy-1"},
+		{ID: "deleted-volume-policy", VolumeName: "app-data", PolicyID: "policy-deleted"},
+		{ID: "system-policy", VolumeName: "app-data", PolicyID: systemSeries("nightly")},
+		{ID: "system-manual", VolumeName: "app-data", PolicyID: systemSeries("manual")},
+		{ID: "deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly")},
+		{ID: "removed-volume", VolumeName: "old-data"},
+		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly")},
+	}
+
+	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})
+
+	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
+}
