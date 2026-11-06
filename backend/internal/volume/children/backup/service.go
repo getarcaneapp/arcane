@@ -620,28 +620,7 @@ func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBa
 // PruneUnmanagedBackups deletes safety backups and backups whose volume or schedule is gone once they pass the
 // sweep's retention window. Backups discovered from other instances are never treated as orphaned.
 func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
-		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list Docker volumes: %w", err)
-	}
-	volumeNames := make([]string, 0, len(listed.Items))
-	for _, item := range listed.Items {
-		volumeNames = append(volumeNames, item.Name)
-	}
-	policyIDs, err := s.policies.IDs(ctx)
-	if err != nil {
-		return err
-	}
-	var candidates []unmanagedCandidate
-	if loadErr := s.deps.DB.WithContext(ctx).Table("volume_backups").
-		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id").
-		Where("status <> ? AND trigger <> ? AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerSafety).
-		Find(&candidates).Error; loadErr != nil {
-		return fmt.Errorf("failed to load volume backups: %w", loadErr)
-	}
-	expired, err := backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
+	expired, err := s.expiredUnmanagedBackupIDs(ctx, sweep)
 	if err != nil || len(expired) == 0 {
 		return err
 	}
@@ -653,33 +632,46 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	for _, entry := range entries {
 		backupVolumes = append(backupVolumes, entry.VolumeName)
 	}
-	// Hold every affected volume's run lease so Rustic forgets all expired snapshots in one pass per repository.
-	leases := make(map[string]*runs.Lease)
+	// Hold each volume's workspace lock, which restores take, and its run lease, which backups, uploads, and deletes
+	// take, so Rustic forgets every expired snapshot in one pass per repository without racing either.
+	held := make(map[string]func())
 	defer func() {
-		for _, lease := range leases {
-			lease.Release(ctx)
+		for _, release := range held {
+			release()
 		}
 	}()
 	var deleteErr error
 	for _, volumeName := range kit.Unique(backupVolumes) {
-		lease, leaseErr := s.acquireVolumeRun(ctx, volumeName)
-		if errors.Is(leaseErr, s.deps.AlreadyRunning) {
+		unlock, locked := s.deps.Locks.TryLock(volumeName)
+		if !locked {
 			slog.InfoContext(ctx, "Skipping unmanaged backup cleanup for a busy volume", "volume", volumeName)
 			continue
 		}
+		lease, leaseErr := s.acquireVolumeRun(ctx, volumeName)
 		if leaseErr != nil {
+			unlock()
+			if errors.Is(leaseErr, s.deps.AlreadyRunning) {
+				slog.InfoContext(ctx, "Skipping unmanaged backup cleanup for a busy volume", "volume", volumeName)
+				continue
+			}
 			deleteErr = errors.Join(deleteErr, leaseErr)
 			continue
 		}
-		leases[volumeName] = lease
+		held[volumeName] = func() {
+			lease.Release(ctx)
+			unlock()
+		}
 	}
-	// Re-read under the leases so a concurrent upload or delete is not undone.
+	// Recheck under the locks: a restore that finished first may have brought the volume back.
+	if expired, err = s.expiredUnmanagedBackupIDs(ctx, sweep); err != nil {
+		return errors.Join(deleteErr, err)
+	}
 	if entries, err = s.deps.Store.Runs(ctx, expired); err != nil {
 		return errors.Join(deleteErr, err)
 	}
 	var rusticEntries []*types.VolumeBackup
 	for _, entry := range entries {
-		if _, ok := leases[entry.VolumeName]; !ok {
+		if _, ok := held[entry.VolumeName]; !ok {
 			continue
 		}
 		if entry.Format == types.VolumeBackupFormatArchive {
@@ -691,8 +683,35 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	if len(rusticEntries) > 0 {
 		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, true))
 	}
-	slog.InfoContext(ctx, "Pruned unmanaged volume backups", "expired", len(expired), "volumes", len(leases))
+	slog.InfoContext(ctx, "Pruned unmanaged volume backups", "expired", len(expired), "volumes", len(held))
 	return deleteErr
+}
+
+// expiredUnmanagedBackupIDs classifies volume backups against the live volumes and schedules and returns those past
+// the retention window.
+func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
+		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
+	}
+	volumeNames := make([]string, 0, len(listed.Items))
+	for _, item := range listed.Items {
+		volumeNames = append(volumeNames, item.Name)
+	}
+	policyIDs, err := s.policies.IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []unmanagedCandidate
+	if loadErr := s.deps.DB.WithContext(ctx).Table("volume_backups").
+		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id").
+		Where("status <> ? AND trigger <> ? AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerSafety).
+		Find(&candidates).Error; loadErr != nil {
+		return nil, fmt.Errorf("failed to load volume backups: %w", loadErr)
+	}
+	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
 }
 
 // orphanedVolumeBackupIDs returns backups whose volume no longer exists or whose schedule was deleted.
