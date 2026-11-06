@@ -635,8 +635,10 @@ func (s *Service) ListStackServicesPaginated(ctx context.Context, environmentID,
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		_, err = s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
-		return []types.SwarmServiceSummary{}, pagination.Response{}, err
+		if _, err := s.getPersistedStackSourceSummary(ctx, environmentID, stackName); err != nil {
+			return nil, pagination.Response{}, err
+		}
+		return []types.SwarmServiceSummary{}, pagination.BuildResponse(0, 0, params), nil
 	}
 
 	return s.paginateServices(ctx, services, params)
@@ -652,8 +654,10 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, environmentID, st
 		return nil, pagination.Response{}, err
 	}
 	if len(services) == 0 {
-		_, err = s.getPersistedStackSourceSummary(ctx, environmentID, stackName)
-		return []types.SwarmTaskSummary{}, pagination.Response{}, err
+		if _, err := s.getPersistedStackSourceSummary(ctx, environmentID, stackName); err != nil {
+			return nil, pagination.Response{}, err
+		}
+		return []types.SwarmTaskSummary{}, pagination.BuildResponse(0, 0, params), nil
 	}
 
 	filters := make(client.Filters)
