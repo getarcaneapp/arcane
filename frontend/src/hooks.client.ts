@@ -1,9 +1,11 @@
 import type { ClientInit, HandleClientError } from '@sveltejs/kit/hooks';
 
+import { getLocale } from '#lib/paraglide/runtime.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { recordError } from '#lib/utils/telemetry.js';
 
 export const init: ClientInit = async () => {
+	document.documentElement.lang = getLocale();
 	if (!('Temporal' in globalThis)) {
 		await import('temporal-polyfill/global');
 	}

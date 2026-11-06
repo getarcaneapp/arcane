@@ -28,6 +28,9 @@ type (
 		EnvironmentLabelStyle *string                  `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
 		DashboardLayout       *[]DashboardWidgetLayout `json:"dashboardLayout,omitempty" doc:"Dashboard widgets with their grid position, size, and visibility"`
 		CustomThemes          *[]CustomTheme           `json:"customThemes,omitempty" maxItems:"20" doc:"Imported custom color themes"`
+		InterfaceFont         *string                  `json:"interfaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for interface text; empty uses the default"`
+		MonospaceFont         *string                  `json:"monospaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for monospace text; empty uses the default"`
+		CodeFont              *string                  `json:"codeFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for code blocks; empty uses the default"`
 	}
 
 	CustomTheme struct {

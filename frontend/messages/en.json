@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Inject into all containers",
   "inject_into_all_containers_description": "Add the variable to every container's environment. When off, it is only available for variable substitution in compose files",
   "injected": "Injected",
-  "built_on": "Built {date}"
+  "built_on": "Built {date}",
+  "default_font": "Default",
+  "system_ui": "System UI",
+  "interface_font": "Interface font",
+  "interface_font_description": "Font for interface text. Chinese, Japanese, and Korean glyphs use installed system fonts.",
+  "monospace_font": "Monospace font",
+  "monospace_font_description": "Font for headings, IDs, and other monospace text",
+  "code_font": "Code font",
+  "code_font_description": "Font for the code editor, code blocks, and terminal. The terminal updates when reopened.",
+  "custom_font": "Custom font",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
