@@ -4436,12 +4436,12 @@
   "code_font": "Písmo kódu",
   "code_font_description": "Písmo pro editor kódu, bloky kódu a terminál. Terminál se aktualizuje při opětovném otevření.",
   "custom_font": "Vlastní písmo",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Název nainstalovaného písma",
+  "font_name_invalid": "Použijte maximálně 128 písmen, číslic, mezer, čárek, uvozovek, pomlček nebo podtržítků.",
+  "browse_installed_fonts": "Procházet nainstalovaná písma",
+  "installed_fonts": "Nainstalovaná písma",
+  "installed_fonts_unavailable": "Nepodařilo se načíst nainstalovaná písma",
+  "font_preview_sample": "Rychlá hnědá liška přeskakuje líného psa 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
