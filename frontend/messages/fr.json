@@ -4436,12 +4436,12 @@
   "code_font": "Police de code",
   "code_font_description": "Police utilisée pour l'éditeur de code, les blocs de code et le terminal. Le terminal se met à jour lorsqu'on le rouvre.",
   "custom_font": "Police personnalisée",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Nom de la police installée",
+  "font_name_invalid": "Vous pouvez utiliser jusqu'à 128 lettres, chiffres, espaces, virgules, guillemets, tirets ou traits de soulignement.",
+  "browse_installed_fonts": "Parcourir les polices installées",
+  "installed_fonts": "Polices installées",
+  "installed_fonts_unavailable": "Impossible de lire les polices installées",
+  "font_preview_sample": "Le renard brun et vif saute par-dessus le chien paresseux 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
