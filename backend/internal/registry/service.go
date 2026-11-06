@@ -80,6 +80,11 @@ type (
 
 	rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
 
+	ImageConfigOptions struct {
+		Platform    v1.Platform
+		Credentials []types.ContainerRegistryCredential
+	}
+
 	ContainerRegistryService struct {
 		db                     *database.DB
 		dockerClient           registryDaemonGetter
@@ -1295,12 +1300,18 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (*v1.ConfigFile, error) {
+func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef string, opts ImageConfigOptions) (*v1.ConfigFile, error) {
 	if strings.TrimSpace(imageRef) == "" {
 		return nil, errors.New("empty image reference")
 	}
 
-	cfg, found, err := s.configCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]*v1.ConfigFile, error) {
+	platform := v1.Platform{
+		OS:           cmp.Or(opts.Platform.OS, "linux"),
+		Architecture: cmp.Or(opts.Platform.Architecture, runtime.GOARCH),
+		Variant:      opts.Platform.Variant,
+	}
+	cacheKey := strings.TrimSpace(imageRef) + "|" + platform.String()
+	cfg, found, err := s.configCache.GetWithLoaders(cacheKey, func(_ []string) (map[string]*v1.ConfigFile, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
@@ -1308,11 +1319,11 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
-		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image config fetch for "+strings.TrimSpace(imageRef), externalCreds,
+		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image config fetch for "+strings.TrimSpace(imageRef), opts.Credentials,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
 				return remote.Image(parsedRef,
 					remote.WithContext(ctx),
-					remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}),
+					remote.WithPlatform(platform),
 					remote.WithTransport(s.distributionHTTPClient.Transport),
 					remote.WithAuth(func() authn.Authenticator {
 						if credential == nil {
@@ -1332,7 +1343,7 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 		if cfg == nil {
 			return nil, fmt.Errorf("image config fetch failed for %s: missing config", strings.TrimSpace(imageRef))
 		}
-		return map[string]*v1.ConfigFile{strings.TrimSpace(imageRef): cfg}, nil
+		return map[string]*v1.ConfigFile{cacheKey: cfg}, nil
 	})
 	if err != nil {
 		return nil, err

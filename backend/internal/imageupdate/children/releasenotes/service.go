@@ -39,7 +39,7 @@ type (
 	Service struct {
 		docker        *docker.DockerClientService
 		settings      *settings.SettingsService
-		remoteConfig  func(context.Context, string, []types.ContainerRegistryCredential) (*v1.ConfigFile, error)
+		remoteConfig  func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error)
 		httpClient    *http.Client
 		releases      *hot.HotCache[string, []githubRelease]
 		taggedRelease *hot.HotCache[string, githubRelease]
@@ -103,7 +103,7 @@ var (
 func NewService(
 	dockerService *docker.DockerClientService,
 	settingsService *settings.SettingsService,
-	remoteConfig func(context.Context, string, []types.ContainerRegistryCredential) (*v1.ConfigFile, error),
+	remoteConfig func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error),
 ) *Service {
 	return &Service{
 		docker:       dockerService,
@@ -136,7 +136,7 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 		if strings.TrimSpace(req.Version) != "" || strings.TrimSpace(req.Digest) == "" {
 			return nil
 		}
-		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+"@"+strings.TrimSpace(req.Digest), nil)
+		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+"@"+strings.TrimSpace(req.Digest), registry.ImageConfigOptions{})
 		if cfgErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve remote image labels for release notes", "imageRef", imageRef, "digest", req.Digest, "error", cfgErr)
 		}
@@ -157,7 +157,7 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 	)
 	source := cmp.Or(sourceLabel(localLabels), sourceLabel(digestLabels))
 	if source == "" && version != "" {
-		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+":"+version, nil)
+		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+":"+version, registry.ImageConfigOptions{})
 		if cfgErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve remote image labels for release notes", "imageRef", imageRef, "version", version, "error", cfgErr)
 		}

@@ -107,6 +107,7 @@ type (
 
 	localImageSnapshot struct {
 		Created           time.Time
+		Platform          v1.Platform
 		ImageID           string
 		Repository        string
 		Tag               string
@@ -658,7 +659,10 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 	}
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, s.parseImageReference(imageRef))
-	created, _ := time.Parse(time.RFC3339Nano, inspectResponse.Created)
+	created, createdErr := time.Parse(time.RFC3339Nano, inspectResponse.Created)
+	if createdErr != nil {
+		slog.DebugContext(ctx, "Local image has no valid created timestamp", "imageRef", imageRef, "error", createdErr)
+	}
 
 	return &localImageSnapshot{
 		ImageID:           inspectResponse.ID,
@@ -670,6 +674,11 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		IsLocalBuild:      len(allDigests) == 0 || isLocalBuildImageRef(imageRef, composeBuildRefs),
 		Version:           strings.TrimSpace(kit.FromPtr(inspectResponse.Config).Labels[registry.OCIImageVersionLabel]),
 		Created:           created,
+		Platform: v1.Platform{
+			OS:           inspectResponse.Os,
+			Architecture: inspectResponse.Architecture,
+			Variant:      inspectResponse.Variant,
+		},
 	}, nil
 }
 
@@ -799,7 +808,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdate
 		),
 		CurrentDigest:    mo.EmptyableToOption(result.CurrentDigest).ToPointer(),
 		LatestDigest:     cmp.Or(mo.EmptyableToOption(result.LatestDigest).ToPointer(), kit.FromPtr(carried).LatestDigest),
-		CurrentCreated:   result.CurrentCreated,
+		CurrentCreated:   cmp.Or(result.CurrentCreated, kit.FromPtr(carried).CurrentCreated),
 		LatestCreated:    cmp.Or(result.LatestCreated, kit.Ternary(sameCarriedDigest, kit.FromPtr(carried).LatestCreated, nil)),
 		LastError:        mo.EmptyableToOption(result.Error).ToPointer(),
 		AuthMethod:       mo.EmptyableToOption(result.AuthMethod).ToPointer(),
@@ -809,9 +818,9 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdate
 		Repository:       repo,
 		Tag:              tag,
 		UpdateType:       result.UpdateType,
-		CurrentVersion:   cmp.Or(result.CurrentVersion, tag),
+		CurrentVersion:   cmp.Or(result.CurrentVersion, kit.FromPtr(carried).CurrentVersion, tag),
 		ResponseTimeMs:   result.ResponseTimeMs,
-		HasUpdate:        result.HasUpdate || kit.FromPtr(carried).HasUpdate,
+		HasUpdate:        result.HasUpdate || strings.TrimSpace(result.Error) != "" && kit.FromPtr(carried).HasUpdate,
 		UsedCredential:   result.UsedCredential,
 		NotificationSent: notificationSent,
 	}
@@ -831,7 +840,9 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 		return nil
 	}
 
-	sameLatest := kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest && kit.FromPtr(existingRecord.LatestVersion) == result.LatestVersion
+	sameDigest := hasExisting && result.LatestDigest != "" && kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest
+	sameLatest := kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest &&
+		(result.UpdateType == UpdateTypeDigest || kit.FromPtr(existingRecord.LatestVersion) == result.LatestVersion)
 	// A failed check keeps its pending target so transient errors do not restart the auto-update delay.
 	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
 
@@ -852,7 +863,7 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 			}
 			return new(result.CheckTime)
 		}(),
-		kit.Ternary(failed, &existingRecord, nil),
+		kit.Ternary(failed || sameDigest, &existingRecord, nil),
 	)).Error
 }
 
@@ -882,7 +893,6 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		var records []ImageUpdateRecord
 		if findErr := s.db.WithContext(ctx).
 			Where("project_id <> '' AND update_type = ? AND tag = ? AND repository IN ?", UpdateTypeDigest, tag, slices.Collect(maps.Keys(repositoryCandidates))).
-			Where("latest_version IS NULL OR latest_version = '' OR latest_version = tag").
 			Where("last_error IS NULL OR last_error = ''").Find(&records).Error; findErr != nil {
 			return nil, "", fmt.Errorf("load project update checks after pull: %w", findErr)
 		}
@@ -939,10 +949,12 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 					"has_update":      false,
 					"latest_seen_at":  nil,
 					"update_type":     UpdateTypeDigest,
-					"current_version": tag,
-					"latest_version":  tag,
+					"current_version": cmp.Or(snapshot.Version, tag),
+					"latest_version":  cmp.Or(snapshot.Version, tag),
 					"current_digest":  pulledDigest,
 					"latest_digest":   pulledDigest,
+					"current_created": mo.EmptyableToOption(snapshot.Created).ToPointer(),
+					"latest_created":  mo.EmptyableToOption(snapshot.Created).ToPointer(),
 					"check_time":      checkTime,
 				}).Error; refreshProjectChecksErr != nil {
 				return fmt.Errorf("refresh project update checks: %w", refreshProjectChecksErr)
@@ -951,10 +963,12 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 
 		if savePreparedUpdateResultWithTxErr := savePreparedUpdateResultWithTx(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, &types.ImageUpdateResponse{
 			UpdateType:     UpdateTypeDigest,
-			CurrentVersion: snapshot.Tag,
-			LatestVersion:  snapshot.Tag,
+			CurrentVersion: cmp.Or(snapshot.Version, snapshot.Tag),
+			LatestVersion:  cmp.Or(snapshot.Version, snapshot.Tag),
 			CurrentDigest:  snapshot.PrimaryDigest,
 			LatestDigest:   snapshot.PrimaryDigest,
+			CurrentCreated: mo.EmptyableToOption(snapshot.Created).ToPointer(),
+			LatestCreated:  mo.EmptyableToOption(snapshot.Created).ToPointer(),
 			CheckTime:      checkTime,
 		}); savePreparedUpdateResultWithTxErr != nil {
 			return fmt.Errorf("save pulled image update state: %w", savePreparedUpdateResultWithTxErr)
@@ -1133,7 +1147,10 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}
 		configCtx, configCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer configCancel()
-		cfg, cfgErr := s.registryService.ImageConfig(configCtx, fmt.Sprintf("%s/%s@%s", parts.Registry, parts.Repository, digestResult.Digest), externalCreds)
+		cfg, cfgErr := s.registryService.ImageConfig(configCtx, fmt.Sprintf("%s/%s@%s", parts.Registry, parts.Repository, digestResult.Digest), registry.ImageConfigOptions{
+			Platform:    snapshot.Platform,
+			Credentials: externalCreds,
+		})
 		if cfgErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve remote image config for update", "imageRef", imageRef, "digest", digestResult.Digest, "error", cfgErr)
 		}

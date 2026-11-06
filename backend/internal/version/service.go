@@ -288,7 +288,7 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 
 	lookupRef := kit.Ternary(newestDigest != "", imageRef+"@"+newestDigest, imageRef+":"+tag)
 
-	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, nil)
+	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, registry.ImageConfigOptions{})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to resolve next-channel image config", "imageRef", lookupRef, "error", err)
 		return nextImage{}

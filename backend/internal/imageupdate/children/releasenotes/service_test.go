@@ -27,7 +27,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -77,7 +76,7 @@ func newTestDockerService(t *testing.T, labels map[string]string) (*docker.Docke
 func newTestService(
 	t *testing.T,
 	labels map[string]string,
-	remoteConfig func(context.Context, string, []types.ContainerRegistryCredential) (*v1.ConfigFile, error),
+	remoteConfig func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error),
 	github testGitHub,
 ) (*Service, *testRecorder) {
 	t.Helper()
@@ -210,7 +209,7 @@ func TestService_ReleaseNotesVersionMatching(t *testing.T) {
 }
 
 func TestService_ReleaseNotesDigestResolvesVersion(t *testing.T) {
-	svc, _ := newTestService(t, nil, func(_ context.Context, ref string, _ []types.ContainerRegistryCredential) (*v1.ConfigFile, error) {
+	svc, _ := newTestService(t, nil, func(_ context.Context, ref string, _ registry.ImageConfigOptions) (*v1.ConfigFile, error) {
 		if ref != "docker.io/library/nginx@"+testDigest {
 			return nil, errors.New("unexpected reference " + ref)
 		}
@@ -528,7 +527,7 @@ func TestService_ReleaseNotesRunningVersion(t *testing.T) {
 	}
 }
 
-func noRemoteConfig(context.Context, string, []types.ContainerRegistryCredential) (*v1.ConfigFile, error) {
+func noRemoteConfig(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error) {
 	return nil, nil
 }
 

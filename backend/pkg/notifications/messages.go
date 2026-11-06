@@ -70,9 +70,11 @@ func formatNotificationCode(format MessageFormat, value string) string {
 	case MessageFormatPlain:
 		return value
 	case MessageFormatHTML:
-		return fmt.Sprintf("<code>%s</code>", value)
-	case MessageFormatMarkdown, MessageFormatSlack:
-		return "`" + value + "`"
+		return fmt.Sprintf("<code>%s</code>", html.EscapeString(value))
+	case MessageFormatMarkdown:
+		return "`" + strings.ReplaceAll(value, "`", "'") + "`"
+	case MessageFormatSlack:
+		return "`" + strings.NewReplacer("`", "'", "&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(value) + "`"
 	default:
 		return value
 	}
@@ -412,7 +414,7 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 
 func notificationUpdateVersions(update *types.ImageUpdateResponse) (string, string) {
 	info := kit.FromPtr(update)
-	if info.LatestVersion != "" || (info.UpdateType == "tag" && info.CurrentVersion != "") {
+	if (info.UpdateType == "tag" && (info.LatestVersion != "" || info.CurrentVersion != "")) || (info.LatestVersion != "" && info.LatestVersion != info.CurrentVersion) {
 		return info.CurrentVersion, info.LatestVersion
 	}
 	if info.CurrentDigest == "" && info.LatestDigest == "" {
