@@ -445,8 +445,10 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 			return err
 		}
 	}
-	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
-	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 {
+	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever. System-managed
+	// runs apply retention once for all their volumes through ApplySeriesRetention instead.
+	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
+		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
 		if retentionErr == nil && len(expired) > 0 {
 			var expiredEntries []*types.VolumeBackup
@@ -629,16 +631,42 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 	for _, policy := range systemPolicies.Policies {
 		owners = append(owners, policy.ID)
 	}
-	sweep := types.UnmanagedBackupSweep{
-		Now:                   time.Now(),
-		SystemVolumePolicyIDs: owners,
-		Retention:             time.Duration(days) * 24 * time.Hour,
+	now := time.Now()
+	return s.deleteExpiredBackups(ctx, true, func(ctx context.Context, within []string) ([]string, error) {
+		return s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
+			Now:                   now,
+			SystemVolumePolicyIDs: owners,
+			Within:                within,
+			Retention:             time.Duration(days) * 24 * time.Hour,
+		})
+	})
+}
+
+// ApplySeriesRetention trims every series to its newest backups in one deletion, pruning each repository once.
+func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.BackupSeriesRetention) error {
+	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
+		return nil
 	}
-	expired, err := s.expiredUnmanagedBackupIDs(ctx, sweep)
-	if err != nil || len(expired) == 0 {
+	return s.deleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, _ []string) ([]string, error) {
+		var expired []string
+		for _, seriesID := range retention.SeriesIDs {
+			ids, err := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", seriesID, retention.Keep)
+			if err != nil {
+				return nil, err
+			}
+			expired = append(expired, ids...)
+		}
+		return expired, nil
+	})
+}
+
+// deleteExpiredBackups deletes the backups expired reports, rechecking that batch under the volumes' locks.
+func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, expired func(ctx context.Context, within []string) ([]string, error)) error {
+	ids, err := expired(ctx, nil)
+	if err != nil || len(ids) == 0 {
 		return err
 	}
-	entries, err := s.deps.Store.Runs(ctx, expired)
+	entries, err := s.deps.Store.Runs(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -657,14 +685,14 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 	for _, volumeName := range kit.Unique(backupVolumes) {
 		unlock, locked := s.deps.Locks.TryLock(volumeName)
 		if !locked {
-			slog.InfoContext(ctx, "Skipping unmanaged backup cleanup for a busy volume", "volume", volumeName)
+			slog.InfoContext(ctx, "Skipping backup deletion for a busy volume until the next run", "volume", volumeName)
 			continue
 		}
 		lease, leaseErr := s.acquireVolumeRun(ctx, volumeName)
 		if leaseErr != nil {
 			unlock()
 			if errors.Is(leaseErr, s.deps.AlreadyRunning) {
-				slog.InfoContext(ctx, "Skipping unmanaged backup cleanup for a busy volume", "volume", volumeName)
+				slog.InfoContext(ctx, "Skipping backup deletion for a busy volume until the next run", "volume", volumeName)
 				continue
 			}
 			deleteErr = errors.Join(deleteErr, leaseErr)
@@ -675,23 +703,20 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 			unlock()
 		}
 	}
-	// A restore that finished first may have brought a volume back.
-	if expired, err = s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
-		Now:                   sweep.Now,
-		SystemVolumePolicyIDs: sweep.SystemVolumePolicyIDs,
-		Within:                expired,
-		Retention:             sweep.Retention,
-	}); err != nil {
+	// A restore or backup that finished first may have changed what is expired.
+	if ids, err = expired(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
-	if entries, err = s.deps.Store.Runs(ctx, expired); err != nil {
+	if entries, err = s.deps.Store.Runs(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
 	var rusticEntries []*types.VolumeBackup
+	deleted := 0
 	for _, entry := range entries {
 		if _, ok := held[entry.VolumeName]; !ok {
 			continue
 		}
+		deleted++
 		if entry.Format == types.VolumeBackupFormatArchive {
 			deleteErr = errors.Join(deleteErr, s.deleteArchiveBackup(ctx, entry, nil))
 			continue
@@ -699,9 +724,9 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 		rusticEntries = append(rusticEntries, entry)
 	}
 	if len(rusticEntries) > 0 {
-		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, true))
+		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, includeRemote))
 	}
-	slog.InfoContext(ctx, "Pruned unmanaged volume backups", "expired", len(expired), "volumes", len(held))
+	slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
 	return deleteErr
 }
 

@@ -457,11 +457,15 @@ func (s *Service) executeSystemVolumeBackups(
 		S3DestinationID: input.Policy.S3DestinationID,
 	}
 	previous, _ := jobcontext.Run(ctx)
+	// Series of every volume backed up in this run, including before a resume, trimmed together once the run ends.
+	var backedUp []string
 	for _, candidate := range input.Candidates {
+		seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, types.SystemVolumeManualSeriesOwner, input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
 		done := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 			return target.ID == candidate.Name && (target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped)
 		})
 		if done >= 0 && previous.Outcome.Targets[done].Status == types.RunStatusSucceeded {
+			backedUp = append(backedUp, seriesID)
 			succeeded++
 			continue
 		}
@@ -482,7 +486,6 @@ func (s *Service) executeSystemVolumeBackups(
 			continue
 		}
 		if backupErr == nil {
-			seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, types.SystemVolumeManualSeriesOwner, input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
 			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, types.SystemUser, trigger, seriesID, policy)
 		}
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
@@ -504,7 +507,16 @@ func (s *Service) executeSystemVolumeBackups(
 		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: candidate.Name, Status: types.RunStatusSucceeded}); progressErr != nil {
 			return nil, progressErr
 		}
+		backedUp = append(backedUp, seriesID)
 		succeeded++
+	}
+	// Retention failures must not fail the run; the next run trims the same series again.
+	if retentionErr := s.volumes.ApplySeriesRetention(ctx, types.BackupSeriesRetention{
+		SeriesIDs:     backedUp,
+		Keep:          input.Policy.RetentionCount,
+		IncludeRemote: input.Policy.S3Enabled,
+	}); retentionErr != nil {
+		slog.ErrorContext(ctx, "System-managed volume backup retention failed", "policyId", input.Policy.ID, "error", retentionErr)
 	}
 	return nil, nil
 }

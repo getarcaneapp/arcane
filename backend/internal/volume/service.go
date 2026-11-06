@@ -213,6 +213,11 @@ func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
 	return s.backup.PruneLocalRepository(ctx)
 }
 
+// ApplySeriesRetention trims each backup series to its newest backups, pruning each repository once.
+func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention types.BackupSeriesRetention) error {
+	return s.backup.ApplySeriesRetention(ctx, retention)
+}
+
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
 func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
 	return s.backup.MigrateRepositoryPasswords(ctx, previousKey, newKey)

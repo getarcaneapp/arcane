@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -237,4 +238,35 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})
 
 	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
+}
+
+func TestApplySeriesRetentionLeavesBusyVolumesForTheNextRun(t *testing.T) {
+	gormDB := newVolumeBackupTestDB(t, "volume-backup-series-retention-busy")
+	db := &database.DB{DB: gormDB}
+	seriesID := types.SystemVolumePolicyPrefix + "nightly:" + kit.SHA256Hex("app-data")[:16]
+	for i, id := range []string{"oldest", "older", "newest"} {
+		require.NoError(t, gormDB.Exec(
+			"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, format, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			id, "app-data", 0, time.Now().Add(time.Duration(i-3)*time.Hour), seriesID, types.VolumeBackupStatusSucceeded,
+			types.VolumeBackupFormatRustic, "snapshot-"+id,
+		).Error)
+	}
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{
+		DB:    db,
+		Locks: locks,
+		Store: Store{Runs: func(ctx context.Context, ids []string) ([]*types.VolumeBackup, error) {
+			var entries []*types.VolumeBackup
+			return entries, gormDB.WithContext(ctx).Table("volume_backups").Where("id IN ?", ids).Find(&entries).Error
+		}},
+	})
+	// A restore holds the volume's workspace lock, so its expired backups wait for the next run.
+	unlock := locks.Lock("app-data")
+	defer unlock()
+
+	require.NoError(t, service.ApplySeriesRetention(t.Context(), types.BackupSeriesRetention{SeriesIDs: []string{seriesID}, Keep: 1, IncludeRemote: true}))
+
+	var remaining int64
+	require.NoError(t, gormDB.Table("volume_backups").Where("policy_id = ?", seriesID).Count(&remaining).Error)
+	require.EqualValues(t, 3, remaining)
 }

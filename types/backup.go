@@ -236,6 +236,13 @@ type (
 		Status     string `json:"status"`
 	}
 
+	// BackupSeriesRetention keeps the newest Keep backups of each series and deletes the rest in one pass.
+	BackupSeriesRetention struct {
+		SeriesIDs     []string
+		Keep          int
+		IncludeRemote bool
+	}
+
 	// UnmanagedBackupSweep's Within, when set, limits a recheck to the batch it already locked.
 	UnmanagedBackupSweep struct {
 		Now                   time.Time
