@@ -4436,12 +4436,12 @@
   "code_font": "Kodefont",
   "code_font_description": "Skrifttype til kodeditoren, kodeblokke og terminalen. Terminalen opdateres, når den åbnes igen.",
   "custom_font": "Brugerdefineret skrifttype",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Navnet på den installerede skrifttype",
+  "font_name_invalid": "Du må bruge op til 128 bogstaver, tal, mellemrum, kommaer, anførselstegn, bindestreger eller understregninger.",
+  "browse_installed_fonts": "Gennemse installerede skrifttyper",
+  "installed_fonts": "Installerede skrifttyper",
+  "installed_fonts_unavailable": "Det var ikke muligt at læse de installerede skrifttyper",
+  "font_preview_sample": "Den hurtige brune ræv springer over den dovne hund 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
