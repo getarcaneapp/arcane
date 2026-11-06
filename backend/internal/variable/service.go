@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.uber.org/fx"
@@ -57,7 +58,8 @@ type (
 		// syncGate skips the agent PUT when the effective variable set is unchanged.
 		syncGate concurrency.SyncGate
 
-		statusMu sync.RWMutex
+		statusMu  sync.RWMutex
+		envFileMu sync.Mutex
 	}
 
 	VariableServiceParams struct {
@@ -597,11 +599,22 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
+	s.envFileMu.Lock()
+	defer s.envFileMu.Unlock()
+
+	envRoot := acfs.Root{Path: projectsDirectory}
 	mode := kitfs.FilePerm
-	if entry, statErr := (acfs.Root{Path: projectsDirectory}).Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
+	if entry, statErr := envRoot.Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
-	if writeErr := (acfs.Root{Path: projectsDirectory}).Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode}); writeErr != nil {
+	writeErr := envRoot.Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode})
+	if errors.Is(writeErr, syscall.EBUSY) {
+		writeErr = envRoot.Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{
+			Mode:    mode,
+			InPlace: true,
+		})
+	}
+	if writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 
