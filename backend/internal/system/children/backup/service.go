@@ -1553,9 +1553,13 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 }
 
 // PruneUnmanagedBackups ages out volume backups no schedule manages, then system safety backups and runs of deleted
-// schedules. A busy system backup defers its own cleanup to the next sweep.
+// schedules. A busy system backup defers its own cleanup to the next sweep, and system runs are kept while no
+// recovery key is stored to forget their snapshots with.
 func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
 	volumeErr := s.volumes.PruneUnmanagedBackups(ctx, sweep)
+	if configured, err := s.recoveryKeys.Configured(ctx); err != nil || !configured {
+		return errors.Join(volumeErr, err)
+	}
 	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, sweep)
 	if err != nil || len(expired) == 0 {
 		return errors.Join(volumeErr, err)

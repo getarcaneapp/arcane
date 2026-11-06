@@ -100,7 +100,8 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const unmanagedBackupRetentionDays = $derived(Number(settingsStore.current?.unmanagedBackupRetentionDays ?? 0));
+	// Users without environment settings access get a snapshot without this value; show nothing rather than guess.
+	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
@@ -903,12 +904,14 @@
 				{:else}
 					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
 				{/if}
-				<p class="text-sm text-muted-foreground">
-					{unmanagedBackupRetentionDays > 0
-						? m.unmanaged_backup_retention_summary({ days: unmanagedBackupRetentionDays })
-						: m.unmanaged_backup_retention_disabled_summary()}
-					<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
-				</p>
+				{#if unmanagedBackupRetentionDays !== undefined}
+					<p class="text-sm text-muted-foreground">
+						{Number(unmanagedBackupRetentionDays) > 0
+							? m.unmanaged_backup_retention_summary({ days: Number(unmanagedBackupRetentionDays) })
+							: m.unmanaged_backup_retention_disabled_summary()}
+						<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
+					</p>
+				{/if}
 			</SettingsSection>
 
 			{#each backupActivity.activeIds as activityId (activityId)}

@@ -129,6 +129,7 @@ type (
 		ID         string
 		VolumeName string
 		PolicyID   string
+		Trigger    string
 	}
 )
 
@@ -696,6 +697,10 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}
+	// A failing volume driver drops its volumes from the list; they must not look deleted.
+	if len(listed.Warnings) > 0 {
+		return nil, fmt.Errorf("docker volume list is incomplete: %s", strings.Join(listed.Warnings, "; "))
+	}
 	volumeNames := make([]string, 0, len(listed.Items))
 	for _, item := range listed.Items {
 		volumeNames = append(volumeNames, item.Name)
@@ -706,7 +711,7 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	}
 	var candidates []unmanagedCandidate
 	if loadErr := s.deps.DB.WithContext(ctx).Table("volume_backups").
-		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id").
+		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id", "trigger").
 		Where("status <> ? AND trigger <> ? AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerSafety).
 		Find(&candidates).Error; loadErr != nil {
 		return nil, fmt.Errorf("failed to load volume backups: %w", loadErr)
@@ -714,12 +719,13 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
 }
 
-// orphanedVolumeBackupIDs returns backups whose volume no longer exists or whose schedule was deleted.
+// orphanedVolumeBackupIDs returns backups whose volume no longer exists or whose schedule was deleted. Manual backups
+// started from a schedule outlive it, so only their volume decides.
 func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
 	var orphaned []string
 	for _, candidate := range candidates {
-		managed := candidate.PolicyID == "" || slices.Contains(policyIDs, candidate.PolicyID)
-		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok {
+		managed := candidate.PolicyID == "" || candidate.Trigger == types.VolumeBackupTriggerManual || slices.Contains(policyIDs, candidate.PolicyID)
+		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok && candidate.Trigger != types.VolumeBackupTriggerManual {
 			owner, _, _ := strings.Cut(series, ":")
 			managed = slices.Contains(systemPolicyIDs, owner)
 		}

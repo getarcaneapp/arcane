@@ -195,6 +195,7 @@ func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
 		{BaseModel: database.BaseModel{ID: "scheduled"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerScheduled, PolicyID: "nightly"},
 		{BaseModel: database.BaseModel{ID: "deleted-policy"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerScheduled, PolicyID: "weekly"},
 		{BaseModel: database.BaseModel{ID: "manual"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerManual},
+		{BaseModel: database.BaseModel{ID: "manual-deleted-policy"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerManual, PolicyID: "weekly"},
 		{BaseModel: database.BaseModel{ID: "safety"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerSafety},
 	} {
 		require.NoError(t, db.Create(&run).Error)
