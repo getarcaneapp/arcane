@@ -399,7 +399,8 @@ func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup,
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return ctx.Err()
 	}
-	if err == nil {
+	// A backup already recorded as succeeded before retention stays succeeded when only its cleanup was cancelled.
+	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
 		err = ctx.Err()
 	}
 	if err != nil {
@@ -453,9 +454,14 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
 		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
-		// This backup is still running, so it is not ranked yet; it takes one of the successful slots.
+		// Record the success before trimming: it then counts toward "Backups to keep", and cancelling a slow prune
+		// cannot fail the backup that replaces the ones already forgotten.
+		entry.Status, entry.Error = types.VolumeBackupStatusSucceeded, ""
+		if saveErr := s.deps.Store.Save(context.WithoutCancel(ctx), entry); saveErr != nil {
+			return fmt.Errorf("failed to save volume backup result: %w", saveErr)
+		}
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, backup.RunRetention{
-			Succeeded: plan.Policy.RetentionCount - 1,
+			Succeeded: plan.Policy.RetentionCount,
 			Failed:    plan.Policy.RetentionCount,
 		})
 		if retentionErr == nil && len(expired) > 0 {
@@ -470,6 +476,9 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	}
 	metadata := database.JSON{"action": "backup_create", "backup_id": entry.ID, "size": entry.Size, "destination": entry.Destination}
 	s.logBackupEvent(ctx, event.EventTypeVolumeBackupCreate, volumeName, &user, metadata)
+	if entry.Status == types.VolumeBackupStatusSucceeded {
+		return nil
+	}
 	return ctx.Err()
 }
 
