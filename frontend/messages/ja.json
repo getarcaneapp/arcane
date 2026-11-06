@@ -4436,12 +4436,12 @@
   "code_font": "コード用フォント",
   "code_font_description": "コードエディタ、コードブロック、およびターミナル用のフォント。ターミナルは再起動時に更新されます。",
   "custom_font": "カスタムフォント",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono"
+  "custom_font_placeholder": "インストール済みのフォント名",
+  "font_name_invalid": "最大128文字まで、英字、数字、スペース、コンマ、引用符、ハイフン、またはアンダースコアを使用できます。",
+  "browse_installed_fonts": "インストール済みのフォントを閲覧する",
+  "installed_fonts": "インストール済みのフォント",
+  "installed_fonts_unavailable": "インストール済みのフォントを読み込めませんでした",
+  "font_preview_sample": "「素早い茶色のキツネが、のろまな犬を飛び越える」0123456789",
+  "montserrat": "モンセラート",
+  "geist_mono": "ガイスト・モノ"
 }
