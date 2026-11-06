@@ -464,6 +464,8 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 			Succeeded: plan.Policy.RetentionCount,
 			Failed:    plan.Policy.RetentionCount,
 		})
+		// A resumed backup can finish after newer ones and rank as expired; it must never trim itself.
+		expired = slices.DeleteFunc(expired, func(id string) bool { return id == entry.ID })
 		if retentionErr == nil && len(expired) > 0 {
 			var expiredEntries []*types.VolumeBackup
 			if expiredEntries, retentionErr = s.deps.Store.Runs(ctx, expired); retentionErr == nil {
