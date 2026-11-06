@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Injetar em todos os recipientes",
   "inject_into_all_containers_description": "Adicione a variável ao ambiente de cada contêiner. Quando desativada, ela estará disponível apenas para substituição de variáveis em arquivos `compose`.",
   "injected": "Injetado",
-  "built_on": "Construído {date}"
+  "built_on": "Construído {date}",
+  "default_font": "Padrão",
+  "system_ui": "Interface do usuário do sistema",
+  "interface_font": "Fonte da interface",
+  "interface_font_description": "Fonte para o texto da interface. Os glifos em chinês, japonês e coreano utilizam as fontes instaladas no sistema.",
+  "monospace_font": "Fonte monoespaçada",
+  "monospace_font_description": "Fonte para títulos, identificadores e outros textos em fonte monoespaçada",
+  "code_font": "Fonte do código",
+  "code_font_description": "Fonte para o editor de código, blocos de código e terminal. O terminal é atualizado quando reaberto.",
+  "custom_font": "Fonte personalizada",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
