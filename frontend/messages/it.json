@@ -4436,12 +4436,12 @@
   "code_font": "Carattere del codice",
   "code_font_description": "Carattere per l'editor di codice, i blocchi di codice e il terminale. Il terminale si aggiorna quando viene riaperto.",
   "custom_font": "Carattere personalizzato",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Nome del font installato",
+  "font_name_invalid": "È possibile utilizzare fino a 128 lettere, numeri, spazi, virgole, virgolette, trattini o caratteri di sottolineatura.",
+  "browse_installed_fonts": "Sfoglia i font installati",
+  "installed_fonts": "Font installati",
+  "installed_fonts_unavailable": "Impossibile leggere i font installati",
+  "font_preview_sample": "La veloce volpe bruna salta sopra il cane pigro 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
