@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "すべてのコンテナに注入する",
   "inject_into_all_containers_description": "この変数をすべてのコンテナの環境変数に追加します。オフの場合、この変数はcomposeファイル内での変数置換にのみ利用可能です。",
   "injected": "注入された",
-  "built_on": "建設された {date}"
+  "built_on": "建設された {date}",
+  "default_font": "デフォルト",
+  "system_ui": "システムUI",
+  "interface_font": "インターフェースのフォント",
+  "interface_font_description": "インターフェースのテキストに使用するフォント。中国語、日本語、韓国語のグリフには、インストール済みのシステムフォントが使用されます。",
+  "monospace_font": "モノスペースフォント",
+  "monospace_font_description": "見出し、ID、およびその他の等幅テキスト用のフォント",
+  "code_font": "コード用フォント",
+  "code_font_description": "コードエディタ、コードブロック、およびターミナル用のフォント。ターミナルは再起動時に更新されます。",
+  "custom_font": "カスタムフォント",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
