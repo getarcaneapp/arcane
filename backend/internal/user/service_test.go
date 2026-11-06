@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/role"
@@ -249,6 +251,26 @@ func TestUserProfileValidationAndPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dto.FontSize)
 	require.Equal(t, 16, *dto.FontSize)
+
+	reloaded.Preferences = types.UserPreferences{
+		InterfaceFont: new("'Inter', 微软雅黑"),
+		MonospaceFont: new("JetBrains Mono"),
+		CodeFont:      new(`"Fira Code"`),
+	}
+	_, err = userSvc.UpdateUser(ctx, reloaded, nil)
+	require.NoError(t, err)
+
+	reloaded, err = userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, "'Inter', 微软雅黑", kit.FromPtr(reloaded.Preferences.InterfaceFont))
+	require.Equal(t, "JetBrains Mono", kit.FromPtr(reloaded.Preferences.MonospaceFont))
+	require.Equal(t, `"Fira Code"`, kit.FromPtr(reloaded.Preferences.CodeFont))
+
+	dto, err = userSvc.ToUserResponseDto(ctx, *reloaded)
+	require.NoError(t, err)
+	require.Equal(t, "'Inter', 微软雅黑", kit.FromPtr(dto.Preferences.InterfaceFont))
+	require.Equal(t, "JetBrains Mono", kit.FromPtr(dto.Preferences.MonospaceFont))
+	require.Equal(t, `"Fira Code"`, kit.FromPtr(dto.Preferences.CodeFont))
 
 	conflictingUser := createTestUser(t, userSvc, "user-2", "another-user")
 	conflictingUser.Username = u.Username

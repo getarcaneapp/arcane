@@ -7,6 +7,7 @@ import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
 	applyApplicationTheme,
+	applyFonts,
 	applyFontSize,
 	applyGlassEffects,
 	applyInterfaceAnimations,
@@ -35,6 +36,7 @@ const setUser = async (user: User) => {
 	setCustomThemes(preferences.customThemes ?? []);
 	applyApplicationTheme(preferences.applicationTheme);
 	applyAccentColor(preferences.accentColor ?? 'default');
+	applyFonts({ interface: preferences.interfaceFont, monospace: preferences.monospaceFont, code: preferences.codeFont });
 	applyOledMode(preferences.oledMode ?? false);
 	applyGlassEffects(preferences.glassEffectsEnabled ?? true);
 	applyInterfaceAnimations(preferences.animationsEnabled ?? true);
@@ -51,6 +53,7 @@ const clearUser = () => {
 	setCustomThemes([]);
 	applyApplicationTheme('default');
 	applyAccentColor('default');
+	applyFonts({});
 	applyOledMode(false);
 	applyGlassEffects(true);
 	applyInterfaceAnimations(true);

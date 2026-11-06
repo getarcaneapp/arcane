@@ -72,8 +72,7 @@ export function createArcaneTheme(dark: boolean): Extension {
 				gutterForeground: 'var(--muted-foreground)',
 				gutterActiveForeground: 'var(--foreground)',
 				gutterBorder: 'transparent',
-				fontFamily:
-					'"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+				fontFamily: 'var(--font-code)',
 				fontSize: '13px'
 			},
 			styles: [

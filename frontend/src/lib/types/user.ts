@@ -103,6 +103,9 @@ export type UserPreferences = {
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;
 	dashboardLayout?: DashboardWidgetLayout[];
+	interfaceFont?: string;
+	monospaceFont?: string;
+	codeFont?: string;
 };
 
 export type RoleAssignmentSummary = {

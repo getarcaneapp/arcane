@@ -386,6 +386,7 @@ export function setLocale(locale: Locale, reload = true) {
 		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
 
 	void setParaglideLocale(locale, { reload });
+	document.documentElement.lang = locale;
 }
 
 // --- ANSI conversion ---

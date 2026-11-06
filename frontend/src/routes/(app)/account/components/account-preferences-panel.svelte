@@ -3,6 +3,7 @@
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '#lib/components/application-theme/application-theme-picker.svelte';
+	import FontFamilyPicker from '#lib/components/font-family-picker.svelte';
 	import FontSizePicker from '#lib/components/font-size-picker.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
@@ -146,6 +147,21 @@
 		<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="switch">
 			{#snippet children({ describedBy })}
 				<FontSizePicker aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.interface_font()} description={m.interface_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="interface" aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.monospace_font()} description={m.monospace_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="monospace" aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.code_font()} description={m.code_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="code" aria-describedby={describedBy} />
 			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.layout_mode()} description={m.layout_mode_description()} layout="switch">

@@ -81,6 +81,7 @@ type AppearanceCache = {
 	oled?: boolean;
 	accent?: { primary: string; primaryForeground: string; ring: string } | null;
 	fontSize?: number | null;
+	fonts?: FontFamilies | null;
 	noBlur?: boolean;
 	reduceEffects?: boolean;
 };
@@ -100,7 +101,10 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 		'--primary-foreground': v.accent?.primaryForeground,
 		'--ring': v.accent?.ring,
 		'--sidebar-ring': v.accent?.ring,
-		'font-size': v.fontSize && `${v.fontSize}px`
+		'font-size': v.fontSize && `${v.fontSize}px`,
+		'--font-sans-user': v.fonts?.interface,
+		'--font-mono-user': v.fonts?.monospace,
+		'--font-code-user': v.fonts?.code
 	})
 		.filter(([, value]) => value)
 		.map(([property, value]) => `${property}: ${value}`)
@@ -331,4 +335,53 @@ export function applyFontSize(px?: number | null): void {
 	const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(px)));
 	root.style.fontSize = `${clamped}px`;
 	updateAppearanceCache({ fontSize: clamped });
+}
+
+export type FontSlot = 'interface' | 'monospace' | 'code';
+export type FontFamilies = Partial<Record<FontSlot, string | null>>;
+
+export const FONT_NAME_PATTERN = /^[\p{L}\p{N} _'",-]*$/u;
+
+const FONT_VARIABLES: Record<FontSlot, string> = {
+	interface: '--font-sans-user',
+	monospace: '--font-mono-user',
+	code: '--font-code-user'
+};
+
+export function toFontFamily(value?: string | null): string | null {
+	const font = value?.trim();
+
+	if (!font || font === 'default' || !FONT_NAME_PATTERN.test(font)) {
+		return null;
+	}
+
+	if (/[,'"]/.test(font) || !font.includes(' ')) {
+		return font;
+	}
+
+	return `"${font}"`;
+}
+
+export function applyFonts(fonts: FontFamilies): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	const resolved: Record<FontSlot, string | null> = {
+		interface: toFontFamily(fonts.interface),
+		monospace: toFontFamily(fonts.monospace),
+		code: toFontFamily(fonts.code)
+	};
+
+	for (const [slot, variable] of Object.entries(FONT_VARIABLES) as [FontSlot, string][]) {
+		const family = resolved[slot];
+
+		if (family) {
+			document.documentElement.style.setProperty(variable, family);
+		} else {
+			document.documentElement.style.removeProperty(variable);
+		}
+	}
+
+	updateAppearanceCache({ fonts: resolved });
 }

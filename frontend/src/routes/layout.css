@@ -399,11 +399,47 @@ html.reduce-effects *::after {
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-surface: var(--surface);
+}
 
-	--font-sans: 'Montserrat Variable', sans-serif;
-	--font-heading: 'Geist Mono Variable', monospace;
-	--font-mono: 'Geist Mono Variable', monospace;
-	--font-code: 'Mona Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
+@theme static {
+	--font-sans: var(--font-sans-user, 'Montserrat Variable'), var(--font-cjk), sans-serif;
+	--font-heading: var(--font-mono-user, 'Geist Mono Variable'), var(--font-cjk), monospace;
+	--font-mono: var(--font-mono-user, 'Geist Mono Variable'), var(--font-cjk), monospace;
+	--font-code:
+		var(--font-code-user, 'Mona Sans Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New',
+		var(--font-cjk), monospace;
+}
+
+:root {
+	--font-cjk-sc:
+		'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC',
+		'Source Han Sans SC';
+	--font-cjk-tc:
+		'PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'Noto Sans TC', 'Noto Sans CJK TC', 'Source Han Sans TC';
+	--font-cjk-jp:
+		'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', 'Noto Sans CJK JP',
+		'Source Han Sans JP';
+	--font-cjk-kr: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK KR', 'Source Han Sans KR';
+	--font-cjk: var(--font-cjk-sc), var(--font-cjk-tc), var(--font-cjk-jp), var(--font-cjk-kr);
+}
+
+:root:lang(zh-TW) {
+	--font-cjk: var(--font-cjk-tc), var(--font-cjk-sc), var(--font-cjk-jp), var(--font-cjk-kr);
+}
+
+:root:lang(ja) {
+	--font-cjk: var(--font-cjk-jp), var(--font-cjk-sc), var(--font-cjk-tc), var(--font-cjk-kr);
+}
+
+:root:lang(ko) {
+	--font-cjk: var(--font-cjk-kr), var(--font-cjk-sc), var(--font-cjk-tc), var(--font-cjk-jp);
+}
+
+:root:lang(zh-CN),
+:root:lang(zh-TW),
+:root:lang(ja),
+:root:lang(ko) {
+	font-synthesis-weight: none;
 }
 
 @layer base {
