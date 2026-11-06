@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Ventana «Agent Tunnel Stream»",
   "agent_tunnel_stream_window_description": "Búfer por transferencia en el túnel del agente. Cuanto mayor sea, más rápido será en enlaces de alta latencia, pero consumirá más memoria.",
   "agent_tunnel_stream_window_reconnect": "Se aplica cuando el túnel se vuelve a conectar.",
-  "value_in_mib": "Valor en MiB ({range})"
+  "value_in_mib": "Valor en MiB ({range})",
+  "inject_into_all_containers": "Inyectar en todos los recipientes",
+  "inject_into_all_containers_description": "Añade la variable al entorno de cada contenedor. Cuando está desactivada, solo está disponible para la sustitución de variables en los archivos «compose».",
+  "injected": "Inyectado",
+  "built_on": "Construido {date}"
 }
