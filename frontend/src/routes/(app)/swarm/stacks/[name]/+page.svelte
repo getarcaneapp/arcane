@@ -94,6 +94,7 @@
 	}
 	type StackTab = 'services' | 'tasks' | 'source';
 	const isLoading = $state({ refresh: false, remove: false, down: false, up: false });
+	const isMutating = $derived(isLoading.remove || isLoading.down || isLoading.up);
 
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
@@ -262,7 +263,7 @@
 							goto(
 								resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)
 							),
-						disabled: isLoading.remove
+						disabled: isMutating
 					}
 				]
 			: []),
@@ -275,7 +276,7 @@
 						icon: PlayIcon,
 						onclick: handleUp,
 						loading: isLoading.up,
-						disabled: isLoading.up || isLoading.remove
+						disabled: isMutating
 					}
 				]
 			: []),
@@ -288,7 +289,7 @@
 						icon: StopIcon,
 						onclick: handleDown,
 						loading: isLoading.down,
-						disabled: isLoading.down || isLoading.remove
+						disabled: isMutating
 					}
 				]
 			: []),
@@ -303,7 +304,7 @@
 						icon: TrashIcon,
 						onclick: handleDelete,
 						loading: isLoading.remove,
-						disabled: isLoading.remove
+						disabled: isMutating
 					}
 				]
 			: []),
