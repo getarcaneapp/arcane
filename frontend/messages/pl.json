@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Okno strumienia tunelu agenta",
   "agent_tunnel_stream_window_description": "Bufor na pojedynczy transfer w tunelu agenta. Wyższa wartość zapewnia większą szybkość w przypadku łączy o dużym opóźnieniu, ale zużywa więcej pamięci.",
   "agent_tunnel_stream_window_reconnect": "Ma zastosowanie w momencie ponownego nawiązania połączenia tunelowego.",
-  "value_in_mib": "Wartość w MiB ({range})"
+  "value_in_mib": "Wartość w MiB ({range})",
+  "inject_into_all_containers": "Wstrzyknąć do wszystkich pojemników",
+  "inject_into_all_containers_description": "Dodaj zmienną do środowiska każdego kontenera. Gdy opcja jest wyłączona, zmienna jest dostępna wyłącznie do zastępowania w plikach compose",
+  "injected": "Wstrzyknięte",
+  "built_on": "Zbudowany {date}"
 }
