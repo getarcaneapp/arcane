@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "注入到所有容器中",
   "inject_into_all_containers_description": "将该变量添加到每个容器的环境中。当该选项关闭时，该变量仅可在 Compose 文件中用于变量替换",
   "injected": "注入",
-  "built_on": "建成 {date}"
+  "built_on": "建成 {date}",
+  "default_font": "默认",
+  "system_ui": "系统用户界面",
+  "interface_font": "界面字体",
+  "interface_font_description": "界面文本的字体。中文、日文和韩文的字符使用已安装的系统字体。",
+  "monospace_font": "等宽字体",
+  "monospace_font_description": "标题、ID 及其他等宽文本的字体",
+  "code_font": "代码字体",
+  "code_font_description": "代码编辑器、代码块和终端所用的字体。重新打开终端时，字体会自动更新。",
+  "custom_font": "自定义字体",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
