@@ -172,7 +172,7 @@ func TestExpiredUnmanagedRunIDs(t *testing.T) {
 
 	expired, err := ExpiredUnmanagedRunIDs(t.Context(), db, "volume_backups", []string{"orphan-new", "orphan-stale"}, sweep)
 	require.NoError(t, err)
-	require.Equal(t, []string{"orphan-stale", "safety-old"}, expired)
+	require.ElementsMatch(t, []string{"orphan-stale", "safety-old"}, expired)
 	require.NotNil(t, orphanedAt("orphan-new"), "a newly orphaned backup starts its grace period instead of expiring by age")
 	require.Nil(t, orphanedAt("managed-again"), "a backup managed again ends its grace period")
 

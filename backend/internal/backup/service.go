@@ -958,7 +958,8 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 
 // ExpiredUnmanagedRunIDs starts the grace period of newly orphaned runs, ends it for runs managed again, and returns
 // up to one batch of finished safety runs and orphaned runs that are past the retention window; later sweeps take the
-// rest. IDs are bound in batches to stay within SQL parameter limits.
+// rest. IDs are bound in batches to stay within SQL parameter limits, and the batch is drawn at random so runs whose
+// deletion keeps failing, such as on an unreachable S3 destination, cannot hold back the rest.
 func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, orphanedIDs []string, sweep types.UnmanagedBackupSweep) ([]string, error) {
 	cutoff := sweep.Now.Add(-sweep.Retention)
 	var expired []string
@@ -992,7 +993,7 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		return tx.Table(table).
 			Where("status <> ?", "running").
 			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff)).
-			Order("created_at ASC").
+			Order("RANDOM()").
 			Limit(unmanagedSweepBatch).
 			Pluck("id", &expired).Error
 	})
