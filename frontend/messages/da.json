@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Agent-tunnel-stream-vindue",
   "agent_tunnel_stream_window_description": "Buffer pr. overførsel i agenttunnelen. Jo højere værdi, desto hurtigere på forbindelser med høj latenstid, men det bruger mere hukommelse.",
   "agent_tunnel_stream_window_reconnect": "Gælder, når tunnelforbindelsen genoprettes.",
-  "value_in_mib": "Værdi i MiB ({range})"
+  "value_in_mib": "Værdi i MiB ({range})",
+  "inject_into_all_containers": "Indsæt i alle beholdere",
+  "inject_into_all_containers_description": "Føj variablen til miljøet for hver container. Når den er slået fra, kan den kun bruges til variabeludskiftning i compose-filer",
+  "injected": "Injiceret",
+  "built_on": "Bygget {date}"
 }
