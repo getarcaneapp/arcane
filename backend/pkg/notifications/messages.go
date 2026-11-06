@@ -412,7 +412,7 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 
 func notificationUpdateVersions(update *types.ImageUpdateResponse) (string, string) {
 	info := kit.FromPtr(update)
-	if info.UpdateType == "tag" && (info.CurrentVersion != "" || info.LatestVersion != "") {
+	if info.LatestVersion != "" || (info.UpdateType == "tag" && info.CurrentVersion != "") {
 		return info.CurrentVersion, info.LatestVersion
 	}
 	if info.CurrentDigest == "" && info.LatestDigest == "" {

@@ -57,6 +57,10 @@ type (
 		// Required: true
 		LatestDigest string `json:"latestDigest"`
 
+		CurrentCreated *time.Time `json:"currentCreated,omitempty"`
+
+		LatestCreated *time.Time `json:"latestCreated,omitempty"`
+
 		// Error contains any error message from the update check.
 		//
 		// Required: true

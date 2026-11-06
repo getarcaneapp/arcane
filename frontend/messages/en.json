@@ -4425,5 +4425,6 @@
   "value_in_mib": "Value in MiB ({range})",
   "inject_into_all_containers": "Inject into all containers",
   "inject_into_all_containers_description": "Add the variable to every container's environment. When off, it is only available for variable substitution in compose files",
-  "injected": "Injected"
+  "injected": "Injected",
+  "built_on": "Built {date}"
 }

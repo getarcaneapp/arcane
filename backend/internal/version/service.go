@@ -288,23 +288,23 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 
 	lookupRef := kit.Ternary(newestDigest != "", imageRef+"@"+newestDigest, imageRef+":"+tag)
 
-	labels, err := s.containerRegistryService.ImageLabels(ctx, lookupRef)
+	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, nil)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve next-channel image labels", "imageRef", lookupRef, "error", err)
+		slog.WarnContext(ctx, "Failed to resolve next-channel image config", "imageRef", lookupRef, "error", err)
 		return nextImage{}
 	}
-	if strings.TrimSpace(labels[registry.OCIImageVersionLabel]) == "" {
+	if strings.TrimSpace(cfg.Config.Labels[registry.OCIImageVersionLabel]) == "" {
 		slog.WarnContext(ctx, "Next-channel image has no version label", "imageRef", lookupRef)
 		return nextImage{}
 	}
 
-	normalized := s.normalizeVersion(labels[registry.OCIImageVersionLabel])
+	normalized := s.normalizeVersion(cfg.Config.Labels[registry.OCIImageVersionLabel])
 	if !semver.IsValid(normalized) {
-		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", labels[registry.OCIImageVersionLabel])
+		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", cfg.Config.Labels[registry.OCIImageVersionLabel])
 	}
 	return nextImage{
 		Version:  kit.Ternary(semver.IsValid(normalized), normalized, ""),
-		Revision: strings.TrimSpace(labels[registry.OCIImageRevisionLabel]),
+		Revision: strings.TrimSpace(cfg.Config.Labels[registry.OCIImageRevisionLabel]),
 	}
 }
 

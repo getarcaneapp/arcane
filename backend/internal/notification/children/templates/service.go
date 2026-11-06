@@ -33,16 +33,31 @@ func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *type
 		Title:     "Container Image Update",
 		NtfyTitle: "📦 Container Image Update",
 		RenderEmail: func() (string, string, error) {
+			rows := []emailRow{
+				{Label: "Environment", Value: environmentName},
+				{Label: "Image", Value: imageRef},
+				{Label: "Update Type", Value: updateInfo.UpdateType},
+			}
+			if updateInfo.CurrentVersion != "" {
+				rows = append(rows, emailRow{
+					Label: "Current Version",
+					Value: updateInfo.CurrentVersion,
+				})
+			}
+			if updateInfo.LatestVersion != "" {
+				rows = append(rows, emailRow{
+					Label: "Latest Version",
+					Value: updateInfo.LatestVersion,
+				})
+			}
+			rows = append(rows,
+				emailRow{Label: "Current Digest", Value: updateInfo.CurrentDigest},
+				emailRow{Label: "Latest Digest", Value: updateInfo.LatestDigest},
+				emailRow{Label: "Checked", Value: updateInfo.CheckTime.Format(time.RFC1123)},
+			)
 			htmlBody, err := renderEmail(emailData{
-				Title: "Container Image Update Available",
-				Rows: []emailRow{
-					{Label: "Environment", Value: environmentName},
-					{Label: "Image", Value: imageRef},
-					{Label: "Update Type", Value: updateInfo.UpdateType},
-					{Label: "Current Digest", Value: updateInfo.CurrentDigest},
-					{Label: "Latest Digest", Value: updateInfo.LatestDigest},
-					{Label: "Checked", Value: updateInfo.CheckTime.Format(time.RFC1123)},
-				},
+				Title:  "Container Image Update Available",
+				Rows:   rows,
 				AppURL: s.appURL(),
 			})
 			if err != nil {
