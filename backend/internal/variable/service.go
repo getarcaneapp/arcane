@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.uber.org/fx"
@@ -57,7 +58,8 @@ type (
 		// syncGate skips the agent PUT when the effective variable set is unchanged.
 		syncGate concurrency.SyncGate
 
-		statusMu sync.RWMutex
+		statusMu  sync.RWMutex
+		envFileMu sync.Mutex
 	}
 
 	VariableServiceParams struct {
@@ -134,10 +136,11 @@ func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVa
 	}
 
 	variable := GlobalVariable{
-		Key:             key,
-		Value:           value,
-		IsSecret:        req.IsSecret,
-		AllEnvironments: allEnvironments,
+		Key:                  key,
+		Value:                value,
+		IsSecret:             req.IsSecret,
+		AllEnvironments:      allEnvironments,
+		InjectIntoContainers: req.InjectIntoContainers,
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -188,6 +191,7 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 	variable.Value = value
 	variable.IsSecret = isSecret
 	variable.AllEnvironments = allEnvironments
+	variable.InjectIntoContainers = kit.Ternary(submitted["injectIntoContainers"], req.InjectIntoContainers, variable.InjectIntoContainers)
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if validateScopeConflictErr := s.validateScopeConflict(tx, key, variable.ID, allEnvironments, envIDs); validateScopeConflictErr != nil {
@@ -287,7 +291,7 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 		return nil, err
 	}
 
-	effective := make(map[string]string)
+	effective := make(map[string]types.EnvVariable)
 	for _, scoped := range []bool{false, true} {
 		for _, variable := range variables {
 			if variable.AllEnvironments == scoped {
@@ -306,15 +310,17 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 				}
 				value = decrypted
 			}
-			effective[variable.Key] = value
+			effective[variable.Key] = types.EnvVariable{
+				Key:      variable.Key,
+				Value:    value,
+				NoInject: !variable.InjectIntoContainers,
+			}
 		}
 	}
 
-	keys := slices.Sorted(maps.Keys(effective))
-
 	result := make([]types.EnvVariable, 0, len(effective))
-	for _, key := range keys {
-		result = append(result, types.EnvVariable{Key: key, Value: effective[key]})
+	for _, key := range slices.Sorted(maps.Keys(effective)) {
+		result = append(result, effective[key])
 	}
 	return result, nil
 }
@@ -504,6 +510,7 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 		return nil, fmt.Errorf("failed to open global variables file: %w", err)
 	}
 
+	noInject := projects.ParseNoInjectDirectives(string(content))
 	vars := []types.EnvVariable{}
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
@@ -535,8 +542,9 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 		}
 
 		vars = append(vars, types.EnvVariable{
-			Key:   key,
-			Value: value,
+			Key:      key,
+			Value:    value,
+			NoInject: noInject[key],
 		})
 	}
 
@@ -562,7 +570,14 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 
 	var builder strings.Builder
 	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n\n")
+	builder.WriteString("# These variables are available to all projects\n")
+
+	for _, v := range vars {
+		if v.NoInject {
+			_, _ = fmt.Fprintf(&builder, "# %s %s\n", projects.GlobalEnvNoInjectDirective, strings.TrimSpace(v.Key))
+		}
+	}
+	builder.WriteString("\n")
 
 	for _, v := range vars {
 		if strings.TrimSpace(v.Key) == "" {
@@ -584,11 +599,22 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
+	s.envFileMu.Lock()
+	defer s.envFileMu.Unlock()
+
+	envRoot := acfs.Root{Path: projectsDirectory}
 	mode := kitfs.FilePerm
-	if entry, statErr := (acfs.Root{Path: projectsDirectory}).Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
+	if entry, statErr := envRoot.Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
-	if writeErr := (acfs.Root{Path: projectsDirectory}).Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode, InPlace: true}); writeErr != nil {
+	writeErr := envRoot.Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{Mode: mode})
+	if errors.Is(writeErr, syscall.EBUSY) {
+		writeErr = envRoot.Write(ctx, "/"+projects.GlobalEnvFileName, []byte(builder.String()), acfs.WriteOptions{
+			Mode:    mode,
+			InPlace: true,
+		})
+	}
+	if writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 
@@ -661,9 +687,10 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 		}
 
 		variable := GlobalVariable{
-			Key:             key,
-			Value:           entry.Value,
-			AllEnvironments: scopeEnvID == "",
+			Key:                  key,
+			Value:                entry.Value,
+			AllEnvironments:      scopeEnvID == "",
+			InjectIntoContainers: !entry.NoInject,
 		}
 		transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if createImportedVariableErr := tx.Omit("Environments").Create(&variable).Error; createImportedVariableErr != nil {
@@ -812,13 +839,14 @@ func environmentsFromIDs(envIDs []string) []environment.Environment {
 func globalVariableToDTO(variable GlobalVariable) types.GlobalVariable {
 	value := kit.Ternary(variable.IsSecret, "", variable.Value)
 	return types.GlobalVariable{
-		ID:              variable.ID,
-		Key:             variable.Key,
-		Value:           value,
-		IsSecret:        variable.IsSecret,
-		AllEnvironments: variable.AllEnvironments,
-		EnvironmentIDs:  scopedEnvironmentIDs(variable.Environments),
-		CreatedAt:       variable.CreatedAt,
-		UpdatedAt:       variable.UpdatedAt,
+		ID:                   variable.ID,
+		Key:                  variable.Key,
+		Value:                value,
+		IsSecret:             variable.IsSecret,
+		AllEnvironments:      variable.AllEnvironments,
+		InjectIntoContainers: variable.InjectIntoContainers,
+		EnvironmentIDs:       scopedEnvironmentIDs(variable.Environments),
+		CreatedAt:            variable.CreatedAt,
+		UpdatedAt:            variable.UpdatedAt,
 	}
 }
