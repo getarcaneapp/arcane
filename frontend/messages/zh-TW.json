@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "代理隧道串流視窗",
   "agent_tunnel_stream_window_description": "代理隧道中的每次傳輸緩衝區大小。在高延遲鏈路上，數值越高速度越快，但會消耗更多記憶體。",
   "agent_tunnel_stream_window_reconnect": "當隧道重新連線時適用。",
-  "value_in_mib": "值以 MiB 為單位（{range}）"
+  "value_in_mib": "值以 MiB 為單位（{range}）",
+  "inject_into_all_containers": "注入至所有容器中",
+  "inject_into_all_containers_description": "將該變數新增至每個容器的環境變數中。若關閉此設定，該變數僅可在 Compose 檔案中進行變數替換",
+  "injected": "注入",
+  "built_on": "建成 {date}"
 }
