@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Venster 'Agent Tunnel Stream'",
   "agent_tunnel_stream_window_description": "Buffer per overdracht op de agenttunnel. Een hogere waarde zorgt voor een hogere snelheid op verbindingen met een hoge latentie, maar neemt meer geheugen in beslag.",
   "agent_tunnel_stream_window_reconnect": "Dit geldt wanneer de tunnel opnieuw verbinding maakt.",
-  "value_in_mib": "Waarde in MiB ({range})"
+  "value_in_mib": "Waarde in MiB ({range})",
+  "inject_into_all_containers": "In alle containers injecteren",
+  "inject_into_all_containers_description": "Voeg de variabele toe aan de omgeving van elke container. Als deze is uitgeschakeld, is de variabele alleen beschikbaar voor variabelevervanging in compose-bestanden",
+  "injected": "Geïnjecteerd",
+  "built_on": "Gebouwd {date}"
 }
