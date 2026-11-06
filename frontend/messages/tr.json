@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Ajan Tüneli Akış Penceresi",
   "agent_tunnel_stream_window_description": "Ajan tünelinde aktarım başına tampon. Yüksek gecikmeli bağlantılarda bu değer ne kadar yüksekse o kadar hızlı olur, ancak daha fazla bellek kullanır.",
   "agent_tunnel_stream_window_reconnect": "Tünel yeniden bağlandığında geçerlidir.",
-  "value_in_mib": "MiB cinsinden değer ({range})"
+  "value_in_mib": "MiB cinsinden değer ({range})",
+  "inject_into_all_containers": "Tüm kaplara enjekte edin",
+  "inject_into_all_containers_description": "Değişkeni her bir kapsayıcının ortamına ekleyin. Kapalı konumdayken, bu değişken yalnızca compose dosyalarında değişken yerine koyma işlemi için kullanılabilir.",
+  "injected": "Enjekte edilmiş",
+  "built_on": "İnşa edildi {date}"
 }
