@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Injecter dans tous les conteneurs",
   "inject_into_all_containers_description": "Ajoutez la variable à l'environnement de chaque conteneur. Lorsqu'elle est désactivée, elle n'est disponible que pour la substitution de variables dans les fichiers Compose.",
   "injected": "Injecté",
-  "built_on": "Construit {date}"
+  "built_on": "Construit {date}",
+  "default_font": "Par défaut",
+  "system_ui": "Interface utilisateur du système",
+  "interface_font": "Police d'interface",
+  "interface_font_description": "Police utilisée pour le texte de l'interface. Les glyphes chinois, japonais et coréens utilisent les polices système installées.",
+  "monospace_font": "Police Monospace",
+  "monospace_font_description": "Police pour les titres, les identifiants et tout autre texte en police à espacement fixe",
+  "code_font": "Police de code",
+  "code_font_description": "Police utilisée pour l'éditeur de code, les blocs de code et le terminal. Le terminal se met à jour lorsqu'on le rouvre.",
+  "custom_font": "Police personnalisée",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
