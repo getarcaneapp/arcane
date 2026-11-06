@@ -75,7 +75,7 @@
 	</div>
 {/snippet}
 
-<div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
+<div class={cn('flex h-full min-h-0 flex-col', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		{#if showFloatingHeader === false}
 			{@render fullHeader()}

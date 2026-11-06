@@ -56,14 +56,17 @@
 		<div
 			data-slot="sidebar-container"
 			class={cn(
-				'fixed inset-y-0 z-(--arcane-z-app-chrome) hidden h-dvh w-(--sidebar-width) overflow-x-hidden transition-[left,right,width] duration-200 ease-out desktop-layout:flex',
+				'fixed inset-y-0 z-(--arcane-z-app-chrome) hidden h-dvh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out desktop-layout:flex',
 				side === 'left'
 					? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
 					: 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
 				// Adjust the padding for floating and inset variants.
-				variant === 'floating' || variant === 'inset'
-					? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
-					: 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
+				// The floating inner panel clips its own content; clipping here would cut its shadow into a hard edge.
+				variant !== 'floating' && 'overflow-x-hidden',
+				variant === 'floating' && 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]',
+				variant === 'inset' && 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]',
+				variant === 'sidebar' &&
+					'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
 				// Conditionally apply hover expansion if enabled
 				sidebar.hoverExpansionEnabled && ['group-data-[collapsible=icon]:group-data-[hovered=true]:w-(--sidebar-width)'],
 				className
@@ -82,7 +85,10 @@
 			<div
 				data-sidebar="sidebar"
 				data-slot="sidebar-inner"
-				class="flex h-full w-full flex-col overflow-x-hidden backdrop-blur-md group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+				class={cn(
+					'flex h-full w-full flex-col overflow-x-hidden',
+					variant === 'floating' ? 'shell-glass rounded-2xl' : 'backdrop-blur-md'
+				)}
 			>
 				{@render children?.()}
 			</div>

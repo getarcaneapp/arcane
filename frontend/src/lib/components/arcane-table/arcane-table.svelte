@@ -748,7 +748,7 @@
 	}
 
 	const shellClass = $derived(
-		unstyled ? 'flex h-full min-h-0 flex-col' : 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border'
+		unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card/30'
 	);
 	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'border-border/50 w-full shrink-0 border-b');
 </script>
@@ -859,7 +859,7 @@
 				bind:this={gridScrollEl}
 				data-table-scroll="grid"
 				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
+					'isolate h-full min-h-0 flex-1 overflow-auto',
 					overflow.below && 'scroll-fade-b',
 					overflow.left && 'scroll-fade-l',
 					overflow.right && 'scroll-fade-r'
@@ -892,8 +892,9 @@
 				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={desktopScrollEl}
 				data-table-scroll="desktop"
+				data-overflow-right={overflow.right || undefined}
 				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
+					'isolate h-full min-h-0 flex-1 overflow-auto',
 					overflow.below && 'scroll-fade-b',
 					overflow.left && 'scroll-fade-l',
 					overflow.right && 'scroll-fade-r'
@@ -930,7 +931,7 @@
 				bind:this={mobileScrollEl}
 				data-table-scroll="mobile"
 				class={cn(
-					'isolate block bg-background/80',
+					'isolate block',
 					!mobilePageScroll && 'min-h-0 flex-1 overflow-auto',
 					overflow.below && 'scroll-fade-b',
 					overflow.left && 'scroll-fade-l',

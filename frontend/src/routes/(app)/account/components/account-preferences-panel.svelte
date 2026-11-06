@@ -22,6 +22,7 @@
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
 
+	import AccountBackdropSettings from './account-backdrop-settings.svelte';
 	import AllEnvironmentsPreferences from './all-environments-preferences.svelte';
 
 	const currentUser = $derived(userStore.current);
@@ -235,6 +236,7 @@
 				/>
 			{/snippet}
 		</SettingsRow>
+		<AccountBackdropSettings {savePreferencesDebounced} />
 		<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="switch">
 			{#snippet children({ describedBy })}
 				<Switch

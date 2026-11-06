@@ -51,6 +51,7 @@ export { default as EyeOffIcon } from 'virtual:icons/fluent/eye-hide-20-filled';
 
 export { default as DownloadIcon } from 'virtual:icons/solar/download-bold';
 export { default as UploadIcon } from 'virtual:icons/solar/upload-minimalistic-bold';
+export { default as ForbiddenIcon } from 'virtual:icons/solar/forbidden-circle-linear';
 export { default as ExternalLinkIcon } from 'virtual:icons/solar/link-minimalistic-2-bold';
 export { default as BookOpenIcon } from 'virtual:icons/solar/notebook-minimalistic-bold';
 export { default as SendEmailIcon } from 'virtual:icons/solar/plain-bold';

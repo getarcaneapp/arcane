@@ -21,6 +21,7 @@ type (
 		OidcAccessToken          *string    `json:"-" gorm:"type:text"`
 		OidcRefreshToken         *string    `json:"-" gorm:"type:text"`
 		OidcAccessTokenExpiresAt *time.Time `json:"-"`
+		BackdropHash             *string    `json:"-" gorm:"column:backdrop_hash"`
 
 		Username               string           `json:"username" sortable:"true"`
 		PasswordHash           string           `json:"-" gorm:"column:password_hash"`
@@ -36,6 +37,12 @@ type (
 		MimeType string `json:"mimeType" gorm:"column:mime_type;not null"`
 		Data     []byte `json:"-" gorm:"column:data;type:blob;not null"`
 	}
+
+	UserBackdrop struct {
+		UserID   string `json:"userId" gorm:"column:user_id;primaryKey"`
+		MimeType string `json:"mimeType" gorm:"column:mime_type;not null"`
+		Data     []byte `json:"-" gorm:"column:data;type:blob;not null"`
+	}
 )
 
 func (User) TableName() string {
@@ -44,6 +51,10 @@ func (User) TableName() string {
 
 func (UserAvatar) TableName() string {
 	return "user_avatars"
+}
+
+func (UserBackdrop) TableName() string {
+	return "user_backdrops"
 }
 
 func (u *User) Actor() *types.Actor {

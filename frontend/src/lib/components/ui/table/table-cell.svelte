@@ -23,12 +23,13 @@
 	data-slot="table-cell"
 	class={cn(
 		'bg-transparent px-4 py-3 align-middle whitespace-nowrap',
-		'first:pl-6 last:pr-6 [&:has([role=checkbox])]:pr-0',
+		'first:rounded-l-lg first:pl-6 last:rounded-r-lg last:pr-6 [&:has([role=checkbox])]:pr-0',
 		variant === 'checkbox' && 'w-0 pr-4!',
 		variant === 'expander' && 'w-8 px-2',
 		variant === 'flush' && 'p-0',
 		indent && 'pl-10',
-		pinned && 'sticky right-0 z-(--arcane-z-sticky) bg-inherit p-0 whitespace-nowrap',
+		pinned &&
+			'sticky right-0 z-(--arcane-z-sticky) p-0 whitespace-nowrap [[data-overflow-right]_&]:rounded-none [[data-overflow-right]_&]:bg-table-sticky [[data-overflow-right]_&]:shadow-[inset_1px_0_0_var(--color-border)] [[data-overflow-right]_&]:backdrop-blur-xl',
 		className
 	)}
 	{...restProps}

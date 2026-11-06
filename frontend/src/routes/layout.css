@@ -92,6 +92,11 @@
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 65%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 45%, transparent);
 
+	--shell-background: color-mix(in oklch, var(--background) 93%, var(--foreground));
+	--shell-glass: color-mix(in oklch, var(--background) 82%, transparent);
+	--shell-glass-blur: blur(24px) saturate(1.5);
+	--shell-glass-shadow: 0 0 0 1px oklch(0 0 0 / 0.06), 0 2px 16px -4px oklch(0 0 0 / 0.12);
+
 	--arcane-z-content: 0;
 	--arcane-z-raised: 10;
 	--arcane-z-sticky: 20;
@@ -184,10 +189,14 @@
 	--shadow-glass-lg:
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
+
+	--shell-background: color-mix(in oklch, var(--background) 88%, var(--foreground));
+	--shell-glass-shadow: 0 0 0 1px oklch(1 0 0 / 0.08), 0 2px 16px -4px oklch(0 0 0 / 0.5);
 }
 
 .dark.oled:not([data-app-theme]) {
 	--background: oklch(0 0 0);
+	--shell-background: oklch(0 0 0);
 	--card: oklch(0 0 0 / 0.5);
 	--popover: oklch(0.04 0.002 285);
 	--secondary: oklch(0.1 0.004 286 / 0.55);
@@ -202,6 +211,31 @@
 	--bg-surface: oklch(0.02 0.001 285);
 	--glass-base: oklch(0.02 0.001 285);
 	--glass-shadow-color: oklch(0 0 0 / 0.6);
+}
+
+/* Over a backdrop photo the shell glass thins out and blurs harder. */
+html[data-backdrop] {
+	--shell-glass: color-mix(in oklch, var(--background) 70%, transparent);
+	--shell-glass-blur: blur(48px) saturate(1.5);
+}
+
+html.no-blur[data-backdrop] {
+	--shell-glass: color-mix(in oklch, var(--background) 92%, transparent);
+}
+
+/* Sticky table chrome is frosted so rows scrolling beneath it stay legible. */
+:root {
+	--table-head: color-mix(in oklab, color-mix(in oklab, var(--foreground) 5%, var(--background)) 75%, transparent);
+	--table-sticky: color-mix(in oklab, var(--background) 75%, transparent);
+}
+
+html.no-blur {
+	--table-head: color-mix(in oklab, var(--foreground) 5%, var(--background));
+	--table-sticky: var(--background);
+}
+
+[data-slot='sidebar-inner'].shell-glass {
+	--sidebar-accent: color-mix(in oklch, var(--sidebar-foreground) 9%, transparent);
 }
 
 html.no-blur *,
@@ -264,10 +298,12 @@ html.reduce-effects *::after {
 	--radius-4xl: var(--radius-xl);
 
 	--color-background: var(--background);
-	--color-row-hover: color-mix(in oklab, var(--primary) 6%, var(--background));
-	--color-row-selected: color-mix(in oklab, var(--primary) 12%, var(--background));
-	--color-row-selected-hover: color-mix(in oklab, var(--primary) 15%, var(--background));
-	--color-row-expanded: color-mix(in oklab, var(--muted) 30%, var(--background));
+	--color-row-hover: color-mix(in oklab, var(--primary) 8%, transparent);
+	--color-row-selected: color-mix(in oklab, var(--primary) 14%, transparent);
+	--color-row-selected-hover: color-mix(in oklab, var(--primary) 18%, transparent);
+	--color-row-expanded: color-mix(in oklab, var(--foreground) 4%, transparent);
+	--color-table-head: var(--table-head);
+	--color-table-sticky: var(--table-sticky);
 	--color-foreground: var(--foreground);
 	--color-muted: var(--muted);
 	--color-muted-foreground: var(--muted-foreground);
@@ -322,6 +358,7 @@ html.reduce-effects *::after {
 	--text-3xs: 0.625rem;
 	--text-4xs: 0.5rem;
 	--text-xs-plus: 0.8125rem;
+	--text-sm-plus: 0.9375rem;
 	--text-form-control: 16px;
 	--spacing-touch-target: 44px;
 	--spacing-stat-ring: 38px;
@@ -358,6 +395,7 @@ html.reduce-effects *::after {
 	--grid-template-columns-split-6-5: minmax(0, 1.2fr) minmax(0, 1fr);
 
 	--height-screen-70: 70vh;
+	--height-screen-inset-1: calc(100dvh - 1rem);
 	--height-screen-inset-12: calc(100vh - 12rem);
 	--height-screen-inset-15: calc(100vh - 15rem);
 	--min-height-screen-60: 60vh;
@@ -584,6 +622,13 @@ html.reduce-effects *::after {
 
 	.bubble-shadow {
 		box-shadow: var(--shadow-glass-sm);
+	}
+
+	.shell-glass {
+		background-color: var(--shell-glass);
+		box-shadow: var(--shell-glass-shadow);
+		-webkit-backdrop-filter: var(--shell-glass-blur);
+		backdrop-filter: var(--shell-glass-blur);
 	}
 
 	.bubble-shadow-lg {

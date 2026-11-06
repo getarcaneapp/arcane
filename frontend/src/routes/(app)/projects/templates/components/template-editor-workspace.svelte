@@ -59,7 +59,7 @@
 	const lockedMessage = $derived(lockNameAndDescription ? m.templates_name_description_locked() : undefined);
 </script>
 
-<div class="flex h-full min-h-0 flex-col bg-background">
+<div class="flex h-full min-h-0 flex-col">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex min-w-0 items-center gap-4">

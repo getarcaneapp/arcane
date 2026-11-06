@@ -14,7 +14,7 @@
 	data-slot="sidebar-content"
 	data-sidebar="content"
 	class={cn(
-		'flex min-h-0 flex-1 scrollbar-visible flex-col gap-1 overflow-x-hidden overflow-y-auto pb-6',
+		'mt-1 flex min-h-0 flex-1 scrollbar-visible flex-col gap-0 overflow-x-hidden overflow-y-auto px-3 pb-4 group-data-[collapsible=icon]:group-data-[hovered=false]:gap-3',
 		moreBelow && 'scroll-fade-b',
 		className
 	)}

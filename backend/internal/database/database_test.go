@@ -624,6 +624,24 @@ func TestMigration106_AddsImageUpdateCreated(t *testing.T) {
 	assert.Zero(t, createdColumns())
 }
 
+func TestMigration107_AddsUserBackdrops(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-user-backdrops.db")
+	schemaObjects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'user_backdrops') +
+			(SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'backdrop_hash')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 107))
+	assert.Equal(t, 2, schemaObjects())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 106))
+	assert.Zero(t, schemaObjects())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")
