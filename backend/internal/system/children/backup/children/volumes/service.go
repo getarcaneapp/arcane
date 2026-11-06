@@ -510,10 +510,12 @@ func (s *Service) executeSystemVolumeBackups(
 		backedUp = append(backedUp, seriesID)
 		succeeded++
 	}
-	// Retention failures must not fail the run; the next run trims the same series again.
+	// Retention failures must not fail the run; the next run trims the same series again. Per-volume retention runs
+	// before its new backup is marked finished, so it keeps that backup plus RetentionCount older ones; trimming after
+	// the run counts the new backups, so keep one more to leave the same backups in place.
 	if retentionErr := s.volumes.ApplySeriesRetention(ctx, types.BackupSeriesRetention{
 		SeriesIDs:     backedUp,
-		Keep:          input.Policy.RetentionCount,
+		Keep:          kit.Ternary(input.Policy.RetentionCount > 0, input.Policy.RetentionCount+1, 0),
 		IncludeRemote: input.Policy.S3Enabled,
 	}); retentionErr != nil {
 		slog.ErrorContext(ctx, "System-managed volume backup retention failed", "policyId", input.Policy.ID, "error", retentionErr)
