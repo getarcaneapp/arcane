@@ -19,6 +19,7 @@ type UserPreferences = {
 	keyboardShortcutsEnabled?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree';
+	interfaceFont?: string;
 };
 
 type AccountUser = {
@@ -49,6 +50,10 @@ async function login(page: Page, username: string, password: string, expectedPat
 	await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 	await expect(page).toHaveURL(expectedPath);
 	await expect(page.locator('main').first()).toBeVisible();
+}
+
+function readRootFontVariable(page: Page, variable: string) {
+	return page.evaluate((name) => document.documentElement.style.getPropertyValue(name), variable);
 }
 
 async function waitForProfileUpdate(page: Page, action: () => Promise<void>) {
@@ -246,6 +251,21 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				preferences: { keyboardShortcutsEnabled }
 			});
 
+			const interfaceFontTrigger = accountPage.getByLabel('Interface font', { exact: true });
+			await interfaceFontTrigger.click();
+			await accountPage.getByRole('option', { name: 'Custom', exact: true }).click();
+			const customFontInput = accountPage.getByLabel('Custom font', { exact: true });
+			await customFontInput.fill('0xProto');
+			const interfaceFontResponse = await waitForProfileUpdate(accountPage, () =>
+				customFontInput.press('Enter')
+			);
+			expect(interfaceFontResponse.request().postDataJSON()).toEqual({
+				preferences: { interfaceFont: '0xProto' }
+			});
+			await expect
+				.poll(() => readRootFontVariable(accountPage, '--font-sans-user'))
+				.toBe('"0xProto"');
+
 			const persisted = await readApiData<AccountUser>(
 				await accountPage.request.get('/api/auth/me'),
 				'Verify persisted account preferences'
@@ -256,7 +276,8 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 					themeMode,
 					defaultLandingPage: landingPage,
 					defaultProjectEditorLayout: projectEditorLayout,
-					keyboardShortcutsEnabled
+					keyboardShortcutsEnabled,
+					interfaceFont: '0xProto'
 				}
 			});
 
@@ -265,6 +286,20 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				'data-state',
 				keyboardShortcutsEnabled ? 'checked' : 'unchecked'
 			);
+			await expect(customFontInput).toHaveValue('0xProto');
+			await expect
+				.poll(() => readRootFontVariable(accountPage, '--font-sans-user'))
+				.toBe('"0xProto"');
+
+			const defaultFontResponse = await waitForProfileUpdate(accountPage, async () => {
+				await interfaceFontTrigger.click();
+				await accountPage.getByRole('option', { name: 'Default', exact: true }).click();
+			});
+			expect(defaultFontResponse.request().postDataJSON()).toEqual({
+				preferences: { interfaceFont: '' }
+			});
+			await expect(customFontInput).toBeHidden();
+			await expect.poll(() => readRootFontVariable(accountPage, '--font-sans-user')).toBe('');
 
 			await accountPage.getByRole('tab', { name: 'Account', exact: true }).click();
 			const logoutOtherResponsePromise = accountPage.waitForResponse(

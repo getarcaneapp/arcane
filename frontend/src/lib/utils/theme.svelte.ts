@@ -348,6 +348,34 @@ const FONT_VARIABLES: Record<FontSlot, string> = {
 	code: '--font-code-user'
 };
 
+const GENERIC_FONT_FAMILIES = new Set([
+	'serif',
+	'sans-serif',
+	'monospace',
+	'cursive',
+	'fantasy',
+	'system-ui',
+	'ui-serif',
+	'ui-sans-serif',
+	'ui-monospace',
+	'ui-rounded',
+	'emoji',
+	'math',
+	'fangsong'
+]);
+
+function quoteFontFamily(name: string): string | null {
+	if (/^(['"])[^'"]+\1$/.test(name) || GENERIC_FONT_FAMILIES.has(name.toLowerCase())) {
+		return name;
+	}
+
+	if (/['"]/.test(name)) {
+		return null;
+	}
+
+	return `"${name}"`;
+}
+
 export function toFontFamily(value?: string | null): string | null {
 	const font = value?.trim();
 
@@ -355,11 +383,17 @@ export function toFontFamily(value?: string | null): string | null {
 		return null;
 	}
 
-	if (/[,'"]/.test(font) || !font.includes(' ')) {
-		return font;
+	const families = font
+		.split(',')
+		.map((name) => name.trim())
+		.filter(Boolean)
+		.map(quoteFontFamily);
+
+	if (families.length === 0 || families.includes(null)) {
+		return null;
 	}
 
-	return `"${font}"`;
+	return families.join(', ');
 }
 
 export function applyFonts(fonts: FontFamilies): void {

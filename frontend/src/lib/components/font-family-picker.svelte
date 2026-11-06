@@ -10,7 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { UserPreferences } from '#lib/types/user.js';
-	import { FONT_NAME_PATTERN, toFontFamily, type FontSlot } from '#lib/utils/theme.svelte.js';
+	import { toFontFamily, type FontSlot } from '#lib/utils/theme.svelte.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 
 	type FontPreferenceKey = keyof Pick<UserPreferences, 'interfaceFont' | 'monospaceFont' | 'codeFont'>;
@@ -49,8 +49,8 @@
 	const options = $derived([
 		{ label: m.default_font(), value: '' },
 		{ label: m.system_ui(), value: 'system-ui, sans-serif' },
-		{ label: 'Montserrat', value: "'Montserrat Variable'" },
-		{ label: 'Geist Mono', value: "'Geist Mono Variable'" },
+		{ label: m.montserrat(), value: "'Montserrat Variable'" },
+		{ label: m.geist_mono(), value: "'Geist Mono Variable'" },
 		{ label: m.custom(), value: CUSTOM_VALUE }
 	]);
 	const isPreset = $derived(options.some((option) => option.value !== CUSTOM_VALUE && option.value === storedFont));
@@ -58,9 +58,7 @@
 	let customMode = $derived(!isPreset);
 	let customFont = $derived(isPreset ? '' : storedFont);
 
-	const customError = $derived(
-		customFont.trim().length > FONT_NAME_MAX_LENGTH || !FONT_NAME_PATTERN.test(customFont.trim()) ? m.font_name_invalid() : null
-	);
+	const customError = $derived(isValidFontName(customFont.trim()) ? null : m.font_name_invalid());
 	const previewFamily = $derived(customMode && !customError ? toFontFamily(customFont) : null);
 
 	const canBrowseFonts = browser && 'queryLocalFonts' in window;
@@ -68,13 +66,15 @@
 	let loadingFonts = $state(false);
 	const installedFontItems = $derived(installedFonts?.map((family) => ({ value: family, label: family })) ?? []);
 
+	function isValidFontName(name: string) {
+		return name.length <= FONT_NAME_MAX_LENGTH && (name === '' || toFontFamily(name) !== null);
+	}
+
 	async function loadInstalledFonts() {
 		loadingFonts = true;
 		try {
 			const fonts = (await (window as LocalFontWindow).queryLocalFonts?.()) ?? [];
-			installedFonts = [...new Set(fonts.map((font) => font.family))]
-				.filter((family) => FONT_NAME_PATTERN.test(family) && family.length <= FONT_NAME_MAX_LENGTH)
-				.sort((a, b) => a.localeCompare(b));
+			installedFonts = [...new Set(fonts.map((font) => font.family))].filter(isValidFontName).sort((a, b) => a.localeCompare(b));
 		} catch (error) {
 			toast.error(m.installed_fonts_unavailable(), { description: error instanceof Error ? error.message : undefined });
 		} finally {

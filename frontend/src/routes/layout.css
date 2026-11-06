@@ -402,9 +402,9 @@ html.reduce-effects *::after {
 }
 
 @theme static {
-	--font-sans: var(--font-sans-user, 'Montserrat Variable'), var(--font-cjk), sans-serif;
-	--font-heading: var(--font-mono-user, 'Geist Mono Variable'), var(--font-cjk), monospace;
-	--font-mono: var(--font-mono-user, 'Geist Mono Variable'), var(--font-cjk), monospace;
+	--font-sans: var(--font-sans-user, 'Montserrat Variable'), 'Montserrat Variable', var(--font-cjk), sans-serif;
+	--font-heading: var(--font-mono-user, 'Geist Mono Variable'), 'Geist Mono Variable', var(--font-cjk), monospace;
+	--font-mono: var(--font-mono-user, 'Geist Mono Variable'), 'Geist Mono Variable', var(--font-cjk), monospace;
 	--font-code:
 		var(--font-code-user, 'Mona Sans Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New',
 		var(--font-cjk), monospace;
