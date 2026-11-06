@@ -460,15 +460,15 @@ func writeNtfyTransition(message *strings.Builder, current, latest, indent strin
 	case current != "" && latest != "":
 		fmt.Fprintf(
 			message,
-			"%s🔄 `%s` → `%s`\n",
+			"%s🔄 %s → %s\n",
 			indent,
-			current,
-			latest,
+			formatNotificationCode(MessageFormatMarkdown, current),
+			formatNotificationCode(MessageFormatMarkdown, latest),
 		)
 	case latest != "":
-		fmt.Fprintf(message, "%s🔄 `%s`\n", indent, latest)
+		fmt.Fprintf(message, "%s🔄 %s\n", indent, formatNotificationCode(MessageFormatMarkdown, latest))
 	default:
-		fmt.Fprintf(message, "%s🔄 `%s`\n", indent, current)
+		fmt.Fprintf(message, "%s🔄 %s\n", indent, formatNotificationCode(MessageFormatMarkdown, current))
 	}
 
 	return true
