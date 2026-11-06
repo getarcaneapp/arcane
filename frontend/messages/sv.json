@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Tillsätt i alla behållare",
   "inject_into_all_containers_description": "Lägg till variabeln i varje behållares miljö. När den är avstängd kan den endast användas för variabelersättning i compose-filer",
   "injected": "Injicerad",
-  "built_on": "Byggd {date}"
+  "built_on": "Byggd {date}",
+  "default_font": "Standard",
+  "system_ui": "Systemgränssnitt",
+  "interface_font": "Teckensnitt i gränssnittet",
+  "interface_font_description": "Teckensnitt för gränssnittstext. Tecken på kinesiska, japanska och koreanska använder installerade systemteckensnitt.",
+  "monospace_font": "Monospace-typsnitt",
+  "monospace_font_description": "Teckensnitt för rubriker, ID:n och annan text med fast teckenbredd",
+  "code_font": "Teckensnitt",
+  "code_font_description": "Teckensnitt för kodredigeraren, kodblock och terminalen. Terminalen uppdateras när den öppnas på nytt.",
+  "custom_font": "Anpassat typsnitt",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
