@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "In alle Behälter einfüllen",
   "inject_into_all_containers_description": "Füge die Variable zur Umgebung jedes Containers hinzu. Wenn diese Option deaktiviert ist, steht sie nur für die Variablenersetzung in Compose-Dateien zur Verfügung.",
   "injected": "Eingespritzt",
-  "built_on": "Errichtet {date}"
+  "built_on": "Errichtet {date}",
+  "default_font": "Standard",
+  "system_ui": "System-Benutzeroberfläche",
+  "interface_font": "Schriftart der Benutzeroberfläche",
+  "interface_font_description": "Schriftart für den Text der Benutzeroberfläche. Für chinesische, japanische und koreanische Zeichen werden die installierten Systemschriftarten verwendet.",
+  "monospace_font": "Monospace-Schriftart",
+  "monospace_font_description": "Schriftart für Überschriften, IDs und anderen Text in Monospace-Schrift",
+  "code_font": "Code-Schriftart",
+  "code_font_description": "Schriftart für den Code-Editor, Code-Blöcke und das Terminal. Das Terminal wird beim erneuten Öffnen aktualisiert.",
+  "custom_font": "Benutzerdefinierte Schriftart",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
