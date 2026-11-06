@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "エージェント・トンネル・ストリーム・ウィンドウ",
   "agent_tunnel_stream_window_description": "エージェントトンネルにおける転送ごとのバッファサイズ。値が大きいほど、遅延の大きい回線では転送速度が向上しますが、メモリ使用量も増えます。",
   "agent_tunnel_stream_window_reconnect": "トンネルが再接続された際に適用されます。",
-  "value_in_mib": "MiB単位の値（{range}）"
+  "value_in_mib": "MiB単位の値（{range}）",
+  "inject_into_all_containers": "すべてのコンテナに注入する",
+  "inject_into_all_containers_description": "この変数をすべてのコンテナの環境変数に追加します。オフの場合、この変数はcomposeファイル内での変数置換にのみ利用可能です。",
+  "injected": "注入された",
+  "built_on": "建設された {date}"
 }
