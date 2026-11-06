@@ -4436,12 +4436,12 @@
   "code_font": "Kód betűtípus",
   "code_font_description": "Betűtípus a kódszerkesztőhöz, a kódblokkokhoz és a terminálhoz. A terminál újbóli megnyitásakor frissül.",
   "custom_font": "Egyedi betűtípus",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "A telepített betűtípus neve",
+  "font_name_invalid": "Legfeljebb 128 betűt, számot, szóközöt, vesszőt, idézőjelet, kötőjelet vagy aláhúzójelet használhat.",
+  "browse_installed_fonts": "A telepített betűtípusok böngészése",
+  "installed_fonts": "Telepített betűtípusok",
+  "installed_fonts_unavailable": "A telepített betűtípusok beolvasása nem sikerült",
+  "font_preview_sample": "A gyors barna róka átugorja a lusta kutyát 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
