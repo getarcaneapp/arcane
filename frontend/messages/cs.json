@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Okno „Agent Tunnel Stream“",
   "agent_tunnel_stream_window_description": "Velikost vyrovnávací paměti na jeden přenos v tunelu agenta. Čím vyšší hodnota, tím rychlejší přenos na spojích s vysokou latencí, ale zároveň se spotřebuje více paměti.",
   "agent_tunnel_stream_window_reconnect": "Platí v případě, že dojde k opětovnému připojení tunelu.",
-  "value_in_mib": "Hodnota v MiB ({range})"
+  "value_in_mib": "Hodnota v MiB ({range})",
+  "inject_into_all_containers": "Vložit do všech kontejnerů",
+  "inject_into_all_containers_description": "Přidejte proměnnou do prostředí každého kontejneru. Pokud je tato možnost vypnutá, je proměnná k dispozici pouze pro nahrazování proměnných v souborech Compose.",
+  "injected": "Vstříknuté",
+  "built_on": "Postaveno {date}"
 }
