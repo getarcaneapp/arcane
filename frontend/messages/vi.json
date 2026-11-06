@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Cửa sổ luồng đường hầm đại lý",
   "agent_tunnel_stream_window_description": "Dung lượng bộ đệm cho mỗi lần truyền trên đường hầm của tác nhân. Giá trị càng cao thì tốc độ càng nhanh trên các kết nối có độ trễ cao, nhưng sẽ tiêu tốn nhiều bộ nhớ hơn.",
   "agent_tunnel_stream_window_reconnect": "Áp dụng khi kết nối đường hầm được thiết lập lại.",
-  "value_in_mib": "Giá trị tính bằng MiB ({range})"
+  "value_in_mib": "Giá trị tính bằng MiB ({range})",
+  "inject_into_all_containers": "Áp dụng cho tất cả các container",
+  "inject_into_all_containers_description": "Thêm biến này vào môi trường của mọi container. Khi tùy chọn này bị tắt, biến này chỉ có thể được sử dụng để thay thế trong các tệp compose",
+  "injected": "Được tiêm",
+  "built_on": "Được xây dựng {date}"
 }
