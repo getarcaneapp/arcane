@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Agent-Tunnel-Stream-Fenster",
   "agent_tunnel_stream_window_description": "Puffer pro Übertragung im Agent-Tunnel. Ein höherer Wert sorgt bei Verbindungen mit hoher Latenz für eine höhere Geschwindigkeit, beansprucht jedoch mehr Speicherplatz.",
   "agent_tunnel_stream_window_reconnect": "Gilt, wenn die Tunnelverbindung wiederhergestellt wird.",
-  "value_in_mib": "Wert in MiB ({range})"
+  "value_in_mib": "Wert in MiB ({range})",
+  "inject_into_all_containers": "In alle Behälter einfüllen",
+  "inject_into_all_containers_description": "Füge die Variable zur Umgebung jedes Containers hinzu. Wenn diese Option deaktiviert ist, steht sie nur für die Variablenersetzung in Compose-Dateien zur Verfügung.",
+  "injected": "Eingespritzt",
+  "built_on": "Errichtet {date}"
 }
