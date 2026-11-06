@@ -20,6 +20,10 @@ export interface BuildsTabProps extends LockableFormTabProps {
 	settings: ResolvedSettings;
 }
 
+export interface StorageTabProps extends FormTabProps {
+	settings: ResolvedSettings;
+}
+
 export interface DockerTabProps extends FormTabProps {
 	environmentId: string;
 }
