@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Minden tartályba befecskendezni",
   "inject_into_all_containers_description": "Adja hozzá a változót minden konténer környezetéhez. Ha ki van kapcsolva, akkor csak a compose fájlokban használható változóhelyettesítésre.",
   "injected": "Befecskendezett",
-  "built_on": "Épült {date}"
+  "built_on": "Épült {date}",
+  "default_font": "Alapértelmezett",
+  "system_ui": "Rendszerfelület",
+  "interface_font": "Felületi betűtípus",
+  "interface_font_description": "A felületi szöveg betűtípusa. A kínai, japán és koreai karakterekhez a telepített rendszerbetűtípusok kerülnek felhasználásra.",
+  "monospace_font": "Monospace betűtípus",
+  "monospace_font_description": "Betűtípus címsorokhoz, azonosítókhoz és egyéb szabványos szélességű szövegekhez",
+  "code_font": "Kód betűtípus",
+  "code_font_description": "Betűtípus a kódszerkesztőhöz, a kódblokkokhoz és a terminálhoz. A terminál újbóli megnyitásakor frissül.",
+  "custom_font": "Egyedi betűtípus",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
