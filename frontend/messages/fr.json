@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Fenêtre « Tunnel Stream » de l'agent",
   "agent_tunnel_stream_window_description": "Taille de la mémoire tampon par transfert sur le tunnel de l'agent. Une valeur plus élevée permet d'accélérer le transfert sur les liaisons à forte latence, mais consomme davantage de mémoire.",
   "agent_tunnel_stream_window_reconnect": "S'applique lorsque la connexion via le tunnel est rétablie.",
-  "value_in_mib": "Valeur en MiB ({range})"
+  "value_in_mib": "Valeur en MiB ({range})",
+  "inject_into_all_containers": "Injecter dans tous les conteneurs",
+  "inject_into_all_containers_description": "Ajoutez la variable à l'environnement de chaque conteneur. Lorsqu'elle est désactivée, elle n'est disponible que pour la substitution de variables dans les fichiers Compose.",
+  "injected": "Injecté",
+  "built_on": "Construit {date}"
 }
