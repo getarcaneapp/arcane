@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Agent-tunnel-ström-fönster",
   "agent_tunnel_stream_window_description": "Buffert per överföring i agenttunneln. Ett högre värde ger snabbare överföring på länkar med hög latens, men kräver mer minne.",
   "agent_tunnel_stream_window_reconnect": "Gäller när tunneln återansluts.",
-  "value_in_mib": "Värde i MiB ({range})"
+  "value_in_mib": "Värde i MiB ({range})",
+  "inject_into_all_containers": "Tillsätt i alla behållare",
+  "inject_into_all_containers_description": "Lägg till variabeln i varje behållares miljö. När den är avstängd kan den endast användas för variabelersättning i compose-filer",
+  "injected": "Injicerad",
+  "built_on": "Byggd {date}"
 }
