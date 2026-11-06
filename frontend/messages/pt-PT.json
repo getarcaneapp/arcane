@@ -4436,12 +4436,12 @@
   "code_font": "Tipo de letra do código",
   "code_font_description": "Tipo de letra para o editor de código, blocos de código e terminal. O terminal atualiza-se quando é reaberto.",
   "custom_font": "Tipo de letra personalizado",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Nome da fonte instalada",
+  "font_name_invalid": "Utilize até 128 letras, números, espaços, vírgulas, aspas, hífens ou sublinhados.",
+  "browse_installed_fonts": "Procurar os tipos de letra instalados",
+  "installed_fonts": "Fontes instaladas",
+  "installed_fonts_unavailable": "Não foi possível ler os tipos de letra instalados",
+  "font_preview_sample": "A raposa castanha e rápida salta por cima do cão preguiçoso 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
