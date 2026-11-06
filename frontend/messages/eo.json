@@ -4436,12 +4436,12 @@
   "code_font": "Koda tiparo",
   "code_font_description": "Tiparo por la kodredaktilo, kodblokoj kaj terminalo. La terminalo ĝisdatigas kiam ĝi estas remalfermita.",
   "custom_font": "Personigita tiparo",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Instaliĝis la nomo de la tiparo",
+  "font_name_invalid": "Uzu ĝis 128 literojn, ciferojn, spacojn, komojn, citilojn, streketojn aŭ substreketojn.",
+  "browse_installed_fonts": "Trarigardu instalitajn tiparojn",
+  "installed_fonts": "Instaliitaj tiparoj",
+  "installed_fonts_unavailable": "Ne povis legi instalitajn tiparojn",
+  "font_preview_sample": "La rapida bruna vulpo saltas super la pigra hundo 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
