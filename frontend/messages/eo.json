@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "Injici en ĉiujn ujojn",
   "inject_into_all_containers_description": "Aldonu la variablon al la medio de ĉiu ujo. Kiam ĝi estas malŝaltita, ĝi estas disponebla nur por anstataŭigo de variabloj en compose-dosieroj.",
   "injected": "Injektita",
-  "built_on": "Konstruita {date}"
+  "built_on": "Konstruita {date}",
+  "default_font": "Normala",
+  "system_ui": "Sistemo UI",
+  "interface_font": "Interfaca tiparo",
+  "interface_font_description": "Tiparo por interfaca teksto. Ĉinaj, japanaj kaj koreaj glifoj uzas instalitajn sistemajn tiparojn.",
+  "monospace_font": "Monospaca tiparo",
+  "monospace_font_description": "Tiparo por titoloj, ID-oj kaj alia monospaca teksto",
+  "code_font": "Koda tiparo",
+  "code_font_description": "Tiparo por la kodredaktilo, kodblokoj kaj terminalo. La terminalo ĝisdatigas kiam ĝi estas remalfermita.",
+  "custom_font": "Personigita tiparo",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
