@@ -4436,12 +4436,12 @@
   "code_font": "Phông chữ mã",
   "code_font_description": "Phông chữ cho trình soạn thảo mã, các khối mã và cửa sổ terminal. Cửa sổ terminal sẽ được cập nhật khi mở lại.",
   "custom_font": "Phông chữ tùy chỉnh",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Tên phông chữ đã cài đặt",
+  "font_name_invalid": "Sử dụng tối đa 128 ký tự, bao gồm chữ cái, số, khoảng trắng, dấu phẩy, dấu ngoặc kép, dấu gạch ngang hoặc dấu gạch dưới.",
+  "browse_installed_fonts": "Xem danh sách các phông chữ đã cài đặt",
+  "installed_fonts": "Phông chữ đã cài đặt",
+  "installed_fonts_unavailable": "Không thể đọc các phông chữ đã cài đặt",
+  "font_preview_sample": "Con cáo nâu nhanh nhẹn nhảy qua con chó lười biếng 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
