@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"path"
 	"slices"
 	"strings"
@@ -665,6 +666,11 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	ids, err := expired(ctx, nil)
 	if err != nil || len(ids) == 0 {
 		return err
+	}
+	// Bound the pass; drawing the batch at random keeps backups that keep failing from holding back the rest.
+	if len(ids) > backup.DeletionBatchSize {
+		rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+		ids = ids[:backup.DeletionBatchSize]
 	}
 	entries, err := s.deps.Store.Runs(ctx, ids)
 	if err != nil {

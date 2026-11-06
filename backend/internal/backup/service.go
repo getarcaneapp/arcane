@@ -143,7 +143,7 @@ const (
 	RunKeyPrefix                   = "run:"
 	VolumeRoot                     = "arcane-volume-backups"
 	rusticRepositoryMissingMessage = "No repository config file found"
-	unmanagedSweepBatch            = 500
+	DeletionBatchSize              = 500
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 )
@@ -977,12 +977,12 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 			}
 			managed = append(managed, id)
 		}
-		for batch := range slices.Chunk(managed, unmanagedSweepBatch) {
+		for batch := range slices.Chunk(managed, DeletionBatchSize) {
 			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", nil).Error; err != nil {
 				return fmt.Errorf("clear backup orphan marks: %w", err)
 			}
 		}
-		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), unmanagedSweepBatch) {
+		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), DeletionBatchSize) {
 			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", sweep.Now).Error; err != nil {
 				return fmt.Errorf("mark orphaned backups: %w", err)
 			}
@@ -993,7 +993,7 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		if len(sweep.Within) > 0 {
 			query = query.Where("id IN ?", sweep.Within)
 		}
-		return query.Order("RANDOM()").Limit(unmanagedSweepBatch).Pluck("id", &expired).Error
+		return query.Order("RANDOM()").Limit(DeletionBatchSize).Pluck("id", &expired).Error
 	})
 	return expired, err
 }
