@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "代理隧道流窗口",
   "agent_tunnel_stream_window_description": "代理隧道中的每次传输缓冲区大小。在高延迟链路上，该值越大速度越快，但会消耗更多内存。",
   "agent_tunnel_stream_window_reconnect": "在隧道重新连接时生效。",
-  "value_in_mib": "值以 MiB 为单位（{range}）"
+  "value_in_mib": "值以 MiB 为单位（{range}）",
+  "inject_into_all_containers": "注入到所有容器中",
+  "inject_into_all_containers_description": "将该变量添加到每个容器的环境中。当该选项关闭时，该变量仅可在 Compose 文件中用于变量替换",
+  "injected": "注入",
+  "built_on": "建成 {date}"
 }
