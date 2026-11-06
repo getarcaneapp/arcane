@@ -4426,5 +4426,22 @@
   "inject_into_all_containers": "In alle containers injecteren",
   "inject_into_all_containers_description": "Voeg de variabele toe aan de omgeving van elke container. Als deze is uitgeschakeld, is de variabele alleen beschikbaar voor variabelevervanging in compose-bestanden",
   "injected": "Geïnjecteerd",
-  "built_on": "Gebouwd {date}"
+  "built_on": "Gebouwd {date}",
+  "default_font": "Standaard",
+  "system_ui": "Systeem-UI",
+  "interface_font": "Lettertype van de interface",
+  "interface_font_description": "Lettertype voor tekst in de interface. Voor Chinese, Japanse en Koreaanse tekens worden de geïnstalleerde systeemlettertypen gebruikt.",
+  "monospace_font": "Lettertype Monospace",
+  "monospace_font_description": "Lettertype voor koppen, ID’s en andere tekst met vaste tekenafstand",
+  "code_font": "Code-lettertype",
+  "code_font_description": "Lettertype voor de code-editor, codeblokken en de terminal. De terminal wordt bij het opnieuw openen bijgewerkt.",
+  "custom_font": "Aangepast lettertype",
+  "custom_font_placeholder": "Installed font name",
+  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
+  "browse_installed_fonts": "Browse installed fonts",
+  "installed_fonts": "Installed fonts",
+  "installed_fonts_unavailable": "Could not read installed fonts",
+  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "montserrat": "Montserrat",
+  "geist_mono": "Geist Mono"
 }
