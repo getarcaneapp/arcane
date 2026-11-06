@@ -633,8 +633,11 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	for _, entry := range entries {
 		backupVolumes = append(backupVolumes, entry.VolumeName)
 	}
-	// Hold each volume's workspace lock, which restores take, and its run lease, which backups, uploads, and deletes
-	// take, so Rustic forgets every expired snapshot in one pass per repository without racing either.
+	// Hold each volume's workspace lock (restores) and run lease (backups, uploads, deletes) for the whole batch so
+	// Rustic forgets every expired snapshot in a single prune per repository. Keep it that way: every prune reads all
+	// remaining snapshots' trees and the index, and repacks partly used packs, so one prune per volume multiplies S3
+	// requests and egress. The cost is that a backup of an affected volume starting mid-sweep is skipped and a restore
+	// waits until the sweep ends.
 	held := make(map[string]func())
 	defer func() {
 		for _, release := range held {
