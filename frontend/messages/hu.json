@@ -4422,5 +4422,9 @@
   "agent_tunnel_stream_window": "Ügynök-alagút-adatfolyam-ablak",
   "agent_tunnel_stream_window_description": "Átvitelenkénti puffer az ügynöki alagútban. Magasabb érték gyorsabb a nagy késleltetésű kapcsolatokon, de több memóriát igényel.",
   "agent_tunnel_stream_window_reconnect": "Akkor lép érvénybe, amikor az alagút újra csatlakozik.",
-  "value_in_mib": "Érték MiB-ben ({range})"
+  "value_in_mib": "Érték MiB-ben ({range})",
+  "inject_into_all_containers": "Minden tartályba befecskendezni",
+  "inject_into_all_containers_description": "Adja hozzá a változót minden konténer környezetéhez. Ha ki van kapcsolva, akkor csak a compose fájlokban használható változóhelyettesítésre.",
+  "injected": "Befecskendezett",
+  "built_on": "Épült {date}"
 }
