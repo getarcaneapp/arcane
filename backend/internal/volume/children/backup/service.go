@@ -449,7 +449,10 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	// runs apply retention once for all their volumes through ApplySeriesRetention instead.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
 		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
-		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
+		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, backup.RunRetention{
+			Succeeded: plan.Policy.RetentionCount,
+			Failed:    plan.Policy.RetentionCount,
+		})
 		if retentionErr == nil && len(expired) > 0 {
 			var expiredEntries []*types.VolumeBackup
 			if expiredEntries, retentionErr = s.deps.Store.Runs(ctx, expired); retentionErr == nil {
@@ -647,10 +650,14 @@ func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.Back
 	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
 		return nil
 	}
+	// Per-volume retention runs before its new backup is marked finished, so it keeps that backup plus Keep older
+	// successful ones. Each series here just gained a successful backup, so keep one more success to match; failed
+	// backups gained none and keep the same limit.
+	keep := backup.RunRetention{Succeeded: retention.Keep + 1, Failed: retention.Keep}
 	return s.deleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, within []string) ([]string, error) {
 		var expired []string
 		for _, seriesID := range retention.SeriesIDs {
-			ids, err := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", seriesID, retention.Keep)
+			ids, err := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", seriesID, keep)
 			if err != nil {
 				return nil, err
 			}

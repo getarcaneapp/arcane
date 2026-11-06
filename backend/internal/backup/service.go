@@ -44,6 +44,12 @@ import (
 )
 
 type (
+	// RunRetention is how many finished runs of each status a policy keeps; each status is ranked separately.
+	RunRetention struct {
+		Succeeded int
+		Failed    int
+	}
+
 	Repository struct {
 		ID          string
 		Environment []string
@@ -940,19 +946,22 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	return fmt.Errorf("%w: %s", ErrRemoteRepositoryMissing, result.Reason)
 }
 
-func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
+func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep RunRetention) ([]string, error) {
 	var expired []string
-	for _, status := range []string{"succeeded", "failed"} {
+	for _, rank := range []struct {
+		status string
+		kept   int
+	}{{status: "succeeded", kept: keep.Succeeded}, {status: "failed", kept: keep.Failed}} {
 		var ids []string
 		if err := db.WithContext(ctx).
 			Table(table).
 			Where(
 				"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
 				policyID,
-				status,
+				rank.status,
 			).
 			Order("created_at DESC").
-			Offset(keep).
+			Offset(rank.kept).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
