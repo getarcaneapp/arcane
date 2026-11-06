@@ -16,33 +16,21 @@ import (
 )
 
 type (
-	// ListParams describes how a list command wants its results paginated.
 	ListParams struct {
-		// Resource is the canonical resource name used to look up a configured
-		// per-resource limit.
-		Resource string
-		// Limit is the value of the command's --limit flag.
-		Limit int
-		// FallbackDefault applies when neither the flag nor config supplies a limit.
+		Resource        string
+		Limit           int
 		FallbackDefault int
-		// Start is the value of the command's --start flag.
-		Start int
-		// All requests every item, ignoring pagination entirely.
-		All bool
+		Start           int
+		All             bool
 	}
 )
 
 const (
-	// ShowAllLimit requests every item without the server pagination clamp.
-	ShowAllLimit = -1
-	// AllFlagUsage is the shared help text for the --all flag on list commands.
-	AllFlagUsage = "Return every item, ignoring pagination"
-	// StartFlagUsage documents offset rounding for database-backed resources.
+	ShowAllLimit   = -1
+	AllFlagUsage   = "Return every item, ignoring pagination"
 	StartFlagUsage = "Offset for pagination (rounded down to a multiple of --limit on database-backed resources)"
 )
 
-// AppendQuery merges extra query parameters into a path, preserving any that
-// are already present.
 func AppendQuery(path string, extra url.Values) string {
 	parsed, err := url.Parse(path)
 	if err != nil {
@@ -58,8 +46,6 @@ func AppendQuery(path string, extra url.Values) string {
 	return parsed.String()
 }
 
-// ApplyPaginationParams appends limit and start query params to a list path.
-// It preserves any existing query parameters on the path.
 func ApplyPaginationParams(cmd *cobra.Command, path string, p ListParams) (string, error) {
 	parsed, err := url.Parse(path)
 	if err != nil {
@@ -90,8 +76,6 @@ func ApplyPaginationParams(cmd *cobra.Command, path string, p ListParams) (strin
 	return parsed.String(), nil
 }
 
-// EffectiveLimit resolves explicit flag, resource config, global config, then fallback.
-// ShowAllLimit passes through unchanged.
 func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fallbackDefault int) int {
 	if cmd != nil {
 		if flag := cmd.Flags().Lookup(flagName); flag != nil && flag.Changed {

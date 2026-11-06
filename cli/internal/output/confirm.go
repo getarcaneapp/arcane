@@ -26,7 +26,6 @@ type (
 	}
 )
 
-// Confirm requires terminal input, using a selector or line input depending on the output terminal.
 func Confirm(ctx context.Context, input io.Reader, out io.Writer, label string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -65,7 +64,6 @@ func Confirm(ctx context.Context, input io.Reader, out io.Writer, label string) 
 	return result.confirmed, nil
 }
 
-// Secret reads a masked value from a terminal, or one line from piped input.
 // An empty value asks the caller to pass flagName instead.
 func Secret(ctx context.Context, input io.Reader, out io.Writer, label, flagName string) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -106,7 +104,6 @@ func Secret(ctx context.Context, input io.Reader, out io.Writer, label, flagName
 	return result.input.Value(), nil
 }
 
-// ReadWithContext reads input until read returns or ctx is canceled.
 // Pollable files cancel in place; other blocking readers use an asynchronous read.
 func ReadWithContext[T any](ctx context.Context, input io.Reader, read func(io.Reader) (T, error)) (T, error) {
 	var value T
@@ -143,7 +140,6 @@ func ReadWithContext[T any](ctx context.Context, input io.Reader, read func(io.R
 	return value, errors.Join(err, closeErr)
 }
 
-// readAsync stops waiting on cancellation; its goroutine exits when input returns.
 func readAsync[T any](ctx context.Context, input io.Reader, read func(io.Reader) (T, error)) (T, error) {
 	type result struct {
 		value T
@@ -163,8 +159,6 @@ func readAsync[T any](ctx context.Context, input io.Reader, read func(io.Reader)
 	}
 }
 
-// readLine reads byte by byte so input after the newline stays
-// available to the next prompt.
 func readLine(r io.Reader) (string, error) {
 	var line []byte
 	buf := make([]byte, 1)

@@ -16,7 +16,6 @@ func TestMaxFileSizeBytes(t *testing.T) {
 func TestValidateContentSize(t *testing.T) {
 	limit := int64(4)
 	require.NoError(t, ValidateContentSize([]byte("text"), limit))
-	// Any bytes are allowed: binary content is valid as long as it fits.
 	require.NoError(t, ValidateContentSize([]byte{0xff, 0, 0x1f}, limit))
 	require.ErrorContains(t, ValidateContentSize([]byte("large"), limit), "file exceeds")
 }

@@ -370,7 +370,6 @@ func TestImageUpdateWatcher_TriggeredScanRetriesAfterManualScanFinishes(t *testi
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
 
-	// Let the startup scan finish so the gate is free.
 	require.Equal(t, 1, <-scanner.startedCh)
 	releaseCh <- struct{}{}
 	// A manual scan takes the gate, then a Docker event fires: the triggered

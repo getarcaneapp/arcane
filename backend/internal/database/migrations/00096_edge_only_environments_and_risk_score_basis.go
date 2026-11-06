@@ -100,7 +100,6 @@ UPDATE environments SET is_edge = false WHERE id = '0';
 `
 )
 
-// Migration 96 converts direct environments to edge environments and adds risk score basis columns.
 func init() {
 	goose.AddMigrationContext(run(v96SQLiteUp, v96PostgresUp), run(v96SQLiteDown, v96PostgresDown))
 }

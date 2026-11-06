@@ -33,19 +33,6 @@ type (
 	}
 )
 
-// RenderStackConfig renders a Compose-defined stack without deploying it.
-//
-// It validates the stack name, loads and interpolates the Compose project using
-// the provided environment content, marshals the normalized project back to
-// YAML, and reports the discovered service, network, volume, config, and secret
-// names that would participate in deployment.
-//
-// ctx controls cancellation for Compose loading.
-// opts provides the stack name, compose content, and optional env content to render.
-//
-// Returns the rendered compose YAML and related resource names.
-// Returns an error if the stack name is empty, the compose or env content is
-// invalid, or the normalized Compose project cannot be marshaled.
 func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRenderResult, error) {
 	stackName := strings.TrimSpace(opts.Name)
 	if err := ValidateStackName(stackName); err != nil {

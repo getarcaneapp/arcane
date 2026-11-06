@@ -1,4 +1,3 @@
-// Package pubsub fans activity stream events out to per-environment subscribers.
 package pubsub
 
 import (
@@ -18,7 +17,6 @@ import (
 )
 
 type (
-	// Service fans activity stream events out to per-environment subscribers.
 	Service struct {
 		changes           *concurrency.Signal[string]
 		subscribers       map[int]*subscriber
@@ -27,19 +25,9 @@ type (
 
 		subscribersMu sync.RWMutex
 
-		// terminalPublished records when each activity's terminal snapshot was
-		// published, so later non-terminal snapshots from slower goroutines can
-		// be dropped (see admit). Entries are pruned on terminal publishes once
-		// older than terminalPublishRetention.
 		terminalPublishedMu sync.Mutex
 	}
 
-	// subscriber buffers stream events between publishers and one stream
-	// consumer. "activity" events are coalesced in place per activity ID (only the
-	// latest pending state matters to the UI), so bulk operations emitting rapid
-	// progress updates cannot overflow the subscriber and force full-snapshot
-	// resends. Other events keep arrival order in a FIFO bounded by
-	// subscriberMessageQueueLimit with drop-oldest on overflow.
 	subscriber struct {
 		ch   chan types.ActivityStreamEvent
 		done chan struct{}
@@ -60,17 +48,10 @@ type (
 )
 
 const (
-	// terminalPublishRetention bounds how long a terminal publish suppresses
-	// stale non-terminal snapshots for the same activity. Stale publishers are
-	// goroutines already past their commit, so they publish within moments; the
-	// retention only has to outlive that gap while keeping the latch map small.
-	terminalPublishRetention = 10 * time.Minute
-	// subscriberMessageQueueLimit bounds the per-subscriber backlog of "message"
-	// events; the oldest message is dropped (and flagged as missed) on overflow.
+	terminalPublishRetention    = 10 * time.Minute
 	subscriberMessageQueueLimit = 256
 )
 
-// NewService returns an empty subscriber registry.
 func NewService(changes *concurrency.Signal[string]) *Service {
 	return &Service{
 		changes:           changes,
@@ -161,7 +142,6 @@ func (sub *subscriber) pump() {
 	}
 }
 
-// Subscribe returns the event channel for environmentID, a drop-check, and an unsubscribe func.
 func (s *Service) Subscribe(environmentID string) (<-chan types.ActivityStreamEvent, func() bool, func()) {
 	ch := make(chan types.ActivityStreamEvent, 64)
 	sub := &subscriber{
@@ -211,8 +191,6 @@ func (s *Service) Subscribe(environmentID string) (<-chan types.ActivityStreamEv
 	return ch, missedEvents, unsubscribe
 }
 
-// PublishActivity streams an activity snapshot unless a terminal snapshot for
-// the same activity was already published.
 func (s *Service) PublishActivity(item types.Activity) {
 	if !s.admit(item) {
 		return
@@ -226,7 +204,6 @@ func (s *Service) PublishActivity(item types.Activity) {
 	s.changes.Publish(item.EnvironmentID)
 }
 
-// PublishMessage delivers one activity message to every subscriber of environmentID.
 func (s *Service) PublishMessage(environmentID string, activityType types.ActivityType, message types.ActivityMessage) {
 	s.publish(environmentID, types.ActivityStreamEvent{
 		Type:         "message",
@@ -245,14 +222,6 @@ func (s *Service) Reopen(activityID string) {
 	s.terminalPublishedMu.Unlock()
 }
 
-// admit orders activity events across the commit → publish gap. Writes
-// publish their snapshot after committing, so a goroutine that committed
-// before a terminal write can publish after it; since a terminal activity
-// emits no further events to correct the stream (and subscriber coalescing
-// would even replace an undelivered terminal event in place), such a stale
-// non-terminal snapshot must be dropped, not delivered. Activities never leave
-// a terminal status, so once a terminal snapshot is published, any later
-// non-terminal snapshot for that ID is stale by construction.
 func (s *Service) admit(item types.Activity) bool {
 	s.terminalPublishedMu.Lock()
 	defer s.terminalPublishedMu.Unlock()

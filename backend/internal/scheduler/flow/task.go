@@ -27,27 +27,22 @@ import (
 )
 
 type (
-	// Binding ties an instance, and its children, to the run that started it.
 	Binding struct {
 		EnvironmentID string `json:"environmentId,omitempty"`
 		JobID         string `json:"jobId,omitempty"`
 		RunID         string `json:"runId,omitempty"`
 		RootID        string `json:"rootId"`
 	}
-	// envelope is every instance's input: its run binding plus the caller's payload.
 	envelope struct {
 		Binding Binding        `json:"binding"`
 		Payload jsontext.Value `json:"payload,omitempty"`
 	}
-	// Task is what an engine handler receives: the Francis task plus its binding.
 	Task struct {
 		workflow.Task
-		binding Binding
-		payload jsontext.Value
-		// recovered marks a standalone task whose instance an earlier process started.
+		binding   Binding
+		payload   jsontext.Value
 		recovered bool
 	}
-	// Result is one fan-out slot: the task's output, or the error that failed it.
 	Result[T any] struct {
 		Value T
 		Err   string
@@ -55,15 +50,10 @@ type (
 )
 
 const (
-	// maxErrorLength bounds task errors recorded in the workflow journal.
 	maxErrorLength = 1024
-	// slotWait bounds how long a resumed task waits for its activity slot before it is handed back.
-	slotWait = 20 * time.Second
+	slotWait       = 20 * time.Second
 )
 
-// Handler wraps a step handler. Its ctx carries the bound run exactly as a job's
-// Run does, is canceled when the user cancels the root activity, and its errors
-// are classified for Francis retries.
 func (e *Engine) Handler(fn func(ctx context.Context, t Task) (any, error)) workflow.StepOption {
 	return workflow.WithRun(func(ctx context.Context, wt workflow.Task) (output any, err error) {
 		// Francis does not recover handler panics, which would take the process down.
@@ -86,8 +76,6 @@ func (e *Engine) Handler(fn func(ctx context.Context, t Task) (any, error)) work
 		if err != nil {
 			return nil, classify(ctx, err)
 		}
-		// A resumed instance's activity lost its slot with the old process, so its first task takes it back;
-		// a held slot returns at once. While none frees up, the task is handed back without spending an attempt.
 		if root := e.rootWorkflow(input.Binding.RootID); root != nil && root.def.Activity.Queue && !root.def.Activity.DeferSlot {
 			environmentID := cmp.Or(root.def.Activity.EnvironmentID, input.Binding.EnvironmentID, "0")
 			// The wait stays well inside any attempt timeout, so waiting for a slot never spends an attempt.
@@ -117,7 +105,6 @@ func (e *Engine) Handler(fn func(ctx context.Context, t Task) (any, error)) work
 	})
 }
 
-// taskContext rebuilds a task's job execution ctx, fencing run-bound tasks.
 func (e *Engine) taskContext(ctx context.Context, binding Binding) (context.Context, error) {
 	if binding.RunID == "" {
 		return e.standaloneContext(ctx, binding)
@@ -148,8 +135,6 @@ func (e *Engine) taskContext(ctx context.Context, binding Binding) (context.Cont
 	return e.coordinator.ExecutionContext(ctx, run, binding.RootID), nil
 }
 
-// standaloneContext gives a standalone task the execution a run would give it, with
-// target progress kept in the engine's state for the instance.
 func (e *Engine) standaloneContext(ctx context.Context, binding Binding) (context.Context, error) {
 	select {
 	case <-e.ready:
@@ -173,7 +158,6 @@ func (e *Engine) standaloneContext(ctx context.Context, binding Binding) (contex
 	}), nil
 }
 
-// classify maps handler errors onto Francis delivery semantics.
 func classify(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, actor.ErrJobRejected), errors.Is(err, actor.ErrJobPermanentFailure):
@@ -191,15 +175,12 @@ func classify(ctx context.Context, err error) error {
 	}
 }
 
-// Retryable reports whether another attempt could succeed. Sources classify
-// transient failures; only network timeouts are assumed transient here.
 func Retryable(err error) bool {
 	var netErr net.Error
 	return errors.Is(err, common.ErrUnavailable) || errors.Is(err, common.ErrTimeout) ||
 		errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }
 
-// Payload decodes the instance payload.
 func (t Task) Payload(into any) error {
 	if len(t.payload) == 0 {
 		return nil
@@ -207,15 +188,10 @@ func (t Task) Payload(into any) error {
 	return json.Unmarshal(t.payload, into, jsonx.DurationNano)
 }
 
-// Recovered reports a standalone task whose instance an earlier process started, so no caller is waiting on it
-// and the request's own checks did not run in this process.
 func (t Task) Recovered() bool { return t.recovered }
 
-// ActivityID returns the activity owned by the task's root instance.
 func (t Task) ActivityID() string { return t.binding.RootID }
 
-// ChildInput returns the output for a step that precedes a Child step, so the
-// child inherits this instance's run binding.
 func (t Task) ChildInput(payload any) (any, error) {
 	encoded, err := json.Marshal(payload, jsonx.DurationNano)
 	if err != nil {
@@ -224,9 +200,6 @@ func (t Task) ChildInput(payload any) (any, error) {
 	return envelope{Binding: t.binding, Payload: encoded}, nil
 }
 
-// Results decodes a fan-out step's output slot by slot. Francis encodes a failed
-// slot as an object whose only key is "error", so successful outputs must never
-// have that shape.
 func Results[T any](t Task, step string) ([]Result[T], error) {
 	var slots []jsontext.Value
 	if err := t.DecodeOutput(step, &slots); err != nil {
@@ -249,7 +222,6 @@ func Results[T any](t Task, step string) ([]Result[T], error) {
 	return results, nil
 }
 
-// truncate shortens a message to maxErrorLength bytes on a rune boundary.
 func truncate(message string) string {
 	if len(message) <= maxErrorLength {
 		return message

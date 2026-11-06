@@ -18,7 +18,6 @@ import (
 )
 
 type (
-	// Handler serves the self-upgrade and upgrade job endpoints.
 	Handler struct {
 		service *Service
 		cfg     *config.Config
@@ -38,8 +37,6 @@ type (
 		TargetVersion string `json:"targetVersion,omitempty" doc:"Release version to upgrade to; overrides this instance's own version check"`
 	}
 
-	// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip waiting
-	// for a restart: an environment already on the newest image is not recreated.
 	TriggerUpgradeData struct {
 		Message  string `json:"message" doc:"Response message"`
 		UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
@@ -55,7 +52,6 @@ func NewHandler(service *Service, cfg *config.Config, appCtx context.Context) *H
 	return &Handler{service: service, cfg: cfg, appCtx: appCtx}
 }
 
-// CheckUpgradeAvailable checks if a system upgrade is available.
 func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *types.EnvironmentInput) (*CheckUpgradeOutput, error) {
 	canUpgrade, err := h.service.CanUpgrade(ctx)
 	if err != nil {
@@ -78,7 +74,6 @@ func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *types.Enviro
 	}, nil
 }
 
-// TriggerUpgrade triggers a system upgrade.
 func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput) (*handlerutil.Out[TriggerUpgradeData], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -114,7 +109,6 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	}, nil
 }
 
-// StartUpgradeJob starts an upgrade job: requested remote agents in parallel, then the manager last when requested.
 func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInput) (*handlerutil.Out[types.UpgradeJob], error) {
 	if h.cfg.AgentEnabled {
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")
@@ -144,7 +138,6 @@ func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInp
 	return &handlerutil.Out[types.UpgradeJob]{Body: body}, nil
 }
 
-// GetCurrentUpgradeJob returns the latest upgrade job.
 func (h *Handler) GetCurrentUpgradeJob(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpgradeJob], error) {
 	if h.cfg.AgentEnabled {
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")

@@ -11,8 +11,6 @@ import (
 )
 
 type (
-	// GitCloneCleanupJob purges orphaned "gitops-*" clone dirs under the git work
-	// dir. Internal job: no job_metadata entry, invisible in the Jobs UI.
 	GitCloneCleanupJob struct {
 		repoService     *gitrepo.GitRepositoryService
 		settingsService *settings.SettingsService
@@ -20,16 +18,11 @@ type (
 )
 
 const (
-	// GitCloneCleanupJobName identifies the hourly purge of leaked git clone
-	// scratch directories.
-	GitCloneCleanupJobName = "git-clone-scratch-cleanup"
-	// gitCloneScratchMinAge is the base mtime cutoff for purging clone scratch dirs.
-	gitCloneScratchMinAge = 2 * time.Hour
-	// gitCloneScratchBuildHold pads the configured build timeout.
+	GitCloneCleanupJobName   = "git-clone-scratch-cleanup"
+	gitCloneScratchMinAge    = 2 * time.Hour
 	gitCloneScratchBuildHold = 30 * time.Minute
 )
 
-// NewGitCloneCleanupJob builds the cleanup job for the scheduler.
 func NewGitCloneCleanupJob(repoService *gitrepo.GitRepositoryService, settingsService *settings.SettingsService) *GitCloneCleanupJob {
 	return &GitCloneCleanupJob{repoService: repoService, settingsService: settingsService}
 }

@@ -23,8 +23,6 @@ type (
 
 var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// WithUpdateInitiator carries manager-authenticated attribution through an
-// agent request without changing the authenticated agent identity.
 func WithUpdateInitiator(ctx context.Context, initiator types.ActivityStartedBy) context.Context {
 	initiator.UserID = strings.TrimSpace(initiator.UserID)
 	initiator.Username = strings.TrimSpace(initiator.Username)
@@ -34,15 +32,11 @@ func WithUpdateInitiator(ctx context.Context, initiator types.ActivityStartedBy)
 	return context.WithValue(ctx, updateInitiatorContextKey{}, initiator)
 }
 
-// UpdateInitiatorFromContext returns trusted proxied update attribution.
 func UpdateInitiatorFromContext(ctx context.Context) (types.ActivityStartedBy, bool) {
 	initiator, ok := ctx.Value(updateInitiatorContextKey{}).(types.ActivityStartedBy)
 	return initiator, ok
 }
 
-// WithActivityBatchID attaches a client-supplied batch ID that groups the
-// activities spawned by one logical user action (e.g. a bulk container
-// update). Invalid IDs are ignored.
 func WithActivityBatchID(ctx context.Context, batchID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background() //nolint:forbidigo // Fallback preserves the existing nil-context contract when no parent is available.
@@ -53,8 +47,6 @@ func WithActivityBatchID(ctx context.Context, batchID string) context.Context {
 	return context.WithValue(ctx, activityBatchIDContextKey{}, batchID)
 }
 
-// ActivityBatchIDFromContext returns the batch ID attached by
-// WithActivityBatchID, or "" when none is set.
 func ActivityBatchIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -63,7 +55,6 @@ func ActivityBatchIDFromContext(ctx context.Context) string {
 	return batchID
 }
 
-// WithAppLifecycleContext marks ctx as the application lifecycle context.
 func WithAppLifecycleContext(ctx context.Context) context.Context {
 	if ctx == nil {
 		ctx = context.Background() //nolint:forbidigo // Fallback preserves the existing nil-context contract when no parent is available.
@@ -71,13 +62,11 @@ func WithAppLifecycleContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, appLifecycleContextKey{}, true)
 }
 
-// IsAppLifecycleContext reports whether ctx is tied to the application lifecycle.
 func IsAppLifecycleContext(ctx context.Context) bool {
 	isLifecycle, _ := ctx.Value(appLifecycleContextKey{}).(bool)
 	return isLifecycle
 }
 
-// ActivityRuntimeContext returns a context suitable for activity-backed work.
 func ActivityRuntimeContext(requestCtx, appCtx context.Context) context.Context {
 	if appCtx != nil {
 		if requestCtx == nil || requestCtx == appCtx {

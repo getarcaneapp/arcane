@@ -24,15 +24,11 @@ import (
 )
 
 type (
-	// EnvResolver resolves an environment ID to its connection details.
-	// Returns: accessToken, enabled, error
 	EnvResolver func(ctx context.Context, id string) (*string, bool, error)
 
-	// AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
 	// Sudo permission sets (internal agent proxies) bypass authorization.
 	AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
 
-	// EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 	EnvironmentMiddleware struct {
 		resolver      EnvResolver
 		authValidator AuthValidator
@@ -60,7 +56,6 @@ const (
 	environmentsPathMarker = "/environments/"
 )
 
-// managementEndpointSet contains paths handled locally and never proxied to remote environments.
 var managementEndpointSet = map[string]struct{}{
 	"/test":       {},
 	"/sync":       {},
@@ -87,7 +82,6 @@ func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFu
 	}
 }
 
-// Handle is the main middleware handler.
 func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
 	ctx := req.Context()
@@ -266,7 +260,6 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 		return false
 	}
 	if perm == "" {
-		// Explicitly public route: allowed for any authenticated caller.
 		return true
 	}
 	if !ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
@@ -276,7 +269,6 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 	return true
 }
 
-// IsManagerLocalPath reports whether an environment-scoped path suffix is served by the manager instead of being proxied.
 func IsManagerLocalPath(method, suffix string) bool {
 	if _, ok := managementEndpointSet[suffix]; ok {
 		return true

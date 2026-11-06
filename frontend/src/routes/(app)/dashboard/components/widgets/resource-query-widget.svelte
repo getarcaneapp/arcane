@@ -195,7 +195,7 @@
 		{/if}
 	</DashboardPanel>
 {:else}
-	<Card.Root interactive class="h-full min-w-0">
+	<Card.Root class="h-full min-w-0">
 		<dl class="flex h-full w-full items-center justify-center p-5">
 			<StatStrip.Item
 				label={title}

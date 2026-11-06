@@ -205,7 +205,6 @@
 					<ArcaneButton
 						action="base"
 						tone="outline-primary"
-						size="sm"
 						icon={UploadIcon}
 						customLabel={m.back_up_now()}
 						loading={backingUp}
@@ -303,13 +302,7 @@
 						{m.recent_backups()}
 					</h3>
 					{#if recentEntries.length > 0}
-						<ArcaneButton
-							action="base"
-							tone="ghost"
-							size="sm"
-							customLabel={m.common_view_all()}
-							onclick={() => (historyOpen = true)}
-						/>
+						<ArcaneButton action="base" tone="ghost" customLabel={m.common_view_all()} onclick={() => (historyOpen = true)} />
 					{/if}
 				</div>
 				{#if history.isPending}

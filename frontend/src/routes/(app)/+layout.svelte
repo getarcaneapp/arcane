@@ -36,22 +36,13 @@
 	const isTablet = new IsTablet();
 
 	const navigationSettings = $derived(getEffectiveNavigationSettings());
-	const navigationMode = $derived(navigationSettings.mode);
-	const mobileSectionPadding = $derived.by(() => {
-		if (navigationMode === 'docked') {
-			if (navigationSettings.scrollToHide) return 'pt-5';
-			return 'pt-5 pb-(--mobile-docked-nav-offset,calc(3.5rem+env(safe-area-inset-bottom)))';
-		}
-		if (navigationSettings.scrollToHide) return 'py-5';
-		return 'py-5 pb-(--mobile-floating-nav-offset,6rem)';
-	});
 	let hiddenNavigationSettings = $state.raw<typeof navigationSettings>();
 	setMobileNavigation({
 		get settings() {
 			return navigationSettings;
 		},
 		get visible() {
-			return !isMobile.current || !navigationSettings.scrollToHide || hiddenNavigationSettings !== navigationSettings;
+			return !isMobile.current || hiddenNavigationSettings !== navigationSettings;
 		},
 		set visible(value: boolean) {
 			hiddenNavigationSettings = value ? undefined : navigationSettings;
@@ -135,7 +126,7 @@
 	{/if}
 
 	<main class={cn('relative z-(--arcane-z-content)', isMobile.current ? 'flex-1' : 'h-dvh flex-1')}>
-		<section class={isMobile.current ? cn('px-3', mobileSectionPadding) : 'h-full p-3 sm:p-5'}>
+		<section class={isMobile.current ? 'px-3 pt-5 pb-(--mobile-floating-nav-offset,6rem)' : 'h-full p-3 sm:p-5'}>
 			{#key user?.id}
 				{@render children()}
 			{/key}

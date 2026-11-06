@@ -167,7 +167,6 @@
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						size="sm"
 						onclick={resetForm}
 						disabled={isLoading}
 						class="gap-2"
@@ -180,7 +179,6 @@
 					onclick={onSubmit}
 					disabled={disabled || !hasChanges}
 					loading={isLoading}
-					size="sm"
 					class="min-w-20 gap-2"
 				/>
 			</div>

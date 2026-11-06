@@ -6,7 +6,6 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { NotificationsIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { apnsService } from '#lib/services/apns-service.js';
@@ -94,7 +93,6 @@
 <SettingsPageLayout
 	title={m.notifications_title()}
 	description={m.notifications_description()}
-	icon={NotificationsIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >
@@ -109,12 +107,15 @@
 					layout="switch"
 					lock={settingsStore.lock('apnsEnabled')}
 				>
-					<Switch
-						id="apnsEnabled"
-						checked={mobilePushEnabled}
-						disabled={isReadOnly || !canWriteSettings || savingMobilePush}
-						onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
-					/>
+					{#snippet children({ describedBy })}
+						<Switch
+							id="apnsEnabled"
+							checked={mobilePushEnabled}
+							disabled={isReadOnly || !canWriteSettings || savingMobilePush}
+							onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
+							aria-describedby={describedBy}
+						/>
+					{/snippet}
 				</SettingsRow>
 				<SettingsRow
 					for="notificationsIncludeReleaseLinks"
@@ -123,12 +124,15 @@
 					layout="switch"
 					lock={settingsStore.lock('notificationsIncludeReleaseLinks')}
 				>
-					<Switch
-						id="notificationsIncludeReleaseLinks"
-						checked={releaseLinksEnabled}
-						disabled={isReadOnly || !canWriteSettings || savingReleaseLinks}
-						onCheckedChange={(checked) => void handleReleaseLinksToggle(checked)}
-					/>
+					{#snippet children({ describedBy })}
+						<Switch
+							id="notificationsIncludeReleaseLinks"
+							checked={releaseLinksEnabled}
+							disabled={isReadOnly || !canWriteSettings || savingReleaseLinks}
+							onCheckedChange={(checked) => void handleReleaseLinksToggle(checked)}
+							aria-describedby={describedBy}
+						/>
+					{/snippet}
 				</SettingsRow>
 				{#if mobilePushEnabled}
 					<SettingsRow label={m.notifications_mobile_devices()} layout="wide">
@@ -147,11 +151,10 @@
 										<div class="flex shrink-0 items-center gap-2">
 											<ArcaneButton
 												action="test"
-												size="sm"
 												loading={testingDeviceId === device.id}
 												onclick={() => testMobileDevice(device)}
 											/>
-											<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
+											<ArcaneButton action="remove" onclick={() => removeMobileDevice(device)} />
 										</div>
 									</li>
 								{/each}

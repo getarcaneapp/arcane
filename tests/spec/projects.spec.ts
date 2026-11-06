@@ -528,12 +528,10 @@ test.describe('New Compose Project Page', () => {
 
 		await expect(createButton).toBeVisible();
 
-		// Open the inline name editor and set a valid name.
 		await page.getByRole('button', { name: 'My New Project' }).click();
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('test-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		// The button should become enabled once name + compose content are present.
 		await expect(createButton).toBeEnabled();
 
 		const stateUnsafe = observedErrors.filter((e) => e.includes('state_unsafe_mutation'));
@@ -693,11 +691,6 @@ test.describe('New Compose Project Page', () => {
 
 			const deployResponse = await deployResponsePromise;
 			expect(deployResponse.ok()).toBe(true);
-			// Don't await deployResponse.finished() here: for a chunked NDJSON stream
-			// consumed via fetch().body, Playwright's network-layer finished() doesn't
-			// reliably resolve even after the server closes the response and the UI
-			// updates to "running" — it hangs until the test timeout. Deploy completion
-			// is verified below via the running-status poll and the activity-success check.
 
 			const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
 			await expect
@@ -718,8 +711,6 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should send selected deploy split-button options in the up request', async ({ page }) => {
-		// Use a wider viewport to prevent the header's project-name area from
-		// overlapping the deploy split-button trigger at the 1280px boundary.
 		await page.setViewportSize({ width: 1440, height: 900 });
 
 		const projectName = `test-deploy-options-${Date.now()}`;
@@ -752,7 +743,6 @@ test.describe('New Compose Project Page', () => {
 
 			await expect(deployMenuTrigger).toBeVisible();
 
-			// Open dropdown and select "Always" pull policy
 			await deployMenuTrigger.click();
 			const alwaysItem = page.getByRole('menuitemradio', {
 				name: 'Always Always pull latest',
@@ -760,10 +750,8 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(alwaysItem).toBeVisible();
 			await alwaysItem.click();
-			// Wait for the dropdown to fully close before reopening
 			await expect(alwaysItem).not.toBeVisible();
 
-			// Reopen dropdown and toggle "Force recreate containers"
 			await deployMenuTrigger.click();
 			const forceRecreateItem = page.getByRole('menuitemcheckbox', {
 				name: 'Force recreate containers',
@@ -771,7 +759,6 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(forceRecreateItem).toBeVisible();
 			await forceRecreateItem.click();
-			// Wait for the dropdown to fully close
 			await expect(forceRecreateItem).not.toBeVisible();
 
 			// Set up request listener right before clicking to minimize timeout window
@@ -806,9 +793,7 @@ test.describe('New Compose Project Page', () => {
 	test('should send selected redeploy split-button options in the redeploy request', async ({
 		page
 	}) => {
-		// Same wide viewport as the deploy options test so the header doesn't
-		// overlap the split-button trigger at the 1280px boundary.
-		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.setViewportSize({ width: 1920, height: 1080 });
 
 		const projectName = `test-redeploy-options-${Date.now()}`;
 
@@ -840,7 +825,6 @@ test.describe('New Compose Project Page', () => {
 
 			await expect(redeployMenuTrigger).toBeVisible();
 
-			// Open dropdown and select "Always" pull policy
 			await redeployMenuTrigger.click();
 			const alwaysItem = page.getByRole('menuitemradio', {
 				name: 'Always Always pull latest',
@@ -848,10 +832,8 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(alwaysItem).toBeVisible();
 			await alwaysItem.click();
-			// Wait for the dropdown to fully close before reopening
 			await expect(alwaysItem).not.toBeVisible();
 
-			// Reopen dropdown and toggle "Force recreate containers"
 			await redeployMenuTrigger.click();
 			const forceRecreateItem = page.getByRole('menuitemcheckbox', {
 				name: 'Force recreate containers',
@@ -859,7 +841,6 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(forceRecreateItem).toBeVisible();
 			await forceRecreateItem.click();
-			// Wait for the dropdown to fully close
 			await expect(forceRecreateItem).not.toBeVisible();
 
 			// Set up request listener right before confirming to minimize timeout window
@@ -1023,12 +1004,10 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
-		// Navigate to Configuration tab
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
-		// Verify the GitOps read-only alert is visible (title contains "Git" and "Read-only")
 		await expect(page.getByText('Git Read-only')).toBeVisible();
 		await expect(
 			page.getByRole('alert').filter({
@@ -1048,7 +1027,6 @@ test.describe('GitOps Managed Project', () => {
 		await configTab.click();
 		await page.waitForLoadState('load');
 
-		// Verify the Sync from Git button is present
 		await expect(page.getByRole('button', { name: 'Sync from Git' })).toBeVisible();
 	});
 
@@ -1060,7 +1038,6 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
-		// The commit hash should be visible somewhere on the page
 		const commitHash = projectDetail!.lastSyncCommit!.substring(0, 7);
 		await expect(page.getByText(commitHash)).toBeVisible();
 	});
@@ -1071,7 +1048,6 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
-		// The name button should be disabled for GitOps-managed projects
 		const nameButton = page.getByRole('button', { name: gitOpsProject.name });
 		await expect(nameButton).toBeDisabled();
 	});
@@ -1161,7 +1137,6 @@ test.describe('GitOps Managed Project', () => {
 		await configTab.click();
 		await page.waitForLoadState('load');
 
-		// Verify no GitOps-related UI elements
 		await expect(
 			page.getByText(
 				'This project is managed by Git. The compose file and project name cannot be edited here. Changes must be made in the connected Git repository.',
@@ -1308,10 +1283,6 @@ test.describe('Project Detail Page', () => {
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 
-		// The project config editor supports two layouts:
-		// - classic: side-by-side compose.yaml + .env panels
-		// - tree view (default when the project has extra files): file list on the
-		//   left and a tabbed code panel on the right
 		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
 		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 		const isTreeView = await workspaceFilesLabel.isVisible();
@@ -1326,19 +1297,16 @@ test.describe('Project Detail Page', () => {
 			await expect(envFileButton).toBeVisible();
 			await expect(page.locator('[data-tab-key="compose"]')).toBeVisible();
 
-			// Selecting files should open and activate their editor tabs
 			await envFileButton.click();
 			await expect(page.locator('[data-tab-key="env"][data-active="true"]')).toBeVisible();
 
 			await composeFileButton.click();
 			await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 		} else {
-			// Classic layout renders both editors at the same time.
 			await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
 			if (!hasEnvFile) await addEnvFile(page);
 			await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
 
-			// Also validate that we can switch to tree view and see the file list.
 			const layoutSwitch = page.getByRole('switch', {
 				name: 'Toggle workspace mode',
 				exact: true

@@ -3,7 +3,6 @@ package backup
 import (
 	"cmp"
 	"context"
-	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -150,11 +149,8 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 		return nil, err
 	}
 	entry, err := h.service.StartBackup(activitylib.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, kit.FromPtr(input.Body))
-	if errors.Is(err, h.service.deps.AlreadyRunning) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return &handlerutil.Out[types.VolumeBackupEntry]{
 		Body: types.ApiResponse[types.VolumeBackupEntry]{Success: true, Data: entry},
@@ -181,9 +177,6 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 	}, func(runtimeCtx context.Context) error {
 		return h.service.DeleteBackup(runtimeCtx, input.BackupID, user)
 	})
-	if errors.Is(err, h.service.deps.AlreadyRunning) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
@@ -233,9 +226,6 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 		uploaded, uploadErr = h.service.UploadBackup(runtimeCtx, input.BackupID, input.Body.S3DestinationID)
 		return uploadErr
 	})
-	if errors.Is(err, h.service.deps.AlreadyRunning) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}

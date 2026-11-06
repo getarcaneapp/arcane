@@ -1,4 +1,3 @@
-// Package config loads and persists CLI configuration in ~/.config/arcanecli.yml and session tokens in ~/.arcanecli/auth.json.
 package config
 
 import (
@@ -23,7 +22,6 @@ import (
 )
 
 type (
-	// authTokens are the session tokens saved for one server.
 	authTokens struct {
 		AccessToken  string `json:"accessToken,omitempty"`
 		RefreshToken string `json:"refreshToken,omitempty"`
@@ -36,7 +34,6 @@ const (
 )
 
 var (
-	// Version and build information - set via ldflags at build time
 	Version          = "dev"
 	Revision         = "unknown"
 	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
@@ -57,7 +54,6 @@ func DefaultConfig() *types.Config {
 	}
 }
 
-// ConfigPath resolves the active config path, defaulting to ~/.config/arcanecli.yml.
 func ConfigPath() (string, error) {
 	if customConfigPath != "" {
 		return customConfigPath, nil
@@ -71,8 +67,6 @@ func ConfigPath() (string, error) {
 	return filepath.Join(home, ".config", configFileName), nil
 }
 
-// SetConfigPath overrides the default configuration file location.
-// Accepts absolute or relative paths and expands a leading ~ to the home directory.
 func SetConfigPath(path string) error {
 	if strings.TrimSpace(path) == "" {
 		customConfigPath = ""
@@ -100,7 +94,6 @@ func SetConfigPath(path string) error {
 	return nil
 }
 
-// Load reads configuration, using defaults when the file does not exist.
 func Load() (*types.Config, error) {
 	path, err := ConfigPath()
 	if err != nil {
@@ -140,7 +133,6 @@ func Load() (*types.Config, error) {
 	return normalized, nil
 }
 
-// Save writes settings with mode 0600 without changing saved sessions.
 func Save(ctx context.Context, c *types.Config) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -172,13 +164,11 @@ func Save(ctx context.Context, c *types.Config) error {
 	return nil
 }
 
-// ClearTokens removes the current server's saved session and clears tokens from the active config.
 func ClearTokens(ctx context.Context, cfg *types.Config) error {
 	cfg.JWTToken, cfg.RefreshToken = "", ""
 	return SaveTokens(ctx, cfg)
 }
 
-// InitDefaultFile creates a template with credential placeholders and returns false if the file already exists.
 func InitDefaultFile() (bool, error) {
 	path, err := ConfigPath()
 	if err != nil {
@@ -193,7 +183,6 @@ func InitDefaultFile() (bool, error) {
 		}
 		return false, nil
 	case os.IsNotExist(err):
-		// Continue and create the file below.
 	default:
 		return false, fmt.Errorf("failed to stat config path: %w", err)
 	}
@@ -259,7 +248,6 @@ func writeConfig(path string, cfg any, exclusive bool) (err error) {
 	return nil
 }
 
-// AuthPath returns the session token file, ~/.arcanecli/auth.json.
 func AuthPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -268,7 +256,6 @@ func AuthPath() (string, error) {
 	return filepath.Join(home, ".arcanecli", "auth.json"), nil
 }
 
-// SwitchServer points cfg at serverURL and loads that server's saved session without changing auth.json.
 func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -333,7 +320,6 @@ func lockAuth(ctx context.Context) (func() error, error) {
 	}, nil
 }
 
-// SaveTokens explicitly stores or removes the current server's session before saving its settings.
 func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 	unlock, err := lockAuth(ctx)
 	if err != nil {
@@ -373,7 +359,6 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 	return Save(ctx, cfg)
 }
 
-// BackupFile moves the active config to .bak, returning moved=false when no config exists.
 func BackupFile() (backupPath string, moved bool, err error) {
 	path, err := ConfigPath()
 	if err != nil {
@@ -382,7 +367,6 @@ func BackupFile() (backupPath string, moved bool, err error) {
 	return moveToBackup(path, "config")
 }
 
-// BackupAuthFile moves auth.json to .bak so a damaged file stops blocking saves.
 func BackupAuthFile(ctx context.Context) (backupPath string, moved bool, err error) {
 	path, err := AuthPath()
 	if err != nil {

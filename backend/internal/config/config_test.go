@@ -16,7 +16,6 @@ import (
 )
 
 func TestConfig_LoadPermissions(t *testing.T) {
-	// Save original env and global perms
 	origFilePerm := os.Getenv("ARCANE_FILE_PERM")
 	origDirPerm := os.Getenv("ARCANE_DIR_PERM")
 	origPkgFilePerm := fs.FilePerm
@@ -64,7 +63,6 @@ func TestConfig_LoadPermissions(t *testing.T) {
 }
 
 func TestConfig_DockerSecretsFileSupport(t *testing.T) {
-	// Save original env vars
 	origEncryptionKey := os.Getenv("ARCANE_ENCRYPTION_KEY")
 	origEncryptionKeyFile := os.Getenv("ARCANE_ENCRYPTION_KEY_FILE")
 	origEncryptionKeyDoubleFile := os.Getenv("ARCANE_ENCRYPTION_KEY__FILE")
@@ -88,14 +86,12 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	}()
 
 	t.Run("Load sensitive field from _FILE env var", func(t *testing.T) {
-		// Create a temp file with the secret
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "encryption_key")
 		secretValue := "my-super-secret-encryption-key-32chars!"
 		err := os.WriteFile(secretFile, []byte(secretValue), 0o600)
 		require.NoError(t, err)
 
-		// Clear direct env var and set _FILE variant
 		unsetEnv(t, "ARCANE_ENCRYPTION_KEY")
 		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
 		setEnv(t, "ARCANE_ENCRYPTION_KEY_FILE", secretFile)
@@ -114,20 +110,18 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	})
 
 	t.Run("Load sensitive field from __FILE env var (double underscore)", func(t *testing.T) {
-		// Create a temp file with the secret
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "jwt_secret")
 		testJWTValue := "test-jwt-stored-in-file"
-		err := os.WriteFile(secretFile, []byte(testJWTValue+"\n"), 0o600) // Include trailing newline
+		err := os.WriteFile(secretFile, []byte(testJWTValue+"\n"), 0o600)
 		require.NoError(t, err)
 
-		// Clear direct env var and set __FILE variant
 		unsetEnv(t, "ARCANE_AGENT_TOKEN")
 		unsetEnv(t, "ARCANE_AGENT_TOKEN_FILE")
 		setEnv(t, "ARCANE_AGENT_TOKEN__FILE", secretFile)
 
 		cfg := mustLoad(t)
-		assert.Equal(t, testJWTValue, cfg.AgentToken) // Should be trimmed
+		assert.Equal(t, testJWTValue, cfg.AgentToken)
 	})
 
 	t.Run("Direct env var is used when no _FILE variant exists", func(t *testing.T) {
@@ -151,14 +145,12 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	})
 
 	t.Run("_FILE takes precedence over direct env var", func(t *testing.T) {
-		// Create a temp file with the secret
 		tmpDir := t.TempDir()
 		secretFile := filepath.Join(tmpDir, "encryption_key")
 		fileValue := "value-from-file-takes-precedence!!"
 		err := os.WriteFile(secretFile, []byte(fileValue), 0o600)
 		require.NoError(t, err)
 
-		// Set both direct and _FILE variants
 		setEnv(t, "ARCANE_ENCRYPTION_KEY", "direct-value-should-be-ignored!!!")
 		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
 		setEnv(t, "ARCANE_ENCRYPTION_KEY_FILE", secretFile)
@@ -185,12 +177,10 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	t.Run("__FILE takes precedence over _FILE", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		// Create single underscore file
 		singleFile := filepath.Join(tmpDir, "single")
 		err := os.WriteFile(singleFile, []byte("single-underscore-value-32chars!!"), 0o600)
 		require.NoError(t, err)
 
-		// Create double underscore file
 		doubleFile := filepath.Join(tmpDir, "double")
 		err = os.WriteFile(doubleFile, []byte("double-underscore-value-32chars!!"), 0o600)
 		require.NoError(t, err)
@@ -223,7 +213,6 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	})
 
 	t.Run("Non-sensitive fields do not support _FILE suffix", func(t *testing.T) {
-		// Create a temp file
 		tmpDir := t.TempDir()
 		portFile := filepath.Join(tmpDir, "port")
 		err := os.WriteFile(portFile, []byte("9999"), 0o600)
@@ -234,7 +223,7 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		setEnv(t, "ARCANE_PORT_FILE", portFile)
 
 		cfg := mustLoad(t)
-		assert.Equal(t, "3552", cfg.Port) // Should use default, not file content
+		assert.Equal(t, "3552", cfg.Port)
 	})
 }
 

@@ -4,7 +4,7 @@
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import {
-		AlertTriangleIcon,
+		AlertIcon,
 		ArrowDownIcon,
 		ArrowUpIcon,
 		EnvironmentsIcon,
@@ -27,7 +27,7 @@
 		id: Extract<BuiltinDashboardWidgetType, 'healthy' | 'attentionCount' | 'updates' | 'risk' | 'reclaimableTotal'>;
 		healthy: { online: number; total: number; offlineNames: string[] };
 		attention: { count: number; critical: number; loading: boolean };
-		updates: { pending: number; checking: boolean };
+		updates: { pending: number; upToDate: number; checking: boolean };
 		risk: { score: number | null; delta?: number; knownExploited: number; loading: boolean };
 		reclaimable: { bytes: number | null; environments: number; loading: boolean };
 	} = $props();
@@ -38,11 +38,11 @@
 	});
 </script>
 
-<Card.Root interactive class="h-full min-w-0">
-	<dl class="flex h-full w-full items-center justify-center p-5">
+<Card.Root class="h-full min-w-0">
+	<dl class="flex h-full w-full items-start justify-center p-3 lg:px-5">
 		{#if id === 'healthy'}
 			<StatStrip.Item
-				label={m.health_status_healthy()}
+				label={m.online_environments()}
 				value={`${healthy.online}/${healthy.total}`}
 				icon={EnvironmentsIcon}
 				segments={[
@@ -58,7 +58,7 @@
 			<StatStrip.Item
 				label={m.needs_attention()}
 				value={attention.count}
-				icon={AlertTriangleIcon}
+				icon={AlertIcon}
 				loading={attention.loading}
 				segments={[
 					{ value: attention.critical, tone: 'destructive' },
@@ -74,6 +74,10 @@
 				icon={UpdateIcon}
 				href={resolve('/(app)/updates')}
 				loading={updates.checking && updates.pending === 0}
+				segments={[
+					{ value: updates.pending, tone: 'update' },
+					{ value: updates.upToDate, tone: 'muted' }
+				]}
 			>
 				{updatesContext}
 			</StatStrip.Item>

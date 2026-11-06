@@ -15,11 +15,6 @@ import type { IconType } from '#lib/icons/index.js';
 
 import type { CardSlot, ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
 
-/**
- * Presentation hints Arcane stows on each column's `meta`. Declared through the v9
- * `columnMeta` type-only slot on `tableFeatures()` below (instead of globally augmenting
- * table-core's `ColumnMeta`), so the typing stays scoped to the Arcane feature set.
- */
 export interface ArcaneColumnMeta {
 	title?: string;
 	filterOptions?: FilterOption[];
@@ -31,19 +26,6 @@ export interface ArcaneColumnMeta {
 	cardLabel?: boolean;
 }
 
-/**
- * The single, app-wide TanStack Table v9 feature set shared by every Arcane table.
- *
- * Arcane runs all tables in manual / server-side mode — sorting, filtering and
- * pagination all happen on the backend (driven by `requestOptions`) — so
- * we register only the *state* features the UI actually drives and deliberately omit
- * every client-side row-model factory (`createSortedRowModel`, `createFilteredRowModel`,
- * `createPaginatedRowModel`, …). v9 tree-shakes the unregistered feature code out of the
- * bundle, which is the headline performance win of this migration. The core row model is
- * automatic, so no `rowModels` entry is needed.
- *
- * Declared once, statically, outside any component (per the `tableFeatures` guidance).
- */
 export const arcaneTableFeatures = tableFeatures({
 	rowSelectionFeature,
 	columnVisibilityFeature,
@@ -53,28 +35,12 @@ export const arcaneTableFeatures = tableFeatures({
 	columnMeta: metaHelper<ArcaneColumnMeta>()
 });
 
-/**
- * The concrete `TFeatures` for every Arcane table. v9 threads a leading `TFeatures`
- * generic through `ColumnDef`/`Row`/`Column`/`Cell`/`Table`; binding it here lets the
- * single-data-param aliases below absorb it, so the ~30 consumers and the public
- * `ColumnSpec` API never have to spell the feature generic.
- */
 export type ArcaneFeatures = typeof arcaneTableFeatures;
 
-// v9 requires `TData extends RowData` (= Record<string, any> | Array<any>). Every Arcane table
-// row is an object DTO (which satisfies RowData), so the aliases carry that bound explicitly;
-// callers thread it through their own `TData extends Record<string, any>` generic. These bind
-// the real `arcaneTableFeatures` so the buildColumns cell/header callbacks infer precise
-// contexts. The leaf view components (header/cell/row/table props) instead use fully-`any`
-// tanstack types — v9's conditional type shapes only reconcile a deferred `TData` against a
-// resolved instantiation when `TFeatures` is also `any`, and those components were already
-// loosely typed pre-migration.
 export type ArcaneColumnDef<T extends RowData> = ColumnDef<ArcaneFeatures, T>;
 export type ArcaneRow<T extends RowData> = Row<ArcaneFeatures, T>;
 export type ArcaneColumn<T extends RowData> = Column<ArcaneFeatures, T>;
 export type ArcaneCell<T extends RowData> = Cell<ArcaneFeatures, T>;
-/** Core table type — used for callback contexts and read-only method access. */
 export type ArcaneTable<T extends RowData> = Table<ArcaneFeatures, T>;
-/** The Svelte adapter table instance — adds reactive `.state` (read state slices). */
 export type ArcaneSvelteTable<T extends RowData> = SvelteTable<ArcaneFeatures, T>;
 export type ArcaneFilterFn<T extends RowData> = FilterFn<ArcaneFeatures, T>;

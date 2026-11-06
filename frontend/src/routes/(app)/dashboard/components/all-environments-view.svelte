@@ -12,16 +12,8 @@
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import {
-		AddIcon,
-		AlertIcon,
-		AlertTriangleIcon,
-		InspectIcon,
-		LayoutGridIcon,
-		LayoutListIcon,
-		ResetIcon,
-		TrashIcon
-	} from '#lib/icons/index.js';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { AddIcon, AlertIcon, InspectIcon, LayoutGridIcon, LayoutListIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -39,7 +31,7 @@
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/container.js';
@@ -138,13 +130,17 @@
 		totalImages: 0,
 		totalImageSize: 0
 	};
-	const CONTAINER_EVENT_TYPES = ['container.oom', 'container.die'];
 	const ALL_API_KEYS = { pagination: { page: 1, limit: -1 } };
 	const DASHBOARD_REQUEST_CONFIG: APIRequestConfig = { suppressAccessDeniedToast: true };
-	const CONTAINER_EVENTS_REQUEST = {
-		pagination: { page: 1, limit: 20 },
+	const CONTAINER_FAILURE_EVENTS_REQUEST = {
+		pagination: { page: 1, limit: 50 },
 		sort: { column: 'timestamp', direction: 'desc' as const },
-		filters: { type: CONTAINER_EVENT_TYPES }
+		filters: { type: ['container.oom', 'container.die'] }
+	};
+	const CONTAINER_START_EVENTS_REQUEST = {
+		pagination: { page: 1, limit: 50 },
+		sort: { column: 'timestamp', direction: 'desc' as const },
+		filters: { type: ['container.start', 'container.restart'] }
 	};
 	const TOP_MEMORY_REQUEST = {
 		pagination: { page: 1, limit: 5 },
@@ -348,8 +344,14 @@
 		const enabled = anyWidgetVisible(ATTENTION_WIDGETS);
 		return {
 			queries: environments.included.map((environment) => ({
-				queryKey: queryKeys.events.environmentList(environment.id, CONTAINER_EVENTS_REQUEST),
-				queryFn: () => eventService.getEnvironmentEvents(environment.id, CONTAINER_EVENTS_REQUEST, DASHBOARD_REQUEST_CONFIG),
+				queryKey: [...queryKeys.events.environmentList(environment.id, CONTAINER_FAILURE_EVENTS_REQUEST), 'starts'],
+				queryFn: async () => {
+					const [failures, starts] = await Promise.all([
+						eventService.getEnvironmentEvents(environment.id, CONTAINER_FAILURE_EVENTS_REQUEST, DASHBOARD_REQUEST_CONFIG),
+						eventService.getEnvironmentEvents(environment.id, CONTAINER_START_EVENTS_REQUEST, DASHBOARD_REQUEST_CONFIG)
+					]);
+					return { ...failures, data: [...failures.data, ...starts.data] };
+				},
 				enabled
 			})),
 			combine: (results) => combineByEnvironment(environments, results)
@@ -459,7 +461,6 @@
 		const containers = containersByEnvironment.get(environment.id) ?? EMPTY_CONTAINER_COUNTS;
 		const updates = containers.updatesAvailable + (projectsByEnvironment.get(environment.id)?.updatesAvailable ?? 0);
 		const vulnerabilities = vulnerabilitiesByEnvironment.get(environment.id)?.actionableCount ?? 0;
-		const expiringKeys = environment.id === LOCAL_DOCKER_ENVIRONMENT_ID ? expiringApiKeys.length : 0;
 		const podman = podmanByEnvironment.get(environment.id);
 		const versionInfo = versionsByEnvironment.get(environment.id);
 
@@ -469,7 +470,6 @@
 			imageUsageCounts: imagesByEnvironment.get(environment.id) ?? EMPTY_IMAGE_COUNTS,
 			updates,
 			vulnerabilities,
-			actionItemCount: [containers.stoppedContainers, updates, vulnerabilities, expiringKeys].filter((count) => count > 0).length,
 			versionInfo: isVersionInformation(versionInfo) ? versionInfo : undefined,
 			podCount: podman?.detected ? podman.podCount : undefined,
 			error: failedEnvironmentMessages.get(environment.id)?.join('; ')
@@ -547,18 +547,17 @@
 				label: m.quick_actions_prune_system(),
 				loading: pruningEnvironmentId === item.environment.id || pruneDefaultsLoadingId === item.environment.id,
 				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId || !!pruneDefaultsLoadingId,
-				onclick: () => void openPruneDialog(item.environment.id),
-				icon: TrashIcon
+				onclick: () => void openPruneDialog(item.environment.id)
 			});
 		}
 
 		return buttons;
 	}
 
-	// Board view mode: cards or table. 'auto' resolves to table once the board
-	// grows past a handful of environments (tiles stop scaling — #2778).
+	const isMobile = new IsMobile();
 	const boardViewPref = new PersistedState<'auto' | 'cards' | 'table'>('dashboard-environments-view', 'table');
 	const boardView = $derived.by((): 'cards' | 'table' => {
+		if (isMobile.current) return 'cards';
 		if (boardViewPref.current !== 'auto') return boardViewPref.current;
 		return environmentCards.length > 6 ? 'table' : 'cards';
 	});
@@ -599,6 +598,11 @@
 			now: Temporal.Now.instant()
 		})
 	);
+	const recentActivityGroups = $derived.by(() => {
+		if (!visibleWidgets.has('attention')) return activityGroups;
+		const shown = new Set(attentionItems.map((item) => item.activityKey));
+		return activityGroups.filter((group) => !shown.has(group.key));
+	});
 	const attentionFailed = $derived(
 		[containersQuery, eventsQuery, riskQuery, jobsQuery, versionsQuery].some((query) => query.isError)
 	);
@@ -640,10 +644,9 @@
 			);
 	});
 
-	// Updates hero: aggregate pending image updates across every environment,
-	// mirroring the iOS Updates overview header.
 	const updatesOverview = $derived({
 		pending: (containersQuery.data?.updatesAvailable ?? 0) + (projectsQuery.data?.updatesAvailable ?? 0),
+		upToDate: Math.max(0, (containersQuery.data?.totalContainers ?? 0) - (containersQuery.data?.updatesAvailable ?? 0)),
 		checking: loadableEnvironmentIds.size > 0 && (containersQuery.isPending || projectsQuery.isPending)
 	});
 
@@ -688,7 +691,6 @@
 		try {
 			const operationResult = await tryCatch((async () => settingsService.getSettingsForEnvironment(environmentId))());
 			if (operationResult.error !== null) {
-				// Fall back to the dialog's built-in defaults if settings can't be loaded.
 				pruneDefaults = null;
 			} else {
 				pruneDefaults = operationResult.data.values;
@@ -697,7 +699,6 @@
 			pruneDefaultsLoadingId = null;
 		}
 
-		// Guard against the selection changing while the fetch was in flight.
 		if (pruneTargetId === environmentId) {
 			isPruneDialogOpen = true;
 		}
@@ -791,6 +792,7 @@
 			systemStats={liveStats.get(environment.id)?.stats ?? null}
 			liveStatsStatus={liveStats.status(environment)}
 			countsLoading={isEnvironmentCountsLoading(environment.id)}
+			attentionCount={attentionCountByEnvironment.get(environment.id) ?? 0}
 			menuButtons={getEnvironmentActionButtons(overview)}
 			{debugUpgrade}
 			debugVersionInfo={DEBUG_VERSION_INFO}
@@ -803,7 +805,7 @@
 		{#snippet failed(_renderError: unknown, reset: () => void)}
 			<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
 				<div class="mt-3">
-					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+					<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={reset} />
 				</div>
 			</Alert.Root>
 		{/snippet}
@@ -819,7 +821,7 @@
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
-							<ArcaneButton {...props} action="base" size="sm" icon={AddIcon} customLabel={m.add_widget()} />
+							<ArcaneButton {...props} action="base" icon={AddIcon} customLabel={m.add_widget()} />
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="max-w-64">
@@ -845,27 +847,24 @@
 				</DropdownMenu.Root>
 				<ArcaneButton
 					action="base"
-					size="sm"
 					icon={ResetIcon}
 					customLabel={m.reset_to_default()}
 					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length))}
 				/>
 				{#if layoutHasChanges}
-					<span class="mx-1 text-xs text-warning">{m.common_unsaved_changes()}</span>
+					<span class="mx-1 text-xs text-warning-foreground">{m.common_unsaved_changes()}</span>
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						size="sm"
 						class="gap-2"
 						icon={ResetIcon}
 						customLabel={m.common_reset()}
 						onclick={() => (draftLayout = savedLayout)}
 					/>
 				{/if}
-				<ArcaneButton action="cancel" size="sm" onclick={() => (editingLayout = false)} />
+				<ArcaneButton action="cancel" onclick={() => (editingLayout = false)} />
 				<ArcaneButton
 					action="save"
-					size="sm"
 					class="min-w-20 gap-2"
 					disabled={!layoutHasChanges}
 					onClickPromise={async () => {
@@ -880,6 +879,7 @@
 							<ArcaneButton
 								{...props}
 								action="refresh"
+								tone="outline"
 								size="icon"
 								class="size-8"
 								customLabel={m.common_refresh()}
@@ -896,6 +896,7 @@
 							<ArcaneButton
 								{...props}
 								action="edit"
+								tone="outline"
 								size="icon"
 								class="size-8"
 								customLabel={m.edit_layout()}
@@ -914,7 +915,7 @@
 
 	{#if failedEnvironments.length > 0 || queryErrors.length > 0}
 		<section>
-			<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+			<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<Alert.Description>
 						{#if failedEnvironments.length > 0}
@@ -930,7 +931,7 @@
 							<p class="whitespace-pre-line">{error.value}</p>
 						{/each}
 					</Alert.Description>
-					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refetchEnvironmentQueries} />
+					<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={refetchEnvironmentQueries} />
 				</div>
 			</Alert.Root>
 		</section>
@@ -938,7 +939,7 @@
 
 	{#if excludedEnvironmentCount > 0}
 		<section>
-			<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+			<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 				<Alert.Description>
 					{m.all_environments_excluded({
 						count: excludedEnvironmentCount,
@@ -985,23 +986,25 @@
 			{:else if item.type === 'environments'}
 				<DashboardPanel title={m.environments_title()}>
 					{#snippet actions()}
-						<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
-							{#each [{ view: 'cards' as const, icon: LayoutGridIcon, label: m.dashboard_view_cards() }, { view: 'table' as const, icon: LayoutListIcon, label: m.dashboard_view_table() }] as option (option.view)}
-								<button
-									type="button"
-									title={option.label}
-									aria-label={option.label}
-									aria-pressed={boardView === option.view}
-									class={cn(
-										'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-										boardView === option.view && 'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-primary-tint'
-									)}
-									onclick={() => (boardViewPref.current = option.view)}
-								>
-									<option.icon class="size-4" />
-								</button>
-							{/each}
-						</div>
+						{#if !isMobile.current}
+							<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+								{#each [{ view: 'cards' as const, icon: LayoutGridIcon, label: m.dashboard_view_cards() }, { view: 'table' as const, icon: LayoutListIcon, label: m.dashboard_view_table() }] as option (option.view)}
+									<button
+										type="button"
+										title={option.label}
+										aria-label={option.label}
+										aria-pressed={boardView === option.view}
+										class={cn(
+											'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+											boardView === option.view && 'bg-primary/15 text-primary-text ring-1 ring-primary/30'
+										)}
+										onclick={() => (boardViewPref.current = option.view)}
+									>
+										<option.icon class="size-4" />
+									</button>
+								{/each}
+							</div>
+						{/if}
 					{/snippet}
 					{#if environmentCards.length === 0}
 						<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
@@ -1014,7 +1017,7 @@
 							getLiveStatsStatus={(environment) => liveStats.status(environment)}
 						/>
 					{:else}
-						<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+						<div class="grid grid-cols-1 gap-4 max-md:gap-0 max-md:divide-y max-md:divide-border/60 xl:grid-cols-2">
 							{#each environmentCards as item (item.environment.id)}
 								{@render environmentCard(item.environment)}
 							{/each}
@@ -1029,7 +1032,7 @@
 					onAction={handleAttentionAction}
 				/>
 			{:else if item.type === 'activity'}
-				<ActivityList groups={activityGroups} loading={activityStore.loading} unavailable={activityStore.streamError} />
+				<ActivityList groups={recentActivityGroups} loading={activityStore.loading} unavailable={activityStore.streamError} />
 			{:else if item.type === 'jobs'}
 				<UpcomingJobs
 					jobs={environmentJobs}

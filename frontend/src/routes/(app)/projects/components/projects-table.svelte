@@ -21,8 +21,25 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
+	import {
+		AlertIcon,
+		ContainersIcon,
+		EditIcon,
+		PlayIcon,
+		RestartIcon,
+		StopIcon,
+		TrashIcon,
+		RedeployIcon
+	} from '#lib/icons/index.js';
+	import {
+		FolderOpenIcon,
+		LayersIcon,
+		CalendarIcon,
+		ProjectsIcon,
+		GitBranchIcon,
+		RefreshIcon,
+		type IconType
+	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -242,7 +259,7 @@
 			loading: isBulkLoading.up,
 			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
 			disabledReason: selectionDisabledReason,
-			icon: StartIcon
+			icon: PlayIcon
 		},
 		{
 			id: 'down',
@@ -342,7 +359,7 @@
 	</div>
 {/snippet}
 
-{#snippet ProviderField(value: { icon: any; text: string })}
+{#snippet ProviderField(value: { icon: IconType; text: string })}
 	{@const Icon = value.icon}
 	<span class="inline-flex items-center gap-2">
 		<Icon class="size-3" />
@@ -474,8 +491,7 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id }))}
+		href={() => resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id })}
 	/>
 {/snippet}
 
@@ -485,7 +501,7 @@
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
 	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() => goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(envId)}`, { projectId: item.id }))}
 			disabled={isAnyLoading}
@@ -512,7 +528,7 @@
 					onclick={() => performProjectAction('start', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
-					icon={StartIcon}
+					icon={PlayIcon}
 					label={m.common_up()}
 					loading={status === 'starting'}
 				/>
@@ -566,7 +582,7 @@
 				<ActionMenuItem
 					onclick={() => performProjectAction('unarchive', item.id, envId)}
 					disabled={isAnyLoading}
-					icon={BoxIcon}
+					icon={ContainersIcon}
 					label={m.projects_unarchive()}
 					loading={status === 'unarchiving'}
 				/>
@@ -575,7 +591,7 @@
 					onclick={() => performProjectAction('archive', item.id, envId)}
 					disabled={isProjectArchiveBlocked(item) || isAnyLoading}
 					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
-					icon={BoxIcon}
+					icon={ContainersIcon}
 					label={m.projects_archive()}
 					loading={status === 'archiving'}
 				/>

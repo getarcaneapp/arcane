@@ -79,7 +79,7 @@
 	props: Record<string, unknown>
 )}
 	{@const Icon = entry.icon}
-	<a href={entry.url} {...props}>
+	<a href={entry.url} {...props} aria-current={page.url.pathname === entry.url ? 'page' : undefined}>
 		{#if entry.icon}
 			<Icon />
 		{/if}
@@ -110,22 +110,21 @@
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
 					{@const groupExpanded = hoveredGroup === item.url}
-					<div
-						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
-						role="group"
-						onmouseenter={() => (hoveredGroup = item.url)}
-						onmouseleave={() => (hoveredGroup = null)}
-					>
-						{@render menuEntry(item, tooltipContent)}
-						{#if groupExpanded}
-							{#each item.items ?? [] as subItem (subItem.url)}
-								{#snippet subItemTooltipContent()}
-									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
-								{/snippet}
-								{@render menuEntry(subItem, subItemTooltipContent)}
-							{/each}
-						{/if}
-					</div>
+					<Sidebar.MenuItem onmouseenter={() => (hoveredGroup = item.url)} onmouseleave={() => (hoveredGroup = null)}>
+						<div class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}>
+							<Sidebar.Menu>
+								{@render menuEntry(item, tooltipContent)}
+								{#if groupExpanded}
+									{#each item.items ?? [] as subItem (subItem.url)}
+										{#snippet subItemTooltipContent()}
+											<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
+										{/snippet}
+										{@render menuEntry(subItem, subItemTooltipContent)}
+									{/each}
+								{/if}
+							</Sidebar.Menu>
+						</div>
+					</Sidebar.MenuItem>
 				{:else}
 					{#snippet collapsibleSubMenu()}
 						<Collapsible.Content>

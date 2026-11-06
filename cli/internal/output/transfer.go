@@ -21,7 +21,6 @@ type (
 	}
 )
 
-// Copy copies a transfer while reporting bytes, or activity for unknown totals.
 func Copy(ctx context.Context, dst io.Writer, src io.Reader, opts TransferOptions) (int64, error) {
 	loading := StartTracker(ctx, Stderr(), opts.ShowProgress, opts.Label)
 	loading.NextStep()

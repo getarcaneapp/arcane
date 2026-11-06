@@ -1,4 +1,3 @@
-// Package s3 owns reusable S3-compatible backup destinations and their HTTP surface.
 package s3
 
 import (

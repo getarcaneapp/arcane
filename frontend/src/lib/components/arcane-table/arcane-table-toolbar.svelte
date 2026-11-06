@@ -243,7 +243,14 @@
 				<Popover.Root>
 					<Popover.Trigger>
 						{#snippet child({ props })}
-							<ArcaneButton {...props} action="base" tone="outline" size="icon" class="relative size-9">
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="outline"
+								size="icon"
+								aria-label={m.activity_filters_label()}
+								class="relative size-9"
+							>
 								<FilterIcon class="size-4" />
 								{#if activeFilterCount > 0}
 									<span
@@ -268,7 +275,6 @@
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				size="sm"
 				icon={ResetIcon}
 				customLabel={m.common_reset()}
 				onclick={onResetFilters}

@@ -39,7 +39,6 @@ var repoRef = cmdutil.ResourceRef[types.GitRepository, types.GitRepository]{
 	},
 }
 
-// Command is the parent command for git repository operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

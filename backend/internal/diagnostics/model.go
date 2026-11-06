@@ -8,20 +8,17 @@ import (
 )
 
 type (
-	// actorHostModel is a read-only view of a registered Francis host.
 	actorHostModel struct {
 		LastHealthCheck actorTime `gorm:"column:host_last_health_check"`
 		HostID          string    `gorm:"column:host_id"`
 		Address         string    `gorm:"column:host_address"`
 	}
 
-	// actorTypeModel is a registered actor type with its concurrency limit.
 	actorTypeModel struct {
 		ActorType        string
 		ConcurrencyLimit int
 	}
 
-	// actorCountModel is one grouped count row from a Francis table.
 	actorCountModel struct {
 		NextDue   actorTime
 		ActorType string
@@ -29,7 +26,6 @@ type (
 		Count     int
 	}
 
-	// activeActorModel is a read-only view of an activated actor.
 	activeActorModel struct {
 		Activation actorTime `gorm:"column:actor_activation"`
 		ActorType  string    `gorm:"column:actor_type"`
@@ -37,7 +33,6 @@ type (
 		HostID     string    `gorm:"column:host_id"`
 	}
 
-	// terminalJobModel is a read-only view of a finished actor job.
 	terminalJobModel struct {
 		EndedAt   actorTime `gorm:"column:ended_at"`
 		LastError *string   `gorm:"column:last_error"`

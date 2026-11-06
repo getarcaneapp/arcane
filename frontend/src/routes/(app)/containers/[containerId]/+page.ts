@@ -5,7 +5,7 @@ import { projectDetailQuery } from '#lib/query/projects.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-import { throwPageLoadError } from '#lib/utils/api.js';
+import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -26,6 +26,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	}
 
 	let project = null;
+	let projectError: string | null = null;
 	const composeProjectName = container.composeInfo?.projectName;
 	if (composeProjectName) {
 		const operationResult = await tryCatch(
@@ -48,9 +49,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 			})()
 		);
 		if (operationResult.error !== null) {
-			const err = operationResult.error;
-
-			console.warn('Failed to load compose project:', err);
+			projectError = extractApiErrorMessage(operationResult.error);
 		} else {
 			project = operationResult.data;
 		}
@@ -59,6 +58,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	return {
 		envId,
 		container,
-		project
+		project,
+		projectError
 	};
 };

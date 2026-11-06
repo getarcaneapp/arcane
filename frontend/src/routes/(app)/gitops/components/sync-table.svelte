@@ -13,11 +13,12 @@
 	import BackupResolveDialog from '#lib/components/gitops/backup-resolve-dialog.svelte';
 	import BackupStateBadge from '#lib/components/gitops/backup-state-badge.svelte';
 	import { LifecycleIndicator } from '#lib/components/lifecycle-indicator/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		EditIcon as PencilIcon,
-		StartIcon as PlayIcon,
+		PlayIcon,
 		TrashIcon as Trash2Icon,
 		RefreshIcon as RefreshCwIcon,
 		GitBranchIcon,
@@ -27,7 +28,7 @@
 		DownloadIcon,
 		ClockIcon,
 		SettingsIcon,
-		AlertTriangleIcon
+		AlertIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -451,7 +452,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: SyncRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		{#if isBackup(item)}
 			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunBackup(item)}>
 				<UploadIcon class="size-4" />
@@ -465,7 +466,7 @@
 
 			{#if item.backupState === 'needs_attention' && canBackup(item)}
 				<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
-					<AlertTriangleIcon class="size-4" />
+					<AlertIcon class="size-4" />
 					{m.resolve()}
 				</DropdownMenu.Item>
 			{/if}
@@ -513,7 +514,11 @@
 	customToolbarActions={ModeFilter}
 	rowActions={RowActions}
 	mobileCard={SyncMobileCardSnippet}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={GitBranchIcon} title={m.no_git_syncs_yet()} description={m.git_sync_keeps_project_updated()} />
+	{/snippet}
+</ArcaneTable>
 
 {#if backupDialogSync}
 	<BackupHistoryDialog bind:open={backupHistoryOpen} environmentId={backupDialogSync.environmentId} sync={backupDialogSync} />

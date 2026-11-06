@@ -3,9 +3,6 @@ package authz
 import "slices"
 
 type (
-	// PermissionCatalogResource describes a resource group in the permission
-	// catalog. It is the authz-owned source for permission ordering, scope, and
-	// display metadata used by API manifests and validation helpers.
 	PermissionCatalogResource struct {
 		Key         string
 		Label       string
@@ -14,7 +11,6 @@ type (
 		Actions     []PermissionCatalogAction
 	}
 
-	// PermissionCatalogAction describes one recognized permission.
 	PermissionCatalogAction struct {
 		Key         string
 		Permission  string
@@ -1924,7 +1920,6 @@ var permissionCatalog = []PermissionCatalogResource{
 	},
 }
 
-// PermissionCatalog returns a defensive copy of the full permission catalog.
 func PermissionCatalog() []PermissionCatalogResource {
 	out := make([]PermissionCatalogResource, len(permissionCatalog))
 	for i, resource := range permissionCatalog {

@@ -24,8 +24,6 @@ import (
 )
 
 type (
-	// Service freezes update targets before any pull, pins pulls to the frozen
-	// digests, and confirms or resumes interrupted updates.
 	Service struct {
 		dockerService  *docker.DockerClientService
 		images         remoteDigester
@@ -35,7 +33,6 @@ type (
 		applyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
 	}
 
-	// remoteDigester resolves registry digests; the image service implements it.
 	remoteDigester interface {
 		RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error)
 	}
@@ -62,7 +59,6 @@ type (
 	}
 )
 
-// errNoFrozenPlan reports a run without a persisted frozen plan.
 var errNoFrozenPlan = errors.New("interrupted update has no frozen target plan")
 
 func NewService(p ServiceParams) *Service {
@@ -76,7 +72,6 @@ func NewService(p ServiceParams) *Service {
 	}
 }
 
-// FrozenRecords returns the frozen batch records carried by ctx, if any.
 func (s *Service) FrozenRecords(ctx context.Context) ([]updater.ImageUpdateRecord, bool) {
 	plan, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	if !ok {
@@ -85,12 +80,10 @@ func (s *Service) FrozenRecords(ctx context.Context) ([]updater.ImageUpdateRecor
 	return slices.Clone(plan.Records), true
 }
 
-// WithSingleTarget scopes pulls in ctx to one accepted container update.
 func (s *Service) WithSingleTarget(ctx context.Context, target *types.FrozenUpdateTarget, persist func() error) context.Context {
 	return context.WithValue(ctx, frozenSingleKey{}, &frozenSingle{Target: target, Persist: persist})
 }
 
-// VerifyResult confirms a reported success against the frozen batch plan.
 func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 	plan, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	if !ok {
@@ -110,10 +103,6 @@ func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 	return nil
 }
 
-// FreezePending persists identities and desired images before any pull. A run
-// that already holds a plan keeps it. Image refs and container IDs in excluded are left
-// out, and a target that cannot be frozen fails alone instead of aborting the batch.
-// Candidates that deferred reports are skipped without failing, so a later run picks them up.
 func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, container.Summary) bool) (context.Context, error) {
 	if _, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan); ok {
 		return ctx, nil
@@ -139,7 +128,6 @@ func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, exc
 		if listErr != nil {
 			return ctx, listErr
 		}
-		// Resolve each candidate's configured image once, not per record.
 		candidateRefs := make(map[string]string, len(listed.Items))
 		for _, candidate := range listed.Items {
 			configured, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
@@ -262,7 +250,6 @@ func (s *Service) freezeRecordTarget(
 		}, nil
 }
 
-// FreezeContainer captures the identity evidence of one container.
 func (s *Service) FreezeContainer(ctx context.Context, id string) (*types.FrozenUpdateTarget, error) {
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
@@ -315,7 +302,6 @@ func (s *Service) ResumeTarget(ctx context.Context, target types.FrozenUpdateTar
 	}, true, nil
 }
 
-// PreparePull commits the exact image before the engine changes Docker.
 func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, error) {
 	if single, ok := ctx.Value(frozenSingleKey{}).(*frozenSingle); ok {
 		if single.Target.DesiredImageRef == "" {
@@ -376,8 +362,6 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 	return immutable, nil
 }
 
-// ConfirmTarget returns whether the desired effect is confirmed,
-// or whether the exact original container is unchanged and safe to resume.
 func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTarget) (bool, bool, error) {
 	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
@@ -439,7 +423,6 @@ func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTa
 	return false, false, nil
 }
 
-// ReconcilePending resumes only frozen targets whose original container is unchanged.
 func (s *Service) ReconcilePending(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	targetIDs, err := s.TargetRefs(run)
 	if err != nil {
@@ -490,9 +473,6 @@ func (s *Service) ReconcilePending(ctx context.Context, run types.SchedulerRun) 
 	}, nil
 }
 
-// ResumePlan confirms each unsettled frozen target before anything repeats and
-// scopes ctx to the targets still to apply. Targets that changed without
-// reaching the desired image are marked for review and reported as unresolved.
 func (s *Service) ResumePlan(ctx context.Context, run types.SchedulerRun) (context.Context, int, bool, error) {
 	plan, found, err := frozenPlan(run)
 	if err != nil {
@@ -560,13 +540,11 @@ func (s *Service) ResumePlan(ctx context.Context, run types.SchedulerRun) (conte
 	return context.WithValue(ctx, frozenPendingKey{}, &frozenUpdatePlan{Records: records, Targets: targets}), len(records), unresolved, nil
 }
 
-// Planned reports whether the run already holds a frozen plan, as a retry does.
 func (s *Service) Planned(run types.SchedulerRun) bool {
 	_, found, err := frozenPlan(run)
 	return found && err == nil
 }
 
-// Started reports whether applying the frozen plan began: a planned container moved past queued.
 func (s *Service) Started(run types.SchedulerRun) bool {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
@@ -594,7 +572,6 @@ func (s *Service) TargetRefs(run types.SchedulerRun) ([]string, error) {
 	return ids, nil
 }
 
-// Unsettled counts the frozen targets a retry would still resume.
 func (s *Service) Unsettled(run types.SchedulerRun) (int, error) {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
@@ -611,7 +588,6 @@ func (s *Service) Unsettled(run types.SchedulerRun) (int, error) {
 	return unsettled, nil
 }
 
-// Unplanned lists the images and containers that never reached the frozen plan: failed checks and failed freezes.
 func (s *Service) Unplanned(run types.SchedulerRun) []types.TargetOutcome {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
@@ -623,7 +599,6 @@ func (s *Service) Unplanned(run types.SchedulerRun) []types.TargetOutcome {
 	})
 }
 
-// frozenPlan decodes the plan persisted on the run's batch target.
 func frozenPlan(run types.SchedulerRun) (frozenUpdatePlan, bool, error) {
 	var plan frozenUpdatePlan
 	for _, target := range run.Outcome.Targets {

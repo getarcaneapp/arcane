@@ -446,7 +446,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: NodeRow })}
-	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+	<RowActionsMenu name={item.hostname} triggerClass="relative size-8 p-0" iconClass="">
 		{#if hasPermission('swarm-nodes:read', item.environmentId)}
 			<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
 				<InspectIcon class="size-4" />

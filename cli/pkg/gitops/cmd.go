@@ -37,7 +37,6 @@ var gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
 	Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
 }
 
-// Command is the parent command for gitops sync operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "gitops",

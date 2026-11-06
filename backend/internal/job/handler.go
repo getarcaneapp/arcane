@@ -155,7 +155,6 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 	}, nil
 }
 
-// ListRuns returns paginated history for the requested job and environment.
 // Remote history combines agent runs with the manager's delivery records.
 func (h *JobSchedulesHandler) ListRuns(ctx context.Context, input *types.JobListRunsInput) (*types.JobListRunsOutput, error) {
 	result, err := h.jobService.ListRuns(ctx, input.ID, input.JobID, input.Page, input.Limit)
@@ -165,8 +164,6 @@ func (h *JobSchedulesHandler) ListRuns(ctx context.Context, input *types.JobList
 	return &types.JobListRunsOutput{Body: result}, nil
 }
 
-// GetRun returns a persisted run or receipt. For remote work, it queries the
-// agent when the manager has no delivery record for the requested run.
 func (h *JobSchedulesHandler) GetRun(ctx context.Context, input *types.JobRunInput) (*types.JobRunOutput, error) {
 	result, err := h.jobService.GetRun(ctx, input.ID, input.JobID, input.RunID)
 	if err != nil {

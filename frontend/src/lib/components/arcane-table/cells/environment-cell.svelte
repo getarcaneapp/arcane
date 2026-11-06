@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon } from '#lib/icons/index.js';
+	import { EnvironmentsIcon, AgentIcon } from '#lib/icons/index.js';
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -11,12 +11,12 @@
 	const environmentId = $derived(String(value ?? ''));
 	const color = $derived(plain ? undefined : environmentColor(environmentId));
 	const showDot = $derived(!!color && userStore.current?.preferences?.environmentLabelStyle === 'dot');
-	const Icon = $derived(environmentId === LOCAL_DOCKER_ENVIRONMENT_ID ? EnvironmentsIcon : RemoteEnvironmentIcon);
+	const Icon = $derived(environmentId === LOCAL_DOCKER_ENVIRONMENT_ID ? EnvironmentsIcon : AgentIcon);
 </script>
 
 {#if showDot}
 	<ArcaneTooltip.Root>
-		<!-- A plain span: the default trigger wrapper is interactive and would swallow the row click. -->
+		<!-- A plain span keeps the trigger from swallowing the row click. -->
 		<ArcaneTooltip.Trigger>
 			{#snippet child({ props })}
 				<span {...props} class="inline-flex size-4 items-center justify-center" aria-label={environmentName(environmentId)}>
@@ -27,7 +27,6 @@
 		<ArcaneTooltip.Content>{environmentName(environmentId)}</ArcaneTooltip.Content>
 	</ArcaneTooltip.Root>
 {:else}
-	<!-- Mixing toward the foreground keeps any picked color readable in light and dark themes. -->
 	<span
 		class={['inline-flex min-w-0 items-center gap-1.5 text-sm', color ? 'environment-colored' : 'text-muted-foreground']}
 		style:--environment-color={color}

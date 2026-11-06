@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// ImagePatchHandler provides Huma-based image patching endpoints.
 	ImagePatchHandler struct {
 		imagePatchService *Service
 		appCtx            context.Context
@@ -47,7 +46,6 @@ type (
 	}
 )
 
-// PatchImage starts a background patch run for an image.
 func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInput) (*handlerutil.Out[types.PatchRecord], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -72,7 +70,6 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 	}, nil
 }
 
-// ListPatchTargets returns scanned images with fixable counts and latest patch runs.
 func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPatchTargetsInput) (*handlerutil.Page[types.PatchTarget], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -100,7 +97,6 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 	}, nil
 }
 
-// ListImagePatches returns the paginated patch history for the environment.
 func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListImagePatchesInput) (*handlerutil.Page[types.PatchRecord], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.SkipCount = !input.IncludeTotal

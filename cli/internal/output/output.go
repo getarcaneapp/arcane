@@ -1,4 +1,3 @@
-// Package output provides styled messages and terminal tables for the CLI.
 package output
 
 import (
@@ -17,7 +16,6 @@ import (
 )
 
 const (
-	// ansiReset closes a styled run re-applied after truncation.
 	ansiReset = "\x1b[0m"
 )
 
@@ -60,9 +58,6 @@ func setTheme(dark bool) {
 	tablePlainCell, tablePlainHead = tableCell, tableCell
 }
 
-// Success prints a success message in green.
-// Format specifiers work like fmt.Printf; a leading newline separates messages.
-//
 //nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Success(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
@@ -70,9 +65,6 @@ func Success(format string, a ...any) {
 	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), successStyle, ("✓ "+msg)))
 }
 
-// Warning prints a warning message in yellow.
-// Format specifiers work like fmt.Printf; a leading newline separates messages.
-//
 //nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Warning(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
@@ -80,9 +72,6 @@ func Warning(format string, a ...any) {
 	_, _ = fmt.Fprintf(Stderr(), "\n  %s\n", renderFor(Stderr(), warnStyle, msg))
 }
 
-// Info prints an info message in purple.
-// Format specifiers work like fmt.Printf; a leading newline separates messages.
-//
 //nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Info(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
@@ -90,9 +79,6 @@ func Info(format string, a ...any) {
 	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), infoStyle, msg))
 }
 
-// Header prints a purple section heading.
-// A leading newline separates the heading from previous output.
-//
 //nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Header(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
@@ -100,20 +86,16 @@ func Header(format string, a ...any) {
 	_, _ = fmt.Fprintf(humanWriter(), "\n  %s\n", renderFor(humanWriter(), headerStyle, msg))
 }
 
-// KeyValue prints a key-value pair with the muted aligned labels and neutral values.
-// Use it for structured details and configuration values.
 func KeyValue(key string, value any) {
 	defer SuspendProgress()()
 	_, _ = fmt.Fprintf(humanWriter(), "  %s %s\n", renderFor(humanWriter(), keyStyle, fmt.Sprintf("%-18s", key)), renderFor(humanWriter(), valueStyle, fmt.Sprint(value)))
 }
 
-// Showing prints a pagination summary in the form "Showing: shown/total label".
 func Showing(shown int, total int64, label string) {
 	defer SuspendProgress()()
 	_, _ = fmt.Fprintf(humanWriter(), "\n  Showing: %d/%d %s\n", shown, total, label)
 }
 
-// TintStatus applies semantic status coloring to a value.
 func TintStatus(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
@@ -134,7 +116,6 @@ func TintStatus(value string) string {
 	}
 }
 
-// TintEnabled applies tints for enabled/disabled values.
 func TintEnabled(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
@@ -151,7 +132,6 @@ func TintEnabled(value string) string {
 	}
 }
 
-// TintYesNo applies tints for yes/no style values.
 func TintYesNo(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
@@ -168,7 +148,6 @@ func TintYesNo(value string) string {
 	}
 }
 
-// TintInsecure applies warning tints for insecure values.
 func TintInsecure(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || ansiRegexp.MatchString(trimmed) || !colorsEnabled() || !IsTerminal(Stdout()) {
@@ -185,8 +164,6 @@ func TintInsecure(value string) string {
 	}
 }
 
-// Table prints a formatted table with headers and rows.
-// Rendering uses Lip Gloss table styles with zebra-striped rows.
 func Table(headers []string, rows [][]string) error {
 	defer SuspendProgress()()
 	if _, spacingErr := fmt.Fprintln(humanWriter()); spacingErr != nil {
@@ -324,7 +301,6 @@ func truncateVisible(value string, maxWidth int) string {
 		truncated = runewidth.Truncate(plain, maxWidth, "…")
 	}
 
-	// Preserve the leading color sequence and reset after truncation.
 	codes := ansiRegexp.FindAllString(value, -1)
 	if len(codes) == 0 || !strings.HasPrefix(value, codes[0]) {
 		return truncated

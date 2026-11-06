@@ -13,8 +13,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterRoutes registers the system backup endpoints, including the
-// system-managed volume backup endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(
 		api,

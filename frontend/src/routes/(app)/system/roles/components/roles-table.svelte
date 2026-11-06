@@ -226,7 +226,7 @@
 
 {#snippet RowActions({ item }: { item: Role })}
 	{#if isAdmin}
-		<RowActionsMenu>
+		<RowActionsMenu name={item.name}>
 			<IfPermitted adminOnly>
 				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/system/roles/[id]', { id: item.id }))}>
 					<EditIcon class="size-4" />

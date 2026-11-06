@@ -161,7 +161,6 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 	}, owned)
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceForbidden)
 
-	// The operator overlay stays editable.
 	err = workspace.ValidateWorkspaceChangesAgainstGitOps([]types.WorkspaceFileChange{
 		{Operation: types.FileOpCreateFile, RelativePath: "app.env"},
 	}, owned)
@@ -5949,7 +5948,6 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o700) })
 	require.NoError(t, os.Chmod(unreadableDir, 0))
 
-	// A known project under the unreadable subtree.
 	strandedDirName := "stranded-project"
 	require.NoError(t, db.Create(&Project{
 		ID:      "stranded-under-unreadable",

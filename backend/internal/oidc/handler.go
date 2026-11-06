@@ -26,8 +26,6 @@ import (
 )
 
 type (
-	// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
-	// mapping management (since mappings only make sense in the OIDC context).
 	OidcHandler struct {
 		authService    *auth.AuthService
 		passkeyService *passkey.PasskeyService
@@ -120,7 +118,6 @@ type (
 	}
 )
 
-// GetOidcStatus returns the OIDC configuration status.
 func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {
 	status, err := h.authService.GetOidcConfigurationStatus(ctx)
 	if err != nil {
@@ -132,7 +129,6 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 	}, nil
 }
 
-// GetOidcConfig returns the OIDC client configuration.
 func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
 	oidcConfig, err := h.authService.GetOidcConfig(ctx)
 	if errors.Is(err, auth.ErrOidcAuthDisabled) {
@@ -158,7 +154,6 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 	}, nil
 }
 
-// GetOidcAuthUrl generates an OIDC authorization URL and sets the state cookie.
 func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlInput) (*GetOidcAuthUrlOutput, error) {
 	enabled, err := h.authService.IsOidcEnabled(ctx)
 	if err != nil {
@@ -183,9 +178,6 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error500InternalServerError("Failed to generate OIDC auth URL: " + err.Error())
 	}
 
-	// Build state cookie (600 seconds = 10 minutes). Secure is resolved from the
-	// request the same way the session token cookie resolves it, rather than
-	// being hard-coded off.
 	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, cookie.SecureCookieFromContext(ctx))
 
 	return &GetOidcAuthUrlOutput{
@@ -196,9 +188,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 	}, nil
 }
 
-// HandleOidcCallback processes the OIDC callback and completes authentication.
 func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcCallbackInput) (*HandleOidcCallbackOutput, error) {
-	// Validate state cookie
 	if input.OidcStateCookie == "" {
 		return nil, huma.Error400BadRequest("Missing or invalid OIDC state cookie")
 	}
@@ -213,7 +203,6 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		}
 	}
 
-	// Process OIDC callback
 	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, CallbackRequest{
 		Code:              input.Body.Code,
 		State:             input.Body.State,
@@ -241,9 +230,6 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
-	// Build cookies: clear the state cookie always; only set the session
-	// token cookie for browser flows (mobile clients use Bearer tokens from
-	// the JSON body and never consume the cookie).
 	clearStateCookie := cookie.BuildClearOidcStateCookieString(cookie.SecureCookieFromContext(ctx))
 	setCookies := []string{clearStateCookie}
 	if userModel.PasskeyMFAEnabled {
@@ -290,7 +276,6 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}, nil
 }
 
-// InitiateDeviceAuth initiates the OIDC device authorization flow.
 func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceAuthInput) (*InitiateDeviceAuthOutput, error) {
 	enabled, err := h.authService.IsOidcEnabled(ctx)
 	if err != nil {
@@ -311,7 +296,6 @@ func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceA
 	}, nil
 }
 
-// ExchangeDeviceToken exchanges a device code for authentication tokens.
 func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDeviceTokenInput) (*ExchangeDeviceTokenOutput, error) {
 	if input.Body.DeviceCode == "" {
 		return nil, huma.Error400BadRequest("device code is required")
@@ -347,10 +331,6 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 		}
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
-	// The device flow has no way to satisfy a WebAuthn assertion: the CLI has no
-	// authenticator, and completing MFA with a recovery code would burn a
-	// single-use code on every login. MFA accounts authenticate the CLI with a
-	// personal API key instead.
 	if userModel.PasskeyMFAEnabled {
 		return nil, huma.Error403Forbidden("mfa_required")
 	}

@@ -19,7 +19,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// ResolveBuildContext resolves a service build context against workingDir.
 // The service config must have a non-nil Build field.
 func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serviceName string) (string, error) {
 	contextDir := strings.TrimSpace(svc.Build.Context)
@@ -38,7 +37,6 @@ func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 	return contextDir, nil
 }
 
-// ResolveDockerfilePath returns the configured Dockerfile path or Dockerfile.
 // The service config must have a non-nil Build field.
 func ResolveDockerfilePath(svc composetypes.ServiceConfig) string {
 	dockerfilePath := cmp.Or(strings.TrimSpace(svc.Build.Dockerfile), "Dockerfile")
@@ -46,7 +44,6 @@ func ResolveDockerfilePath(svc composetypes.ServiceConfig) string {
 	return dockerfilePath
 }
 
-// BuildArgsFromCompose flattens compose build args into a string map, dropping nil values.
 func BuildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -58,7 +55,6 @@ func BuildArgsFromCompose(args map[string]*string) map[string]string {
 	return buildArgs
 }
 
-// LabelsFromCompose copies compose labels into a plain map, returning nil when empty.
 func LabelsFromCompose(labels composetypes.Labels) map[string]string {
 	if len(labels) == 0 {
 		return nil
@@ -70,7 +66,6 @@ func LabelsFromCompose(labels composetypes.Labels) map[string]string {
 	return out
 }
 
-// UlimitsFromCompose renders compose ulimits as Docker-style "soft:hard" (or single) strings.
 func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[string]string {
 	if len(ulimits) == 0 {
 		return nil
@@ -93,8 +88,6 @@ func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[stri
 	return kit.Ternary(len(out) == 0, nil, out)
 }
 
-// BuildPlatformsFromCompose returns the build platforms for a service, falling
-// back to the service platform when no build platforms are declared.
 func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
 	platforms := kit.TrimNonEmpty(svc.Build.Platforms)
 	if len(platforms) == 0 {
@@ -106,7 +99,6 @@ func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
 	return platforms
 }
 
-// BuildLocalImageTag derives a deterministic local image tag for a built service.
 func BuildLocalImageTag(projectID, projectName, serviceName string) string {
 	shortID := strings.TrimSpace(projectID)
 	if len(shortID) > 8 {
@@ -118,8 +110,6 @@ func BuildLocalImageTag(projectID, projectName, serviceName string) string {
 	return fmt.Sprintf("%s/%s-%s/%s:latest", imageref.LocalBuildRegistry, projectPart, shortID, servicePart)
 }
 
-// SanitizeImageComponent lowercases a value and replaces characters that are
-// invalid in an image reference component with '-'.
 func SanitizeImageComponent(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
@@ -150,7 +140,6 @@ func resolveEffectiveBuildProvider(override, defaultProvider string) string {
 	return provider
 }
 
-// PrepareServiceBuildRequest translates a Compose build into the configured provider request.
 func PrepareServiceBuildRequest(
 	projectID string,
 	project *composetypes.Project,

@@ -28,7 +28,6 @@ type (
 	}
 )
 
-// Command runs environment and connection diagnostics.
 func Command() *cobra.Command {
 	return &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

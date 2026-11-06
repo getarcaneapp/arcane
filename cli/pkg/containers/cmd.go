@@ -75,7 +75,6 @@ var ContainerRef = cmdutil.ResourceRef[types.ContainerDetails, types.ContainerSu
 	IdentifierOf: func(details types.ContainerDetails) string { return details.ID },
 }
 
-// Command builds the containers command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeResource},
@@ -540,7 +539,6 @@ func containerDisplayName(details *types.ContainerDetails) string {
 func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) {
 	var req types.Container
 
-	// File mode: read base config from file
 	if opts.file != "" {
 		data, readFileErr := os.ReadFile(opts.file)
 		if readFileErr != nil {
@@ -551,7 +549,6 @@ func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) 
 		}
 	}
 
-	// Flag overrides
 	if cmd.Flags().Changed("name") {
 		req.Name = opts.name
 	}
@@ -562,7 +559,6 @@ func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) 
 		req.Env = opts.env
 	}
 	if cmd.Flags().Changed("port") {
-		// Parse "HOST:CONTAINER" format into ports map
 		req.Ports = make(map[string]string)
 		for _, p := range opts.port {
 			parts := strings.SplitN(p, ":", 2)
@@ -614,7 +610,6 @@ func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) 
 		req.Cmd = []string{opts.cmd}
 	}
 
-	// Validate required fields
 	if req.Name == "" {
 		return req, errors.New("--name is required")
 	}

@@ -294,10 +294,8 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
-		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
 
-		// Try to fetch public settings for login page configuration
 		settings = await dataOrNull(
 			queryClient.query({
 				...rootQuery,

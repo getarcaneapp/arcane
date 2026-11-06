@@ -24,15 +24,12 @@ type (
 		} `json:"value"`
 	}
 
-	// otlpEnvelope decodes only the resource identities of an OTLP/JSON export.
 	otlpEnvelope map[string][]struct {
 		Resource struct {
 			Attributes []otlpAttribute `json:"attributes"`
 		} `json:"resource"`
 	}
 
-	// Service relays browser OTLP/JSON payloads to the configured collector so the
-	// collector and its credentials stay server-side.
 	Service struct {
 		destinations map[string]destination
 		client       *http.Client
@@ -51,17 +48,13 @@ const (
 var (
 	ErrPayloadTooLarge = errors.New("telemetry payload exceeds 512 KiB")
 	ErrInvalidPayload  = errors.New("telemetry payload is not OTLP/JSON from arcane-frontend")
-	// resourceKeys names each signal's top-level OTLP/JSON resource list.
-	resourceKeys = map[string]string{"traces": "resourceSpans", "metrics": "resourceMetrics", "logs": "resourceLogs"}
+	resourceKeys       = map[string]string{"traces": "resourceSpans", "metrics": "resourceMetrics", "logs": "resourceLogs"}
 )
 
-// SDKDisabled reports whether OTEL_SDK_DISABLED turns all telemetry off.
 func SDKDisabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")), "true")
 }
 
-// Endpoint returns the OTLP/HTTP URL for signal, or "" when its exporter is
-// off, uses gRPC, or has no endpoint configured.
 func Endpoint(signal string) string {
 	upper := strings.ToUpper(signal)
 	if SDKDisabled() || strings.TrimSpace(os.Getenv("OTEL_"+upper+"_EXPORTER")) != "otlp" {
@@ -122,8 +115,6 @@ func NewService() *Service {
 	}
 }
 
-// Forward posts an OTLP/JSON payload of at most 512 KiB for signal to the collector
-// and returns its status code. Every resource must identify as arcane-frontend.
 func (s *Service) Forward(ctx context.Context, signal string, body io.Reader) (int, error) {
 	dest, ok := s.destinations[signal]
 	if !ok {

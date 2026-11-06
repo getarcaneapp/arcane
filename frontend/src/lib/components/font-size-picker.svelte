@@ -11,7 +11,11 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { debounced } from '#lib/utils/ws.js';
 
-	let { id = 'fontSizePicker', class: className = '' }: { id?: string; class?: string } = $props();
+	let {
+		id = 'fontSizePicker',
+		class: className = '',
+		'aria-describedby': ariaDescribedby
+	}: { id?: string; class?: string; 'aria-describedby'?: string } = $props();
 
 	const queryClient = useQueryClient();
 
@@ -53,6 +57,7 @@
 		onValueChange={handleChange}
 		{id}
 		aria-label={m.font_size()}
+		aria-describedby={ariaDescribedby}
 		class="w-40 sm:w-44"
 	/>
 	<span class="w-10 text-right text-sm text-muted-foreground tabular-nums">{currentSize}px</span>

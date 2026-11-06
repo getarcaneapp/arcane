@@ -17,7 +17,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for updater operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "updater",

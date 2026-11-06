@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// Service runs connectivity probes; the parent persists the resulting status.
 	Service struct {
 		dockerService *docker.DockerClientService
 		tunnels       *agent.TunnelRegistry

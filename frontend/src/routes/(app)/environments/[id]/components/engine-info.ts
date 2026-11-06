@@ -64,14 +64,8 @@ function storageDetails(entries: string[][]): EngineSection[] {
 }
 
 export function dockerEngineView(docker: DockerInfo): EngineView {
-	const swarm = docker.Swarm as {
-		LocalNodeState?: string;
-		ControlAvailable?: boolean;
-		NodeID?: string;
-		Managers?: number;
-		Nodes?: number;
-	};
-	const swarmActive = !!swarm?.LocalNodeState && swarm.LocalNodeState !== 'inactive';
+	const swarm = docker.Swarm;
+	const swarmActive = !!swarm.LocalNodeState && swarm.LocalNodeState !== 'inactive';
 
 	return {
 		warnings: docker.Warnings ?? [],

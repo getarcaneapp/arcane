@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"getarcane.dev/arcane/v3/internal/search"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 )
@@ -31,13 +30,14 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, notifications.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermNotificationsList, authz.PermNotificationsRead}, notifications.Permissions)
 
-	templates := requireAccessSurface(t, "customize.category.templates")
-	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, templates.Kind)
+	templates := requireAccessSurface(t, "route.projects.templates")
+	require.Equal(t, authz.AccessSurfaceKindRoute, templates.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, templates.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermTemplatesList, authz.PermTemplatesRead}, templates.Permissions)
+	require.Equal(t, 40, templates.FallbackOrder)
 
-	variables := requireAccessSurface(t, "customize.category.variables")
-	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, variables.Kind)
+	variables := requireAccessSurface(t, "route.projects.variables")
+	require.Equal(t, authz.AccessSurfaceKindRoute, variables.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, variables.ScopeMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, variables.MatchMode)
 	require.ElementsMatch(t, []string{authz.PermVariablesList, authz.PermVariablesRead}, variables.Permissions)
@@ -93,17 +93,17 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 
 	registryPS := authz.NewPermissionSet()
 	registryPS.AddGlobal(authz.PermRegistriesRead)
-	require.True(t, authz.CanAccessSurface(registryPS, "customize.category.registries", "env-a"))
-	require.True(t, authz.CanAccessSurface(registryPS, "landing.customize", "env-a"))
-	require.False(t, authz.CanAccessSurface(registryPS, "customize.category.templates", "env-a"))
+	require.True(t, authz.CanAccessSurface(registryPS, "route.images.registries", "env-a"))
+	require.Equal(t, 41, requireAccessSurface(t, "route.images.registries").FallbackOrder)
+	require.False(t, authz.CanAccessSurface(registryPS, "route.projects.templates", "env-a"))
 
 	variablePS := authz.NewPermissionSet()
 	variablePS.AddGlobal(authz.PermVariablesList)
-	require.True(t, authz.CanAccessSurface(variablePS, "customize.category.variables", "env-a"))
-	require.True(t, authz.CanAccessSurface(variablePS, "landing.customize", "env-a"))
+	require.True(t, authz.CanAccessSurface(variablePS, "route.projects.variables", "env-a"))
+	require.Equal(t, 42, requireAccessSurface(t, "route.projects.variables").FallbackOrder)
 	templatePS := authz.NewPermissionSet()
 	templatePS.AddGlobal(authz.PermTemplatesRead)
-	require.False(t, authz.CanAccessSurface(templatePS, "customize.category.variables", "env-a"))
+	require.False(t, authz.CanAccessSurface(templatePS, "route.projects.variables", "env-a"))
 
 	activitiesPS := authz.NewPermissionSet()
 	activitiesPS.AddEnv("env-a", authz.PermActivitiesList)
@@ -139,7 +139,7 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 func TestCanAccessSurfaceGatesSettingsCategoriesByScope(t *testing.T) {
 	envSettingsPS := authz.NewPermissionSet()
 	envSettingsPS.AddEnv("env-a", authz.PermEnvironmentSettingsRead)
-	for _, category := range []string{"storage", "docker", "security", "timeouts", "activity", "build"} {
+	for _, category := range []string{"storage", "docker", "security", "timeouts", "tunnel", "activity", "build"} {
 		require.True(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-a"), category)
 		require.False(t, authz.CanAccessSurface(envSettingsPS, "settings.category."+category, "env-b"), category)
 	}
@@ -184,8 +184,8 @@ func TestCanAccessSurfaceGatesCreateAndEditRoutesOnTheirMutatingPermission(t *te
 		{surfaceID: "route.containers.edit", permission: authz.PermContainersUpdate},
 		{surfaceID: "route.podman.pods.detail", permission: authz.PermPodmanPodsRead},
 		{surfaceID: "route.podman.quadlets.detail", permission: authz.PermPodmanQuadletsRead},
-		{surfaceID: "route.customize.templates.create", permission: authz.PermTemplatesCreate, global: true},
-		{surfaceID: "route.customize.templates.default", permission: authz.PermTemplatesUpdate, global: true},
+		{surfaceID: "route.projects.templates.create", permission: authz.PermTemplatesCreate, global: true},
+		{surfaceID: "route.projects.templates.default", permission: authz.PermTemplatesUpdate, global: true},
 	}
 
 	viewerPS := authz.NewPermissionSet()
@@ -232,11 +232,6 @@ func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
 	for _, category := range settings.NewSettingsSearchService().GetSettingsCategories() {
 		_, ok := findAccessSurface("settings.category." + category.ID)
 		require.True(t, ok, "settings category %s must have an access surface", category.ID)
-	}
-
-	for _, category := range search.NewCustomizeSearchService().GetCustomizeCategories() {
-		_, ok := findAccessSurface("customize.category." + category.ID)
-		require.True(t, ok, "customize category %s must have an access surface", category.ID)
 	}
 }
 

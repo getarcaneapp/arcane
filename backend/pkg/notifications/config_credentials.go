@@ -13,7 +13,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 )
 
-// DecodeConfig round-trips a provider config (database.JSON) into a typed struct T.
 func DecodeConfig[T any](config database.JSON, providerName string) (T, error) {
 	var out T
 	configBytes, err := json.Marshal(config)
@@ -26,8 +25,6 @@ func DecodeConfig[T any](config database.JSON, providerName string) (T, error) {
 	return out, nil
 }
 
-// DecryptStringCredential decrypts an encrypted credential in place. A value that
-// fails to decrypt but is not plausibly ciphertext is treated as a legacy raw value.
 func DecryptStringCredential(value *string) error {
 	if *value == "" {
 		return nil
@@ -55,7 +52,6 @@ func isPlausibleEncryptedCredential(value string) bool {
 	return len(data) >= minAESGCMCiphertextSize
 }
 
-// PrepareSlackConfig decodes and decrypts a Slack provider config.
 func PrepareSlackConfig(config database.JSON, providerName string) (SlackConfig, error) {
 	slackConfig, err := DecodeConfig[SlackConfig](config, providerName)
 	if err != nil {
@@ -70,7 +66,6 @@ func PrepareSlackConfig(config database.JSON, providerName string) (SlackConfig,
 	return slackConfig, nil
 }
 
-// PrepareNtfyConfig decodes and decrypts an ntfy provider config.
 func PrepareNtfyConfig(config database.JSON, providerName string) (NtfyConfig, error) {
 	ntfyConfig, err := DecodeConfig[NtfyConfig](config, providerName)
 	if err != nil {
@@ -88,7 +83,6 @@ func PrepareNtfyConfig(config database.JSON, providerName string) (NtfyConfig, e
 	return ntfyConfig, nil
 }
 
-// PreparePushoverConfig decodes and decrypts a Pushover provider config.
 func PreparePushoverConfig(config database.JSON, providerName string) (PushoverConfig, error) {
 	pushoverConfig, err := DecodeConfig[PushoverConfig](config, providerName)
 	if err != nil {
@@ -100,7 +94,6 @@ func PreparePushoverConfig(config database.JSON, providerName string) (PushoverC
 	return pushoverConfig, nil
 }
 
-// PrepareGotifyConfig decodes and decrypts a Gotify provider config.
 func PrepareGotifyConfig(config database.JSON, providerName string) (GotifyConfig, error) {
 	gotifyConfig, err := DecodeConfig[GotifyConfig](config, providerName)
 	if err != nil {
@@ -112,7 +105,6 @@ func PrepareGotifyConfig(config database.JSON, providerName string) (GotifyConfi
 	return gotifyConfig, nil
 }
 
-// PrepareMatrixConfig decodes and decrypts a Matrix provider config.
 func PrepareMatrixConfig(config database.JSON) (MatrixConfig, error) {
 	matrixConfig, err := DecodeConfig[MatrixConfig](config, "Matrix")
 	if err != nil {

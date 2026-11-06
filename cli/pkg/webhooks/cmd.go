@@ -1,5 +1,3 @@
-// Package webhooks implements the `arcane webhooks` command group for
-// per-environment inbound webhooks that trigger actions.
 package webhooks
 
 import (
@@ -34,7 +32,6 @@ var webhookRef = cmdutil.ResourceRef[types.Webhook, types.Webhook]{
 	IdentifierOf: func(item types.Webhook) string { return item.ID },
 }
 
-// Command is the parent command for webhook operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "webhooks",

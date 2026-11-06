@@ -12,11 +12,8 @@
 		children,
 		...restProps
 	}: WithElementRef<HTMLTdAttributes> & {
-		/** Sticky column at the row's right edge that inherits the row's opaque background. */
 		pinned?: boolean;
-		/** `checkbox` and `expander` size narrow control columns; `flush` drops padding for full-width panels. */
 		variant?: 'default' | 'checkbox' | 'expander' | 'flush';
-		/** Indents the first cell of a grouped row. */
 		indent?: boolean;
 	} = $props();
 </script>

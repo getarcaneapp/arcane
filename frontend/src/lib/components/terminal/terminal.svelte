@@ -88,7 +88,8 @@
 			cursorBlink: true,
 			cursorStyle: 'underline',
 			fontSize: 14,
-			fontFamily: 'Mona Sans Mono, monospace',
+			fontFamily:
+				getComputedStyle(document.documentElement).getPropertyValue('--font-code').trim() || 'Mona Sans Mono, monospace',
 			theme: mode.current === 'dark' ? darkTheme : lightTheme
 		});
 

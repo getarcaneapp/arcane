@@ -15,7 +15,6 @@ import (
 )
 
 type (
-	// KVService persists lightweight application state in the kv table.
 	KVService struct {
 		db *database.DB
 	}
@@ -69,8 +68,6 @@ func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]KVEntry,
 	return entries, nil
 }
 
-// GetTyped loads one kv entry and parses it, returning defaultValue when the
-// key is absent or unreadable.
 func (s *KVService) GetTyped[T any](ctx context.Context, key string, defaultValue T, parse func(string) (T, error)) (T, error) {
 	rawValue, ok, err := s.Get(ctx, key)
 	if err != nil || !ok {
@@ -140,7 +137,6 @@ func (s *KVService) CreateIfAbsent(ctx context.Context, key, value string) (bool
 	return result.RowsAffected == 1, nil
 }
 
-// CompareAndSwap updates only the exact value read by the caller.
 func (s *KVService) CompareAndSwap(ctx context.Context, key, previous, next string) (bool, error) {
 	result := s.db.WithContext(ctx).Model(&KVEntry{}).Where("key = ? AND value = ?", key, previous).Updates(map[string]any{"value": next, "updated_at": time.Now()})
 	if err := result.Error; err != nil {

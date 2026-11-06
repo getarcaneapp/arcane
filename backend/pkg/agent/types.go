@@ -20,6 +20,7 @@ type (
 	TunnelClient struct {
 		handler                http.Handler
 		cfg                    *Config
+		streamWindowMiB        func() int
 		errCh                  chan error
 		conn                   atomic.Pointer[connBox]
 		preference             atomic.Pointer[transportPreference]
@@ -38,8 +39,6 @@ type (
 		grpcFailures   int
 	}
 
-	// connBox lets the active connection swap atomically on reconnect: an atomic.Value would panic when the
-	// concrete type changes between gRPC and WebSocket.
 	connBox struct {
 		conn TunnelConnection
 	}
@@ -73,9 +72,8 @@ type (
 		ConnectedAt   time.Time
 		LastHeartbeat time.Time
 		Conn          TunnelConnection
-		// HTTPClient sends requests to the agent's router over the multiplexed session; use MuxAgentBaseURL as the origin.
-		HTTPClient *http.Client
-		done       chan struct{}
+		HTTPClient    *http.Client
+		done          chan struct{}
 
 		mux           *muxSession
 		Host          *AgentHostInfo
@@ -107,24 +105,25 @@ type (
 	TunnelServer struct {
 		MTLS *MTLS
 
-		registry       *TunnelRegistry
-		resolver       EnvironmentResolver
-		statusCallback StatusUpdateCallback
-		eventCallback  EventCallback
-		statusMu       sync.Mutex
+		registry        *TunnelRegistry
+		resolver        EnvironmentResolver
+		statusCallback  StatusUpdateCallback
+		eventCallback   EventCallback
+		streamWindowMiB func() int
+		statusMu        sync.Mutex
 	}
 
 	TunnelServerOptions struct {
-		Registry       *TunnelRegistry
-		Resolver       EnvironmentResolver
-		StatusCallback StatusUpdateCallback
-		MTLS           *MTLS
-		EventCallback  EventCallback
+		Registry        *TunnelRegistry
+		Resolver        EnvironmentResolver
+		StatusCallback  StatusUpdateCallback
+		MTLS            *MTLS
+		EventCallback   EventCallback
+		StreamWindowMiB func() int
 	}
 
 	streamIdentityKey struct{}
 
-	// streamIdentity is what the gRPC auth interceptor verified for a tunnel stream.
 	streamIdentity struct {
 		environmentID string
 		securityMode  string
@@ -136,7 +135,6 @@ type (
 		ctx context.Context
 	}
 
-	// GeneratedMTLSFile describes a generated file that should be copied to the agent host.
 	GeneratedMTLSFile struct {
 		Name          string `json:"name"`
 		Content       string `json:"content"`
@@ -144,7 +142,6 @@ type (
 		Permissions   string `json:"permissions"`
 	}
 
-	// GeneratedMTLSAssets contains manager-generated agent client certificates and snippet metadata.
 	GeneratedMTLSAssets struct {
 		HostDirHint string              `json:"hostDirHint"`
 		Files       []GeneratedMTLSFile `json:"files"`
@@ -178,9 +175,10 @@ type (
 	}
 
 	TunnelClientConfig struct {
-		Config  *Config
-		Handler http.Handler
-		Errors  chan error
+		Config          *Config
+		Handler         http.Handler
+		Errors          chan error
+		StreamWindowMiB func() int
 	}
 
 	MTLSConfig struct {
@@ -221,9 +219,7 @@ type (
 		CPUs          int32  `json:"cpus,omitempty"`
 	}
 
-	// TunnelRuntimeState describes the live, in-memory state of an active agent tunnel.
 	TunnelRuntimeState struct {
-		// RoundTripTime is the last keepalive round trip.
 		RoundTripTime *time.Duration
 		RTTMin        *time.Duration
 		RTTAvg        *time.Duration
@@ -238,14 +234,12 @@ type (
 		State         string
 		RemoteAddr    string
 		Capabilities  []string
-		// OpenStreams counts open mux streams, including pooled idle ones.
 		OpenStreams   int
 		BytesIn       int64
 		BytesOut      int64
 		StreamsOpened int64
 	}
 
-	// TunnelMessage is the register handshake both peers exchange before switching to the multiplexed data plane.
 	TunnelMessage struct {
 		ID            string            `json:"id"`
 		Type          TunnelMessageType `json:"type"`
@@ -262,7 +256,6 @@ type (
 		DrainPrevious bool              `json:"drain_previous,omitempty"`
 	}
 
-	// TunnelEvent is an event payload sent from an agent to the manager.
 	TunnelEvent struct {
 		Type         string `json:"type"`
 		Severity     string `json:"severity,omitempty"`
@@ -283,7 +276,6 @@ type (
 		muxed  atomic.Bool
 	}
 
-	// GRPCManagerTunnelConn wraps the manager-side gRPC tunnel stream.
 	GRPCManagerTunnelConn struct {
 		stream grpcManagerStream
 		cancel context.CancelFunc
@@ -292,7 +284,6 @@ type (
 		muxed  atomic.Bool
 	}
 
-	// GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.
 	GRPCAgentTunnelConn struct {
 		stream grpcAgentStream
 		cancel context.CancelFunc
@@ -301,7 +292,6 @@ type (
 		muxed  atomic.Bool
 	}
 
-	// muxSession is the manager end of a multiplexed data plane. Dials wait until ready closes.
 	muxSession struct {
 		ready   chan struct{}
 		closed  chan struct{}
@@ -318,7 +308,6 @@ type (
 		mu        sync.Mutex
 	}
 
-	// muxConn adapts a message transport to the byte stream yamux runs on.
 	muxConn struct {
 		err            error
 		recv           func() ([]byte, error)

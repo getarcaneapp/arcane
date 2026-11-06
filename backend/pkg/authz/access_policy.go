@@ -3,9 +3,6 @@ package authz
 import "slices"
 
 type (
-	// AccessSurface describes one frontend-visible surface whose reachability is
-	// derived from backend-owned permission metadata. This is decision metadata for
-	// UX gating; backend middleware and service checks remain authoritative.
 	AccessSurface struct {
 		ID            string
 		Kind          string
@@ -21,32 +18,26 @@ type (
 )
 
 const (
-	AccessSurfaceKindRoute             = "route"
-	AccessSurfaceKindSettingsCategory  = "settings-category"
-	AccessSurfaceKindCustomizeCategory = "customize-category"
-	AccessSurfaceKindLanding           = "landing"
-	AccessModePermissions              = "permissions"
-	AccessModeAnyChild                 = "any-child"
-	AccessMatchModeAnyOf               = "any-of"
-	AccessMatchModeAllOf               = "all-of"
-	AccessScopeModeGlobalOnly          = "global-only"
-	AccessScopeModeEnvPlusGlobal       = "env-plus-global"
-	AccessScopeModeAnyEffectiveScope   = "any-effective-scope"
+	AccessSurfaceKindRoute            = "route"
+	AccessSurfaceKindSettingsCategory = "settings-category"
+	AccessSurfaceKindLanding          = "landing"
+	AccessModePermissions             = "permissions"
+	AccessModeAnyChild                = "any-child"
+	AccessMatchModeAnyOf              = "any-of"
+	AccessMatchModeAllOf              = "all-of"
+	AccessScopeModeGlobalOnly         = "global-only"
+	AccessScopeModeEnvPlusGlobal      = "env-plus-global"
+	AccessScopeModeAnyEffectiveScope  = "any-effective-scope"
 )
 
 var (
 	accessSurfaces = []AccessSurface{
-		landingSurface("landing.customize", "/customize", "Customize", []string{
-			"customize.category.templates",
-			"customize.category.registries",
-			"customize.category.variables",
-			"customize.category.git-repositories",
-		}, 40),
 		landingSurface("landing.settings", "/settings", "Settings", []string{
 			"settings.category.storage",
 			"settings.category.docker",
 			"settings.category.security",
 			"settings.category.timeouts",
+			"settings.category.tunnel",
 			"settings.category.activity",
 			"settings.category.build",
 			"settings.category.jobschedule",
@@ -108,10 +99,14 @@ var (
 		routeSurface("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsList}, 110),
 		routeSurface("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesList, PermActivitiesRead}, 0),
 		allOfRouteSurface("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
-		allOfRouteSurface("route.customize.templates.create", "/customize/templates/create", "Create template", AccessScopeModeGlobalOnly, []string{PermTemplatesCreate}),
-		allOfRouteSurface("route.customize.templates.default", "/customize/templates/default", "Default template", AccessScopeModeGlobalOnly, []string{PermTemplatesUpdate}),
-		routeSurface("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermTemplatesList, PermTemplatesRead}, 0),
-		allOfRouteSurface("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
+		routeSurface("route.projects.templates", "/projects/templates", "Templates", AccessScopeModeGlobalOnly, []string{PermTemplatesList, PermTemplatesRead}, 40),
+		allOfRouteSurface("route.projects.templates.create", "/projects/templates/create", "Create template", AccessScopeModeGlobalOnly, []string{PermTemplatesCreate}),
+		allOfRouteSurface("route.projects.templates.default", "/projects/templates/default", "Default template", AccessScopeModeGlobalOnly, []string{PermTemplatesUpdate}),
+		routeSurface("route.projects.templates.detail", "/projects/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermTemplatesList, PermTemplatesRead}, 0),
+		routeSurface("route.images.registries", "/images/registries", "Container Registries", AccessScopeModeGlobalOnly, []string{PermRegistriesList, PermRegistriesRead}, 41),
+		allOfRouteSurface("route.images.registries.browse", "/images/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
+		routeSurface("route.projects.variables", "/projects/variables", "Variables", AccessScopeModeGlobalOnly, []string{PermVariablesList, PermVariablesRead}, 42),
+		routeSurface("route.gitops.repositories", "/gitops/repositories", "Git Repositories", AccessScopeModeGlobalOnly, []string{PermGitReposList, PermGitReposRead}, 43),
 
 		settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
 		allOfSettingsCategorySurface("authentication", "/system/authentication", "Authentication", AccessScopeModeGlobalOnly, AllPermissions()),
@@ -128,21 +123,15 @@ var (
 		settingsCategorySurface("docker", "/settings/docker", "Docker", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("security", "/settings/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("timeouts", "/settings/timeouts", "Timeouts", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
+		settingsCategorySurface("tunnel", "/settings/tunnel", "Agent Tunnel", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("activity", "/settings/activity", "Activity", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("build", "/settings/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		allOfSettingsCategorySurface("jobschedule", "/settings/automations", "Automations", AccessScopeModeEnvPlusGlobal, []string{PermJobsList, PermEnvironmentSettingsRead}),
-
-		customizeCategorySurface("templates", "/customize/templates", "Templates", []string{PermTemplatesList, PermTemplatesRead}),
-		customizeCategorySurface("registries", "/customize/registries", "Container Registries", []string{PermRegistriesList, PermRegistriesRead}),
-		customizeCategorySurface("variables", "/customize/variables", "Variables", []string{PermVariablesList, PermVariablesRead}),
-		customizeCategorySurface("git-repositories", "/customize/git-repositories", "Git Repositories", []string{PermGitReposList, PermGitReposRead}),
 	}
 
 	accessSurfacesByID = buildAccessSurfaceIndex(accessSurfaces)
 )
 
-// AccessSurfaces returns a defensive copy of every backend-owned access
-// surface in stable evaluation order.
 func AccessSurfaces() []AccessSurface {
 	out := make([]AccessSurface, len(accessSurfaces))
 	for i, surface := range accessSurfaces {
@@ -153,9 +142,6 @@ func AccessSurfaces() []AccessSurface {
 	return out
 }
 
-// CanAccessSurface evaluates backend-owned UI reachability metadata for the
-// caller. It is for advisory UX only; middleware and handlers still enforce
-// permissions on actual API requests.
 func CanAccessSurface(ps *PermissionSet, surfaceID, envID string) bool {
 	if ps == nil {
 		return false
@@ -268,19 +254,6 @@ func allOfSettingsCategorySurface(categoryID, url, label, scopeMode string, perm
 	surface := settingsCategorySurface(categoryID, url, label, scopeMode, permissions)
 	surface.MatchMode = AccessMatchModeAllOf
 	return surface
-}
-
-func customizeCategorySurface(categoryID, url, label string, permissions []string) AccessSurface {
-	return AccessSurface{
-		ID:          "customize.category." + categoryID,
-		Kind:        AccessSurfaceKindCustomizeCategory,
-		URL:         url,
-		Label:       label,
-		AccessMode:  AccessModePermissions,
-		MatchMode:   AccessMatchModeAnyOf,
-		ScopeMode:   AccessScopeModeGlobalOnly,
-		Permissions: append([]string(nil), permissions...),
-	}
 }
 
 func landingSurface(id, url, label string, children []string, fallbackOrder int) AccessSurface {

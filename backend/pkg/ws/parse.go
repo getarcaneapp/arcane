@@ -10,13 +10,6 @@ import (
 // Docker's RFC3339 timestamp when timestamps=true
 var dockerTimestamp = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+`)
 
-// stripStreamMetadata removes one leading Arcane stderr marker and one
-// leading Docker RFC3339 timestamp (in either order) from the front of line.
-// It reports whether the marker was removed and, when allowTimestamp is true
-// and a valid Docker timestamp was found, its normalized value. The transport
-// adds at most one marker and one timestamp per line, so anything past the
-// first of each is application content and stays; timestamps that fail to
-// parse are left in place.
 func stripStreamMetadata(line string, allowTimestamp bool) (rest string, sawStderr bool, timestamp string) {
 	for {
 		line = strings.TrimLeft(line, " \t")
@@ -54,8 +47,6 @@ func trimTrailingNewlines(raw string) string {
 	return raw[:end]
 }
 
-// NormalizeContainerLine parses a raw container log line into level + cleaned message.
-// It extracts Docker's timestamp if present (when timestamps=true in Docker API).
 func NormalizeContainerLine(raw string) (level, msg, timestamp string) {
 	level = "stdout"
 
@@ -68,12 +59,6 @@ func NormalizeContainerLine(raw string) (level, msg, timestamp string) {
 	return level, strings.TrimSpace(line), timestamp
 }
 
-// NormalizeProjectLine additionally extracts service (pattern: service | message).
-// It normalizes markers and Docker timestamps both before and after splitting
-// the service prefix so either ordering resolves; stderr classification wins
-// if either pass detects it, and the first valid Docker timestamp found is
-// used and removed from the message. Application-generated timestamps deeper
-// inside the message are preserved.
 func NormalizeProjectLine(raw string) (level, service, msg, timestamp string) {
 	level = "stdout"
 	service = ""

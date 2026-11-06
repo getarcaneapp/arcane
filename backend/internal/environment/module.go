@@ -1,5 +1,3 @@
-// Package environment owns environment persistence, remote runtime state, pairing,
-// synchronization, and its HTTP and stream surfaces.
 package environment
 
 import (
@@ -68,7 +66,6 @@ func (m *Module) Handler() *EnvironmentHandler {
 	return m.handler
 }
 
-// RegisterRoutes registers the environment endpoints; localVersion answers version requests for the local environment.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *types.VersionInfo) {
 	if m == nil {
 		RegisterEnvironments(api, NewHandler(HandlerParams{}))
@@ -91,7 +88,6 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	RegisterEnvironments(api, m.handler)
 }
 
-// RegisterEnvironments registers all environment management endpoints.
 func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listEnvironments",
@@ -101,10 +97,6 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Get a paginated list of Docker environments",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		// No global PermEnvironmentsList gate: this endpoint also backs the
-		// environment switcher, so any authenticated caller may list. The handler
-		// filters the result to the environments the caller can actually access.
-		// Management mutations (create/update/delete) remain global-gated below.
 	}, h.ListEnvironments)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

@@ -45,8 +45,7 @@ type (
 )
 
 const (
-	TunnelStaleTimeout = 2 * time.Minute
-	// tunnelStaleSweepInterval backs up read-deadline liveness, so it runs well under TunnelStaleTimeout.
+	TunnelStaleTimeout       = 2 * time.Minute
 	tunnelStaleSweepInterval = time.Minute
 )
 
@@ -60,16 +59,15 @@ func NewTunnelServer(opts TunnelServerOptions) *TunnelServer {
 	})
 
 	return &TunnelServer{
-		MTLS:           opts.MTLS,
-		registry:       opts.Registry,
-		resolver:       opts.Resolver,
-		statusCallback: opts.StatusCallback,
-		eventCallback:  opts.EventCallback,
+		MTLS:            opts.MTLS,
+		registry:        opts.Registry,
+		resolver:        opts.Resolver,
+		statusCallback:  opts.StatusCallback,
+		eventCallback:   opts.EventCallback,
+		streamWindowMiB: opts.StreamWindowMiB,
 	}
 }
 
-// GRPCServerOptions returns the receive limit and stream interceptors for the tunnel service.
-// It is served through ServeHTTP, so transport keepalive options belong on net/http.
 func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 	recovery := func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
@@ -127,6 +125,7 @@ func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 
 	return []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxGRPCTunnelMessageSize),
+		grpc.ForceServerCodecV2(tunnelCodec),
 		grpc.ChainStreamInterceptor(recovery, logStream, auth),
 	}
 }
@@ -216,7 +215,6 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	return nil
 }
 
-// Connect is the gRPC bidi stream handler for agent connections.
 func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMessage, tunnelpb.ManagerMessage]) error {
 	ctx := stream.Context()
 
@@ -270,8 +268,6 @@ func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (st
 	return s.resolver(ctx, token)
 }
 
-// agentToken returns the first agent token from X-Arcane-Agent-Token, X-API-Key, then
-// "Authorization: Bearer", for proxies that strip custom headers, plus the header that supplied it.
 func agentToken(values func(key string) []string) (string, string) {
 	for _, header := range []string{HeaderAgentToken, HeaderAPIKey} {
 		if tokens := kit.TrimNonEmpty(values(header)); len(tokens) > 0 {
@@ -396,8 +392,6 @@ func (s *contextualServerStream) Context() context.Context {
 	return s.ctx
 }
 
-// requireCertificateIdentity checks a direct-TLS client certificate against envID. A nil state
-// means TLS ended before Arcane, such as at a proxy, so only the token applies.
 func (s *TunnelServer) requireCertificateIdentity(state *tls.ConnectionState, envID string) error {
 	if s.MTLS.Mode == MTLSModeDisabled || state == nil {
 		return nil

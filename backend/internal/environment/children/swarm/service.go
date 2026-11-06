@@ -1,5 +1,3 @@
-// Package swarm owns swarm-node agent provisioning, node binding policy, and
-// agent API-key rotation; the parent persists environment rows.
 package swarm
 
 import (
@@ -26,8 +24,6 @@ func New(apiKeys *apikey.ApiKeyService) *Service {
 	return &Service{apiKeys: apiKeys}
 }
 
-// AgentIdentity validates a node agent request and returns the name and API URL
-// for a newly provisioned agent environment.
 func (s *Service) AgentIdentity(parentEnvironmentID, nodeID, hostname string) (string, string, error) {
 	if strings.TrimSpace(parentEnvironmentID) == "" {
 		return "", "", errors.New("parent environment ID is required")
@@ -38,9 +34,6 @@ func (s *Service) AgentIdentity(parentEnvironmentID, nodeID, hostname string) (s
 	return cmp.Or(strings.TrimSpace(hostname), "Swarm Node "+nodeID[:min(len(nodeID), 12)]), "agent://swarm-node-" + nodeID[:min(len(nodeID), 12)], nil
 }
 
-// AuthorizeBinding rejects bindings that would silently move an environment or
-// replace a node's visible binding unless rebind is set. countVisibleBindings
-// returns the other visible environments already bound to the node.
 func (s *Service) AuthorizeBinding(
 	candidate types.SwarmBindingCandidate,
 	parentEnvironmentID, nodeID string,
@@ -89,11 +82,6 @@ func (s *Service) RotateApiKey(
 		return "", linkErr
 	}
 
-	// Delete the previous key only after the environment points at the new
-	// one — while still referenced it is protected and the delete would be
-	// rejected. Failure is non-fatal for the rotation itself, but the old key
-	// remains a valid credential until deleted, so log it as an error; the key
-	// stays visible and deletable on the API Keys page.
 	if mo.PointerToOption(previousApiKeyID).OrElse(apiKeyDto.ID) != apiKeyDto.ID {
 		if deleteApiKeyErr := s.apiKeys.DeleteApiKey(ctx, *previousApiKeyID); deleteApiKeyErr != nil && !errors.Is(deleteApiKeyErr, apikey.ErrApiKeyNotFound) {
 			slog.ErrorContext(ctx, "Failed to delete previous environment API key; the old key remains valid until deleted manually", "environmentId", environmentID, "error", deleteApiKeyErr.Error())

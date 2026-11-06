@@ -492,7 +492,6 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	service := NewTemplateService(t.Context(), db, client, settingsSvc)
 	service.lookupIP = lookupIP
 
-	// Cache starts empty; GetTemplate for a remote ID should force a refresh and find the template.
 	got, err := service.GetTemplate(t.Context(), "remote:reg-1:affine")
 	require.NoError(t, err)
 	require.NotNil(t, got)
@@ -500,7 +499,6 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	require.Equal(t, "AFFiNE", got.Name)
 	require.GreaterOrEqual(t, registryHits.Load(), int32(1), "registry should be fetched at least once")
 
-	// Unknown remote ID still surfaces a clear error after the forced refresh.
 	_, err = service.GetTemplate(t.Context(), "remote:reg-1:does-not-exist")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found")

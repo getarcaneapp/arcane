@@ -39,7 +39,6 @@ export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'i
 	return result;
 }
 
-/** Emits a single toast describing an updater run's updated/failed/skipped tally. */
 export function summarizeUpdateResult(result: UpdaterResult) {
 	const options = activityToastOptions(result.activityId);
 	const updated = (result.updated ?? 0) + (result.restarted ?? 0);

@@ -1,5 +1,7 @@
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
+import type { Component } from 'svelte';
+import type { SVGAttributes } from 'svelte/elements';
 
 import {
 	ApiKeyIcon,
@@ -15,7 +17,6 @@ import {
 	NetworksIcon,
 	VolumesIcon,
 	HashIcon,
-	DockIcon,
 	JobsIcon,
 	LayersIcon,
 	EventsIcon,
@@ -29,13 +30,13 @@ import {
 	VariableIcon,
 	ActivityIcon,
 	BackupIcon,
-	BoxIcon,
 	FileTextIcon,
 	DockerBrandIcon,
 	SecurityIcon,
 	ClockIcon,
 	CodeIcon,
-	MonitorIcon
+	MonitorIcon,
+	AgentIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -50,7 +51,7 @@ import type { ShortcutKey } from '#lib/utils/navigation.js';
 export type NavigationItem = {
 	title: string;
 	url: ResolvedPathname;
-	icon: any;
+	icon: Component<SVGAttributes<SVGSVGElement> & { size?: number }>;
 	shortcut?: ShortcutKey[];
 	items?: NavigationItem[];
 	accessSurfaceId?: string;
@@ -85,7 +86,7 @@ export const navigationItems: NavigationSections = {
 			title: m.security(),
 			url: resolve('/(app)/security'),
 			requiredFeature: 'vulnerabilityManagement',
-			icon: ShieldAlertIcon,
+			icon: SecurityIcon,
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
 		{
@@ -106,15 +107,15 @@ export const navigationItems: NavigationSections = {
 			items: [
 				{
 					title: m.templates_title(),
-					url: resolve('/(app)/customize/templates'),
+					url: resolve('/(app)/projects/templates'),
 					icon: TemplateIcon,
-					accessSurfaceId: 'customize.category.templates'
+					accessSurfaceId: 'route.projects.templates'
 				},
 				{
 					title: m.variables_title(),
-					url: resolve('/(app)/customize/variables'),
+					url: resolve('/(app)/projects/variables'),
 					icon: VariableIcon,
-					accessSurfaceId: 'customize.category.variables'
+					accessSurfaceId: 'route.projects.variables'
 				}
 			]
 		},
@@ -127,9 +128,9 @@ export const navigationItems: NavigationSections = {
 			items: [
 				{
 					title: m.git_repositories_title(),
-					url: resolve('/(app)/customize/git-repositories'),
+					url: resolve('/(app)/gitops/repositories'),
 					icon: GitBranchIcon,
-					accessSurfaceId: 'customize.category.git-repositories'
+					accessSurfaceId: 'route.gitops.repositories'
 				}
 			]
 		}
@@ -152,9 +153,9 @@ export const navigationItems: NavigationSections = {
 				{ title: m.builds(), url: resolve('/(app)/images/builds'), icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
 				{
 					title: m.registries_title(),
-					url: resolve('/(app)/customize/registries'),
+					url: resolve('/(app)/images/registries'),
 					icon: RegistryIcon,
-					accessSurfaceId: 'customize.category.registries'
+					accessSurfaceId: 'route.images.registries'
 				}
 			]
 		},
@@ -183,7 +184,7 @@ export const navigationItems: NavigationSections = {
 		}
 	],
 	swarmItems: [
-		{ title: 'Services', url: resolve('/(app)/swarm/services'), icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: 'Services', url: resolve('/(app)/swarm/services'), icon: ContainersIcon, accessSurfaceId: 'route.swarm.services' },
 		{ title: 'Nodes', url: resolve('/(app)/swarm/nodes'), icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
 		{ title: 'Tasks', url: resolve('/(app)/swarm/tasks'), icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
 		{ title: 'Stacks', url: resolve('/(app)/swarm/stacks'), icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
@@ -192,7 +193,7 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Secrets', url: resolve('/(app)/swarm/secrets'), icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	podmanItems: [
-		{ title: m.podman_pods_title(), url: resolve('/(app)/podman/pods'), icon: BoxIcon, accessSurfaceId: 'route.podman' },
+		{ title: m.podman_pods_title(), url: resolve('/(app)/podman/pods'), icon: ContainersIcon, accessSurfaceId: 'route.podman' },
 		{
 			title: m.podman_quadlets_title(),
 			url: resolve('/(app)/podman/quadlets'),
@@ -251,6 +252,12 @@ export const navigationItems: NavigationSections = {
 					url: resolve('/(app)/settings/timeouts'),
 					icon: ClockIcon,
 					accessSurfaceId: 'settings.category.timeouts'
+				},
+				{
+					title: m.agent_tunnel_settings(),
+					url: resolve('/(app)/settings/tunnel'),
+					icon: AgentIcon,
+					accessSurfaceId: 'settings.category.tunnel'
 				},
 				{
 					title: m.activity(),
@@ -350,7 +357,12 @@ export function filterByPermissions(
 	if (!user || !userHasAnyAccess(user)) return [];
 	const out: NavigationItem[] = [];
 	for (const item of items) {
-		if (!canSeeItem(item, user, accessManifest)) continue;
+		if (!canSeeItem(item, user, accessManifest)) {
+			if (item.items && (!item.requiredFeature || hasShownFeature(item.requiredFeature))) {
+				out.push(...filterByPermissions(item.items, user, accessManifest));
+			}
+			continue;
+		}
 		if (item.items && item.items.length > 0) {
 			const filteredChildren = filterByPermissions(item.items, user, accessManifest);
 			// Drop a parent group only when none of its children survived the
@@ -375,7 +387,6 @@ function canSeeItem(item: NavigationItem, user: User, accessManifest: Permission
 	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user);
 }
 
-/** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
 export function getNavigationTitleForPath(pathname: string): string | undefined {
 	let title: string | undefined;
 	let bestLength = 0;
@@ -396,14 +407,6 @@ export function getNavigationTitleForPath(pathname: string): string | undefined 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {
 	const entry = navigationItems.adminItems.find((item) => item.url === resolve('/(app)/settings'));
 	return entry?.items?.map((item) => item.url) ?? [];
-}
-
-export function getCustomizeSubpageUrlsInNavOrder(): string[] {
-	return Object.values(navigationItems)
-		.flat()
-		.flatMap((item) => item.items ?? [])
-		.map((item) => item.url)
-		.filter((url) => url.startsWith('/customize/'));
 }
 
 const defaultMobilePinnedItems: NavigationItem[] = [
@@ -448,9 +451,7 @@ export function getLandingPageNavItems(): NavigationItem[] {
 
 export type MobileNavigationSettings = {
 	pinnedItems: string[];
-	mode: 'floating' | 'docked';
 	showLabels: boolean;
-	scrollToHide: boolean;
 };
 
 export function getAvailableMobileNavItems(options?: {
@@ -478,7 +479,5 @@ export function getAvailableMobileNavItems(options?: {
 
 export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	pinnedItems: defaultMobilePinnedItems.map((item) => item.url),
-	mode: 'floating',
-	showLabels: true,
-	scrollToHide: true
+	showLabels: true
 };

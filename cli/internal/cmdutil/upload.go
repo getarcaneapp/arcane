@@ -24,8 +24,6 @@ const (
 	uploadChunkAttempts = 3
 )
 
-// UploadFileInChunks sends retried chunks with optional progress and aborts the session on failure.
-// It returns the completed upload session ID.
 func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath string, showProgress bool) (string, error) {
 	log := charmLog.Default()
 
@@ -93,8 +91,6 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 	return session.ID, nil
 }
 
-// AbortUploadSession deletes a chunked upload session, ignoring errors. Use it
-// when the consume step after a completed upload fails.
 func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID string) {
 	if resp, err := c.Request(context.WithoutCancel(ctx), http.MethodDelete, clitypes.UploadSession(c.EnvID(), kind, sessionID), nil); err == nil {
 		_ = resp.Body.Close()

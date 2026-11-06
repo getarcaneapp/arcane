@@ -19,25 +19,17 @@ import (
 )
 
 type (
-	// ListSpec describes a paginated list with raw JSON passthrough or table rendering.
 	ListSpec[T any] struct {
-		// Query holds extra query parameters, applied after pagination.
 		Query url.Values
 
-		Row func(T) []string
-		// Resource names the collection in error messages and the trailing
-		// "Showing x of y <resource>" line.
+		Row      func(T) []string
 		Resource string
-		// Endpoint is the list path (environment already applied).
 		Endpoint string
 
 		Headers []string
-		// Params configures pagination from the command's flags.
-		Params ListParams
+		Params  ListParams
 	}
 
-	// Spec describes a request with raw JSON data output or typed text rendering.
-	// Render is required in text mode; a nil Render returns a programmer error before requesting.
 	Spec[T any] struct {
 		Body                         any
 		Render                       func(T) error
@@ -45,7 +37,6 @@ type (
 		Timeout                      time.Duration
 	}
 
-	// DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
 	DeleteSpec struct {
 		Body                                         any
 		Prompt, Path, FailureMessage, SuccessMessage string
@@ -53,7 +44,6 @@ type (
 	}
 )
 
-// RunList executes one standard list command as described by spec.
 func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) error {
 	loading := output.StartTracker(cmd.Context(), cmd.ErrOrStderr(), !JSONOutputEnabled(cmd), "Loading "+spec.Resource)
 	loading.NextStep()
@@ -116,7 +106,6 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	return PrintTable(cmd, headers, rows, TableSummary{Resource: spec.Resource, Total: result.Pagination.TotalItems, Paginated: true})
 }
 
-// Run enforces a success envelope and prints raw data in JSON mode or invokes Render in text mode.
 func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	jsonMode := JSONOutputEnabled(cmd)
 	if !jsonMode && spec.Render == nil {
@@ -156,7 +145,6 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	return spec.Render(data)
 }
 
-// RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.
 func RunDelete(cmd *cobra.Command, c *client.Client, spec DeleteSpec) error {
 	confirmed, err := ConfirmOrCancel(cmd, ConfirmOptions{Label: spec.Prompt, Force: spec.Force})
 	if err != nil || !confirmed {

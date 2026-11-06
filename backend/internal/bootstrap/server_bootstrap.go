@@ -19,6 +19,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
@@ -28,10 +29,11 @@ type (
 	HTTPServerParams struct {
 		fx.In
 
-		AppCtx       context.Context
-		Config       *config.Config
-		Router       *echo.Echo
-		TunnelServer *agent.TunnelServer
+		AppCtx          context.Context
+		Config          *config.Config
+		Router          *echo.Echo
+		TunnelServer    *agent.TunnelServer
+		SettingsService *settings.SettingsService
 	}
 )
 
@@ -46,7 +48,6 @@ var serverOptions = fx.Options(
 	),
 )
 
-// NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if p.Config.AgentEnabled {
 		return &http.Server{Handler: p.Router}, nil
@@ -95,6 +96,7 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
 
+	http2Window := p.SettingsService.GetSettingsOrDefaults(p.AppCtx).HTTP2ReceiveWindowMb.AsInt() << 20
 	// Request contexts deliberately do not inherit the app lifecycle marker.
 	baseCtx, cancelBase := context.WithCancel(context.Background()) //nolint:forbidigo // HTTP requests need a root without the application lifecycle marker.
 	srv := &http.Server{
@@ -107,10 +109,9 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 		// Long-lived stream handlers tune dead-peer detection per connection; see handlerutil.SetDeadPeerTimeout.
 		ConnContext: httpx.WithConn,
-		// Agent gRPC tunnels are one long HTTP/2 stream, so the 1 MiB default window would cap agent throughput per RTT.
 		HTTP2: &http.HTTP2Config{
-			MaxReceiveBufferPerStream:     8 << 20,
-			MaxReceiveBufferPerConnection: 16 << 20,
+			MaxReceiveBufferPerStream:     http2Window,
+			MaxReceiveBufferPerConnection: 2 * http2Window,
 			SendPingTimeout:               30 * time.Second,
 			PingTimeout:                   10 * time.Second,
 		},

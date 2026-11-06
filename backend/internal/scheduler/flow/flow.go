@@ -1,19 +1,3 @@
-// Package flow runs durable multi-step jobs as Francis workflows inside
-// coordinator runs. The run stays the source of truth for status, the Jobs UI,
-// and Activity; the workflow instance is its execution graph.
-//
-// Migrating a job:
-//  1. Write each step as a func(ctx context.Context, t flow.Task) (any, error), inline in the definition
-//     unless it is shared or too complex to inline.
-//     Return common.Classify(common.ErrUnavailable or common.ErrTimeout, err) to retry; other errors fail the task.
-//     Tasks run at least once, so confirm external effects before repeating them.
-//  2. Keep inputs and outputs small: keys, not lists of data, since Francis ships the instance input with
-//     every task. Keep data in domain tables and never put secrets in a payload.
-//  3. Define the workflow with Engine.Define in a RegisterWorkflows method called from the service's DI
-//     provider. The last step returns scheduler.Outcome.
-//  4. Register a flow.Job in place of the old job.
-//  5. Cover the definition with flowtest.AssertDefinitions. On any graph or policy change, bump Version and
-//     set Fingerprint to the value the test reports.
 package flow
 
 import (
@@ -44,12 +28,9 @@ import (
 )
 
 type (
-	// Definition declares a workflow. Bump Version and update Fingerprint on any
-	// graph or policy change; flowtest.AssertDefinitions reports the new value.
 	Definition struct {
 		// Activity is the template for the activity each root instance owns; an empty Type means none.
-		Activity activitylib.StartRequest
-		// Labels name steps on the activity; steps without one show their name.
+		Activity    activitylib.StartRequest
 		Labels      map[string]string
 		Name        string
 		Fingerprint string
@@ -61,13 +42,11 @@ type (
 		Concurrency int
 		Timeout     time.Duration
 	}
-	// Workflow is a defined workflow registered on the engine's host.
 	Workflow struct {
 		wf  *workflow.Workflow
 		svc *workflow.WorkflowService
 		def Definition
 	}
-	// Activities is the activity service surface the engine drives.
 	Activities interface {
 		activitylib.Service
 		activitylib.MessageAppender
@@ -75,7 +54,6 @@ type (
 		UpdateActivity(ctx context.Context, activityID string, req activitylib.UpdateRequest) (*types.Activity, error)
 		AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error
 	}
-	// Engine defines workflows, runs them inside coordinator runs, and owns their activities.
 	Engine struct {
 		activities Activities
 		ctx        context.Context
@@ -99,7 +77,6 @@ type (
 		readyOnce sync.Once
 		mu        sync.Mutex
 	}
-	// rootCancellation interrupts every running task of one root instance.
 	rootCancellation struct {
 		ctx    context.Context
 		cancel context.CancelCauseFunc
@@ -109,20 +86,15 @@ type (
 const (
 	defaultMaxPayloadSize = 256 << 10
 	defaultMaxJournalSize = 4 << 20
-	// stepWriteInterval bounds how often step progress rewrites the run record.
-	stepWriteInterval = 500 * time.Millisecond
-	// evidenceActorType stores the target progress of standalone instances, which have no run to hold it.
-	evidenceActorType = "workflow-evidence"
+	stepWriteInterval     = 500 * time.Millisecond
+	evidenceActorType     = "workflow-evidence"
 )
 
 var (
-	// ErrNotResumable reports that a run has no workflow instance this host can serve.
-	ErrNotResumable = errors.New("workflow instance cannot be resumed")
-	// errInstanceFinished releases a root's cancellation once the instance ends.
+	ErrNotResumable     = errors.New("workflow instance cannot be resumed")
 	errInstanceFinished = errors.New("workflow instance finished")
 )
 
-// New builds an engine whose monitors live until appCtx ends or Stop is called.
 func New(appCtx context.Context, runtime *francis.Runtime, coordinator *runs.Coordinator, activities Activities) (*Engine, error) {
 	if err := runtime.RegisterActor(evidenceActorType, func(string, *actor.Service) actor.Actor { return struct{}{} }); err != nil {
 		return nil, err
@@ -143,7 +115,6 @@ func New(appCtx context.Context, runtime *francis.Runtime, coordinator *runs.Coo
 	}, nil
 }
 
-// Define validates and registers a workflow. It must run before the host starts.
 func (e *Engine) Define(def Definition) (*Workflow, error) {
 	switch {
 	case def.Version < 1:
@@ -180,20 +151,16 @@ func (e *Engine) Define(def Definition) (*Workflow, error) {
 	return defined, nil
 }
 
-// Fingerprint is the graph hash the definition declares for its version.
 func (w *Workflow) Fingerprint() string { return w.def.Fingerprint }
 
-// Francis exposes the underlying definition for use with workflow.WithChild.
 func (w *Workflow) Francis() *workflow.Workflow { return w.wf }
 
-// Workflows lists every defined workflow.
 func (e *Engine) Workflows() []*Workflow {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return slices.Clone(e.workflows)
 }
 
-// Start monitors every unfinished root instance so activities complete without a caller.
 func (e *Engine) Start(ctx context.Context) error {
 	return e.eachRoot(ctx, func(wf *Workflow, instanceID string) error {
 		e.monitor(wf, instanceID)
@@ -201,13 +168,10 @@ func (e *Engine) Start(ctx context.Context) error {
 	})
 }
 
-// Ready lets standalone tasks run once startup recovery has protected the work Standalone reported.
 func (e *Engine) Ready() {
 	e.readyOnce.Do(func() { close(e.ready) })
 }
 
-// Standalone lists unfinished instances started by Submit or an unbound Run as runs of the workflow's
-// name, carrying the targets their tasks recorded, so startup recovery can protect their work.
 func (e *Engine) Standalone(ctx context.Context) ([]types.SchedulerRun, error) {
 	var standalone []types.SchedulerRun
 	err := e.eachRoot(ctx, func(wf *Workflow, instanceID string) error {
@@ -224,7 +188,6 @@ func (e *Engine) Standalone(ctx context.Context) ([]types.SchedulerRun, error) {
 	return standalone, err
 }
 
-// eachRoot visits every unfinished root instance of every defined workflow.
 func (e *Engine) eachRoot(ctx context.Context, visit func(wf *Workflow, instanceID string) error) error {
 	for _, wf := range e.Workflows() {
 		for _, status := range []workflow.Status{workflow.StatusPending, workflow.StatusRunning, workflow.StatusSuspended, workflow.StatusCompensating} {
@@ -251,15 +214,11 @@ func (e *Engine) eachRoot(ctx context.Context, visit func(wf *Workflow, instance
 	return nil
 }
 
-// Stop ends monitoring; unfinished instances resume on the next Start.
 func (e *Engine) Stop(context.Context) error {
 	e.cancel()
 	return nil
 }
 
-// Run starts the workflow, or attaches to the run's active instance, and waits for its outcome. A run in
-// ctx (jobcontext.Run) binds the instance to that run; set fields of activity override the definition's
-// activity template; a non-nil output receives the last step's data alongside its scheduler.Outcome fields.
 func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, output any) (types.SchedulerOutcome, error) {
 	run, bound := jobcontext.Run(ctx)
 	instanceID := ""
@@ -294,9 +253,6 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity ac
 	return outcome, status.DecodeOutput(output)
 }
 
-// Submit starts a standalone instance without waiting for it and returns its ID,
-// which is also its activity's ID. Its tasks record target progress like a run's;
-// evidence is recorded before the instance starts, such as the record it owns.
 func (e *Engine) Submit(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, evidence ...types.TargetOutcome) (string, error) {
 	instanceID, err := e.startInstance(ctx, wf, types.SchedulerRun{}, false, payload, activity, evidence)
 	if err != nil {
@@ -306,7 +262,6 @@ func (e *Engine) Submit(ctx context.Context, wf *Workflow, payload any, activity
 	return instanceID, nil
 }
 
-// Wait blocks until a submitted instance finishes, ctx ends, or the engine stops.
 func (e *Engine) Wait(ctx context.Context, wf *Workflow, instanceID string) (types.SchedulerOutcome, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -314,9 +269,6 @@ func (e *Engine) Wait(ctx context.Context, wf *Workflow, instanceID string) (typ
 	return e.await(ctx, wf, types.SchedulerRun{}, false, instanceID)
 }
 
-// Resume attaches to the run's active instance, or reads the result of one that finished before the run saved it.
-// When the instance is gone or belongs to a version this host no longer serves, a recorded non-failed result is
-// returned; otherwise it returns ErrNotResumable so the job's fallback can run.
 func (e *Engine) Resume(ctx context.Context, wf *Workflow, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	target, ok := activeTarget(run, wf.def.Name, true)
 	if !ok {
@@ -343,8 +295,6 @@ func (e *Engine) Resume(ctx context.Context, wf *Workflow, run types.SchedulerRu
 	return e.await(ctx, wf, run, true, target.ID)
 }
 
-// Retire cancels the run's unfinished instance without resuming it, such as for a job that was disabled. An instance
-// that finished before the run saved its result reports that result instead, with finished set.
 func (e *Engine) Retire(ctx context.Context, wf *Workflow, run types.SchedulerRun, reason string) (outcome types.SchedulerOutcome, finished bool, err error) {
 	if target, ok := activeTarget(run, wf.def.Name, true); ok && target.Status.Terminal() {
 		if outcome, err = e.Resume(ctx, wf, run); !errors.Is(err, ErrNotResumable) {
@@ -454,15 +404,12 @@ func (e *Engine) startActivity(ctx context.Context, wf *Workflow, activityID, en
 	return nil
 }
 
-// untrack drops a starting activity's registration; the engine only holds it until the monitor starts.
 func (e *Engine) untrack(activityID string) {
 	e.mu.Lock()
 	delete(e.tracked, activityID)
 	e.mu.Unlock()
 }
 
-// await waits for the instance's outcome, projecting steps onto a bound run at
-// most every stepWriteInterval.
 func (e *Engine) await(ctx context.Context, wf *Workflow, run types.SchedulerRun, bound bool, instanceID string) (types.SchedulerOutcome, error) {
 	monitor := e.monitor(wf, instanceID)
 	var recorded []types.StepOutcome
@@ -502,7 +449,6 @@ func (e *Engine) await(ctx context.Context, wf *Workflow, run types.SchedulerRun
 	}
 }
 
-// supersede retires an instance that a run no longer follows.
 func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.TargetOutcome, reason string) {
 	target.Status = types.RunStatusFailed
 	target.Message = reason
@@ -527,7 +473,6 @@ func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.Targe
 	}
 }
 
-// admit lets the run's tasks execute until the returned func is called.
 func (e *Engine) admit(runID string) func() {
 	e.mu.Lock()
 	e.admitted[runID] = struct{}{}
@@ -539,7 +484,6 @@ func (e *Engine) admit(runID string) func() {
 	}
 }
 
-// rootContext is canceled, with the user's cause, when a root instance is canceled.
 func (e *Engine) rootContext(rootID string) context.Context {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -552,7 +496,6 @@ func (e *Engine) rootContext(rootID string) context.Context {
 	return root.ctx
 }
 
-// cancelRoot interrupts the running tasks of a root instance and its children.
 func (e *Engine) cancelRoot(rootID string, cause error) {
 	e.mu.Lock()
 	root, ok := e.roots[rootID]
@@ -573,8 +516,6 @@ func (e *Engine) releaseRoot(rootID string) {
 	}
 }
 
-// activeTarget returns the run's latest instance of a workflow and whether the run may attach to it: an unfinished
-// instance, or when recovering, a finished one whose attempt ended before the run saved its result.
 func activeTarget(run types.SchedulerRun, name string, recovering bool) (types.TargetOutcome, bool) {
 	for _, target := range slices.Backward(run.Outcome.Targets) {
 		if target.ResourceType != types.SchedulerWorkflowTarget || !isInstanceOf(target.ID, name) {
@@ -598,7 +539,6 @@ func activeTarget(run types.SchedulerRun, name string, recovering bool) (types.T
 	return types.TargetOutcome{}, false
 }
 
-// isInstanceOf matches run-bound instance IDs of the form <name>-<runID>-<attempt>.
 func isInstanceOf(instanceID, name string) bool {
 	rest, ok := strings.CutPrefix(instanceID, name+"-")
 	if !ok || len(rest) < 38 || rest[36] != '-' {
@@ -608,7 +548,6 @@ func isInstanceOf(instanceID, name string) bool {
 	return err == nil
 }
 
-// rootWorkflow returns the workflow a root instance ID belongs to: <name>-<uuid> standalone, or <name>-<runID>-<attempt>.
 func (e *Engine) rootWorkflow(rootID string) *Workflow {
 	for _, wf := range e.Workflows() {
 		rest, ok := strings.CutPrefix(rootID, wf.def.Name+"-")
@@ -622,8 +561,6 @@ func (e *Engine) rootWorkflow(rootID string) *Workflow {
 	return nil
 }
 
-// activityFor returns the activity an instance owns, or "" when the workflow has
-// none. The instance ID doubles as the activity ID, so redelivery finds the same row.
 func (w *Workflow) activityFor(instanceID string) string {
 	if w.def.Activity.Type == "" {
 		return ""

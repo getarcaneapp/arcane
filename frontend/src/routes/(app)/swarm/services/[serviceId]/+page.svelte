@@ -16,7 +16,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
-		DockIcon,
+		ContainersIcon,
 		FileTextIcon,
 		JobsIcon,
 		SettingsIcon,
@@ -70,7 +70,6 @@
 	let userScaleReplicasServiceId = $state<string | null>(null);
 	const isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
 
-	// Editor state
 	let editOpen = $state(false);
 
 	type ServiceContainerSpecShape = {
@@ -94,7 +93,6 @@
 		};
 	};
 
-	// Parse spec fields
 	const spec = $derived(service?.spec as ServiceSpecShape | undefined);
 	const containerSpec = $derived(spec?.TaskTemplate?.ContainerSpec);
 	const serviceName = $derived(spec?.Name || '');
@@ -238,7 +236,7 @@
 	const canViewServiceLogs = $derived(hasPermission('swarm-services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([
-		{ value: 'overview', label: m.common_overview(), icon: DockIcon },
+		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(canViewServiceLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		{ value: 'tasks', label: m.tasks(), icon: JobsIcon },
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
@@ -266,7 +264,6 @@
 		await refreshAll();
 	}
 
-	// Editor
 	const editVersion = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const editSpec = $derived(JSON.stringify(spec ?? {}, null, 2));
 
@@ -357,7 +354,7 @@
 		{#snippet headerInfo()}
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-					<DockIcon class="size-5 text-primary" />
+					<ContainersIcon class="size-5 text-primary" />
 				</div>
 				<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={serviceName}>
 					{serviceName}

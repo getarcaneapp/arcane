@@ -16,8 +16,6 @@ import (
 )
 
 type (
-	// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
-	// The live diagnostics snapshots use the api/ws streams.
 	DiagnosticsHandler struct {
 		diag *diagnostics.DiagnosticsService
 	}
@@ -31,7 +29,6 @@ type (
 	}
 )
 
-// RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	h := &DiagnosticsHandler{diag: diag}
 

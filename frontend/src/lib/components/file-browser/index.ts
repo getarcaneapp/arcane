@@ -13,7 +13,6 @@ export {
 	Preview,
 	UploadDialog,
 	CreateFolderDialog,
-	// aliases
 	Breadcrumb as FileBreadcrumb,
 	List as FileList,
 	Preview as FilePreview,

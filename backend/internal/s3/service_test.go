@@ -277,9 +277,6 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 
 	require.NoError(t, service.TestS3Destination(t.Context(), destination.ID, nil))
 
-	// Changing a connection field without re-supplying the secret is rejected
-	// before any outbound request: the stored secret must never sign requests
-	// against caller-modified connection settings.
 	requestsBeforeRejection := len(requestMethods)
 	err = service.TestS3Destination(t.Context(), destination.ID, &types.S3Destination{
 		Name:           destination.Name,

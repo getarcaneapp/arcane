@@ -40,7 +40,6 @@ type (
 		IsArchived    bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
 	}
 
-	// ProjectTag stores one normalized tag association and its management source.
 	ProjectTag struct {
 		ProjectID string `json:"projectId" gorm:"column:project_id;primaryKey"`
 		Name      string `json:"name" gorm:"column:name;primaryKey"`
@@ -53,7 +52,7 @@ type (
 
 		Environment    *environment.Environment `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID"`
 		Repository     *gitrepo.GitRepository   `json:"repository,omitempty" gorm:"foreignKey:RepositoryID"`
-		ProjectID      *string                  `json:"projectId,omitempty" sortable:"true"` // Set after project is created
+		ProjectID      *string                  `json:"projectId,omitempty" sortable:"true"`
 		Project        *Project                 `json:"project,omitempty" gorm:"foreignKey:ProjectID"`
 		SyncedFiles    *string                  `json:"syncedFiles,omitempty" gorm:"column:synced_files"` // JSON array of synced file paths
 		LastSyncAt     *time.Time               `json:"lastSyncAt,omitempty" sortable:"true"`
@@ -61,18 +60,10 @@ type (
 		LastSyncError  *string                  `json:"lastSyncError,omitempty"`
 		LastSyncCommit *string                  `json:"lastSyncCommit,omitempty" search:"commit,hash,sha,revision"`
 
-		// Pre-deploy lifecycle hook (configuration)
-		// When PreDeployScriptPath is set, the named script is executed in a
-		// throwaway container before each deploy of the linked project. The script,
-		// runner image, and execution context together act as repo-trusted code —
-		// any push to the repo that changes the script will run unreviewed on the
-		// next deploy. See docs for details.
-		PreDeployScriptPath  *string `json:"preDeployScriptPath,omitempty" gorm:"column:pre_deploy_script_path" search:"lifecycle,hook,pre-deploy,script,path"`
-		PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty" gorm:"column:pre_deploy_runner_image"`
-		PreDeployEnv         *string `json:"preDeployEnv,omitempty" gorm:"column:pre_deploy_env"`                  // KEY=VALUE lines, one per line; same format as .env files
-		PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty" gorm:"column:pre_deploy_extra_mounts"` // docker -v style "src:tgt[:ro|:rw]" entries, one per line
-
-		// Pre-deploy lifecycle hook (last-run state)
+		PreDeployScriptPath    *string    `json:"preDeployScriptPath,omitempty" gorm:"column:pre_deploy_script_path" search:"lifecycle,hook,pre-deploy,script,path"`
+		PreDeployRunnerImage   *string    `json:"preDeployRunnerImage,omitempty" gorm:"column:pre_deploy_runner_image"`
+		PreDeployEnv           *string    `json:"preDeployEnv,omitempty" gorm:"column:pre_deploy_env"`                  // KEY=VALUE lines, one per line; same format as .env files
+		PreDeployExtraMounts   *string    `json:"preDeployExtraMounts,omitempty" gorm:"column:pre_deploy_extra_mounts"` // docker -v style "src:tgt[:ro|:rw]" entries, one per line
 		PreDeployLastRunAt     *time.Time `json:"preDeployLastRunAt,omitempty" gorm:"column:pre_deploy_last_run_at" sortable:"true"`
 		PreDeployLastRunStatus *string    `json:"preDeployLastRunStatus,omitempty" gorm:"column:pre_deploy_last_run_status" sortable:"true"` // "success" | "failed" | "timeout"
 		PreDeployLastRunOutput *string    `json:"preDeployLastRunOutput,omitempty" gorm:"column:pre_deploy_last_run_output"`                 // truncated stdout+stderr
@@ -85,8 +76,8 @@ type (
 		RepositoryID           string     `json:"repositoryId" sortable:"true"`
 		Branch                 string     `json:"branch" sortable:"true" search:"branch,main,master,develop,feature,release"`
 		ComposePath            string     `json:"composePath" sortable:"true" search:"compose,docker-compose,path,file,yaml,yml"`
-		TargetType             string     `json:"targetType" gorm:"column:target_type;default:'project'"`                      // "project" or "swarm_stack"
-		ProjectName            string     `json:"projectName" sortable:"true" search:"project,name,stack,application,service"` // Name of project to create/update
+		TargetType             string     `json:"targetType" gorm:"column:target_type;default:'project'"` // "project" or "swarm_stack"
+		ProjectName            string     `json:"projectName" sortable:"true" search:"project,name,stack,application,service"`
 		// Docker network mode for the runner: "none" denies access; "bridge", "host", or a named network enables it.
 		PreDeployNetworkMode string `json:"preDeployNetworkMode" gorm:"column:pre_deploy_network_mode;default:'none'"`
 
@@ -101,7 +92,7 @@ type (
 		MaxSyncBinarySize   int64                `json:"maxSyncBinarySize" gorm:"column:max_sync_binary_size;default:10485760"`          // bytes; 0 = unlimited; env var overrides take precedence
 		PreDeployTimeoutSec int                  `json:"preDeployTimeoutSec" gorm:"column:pre_deploy_timeout_sec;default:60"`
 		AutoSync            bool                 `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
-		SyncDirectory       bool                 `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
+		SyncDirectory       bool                 `json:"syncDirectory" gorm:"column:sync_directory"`
 		PullImageAfterSync  bool                 `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
 		RedeployAfterSync   bool                 `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
 		PendingRedeploy     bool                 `json:"-" gorm:"column:pending_redeploy;not null;default:false"`
@@ -126,12 +117,10 @@ func (Project) TableName() string {
 	return "projects"
 }
 
-// TableName returns the database table used for project tag associations.
 func (ProjectTag) TableName() string {
 	return "project_tags"
 }
 
-// BackupState derives the persisted backup lifecycle state.
 func (s GitOpsSync) BackupState() string {
 	if s.Mode != types.GitOpsSyncModeBackup {
 		return ""
@@ -159,7 +148,6 @@ func (GitOpsSync) TableName() string {
 	return "gitops_syncs"
 }
 
-// SyncedFileList decodes the tracked synced-file paths.
 func (s GitOpsSync) SyncedFileList() []string {
 	if kit.FromPtr(s.SyncedFiles) == "" {
 		return nil
@@ -171,7 +159,6 @@ func (s GitOpsSync) SyncedFileList() []string {
 	return files
 }
 
-// BackupSnapshot decodes the file hashes recorded by the last backup push.
 func (s GitOpsSync) BackupSnapshot() map[string]string {
 	if kit.FromPtr(s.LastBackupSnapshot) == "" {
 		return nil
@@ -183,7 +170,6 @@ func (s GitOpsSync) BackupSnapshot() map[string]string {
 	return hashes
 }
 
-// EncodeSyncedFiles converts tracked synced-file paths to their stored JSON form.
 func EncodeSyncedFiles(files []string) *string {
 	if len(files) == 0 {
 		return nil
@@ -195,7 +181,6 @@ func EncodeSyncedFiles(files []string) *string {
 	return new(string(data))
 }
 
-// LockProjectForSync row-locks the project so the one-Git-relationship check and the insert are atomic.
 func LockProjectForSync(tx *gorm.DB, projectID string) (*Project, error) {
 	var project Project
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", projectID).First(&project).Error; err != nil {

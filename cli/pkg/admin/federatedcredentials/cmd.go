@@ -1,4 +1,3 @@
-// Package federatedcredentials manages workload identity federation trust rules.
 package federatedcredentials
 
 import (
@@ -18,7 +17,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for federated credential operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "federated",

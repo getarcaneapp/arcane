@@ -30,7 +30,6 @@
 	const environment = $derived(environmentStore.available.find((env) => env.id === page.url.searchParams.get('env')));
 	const localSettings = useEnvironmentSettings(() => LOCAL_DOCKER_ENVIRONMENT_ID);
 
-	// Check if this is a connection error
 	const isConnectionError = $derived.by(() => {
 		const lowerMessage = message.toLowerCase();
 		const connectionTerms = [

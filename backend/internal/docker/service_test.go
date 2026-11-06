@@ -506,7 +506,7 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	containers := []container.Summary{
 		{ImageID: "sha256:image-a"},
 		{ImageID: "sha256:image-c"},
-		{ImageID: "sha256:image-a"}, // duplicate container ref should not affect counts
+		{ImageID: "sha256:image-a"},
 		{ImageID: ""},
 	}
 

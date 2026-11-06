@@ -18,7 +18,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for API key operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "api-keys",

@@ -3,9 +3,9 @@ import { onMount } from 'svelte';
 export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface SwipeGestureOptions {
-	threshold?: number; // Minimum distance in pixels
-	velocity?: number; // Minimum velocity in pixels/ms
-	timeLimit?: number; // Maximum time for swipe in ms
+	threshold?: number;
+	velocity?: number;
+	timeLimit?: number;
 }
 
 export class SwipeGestureDetector {
@@ -34,7 +34,6 @@ export class SwipeGestureDetector {
 	}
 
 	setElement(element: HTMLElement | null) {
-		// Clean up previous listeners
 		if (this.cleanupFn) {
 			this.cleanupFn();
 			this.cleanupFn = null;
@@ -63,20 +62,16 @@ export class SwipeGestureDetector {
 			const deltaY = endY - this.startY;
 			const deltaTime = endTime - this.startTime;
 
-			// Check if gesture meets time limit
 			if (deltaTime > this.options.timeLimit) return;
 
 			const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 			const velocity = distance / deltaTime;
 
-			// Check if gesture meets thresholds
-			// More lenient: meet either distance OR velocity threshold
 			const meetsDistanceThreshold = distance >= this.options.threshold;
 			const meetsVelocityThreshold = velocity >= this.options.velocity;
 
 			if (!meetsDistanceThreshold && !meetsVelocityThreshold) return;
 
-			// Determine primary direction
 			const absDeltaX = Math.abs(deltaX);
 			const absDeltaY = Math.abs(deltaY);
 

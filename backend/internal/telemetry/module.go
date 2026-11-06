@@ -1,5 +1,3 @@
-// Package telemetry relays browser OpenTelemetry data to the collector configured
-// through the standard OTEL_* exporter, endpoint, protocol, and header variables.
 package telemetry
 
 import (

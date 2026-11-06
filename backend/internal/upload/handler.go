@@ -21,7 +21,6 @@ import (
 )
 
 type (
-	// UploadHandler provides the Huma-based chunked upload-session endpoints.
 	UploadHandler struct {
 		uploadService *UploadService
 	}
@@ -53,9 +52,6 @@ type (
 	}
 )
 
-// SessionHTTPError maps upload-session errors to HTTP errors for this package
-// and the domain endpoints that consume sessions. It returns nil for errors
-// that are not upload-session errors.
 func SessionHTTPError(err error) error {
 	switch {
 	case errors.Is(err, common.ErrUploadSessionNotFound):
@@ -70,10 +66,6 @@ func SessionHTTPError(err error) error {
 	return nil
 }
 
-// requireUploadPermission enforces the kind-derived permission for the
-// target environment. Registration cannot use middleware.RegisterWithPermission
-// because the required permission depends on the {kind} path parameter; the
-// manager-side proxy applies the same mapping for remote environments.
 func requireUploadPermission(ctx context.Context, kind, environmentID string) error {
 	perms := authz.UploadKindConditions.Required("kind", kind)
 	if len(perms) == 0 {
@@ -152,15 +144,6 @@ func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSe
 	return handlerutil.MessageOutput("Upload session deleted", ""), nil
 }
 
-// LegacyMultipartMiddleware converts a deprecated multipart/form-data request
-// into a complete upload session and rewrites the request into the JSON
-// {"uploadId"} form, so clients predating chunked uploads keep working. It
-// runs after authentication (a huma global middleware) but before the
-// operation's permission middleware, so it enforces the kind permission
-// itself to avoid staging files for unauthorized callers.
-//
-// This compatibility path is deprecated for API consumers; delete this
-// middleware when multipart upload support is removed.
 func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		if !strings.HasPrefix(ctx.Header("Content-Type"), "multipart/form-data") {

@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	// maxMuxEventBytes bounds one agent event posted over a multiplexed session.
 	maxMuxEventBytes           = 1 << 20
 	muxRegistrationPingTimeout = 3 * time.Second
 )
@@ -38,7 +37,6 @@ func (m *muxSession) dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-// close tears the session down and fails waiting and future dials with ErrTunnelConnectionClosed.
 func (m *muxSession) close() {
 	m.closeOnce.Do(func() {
 		m.mu.Lock()
@@ -98,7 +96,6 @@ func (m *muxSession) traffic() (int64, int64) {
 	return conn.rx.Load(), conn.tx.Load()
 }
 
-// start publishes session to waiting dials. It reports false when the tunnel already closed.
 func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -113,10 +110,9 @@ func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 	}
 }
 
-// serveMuxTunnel runs the manager end of a multiplexed session until the agent disconnects or the tunnel closes.
 func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, rw *muxConn) error {
 	defer tunnel.mux.close()
-	session, err := yamux.Server(rw, newMuxConfig(false))
+	session, err := yamux.Server(rw, newMuxConfig(false, muxStreamWindowMiB(tunnel.Capabilities, s.streamWindowMiB())))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)
@@ -163,7 +159,6 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 	}
 }
 
-// muxEventHandler accepts the events an agent posts over its multiplexed session.
 func (s *TunnelServer) muxEventHandler(ctx context.Context, envID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != muxEventsPath {

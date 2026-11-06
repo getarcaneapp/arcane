@@ -73,9 +73,6 @@ const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 
-// Mirrors the appearance state onto localStorage so the blocking inline script
-// in app.html can restore it before first paint (see app.html) — without this
-// the SPA shell paints the default light theme until hydration + API calls finish.
 const APPEARANCE_CACHE_KEY = 'arcane-appearance';
 
 type AppearanceCache = {
@@ -84,6 +81,7 @@ type AppearanceCache = {
 	oled?: boolean;
 	accent?: { primary: string; primaryForeground: string; ring: string } | null;
 	fontSize?: number | null;
+	fonts?: FontFamilies | null;
 	noBlur?: boolean;
 	reduceEffects?: boolean;
 };
@@ -96,8 +94,6 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 	const stored = trySync(() => JSON.parse(localStorage.getItem(APPEARANCE_CACHE_KEY) ?? '{}') as { v?: AppearanceCache });
 	const v: AppearanceCache = { ...stored.data?.v, ...partial };
 
-	// Pre-compute the exact attribute, class list, and inline style the inline
-	// script applies, so it stays a dumb three-line replay of this cache.
 	const attr = v.appTheme ?? '';
 	const cls = [v.oled && OLED_CLASS, v.noBlur && 'no-blur', v.reduceEffects && 'reduce-effects'].filter(Boolean).join(' ');
 	const css = Object.entries({
@@ -105,7 +101,10 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 		'--primary-foreground': v.accent?.primaryForeground,
 		'--ring': v.accent?.ring,
 		'--sidebar-ring': v.accent?.ring,
-		'font-size': v.fontSize && `${v.fontSize}px`
+		'font-size': v.fontSize && `${v.fontSize}px`,
+		'--font-sans-user': v.fonts?.interface,
+		'--font-mono-user': v.fonts?.monospace,
+		'--font-code-user': v.fonts?.code
 	})
 		.filter(([, value]) => value)
 		.map(([property, value]) => `${property}: ${value}`)
@@ -217,9 +216,6 @@ function syncBrowserThemeColor(): void {
 }
 
 export function applyAccentColor(accentValue: string) {
-	// The 'theme' sentinel means "inherit the application theme" and behaves
-	// exactly like 'default' (no override). It is normalized here so invalid
-	// CSS can never reach the custom-accent branch below.
 	const normalizedAccent = accentValue === 'theme' ? 'default' : accentValue;
 	const resolvedAccent = normalizedAccent === 'default' ? DEFAULT_ACCENT_COLOR : normalizedAccent;
 	appearanceState.accent = normalizedAccent;
@@ -301,11 +297,6 @@ export function applyOledMode(enabled: boolean): void {
 const NO_BLUR_CLASS = 'no-blur';
 const REDUCE_EFFECTS_CLASS = 'reduce-effects';
 
-/**
- * Toggle glass / backdrop-blur effects. When disabled, the `no-blur` class on
- * <html> drives layout.css to strip every backdrop-filter and make glass surfaces
- * opaque — the main lever for cutting GPU usage on Firefox-based browsers.
- */
 export function applyGlassEffects(enabled: boolean): void {
 	if (typeof document === 'undefined') {
 		return;
@@ -315,11 +306,6 @@ export function applyGlassEffects(enabled: boolean): void {
 	updateAppearanceCache({ noBlur: !enabled });
 }
 
-/**
- * Toggle decorative, always-on interface animations (ambient login shimmer,
- * loading-bar glow, pulse indicators). When disabled we add a `reduce-effects`
- * class to <html> and layout.css halts those animations.
- */
 export function applyInterfaceAnimations(enabled: boolean): void {
 	if (typeof document === 'undefined') {
 		return;
@@ -331,13 +317,8 @@ export function applyInterfaceAnimations(enabled: boolean): void {
 
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 20;
-export const FONT_SIZE_DEFAULT = 14; // matches `html { font-size: 14px }` in layout.css
+export const FONT_SIZE_DEFAULT = 15;
 
-/**
- * Apply the user's preferred root font size. The UI is sized in `rem` off the
- * root element, so this scales text and spacing together (a whole-UI zoom). At
- * the default size we remove the inline override so the CSS rule wins.
- */
 export function applyFontSize(px?: number | null): void {
 	if (typeof document === 'undefined') {
 		return;
@@ -354,4 +335,87 @@ export function applyFontSize(px?: number | null): void {
 	const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(px)));
 	root.style.fontSize = `${clamped}px`;
 	updateAppearanceCache({ fontSize: clamped });
+}
+
+export type FontSlot = 'interface' | 'monospace' | 'code';
+export type FontFamilies = Partial<Record<FontSlot, string | null>>;
+
+export const FONT_NAME_PATTERN = /^[\p{L}\p{N} _'",-]*$/u;
+
+const FONT_VARIABLES: Record<FontSlot, string> = {
+	interface: '--font-sans-user',
+	monospace: '--font-mono-user',
+	code: '--font-code-user'
+};
+
+const GENERIC_FONT_FAMILIES = new Set([
+	'serif',
+	'sans-serif',
+	'monospace',
+	'cursive',
+	'fantasy',
+	'system-ui',
+	'ui-serif',
+	'ui-sans-serif',
+	'ui-monospace',
+	'ui-rounded',
+	'emoji',
+	'math',
+	'fangsong'
+]);
+
+function quoteFontFamily(name: string): string | null {
+	if (/^(['"])[^'"]+\1$/.test(name) || GENERIC_FONT_FAMILIES.has(name.toLowerCase())) {
+		return name;
+	}
+
+	if (/['"]/.test(name)) {
+		return null;
+	}
+
+	return `"${name}"`;
+}
+
+export function toFontFamily(value?: string | null): string | null {
+	const font = value?.trim();
+
+	if (!font || font === 'default' || !FONT_NAME_PATTERN.test(font)) {
+		return null;
+	}
+
+	const families = font
+		.split(',')
+		.map((name) => name.trim())
+		.filter(Boolean)
+		.map(quoteFontFamily);
+
+	if (families.length === 0 || families.includes(null)) {
+		return null;
+	}
+
+	return families.join(', ');
+}
+
+export function applyFonts(fonts: FontFamilies): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	const resolved: Record<FontSlot, string | null> = {
+		interface: toFontFamily(fonts.interface),
+		monospace: toFontFamily(fonts.monospace),
+		code: toFontFamily(fonts.code)
+	};
+
+	for (const [slot, variable] of Object.entries(FONT_VARIABLES) as [FontSlot, string][]) {
+		const family = resolved[slot];
+
+		if (family) {
+			document.documentElement.style.setProperty(variable, family);
+		} else {
+			document.documentElement.style.removeProperty(variable);
+		}
+	}
+
+	updateAppearanceCache({ fonts: resolved });
 }

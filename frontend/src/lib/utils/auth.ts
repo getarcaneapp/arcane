@@ -43,8 +43,6 @@ export function normalizeAuthenticationError(error: unknown, fallback: string): 
 	};
 }
 
-// --- Store-backed permission checks (for .svelte / runtime) ---
-
 export function hasPermission(perm: string, envId: string): boolean {
 	return userStore.hasPermission(perm, envId);
 }
@@ -57,15 +55,13 @@ export function isGlobalAdmin(): boolean {
 	return userStore.isGlobalAdmin();
 }
 
-// --- Load-function helpers (run before stores hydrate) ---
-
 const PROTECTED_PREFIXES = [
 	'/account',
 	'/dashboard',
 	'/containers',
-	'/customize',
 	'/events',
 	'/environments',
+	'/gitops',
 	'/images',
 	'/projects',
 	'/volumes',

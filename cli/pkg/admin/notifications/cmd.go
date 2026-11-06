@@ -31,7 +31,6 @@ var providerRef = cmdutil.ResourceRef[types.NotificationSettings, types.Notifica
 	IdentifierOf: func(item types.NotificationSettings) string { return string(item.Provider) },
 }
 
-// Command is the parent command for notification operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "notifications",

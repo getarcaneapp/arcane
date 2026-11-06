@@ -24,7 +24,6 @@ import (
 )
 
 type (
-	// RuntimeImage is the Arcane image that runs internal helper commands in temporary containers.
 	RuntimeImage struct {
 		Image      string
 		Source     string
@@ -38,12 +37,10 @@ const (
 	ContainerLabel = "com.getarcaneapp.volume-helper"
 )
 
-// ToolsImage returns the shared Arcane tools image reference hosted on the given registry setting.
 func ToolsImage(registrySetting string) string {
 	return registry.ArcaneRegistryHost(registrySetting) + "/" + toolsRepoPath + ":latest"
 }
 
-// Labels returns the labels used for temporary internal volume helper containers.
 func Labels() map[string]string {
 	return map[string]string{
 		selfcontainer.InternalResourceLabel: "true",
@@ -68,7 +65,6 @@ func IsHelperContainer(c container.Summary) bool {
 	})
 }
 
-// HostConfig builds the host config shared by volume helper containers.
 func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
 	hostConfig := &container.HostConfig{
 		Binds:      binds,
@@ -85,7 +81,6 @@ func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *conta
 	return hostConfig
 }
 
-// ResolveHelperImage pulls the tools image when missing and falls back to the Arcane runtime image.
 func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsImage string) (string, error) {
 	if _, err := dockerClient.ImageInspect(ctx, toolsImage); err == nil {
 		return toolsImage, nil
@@ -112,7 +107,6 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsI
 	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found: %w", pullErr)
 }
 
-// ResolveArcaneRuntimeImage finds the running Arcane image so helpers need no external pull.
 func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client) mo.Option[RuntimeImage] {
 	hostname, _ := os.Hostname()
 	if hostname != "" {

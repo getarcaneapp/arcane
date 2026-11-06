@@ -37,7 +37,6 @@ import (
 )
 
 type (
-	// PasskeyChallenge is the public result of a WebAuthn ceremony begin.
 	// The matching SessionData remains in passkey_ceremonies.
 	PasskeyChallenge struct {
 		ExpiresAt     time.Time
@@ -46,7 +45,6 @@ type (
 		TransactionID string
 	}
 
-	// PasskeySummary is the safe representation of a stored credential.
 	PasskeySummary struct {
 		CreatedAt               time.Time  `json:"createdAt"`
 		UpdatedAt               *time.Time `json:"updatedAt,omitempty"`
@@ -62,8 +60,6 @@ type (
 		CloneWarning            bool       `json:"cloneWarning"`
 	}
 
-	// PasskeyCapabilities describes the server-derived authentication choices for
-	// the current account. It deliberately does not trust client-supplied flags.
 	PasskeyCapabilities struct {
 		PasskeyCount               int  `json:"passkeyCount"`
 		PasskeyMFAEnabled          bool `json:"passkeyMfaEnabled"`
@@ -74,34 +70,23 @@ type (
 		RequiresStepUp             bool `json:"requiresStepUp"`
 	}
 
-	// MFAStatus is the account's passkey MFA state. Recovery codes are counted,
-	// but their plaintext values are never returned after generation.
 	MFAStatus struct {
 		Enabled                bool `json:"enabled"`
 		PasskeyCount           int  `json:"passkeyCount"`
 		RecoveryCodesRemaining int  `json:"recoveryCodesRemaining"`
 	}
 
-	// StepUpGrant is returned after a fresh password or passkey assertion. The
-	// token is hashed in the database and stays usable, for the issuing session
-	// only, until ExpiresAt.
 	StepUpGrant struct {
 		ExpiresAt time.Time `json:"expiresAt"`
 		Token     string    `json:"token"`
 	}
 
-	// AuthenticationCompletion carries the original primary-auth metadata across
-	// an MFA transaction so the eventual session cannot be assigned client-chosen
-	// source or network metadata.
 	AuthenticationCompletion struct {
 		User   *userdomain.User
 		Meta   types.SessionMeta
 		Source string
 	}
 
-	// PasskeyService owns WebAuthn ceremonies, passkey persistence, MFA
-	// transactions, recovery codes, and step-up grants. It intentionally does not
-	// issue JWTs; auth.AuthService remains the single token/session issuer.
 	PasskeyService struct {
 		initErr  error
 		db       *database.DB
@@ -298,7 +283,6 @@ func credentialFromModel(row Passkey) webauthn.Credential {
 	}
 }
 
-// LoginAvailable reports whether a registered passkey can be used on this instance.
 func (s *PasskeyService) LoginAvailable(ctx context.Context) (bool, error) {
 	if errors.Is(kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil), ErrPasskeyServiceUnavailable) {
 		return false, nil
@@ -366,9 +350,6 @@ func (s *PasskeyService) BeginMFAAuthentication(ctx context.Context, userID stri
 	return challenge, nil
 }
 
-// BeginMFAForTransaction starts a passkey assertion for an already-created
-// pending MFA transaction. This is useful to clients that separate primary
-// authentication from challenge retrieval.
 func (s *PasskeyService) BeginMFAForTransaction(ctx context.Context, transactionID string) (*types.MFAChallenge, error) {
 	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return nil, err
@@ -789,9 +770,6 @@ func (s *PasskeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, 
 	return s.issueStepUpGrant(ctx, transaction.ID)
 }
 
-// VerifyStepUpToken accepts a grant repeatedly until it expires, so a single
-// re-authentication covers a short run of management actions instead of one.
-// The grant stays bound to the issuing user and session.
 func (s *PasskeyService) VerifyStepUpToken(ctx context.Context, userID, sessionID, token string) error {
 	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
@@ -1045,8 +1023,6 @@ func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, se
 	return codes, nil
 }
 
-// ResetMFAForUser is intentionally separate from self-service operations. It
-// is used only by the explicitly gated embedded admin recovery command.
 func (s *PasskeyService) ResetMFAForUser(ctx context.Context, userID string) error {
 	if err := kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil); err != nil {
 		return err
@@ -1521,8 +1497,6 @@ func optionalString(value string) *string {
 	return &value
 }
 
-// normalizePasskeyAssertionExtensions drops an unrequested appid=false output, which Safari
-// reports even though it means the legacy AppID was not used.
 func normalizePasskeyAssertionExtensions(sessionExtensions protocol.SessionExtensions, assertion *protocol.ParsedCredentialAssertionData) {
 	if assertion == nil {
 		return

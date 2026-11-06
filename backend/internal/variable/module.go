@@ -1,4 +1,3 @@
-// Package variable owns global variables, environment materialization, and routes.
 package variable
 
 import (
@@ -109,9 +108,6 @@ func RegisterVariables(api huma.API, variableService *VariableService, proxyRemo
 	}, authz.PermVariablesRead, h.GetSyncStatus)
 }
 
-// RegisterMaterializedVariables registers the plaintext synchronization
-// channel on agents. It must never be registered on a manager API because its
-// response intentionally contains decrypted values for .env.global.
 func RegisterMaterializedVariables(api huma.API, variableService *VariableService, proxyRemoteJSON handlerutil.RemoteJSONProxy) {
 	h := &VariableHandler{variableService: variableService, proxyRemoteJSON: proxyRemoteJSON}
 

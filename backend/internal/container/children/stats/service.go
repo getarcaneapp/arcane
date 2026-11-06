@@ -1,5 +1,3 @@
-// Package stats owns container resource sampling, resource metrics, resource sorting and the
-// live stats stream.
 package stats
 
 import (
@@ -36,7 +34,6 @@ import (
 )
 
 type (
-	// Service collects container stats through the parent's Docker client.
 	Service struct {
 		flight        singleflight.Group
 		getClient     func(context.Context) (*client.Client, error)
@@ -48,7 +45,6 @@ type (
 		batchTimeout  time.Duration
 	}
 
-	// cachedStats records when Arcane fetched a sample, so freshness checks don't depend on the daemon's clock.
 	cachedStats struct {
 		fetchedAt time.Time
 		stats     container.StatsResponse
@@ -90,7 +86,6 @@ const (
 	ContainerMetricsCollectTimeout      = 20 * time.Second
 )
 
-// New builds a stats service. Non-positive timeouts fall back to defaults.
 func New(p Params) *Service {
 	return &Service{
 		getClient:  p.GetClient,
@@ -109,7 +104,6 @@ func New(p Params) *Service {
 	}
 }
 
-// Stream decodes the Docker stats stream and forwards payloads with history.
 func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan<- any) error {
 	dockerClient, err := s.getClient(ctx)
 	if err != nil {
@@ -165,9 +159,6 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 	}
 }
 
-// Collect fetches one sample per running container, reusing cached samples younger than maxAge.
-// Individual failures leave the container unsampled; a batch timeout or cancellation fails so partial
-// lists never sort as global.
 func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration, waitForBaseline bool) (map[string]*types.ContainerResourceSample, error) {
 	ids := make([]string, 0, len(items))
 	for i := range items {
@@ -200,8 +191,6 @@ func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, m
 	return samples, nil
 }
 
-// collect runs fetch for each ID with bounded concurrency under timeout. Individual failures are
-// skipped; on batch timeout or cancellation it returns the partial result with the error.
 func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fetch func(context.Context, string) (T, error)) (map[string]T, error) {
 	batchCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -229,9 +218,6 @@ func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fe
 	return results, g.Wait()
 }
 
-// fetch returns a cached stats sample younger than maxAge and coalesces concurrent fetches per daemon
-// and container. The CPU delta is measured from the last cached sample; without one, waitForBaseline
-// asks Docker for a second sample one second later instead of the delta since container start.
 func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (container.StatsResponse, error) {
 	key := s.dockerHost() + "\x00" + containerID
 	if cached, ok, _ := s.cache.Get(key); ok && time.Since(cached.fetchedAt) < maxAge {
@@ -288,8 +274,6 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 	}
 }
 
-// ObserveResources reports arcane.container.* metrics for running containers from list, sharing the
-// sample cache and flights with Collect so overlapping collections reuse Docker calls.
 func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context, bool) ([]container.Summary, error)) error {
 	cpuTime, cpuTimeErr := meter.Float64ObservableCounter("arcane.container.cpu.time",
 		metric.WithDescription("Cumulative CPU time consumed by a running container"), metric.WithUnit("s"))
@@ -371,7 +355,6 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 	return err
 }
 
-// observe records one container's sample, labelled by name, image and Compose project/service.
 func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sample resourceSample) {
 	attrs := []attribute.KeyValue{
 		attribute.String("container.name", docker.ContainerNameFromNames(c.Names)),
@@ -428,8 +411,6 @@ func ioTotals(statsData container.StatsResponse) ioBytes {
 	return totals
 }
 
-// ContainerResourceSampleSort orders summaries by sample value with unsampled containers last in both
-// directions, breaking ties by name then ID. Valid zero values sort as zero, not as unavailable.
 func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[types.ContainerSummary] {
 	value := kit.Ternary(
 		sort == types.ContainerSortCPUUsage,
@@ -477,8 +458,6 @@ func CompareContainerNamesForSort(a, b types.ContainerSummary) int {
 	)
 }
 
-// ContainerResourceSortPermissionDenied enforces the extra containers:read
-// requirement on resource-sorted list requests.
 func ContainerResourceSortPermissionDenied(ps *authz.PermissionSet, envID, sort string) bool {
 	if !types.IsContainerResourceSort(sort) {
 		return false

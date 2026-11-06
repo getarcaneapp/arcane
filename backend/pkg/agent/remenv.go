@@ -22,7 +22,6 @@ const (
 )
 
 var (
-	// hopByHopHeaders is shared and read-only; CopyResponseHeaders extends a private copy.
 	hopByHopHeaders = map[string]struct{}{
 		"Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {}, "Proxy-Authorization": {},
 		"Te": {}, "Trailers": {}, "Trailer": {}, "Transfer-Encoding": {}, "Upgrade": {},
@@ -53,7 +52,6 @@ func CopyRequestHeaders(from, to http.Header) {
 	}
 }
 
-// SetAgentToken sets the agent token in both X- header forms.
 func SetAgentToken(headers http.Header, token string) {
 	if strings.TrimSpace(token) == "" {
 		return
@@ -62,7 +60,6 @@ func SetAgentToken(headers http.Header, token string) {
 	headers.Set(HeaderAPIKey, token)
 }
 
-// HTTPToWebSocketURL converts an HTTP(S) URL to WS(S).
 func HTTPToWebSocketURL(url string) string {
 	switch {
 	case strings.HasPrefix(url, "https://"):
@@ -74,8 +71,6 @@ func HTTPToWebSocketURL(url string) string {
 	}
 }
 
-// CopyResponseBody streams resp's body to w, flushing after each write for event streams and responses of unknown
-// length. It returns the first error other than io.EOF, so a response cut short upstream is not mistaken for a complete one.
 func CopyResponseBody(w http.ResponseWriter, resp *http.Response) error {
 	buf := copyBufferPool.Get().(*[]byte)
 	defer copyBufferPool.Put(buf)

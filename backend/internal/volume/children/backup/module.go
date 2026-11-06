@@ -13,8 +13,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterRoutes registers the volume backup endpoints, including policies,
-// file browsing, and restores.
 func RegisterRoutes(api huma.API, h *Handler) {
 	var policiesService *policies.Service
 	var browserService *browser.Service

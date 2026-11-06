@@ -12,7 +12,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// RegisterRoutes registers the volume backup restore endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "volume-backup-action",

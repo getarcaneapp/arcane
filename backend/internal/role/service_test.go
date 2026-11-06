@@ -20,7 +20,6 @@ import (
 )
 
 type (
-	// Minimal stand-ins for the environments and api_keys rows these tests need.
 	testEnvironmentRow struct {
 		database.BaseModel
 		AccessToken *string `gorm:"column:access_token"`
@@ -74,9 +73,6 @@ func TestValidatePermissionsAgainstCallerRejectsEnvOnlyGrantForGlobalRole(t *tes
 func TestValidatePermissionsAgainstCallerRejectsUnknownPermissionBeforeEscalation(t *testing.T) {
 	_, roleSvc := setupUserAndRoleServices(t)
 
-	// A sudo caller would otherwise short-circuit past the escalation loop;
-	// unknown perms must still surface as UnknownPermissionError (→ 400),
-	// not as an opaque escalation 403 or a silent pass.
 	err := roleSvc.ValidatePermissionsAgainstCaller(authz.SudoPermissionSet(), []string{"containrs:start"})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrUnknownPermission)

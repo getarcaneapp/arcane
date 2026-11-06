@@ -1,4 +1,3 @@
-// Package apns owns mobile push device pairing, the relay outbox, and its HTTP routes.
 package apns
 
 import (

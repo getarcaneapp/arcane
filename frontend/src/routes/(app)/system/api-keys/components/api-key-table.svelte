@@ -240,7 +240,7 @@
 
 {#snippet RowActions({ item }: { item: ApiKey })}
 	{@const lockedReason = getLockedReason(item)}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<IfPermitted perm="apikeys:update">
 			{#if lockedReason}
 				<ArcaneTooltip.Root>

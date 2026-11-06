@@ -21,7 +21,6 @@ const (
 	secretMask = "********"
 )
 
-// Command is the parent command for global variable operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
@@ -43,6 +42,7 @@ func printMutationResult(result types.GlobalVariableMutationResponse, message st
 		output.KeyValue("ID", result.Variable.ID)
 		output.KeyValue("Key", result.Variable.Key)
 		output.KeyValue("Secret", strconv.FormatBool(result.Variable.IsSecret))
+		output.KeyValue("Inject", strconv.FormatBool(result.Variable.InjectIntoContainers))
 		scope := "-"
 		switch {
 		case result.Variable.AllEnvironments:
@@ -73,7 +73,7 @@ func newListCmd() *cobra.Command {
 				Path:           clitypes.Variables(),
 				FailureMessage: "failed to list variables",
 				Render: func(data []types.GlobalVariable) error {
-					headers := []string{"ID", "KEY", "SCOPE", "SECRET", "VALUE"}
+					headers := []string{"ID", "KEY", "SCOPE", "SECRET", "INJECT", "VALUE"}
 					rows := make([][]string, len(data))
 					for i, variable := range data {
 						value := variable.Value
@@ -92,6 +92,7 @@ func newListCmd() *cobra.Command {
 							variable.Key,
 							scope,
 							strconv.FormatBool(variable.IsSecret),
+							strconv.FormatBool(variable.InjectIntoContainers),
 							value,
 						}
 					}
@@ -113,6 +114,7 @@ func newCreateCmd() *cobra.Command {
 		value   string
 		envIDs  []string
 		secret  bool
+		inject  bool
 		allEnvs bool
 	}
 	command := &cobra.Command{
@@ -127,11 +129,12 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			req := types.GlobalVariable{
-				Key:             opts.key,
-				Value:           opts.value,
-				IsSecret:        opts.secret,
-				AllEnvironments: opts.allEnvs,
-				EnvironmentIDs:  opts.envIDs,
+				Key:                  opts.key,
+				Value:                opts.value,
+				IsSecret:             opts.secret,
+				AllEnvironments:      opts.allEnvs,
+				InjectIntoContainers: opts.inject,
+				EnvironmentIDs:       opts.envIDs,
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GlobalVariableMutationResponse]{
@@ -148,6 +151,7 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.key, "key", "", "Variable key")
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
+	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
 	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
 	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
 	_ = command.MarkFlagRequired("key")
@@ -160,6 +164,7 @@ func newUpdateCmd() *cobra.Command {
 		value   string
 		envIDs  []string
 		secret  bool
+		inject  bool
 		allEnvs bool
 	}
 	command := &cobra.Command{
@@ -177,6 +182,7 @@ func newUpdateCmd() *cobra.Command {
 				{flag: "key", key: "key", value: opts.key},
 				{flag: "value", key: "value", value: opts.value},
 				{flag: "secret", key: "isSecret", value: opts.secret},
+				{flag: "inject", key: "injectIntoContainers", value: opts.inject},
 				{flag: "all-environments", key: "allEnvironments", value: opts.allEnvs},
 				{flag: "environment", key: "environmentIds", value: opts.envIDs},
 			} {
@@ -206,6 +212,7 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.key, "key", "", "Variable key")
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
+	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
 	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
 	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
 	return command

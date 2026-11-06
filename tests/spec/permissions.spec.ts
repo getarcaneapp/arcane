@@ -10,7 +10,7 @@ import {
 } from '../fixtures/test.fixture';
 import { TEST_COMPOSE_YAML } from '../setup/project.data';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 
 type TestRole = {
@@ -584,7 +584,7 @@ test('administers scoped identities and enforces their browser access immediatel
 
 			const containerRow = restrictedPage
 				.getByRole('row')
-				.filter({ has: restrictedPage.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: restrictedPage.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.first();
 			const containerMenu = await openRowActionsMenu(restrictedPage, containerRow);
 			await expect(
@@ -646,9 +646,6 @@ test('administers scoped identities and enforces their browser access immediatel
 			).toEqual([]);
 		}
 
-		// An Admin role granted only on the local environment must reach every
-		// environment-scoped page without the global settings, templates,
-		// variables, or S3 destination requests those pages used to make.
 		environmentAdminUser = await createEnvironmentAdminViaApi(
 			page,
 			environmentAdminUsername,

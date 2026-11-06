@@ -12,7 +12,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// BuildTelegramURL converts TelegramConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildTelegramURL(config TelegramConfig) (string, error) {
 	telegramConfig := &telegram.Config{
 		Token:        config.BotToken,
@@ -24,9 +23,7 @@ func BuildTelegramURL(config TelegramConfig) (string, error) {
 
 	url := telegramConfig.GetURL()
 
-	// Add parse mode as query parameter if provided
 	if config.ParseMode != "" {
-		// Validate parse mode
 		switch config.ParseMode {
 		case "Markdown", "HTML", "MarkdownV2", "None":
 			q := url.Query()
@@ -40,7 +37,6 @@ func BuildTelegramURL(config TelegramConfig) (string, error) {
 	return url.String(), nil
 }
 
-// ValidateTelegramChatIDs checks that each optional "chat:topic" topic ID is a positive integer.
 func ValidateTelegramChatIDs(config TelegramConfig) error {
 	for _, chatID := range config.ChatIDs {
 		_, topic, hasTopic := strings.Cut(chatID, ":")
@@ -54,7 +50,6 @@ func ValidateTelegramChatIDs(config TelegramConfig) error {
 	return nil
 }
 
-// SendTelegram sends a message via Shoutrrr Telegram using proper service configuration
 func SendTelegram(ctx context.Context, config TelegramConfig, message string) error {
 	if config.BotToken == "" {
 		return errors.New("telegram bot token is empty")

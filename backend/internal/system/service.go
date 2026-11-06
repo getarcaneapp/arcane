@@ -60,8 +60,6 @@ import (
 )
 
 type (
-	// SystemService owns Docker system-wide operations and coordinates the prune
-	// and self-upgrade features.
 	SystemService struct {
 		db                    *database.DB
 		dockerService         *dockerInternal.DockerClientService
@@ -180,13 +178,10 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 	return s
 }
 
-// RegisterWorkflows defines the backup workflows while the host is still unstarted.
 func (s *SystemService) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService, roles *role.RoleService) error {
 	return errors.Join(s.backup.RegisterWorkflows(engine), s.upgrade.RegisterWorkflows(engine, environments, roles))
 }
 
-// ReconcileInterruptedBackups fails system backup runs left running by the previous process and watches the
-// manual backups that saved workflows resume.
 func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	query := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("status = ?", SystemBackupStatusRunning)
 	if len(protectedIDs) > 0 {
@@ -198,32 +193,26 @@ func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protect
 	return s.backup.WatchAcceptedBackups(ctx)
 }
 
-// PruneLocalBackupRepository frees the space of deleted local system backups.
 func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
 	return s.backup.PruneLocalRepository(ctx)
 }
 
-// RegisterBackupJobOnStartup schedules every saved system and system-managed volume backup policy.
 func (s *SystemService) RegisterBackupJobOnStartup(ctx context.Context) {
 	s.backup.RegisterBackupJobOnStartup(ctx)
 }
 
-// PruneScheduled runs the scheduled prune job.
 func (s *SystemService) PruneScheduled(ctx context.Context, environmentID string, req types.PruneAllRequest) (*types.PruneAllResult, bool, error) {
 	return s.prune.PruneScheduled(ctx, environmentID, req)
 }
 
-// ReconcileScheduledPrune recovers an interrupted scheduled prune.
 func (s *SystemService) ReconcileScheduledPrune(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return s.prune.ReconcileScheduledPrune(ctx, previous)
 }
 
-// TriggerUpgradeViaCLI starts the self-upgrade for the updater engine.
 func (s *SystemService) TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error) {
 	return s.upgrade.TriggerUpgradeViaCLI(ctx, user, target)
 }
 
-// ResumeUpgradeJobOnStartup finalizes an upgrade job interrupted by the manager restart.
 func (s *SystemService) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	s.upgrade.ResumeUpgradeJobOnStartup(ctx)
 }
@@ -232,7 +221,6 @@ func (s *SystemService) RunUpgradeStreamProducer(ctx context.Context, events cha
 	s.upgrade.RunStreamProducer(ctx, events)
 }
 
-// PruneUpgradeLogs removes expired upgrade logs.
 func (s *SystemService) PruneUpgradeLogs(ctx context.Context, dataDir string, now time.Time) (int, error) {
 	return s.upgrade.PruneUpgradeLogs(ctx, dataDir, now)
 }
@@ -309,7 +297,6 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 		errs = append(errs, fmt.Sprintf("Failed to list containers: %v", listErr))
 	} else {
 		g, groupCtx := errgroup.WithContext(ctx)
-		// Limit concurrency to avoid overwhelming Docker daemon
 		g.SetLimit(5)
 		for _, c := range containers {
 			if !opts.ShouldStart(c) {
@@ -355,7 +342,6 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 	return result, listErr
 }
 
-// PingDocker checks that the Docker daemon is responsive.
 func (s *SystemService) PingDocker(ctx context.Context) error {
 	_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
 		return cli.Ping(ctx, client.PingOptions{})
@@ -363,7 +349,6 @@ func (s *SystemService) PingDocker(ctx context.Context) error {
 	return err
 }
 
-// GetDockerInfo returns Docker daemon version and system information.
 func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, error) {
 	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServerVersionResult, error) {
 		return cli.ServerVersion(ctx, client.ServerVersionOptions{})
@@ -381,7 +366,6 @@ func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, er
 	info := infoResult.Info
 
 	// Outside Docker (e.g. LXC) the daemon may report the whole machine, so cap totals at the guest's cgroup budget.
-	// Inside Docker, --cpus/--memory are operator limits and the daemon's totals already reflect the host.
 	if !cgroup.IsDockerContainer() {
 		if cgroupLimits, detectLimitsErr := cgroup.DetectLimits(); detectLimitsErr == nil {
 			if limit := cgroupLimits.MemoryLimit; limit > 0 && (info.MemTotal == 0 || limit < info.MemTotal) {
@@ -419,8 +403,6 @@ func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, er
 	}, nil
 }
 
-// GetDockerHostMemory reports enclosing guest memory when Docker shares its
-// host's cgroup namespace. A false result leaves the caller's baseline intact.
 func (s *SystemService) GetDockerHostMemory(ctx context.Context) (uint64, uint64, bool) {
 	if runtime.GOOS != "linux" || !cgroup.IsDockerContainer() {
 		return 0, 0, false
@@ -480,7 +462,6 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 	return dockerHostMemoryInfo{root: root, total: uint64(info.Info.MemTotal)}, nil
 }
 
-// resolveUpgraderRuntimeOptions determines how a helper container reaches the Docker daemon.
 func resolveUpgraderRuntimeOptions(
 	ctx context.Context,
 	dockerHost string,
@@ -520,7 +501,6 @@ func resolveUpgraderRuntimeOptions(
 	}}, "", nil
 }
 
-// backupStore persists system backup runs and policies for the backup child.
 func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) systembackup.Store {
 	toModel := func(dto *types.SystemBackupRun) SystemBackupRun {
 		return SystemBackupRun{ //exhaustruct:enforce

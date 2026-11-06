@@ -76,7 +76,6 @@
 		}
 	}));
 	const selectedRun = $derived(activeRunId ? detail.data : undefined);
-	// The workflow target only links a run to its workflow instance.
 	const targets = $derived(selectedRun?.outcome.targets?.filter((target) => target.resourceType !== 'workflow') ?? []);
 	const hasPrev = $derived(page > 1);
 	const hasNext = $derived(!!runs.data && page * runs.data.limit < runs.data.total);

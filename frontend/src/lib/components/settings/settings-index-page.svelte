@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 
@@ -19,7 +18,7 @@
 		CodeIcon,
 		GlobeIcon,
 		ActivityIcon,
-		RemoteEnvironmentIcon,
+		AgentIcon,
 		BackupIcon,
 		VolumesIcon,
 		ClockIcon,
@@ -31,7 +30,7 @@
 	import type { PermissionsManifest } from '#lib/types/role.js';
 	import type { User } from '#lib/types/user.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { canReachAccessSurfaceUrl, isInAppPath } from '#lib/utils/auth.js';
+	import { canReachAccessSurfaceUrl } from '#lib/utils/auth.js';
 	import { normalizeCategory } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -43,7 +42,6 @@
 
 	interface Props {
 		rootUrl: ResolvedPathname;
-		headerIcon: IconType;
 		title: string;
 		subtitle: string;
 		searchPlaceholder: string;
@@ -56,7 +54,6 @@
 
 	let {
 		rootUrl,
-		headerIcon,
 		title,
 		subtitle,
 		searchPlaceholder,
@@ -85,7 +82,7 @@
 		code: CodeIcon,
 		globe: GlobeIcon,
 		activity: ActivityIcon,
-		remoteenvironment: RemoteEnvironmentIcon,
+		remoteenvironment: AgentIcon,
 		backup: BackupIcon,
 		volumes: VolumesIcon,
 		clock: ClockIcon
@@ -103,6 +100,10 @@
 		timeouts: {
 			title: m.timeouts_settings,
 			description: m.timeouts_settings_description
+		},
+		tunnel: {
+			title: m.agent_tunnel_settings,
+			description: m.agent_tunnel_settings_description
 		},
 		build: {
 			title: m.builds,
@@ -160,10 +161,6 @@
 		});
 	});
 
-	function navigateToCategory(categoryUrl: string) {
-		if (isInAppPath(categoryUrl)) goto(categoryUrl);
-	}
-
 	function isAccessibleCategory(category: Category) {
 		if (!category.url.startsWith(`${rootUrl}/`)) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
@@ -185,7 +182,15 @@
 		).flatMap((item): NormalizedCategory[] => {
 			const description = navOnlyDescriptions[item.url];
 			if (!description) return [];
-			return [{ id: item.url, title: item.title, description: description(), icon: item.icon, href: item.url }];
+			return [
+				{
+					id: item.url,
+					title: item.title,
+					description: description(),
+					icon: item.icon,
+					href: item.url
+				}
+			];
 		})
 	);
 
@@ -226,7 +231,6 @@
 </script>
 
 <CategoryIndexPage
-	{headerIcon}
 	{title}
 	{subtitle}
 	{searchPlaceholder}
@@ -239,10 +243,12 @@
 	goToPageLabel={m.settings_go_to_page()}
 	groups={groupedCategories}
 	categorySearch={searchAdapter}
-	navigate={navigateToCategory}
 >
 	{#snippet resultsHeading()}
-		{m.settings_search_results({ query: categorySearch.searchQuery, count: categorySearch.searchResults.length })}
+		{m.settings_search_results({
+			query: categorySearch.searchQuery,
+			count: categorySearch.searchResults.length
+		})}
 	{/snippet}
 	{#snippet moreKeywords(count: number)}
 		{m.count_more({ count })}

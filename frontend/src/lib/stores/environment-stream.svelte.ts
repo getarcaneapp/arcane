@@ -37,7 +37,6 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	/** Used in console warnings, e.g. 'Activity'. */
 	label: string;
 	createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): TState;
-	/** Channel to subscribe to on the shared client stream. */
 	channel: string;
 	/** Handles every event type except 'heartbeat' (core owns connection state). */
 	applyEvent(environmentId: string, event: TEvent): void;

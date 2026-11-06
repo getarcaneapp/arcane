@@ -26,7 +26,6 @@
 
 	function b64DecodeUnicode(str: string) {
 		try {
-			// Try to decode UTF-8 safely
 			return decodeURIComponent(
 				atob(str)
 					.split('')
@@ -36,7 +35,6 @@
 					.join('')
 			);
 		} catch (e) {
-			// Fallback to plain atob if it's not proper UTF-8
 			return atob(str);
 		}
 	}

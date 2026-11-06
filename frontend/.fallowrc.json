@@ -21,7 +21,7 @@
 		},
 		{
 			"file": "src/lib/icons/index.ts",
-			"exports": ["LayoutGridIcon", "MonitorSpeakerIcon"]
+			"exports": ["LayoutGridIcon"]
 		}
 	],
 	"ignoreExportsUsedInFile": {

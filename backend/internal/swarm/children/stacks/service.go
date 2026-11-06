@@ -36,7 +36,6 @@ import (
 )
 
 type (
-	// Service deploys and manages swarm stacks and their persisted sources.
 	Service struct {
 		docker           *dockerInternal.DockerClientService
 		ensureManager    func(ctx context.Context) error
@@ -410,14 +409,6 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 		return nil, upsertStackSourceErr
 	}
 
-	// Saving an edited stack must behave like `docker stack deploy` (#3463):
-	// push the updated spec to the running services so the edit takes effect.
-	// The saved source is the full stack spec, so services removed from it
-	// must also be removed from the swarm.
-	// WithRegistryAuth is always set, the same as the Git Sync deploy path:
-	// resolution is per image and yields nothing unless a configured container
-	// registry matches the image host. Without it, a service added in the edit
-	// has no previous spec to fall back on and private images fail to pull.
 	if _, deployStackAfterSourceUpdateErr := deployStackAfterSourceUpdate(s, ctx, environmentID, types.SwarmStackDeployRequest{
 		Name:             stackName,
 		ComposeContent:   source.ComposeContent,
@@ -479,7 +470,6 @@ func (s *Service) listPersistedStackSources(ctx context.Context, environmentID s
 	return stacks, nil
 }
 
-// getPersistedStackSourceSummary maps any not-found failure to errdefs.ErrNotFound.
 func (s *Service) getPersistedStackSourceSummary(ctx context.Context, environmentID, stackName string) (*types.SwarmStackSummary, error) {
 	_, stackSourceDir, err := s.resolveSwarmStackSourceDir(ctx, environmentID, stackName)
 	if err != nil {
@@ -881,7 +871,6 @@ func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackNam
 		return fmt.Errorf("failed to remove swarm stack source directory: %w", removeAllErr)
 	}
 
-	// Best-effort cleanup of now-empty environment directory.
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
 		if removeErr := (acfs.Root{Path: rootDir}).Remove(ctx, path.Dir(stackLogical)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {

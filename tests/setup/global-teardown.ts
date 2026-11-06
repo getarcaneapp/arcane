@@ -17,7 +17,6 @@ async function globalTeardown() {
 	const failures: unknown[] = [];
 	captureComposeDiagnostics(composeFile);
 
-	// 1. Stop and remove Docker containers
 	try {
 		console.log('Stopping Docker containers...');
 		execFileSync('docker', ['compose', '-f', composeFile, 'down', '-v'], {
@@ -30,7 +29,6 @@ async function globalTeardown() {
 		console.error('Warning: Failed to stop Docker containers cleanly:', error);
 	}
 
-	// 2. Clean up test projects created on disk
 	try {
 		if (fs.existsSync(projectsDir)) {
 			console.log('Cleaning up test projects...');
@@ -39,7 +37,6 @@ async function globalTeardown() {
 			for (const item of items) {
 				const itemPath = path.join(projectsDir, item);
 
-				// Keep .env.global and test-project-static if they exist, remove everything else that looks like a test project
 				if (item === '.env.global' || item === 'test-project-static') continue;
 
 				if (fs.lstatSync(itemPath).isDirectory()) {

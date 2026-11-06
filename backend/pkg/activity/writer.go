@@ -147,7 +147,6 @@ func (w *Writer) Flush() {
 	}
 }
 
-// processLine records {"log"} and {"error"} frames and other lines verbatim as activity messages.
 func (w *Writer) processLine(line string) mo.Option[writerAppendMessage] {
 	if line == "" || w.activityID == "" {
 		return mo.None[writerAppendMessage]()
@@ -229,7 +228,6 @@ func (w *Writer) drainRemaining() {
 	}
 }
 
-// drainQueueBatch writes up to writerAppendBatchSize queued lines in one AppendMessages call, closing flushes afterwards.
 func (w *Writer) drainQueueBatch(item writerQueueItem) {
 	var batch []AppendMessageRequest
 	var flushes []chan struct{}

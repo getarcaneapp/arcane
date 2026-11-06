@@ -18,7 +18,6 @@ import (
 )
 
 type (
-	// Handler serves the swarm node endpoints.
 	Handler struct {
 		service            *Service
 		audit              func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
@@ -128,16 +127,6 @@ func NewHandler(p HandlerParams) *Handler {
 	}
 }
 
-// ListNodes lists swarm nodes for an environment and returns a paginated response.
-//
-// It applies the requested search, sort, and pagination values and guarantees a
-// non-nil node slice in the response body.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input supplies the environment ID plus optional filtering and pagination values.
-//
-// Returns a paginated list of node summaries.
-// Returns a mapped HTTP error when node enumeration fails.
 func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[types.SwarmNode], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -155,17 +144,6 @@ func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*h
 	return &handlerutil.Page[types.SwarmNode]{Body: types.Paginated[types.SwarmNode]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// GetNode returns detailed information for a single swarm node.
-//
-// It loads the node through the swarm service and translates not-found
-// conditions into the HTTP error returned by the API.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment and swarm node to inspect.
-//
-// Returns a successful response containing the node summary.
-// Returns `404 Not Found` when the node does not exist or another mapped HTTP
-// error when the inspection fails.
 func (h *Handler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handlerutil.Out[types.SwarmNode], error) {
 	node, err := h.service.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
@@ -229,7 +207,6 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 	}, nil
 }
 
-// ReconcileNodeAgents verifies and persists unique visible-environment node bindings.
 func (h *Handler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*handlerutil.Out[types.NodeAgentReconcileResponse], error) {
 	result, err := h.service.ReconcileNodeAgents(ctx, input.EnvironmentID)
 	if err != nil {
@@ -238,7 +215,6 @@ func (h *Handler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarm
 	return &handlerutil.Out[types.NodeAgentReconcileResponse]{Body: types.ApiResponse[types.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
 }
 
-// PutNodeAgentBinding verifies and attaches an existing visible environment.
 func (h *Handler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*handlerutil.Out[types.SwarmNode], error) {
 	if _, err := h.service.BindNodeAgent(ctx, input.EnvironmentID, input.NodeID, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -266,7 +242,6 @@ func (h *Handler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAg
 	return &handlerutil.Out[types.SwarmNode]{Body: types.ApiResponse[types.SwarmNode]{Success: true, Data: *node}}, nil
 }
 
-// DeleteNodeAgentBinding detaches the visible environment currently bound to a node.
 func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -274,7 +249,6 @@ func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarm
 	return handlerutil.MessageOutput("Swarm node environment detached", ""), nil
 }
 
-// DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
 func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -292,17 +266,6 @@ func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSw
 	return handlerutil.MessageOutput("Dedicated swarm node agent registration removed", ""), nil
 }
 
-// GetNodeIdentity returns the swarm identity of the node serving the current request.
-//
-// It is used by agents and local nodes to report their swarm node ID,
-// hostname, role, engine version, and swarm participation state.
-//
-// ctx carries request-scoped cancellation and auth context.
-// The input value is unused because the endpoint has no parameters.
-//
-// Returns the local swarm node identity when it can be determined.
-// Returns `500 Internal Server Error` when the swarm service is unavailable or
-// identity discovery fails.
 func (h *Handler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityInput) (*handlerutil.Out[SwarmNodeIdentity], error) {
 	identity, err := h.service.GetLocalNodeIdentity(ctx)
 	if err != nil {
@@ -317,17 +280,6 @@ func (h *Handler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityIn
 	}, nil
 }
 
-// UpdateNode updates mutable settings on a swarm node.
-//
-// It requires admin privileges, forwards the requested node changes to the
-// swarm service, and records an audit event when the mutation succeeds.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the node to update and contains the requested changes.
-//
-// Returns a confirmation response when the update succeeds.
-// Returns an authorization error for non-admin callers or a mapped HTTP error
-// when the node update fails.
 func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -343,17 +295,6 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (
 	return handlerutil.MessageOutput("Swarm node updated successfully", ""), nil
 }
 
-// DeleteNode removes a swarm node from the cluster.
-//
-// It requires admin privileges, supports forced removal when requested, and
-// records the deletion parameters in the audit event metadata.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the node to remove and indicates whether removal should be forced.
-//
-// Returns a confirmation response when the node is removed.
-// Returns an authorization error for non-admin callers or a mapped HTTP error
-// when the node cannot be removed.
 func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveNode(ctx, input.NodeID, input.Force); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
@@ -387,16 +328,6 @@ func (h *Handler) RunNodeAction(ctx context.Context, input *SwarmNodeActionInput
 	return handlerutil.MessageOutput(action.SuccessMessage, ""), nil
 }
 
-// ListNodeTasks lists tasks currently associated with a swarm node.
-//
-// It applies search, sort, and pagination inputs and normalizes nil task lists
-// to empty arrays in the API response.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the node and provides optional filtering and pagination values.
-//
-// Returns a paginated list of node task summaries.
-// Returns a mapped HTTP error when the underlying lookup fails.
 func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListNodeTasksPaginated(ctx, input.NodeID, params)
@@ -407,7 +338,6 @@ func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksIn
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// GetJoinCandidates lists enabled visible environments the caller can join.
 func (h *Handler) GetJoinCandidates(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
 	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err
@@ -424,7 +354,6 @@ func (h *Handler) GetJoinCandidates(ctx context.Context, input *types.Environmen
 	return &handlerutil.Out[[]types.SwarmJoinCandidate]{Body: types.ApiResponse[[]types.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
 }
 
-// JoinEnvironments performs Easy Join without returning manager join tokens.
 func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*handlerutil.Out[types.SwarmJoinEnvironmentsResponse], error) {
 	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err

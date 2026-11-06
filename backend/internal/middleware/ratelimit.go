@@ -17,7 +17,6 @@ import (
 )
 
 type (
-	// ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
 	ipRateLimiter struct {
 		lastSweep  time.Time
 		limiters   map[string]*limiterEntry
@@ -110,8 +109,6 @@ func (l *ipRateLimiter) evictOldestEntries(count int, protectedKey string) {
 	}
 }
 
-// PerIPRateLimit returns an Echo middleware that limits requests per client IP
-// to the given rate and burst. It responds with 429 when the limit is exceeded.
 func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -133,8 +130,6 @@ func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	}
 }
 
-// PerAgentTokenRateLimit returns an Echo middleware that limits requests per
-// agent token to the given rate and burst.
 func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
@@ -160,9 +155,6 @@ func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	}
 }
 
-// PerTokenRateLimitForPaths gives known tokens independent budgets and limits others per IP.
-// isKnown must be an in-memory lookup with bounded input, without request-driven cache fills.
-// A nil lookup falls back to the shared IP limiter.
 func PerTokenRateLimitForPaths(
 	paths []string,
 	perMinute int,
@@ -208,11 +200,6 @@ func PerTokenRateLimitForPaths(
 	}
 }
 
-// PerIPRateLimitForPaths returns an Echo middleware that applies a per-IP
-// rate limit only when c.Path() (the registered route pattern) is in paths.
-// Each path gets its own independent token bucket, so traffic on one path
-// does not deplete the budget for another (e.g. a login burst will not
-// block a concurrent token refresh).
 func PerIPRateLimitForPaths(paths []string, perMinute, burst int) echo.MiddlewareFunc {
 	limiters := make(map[string]echo.MiddlewareFunc, len(paths))
 	for _, p := range paths {

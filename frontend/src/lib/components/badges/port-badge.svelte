@@ -80,7 +80,6 @@
 		return Array.from(Map.groupBy(list.map(normalize), portKey).values(), (group) =>
 			group.reduce((merged, n) => ({ ...merged, ips: [...new Set([...merged.ips, ...n.ips])] }))
 		).sort((a, b) => {
-			// Published ports first
 			if (a.isPublished !== b.isPublished) {
 				return a.isPublished ? -1 : 1;
 			}
@@ -111,13 +110,15 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							class:
-								'inline-flex h-6.5 shrink-0 items-stretch overflow-hidden rounded-xl border border-border font-mono text-xs font-medium transition-colors hover:border-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+								'inline-flex h-6.5 shrink-0 items-stretch overflow-hidden rounded-xl border border-border font-mono text-xs font-medium transition-colors hover:border-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
 							rel: 'noopener noreferrer'
 						})}
 						<a {...triggerProps}>
-							<span class="flex items-center bg-sky/10 pr-2 pl-2.5 leading-none text-sky tabular-nums">{p.hostPort}</span>
+							<span class="flex items-center bg-sky/10 pr-2 pl-2.5 leading-none text-sky-foreground tabular-nums"
+								>{p.hostPort}</span
+							>
 							<span class="flex items-center pr-2.5 pl-0.5 leading-none text-muted-foreground tabular-nums">
 								<ArrowRightIcon class="size-3.5 shrink-0 opacity-50" />
 								<span>

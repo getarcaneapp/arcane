@@ -1,0 +1,268 @@
+<script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { toast } from 'svelte-sonner';
+
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
+	import EnabledStatusCell from '#lib/components/arcane-table/cells/enabled-status-cell.svelte';
+	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
+	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import {
+		EditIcon as PencilIcon,
+		TestIcon as TestTubeIcon,
+		TrashIcon as Trash2Icon,
+		GitBranchIcon,
+		ApiKeyIcon as KeyIcon,
+		ExternalLinkIcon as LinkIcon
+	} from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { GitRepository } from '#lib/types/gitops.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	type FieldVisibility = Record<string, boolean>;
+
+	let {
+		repositories,
+		selectedIds = $bindable(),
+		requestOptions = $bindable(),
+		onEditRepository
+	}: {
+		repositories: Paginated<GitRepository>;
+		selectedIds: string[];
+		requestOptions: SearchPaginationSortRequest;
+		onEditRepository: (repository: GitRepository) => void;
+	} = $props();
+
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
+		removing: false,
+		testing: false
+	});
+
+	const canDeleteRepository = $derived(hasShownPermission('git-repositories:delete'));
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onclick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: !canDeleteRepository || isLoading.removing,
+			icon: Trash2Icon
+		}
+	]);
+
+	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+
+	async function handleDeleteSelected(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
+			title: m.common_remove_title({ resource: `${ids.length} ${m.resource_repository()}(s)` }),
+			message: m.common_remove_message({ resource: `${ids.length} ${m.resource_repository()}(s)` }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => gitRepositoryService.deleteRepository(id),
+			messages: {
+				success: (count) => m.common_delete_success({ resource: `${count} ${m.resource_repository()}(s)` }),
+				partial: (_success, _total, failed) => m.common_delete_failed({ resource: `${failed} items` }),
+				failure: () => m.common_delete_failed({ resource: `${ids.length} items` })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onItemFailure: (id) => {
+				const repo = repositories.data.find((item) => item.id === id);
+				toast.error(m.common_delete_failed({ resource: repo?.name ?? m.common_unknown() }));
+			},
+			onComplete: async (result) => {
+				if (result.success > 0) {
+					await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
+				}
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
+		});
+	}
+
+	async function handleDeleteOne(id: string, name: string) {
+		const safeName = name ?? m.common_unknown();
+		confirmAndRun({
+			title: m.git_repository_remove_confirm(),
+			message: m.git_repository_remove_message(),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => gitRepositoryService.deleteRepository(id),
+			failureMessage: m.common_delete_failed({ resource: safeName }),
+			onSuccess: async () => {
+				toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
+			}
+		});
+	}
+
+	async function handleTest(id: string, name: string) {
+		isLoading.testing = true;
+		const safeName = name ?? m.common_unknown();
+		const result = await tryCatch(gitRepositoryService.testRepository(id));
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.common_test_failed({ resource: safeName }),
+			setLoadingState: () => {},
+			onSuccess: () => {
+				toast.success(m.common_test_success({ resource: safeName }));
+			}
+		});
+		isLoading.testing = false;
+	}
+
+	const columns = [
+		{ accessorKey: 'id', title: m.common_id(), hidden: true },
+		{
+			accessorKey: 'name',
+			title: m.git_repository_name(),
+			sortable: true,
+			cell: NameCell
+		},
+		{
+			accessorKey: 'url',
+			title: m.git_repository_url(),
+			sortable: true,
+			cell: UrlCell
+		},
+		{
+			accessorKey: 'authType',
+			title: m.git_repository_auth_type(),
+			sortable: true,
+			cell: AuthTypeCell
+		},
+		{
+			accessorKey: 'enabled',
+			title: m.common_status(),
+			sortable: true,
+			cellComponent: EnabledStatusCell
+		},
+		{
+			accessorKey: 'createdAt',
+			title: m.common_created(),
+			sortable: true,
+			cellComponent: CreatedAtCell
+		}
+	] satisfies ColumnSpec<GitRepository>[];
+
+	const mobileFields = [
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'name', label: m.git_repository_name(), defaultVisible: true },
+		{ id: 'url', label: m.git_repository_url(), defaultVisible: true },
+		{ id: 'authType', label: m.git_repository_auth_type(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
+	];
+</script>
+
+{#snippet NameCell({ value }: { value: unknown })}
+	<div class="flex items-center gap-2">
+		<GitBranchIcon class="size-4 text-muted-foreground" />
+		<span class="font-medium">{value}</span>
+	</div>
+{/snippet}
+
+{#snippet UrlCell({ value }: { value: unknown })}
+	<code class="rounded-xl bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
+{/snippet}
+
+{#snippet AuthTypeCell({ value }: { value: unknown })}
+	{@const authType = String(value)}
+	{#if authType === 'http'}
+		<Badge variant="blue" minWidth="20">{m.git_repository_auth_http()}</Badge>
+	{:else if authType === 'ssh'}
+		<Badge variant="purple" minWidth="20">{m.git_repository_auth_ssh()}</Badge>
+	{:else}
+		<Badge variant="gray" minWidth="20">{m.none()}</Badge>
+	{/if}
+{/snippet}
+
+{#snippet RepositoryMobileCardSnippet({
+	item,
+	mobileFieldVisibility
+}: {
+	item: GitRepository;
+	mobileFieldVisibility: FieldVisibility;
+})}
+	<UniversalMobileCard
+		{item}
+		icon={{ component: GitBranchIcon, variant: 'blue' as const }}
+		title={(item) => item.name}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : item.url)}
+		badges={[{ variant: 'blue' as const, text: m.resource_repository_cap() }]}
+		fields={[
+			{
+				label: m.git_repository_url(),
+				getValue: (item: GitRepository) => item.url,
+				icon: LinkIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['url'] ?? true
+			},
+			{
+				label: m.git_repository_auth_type(),
+				getValue: (item: GitRepository) => item.authType,
+				icon: KeyIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['authType'] ?? true
+			}
+		]}
+		rowActions={RowActions}
+	/>
+{/snippet}
+
+{#snippet RowActions({ item }: { item: GitRepository })}
+	<RowActionsMenu name={item.name}>
+		<IfPermitted perm="git-repositories:test">
+			<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
+				<TestTubeIcon class="size-4" />
+				{m.test_connection()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+
+		<IfPermitted perm="git-repositories:update">
+			<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+				<PencilIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+
+		{#if canDeleteRepository}
+			<RemoveMenuItem onclick={() => handleDeleteOne(item.id, item.name)} disabled={isLoading.removing} />
+		{/if}
+	</RowActionsMenu>
+{/snippet}
+
+<ArcaneTable
+	persistKey="arcane-git-repositories-table"
+	items={repositories}
+	bind:requestOptions
+	bind:selectedIds
+	bind:mobileFieldVisibility
+	{bulkActions}
+	{columns}
+	{mobileFields}
+	rowActions={RowActions}
+	mobileCard={RepositoryMobileCardSnippet}
+>
+	{#snippet emptyState()}
+		<EmptyState icon={GitBranchIcon} title={m.no_repositories_yet()} description={m.add_git_repository_for_syncs()} />
+	{/snippet}
+</ArcaneTable>

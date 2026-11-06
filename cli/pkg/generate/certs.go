@@ -245,17 +245,14 @@ func generateServerTLSBundle(outDir, commonName string, hosts []string, certName
 	return paths, nil
 }
 
-// GenerateP384PrivateKey generates an ECDSA P-384 private key.
 func GenerateP384PrivateKey() (*ecdsa.PrivateKey, error) {
 	return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 }
 
-// GenerateMLDSA87PrivateKey generates an ML-DSA-87 private key.
 func GenerateMLDSA87PrivateKey() (*mldsa.PrivateKey, error) {
 	return mldsa.GenerateKey(mldsa.MLDSA87())
 }
 
-// NewAgentMTLSCATemplate builds Arcane's agent mTLS CA certificate template.
 func NewAgentMTLSCATemplate() (*x509.Certificate, error) {
 	template, err := newCertificateTemplate("Arcane Agent mTLS CA")
 	if err != nil {
@@ -269,7 +266,6 @@ func NewAgentMTLSCATemplate() (*x509.Certificate, error) {
 	return template, nil
 }
 
-// NewAgentMTLSClientTemplate builds an agent client certificate template.
 func NewAgentMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []string) (*x509.Certificate, error) {
 	commonName = strings.TrimSpace(commonName)
 	if commonName == "" {
@@ -293,7 +289,6 @@ func NewAgentMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []st
 	return template, nil
 }
 
-// NewServerTLSTemplate builds a self-signed Arcane HTTPS server certificate template.
 func NewServerTLSTemplate(commonName string, hosts []string) (*x509.Certificate, error) {
 	commonName = strings.TrimSpace(commonName)
 	if commonName == "" {
@@ -320,7 +315,6 @@ func NewServerTLSTemplate(commonName string, hosts []string) (*x509.Certificate,
 	return template, nil
 }
 
-// AgentMTLSTrustDomain returns the SPIFFE trust domain derived from an Arcane app URL.
 func AgentMTLSTrustDomain(appURL string) string {
 	appURL = strings.TrimSpace(appURL)
 	if appURL == "" {
@@ -339,7 +333,6 @@ func AgentMTLSTrustDomain(appURL string) string {
 	return strings.ToLower(strings.TrimSuffix(appURL, "."))
 }
 
-// BuildAgentMTLSURISAN returns the SPIFFE URI SAN for an agent environment ID.
 func BuildAgentMTLSURISAN(appURL, envID string) *url.URL {
 	trustDomain := AgentMTLSTrustDomain(appURL)
 	envID = strings.TrimSpace(envID)

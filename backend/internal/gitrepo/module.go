@@ -1,4 +1,3 @@
-// Package gitrepo owns configured Git repositories and their HTTP surface.
 package gitrepo
 
 import (
@@ -36,7 +35,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterGitRepositories(api, m.service)
 }
 
-// RegisterGitRepositories registers all git repository endpoints.
 func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 	h := &GitRepositoryHandler{repoService: repoService}
 
@@ -45,10 +43,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"listGitRepositories",
 			"GET",
-			"/customize/git/repositories",
+			"/gitops/repositories",
 			"List git repositories",
 			"Get a paginated list of git repositories",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposList,
 		h.ListRepositories,
@@ -58,10 +56,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"createGitRepository",
 			"POST",
-			"/customize/git/repositories",
+			"/gitops/repositories",
 			"Create a git repository",
 			"Create a new git repository configuration",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposCreate,
 		h.CreateRepository,
@@ -71,10 +69,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"getGitRepository",
 			"GET",
-			"/customize/git/repositories/{id}",
+			"/gitops/repositories/{id}",
 			"Get a git repository",
 			"Get a git repository by ID",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposRead,
 		h.GetRepository,
@@ -84,10 +82,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"updateGitRepository",
 			"PATCH",
-			"/customize/git/repositories/{id}",
+			"/gitops/repositories/{id}",
 			"Update a git repository",
 			"Update an existing git repository configuration",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposUpdate,
 		h.UpdateRepository,
@@ -97,10 +95,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"deleteGitRepository",
 			"DELETE",
-			"/customize/git/repositories/{id}",
+			"/gitops/repositories/{id}",
 			"Delete a git repository",
 			"Delete a git repository configuration by ID",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposDelete,
 		h.DeleteRepository,
@@ -110,10 +108,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		huma.Operation{
 			OperationID: "gitRepositoryAction",
 			Method:      http.MethodPost,
-			Path:        "/customize/git/repositories/{id}",
+			Path:        "/gitops/repositories/{id}",
 			Summary:     "Test a git repository",
 			Description: "Test connectivity and authentication to a git repository",
-			Tags:        []string{"Customize"},
+			Tags:        []string{"Git Repositories"},
 			Security:    handlerutil.DefaultOperationSecurity(),
 		},
 		"action",
@@ -127,10 +125,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"listGitRepositoryBranches",
 			"GET",
-			"/customize/git/repositories/{id}/branches",
+			"/gitops/repositories/{id}/branches",
 			"List repository branches",
 			"Get all branches from a git repository with default branch detection",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposRead,
 		h.ListBranches,
@@ -140,10 +138,10 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"browseGitRepositoryFiles",
 			"GET",
-			"/customize/git/repositories/{id}/files",
+			"/gitops/repositories/{id}/files",
 			"Browse repository files",
 			"Browse files and directories in a git repository",
-			"Customize",
+			"Git Repositories",
 		),
 		authz.PermGitReposRead,
 		h.BrowseFiles,

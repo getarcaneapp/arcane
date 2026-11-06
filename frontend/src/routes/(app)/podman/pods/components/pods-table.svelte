@@ -10,7 +10,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { BoxIcon, CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
+	import { CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -93,7 +93,7 @@
 {#snippet PodMobileCard({ item, mobileFieldVisibility }: { item: PodRow; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: BoxIcon, variant: podmanStateVariant(item.status) === 'green' ? 'emerald' : 'gray' }}
+		icon={{ component: ContainersIcon, variant: podmanStateVariant(item.status) === 'green' ? 'emerald' : 'gray' }}
 		title={(item: PodRow) => item.name}
 		subtitle={(item: PodRow) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
 		badges={(mobileFieldVisibility['status'] ?? true)
@@ -116,13 +116,13 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) }))}
+		href={() =>
+			resolve(`/(app)/podman/pods/[id]?env=${encodeURIComponent(item.environmentId)}`, { id: encodeURIComponent(item.id) })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: PodRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() =>
 				goto(

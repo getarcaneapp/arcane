@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// AppImagesHandler provides Huma-based application image endpoints.
 	AppImagesHandler struct {
 		appImagesService *ApplicationImagesService
 	}
@@ -49,7 +48,6 @@ var allowedPWAIconFilenames = map[string]struct{}{
 	"icon-512x512.png": {},
 }
 
-// GetLogo returns the application logo image.
 func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
 	name := kit.Ternary(input.Full, "logo-full", "logo")
 	if input.Animated {
@@ -59,17 +57,14 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 	return h.getImageWithColor(name, input.Color, input.Loop)
 }
 
-// GetFavicon returns the application favicon image.
 func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
 	return h.getImageWithColor("favicon", "", false)
 }
 
-// GetDefaultProfile returns the default user profile image.
 func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
 	return h.getImageWithColor("profile", "", false)
 }
 
-// GetPWAIcon returns a PWA icon image.
 func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
 	if _, ok := allowedPWAIconFilenames[input.Filename]; !ok {
 		return nil, huma.Error400BadRequest("invalid PWA icon filename")

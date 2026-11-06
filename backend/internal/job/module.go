@@ -1,4 +1,3 @@
-// Package job owns background-job schedule configuration and its HTTP surface.
 package job
 
 import (

@@ -16,7 +16,6 @@ import (
 )
 
 type (
-	// TemplateHandler handles template management endpoints.
 	TemplateHandler struct {
 		templateService *TemplateService
 	}
@@ -84,7 +83,6 @@ type (
 	}
 )
 
-// ListTemplates returns a paginated list of templates.
 func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplatesInput) (*handlerutil.Page[types.Template], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.Limit = cmp.Or(params.Limit, 20)
@@ -106,7 +104,6 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 	}, nil
 }
 
-// GetAllTemplates returns all templates without pagination.
 func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplatesInput) (*handlerutil.Out[[]types.Template], error) {
 	templates, err := h.templateService.GetAllTemplates(ctx)
 	if err != nil {
@@ -126,7 +123,6 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 	}, nil
 }
 
-// GetTemplate returns a template by ID.
 func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInput) (*handlerutil.Out[types.Template], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
@@ -151,7 +147,6 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 	}, nil
 }
 
-// GetTemplateContent returns template content with parsed data.
 func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemplateContentInput) (*handlerutil.Out[types.TemplateContent], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
@@ -171,7 +166,6 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 	}, nil
 }
 
-// CreateTemplate creates a new template.
 func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTemplateInput) (*handlerutil.Out[types.Template], error) {
 	tmpl := &ComposeTemplate{
 		Name:        input.Body.Name,
@@ -199,7 +193,6 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 	}, nil
 }
 
-// UpdateTemplate updates a template.
 func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTemplateInput) (*handlerutil.Out[types.Template], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
@@ -233,7 +226,6 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 	}, nil
 }
 
-// DeleteTemplate deletes a template.
 func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTemplateInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
@@ -247,7 +239,6 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 	return handlerutil.MessageOutput("Template deleted successfully", ""), nil
 }
 
-// DownloadTemplate downloads a remote template to local storage.
 func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *TemplateActionInput) (*handlerutil.Out[types.Template], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
@@ -280,7 +271,6 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *TemplateA
 	}, nil
 }
 
-// GetDefaultTemplates returns the default compose and env templates.
 func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefaultTemplatesInput) (*handlerutil.Out[types.DefaultTemplatesResponse], error) {
 	composeTemplate := h.templateService.GetComposeTemplate(ctx)
 	swarmStackTemplate := h.templateService.GetSwarmStackTemplate(ctx)
@@ -300,7 +290,6 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 	}, nil
 }
 
-// SaveDefaultTemplates saves the default compose and env templates.
 func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveDefaultTemplatesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.templateService.SaveComposeTemplate(ctx, input.Body.ComposeContent); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to save default template: " + err.Error())
@@ -313,7 +302,6 @@ func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveD
 	return handlerutil.MessageOutput("Default templates saved successfully", ""), nil
 }
 
-// GetRegistries returns all template registries.
 func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegistriesInput) (*handlerutil.Out[[]types.TemplateRegistry], error) {
 	registries, err := h.templateService.GetRegistries(ctx)
 	if err != nil {
@@ -343,7 +331,6 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 	}, nil
 }
 
-// CreateRegistry creates a new template registry.
 func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*handlerutil.Out[types.TemplateRegistry], error) {
 	registry := &TemplateRegistry{
 		Name:        input.Body.Name,
@@ -369,7 +356,6 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 	}, nil
 }
 
-// UpdateRegistry updates a template registry.
 func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTemplateRegistryInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Registry ID is required")
@@ -388,7 +374,6 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 	return handlerutil.MessageOutput("Registry updated successfully", ""), nil
 }
 
-// DeleteRegistry deletes a template registry.
 func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTemplateRegistryInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Registry ID is required")
@@ -402,7 +387,6 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 	return handlerutil.MessageOutput("Registry deleted successfully", ""), nil
 }
 
-// FetchRegistry fetches templates from a remote registry URL.
 func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplateRegistryInput) (*handlerutil.Out[types.TemplateRemoteRegistry], error) {
 	if input.URL == "" {
 		return nil, huma.Error400BadRequest("Query parameter is required")

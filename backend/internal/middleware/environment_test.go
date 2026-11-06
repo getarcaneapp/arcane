@@ -225,12 +225,6 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 }
 
 func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *testing.T) {
-	// The local environment ("0") is served directly and is never proxied, so
-	// the proxy's per-environment authorization must not apply to it. Set up a
-	// matcher that would require containers:list and a caller with no
-	// permissions at all: if local requests were subject to proxy authz, this
-	// would be a 403. It must instead fall through to the local handler, where
-	// the operation's own RequirePermission middleware enforces access.
 	matcher := authz.NewPermissionMatcher()
 	matcher.Add(http.MethodGet, "/containers", authz.PermContainersList)
 
@@ -316,6 +310,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			registry := agent.NewTunnelRegistry()
 			manager := echo.New()
 			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Registry: registry,
 				Resolver: func(context.Context, string) (string, error) {
 					return "env-remote", nil
@@ -327,6 +324,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
 			_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+				StreamWindowMiB: func() int {
+					return 16
+				},
 				Config: &agent.Config{
 					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
 					AgentEnabled:   true,
@@ -600,7 +600,7 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 
 func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
-	ps := authz.NewPermissionSet() // no permissions at all
+	ps := authz.NewPermissionSet()
 
 	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/settings/public")
 
@@ -623,7 +623,6 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
 		"expected WS terminal to be denied without containers:exec")
 
-	// Granting containers:exec allows the same stream.
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersExec)
 
 	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),

@@ -1,14 +1,6 @@
 import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
 import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
-/**
- * Attaches the operation watch dialog to a project's live log stream, mirroring
- * the log phase of a non-detached `docker compose up`: each container line is
- * appended as `service  | message`. sinceEpochSeconds scopes the backlog to the
- * operation, so the dialog shows every line the containers wrote since the
- * operation began (application startup included) without dredging up history
- * from previous runs. Returns a detach function that closes the stream.
- */
 export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: number, environmentId: string): () => void {
 	let active = true;
 

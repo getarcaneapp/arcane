@@ -12,11 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRegisterFrontend_ServesSPA verifies the RouteNotFound fallback serves
-// index.html for both the root path and unmatched client-side routes, while
-// registered routes stay untouched. Regression test for the echo v5
-// migration, where the router's not-found sentinel stopped matching
-// *echo.HTTPError and every page load returned a 500.
 func TestRegisterFrontend_ServesSPA(t *testing.T) {
 	e := echo.New()
 	e.GET("/api/health", func(c *echo.Context) error {

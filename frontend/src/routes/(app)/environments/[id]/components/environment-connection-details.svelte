@@ -3,14 +3,7 @@
 
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import {
-		ArrowDownIcon,
-		EnvironmentsIcon,
-		type IconType,
-		LockIcon,
-		RemoteEnvironmentIcon,
-		ShieldCheckIcon
-	} from '#lib/icons/index.js';
+	import { ArrowDownIcon, EnvironmentsIcon, type IconType, LockIcon, AgentIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { cn } from '#lib/utils.js';
@@ -48,18 +41,22 @@
 
 	let live = $derived(Boolean(environment.connected));
 
-	let status = $derived.by((): { label: string; dot: string; description?: string } => {
+	let status = $derived.by((): { label: string; description?: string } => {
 		if (live) {
-			return { label: m.environments_agent_status_connected(), dot: 'bg-success' };
+			return {
+				label: m.environments_agent_status_connected()
+			};
 		}
 		if (currentStatus === 'pending') {
 			return {
 				label: m.environments_agent_status_connecting(),
-				dot: 'bg-warning',
 				description: m.environments_agent_pending_description()
 			};
 		}
-		return { label: m.disconnected(), dot: 'bg-destructive', description: m.environments_agent_disconnected_description() };
+		return {
+			label: m.disconnected(),
+			description: m.environments_agent_disconnected_description()
+		};
 	});
 
 	let heartbeatStale = $derived.by(() => {
@@ -85,13 +82,22 @@
 		const avg = tunnelStats?.roundTripAvgMs;
 		const max = tunnelStats?.roundTripMaxMs;
 		if (min === undefined || avg === undefined || max === undefined) return undefined;
-		return m.round_trip_min_avg_max({ min: min.toFixed(1), avg: avg.toFixed(1), max: max.toFixed(1) });
+		return m.round_trip_min_avg_max({
+			min: min.toFixed(1),
+			avg: avg.toFixed(1),
+			max: max.toFixed(1)
+		});
 	});
 
 	let lastDisconnectSummary = $derived.by(() => {
 		const at = tunnelStats?.lastDisconnectAt;
 		if (!at) return undefined;
-		return [m.last_disconnect_time({ time: formatRelativeTime(at, { base: now }) }), tunnelStats?.lastDisconnectReason]
+		return [
+			m.last_disconnect_time({
+				time: formatRelativeTime(at, { base: now })
+			}),
+			tunnelStats?.lastDisconnectReason
+		]
 			.filter(Boolean)
 			.join(' · ');
 	});
@@ -109,7 +115,9 @@
 
 {#snippet stat(label: string, value: string, hint?: string)}
 	<div class="flex flex-col gap-0.5">
-		<div class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+		<div class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+			{label}
+		</div>
 		<div class="text-sm font-semibold break-all">{value}</div>
 		{#if hint}
 			<div class="text-xs text-muted-foreground">{hint}</div>
@@ -129,14 +137,15 @@
 {#snippet detail(label: string, value: string, mono = false)}
 	<div class="flex flex-col gap-0.5 sm:flex-row sm:gap-6">
 		<dt class="shrink-0 text-muted-foreground sm:w-32">{label}</dt>
-		<dd class={cn('min-w-0', mono && 'font-mono break-all select-all')}>{value}</dd>
+		<dd class={cn('min-w-0', mono && 'font-mono break-all select-all')}>
+			{value}
+		</dd>
 	</div>
 {/snippet}
 
 <div class="flex flex-col gap-6 px-1">
 	<div class="flex flex-col gap-1.5">
 		<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-			<span class={cn('size-2 rounded-full', status.dot)}></span>
 			<span class="text-base font-semibold">{status.label}</span>
 			{#if environment.connected}
 				<Badge variant={heartbeatStale ? 'amber' : 'green'} size="sm" hoverEffect="none">
@@ -144,10 +153,14 @@
 				</Badge>
 				<span class="text-xs text-muted-foreground">
 					{#if environment.connectedAt}
-						{m.environments_agent_uptime({ duration: formatElapsedTime(environment.connectedAt, { base: now }) })}
+						{m.environments_agent_uptime({
+							duration: formatElapsedTime(environment.connectedAt, { base: now })
+						})}
 					{/if}
 					{#if environment.lastHeartbeat}
-						· {m.environments_agent_heartbeat_ago({ time: formatRelativeTime(environment.lastHeartbeat, { base: now }) })}
+						· {m.environments_agent_heartbeat_ago({
+							time: formatRelativeTime(environment.lastHeartbeat, { base: now })
+						})}
 					{/if}
 				</span>
 			{/if}
@@ -156,7 +169,9 @@
 			<p class="text-sm text-muted-foreground">
 				{status.description}
 				{#if transportLabel}
-					{m.environments_agent_last_transport({ transport: transportLabel })}
+					{m.environments_agent_last_transport({
+						transport: transportLabel
+					})}
 				{/if}
 			</p>
 		{/if}
@@ -181,7 +196,7 @@
 			</span>
 		</div>
 		<div class={cn('flow-track flow-track-agent mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
-		{@render endpoint(RemoteEnvironmentIcon, environment.name)}
+		{@render endpoint(AgentIcon, environment.name)}
 	</div>
 
 	{#if environment.connected}
@@ -189,7 +204,9 @@
 			{#if environment.agentRoundTripMs !== undefined}
 				{@render stat(
 					m.environments_agent_stat_round_trip(),
-					m.environments_agent_round_trip_ms({ ms: environment.agentRoundTripMs.toFixed(1) }),
+					m.environments_agent_round_trip_ms({
+						ms: environment.agentRoundTripMs.toFixed(1)
+					}),
 					roundTripRange
 				)}
 			{/if}

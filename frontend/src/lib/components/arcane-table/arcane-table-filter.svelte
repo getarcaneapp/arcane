@@ -45,7 +45,6 @@
 				{...props}
 				action="base"
 				tone="ghost"
-				size="sm"
 				icon={FilterIcon}
 				customLabel={title}
 				class={cn(

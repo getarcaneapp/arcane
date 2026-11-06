@@ -9,7 +9,6 @@
 		Omit<HTMLInputAttributes, 'type' | 'size'> & ({ type: 'file'; files?: FileList } | { type?: InputType; files?: undefined })
 	> & {
 		size?: 'default' | 'sm' | 'lg';
-		/** Monospace text for code-like values (paths, IDs, env vars). */
 		mono?: boolean;
 	};
 
@@ -46,11 +45,12 @@
 		bind:this={ref}
 		data-slot="input"
 		class={cn(
-			'flex h-9 w-full min-w-0 rounded-xl bg-input/80 px-3 py-1 text-base ring-offset-background backdrop-blur-sm transition-all outline-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-			'focus-visible:border-ring focus-visible:bg-input/90 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:backdrop-blur-md',
+			'flex h-9 w-full min-w-0 rounded-xl bg-input/80 px-3 py-1 text-base ring-offset-background backdrop-blur-sm transition-all outline-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pointer-coarse:min-h-touch-target',
+			'focus-visible:border-ring focus-visible:bg-input/90 focus-visible:ring-3 focus-visible:ring-ring focus-visible:backdrop-blur-md',
 			'aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40',
 			size === 'sm' && 'text-xs md:text-xs',
 			size === 'lg' && 'text-lg font-semibold md:text-lg',
+			size !== 'lg' && 'pointer-coarse:text-form-control',
 			mono && 'font-mono',
 			className
 		)}

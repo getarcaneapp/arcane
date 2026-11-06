@@ -91,8 +91,6 @@
 		const data = form.validate();
 		if (!data) return;
 
-		// v1: persist all picks as global grants (environmentId undefined).
-		// env-scoped picking is a follow-up. Personal keys carry no grants.
 		const permissions = data.permissions.map((p) => ({ permission: p }));
 
 		if (!apiKeyToEdit) {

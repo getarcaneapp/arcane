@@ -424,12 +424,6 @@ func TestUnescapeMountInfoPath(t *testing.T) {
 func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	tempDir := t.TempDir()
 
-	// Setup directory structure:
-	// tempDir/
-	//   database/
-	//   projects/ (this is the protected projects directory)
-	//     demo/
-	//       keep.txt (should not be touched)
 	projectsDir := filepath.Join(tempDir, "projects")
 	demoDir := filepath.Join(projectsDir, "demo")
 	keepFile := filepath.Join(demoDir, "keep.txt")
@@ -439,7 +433,6 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0o644))
 	require.NoError(t, os.MkdirAll(databaseDir, 0o755))
 
-	// Track visited paths using mocked lchownFn
 	visited := make(map[string]bool)
 	oldLchownFn := lchownFn
 	lchownFn = func(path string, uid, gid int) error {
@@ -460,14 +453,11 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	cleanedDemoDir := filepath.Clean(demoDir)
 	cleanedKeepFile := filepath.Clean(keepFile)
 
-	// Assert base directories / other directories under the path were visited
 	require.True(t, visited[cleanedTempDir], "temp root dir must be visited")
 	require.True(t, visited[cleanedDatabaseDir], "non-protected database dir must be visited")
 
-	// Assert projects directory itself was visited (top level chown)
 	require.True(t, visited[cleanedProjectsDir], "protected projects dir must be visited at top-level")
 
-	// Assert contents inside elements of projects directory were NOT visited
 	require.False(t, visited[cleanedDemoDir], "subdir inside projects dir must NOT be visited")
 	require.False(t, visited[cleanedKeepFile], "file inside projects dir must NOT be visited")
 }

@@ -29,7 +29,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
 	"getarcane.dev/arcane/v3/internal/container"
-	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/di"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -146,8 +145,6 @@ func Bootstrap(ctx context.Context) error {
 		AgentMode:     cfg.AgentEnabled,
 	})
 
-	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
-	// database is open but before Docker clients and services. Exporter errors go to the console-only logger.
 	instanceID, err := settings.EnsureInstanceID(appCtx, db)
 	if err != nil {
 		return err
@@ -244,7 +241,7 @@ func applicationOptions(
 			initializeStartupState,
 			startJobScheduler,
 			registerJobs,
-			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, _ *http.Server) {
+			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, _ *http.Server) {
 				if !cfg.AgentEnabled {
 					return
 				}
@@ -254,6 +251,9 @@ func applicationOptions(
 						tunnelStop, err := agent.NewTunnelClient(agent.TunnelClientConfig{
 							Config:  buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)),
 							Handler: router,
+							StreamWindowMiB: func() int {
+								return settingsService.GetSettingsOrDefaults(appCtx).AgentTunnelStreamWindowMb.AsInt()
+							},
 						}).Start(appCtx)
 						if err != nil {
 							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)
@@ -332,8 +332,8 @@ func applicationOptions(
 					},
 				})
 			},
-			func(lc fx.Lifecycle, dashboardService *dashboard.DashboardService) {
-				if err := dashboardService.ObserveInventory(otel.Meter(logging.InstrumentationName)); err != nil {
+			func(lc fx.Lifecycle, swarmService *swarm.SwarmService) {
+				if err := swarmService.ObserveMetrics(otel.Meter(logging.InstrumentationName)); err != nil {
 					otel.Handle(err)
 				}
 				if providers.meterProvider != nil {
@@ -390,7 +390,6 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {
 			slog.WarnContext(p.AppCtx, "Failed to reconcile agent environment statuses on startup", "error", err)
 		}
-		p.Environment.RegisterMetrics()
 	}
 
 	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,

@@ -18,17 +18,12 @@ import (
 )
 
 const (
-	// UpgradeLogDirectory is mounted into the upgrader to persist its logs.
-	UpgradeLogDirectory = "/app/data"
-	// InternalResourceLabel marks containers used for Arcane utilities.
+	UpgradeLogDirectory   = "/app/data"
 	InternalResourceLabel = "com.getarcaneapp.internal.resource"
-	// HiddenResourceLabel hides containers from container lists and dashboard counts.
-	HiddenResourceLabel = "com.getarcaneapp.arcane.hidden"
-	// LabelArcaneUpgrader marks the self-upgrade helper, which container lookups must skip.
-	LabelArcaneUpgrader = "com.getarcaneapp.arcane.upgrader"
+	HiddenResourceLabel   = "com.getarcaneapp.arcane.hidden"
+	LabelArcaneUpgrader   = "com.getarcaneapp.arcane.upgrader"
 )
 
-// FindArcaneContainerIDByLabel prefers a running labeled container, skips the upgrader, and returns "" when none match.
 func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Client) string {
 	filters := make(client.Filters)
 	filters = filters.Add("label", labels.LabelArcane+"=true")
@@ -54,7 +49,6 @@ func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Clie
 	return fallbackID
 }
 
-// InspectCurrentArcaneContainer prefers cgroup/hostname detection and falls back to the Arcane label.
 func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Client) (*container.InspectResponse, error) {
 	// Behind a network_mode sidecar, hostname and cgroup resolve the sidecar, so only a labeled hit is trusted (#3544, #3693).
 	var unlabeled *container.InspectResponse
@@ -85,7 +79,6 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	return nil, errors.New("could not detect Arcane container")
 }
 
-// sharesNetworkNamespace reports whether candidate uses network_mode container:<owner ID prefix or name>.
 func sharesNetworkNamespace(candidate, owner *container.InspectResponse) bool {
 	if candidate.HostConfig == nil || !candidate.HostConfig.NetworkMode.IsContainer() {
 		return false
@@ -97,7 +90,6 @@ func sharesNetworkNamespace(candidate, owner *container.InspectResponse) bool {
 	return strings.HasPrefix(owner.ID, ref) || strings.EqualFold(ref, strings.TrimPrefix(owner.Name, "/"))
 }
 
-// CurrentContainerInspectTarget returns the container ID or hostname; callers must validate the inspected container.
 func CurrentContainerInspectTarget(currentContainerID, hostname func() (string, error)) (string, error) {
 	if currentContainerID != nil {
 		if containerID, err := currentContainerID(); err == nil {

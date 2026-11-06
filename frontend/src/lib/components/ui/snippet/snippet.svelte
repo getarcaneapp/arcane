@@ -3,11 +3,11 @@
 -->
 
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
 
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import type { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
-	import { cn } from '#lib/utils.js';
+	import { tv, cn } from '#lib/utils.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 
 	const style = tv({

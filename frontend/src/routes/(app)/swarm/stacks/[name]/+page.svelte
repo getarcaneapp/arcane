@@ -15,7 +15,7 @@
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon, StopIcon, StartIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon, StopIcon, PlayIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -101,7 +101,7 @@
 	const canReadStackSource = $derived(hasPermission('swarm-stacks:read', envId));
 	const canViewSource = $derived(canReadStackSource && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
-		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
+		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: ContainersIcon }] : []),
 		...(hasLiveStack ? [{ value: 'tasks', label: m.tasks(), icon: JobsIcon }] : []),
 		...(canViewSource ? [{ value: 'source', label: 'Source', icon: FileTextIcon }] : [])
 	]);
@@ -272,7 +272,7 @@
 						id: 'up',
 						action: 'start' as const,
 						label: m.common_up(),
-						icon: StartIcon,
+						icon: PlayIcon,
 						onclick: handleUp,
 						loading: isLoading.up,
 						disabled: isLoading.up || isLoading.remove
@@ -323,7 +323,7 @@
 		{
 			title: m.services(),
 			value: totalServices,
-			icon: DockIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-info'
 		},
 		{
@@ -335,7 +335,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={stackName} subtitle={stackSubtitle} icon={LayersIcon} {actionButtons} {statCards}>
+<ResourcePageLayout title={stackName} subtitle={stackSubtitle} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="flex min-h-screen-inset-18 flex-col gap-4">
 			{#if !hasLiveStack && canViewSource}

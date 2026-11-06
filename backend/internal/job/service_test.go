@@ -208,7 +208,6 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	status = runtime.ApplyRunStatus(status, []types.SchedulerRun{retried})
 	require.Equal(t, retried.ID, status.LastRun.ID)
 	require.Equal(t, "clone failed", status.LastError)
-	// Merge the same run's terminal revision before choosing an active run.
 	status = runtime.ApplyRunStatus(
 		types.JobStatus{
 			CurrentRun: &types.SchedulerRun{

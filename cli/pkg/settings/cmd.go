@@ -26,7 +26,6 @@ type (
 	}
 )
 
-// Command is the parent command for settings operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "settings",

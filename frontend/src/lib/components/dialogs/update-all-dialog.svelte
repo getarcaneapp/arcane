@@ -6,7 +6,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, AlertIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
@@ -135,9 +135,6 @@
 
 	async function handleClose() {
 		const attempt = ++startAttempt;
-		// Refresh through SvelteKit instead of reloading the document: a hard reload
-		// lands while agents are still reconnecting after every environment restarts, which
-		// renders every environment as offline for a moment.
 		if (job && !debugDemo) await tryCatch(refreshAll());
 		if (attempt !== startAttempt) return;
 		resetState();
@@ -145,8 +142,6 @@
 		await onFinished?.();
 	}
 
-	// Version/release presentation for the confirm step, rendered when the caller
-	// has the manager's version information at hand (sidebar / mobile nav).
 	const releaseNotes = $derived(versionInformation?.releaseNotes?.trim() ?? '');
 	const releaseUrl = $derived(versionInformation?.releaseUrl ?? '');
 	const releasedAgo = $derived.by(() => {
@@ -154,8 +149,6 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
-	// "Done" is every environment that has reached a terminal state — i.e. anything
-	// that isn't still queued (pending) or actively being worked on (updating).
 	const results = $derived(job?.results ?? []);
 	const managerResult = $derived(results.find((r) => r.environmentId === MANAGER_ENVIRONMENT_ID));
 	const totalCount = $derived(results.length);
@@ -202,13 +195,9 @@
 		{ count: totalCount - doneCount - updatingCount, class: 'bg-muted', label: m.environments_update_all_legend_queued }
 	]);
 
-	// Dev-only preview: step fake environments through every row state so this dialog can be
-	// designed and reviewed without triggering a real update of all environments. Only ever enabled
-	// from a dev-guarded callsite.
 	async function runDebugDemo() {
 		const attempt = startAttempt;
 		const live = () => attempt === startAttempt && isActiveUpgradeJob(demoJob);
-		// Sleeps, then reports whether the demo is still the one being watched.
 		const pause = async (ms: number) => {
 			await new Promise((resolve) => setTimeout(resolve, ms));
 			return live();
@@ -264,7 +253,6 @@
 			enterStage(row, 'upgrading', 70);
 			if (!(await pause(700))) return false;
 			enterStage(row, 'reconnecting', 90);
-			// One slow reconnect, to exercise the elapsed-time display.
 			if (index === 1 && !(await pause(5000))) return false;
 			// The manager restart is the one moment the reconnecting banner shows.
 			if (index === 0 && demoJob) {
@@ -347,7 +335,7 @@
 						<div class="flex min-w-0 items-center gap-2">
 							{#if phase === 'finished'}
 								{#if failed}
-									<AlertTriangleIcon class="size-4 shrink-0 text-destructive" />
+									<AlertIcon class="size-4 shrink-0 text-destructive" />
 								{:else}
 									<SuccessIcon class="size-4 shrink-0 text-success" />
 								{/if}

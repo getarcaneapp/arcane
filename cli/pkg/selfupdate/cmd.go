@@ -67,7 +67,6 @@ const (
 
 var errCLIUpdateNotFound = errors.New("HTTP 404 Not Found")
 
-// Command updates the arcane-cli executable.
 func Command() *cobra.Command {
 	var opts cliUpdateOptions
 	cmd := &cobra.Command{

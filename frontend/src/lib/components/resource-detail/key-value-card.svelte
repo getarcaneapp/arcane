@@ -8,7 +8,6 @@
 		children: Snippet;
 		/** `custom` preserves the value snippet's own formatting. */
 		valueFormat?: 'code' | 'text' | 'custom';
-		/** Stacks multiple value children vertically. */
 		stacked?: boolean;
 		valueTitle?: string;
 		class?: string;

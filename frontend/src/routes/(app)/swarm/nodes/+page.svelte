@@ -5,7 +5,7 @@
 
 	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
+	import { AlertIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmNodeListQuery } from '#lib/query/swarm.js';
@@ -96,7 +96,7 @@
 		<div class="space-y-4">
 			{#if uncoveredNodeCount > 0}
 				<Alert.Root variant="warning-subtle">
-					<AlertTriangleIcon class="size-4 text-warning" />
+					<AlertIcon class="size-4 text-warning" />
 					<Alert.Title>{m.swarm_node_agent_warning_title()}</Alert.Title>
 					<Alert.Description>{m.swarm_node_agent_warning_description({ count: uncoveredNodeCount })}</Alert.Description>
 				</Alert.Root>

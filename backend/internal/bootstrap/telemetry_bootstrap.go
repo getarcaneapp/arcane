@@ -27,8 +27,6 @@ import (
 )
 
 type (
-	// telemetryProviders owns the providers enabled through the standard OTEL_*
-	// exporter variables. A nil provider means that signal is off.
 	telemetryProviders struct {
 		shutdownErr    error
 		tracerProvider *trace.TracerProvider
@@ -38,7 +36,6 @@ type (
 		shutdownOnce sync.Once
 	}
 
-	// redactingExporter strips URL queries and fragments from span attributes, events, and statuses before export.
 	redactingExporter struct{ trace.SpanExporter }
 
 	redactedSpan struct{ trace.ReadOnlySpan }
@@ -50,8 +47,6 @@ var (
 	webhookToken = regexp.MustCompile(`(/webhooks/trigger/)[^/?#\s"']+`)
 )
 
-// setupTelemetry installs global providers for each OTEL_*_EXPORTER that is set
-// to something other than none. Exporter failures are reported to errorLogger.
 func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.Logger, instanceID string) (*telemetryProviders, error) {
 	tel := &telemetryProviders{}
 	if telemetry.SDKDisabled() {
@@ -65,6 +60,7 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 	// persisted instance ID or mode that identify this installation.
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
+		resource.WithHost(),
 		resource.WithAttributes(semconv.ServiceName("arcane"), semconv.ServiceVersion(config.Version)),
 		resource.WithFromEnv(),
 		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.AgentEnabled, "agent", "manager"))),
@@ -128,7 +124,6 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 	return tel, nil
 }
 
-// Shutdown flushes and stops every provider. It is safe to call more than once.
 func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 	t.shutdownOnce.Do(func() {
 		var errs []error
@@ -148,7 +143,6 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 	return t.shutdownErr
 }
 
-// redactSecrets strips URL credentials, queries, and fragments, and masks webhook trigger tokens, which travel in the path.
 func redactSecrets(s string) string {
 	s = urlUserinfo.ReplaceAllString(s, "$1")
 	return webhookToken.ReplaceAllString(urlQuery.ReplaceAllString(s, "$1"), "${1}:token")

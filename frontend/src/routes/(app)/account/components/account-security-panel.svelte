@@ -129,7 +129,6 @@
 					<ArcaneButton
 						action="restart"
 						tone="outline"
-						size="sm"
 						customLabel={m.account_signout_other()}
 						onclick={logoutAllOther}
 						loading={revokingAll}
@@ -144,7 +143,6 @@
 						<ArcaneButton
 							action="cancel"
 							tone="outline"
-							size="sm"
 							customLabel={m.common_log_out()}
 							icon={LogoutIcon}
 							type="submit"

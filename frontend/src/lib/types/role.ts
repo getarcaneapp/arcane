@@ -70,7 +70,7 @@ export type PermissionPreset = {
 	permissions: string[];
 };
 
-export type AccessSurfaceKind = 'route' | 'settings-category' | 'customize-category' | 'landing';
+export type AccessSurfaceKind = 'route' | 'settings-category' | 'landing';
 export type AccessMode = 'permissions' | 'any-child';
 export type AccessMatchMode = 'any-of' | 'all-of';
 export type AccessScopeMode = 'global-only' | 'env-plus-global' | 'any-effective-scope';

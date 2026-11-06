@@ -71,15 +71,19 @@
 			layout="wide"
 			class="p-0"
 		>
-			<Input
-				id="environments-all-environments-limit"
-				type="number"
-				min="2"
-				max="256"
-				bind:value={environmentLimitInput}
-				placeholder="64"
-				aria-invalid={Boolean(environmentLimitError)}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="environments-all-environments-limit"
+					type="number"
+					min="2"
+					max="256"
+					bind:value={environmentLimitInput}
+					placeholder="64"
+					aria-invalid={Boolean(environmentLimitError)}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			for="environments-upgrade-max-parallel-agents"
@@ -91,16 +95,20 @@
 			layout="wide"
 			class="p-0"
 		>
-			<Input
-				id="environments-upgrade-max-parallel-agents"
-				type="number"
-				min="1"
-				max="16"
-				bind:value={parallelUpgradesInput}
-				placeholder="4"
-				disabled={settingsStore.isLocked('upgradeMaxParallelAgents')}
-				aria-invalid={Boolean(parallelUpgradesError)}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="environments-upgrade-max-parallel-agents"
+					type="number"
+					min="1"
+					max="16"
+					bind:value={parallelUpgradesInput}
+					placeholder="4"
+					disabled={settingsStore.isLocked('upgradeMaxParallelAgents')}
+					aria-invalid={Boolean(parallelUpgradesError)}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</form>
 

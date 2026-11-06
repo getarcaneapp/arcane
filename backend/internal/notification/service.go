@@ -67,7 +67,6 @@ type (
 		SettingsService *settings.SettingsService
 	}
 
-	// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
 	// Only vulnerabilities with a fixed version should trigger this notification.
 	VulnerabilityNotificationPayload struct {
 		CVEID            string // e.g. CVE-2024-1234
@@ -75,8 +74,8 @@ type (
 		Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
 		ImageName        string // e.g. nginx:latest
 		FixedVersion     string
-		PkgName          string // optional
-		InstalledVersion string // optional
+		PkgName          string
+		InstalledVersion string
 	}
 
 	ContainerUpdateEvent struct {
@@ -120,7 +119,6 @@ var (
 		notifications.NotificationProviderMatrix: "host",
 	}
 
-	// notificationTestEventTypes lists supported test types and the event a real notification of that kind is gated on ("" = none).
 	notificationTestEventTypes = map[string]notifications.NotificationEventType{
 		notificationTestTypeSimple:           "",
 		notificationTestTypeImageUpdate:      notifications.NotificationEventImageUpdate,
@@ -341,9 +339,6 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
-		// Shoutrrr renders the payload template internally at send time, so a
-		// broken template is validated here where the error surfaces against
-		// the user's own configuration instead of as an opaque send failure.
 		if validateErr := notifications.ValidateGenericPayloadTemplate(genericConfig); validateErr != nil {
 			return nil, common.Classify(common.ErrInvalidNotificationPayloadTemplate, validateErr)
 		}
@@ -395,7 +390,6 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 	return &setting, nil
 }
 
-// RedactNotificationConfigCredentials returns a copy of config with provider credential fields blanked for API responses.
 func RedactNotificationConfigCredentials(provider notifications.NotificationProvider, localConfig database.JSON) database.JSON {
 	redacted := cloneNotificationConfig(localConfig)
 	for _, field := range notificationCredentialFieldsByProvider[provider] {
@@ -412,7 +406,6 @@ func RedactNotificationConfigCredentials(provider notifications.NotificationProv
 	return redacted
 }
 
-// encryptNotificationConfigCredentials encrypts credential fields, preserving stored ones left blank.
 // Kept separate from CreateOrUpdateSettings to stay under the gocognit limit.
 func encryptNotificationConfigCredentials(provider notifications.NotificationProvider, localConfig, existingConfig database.JSON) (database.JSON, error) {
 	encryptedConfig := cloneNotificationConfig(localConfig)
@@ -489,7 +482,6 @@ func encryptNotificationConfigCredentials(provider notifications.NotificationPro
 	return encryptedConfig, nil
 }
 
-// cloneNotificationConfig copies config, returning an empty non-nil map for nil.
 func cloneNotificationConfig(localConfig database.JSON) database.JSON {
 	if localConfig == nil {
 		return database.JSON{}
@@ -516,7 +508,6 @@ func (s *NotificationService) isEventEnabled(localConfig database.JSON, eventTyp
 	return !ok || enabled
 }
 
-// send delivers content to one provider inside a notification.send span and counts the outcome.
 func (s *NotificationService) send(
 	ctx context.Context,
 	target NotificationTarget,
@@ -548,8 +539,6 @@ func (s *NotificationService) send(
 	return handled, err
 }
 
-// notifyEnabledProviders sends content to every enabled provider subscribed to eventType, logs each attempt,
-// and returns how many providers it was delivered to along with the aggregated send errors.
 func (s *NotificationService) notifyEnabledProviders(
 	ctx context.Context,
 	target NotificationTarget,
@@ -651,9 +640,6 @@ func (s *NotificationService) notifyEnabledProviders(
 	return delivered, nil
 }
 
-// --- Event entry points ---
-
-// SendBatchContainerUpdateNotification dispatches one notification covering all containers updated in an auto-update run.
 func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.Context, entries []notifications.ContainerUpdateBatchEntry) error {
 	if len(entries) == 0 {
 		return nil
@@ -703,7 +689,6 @@ func (s *NotificationService) sendBatchContainerUpdateNotificationForTarget(ctx 
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, logRef, metadata, content)
 }
 
-// SendImageUpdateNotification returns how many providers the notification was delivered to.
 // Zero means no provider has this event enabled, so callers must not mark the update notified.
 func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *types.ImageUpdateResponse, eventType notifications.NotificationEventType) (int, error) {
 	if updateInfo == nil {
@@ -786,7 +771,6 @@ func (s *NotificationService) sendContainerUpdateNotificationForTarget(ctx conte
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, imageRef, metadata, content)
 }
 
-// SendVulnerabilityNotification notifies providers subscribed to vulnerability_found events.
 // Only daily summary payloads are sent; legacy per-CVE payloads are ignored.
 func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context, payload VulnerabilityNotificationPayload) error {
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(payload.CVEID)), "DAILY SUMMARY") {
@@ -831,7 +815,6 @@ func (s *NotificationService) sendVulnerabilityNotificationForTarget(ctx context
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventVulnerabilityFound, payload.ImageName, metadata, content)
 }
 
-// SendBatchImageUpdateNotification returns how many providers the notification was delivered to.
 // Zero means no provider has this event enabled, so callers must not mark the updates notified.
 func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*types.ImageUpdateResponse) (int, error) {
 	updatesWithChanges := maps.Clone(updates)
@@ -931,7 +914,6 @@ func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.C
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventPruneReport, "System Prune Report", metadata, content)
 }
 
-// SendAutoHealNotification sends a notification when a container is auto-healed.
 func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
 	if s.config.AgentEnabled {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
@@ -963,10 +945,6 @@ func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Cont
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventAutoHeal, containerName, metadata, content)
 }
 
-// --- Test notifications ---
-
-// TestNotification sends a test message even to a disabled provider (testing before enabling is legitimate)
-// and returns a warning when a real notification of the tested kind would not send.
 func (s *NotificationService) TestNotification(ctx context.Context, provider notifications.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1054,7 +1032,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider not
 				ResponseTimeMs: 95,
 			},
 		}, true)
-	default: // simple and image-update
+	default:
 		imageRef := kit.Ternary(testType == notificationTestTypeSimple, "test/image:latest", "nginx:latest")
 		content = s.templates.ImageUpdate(target.EnvironmentName, imageRef, &types.ImageUpdateResponse{
 			HasUpdate:      true,

@@ -115,7 +115,6 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
 
-// registryPing answers the /v2/ version check every registry client sends first: a bearer challenge when set, else OK.
 func registryPing(w http.ResponseWriter, r *http.Request, challenge string) bool {
 	if r.URL.Path != "/v2/" {
 		return false
@@ -129,7 +128,6 @@ func registryPing(w http.ResponseWriter, r *http.Request, challenge string) bool
 	return true
 }
 
-// writeManifestHead answers a manifest HEAD with the headers a client needs to trust the digest without a body.
 func writeManifestHead(w http.ResponseWriter, localDigest string) {
 	w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
 	w.Header().Set("Content-Length", "0")
@@ -1034,8 +1032,6 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsForNon
 	assert.True(t, result.UsedCredential)
 }
 
-// A rate limited anonymous request is not an unauthorized one, so before this was
-// fixed a stored ghcr.io credential was never reached. See issue #2635.
 func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsInsteadOfRateLimitedAnonymous(t *testing.T) {
 	db := setupContainerRegistryTestDB(t)
 	createTestPullRegistry(t, db, "ghcr.io", "ghcr-user", "ghcr-token")
@@ -1445,8 +1441,6 @@ func TestContainerRegistryService_CreateRegistry_NormalizesAndPersistsRepository
 	db := setupContainerRegistryTestDB(t)
 	svc := newRegistryTestService(t, db, nil)
 
-	// Entries are trimmed, empties dropped and duplicates removed while
-	// preserving first-occurrence order.
 	registryRecord := createRegistryWithRepositoryNames(t, svc, " team ", "", "team", "team/platform", " team ")
 	assert.Equal(t, database.StringSlice{"team", "team/platform"}, registryRecord.RepositoryNames)
 	assert.Equal(t, database.StringSlice{"team", "team/platform"}, fetchRegistry(t, db, registryRecord.ID).RepositoryNames)
@@ -1480,7 +1474,6 @@ func TestContainerRegistryService_UpdateRegistry_RepositoryNamesPointerSemantics
 	require.NoError(t, err)
 	assert.Equal(t, database.StringSlice{"team", "team/platform"}, updated.RepositoryNames)
 
-	// An empty slice clears them.
 	updated, err = svc.UpdateRegistry(t.Context(), registryRecord.ID, types.ContainerRegistry{
 		RepositoryNames: []string{},
 	}, map[string]bool{"repositoryNames": true})
@@ -1619,8 +1612,6 @@ func TestListImageTagsRejectedCredentialFallback(t *testing.T) {
 	}
 }
 
-// newLabelTestRegistry starts an in-memory OCI registry and returns its
-// host as "localhost:PORT" so go-containerregistry resolves it over plain HTTP.
 func newLabelTestRegistry(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
@@ -1646,7 +1637,7 @@ func pushLabeledImage(t *testing.T, imageRef string, imageLabels map[string]stri
 	return img
 }
 
-func TestContainerRegistryService_ImageLabels(t *testing.T) {
+func TestContainerRegistryService_ImageConfig(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 	img := pushLabeledImage(t, imageRef, map[string]string{
@@ -1655,46 +1646,45 @@ func TestContainerRegistryService_ImageLabels(t *testing.T) {
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
 
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.66", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.66", cfg.Config.Labels[OCIImageVersionLabel])
 
 	// Digest references resolve too — the version service prefers them.
 	imgDigest, err := img.Digest()
 	require.NoError(t, err)
-	labels, err = svc.ImageLabels(t.Context(), host+"/getarcaneapp/arcane@"+imgDigest.String())
+	cfg, err = svc.ImageConfig(t.Context(), host+"/getarcaneapp/arcane@"+imgDigest.String(), ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.66", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.66", cfg.Config.Labels[OCIImageVersionLabel])
 }
 
-func TestContainerRegistryService_ImageLabelsWithoutVersionLabel(t *testing.T) {
+func TestContainerRegistryService_ImageConfigWithoutVersionLabel(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 	pushLabeledImage(t, imageRef, nil)
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.NotContains(t, labels, OCIImageVersionLabel)
+	assert.NotContains(t, cfg.Config.Labels, OCIImageVersionLabel)
 }
 
-func TestContainerRegistryService_ImageLabelsErrorNotCached(t *testing.T) {
+func TestContainerRegistryService_ImageConfigErrorNotCached(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
 
-	// The image does not exist yet: the lookup must fail...
-	_, err := svc.ImageLabels(t.Context(), imageRef)
+	_, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.Error(t, err)
 
 	// ...and the failure must not be cached: after the push the same ref resolves.
 	pushLabeledImage(t, imageRef, map[string]string{
 		OCIImageVersionLabel: "v2.8.0-next.67",
 	})
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.67", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.67", cfg.Config.Labels[OCIImageVersionLabel])
 }
 
 func TestClassifyDigestError(t *testing.T) {

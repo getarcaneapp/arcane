@@ -47,14 +47,13 @@ import (
 
 type (
 	EventService struct {
-		Changes     *concurrency.Signal[types.EnvironmentChanges]
-		changeKinds map[string]map[string]uint64
-		correlation *correlation.Service
-		db          *database.DB
-		cfg         *config.Config
-		httpClient  *http.Client
-		agentSyncs  *semaphore.Weighted
-		// Daemon events are persisted in batches by a writer started on first use.
+		Changes        *concurrency.Signal[types.EnvironmentChanges]
+		changeKinds    map[string]map[string]uint64
+		correlation    *correlation.Service
+		db             *database.DB
+		cfg            *config.Config
+		httpClient     *http.Client
+		agentSyncs     *semaphore.Weighted
 		daemonQueue    chan CreateEventRequest
 		daemonDone     chan struct{}
 		changeEpoch    string
@@ -100,7 +99,6 @@ type (
 )
 
 const (
-	// maxConcurrentAgentSyncs bounds in-flight event forwards to the manager.
 	maxConcurrentAgentSyncs = 16
 	agentSyncQueueTimeout   = time.Minute
 	agentSyncPublishTimeout = 10 * time.Second
@@ -261,7 +259,6 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	return records[0], nil
 }
 
-// persistEvents inserts requests in one transaction, skipping replayed deduplication keys.
 func (s *EventService) persistEvents(ctx context.Context, reqs []CreateEventRequest) ([]*Event, error) {
 	records := make([]*Event, len(reqs))
 	inserted := make([]bool, len(reqs))
@@ -312,7 +309,6 @@ func (s *EventService) persistEvents(ctx context.Context, reqs []CreateEventRequ
 	return records, nil
 }
 
-// IngestAgentEvent assigns the authenticated environment instead of trusting the agent's local ID.
 func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID string, req CreateEventRequest) (*Event, error) {
 	environmentID = strings.TrimSpace(environmentID)
 	if environmentID == "" || environmentID == "0" {
@@ -441,7 +437,6 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
 }
 
-// paginateEvents applies the shared search and filters to q, then pages and maps the rows.
 func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -657,7 +652,6 @@ func cloneEventMetadataValue(value any) any {
 	}
 }
 
-// describeEvent formats an event's title, description, and severity, with a generic fallback for undefined types.
 func describeEvent(eventType EventType, resourceType, resourceName string) (string, string, EventSeverity) {
 	definition, ok := eventDefinitions[eventType]
 	if !ok {
@@ -812,8 +806,6 @@ func (s *EventService) RunStreamProducer(ctx context.Context, ps *authz.Permissi
 	}
 }
 
-// SubscribeDockerEvents prepares subscriptions before the watcher starts. The caller
-// runs the returned worker and calls cleanup after joining it, including on failed startup.
 func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run func(context.Context) error, cleanup func()) {
 	containers, unsubscribeContainers := eventBus.Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
 	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
@@ -900,7 +892,6 @@ func (s *EventService) runDockerEvents(ctx context.Context, containers, images, 
 	return nil
 }
 
-// RecordDockerEvent persists a daemon occurrence once across normal and overflow delivery.
 func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message) {
 	if ctx.Err() != nil {
 		return
@@ -979,7 +970,6 @@ func (s *EventService) writeDaemonEvents(ctx context.Context) {
 	}
 }
 
-// Stop flushes queued daemon events; later observations are persisted directly.
 func (s *EventService) Stop(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -1030,32 +1020,26 @@ func mapDaemonEvent(msg events.Message) (CreateEventRequest, bool) {
 	}, true
 }
 
-// MarkDockerExpectation correlates subsequent daemon observations with a local Arcane action.
 func (s *EventService) MarkDockerExpectation(resourceType, resourceID, resourceName string) {
 	s.correlation.MarkExpectation(resourceType, resourceID, resourceName)
 }
 
-// BeginComposeSuppressionWindow covers daemon events labeled with the Compose project.
 func (s *EventService) BeginComposeSuppressionWindow(composeProject string) func() {
 	return s.correlation.BeginComposeWindow(composeProject)
 }
 
-// BeginDockerResourceSuppressionWindow covers a mutation for its full duration and cleanup grace.
 func (s *EventService) BeginDockerResourceSuppressionWindow(resourceType, resourceID, resourceName string) func() {
 	return s.correlation.BeginResourceWindow(resourceType, resourceID, resourceName)
 }
 
-// BeginDockerTypeSuppressionWindow covers bulk daemon operations whose per-item IDs are unknown until they finish.
 func (s *EventService) BeginDockerTypeSuppressionWindow(resourceType string) func() {
 	return s.correlation.BeginTypeWindow(resourceType)
 }
 
-// SetDockerUpdatingContainers supplies the updater's live identities without coupling domains.
 func (s *EventService) SetDockerUpdatingContainers(source func() []string) {
 	s.correlation.SetUpdatingContainers(source)
 }
 
-// ShouldSuppressDaemonEvent reports whether a daemon observation matches a recent local action.
 func (s *EventService) ShouldSuppressDaemonEvent(resourceType, actorID, actorName, composeProject string) bool {
 	return s.correlation.ShouldSuppress(resourceType, actorID, actorName, composeProject)
 }

@@ -20,8 +20,6 @@ func TestSetupMessageOnlyLogFile(t *testing.T) {
 	require.NoError(t, err,
 		"SetupMessageOnlyLogFile() error = %v", err)
 
-	// Each entry is written atomically as it is logged, so the file is readable
-	// in full without any flush or close.
 	slog.InfoContext(t.Context(), "container updated", "container", "web")
 
 	content, err := os.ReadFile(logFile.Name())

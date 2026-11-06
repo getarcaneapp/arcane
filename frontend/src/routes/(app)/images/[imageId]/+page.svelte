@@ -7,7 +7,6 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
@@ -37,6 +36,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
+	import type { VulnerabilityScanResult } from '#lib/types/vulnerability.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -87,7 +87,6 @@
 	let tagDialogOpen = $state(false);
 	let releaseNotesOpen = $state(false);
 
-	const scanScope = $derived(`${currentEnvId}:${image?.id}`);
 	let scanRequest = $state<{ scope: string; time: string } | null>(null);
 	let completionToastScope = $state<string | null>(null);
 
@@ -95,28 +94,36 @@
 		const environmentId = currentEnvId;
 		const imageId = image?.id ?? '';
 		const scope = `${environmentId}:${imageId}`;
+		const fetchScanResult = async (signal: AbortSignal) => {
+			await environmentStore.ready;
+			signal.throwIfAborted();
+			const result = await vulnerabilityService.getScanResult(imageId, environmentId);
+			if (result.status !== 'failed' || scanRequest?.scope !== scope) return result;
+			const { data: summary } = await tryCatch(
+				stabilizeFailedVulnerabilitySummary(imageId, result, (id) => vulnerabilityService.getScanSummary(id, environmentId), {
+					scanRequestedAt: scanRequest.time
+				})
+			);
+			if (!summary || summary.status === 'failed') return result;
+			if (!isVulnerabilityScanInProgress(summary.status)) return vulnerabilityService.getScanResult(imageId, environmentId);
+			return {
+				...result,
+				scanTime: summary.scanTime,
+				status: summary.status,
+				scanPhase: summary.scanPhase,
+				summary: summary.summary,
+				error: summary.error
+			};
+		};
 		return {
 			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId),
 			queryFn: async ({ signal }) => {
-				await environmentStore.ready;
-				signal.throwIfAborted();
-				const result = await vulnerabilityService.getScanResult(imageId, environmentId);
-				if (result.status !== 'failed' || scanRequest?.scope !== scope) return result;
-				const { data: summary } = await tryCatch(
-					stabilizeFailedVulnerabilitySummary(imageId, result, (id) => vulnerabilityService.getScanSummary(id, environmentId), {
-						scanRequestedAt: scanRequest.time
-					})
-				);
-				if (!summary || summary.status === 'failed') return result;
-				if (!isVulnerabilityScanInProgress(summary.status)) return vulnerabilityService.getScanResult(imageId, environmentId);
-				return {
-					...result,
-					scanTime: summary.scanTime,
-					status: summary.status,
-					scanPhase: summary.scanPhase,
-					summary: summary.summary,
-					error: summary.error
-				};
+				const result = await fetchScanResult(signal);
+				if (completionToastScope === scope && !isVulnerabilityScanInProgress(result.status)) {
+					completionToastScope = null;
+					toastVulnerabilityScanStatus(result);
+				}
+				return result;
 			},
 			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
 			retry: false
@@ -142,14 +149,7 @@
 			seen = next;
 		});
 	});
-	const scanInProgress = $derived(isVulnerabilityScanInProgress(vulnerabilityScan?.status));
 	const scanReportError = $derived(scanQuery.isError && scanQuery.data ? extractApiErrorMessage(scanQuery.error) : null);
-
-	$effect(() => {
-		if (!vulnerabilityScan || scanInProgress || completionToastScope !== scanScope) return;
-		completionToastScope = null;
-		toastVulnerabilityScanStatus(vulnerabilityScan);
-	});
 
 	const scanMutation = createMutation(() => ({
 		mutationFn: ({ imageId, environmentId }: { imageId: string; environmentId: string }) =>
@@ -160,7 +160,12 @@
 			const inProgress = isVulnerabilityScanInProgress(result.status);
 			toastVulnerabilityScanStatus(result, { includeStarted: inProgress });
 			await queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId) });
-			if (inProgress) completionToastScope = scope;
+			if (!inProgress) return;
+			const current = queryClient.getQueryData<VulnerabilityScanResult>(
+				queryKeys.vulnerabilities.scanResult(environmentId, imageId)
+			);
+			if (current && !isVulnerabilityScanInProgress(current.status)) toastVulnerabilityScanStatus(current);
+			else completionToastScope = scope;
 		},
 		onError: (error) => {
 			toast.error(m.vuln_scan_failed(), { description: extractApiErrorMessage(error) });
@@ -325,11 +330,7 @@
 	});
 </script>
 
-<ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
-	{#snippet badges()}
-		<EnvironmentCell value={currentEnvId} plain />
-	{/snippet}
-
+<ResourceDetailLayout backUrl="/images" backLabel={m.images()} environmentId={currentEnvId} title={detailTitle} {actions}>
 	{#if image}
 		{#snippet kvTile(label: string, value: string, wide = false)}
 			<KeyValueCard {label} class={wide ? 'sm:col-span-2 lg:col-span-3' : undefined} valueTitle={value}>
@@ -439,7 +440,6 @@
 				action="cancel"
 				customLabel={m.common_back_to({ resource: m.images() })}
 				onclick={() => goto(resolve('/(app)/images'))}
-				size="sm"
 				class="mt-4"
 			/>
 		</div>

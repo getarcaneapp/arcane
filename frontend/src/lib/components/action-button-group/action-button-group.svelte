@@ -37,16 +37,12 @@
 		danger: m.danger_zone()
 	});
 
-	// Compact mode drops inline labels when the natural row is wider than the host column.
-	// The host column's width never depends on this content, so measuring it cannot loop.
 	let compact = $state(false);
 
 	const primary = $derived(buttons.filter((b) => b.placement === 'primary'));
-	const menuOnly = $derived(buttons.filter((b) => (b.placement ?? 'menu') === 'menu'));
-	// A lone menu item is promoted inline rather than hiding behind a one-entry menu.
-	const promoted = $derived(menuOnly.length === 1 ? menuOnly : []);
+	const menuOnly = $derived(buttons.filter((b) => ['menu', 'overflow'].includes(b.placement ?? 'menu')));
+	const promoted = $derived(menuOnly.length === 1 && menuOnly[0]?.placement !== 'overflow' ? menuOnly : []);
 	const secondary = $derived([...buttons.filter((b) => b.placement === 'secondary'), ...promoted]);
-	// Icon-only secondaries (Refresh) sit after the Actions menu at the far right.
 	const secondaryLabelled = $derived(secondary.filter((b) => !b.iconOnly));
 	const secondaryIcons = $derived(secondary.filter((b) => b.iconOnly));
 	const menuGroups = $derived(
@@ -56,10 +52,8 @@
 		})).filter((g) => g.items.length > 0)
 	);
 	const showMenu = $derived(secondary.length > 0 || menuGroups.length > 0);
-	// Without menu-only items the trigger only folds secondaries: icon ones below sm, labelled ones below lg or when compact.
 	const menuIsMobileOnly = $derived(menuGroups.length === 0 && !(compact && secondaryLabelled.length > 0));
 	const foldBreakpoint = $derived(secondaryLabelled.length > 0 ? 'lg' : 'sm');
-	// Labelled secondaries fold into the menu below lg, or whenever the row is compact.
 	const secondariesInline = $derived(!compact);
 	const iconSize = $derived(size === 'sm' ? 'size-8' : 'size-9');
 
@@ -107,6 +101,7 @@
 
 	function toneFor(button: ActionButton): ArcaneButtonTone {
 		if (button.destructive) return 'outline-destructive';
+		if (button.placement !== 'primary') return 'outline';
 		return (actionConfigs[button.action] as ActionConfig).tone;
 	}
 
@@ -279,7 +274,7 @@
 							<ArcaneButton
 								{...props}
 								action="base"
-								tone="outline-primary"
+								tone="outline"
 								{size}
 								class={cn('max-sm:size-9 max-sm:p-0', compact && 'size-9 p-0', menuIsMobileOnly && `${foldBreakpoint}:hidden`)}
 								aria-label={m.common_more_actions()}

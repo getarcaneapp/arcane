@@ -53,7 +53,6 @@ type (
 		Templates    []ComposeTemplate
 	}
 
-	// templateFileSnapshot is a folder template file's state before a save overwrote it.
 	templateFileSnapshot struct {
 		path    string
 		content string
@@ -171,7 +170,6 @@ func (s *TemplateService) GetAllTemplates(ctx context.Context) ([]ComposeTemplat
 	}
 
 	var templates []ComposeTemplate
-	// Omit heavy content fields which are not needed for listing.
 	if err := s.db.WithContext(ctx).Omit("Content", "EnvContent").Preload("Registry").Find(&templates).Error; err != nil {
 		return nil, fmt.Errorf("failed to get local templates: %w", err)
 	}
@@ -413,8 +411,6 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 	})
 }
 
-// importedTemplateFolder returns the folder tpl was imported from, as a path logical to baseDir, and its compose file.
-// composePath is empty when no folder belongs to tpl, including a folder that only shares its name.
 func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *ComposeTemplate) (baseDir, folder, composePath string, err error) {
 	baseDir, err = projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
@@ -432,7 +428,6 @@ func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *Compo
 	return baseDir, entry.Path, detected, nil
 }
 
-// writeImportedTemplateFiles writes content and env through any symlinks to the files projects.ReadFolderComposeTemplate reads.
 // restore puts back every file it changed and is set even when err is.
 func writeImportedTemplateFiles(folderPath, composePath, content, envContent string) (restore func() error, err error) {
 	envPath := filepath.Join(folderPath, ".env.example")
@@ -490,7 +485,6 @@ func writeImportedTemplateFiles(folderPath, composePath, content, envContent str
 	return restore, nil
 }
 
-// readDefaultTemplate reads one of the default template files from the configured templates directory.
 func (s *TemplateService) readDefaultTemplate(ctx context.Context, fileName string) (string, error) {
 	baseDir, err := projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "templatesDirectory")))
 	if err != nil {
@@ -564,8 +558,6 @@ func (s *TemplateService) GetRegistries(ctx context.Context) ([]TemplateRegistry
 	return registries, nil
 }
 
-// GetRegistryFetchErrors returns a snapshot of the last fetch error per registry ID.
-// An absent entry means the registry fetched successfully (or has never been attempted).
 func (s *TemplateService) GetRegistryFetchErrors() map[string]string {
 	s.registryMu.RLock()
 	defer s.registryMu.RUnlock()
@@ -581,7 +573,6 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *Template
 	if registry.URL == "" {
 		return common.Classify(common.ErrValidation, errors.New("registry URL is required"))
 	}
-	// Hydrate metadata if needed
 	if registry.Name == "" || registry.Description == "" {
 		if manifest, err := s.fetchRegistryManifest(ctx, registry.URL); err == nil {
 			registry.Name = cmp.Or(registry.Name, manifest.Name)
@@ -726,7 +717,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context, generation ui
 				mu.Lock()
 				fetchErrors = append(fetchErrors, fmt.Errorf("registry %q: %w", reg.Name, fetchRegistryTemplatesErr))
 				mu.Unlock()
-				return nil // Don't fail the whole group if one registry fails
+				return nil
 			}
 
 			s.registryMu.Lock()
@@ -790,7 +781,6 @@ func (s *TemplateService) FetchRaw(ctx context.Context, rawURL string) ([]byte, 
 	return body, nil
 }
 
-// fetchRegistryTemplates performs a conditional GET; a 304 reuses the registry's cached templates.
 func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *TemplateRegistry, generation uint64) (templates []ComposeTemplate, err error) {
 	registryHost := ""
 	if parsedURL, parseErr := url.Parse(reg.URL); parseErr == nil {
@@ -1133,7 +1123,6 @@ func (s *TemplateService) invalidateRemoteCache() {
 	s.remoteCache.Purge()
 }
 
-// SyncLocalTemplatesFromFilesystem imports template folders from the templates directory, at most once per fsSyncInterval.
 func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) (err error) {
 	s.fsMu.Lock()
 	defer s.fsMu.Unlock()
@@ -1251,7 +1240,6 @@ func setTemplateIconURL(template *ComposeTemplate, iconURL *string) {
 	}
 }
 
-// GetTemplateContentWithParsedData returns template content along with parsed metadata
 func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, id string) (*types.TemplateContent, error) {
 	composeTemplate, err := s.GetTemplate(ctx, id)
 	if err != nil {
@@ -1276,10 +1264,8 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 		return nil, fmt.Errorf("failed to map template: %w", mapErr)
 	}
 
-	// Parse services from compose content using compose-go library
 	services := projects.ParseComposeServices(ctx, composeContent)
 
-	// Parse environment variables
 	parsedEnvVars := projects.ParseEnvContent(envContent)
 	envVars := make([]types.EnvVariable, len(parsedEnvVars))
 	for i, v := range parsedEnvVars {

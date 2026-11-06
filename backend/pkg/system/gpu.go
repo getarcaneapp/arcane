@@ -24,9 +24,6 @@ import (
 )
 
 type (
-	// GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
-	// Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
-	// calls invoke the vendor-specific tool directly.
 	GPUMonitor struct {
 		statsGroup singleflight.Group
 
@@ -59,10 +56,8 @@ type (
 	}
 )
 
-// AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
 const (
 	AMDGPUSysfsPath = "/sys/class/drm"
-	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
 	gpuDetectionTTL = 30 * time.Second
 	// gpuStatsTTL bounds how often the vendor tool is invoked: reading VRAM
 	// stats forks a process (nvidia-smi, intel_gpu_top), which is far too
@@ -70,9 +65,6 @@ const (
 	gpuStatsTTL = 3 * time.Second
 )
 
-// NewGPUMonitor creates a monitor. enabled gates Stats; when false, Stats returns
-// (nil, nil). configuredType is the user-pinned vendor ("nvidia"|"amd"|"intel"|"auto"|"")
-// — anything else falls back to auto-detection.
 func NewGPUMonitor(enabled bool, configuredType string) *GPUMonitor {
 	return &GPUMonitor{
 		enabled:        enabled,
@@ -83,13 +75,8 @@ func NewGPUMonitor(enabled bool, configuredType string) *GPUMonitor {
 	}
 }
 
-// Enabled reports whether GPU monitoring is on.
 func (m *GPUMonitor) Enabled() bool { return m.enabled }
 
-// Stats returns per-GPU VRAM stats. Returns (nil, 0, nil) when monitoring is disabled
-// or no GPU is detected; vendor-specific errors are propagated otherwise.
-// Results (including failures) are cached for gpuStatsTTL, so callers may
-// receive stats up to that many seconds old.
 func (m *GPUMonitor) Stats(ctx context.Context) ([]types.GPUStats, error) {
 	if !m.enabled {
 		return nil, nil
@@ -153,7 +140,6 @@ func (m *GPUMonitor) statsForType(ctx context.Context, gpuType string) ([]types.
 	}
 }
 
-// markDetected records a successful detection.
 func (m *GPUMonitor) markDetected(gpuType, toolPath string) bool {
 	m.detectionCache.Set(struct{}{}, gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath})
 	m.detectionDone = true
@@ -162,8 +148,6 @@ func (m *GPUMonitor) markDetected(gpuType, toolPath string) bool {
 	return announce
 }
 
-// detect runs vendor probing under detectionMu. The configuredType pin is honored when set
-// to a known vendor; otherwise vendors are tried in order: nvidia → amd → intel.
 func (m *GPUMonitor) detect(ctx context.Context) error {
 	m.detectionMu.Lock()
 	defer m.detectionMu.Unlock()
@@ -222,7 +206,6 @@ func (m *GPUMonitor) detect(ctx context.Context) error {
 	return errors.New("no supported GPU found")
 }
 
-// HasAMDGPU reports whether a card with mem_info_vram_total exists under AMDGPUSysfsPath.
 func HasAMDGPU() bool {
 	// Reads fixed system paths under /sys; not under any acfs root.
 	entries, err := os.ReadDir(AMDGPUSysfsPath)
@@ -241,7 +224,6 @@ func HasAMDGPU() bool {
 	return false
 }
 
-// readSysfsValue parses a numeric value from a sysfs file.
 func readSysfsValue(path string) (uint64, error) {
 	// Reads fixed system paths under /sys; not under any acfs root.
 	data, err := os.ReadFile(path)

@@ -2,6 +2,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import type { IconType } from '#lib/icons/index.js';
 	import { cn, type WithElementRef } from '#lib/utils.js';
 
 	let {
@@ -17,7 +18,7 @@
 		...restProps
 	}: WithElementRef<
 		HTMLAttributes<HTMLDivElement> & {
-			icon?: any;
+			icon?: IconType;
 			iconVariant?: 'primary' | 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'cyan' | 'orange' | 'indigo' | 'pink';
 			compact?: boolean;
 			enableHover?: boolean;

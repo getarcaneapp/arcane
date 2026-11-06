@@ -87,7 +87,7 @@
 
 	{#if logLines.length > 0 && !isBuilding}
 		<div class="mt-4 shrink-0">
-			<ArcaneButton action="base" tone="outline" size="sm" onclick={() => onReset?.()}>
+			<ArcaneButton action="base" tone="outline" onclick={() => onReset?.()}>
 				{m.clear_output()}
 			</ArcaneButton>
 		</div>

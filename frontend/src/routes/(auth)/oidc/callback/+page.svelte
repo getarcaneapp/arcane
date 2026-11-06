@@ -29,9 +29,6 @@
 	const buildLoginQuery = (errorCode: string, message?: string) =>
 		new URLSearchParams({ error: errorCode, ...(message ? { message } : {}) }).toString();
 
-	// Returns null when no explicit target was carried across the OIDC round trip.
-	// This runs before the user is in the store, so the account landing page must
-	// not be resolved here — it is resolved after sign-in, below.
 	const getStoredRedirect = () => {
 		const storedRedirect = localStorage.getItem('oidc_redirect');
 		return isInAppPath(storedRedirect) ? storedRedirect : null;
@@ -47,9 +44,6 @@
 	}
 
 	async function finalizeAuthentication(user: User, redirectTo: ResolvedPathname | null) {
-		// refreshAll re-runs the root +layout.ts loader, which fetches settings
-		// (with a graceful catch). We don't fetch them here directly — a user with
-		// zero/limited permissions would 403 on settings:read and crash this handler.
 		await refreshAll();
 		const operationResult = await tryCatch(
 			(async () => {
@@ -63,14 +57,9 @@
 		if (operationResult.error !== null) {
 			const settingsError = operationResult.error;
 
-			// User lacks settings:read or settings fetch failed — not fatal; the root
-			// layout already pulls public settings as a fallback.
 			console.warn('Skipping post-login settings fetch:', settingsError);
 		}
 		toast.success(m.auth_login_success());
-		// Navigate straight to a route the user can actually reach. Computing the
-		// reachable target here avoids the (app) layout's auth-redirect superseding
-		// this navigation for environment-scoped users.
 		const landingUser = page.data['user'] ?? user;
 		const landingPage = getEffectiveLandingPage();
 		const requestedTarget = redirectTo ?? landingPage;
@@ -200,10 +189,7 @@
 		busyDescription={m.auth_processing_login_description()}
 		{error}
 	>
-		<!-- Defensive fallback: if neither branch matches (e.g. an
-			     unexpected throw inside onSuccess), the user would otherwise
-			     see a blank page with no way out. Always show a logout link. -->
 		<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
-		<a href={resolve('/(auth)/logout')} class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
+		<a href={resolve('/(auth)/logout')} class="mt-6 text-xs text-primary-text underline">{m.common_logout()}</a>
 	</OidcStatusPanel>
 {/if}

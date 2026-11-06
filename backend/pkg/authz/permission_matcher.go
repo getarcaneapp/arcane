@@ -12,19 +12,6 @@ import (
 )
 
 type (
-	// PermissionMatcher maps an HTTP method and environment-relative resource path
-	// to the permission required to perform it. It mirrors the per-operation
-	// RequirePermission checks enforced for the local environment so the remote
-	// environment proxy can enforce the same permission before forwarding a request
-	// to an agent (which itself runs with a sudo permission set and performs no
-	// authorization).
-	//
-	// Paths registered and looked up are the resource suffix AFTER the
-	// /environments/{id} prefix, e.g. "/containers/{containerId}/start" for the
-	// REST API or "/ws/containers/{containerId}/terminal" for WebSocket streams.
-	//
-	// The matcher is populated once during startup and is read-only afterwards, so
-	// concurrent Lookup calls during request serving need no synchronization.
 	PermissionMatcher struct {
 		aggregates map[string]struct{}
 		routes     []permRoute
@@ -39,15 +26,10 @@ type (
 	}
 )
 
-// NewPermissionMatcher returns an empty matcher.
 func NewPermissionMatcher() *PermissionMatcher {
 	return &PermissionMatcher{}
 }
 
-// Add registers the permission required for method + pathTemplate. pathTemplate
-// is the resource suffix after /environments/{id}. Path parameters may use
-// either Huma's "{name}" or Echo's ":name" syntax; both are treated as
-// single-segment wildcards.
 func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 	m.routes = append(m.routes, permRoute{
 		method:   strings.ToUpper(method),
@@ -56,17 +38,10 @@ func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 	})
 }
 
-// AddPublic registers method + pathTemplate as a proxied route that requires no
-// permission (an intentionally public endpoint). Lookup reports it as found
-// with an empty permission string, which the proxy treats as "allow".
 func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
 	m.Add(method, pathTemplate, "")
 }
 
-// AddActions registers method + pathTemplate as a proxied route whose
-// permission is selected by the param query parameter. perms maps each accepted
-// value to its permission. Lookup yields None for a missing or unknown value,
-// which the proxy treats as "deny".
 func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms map[string]string) {
 	m.routes = append(m.routes, permRoute{
 		method:      strings.ToUpper(method),
@@ -76,18 +51,6 @@ func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms
 	})
 }
 
-// Lookup returns the permission required for method + suffixPath, where
-// suffixPath is the resource path after /environments/{id} without a query
-// string (for example "/containers/abc123") and query holds the request's
-// query parameters. When multiple templates match, the most specific one wins —
-// a route with more literal (non-wildcard) segments is preferred, so static
-// routes such as "/containers/counts" take precedence over parameterized routes
-// such as "/containers/{containerId}".
-//
-// The returned option contains the required permission when a route matched.
-// For action routes (see AddActions) the permission is selected by the action
-// query parameter, and a missing or unknown action yields None. Callers should
-// treat None as "deny" for proxied resource paths.
 func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
 	reqSegs := pathSegments(suffixPath)
 	method = strings.ToUpper(method)
@@ -136,8 +99,6 @@ func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string
 	return ok
 }
 
-// pathSegments splits a path into its non-empty segments, ignoring
-// leading and trailing slashes.
 func pathSegments(p string) []string {
 	p = strings.Trim(p, "/")
 	if p == "" {
@@ -146,8 +107,6 @@ func pathSegments(p string) []string {
 	return strings.Split(p, "/")
 }
 
-// templateSegments splits a path template into segments, normalizing
-// any path parameter ("{name}" or ":name") to the "*" wildcard.
 func templateSegments(t string) []string {
 	segs := pathSegments(t)
 	for i, s := range segs {
@@ -158,9 +117,6 @@ func templateSegments(t string) []string {
 	return segs
 }
 
-// VolumeWorkspaceRequiredPermissions returns the distinct mutation permissions
-// required by a Volume Workspace manifest. The boolean is false when a change
-// uses an unknown operation so remote proxies can fail closed.
 func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChange) ([]string, bool) {
 	required := make([]string, 0, 3)
 	for _, change := range changes {

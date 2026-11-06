@@ -39,8 +39,6 @@ export const templateBtnClass = arcaneButtonVariants({
 	hoverEffect: 'none'
 });
 
-// Shared file-tree ResizableSplit preset for the compose editor pages
-// (project detail + new project); size binding and persistKey stay per-page.
 export const composeTreeSplitProps = {
 	variant: 'flush',
 	firstClass: 'bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0',

@@ -100,27 +100,7 @@ func NewApiKeyService(db *database.DB, userService *user.UserService, roleServic
 	}
 }
 
-// BackfillApiKeyPermissions ensures every ownerless (bootstrap) API key has
-// its expected permission grants. Called once per boot.
-//
-// Per-key, not all-or-nothing: a single bootstrap key with zero grants is
-// repaired even if other keys are already populated. This recovers env-
-// bootstrap keys that pre-date the per-key permission feature, or that were
-// created on a deployment where the original SetApiKeyPermissions call failed
-// (e.g., the api_key_permissions table didn't exist yet).
-//
-// User-owned keys are deliberately skipped. A user-owned key with zero grants
-// is an intentional "no access" state; rehydrating from the owner's effective
-// permissions on every boot would clobber that. User keys are seeded at
-// creation time by CreateApiKey instead.
 func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
-	// Bootstrap-class keys we'll repair if they have zero grants:
-	//   - user_id IS NULL → env-bootstrap keys.
-	//   - managed_by IS NOT NULL → admin-static (ADMIN_STATIC_API_KEY) keys,
-	//     which DO have a user_id but are infrastructure-managed and must
-	//     always carry full perms.
-	// Regular user-created keys are deliberately excluded — empty grants on
-	// those are an intentional "no access" state we must not overwrite.
 	var keys []ApiKey
 	if err := s.db.WithContext(ctx).Where("user_id IS NULL OR managed_by IS NOT NULL").Find(&keys).Error; err != nil {
 		return fmt.Errorf("failed to list bootstrap api keys for backfill: %w", err)
@@ -162,19 +142,12 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 }
 
 func (s *ApiKeyService) backfillPermsForKey(ctx context.Context, tx *gorm.DB, key ApiKey) ([]string, error) {
-	// Static admin bootstrap keys (no owner, no env scope) get full access.
 	if key.UserID == nil && key.EnvironmentID == nil {
 		return authz.AllPermissions(), nil
 	}
-	// Environment bootstrap keys (key bound to a specific env, no owner) get
-	// full access scoped to that environment via the auth bridge — replicate
-	// that by granting all permissions scoped to that environment. Org-level
-	// permissions land in PerEnv[envID] and are unreachable via org-level
-	// checks (which always pass envID=""), so over-granting is harmless here.
 	if key.UserID == nil && key.EnvironmentID != nil {
 		return authz.AllPermissions(), nil
 	}
-	// Otherwise inherit the owner's current effective permissions.
 	var owner user.User
 	if err := tx.WithContext(ctx).Where("id = ?", *key.UserID).First(&owner).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -186,7 +159,6 @@ func (s *ApiKeyService) backfillPermsForKey(ctx context.Context, tx *gorm.DB, ke
 	if err != nil {
 		return nil, err
 	}
-	// Flatten ps into a deduplicated list of permissions for this key's scope.
 	seen := make(map[string]struct{}, len(ps.Global))
 	for p := range ps.Global {
 		seen[p] = struct{}{}
@@ -236,9 +208,6 @@ func (s *ApiKeyService) markApiKeyUsed(ctx context.Context, keyID string) error 
 	return nil
 }
 
-// markApiKeyUsedDebounced skips the DB write entirely when this process
-// already persisted last_used_at for the key within the write window, so the
-// auth hot path stays read-only between windows.
 func (s *ApiKeyService) markApiKeyUsedDebounced(ctx context.Context, keyID string) {
 	now := time.Now()
 	s.lastUsedMu.Lock()
@@ -251,10 +220,6 @@ func (s *ApiKeyService) markApiKeyUsedDebounced(ctx context.Context, keyID strin
 
 	if err := s.markApiKeyUsed(ctx, keyID); err != nil {
 		slog.WarnContext(ctx, "failed to persist API key usage", "apiKeyId", keyID, "error", err)
-		// Release the reservation so the next use retries instead of silently
-		// skipping writes for the rest of the window — but only if it is still
-		// ours, to avoid clobbering a newer reservation made after an
-		// invalidation reset the entry.
 		s.lastUsedMu.Lock()
 		if last, ok := s.lastUsedWrites[keyID]; ok && last.Equal(now) {
 			delete(s.lastUsedWrites, keyID)
@@ -289,28 +254,12 @@ func (s *ApiKeyService) upgradeAPIKeyHash(ctx context.Context, apiKey ApiKey, ra
 	}
 }
 
-// hashRawAPIKey derives the cache key for a raw API key. This is not
-// credential storage — the stored key_hash is — so a fast keyed hash is
-// appropriate for this hot path; the per-process pepper prevents offline
-// brute-force of the digest should process memory leak.
 func (s *ApiKeyService) hashRawAPIKey(rawKey string) string {
 	mac := hmac.New(sha256.New, s.cacheKeyPepper)
 	mac.Write([]byte(rawKey))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// invalidateValidatedKeys evicts cached validations for the given key
-// IDs (the cache is keyed by raw-key hash, so eviction scans for matching IDs)
-// and resets their last_used_at debounce state.
-//
-// Callers must invoke this only AFTER the corresponding DB change has
-// committed. Combined with the generation guard on fills, that makes the
-// invariant: once this returns, no cached validation for these ids exists or
-// can reappear. Requests whose cache read races the brief span between commit
-// and eviction — like requests already past hash validation when the change
-// commits — are the unavoidable in-flight window every auth system has; they
-// are deliberately not defended against, as doing so would require locking
-// every validation against every revocation.
 func (s *ApiKeyService) invalidateValidatedKeys(ids ...string) {
 	if len(ids) == 0 {
 		return
@@ -320,10 +269,6 @@ func (s *ApiKeyService) invalidateValidatedKeys(ids ...string) {
 		idSet[id] = struct{}{}
 	}
 
-	// Bump the generation before evicting, under the fill mutex: any in-flight
-	// validation that read the DB before this invalidation either publishes
-	// before us (and is evicted below) or sees the moved generation and skips
-	// its publish. Either way the stale entry cannot survive.
 	s.cacheFillMu.Lock()
 	s.cacheGen.Add(1)
 	var cacheKeys []string
@@ -379,12 +324,6 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 	return created, nil
 }
 
-// validateGrantsAgainstOwner caps grants at the key owner's role
-// permissions, so no holder of apikeys:create/update — sudo included — can
-// push a key above what its owner is allowed to do. Complements the caller-set
-// check: the caller cap uses the credential's live context permissions, this
-// one re-resolves the owner's roles from the DB. Skipped when role.RoleService is
-// unavailable (bootstrap path only, where no human caller exists).
 func (s *ApiKeyService) validateGrantsAgainstOwner(ctx context.Context, ownerID string, grants []types.ApiKeyPermissionGrant) error {
 	if len(grants) == 0 {
 		return nil
@@ -403,10 +342,6 @@ func (s *ApiKeyService) validateGrantsAgainstOwner(ctx context.Context, ownerID 
 	return nil
 }
 
-// validateGrantsAgainstPermissionSet refuses requests that would grant
-// a key permissions the calling credential does not itself hold right now —
-// session callers are capped by their role permissions, API-key callers by
-// their own grants. Sudo callers always pass; a nil set denies everything.
 func validateGrantsAgainstPermissionSet(callerPerms *authz.PermissionSet, grants []types.ApiKeyPermissionGrant) error {
 	for _, g := range grants {
 		envID := ""
@@ -456,9 +391,6 @@ func toApiKeyPermissionRows(apiKeyID string, grants []types.ApiKeyPermissionGran
 	return out
 }
 
-// CreatePersonalApiKey creates a personal key for userID. Personal keys carry
-// no permission grants of their own; the auth middleware resolves them to the
-// owner's role permissions, so there is nothing to validate or escalate here.
 func (s *ApiKeyService) CreatePersonalApiKey(ctx context.Context, userID string, req types.ApiKey) (*types.ApiKeyCreatedDto, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
@@ -522,13 +454,6 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	}, nil
 }
 
-// isEnvironmentReferencedApiKey reports whether an environment
-// currently references keyID as its pairing key (environments.api_key_id).
-// Referenced keys are the live environment bootstrap credentials: editing or
-// deleting one would silently break the paired agent the next time it
-// authenticates, so they are protected. Keys orphaned by regeneration are no
-// longer referenced and may be edited or deleted normally. Cascade-delete
-// still applies when the environment row itself is removed.
 func (s *ApiKeyService) isEnvironmentReferencedApiKey(ctx context.Context, keyID string) (bool, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).Table("environments").
@@ -538,9 +463,6 @@ func (s *ApiKeyService) isEnvironmentReferencedApiKey(ctx context.Context, keyID
 	return count > 0, nil
 }
 
-// environmentReferencedApiKeyIDs returns the set of API key ids
-// currently referenced by an environment, for tagging whole listings with a
-// single query instead of one per row.
 func (s *ApiKeyService) environmentReferencedApiKeyIDs(ctx context.Context) (map[string]struct{}, error) {
 	var ids []string
 	if err := s.db.WithContext(ctx).Table("environments").
@@ -571,8 +493,6 @@ func toAPIKeyDTO(ak *ApiKey, isBootstrap bool) types.ApiKey {
 	}
 }
 
-// toAPIKeyDTOWithPermissions is like toAPIKeyDTO but
-// additionally attaches the key's persisted permission grants.
 func toAPIKeyDTOWithPermissions(ak *ApiKey, isBootstrap bool) types.ApiKey {
 	dto := toAPIKeyDTO(ak, isBootstrap)
 	dto.Permissions = make([]types.ApiKeyPermissionGrant, len(ak.PermissionGrants))
@@ -697,11 +617,6 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(ctx context.Context, tx 
 	return nil
 }
 
-// reconcileManagedAPIKeys applies the desired managed-key state inside tx and
-// returns the ids whose cached validations the caller must invalidate AFTER
-// the transaction commits. Invalidating pre-commit is ineffective: a concurrent
-// validation can still read the old committed row, snapshot the already-bumped
-// generation, and republish the entry so it survives the commit.
 func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, tx *gorm.DB, userID, rawKey string) ([]string, error) {
 	managedKeys, err := s.listManagedAPIKeys(tx, userID)
 	if err != nil {
@@ -776,11 +691,6 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	if err != nil {
 		return nil, err
 	}
-	// Env-bootstrap keys are infrastructure-level credentials used by the agent
-	// pairing flow; they must always carry every permission scoped to their
-	// environment. Without this seed, the per-key permission resolver returns
-	// an empty set on any request authenticated by this key and every
-	// downstream RequirePermission check fails with 403.
 	all := authz.AllPermissions()
 	grants := make([]role.ApiKeyPermission, len(all))
 	for i, p := range all {
@@ -841,9 +751,6 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 
 	result := make([]types.ApiKey, len(apiKeys))
 	for i := range apiKeys {
-		// Include per-key permission grants so the edit form preloads with the
-		// key's actual current grants. Without this, the form starts empty and
-		// "Save" would wipe whatever grants the DB has.
 		_, isBootstrap := referenced[apiKeys[i].ID]
 		result[i] = toAPIKeyDTOWithPermissions(&apiKeys[i], isBootstrap)
 	}
@@ -851,11 +758,6 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 	return result, paginationResp, nil
 }
 
-// ListApiKeysByUser returns every non-static, non-bootstrap API key owned by
-// userID. Used by the self-service personal-keys flow. Keys referenced by an
-// environment are hidden even when they carry an owner (legacy bootstrap rows
-// created before user_id became nullable) — self-service must never touch a
-// live pairing credential.
 func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]types.ApiKey, error) {
 	var apiKeys []ApiKey
 	query := s.db.WithContext(ctx)
@@ -913,19 +815,10 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		if ak.Kind == ApiKeyKindPersonal {
 			return nil, ErrApiKeyPersonalNoGrants
 		}
-		// Grants are capped twice: by the calling credential's effective
-		// permissions (a holder of apikeys:update cannot grant anything the
-		// credential itself cannot do right now) AND by the key owner's role
-		// permissions (no caller can push another user's key above what that
-		// user's own roles allow).
 		if err := validateGrantsAgainstPermissionSet(callerPerms, grants); err != nil {
 			return nil, err
 		}
 		if ak.UserID == nil {
-			// No owner to cap against. Ownerless rows are (possibly stale)
-			// environment bootstrap keys — name/description edits are harmless,
-			// but refuse grant edits rather than fall back to a weaker
-			// caller-only check.
 			return nil, ErrApiKeyProtected
 		}
 		if err := s.validateGrantsAgainstOwner(ctx, *ak.UserID, grants); err != nil {
@@ -982,11 +875,6 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	}, nil
 }
 
-// loadKeyGrants returns the persisted permission grants for an API key.
-// Always returns a non-nil slice (possibly empty) so the JSON-marshalled DTO
-// renders as `"permissions": []` rather than `"permissions": null`, which the
-// frontend treats differently (null hides the picker, [] shows it empty).
-// DB errors are logged and yield an empty slice — the caller never sees nil.
 func (s *ApiKeyService) loadKeyGrants(ctx context.Context, apiKeyID string) []types.ApiKeyPermissionGrant {
 	empty := []types.ApiKeyPermissionGrant{}
 	var rows []role.ApiKeyPermission
@@ -1039,8 +927,6 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*use
 	return localUser, err
 }
 
-// ValidateApiKeyWithID is like ValidateApiKey but additionally returns the
-// API key record so callers can resolve permissions according to its kind.
 func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string) (*user.User, *ApiKey, error) {
 	apiKey, err := s.ValidateRawApiKey(ctx, rawKey)
 	if err != nil {
@@ -1116,11 +1002,6 @@ func (s *ApiKeyService) ValidateRawApiKey(ctx context.Context, rawKey string) (*
 	return nil, ErrApiKeyInvalid
 }
 
-// storeValidatedKey publishes a validated key into the cache unless an
-// invalidation ran since the generation snapshot taken before the caller's DB
-// read. The current request still proceeds — it validated against a row that
-// existed at read time, indistinguishable from a request racing the revocation
-// itself — but the result must not outlive the revocation in the cache.
 func (s *ApiKeyService) storeValidatedKey(gen uint64, cacheKey string, apiKey ApiKey) {
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()

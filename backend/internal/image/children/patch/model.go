@@ -6,7 +6,6 @@ import (
 )
 
 type (
-	// ImagePatchRecord stores one Copacetic image patch run.
 	ImagePatchRecord struct {
 		database.BaseModel
 

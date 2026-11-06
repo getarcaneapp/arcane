@@ -3,8 +3,6 @@
 
 	import { cn } from '#lib/utils.js';
 
-	// A titled group of settings. `list` frames the rows in one bordered, divided block;
-	// `plain` leaves the content unframed for tables and card grids.
 	interface Props {
 		title?: string;
 		description?: string;
@@ -20,13 +18,13 @@
 
 <section {id} class={cn('flex flex-col gap-3', className)}>
 	{#if title || actions}
-		<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 px-1">
+		<div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
 			<div class="min-w-0">
 				{#if title}
-					<h2 class="text-sm font-semibold">{title}</h2>
+					<h2 class="text-base font-semibold">{title}</h2>
 				{/if}
 				{#if description}
-					<p class="text-xs text-muted-foreground">{description}</p>
+					<p class="text-xs-plus leading-5 text-muted-foreground">{description}</p>
 				{/if}
 			</div>
 			{#if actions}

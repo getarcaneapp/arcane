@@ -143,10 +143,7 @@ export class DashboardLiveStats {
 				liveStatsState.loading = false;
 				liveStatsState.failed = false;
 			},
-			onError: (error) => {
-				console.error(`Stats websocket error for environment ${environment.id}:`, error);
-				markLiveStatsFailed(liveStatsState);
-			},
+			onError: () => markLiveStatsFailed(liveStatsState),
 			onClose: () => markLiveStatsFailed(liveStatsState)
 		});
 		void liveStatsState.client.connect();

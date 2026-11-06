@@ -54,7 +54,6 @@ var (
 	dashboardResourceKinds = []string{"containers", "projects", "images", "volumes", "networks"}
 )
 
-// CurrentUserFromContext retrieves the authenticated persistence model.
 func CurrentUserFromContext(ctx context.Context) (*User, bool) {
 	u, ok := ctx.Value(types.CurrentUserContextKey{}).(*User)
 	return u, ok

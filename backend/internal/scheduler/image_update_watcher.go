@@ -45,7 +45,6 @@ type (
 		BackfillProjectImageRefs(ctx context.Context) (int, error)
 	}
 
-	// ImageUpdateWatcher debounces Docker events and admits durable image scans.
 	ImageUpdateWatcher struct {
 		imageUpdateService     imageUpdateScanner
 		settingsService        pollingSettingReader
@@ -108,7 +107,6 @@ func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 
 func (w *ImageUpdateWatcher) Name() string { return "image-polling" }
 
-// Start owns the debounce loop and joins its workers before returning.
 func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 	if w.stopping.Load() {
 		return errors.New("image update watcher cannot be restarted after stop")

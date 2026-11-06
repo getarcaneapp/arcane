@@ -21,10 +21,6 @@ var (
 	logrusMirrors      = map[int]io.Writer{}
 )
 
-// InstallLogrusBridge routes the global logrus logger — used by embedded
-// libraries such as Copacetic — through slog so their output follows Arcane's
-// log format instead of logrus' own stderr formatting. Safe to call more than
-// once.
 func InstallLogrusBridge() {
 	logrusBridgeOnce.Do(func() {
 		logrus.SetOutput(io.Discard)
@@ -32,10 +28,6 @@ func InstallLogrusBridge() {
 	})
 }
 
-// AddLogrusMirror additionally streams bridged logrus messages (info and
-// above) to the given writer, one line per entry, until the returned function
-// is called. Used to surface an embedded library's log output in the activity
-// feed of the operation that drives it.
 func AddLogrusMirror(w io.Writer) func() {
 	logrusMirrorMu.Lock()
 	logrusMirrorNextID++

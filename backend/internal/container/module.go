@@ -1,5 +1,3 @@
-// Package container owns Docker container lifecycle, inspection, listing and
-// stats, plus the HTTP surface that exposes them.
 package container
 
 import (
@@ -18,7 +16,6 @@ import (
 )
 
 type (
-	// Module wires the container domain and mounts its routes.
 	Module struct {
 		service         *ContainerService
 		dockerService   *docker.DockerClientService
@@ -27,7 +24,6 @@ type (
 	}
 )
 
-// New wires container routes around an existing service and registers per-container resource metrics once.
 func New(service *ContainerService, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, activityService *activity.ActivityService) *Module {
 	if err := service.stats.ObserveResources(otel.Meter(logging.InstrumentationName), service.dockerService.ListContainers); err != nil {
 		otel.Handle(err)
@@ -40,7 +36,6 @@ func New(service *ContainerService, dockerService *docker.DockerClientService, s
 	}
 }
 
-// Service exposes the container service to collaborators.
 func (m *Module) Service() *ContainerService {
 	if m == nil {
 		return nil
@@ -48,8 +43,6 @@ func (m *Module) Service() *ContainerService {
 	return m.service
 }
 
-// RegisterRoutes mounts the container endpoints. A nil module still registers,
-// so OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterContainers(api, nil, nil, nil, nil, appCtx)

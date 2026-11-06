@@ -1,0 +1,113 @@
+<script lang="ts">
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import type { TemplateRegistry } from '#lib/types/template.js';
+
+	let {
+		registries,
+		isLoading,
+		onAddRegistry,
+		onUpdateRegistry,
+		onRemoveRegistry
+	}: {
+		registries: TemplateRegistry[];
+		isLoading: {
+			updating: Record<string, boolean>;
+			removing: Record<string, boolean>;
+		};
+		onAddRegistry: () => void;
+		onUpdateRegistry: (id: string, updates: { enabled?: boolean }) => void;
+		onRemoveRegistry: (id: string) => void;
+	} = $props();
+</script>
+
+<div class="space-y-6">
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+		<div>
+			<h3 class="text-lg font-semibold">{m.templates_registries_section_title()}</h3>
+			<p class="text-sm text-muted-foreground">{m.templates_registries_section_description()}</p>
+		</div>
+		<ArcaneButton
+			action="create"
+			onclick={onAddRegistry}
+			customLabel={m.common_add_button({ resource: m.common_registry() })}
+			class="w-full sm:w-auto"
+		/>
+	</div>
+
+	{#if registries.length === 0}
+		<div class="space-y-4">
+			<Alert.Root>
+				<RegistryIcon class="size-4" />
+				<Alert.Title>{m.templates_alert_remote_registries_title()}</Alert.Title>
+				<Alert.Description>{m.templates_alert_remote_registries_description()}</Alert.Description>
+			</Alert.Root>
+
+			<Alert.Root variant="primary-subtle">
+				<CommunityIcon class="size-4" />
+				<Alert.Title>{m.templates_community_registry_title()}</Alert.Title>
+				<Alert.Description>
+					<div class="space-y-2">
+						<p>{m.templates_community_registry_description()}</p>
+						<div class="flex w-full max-w-118.75 flex-col gap-2">
+							<Snippet text="https://registry.getarcane.app/registry.json" />
+						</div>
+					</div>
+				</Alert.Description>
+			</Alert.Root>
+		</div>
+	{:else}
+		<div class="space-y-3">
+			{#each registries as registry (registry.id)}
+				<div class="rounded-xl border border-border/50 p-4">
+					<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+						<div class="min-w-0 flex-1">
+							<div class="mb-1 flex flex-wrap items-center gap-2">
+								<h4 class="font-medium">{registry.name}</h4>
+								<Badge variant={registry.enabled ? 'default' : 'secondary'}>
+									{registry.enabled ? m.common_enabled() : m.common_disabled()}
+								</Badge>
+							</div>
+							<p class="text-sm break-all text-muted-foreground">{registry.url}</p>
+							{#if registry.description}
+								<p class="mt-1 text-sm text-muted-foreground">{registry.description}</p>
+							{/if}
+							{#if registry.lastFetchError}
+								<div class="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
+									<AlertIcon class="mt-0.5 size-3.5 shrink-0 text-destructive" />
+									<p class="text-xs break-all text-destructive">{registry.lastFetchError}</p>
+								</div>
+							{/if}
+						</div>
+						<div class="flex items-center gap-2 self-end sm:self-center">
+							<Switch
+								checked={registry.enabled}
+								onCheckedChange={(checked) => onUpdateRegistry(registry.id, { enabled: checked })}
+								disabled={isLoading.updating[registry.id]}
+							/>
+
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								onclick={() => window.open(registry.url, '_blank', 'noopener,noreferrer')}
+							>
+								<ExternalLinkIcon class="size-4" />
+							</ArcaneButton>
+
+							<ArcaneButton
+								action="remove"
+								onclick={() => onRemoveRegistry(registry.id)}
+								loading={isLoading.removing[registry.id]}
+							/>
+						</div>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+</div>

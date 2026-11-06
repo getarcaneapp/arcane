@@ -15,7 +15,6 @@ import (
 )
 
 type (
-	// Handler serves the system-managed volume backup endpoints.
 	Handler struct {
 		service *Service
 		appCtx  context.Context

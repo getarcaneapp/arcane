@@ -20,6 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
@@ -36,6 +37,7 @@ type TunnelServerParams struct {
 	EnvironmentService  *environment.EnvironmentService
 	EventService        *event.EventService
 	NotificationService *notification.NotificationService
+	SettingsService     *settings.SettingsService
 }
 
 func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
@@ -51,6 +53,9 @@ func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
 		MTLS: p.MTLS,
 		EventCallback: func(ctx context.Context, envID string, evt *agent.TunnelEvent) error {
 			return handleAgentEvent(ctx, envID, evt, p.EventService, p.NotificationService)
+		},
+		StreamWindowMiB: func() int {
+			return p.SettingsService.GetSettingsOrDefaults(p.Context).AgentTunnelStreamWindowMb.AsInt()
 		},
 	})
 
@@ -89,7 +94,6 @@ func tunnelRoutes(server *agent.TunnelServer) []middleware.EchoRoute {
 	}}
 }
 
-// handleAgentStatusChange stores the tunnel state, logs real transitions, and wakes status streams.
 func handleAgentStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
 	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 	if getErr != nil {

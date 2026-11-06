@@ -164,8 +164,6 @@ func TestPerIPRateLimitForPaths_RouteParamsDoNotEscapeFilter(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-bbb"))
 }
 
-// newTokenRateLimitTestRouter wires PerTokenRateLimitForPaths ahead
-// of handler and returns a doReq helper posting from a fixed source IP.
 func newTokenRateLimitTestRouter(
 	t *testing.T,
 	perMinute, burst int,
@@ -202,9 +200,6 @@ func TestPerTokenRateLimitForPaths_TracksDistinctTokensNotIP(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, doReq("token-a"))
 }
 
-// TestPerTokenRateLimitForPaths_NilAuthenticatorFailsClosedToSharedIPBucket proves
-// a nil isAuthentic does not hand out independent per-token buckets: all nonempty
-// tokens contend for one shared IP bucket and trip 429 together.
 func TestPerTokenRateLimitForPaths_NilAuthenticatorFailsClosedToSharedIPBucket(t *testing.T) {
 	doReq := newTokenRateLimitTestRouter(t, 60, 1, nil, okHandler)
 

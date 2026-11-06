@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { GoroutineLeakReport } from '#lib/types/system.js';
@@ -91,7 +91,7 @@
 				{m.diagnostics_leaks_not_scanned()}
 			{:else if count > 0}
 				<span class="inline-flex items-center gap-1.5 font-medium">
-					<AlertTriangleIcon class="size-4" />
+					<AlertIcon class="size-4" />
 					{m.diagnostics_leaks_count({ count })}
 				</span>
 			{:else}
@@ -106,7 +106,6 @@
 
 		<ArcaneButton
 			action="scan"
-			size="sm"
 			customLabel={m.diagnostics_leaks_scan()}
 			loading={scanning}
 			disabled={scanning || downloading}
@@ -116,7 +115,6 @@
 			<ArcaneButton
 				action="base"
 				tone="outline"
-				size="sm"
 				icon={DownloadIcon}
 				customLabel={m.diagnostics_profile_goroutineleak()}
 				loading={downloading}

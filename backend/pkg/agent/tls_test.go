@@ -314,8 +314,9 @@ func TestTunnelServerRequireCertificateIdentity_RejectsWrongEnvironmentURI(t *te
 		VerifiedChains:   [][]*x509.Certificate{{cert}},
 	}
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	require.NoError(t, server.requireCertificateIdentity(state, "env-a"))
@@ -358,8 +359,9 @@ func TestMTLSServer_RejectsMissingOrMalformedCAFile(t *testing.T) {
 func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", http.NoBody)
@@ -369,8 +371,9 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertificate(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{Mode: MTLSModeRequired}),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "https://manager.example.com/api/tunnel/connect", http.NoBody)
@@ -384,8 +387,9 @@ func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertifica
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	server := NewTunnelServer(TunnelServerOptions{
-		Registry: tunnels,
-		MTLS:     NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
+		StreamWindowMiB: testStreamWindowMiB,
+		Registry:        tunnels,
+		MTLS:            NewMTLS(MTLSConfig{Mode: MTLSModeRequired, AppURL: "https://manager.example.com"}),
 	})
 
 	cert := &x509.Certificate{}
@@ -645,6 +649,10 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 	require.NoError(t, result.err)
 	require.Equal(t, uint16(tls.VersionTLS13), result.state.Version)
 	require.True(t, hasVerifiedPeerCertificate(&result.state))
-	server := NewTunnelServer(TunnelServerOptions{Registry: tunnels, MTLS: cfg})
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:        tunnels,
+		MTLS:            cfg,
+		StreamWindowMiB: testStreamWindowMiB,
+	})
 	require.NoError(t, server.requireCertificateIdentity(&result.state, "env-hs"))
 }

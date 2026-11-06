@@ -4,7 +4,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// RegisterVersion registers version endpoints.
 func RegisterVersion(api huma.API, versionService *VersionService) {
 	h := &VersionHandler{versionService: versionService}
 

@@ -25,8 +25,6 @@ import (
 )
 
 type (
-	// testEnvironmentRow is a minimal stand-in for environment.Environment: the
-	// environment package imports apikey, so this in-package test cannot import it.
 	testEnvironmentRow struct {
 		database.BaseModel
 		AccessToken *string `gorm:"column:access_token"`
@@ -333,14 +331,12 @@ func TestCreateApiKeyRejectsGrantsBeyondCallerPermissions(t *testing.T) {
 	callerPerms := authz.NewPermissionSet()
 	callerPerms.AddGlobal(authz.PermContainersList)
 
-	// A grant the caller does not hold must be rejected.
 	_, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, types.ApiKey{
 		Name:        "escalated",
 		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermApiKeysCreate}},
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
-	// A grant within the caller's set succeeds.
 	created, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, types.ApiKey{
 		Name:        "allowed",
 		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
@@ -367,7 +363,6 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
-	// Update path: a grantless key cannot gain permissions the owner lacks.
 	require.NoError(t, db.WithContext(ctx).Create(&ApiKey{
 		Name:      "grantless",
 		KeyHash:   "hash",
@@ -476,11 +471,6 @@ func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) 
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, oldKey))
 	oldRow := listAPIKeysForUser(t, db, adminUser.ID)[0]
 
-	// Mid-transaction — after the old key's delete, before commit — simulate a
-	// concurrent validation that read the old committed row and publishes it
-	// with a fresh generation snapshot; the hook fires on the new managed
-	// key's insert. With pre-commit invalidation this entry survived the
-	// commit and kept authenticating the deleted key.
 	published := false
 	require.NoError(t, db.Callback().Create().After("gorm:create").Register("simulate_racing_validation", func(*gorm.DB) {
 		if published {
@@ -678,9 +668,6 @@ func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.
 	})
 	require.NoError(t, err)
 
-	// Simulate a validation whose DB read happened before the revocation:
-	// snapshot the generation and the row, revoke, then attempt the publish
-	// with the stale snapshot. The publish must be dropped, not accepted.
 	gen := service.cacheGen.Load()
 	stored := fetchAPIKey(t, db, created.ID)
 	require.NoError(t, service.DeleteApiKey(ctx, created.ID))
@@ -854,7 +841,6 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(env).Error)
 
-	// Referenced by the environment: protected from update and delete.
 	require.ErrorIs(t, service.DeleteApiKey(ctx, created.ID), ErrApiKeyProtected)
 	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, ApiKeyUpdate{
 		Request:   types.ApiKey{Name: "renamed"},
@@ -947,8 +933,6 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	created, err := service.CreateEnvironmentApiKey(ctx, envID)
 	require.NoError(t, err)
 
-	// Resolve the per-key permission set and confirm every permission is
-	// present, scoped to the bootstrap env (not global).
 	var grants []role.ApiKeyPermission
 	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", created.ID).Find(&grants).Error)
 	envPerms := make(map[string]struct{}, len(grants))
@@ -1000,7 +984,6 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 
 	require.NoError(t, service.BackfillApiKeyPermissions(ctx))
 
-	// The backfill should have populated the env-scoped perms retroactively.
 	var keys []ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("environment_id = ?", envID).Find(&keys).Error)
 	require.Len(t, keys, 1)

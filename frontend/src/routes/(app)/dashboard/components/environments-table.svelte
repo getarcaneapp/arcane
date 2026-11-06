@@ -37,6 +37,7 @@
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { getRiskBandDisplay } from '#lib/utils/vulnerability.js';
 
+	import { getUsageTone } from '../../containers/container-table.helpers';
 	import { getCpuMetric, getDiskMetric, getMemoryMetric } from '../overview.helpers';
 
 	let {
@@ -51,7 +52,7 @@
 	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
 	const headCell =
-		'h-9 px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground first:pl-2 last:pr-2';
+		'h-9 px-3 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground first:pl-2 last:pr-2';
 	const bodyCell = 'px-3 py-2.5 align-middle first:pl-2 last:pr-2';
 </script>
 
@@ -61,7 +62,7 @@
 		href={resolve('/(app)/updates')}
 		class={cn(
 			'inline-flex items-center gap-1.5 text-sm tabular-nums transition-colors hover:underline',
-			count === 0 ? 'text-muted-foreground' : 'text-warning'
+			count === 0 ? 'text-muted-foreground' : 'text-update'
 		)}
 	>
 		<Icon class={cn('size-3.5 shrink-0', count === 0 && 'text-success')} />
@@ -93,7 +94,7 @@
 	memoryTotal?: number
 )}
 	{#if status === 'loading'}
-		<div class="ml-auto size-9.5 animate-pulse rounded-full bg-muted"></div>
+		<div class="ml-auto size-11 animate-pulse rounded-full bg-muted"></div>
 	{:else if status === 'denied'}
 		<span class="text-xs text-muted-foreground" title={m.common_access_denied()}>—</span>
 	{:else if value === null || Number.isNaN(value)}
@@ -104,10 +105,10 @@
 			title={status === 'stale' ? m.stats_stale() : undefined}
 		>
 			{#if memoryUsed !== undefined}
-				<MemoryRing used={memoryUsed} total={memoryTotal} />
+				<MemoryRing used={memoryUsed} total={memoryTotal} tone={getUsageTone(value)} size={44} />
 			{:else}
-				<MetricRing percent={value} {variant} size={38} stroke={3}>
-					<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+				<MetricRing percent={value} {variant} tone={getUsageTone(value)} size={44} stroke={3}>
+					<span class="text-xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
 				</MetricRing>
 			{/if}
 		</span>
@@ -121,12 +122,12 @@
 				<th class={headCell}>{m.common_name()}</th>
 				<th class={headCell}>{m.common_version()}</th>
 				<th class={headCell}>{m.common_status()}</th>
-				<th class={headCell}>{m.containers()}</th>
-				<th class={headCell}>{m.images()}</th>
-				{#if showPods}<th class={headCell}>{m.podman_pods_title()}</th>{/if}
-				<th class={headCell}>{m.updates()}</th>
-				{#if showVulnerabilities}<th class={headCell}>{m.risk()}</th>{/if}
-				<th class={headCell}>{m.reclaimable()}</th>
+				<th class={cn(headCell, 'text-right')}>{m.containers()}</th>
+				<th class={cn(headCell, 'text-right')}>{m.images()}</th>
+				{#if showPods}<th class={cn(headCell, 'text-right')}>{m.podman_pods_title()}</th>{/if}
+				<th class={cn(headCell, 'text-right')}>{m.updates()}</th>
+				{#if showVulnerabilities}<th class={cn(headCell, 'text-right')}>{m.risk()}</th>{/if}
+				<th class={cn(headCell, 'text-right')}>{m.reclaimable()}</th>
 				<th class={cn(headCell, 'text-right')}>{m.cpu_usage()}</th>
 				<th class={cn(headCell, 'text-right')}>{m.memory_usage()}</th>
 				<th class={cn(headCell, 'text-right')}>{m.disk()}</th>
@@ -150,6 +151,9 @@
 								<Badge variant="purple" size="sm">{m.podman()}</Badge>
 							{/if}
 						</div>
+						{#if statsStatus === 'unavailable'}
+							<p class="text-xs text-muted-foreground">{m.stats_unavailable()}</p>
+						{/if}
 					</td>
 					<td class={bodyCell}>
 						{#if row.versionText}
@@ -184,10 +188,10 @@
 							><Skeleton class="h-4 w-full max-w-md" /></td
 						>
 					{:else}
-						<td class={bodyCell}><span class="tabular-nums">{row.running}/{row.total}</span></td>
-						<td class={bodyCell}><span class="tabular-nums">{row.images}</span></td>
+						<td class={cn(bodyCell, 'text-right')}><span class="tabular-nums">{row.running}/{row.total}</span></td>
+						<td class={cn(bodyCell, 'text-right')}><span class="tabular-nums">{row.images}</span></td>
 						{#if showPods}
-							<td class={bodyCell}>
+							<td class={cn(bodyCell, 'text-right')}>
 								{#if row.podCount === null}
 									<span class="text-xs text-muted-foreground">—</span>
 								{:else}
@@ -195,15 +199,15 @@
 								{/if}
 							</td>
 						{/if}
-						<td class={bodyCell}>{@render actionCount(row.updates, UpdateIcon)}</td>
+						<td class={cn(bodyCell, 'text-right')}>{@render actionCount(row.updates, UpdateIcon)}</td>
 						{#if showVulnerabilities}
-							<td class={bodyCell}>
+							<td class={cn(bodyCell, 'text-right')}>
 								{#if featureStore.isEnabled('vulnerabilityManagement', row.environment.id)}
 									{@render riskScore(row.risk)}
 								{/if}
 							</td>
 						{/if}
-						<td class={bodyCell}>
+						<td class={cn(bodyCell, 'text-right')}>
 							{#if row.reclaimable === null}
 								<span class="text-xs text-muted-foreground">—</span>
 							{:else}

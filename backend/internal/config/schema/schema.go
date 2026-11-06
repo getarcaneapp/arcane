@@ -26,7 +26,6 @@ import (
 )
 
 type (
-	// SchemaDocument is the canonical JSON artifact consumed by the docs site.
 	SchemaDocument struct {
 		RenamedEnv    map[string]string `json:"renamedEnv"`
 		EnvConfig     []ConfigEntry     `json:"envConfig"`
@@ -35,7 +34,6 @@ type (
 		SchemaVersion int               `json:"schemaVersion"`
 	}
 
-	// ConfigEntry describes an environment-backed runtime config value.
 	ConfigEntry struct {
 		Env          string   `json:"env"`
 		Field        string   `json:"field"`
@@ -156,7 +154,6 @@ var overrideDocRules = map[string]overrideDocRule{
 	},
 }
 
-// GenerateWithSourceRoot builds the canonical schema document for config and settings docs.
 func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
 	envConfig, err := collectEnvConfig(sourceRoot)
 	if err != nil {
@@ -172,7 +169,6 @@ func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
 	}, nil
 }
 
-// MarshalJSON returns a stable, indented JSON encoding of the schema document.
 func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
 	output, err := json.Marshal(doc, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {

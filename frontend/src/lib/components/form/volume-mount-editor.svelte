@@ -103,7 +103,6 @@
 		<ArcaneButton
 			action="base"
 			tone="outline"
-			size="sm"
 			onclick={() => addRow('bind')}
 			{disabled}
 			class="w-fit"
@@ -113,7 +112,6 @@
 		<ArcaneButton
 			action="base"
 			tone="outline"
-			size="sm"
 			onclick={() => addRow('volume')}
 			{disabled}
 			class="w-fit"

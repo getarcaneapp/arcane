@@ -20,12 +20,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
-// Run executes one Rustic command in an ephemeral container built from
-// DefaultImage and returns its trimmed stdout. It is the single Rustic
-// invocation contract, shared by the backup engine and the detached recovery
-// helper; the image must already be present. The standard RUSTIC_* variables
-// are appended to environment, and networkMode is applied verbatim ("" keeps
-// the default network). Every run mounts the shared CacheVolume.
 func Run(ctx context.Context, dockerClient *client.Client, password string, command, environment []string, mounts []mount.Mount, networkMode container.NetworkMode) (string, error) {
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)

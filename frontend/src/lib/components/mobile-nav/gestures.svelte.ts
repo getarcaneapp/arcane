@@ -8,7 +8,6 @@ export interface GestureHandlers {
 }
 
 export interface GestureOptions {
-	scrollToHideEnabled: boolean;
 	menuOpen: boolean;
 }
 
@@ -49,7 +48,7 @@ export class MobileNavGestures {
 
 	handleTouchStart = (e: TouchEvent) => {
 		this.handleTouchEnd();
-		if (!this.options.scrollToHideEnabled || this.options.menuOpen) return;
+		if (this.options.menuOpen) return;
 		const t = e.touches?.[0];
 		if (!t) return;
 		const target = e.target as HTMLElement | null;
@@ -66,14 +65,7 @@ export class MobileNavGestures {
 	};
 
 	handleTouchMove = (e: TouchEvent) => {
-		if (
-			!this.options.scrollToHideEnabled ||
-			this.options.menuOpen ||
-			this.isInteractiveTouch ||
-			this.touchStartY === null ||
-			this.touchStartX === null
-		)
-			return;
+		if (this.options.menuOpen || this.isInteractiveTouch || this.touchStartY === null || this.touchStartX === null) return;
 		const t = e.touches?.[0];
 		if (!t) return;
 		const deltaY = t.clientY - this.touchStartY;
@@ -81,7 +73,6 @@ export class MobileNavGestures {
 
 		if (Math.abs(deltaY) < this.touchMoveThreshold && Math.abs(deltaX) < this.touchMoveThreshold) return;
 
-		// If horizontal movement is dominant, ignore this touch sequence
 		if (Math.abs(deltaX) > Math.abs(deltaY)) {
 			return;
 		}
@@ -104,7 +95,7 @@ export class MobileNavGestures {
 
 	handleScroll = (e: Event) => {
 		const currentScrollY = window.scrollY;
-		if (!this.options.scrollToHideEnabled || this.options.menuOpen) {
+		if (this.options.menuOpen) {
 			this.lastScrollY = currentScrollY;
 			return;
 		}
@@ -140,7 +131,7 @@ export class MobileNavGestures {
 		if (!atBottom) {
 			this.scrollTimeout = setTimeout(() => {
 				this.scrollTimeout = null;
-				if (this.options.scrollToHideEnabled && !this.options.menuOpen && window.scrollY < this.minScrollDistance) {
+				if (!this.options.menuOpen && window.scrollY < this.minScrollDistance) {
 					this.handlers.onVisibilityChange(true);
 				}
 			}, 150);
@@ -149,7 +140,7 @@ export class MobileNavGestures {
 
 	private handleWheel = (e: WheelEvent) => {
 		e.preventDefault();
-		if (this.options.menuOpen || !this.options.scrollToHideEnabled || e.deltaY <= 0) return;
+		if (this.options.menuOpen || e.deltaY <= 0) return;
 
 		const now = performance.now();
 		const velocity = e.deltaY / Math.max(1, now - this.lastWheelTime);

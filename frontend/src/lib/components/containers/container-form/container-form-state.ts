@@ -17,7 +17,6 @@ import type {
 } from '#lib/types/container.js';
 import type { ContainerCreate } from '#lib/types/ui/container.js';
 
-// Common Linux capabilities offered by the cap add/drop selectors.
 export const LINUX_CAPABILITIES = [
 	'AUDIT_CONTROL',
 	'AUDIT_READ',
@@ -100,8 +99,6 @@ export type ContainerFormRows = {
 	capDrop: string[];
 };
 
-// Splits a command string into words, honoring single/double quotes so
-// entries like `sh -c "echo hi"` survive the round-trip.
 function splitShellWords(input: string): string[] {
 	const words: string[] = [];
 	const re = /"([^"]*)"|'([^']*)'|(\S+)/g;

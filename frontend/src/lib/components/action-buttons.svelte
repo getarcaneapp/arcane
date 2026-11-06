@@ -209,10 +209,6 @@
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
 
-	// Per-action RBAC gating. Each button hides if the caller lacks the
-	// corresponding permission on the resource's environment. Project
-	// pull / build / redeploy all share the `projects:deploy` permission since
-	// they're stages of the deploy flow.
 	// Captured when an action starts: a confirmation or watch can outlive navigation to another resource.
 	type ActionTarget = { id: string; environmentId: string };
 	const actionTarget = (): ActionTarget => ({ id, environmentId });
@@ -289,7 +285,6 @@
 		}
 	}
 
-	// Saves pending editor changes first; the deploy is skipped if the save fails.
 	function confirmSaveBeforeDeploy(label: string, run: () => Promise<void>) {
 		openConfirmDialog({
 			title: m.common_unsaved_changes(),
@@ -422,10 +417,6 @@
 		}
 	}
 
-	// Interactive mode: like a non-detached `docker compose up`, the deploy
-	// output is followed by the containers' live logs — everything they wrote
-	// since the operation began — and dismissing the dialog is the Ctrl-C:
-	// the project is brought down.
 	function enterInteractiveWatchInternal(operationStartedAt: number, target: ActionTarget) {
 		operationWatchStore.append(`Attaching to ${name ?? id}`);
 		const detach = attachProjectLogsToWatch(target.id, operationStartedAt, target.environmentId);

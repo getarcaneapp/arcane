@@ -325,14 +325,13 @@
 			</Select.Root>
 
 			{#if isStreaming}
-				<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
+				<ArcaneButton action="stop" tone="outline" class="text-xs font-medium" onclick={onStop} />
 			{:else}
-				<ArcaneButton action="start" tone="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled} />
+				<ArcaneButton action="start" tone="outline" class="text-xs font-medium" onclick={onStart} {disabled} />
 			{/if}
 			<ArcaneButton
 				action="refresh"
 				tone="outline"
-				size="sm"
 				class="text-xs font-medium"
 				onclick={onRefresh}
 				aria-label={m.log_refresh_aria_label()}
@@ -346,7 +345,6 @@
 								{...props}
 								action="base"
 								tone="outline"
-								size="sm"
 								icon={DownloadIcon}
 								class="text-xs font-medium"
 								customLabel={m.common_download()}

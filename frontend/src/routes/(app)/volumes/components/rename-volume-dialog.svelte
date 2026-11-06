@@ -5,7 +5,7 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Volume } from '#lib/types/volume.js';
 	import { getManagedByLabel } from '#lib/utils/docker.js';
@@ -73,7 +73,7 @@
 
 		{#if isManaged}
 			<Alert.Root variant="warning">
-				<AlertTriangleIcon class="size-4" />
+				<AlertIcon class="size-4" />
 				<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
 				<Alert.Description>{m.volumes_rename_managed_warning_description()}</Alert.Description>
 			</Alert.Root>

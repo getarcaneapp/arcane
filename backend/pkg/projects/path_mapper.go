@@ -21,25 +21,18 @@ import (
 )
 
 type (
-	// HostMount is one container→host mount (bind or named volume) from Arcane's own
-	// container. It is used for longest-prefix host-path resolution in Docker-in-Docker
-	// setups, where independently bind-mounted project directories each map to their own
-	// host path rather than a single projects-root prefix.
 	HostMount struct {
 		Destination string // container-side mount path, e.g. "/app/data/projects/homeassistant"
 		Source      string // host-side path, e.g. "/home/user/homeassistant"
 	}
 
-	// PathMapper handles translation between container and host paths
 	PathMapper struct {
 		containerPrefix string      // e.g., "/app/data/projects" (single-prefix mode)
 		hostPrefix      string      // e.g., "D:/self-hosted/arcane/projects" (single-prefix mode)
 		mounts          []HostMount // when set, sources resolve by longest-prefix match (auto-discovery mode)
-		isNonMatching   bool        // true if a translation can occur
+		isNonMatching   bool
 	}
 
-	// remapTarget is one daemon-side path that may need re-resolving, paired with how
-	// to write the new value back into the project.
 	remapTarget struct {
 		apply   func(hostPath string)
 		kind    string
@@ -49,12 +42,11 @@ type (
 	}
 )
 
-// NewPathMapper creates a new path mapper
 func NewPathMapper(containerDir, hostDir string) *PathMapper {
 	container := filepath.Clean(containerDir)
 	host := hostDir
 	if host == "" {
-		host = container // Matching mount (Linux/macOS)
+		host = container
 	}
 	host = filepath.Clean(host)
 
@@ -65,10 +57,6 @@ func NewPathMapper(containerDir, hostDir string) *PathMapper {
 	}
 }
 
-// NewPathMapperFromMounts creates a path mapper that resolves each source against the
-// given container mount table by longest-prefix match, instead of a single
-// container→host prefix. This is used for Docker-in-Docker auto-discovery so that an
-// independently bind-mounted project directory maps to its real host path.
 func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 	nonMatching := false
 	for i := range mounts {
@@ -84,9 +72,6 @@ func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 	}
 }
 
-// NewPathMapperForConfiguredDirectory resolves an optional container-to-host
-// directory mapping and falls back to Docker mount discovery when no explicit
-// host path is configured.
 func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, defaultDir string, dockerClient *client.Client) *PathMapper {
 	configuredPath = cmp.Or(strings.TrimSpace(configuredPath), defaultDir)
 
@@ -119,9 +104,6 @@ func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, de
 	return kit.Ternary(pathMapper.isNonMatching, pathMapper, nil)
 }
 
-// ResolveHostPath returns the host-side path for containerPath by selecting the
-// longest-prefix mount whose Destination contains it and appending the trailing relative
-// segment to that mount's Source. It returns None when no mount contains the path.
 func ResolveHostPath(mounts []HostMount, containerPath string) mo.Option[string] {
 	cleaned := filepath.Clean(containerPath)
 
@@ -153,11 +135,6 @@ func ResolveHostPath(mounts []HostMount, containerPath string) mo.Option[string]
 	return mo.Some(host)
 }
 
-// joinHostRelativePath joins rel onto a host base path and cleans the
-// result. A Windows drive prefix is held aside while cleaning so that ".."
-// segments cannot consume it, and the base's separator style is preserved:
-// backslashes are kept for a Windows drive path written with them, forward
-// slashes otherwise (Docker on Windows accepts forward slashes fine).
 func joinHostRelativePath(base, rel string) string {
 	rel = strings.ReplaceAll(rel, "\\", "/")
 	if rel == "" || rel == "." {
@@ -179,10 +156,6 @@ func joinHostRelativePath(base, rel string) string {
 	return joined
 }
 
-// ContainerToHost translates a container path to host path. mapped reports
-// whether a mounted directory contains the path; an identity mount leaves the
-// path unchanged yet still counts as mapped, while a path outside every mount
-// is never mapped, even when no translation could occur.
 func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error) {
 	// Auto-discovery mode: resolve against Arcane's real mount table so nested,
 	// independently bind-mounted directories map to their own host path.
@@ -190,27 +163,22 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error
 		if host, ok := ResolveHostPath(pm.mounts, containerPath).Get(); ok {
 			return host, true, nil
 		}
-		return filepath.Clean(containerPath), false, nil // outside all mounts: leave unchanged
+		return filepath.Clean(containerPath), false, nil
 	}
 
 	cleaned := filepath.Clean(containerPath)
 
-	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to calculate relative path: %w", err)
 	}
 
-	// Only translate paths within container prefix
 	if strings.HasPrefix(relPath, "..") || relPath == ".." || filepath.IsAbs(relPath) {
 		return cleaned, false, nil
 	}
 
-	// Join with host prefix
 	hostPath := filepath.Join(pm.hostPrefix, relPath)
 
-	// Force forward slashes if host looks like a Windows path but we're on Linux
-	// Docker on Windows accepts forward slashes fine
 	if strings.Contains(pm.hostPrefix, ":") || strings.HasPrefix(pm.hostPrefix, "\\") {
 		hostPath = filepath.ToSlash(hostPath)
 	}
@@ -218,21 +186,16 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error
 	return hostPath, true, nil
 }
 
-// TranslateVolumeSources translates bind mount sources in a Compose project.
-// File-backed configs and secrets are translated only when the Docker host,
-// rather than Arcane itself, will read those files.
 func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error {
 	if !pm.isNonMatching {
-		return nil // No translation needed
+		return nil
 	}
 
-	// Translate service volumes
 	for si := range project.Services {
 		service := project.Services[si]
 		for vi := range service.Volumes {
 			volume := service.Volumes[vi]
 
-			// Only translate bind mounts
 			if volume.Type != composetypes.VolumeTypeBind {
 				continue
 			}
@@ -252,7 +215,6 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		return nil
 	}
 
-	// Translate secrets
 	for name, secret := range project.Secrets {
 		if secret.File != "" {
 			hostPath, _, err := pm.ContainerToHost(secret.File)
@@ -264,7 +226,6 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		}
 	}
 
-	// Translate configs
 	for name, config := range project.Configs {
 		if config.File != "" {
 			hostPath, _, err := pm.ContainerToHost(config.File)
@@ -276,13 +237,8 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		}
 	}
 
-	// Translate bind-backed named volumes. The Docker daemon, not Arcane, opens
-	// the device path, so it needs the same translation as a bind mount source.
 	for name, volume := range project.Volumes {
 		device, ok := bindVolumeDevice(volume)
-		// Only absolute devices can be translated. compose-go absolutizes a
-		// relative device only when `o` is exactly "bind", so one that is still
-		// relative here keeps its existing behavior instead of failing the load.
 		if !ok || (!filepath.IsAbs(device) && !IsWindowsDrivePath(device)) {
 			continue
 		}
@@ -298,14 +254,6 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	return nil
 }
 
-// bindVolumeDevice returns the device path of a bind-backed named volume
-// (local driver with `o: bind`), which compose-go resolves against the working
-// directory just like a bind mount source.
-//
-// The check is deliberately looser than compose-go's: an empty driver counts as
-// local because that is how Docker defaults it, and `o` only has to contain
-// "bind" rather than equal it, since a device is a host path whether or not
-// compose-go chose to resolve it.
 func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
 	if volume.Driver != "" && volume.Driver != "local" {
 		return "", false
@@ -318,22 +266,6 @@ func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
 	return device, device != ""
 }
 
-// RemapEscapedRelativeSources rewrites daemon-side paths that compose-go
-// resolved against the container-side project directory but that
-// TranslateVolumeSources could not map, because they escaped every mounted
-// directory.
-//
-// compose-go absolutizes relative paths against ConfigDetails.WorkingDir, which
-// for Arcane is a container path. A source like `../../data` can therefore land
-// outside the projects mount, where prefix translation has nothing to match and
-// leaves the path untouched — so the daemon creates it at the wrong place on the
-// host, unlike `docker compose up` run in the project directory. Relativity is
-// not recoverable from the resolved path (an intentionally absolute source is an
-// identical string by then), so the raw pre-resolution paths are passed in as
-// rawSources, keyed by VolumeSourceKey and by "<kind>:<name>".
-//
-// Anything TranslateVolumeSources already rewrote is left alone, so nested
-// independently-bind-mounted directories keep resolving through the mount table.
 func RemapEscapedRelativeSources(
 	ctx context.Context,
 	pathMapper types.VolumeSourcePathMapper,
@@ -379,10 +311,6 @@ func RemapEscapedRelativeSources(
 	}
 }
 
-// remapTargets collects every daemon-side path in the project, so that
-// deciding which ones to rewrite stays a single flat pass. File-backed secrets
-// and configs are included only when the Docker host, rather than Arcane itself,
-// reads them — matching TranslateVolumeSources.
 func remapTargets(project *composetypes.Project, includeFileResources bool) []remapTarget {
 	var targets []remapTarget
 
@@ -445,11 +373,6 @@ func remapTargets(project *composetypes.Project, includeFileResources bool) []re
 	return targets
 }
 
-// isRemappableSource reports whether a raw Compose path can be
-// re-resolved against a different working directory. Absolute paths (including
-// Windows drive and UNC paths, which compose-go also leaves alone) are already
-// meaningful to the Docker host, and `~` expands against the container's home
-// directory, which has no host equivalent — all keep their current behavior.
 func isRemappableSource(rawSource string) bool {
 	rawSource = strings.TrimSpace(rawSource)
 	if rawSource == "" || strings.HasPrefix(rawSource, "~") || strings.HasPrefix(rawSource, `\\`) {
@@ -458,10 +381,6 @@ func isRemappableSource(rawSource string) bool {
 	return !filepath.IsAbs(rawSource) && !IsWindowsDrivePath(rawSource)
 }
 
-// resolveHostWorkingDir resolves the host-side project directory that relative
-// paths must be re-resolved against. It reports false when the project directory
-// itself is not inside a mounted directory, since there is then no host path to
-// anchor to.
 func resolveHostWorkingDir(ctx context.Context, pathMapper types.VolumeSourcePathMapper, containerWorkingDir string) (string, bool) {
 	hostWorkingDir, mapped, err := pathMapper.ContainerToHost(containerWorkingDir)
 	if err != nil {
@@ -479,7 +398,6 @@ func resolveHostWorkingDir(ctx context.Context, pathMapper types.VolumeSourcePat
 	return hostWorkingDir, true
 }
 
-// IsWindowsDrivePath returns true if the path looks like a Windows drive path (e.g., "C:/path")
 func IsWindowsDrivePath(candidate string) bool {
 	if len(candidate) < 3 {
 		return false
@@ -489,21 +407,13 @@ func IsWindowsDrivePath(candidate string) bool {
 		(candidate[2] == '/' || candidate[2] == '\\')
 }
 
-// GetCurrentContainerMounts inspects Arcane's own container and returns its bind and
-// named-volume mounts as HostMount entries. It returns no mounts when Arcane is
-// not running in a container (or the daemon is unreachable). This is the basis for
-// Docker-in-Docker host-path resolution.
 func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([]HostMount, error) {
 	if dockerCli == nil {
-		return nil, nil // No docker client, can't discover
+		return nil, nil
 	}
 
-	// Label-fallback detection matters here: with network_mode: service:<sidecar>
-	// the hostname identifies the sidecar, whose mounts do not include
-	// docker.sock — breaking host-path resolution for the self-upgrader (#3544).
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerCli)
 	if err != nil {
-		// Not running in a container or can't reach docker daemon
 		return nil, err
 	}
 
@@ -521,10 +431,6 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	return mounts, nil
 }
 
-// GetHostPathForContainerPath attempts to discover the host-side path for a given container path
-// by inspecting the container itself. This is useful for Docker-in-Docker scenarios
-// where the application needs to know host paths for volume mapping. It returns an empty
-// string when the path is not covered by any of Arcane's mounts.
 func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
 	mounts, err := GetCurrentContainerMounts(ctx, dockerCli)
 	if err != nil {

@@ -105,7 +105,6 @@
 				</Collapsible.Trigger>
 				<Collapsible.Content>
 					<div class="mt-4 grid gap-6">
-						<!-- Advanced build options -->
 						<div class="grid gap-4 sm:grid-cols-2">
 							<FormInput
 								label={m.dockerfile()}

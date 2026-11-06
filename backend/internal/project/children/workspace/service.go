@@ -1,5 +1,3 @@
-// Package workspace reads and edits project directories as bounded,
-// revision-checked workspaces.
 package workspace
 
 import (
@@ -26,7 +24,6 @@ import (
 )
 
 type (
-	// Service reads and edits a project directory as a bounded workspace.
 	Service struct {
 		settingsService *settings.SettingsService
 	}
@@ -36,7 +33,6 @@ func New(settingsService *settings.SettingsService) *Service {
 	return &Service{settingsService: settingsService}
 }
 
-// Read lists the workspace files, marking GitOps-owned paths read-only.
 func (s *Service) Read(ctx context.Context, projectPath, composeFileName string, owned map[string]struct{}) (*types.Workspace, error) {
 	files, revision, truncated, err := projects.ReadProjectWorkspace(
 		ctx,
@@ -74,7 +70,6 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName string,
 	}, nil
 }
 
-// File returns one workspace file's content and whether it may be edited.
 func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*types.WorkspaceFileContent, error) {
 	rel, fullPath, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
@@ -124,7 +119,6 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 	return response("", http.DetectContentType(content), string(content)), nil
 }
 
-// Download opens one workspace file for streaming.
 func (s *Service) Download(ctx context.Context, projectPath, composeFileName, relativePath string) (io.ReadCloser, int64, string, error) {
 	rel, _, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
@@ -140,8 +134,6 @@ func (s *Service) Download(ctx context.Context, projectPath, composeFileName, re
 	return file, size, filepath.Base(rel), nil
 }
 
-// Apply backs up the touched paths, applies the manifest and restores the
-// backup when the changes cannot be applied.
 func (s *Service) Apply(
 	ctx context.Context,
 	projectsDirectory, projectPath, composeFileName string,
@@ -174,8 +166,6 @@ func (s *Service) Apply(
 	return nil
 }
 
-// OwnedPaths returns the workspace paths a GitOps sync writes on every sync.
-// It fails closed: an incomplete set would expose synced files the next sync silently overwrites.
 func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, error) {
 	owned := make(map[string]struct{})
 	add := func(p string) {
@@ -198,7 +188,6 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 	return owned, nil
 }
 
-// resolvePath validates a workspace path outside protected config and stats it.
 func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, acfstypes.Entry, error) {
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
@@ -220,7 +209,6 @@ func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath
 	return rel, fullPath, entry, nil
 }
 
-// WrapProjectWorkspaceError classifies workspace apply failures.
 func WrapProjectWorkspaceError(err error) error {
 	if err == nil {
 		return nil
@@ -244,8 +232,6 @@ func WrapProjectWorkspaceError(err error) error {
 	}
 }
 
-// ValidateWorkspaceChangesAgainstGitOps rejects changes that touch a sync-owned
-// path, directly or by deleting/renaming a folder that still holds one.
 func ValidateWorkspaceChangesAgainstGitOps(changes []types.WorkspaceFileChange, owned map[string]struct{}) error {
 	if len(owned) == 0 {
 		return nil
@@ -272,7 +258,6 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []types.WorkspaceFileChange, 
 	return nil
 }
 
-// ChangeTargetPaths lists every normalized path a change can create, overwrite or delete.
 // Backup scope and GitOps ownership share it so they cannot diverge.
 func ChangeTargetPaths(change types.WorkspaceFileChange) []string {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
@@ -293,7 +278,6 @@ func ChangeTargetPaths(change types.WorkspaceFileChange) []string {
 	return paths
 }
 
-// classifyACFSError classifies workspace read failures.
 func classifyACFSError(err error, operation string) error {
 	switch {
 	case errors.Is(err, acfs.ErrInvalidPath), errors.Is(err, acfs.ErrOutsideRoot), errors.Is(err, acfs.ErrSymlinkLoop), errors.Is(err, acfs.ErrSymlink):

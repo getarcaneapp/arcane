@@ -65,10 +65,6 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 	}
 }
 
-// A stale non-terminal snapshot published after the activity's terminal event
-// — a goroutine that committed before the terminal write but publishes after
-// it — is dropped instead of reverting subscribers to a running state no later
-// event would correct.
 func TestDropsStaleSnapshotAfterTerminalPublish(t *testing.T) {
 	service := NewService(concurrency.NewSignal[string]())
 

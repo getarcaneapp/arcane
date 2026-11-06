@@ -33,6 +33,8 @@
 	const isAllSelected = $derived(pageSize === TABLE_PAGE_SIZE_ALL);
 	const displayValue = $derived(isAllSelected ? m.common_all() : String(pageSize));
 	const selectValue = $derived(isAllSelected ? 'all' : String(pageSize));
+	const singlePage = $derived(totalsKnown && totalPages <= 1 && currentPage <= 1);
+	const showPageSize = $derived(!singlePage || totalItems > TABLE_PAGE_SIZE_OPTIONS[0]);
 
 	function handlePageSizeChange(value: string) {
 		if (value === 'all') {
@@ -43,81 +45,93 @@
 	}
 </script>
 
-<div class="flex w-full items-center justify-between gap-2 px-2 sm:gap-4">
-	<div class="order-2 hidden text-sm text-muted-foreground sm:order-1 sm:block">
+<div class="flex w-full flex-wrap items-center justify-between gap-2 px-2 sm:flex-nowrap sm:gap-4">
+	<div class="order-2 w-full text-center text-xs text-muted-foreground sm:order-1 sm:w-auto sm:text-left sm:text-sm">
 		{#if totalsKnown}
 			{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
+		{:else}
+			{m.common_showing_count({ shown: items.data.length })}
 		{/if}
 	</div>
-	<div class="order-1 flex w-full items-center justify-between gap-2 sm:order-2 sm:w-auto sm:gap-4 sm:space-x-6 lg:space-x-8">
-		<div class="flex items-center justify-between space-x-2 sm:justify-start">
-			<p id="{uid}-rows-per-page" class="sr-only text-sm font-medium sm:not-sr-only">{m.common_rows_per_page()}</p>
-			<Select.Root allowDeselect={false} type="single" bind:value={() => selectValue, handlePageSizeChange}>
-				<Select.Trigger id="{uid}-page-size" aria-labelledby="{uid}-rows-per-page {uid}-page-size" class="h-11 w-17.5 sm:h-8">
-					{displayValue}
-				</Select.Trigger>
-				<Select.Content side="top">
-					{#each TABLE_PAGE_SIZE_OPTIONS as size (size)}
-						<Select.Item value={`${size}`}>
-							{size}
-						</Select.Item>
-					{/each}
-					<Select.Item value="all">
-						{m.common_all()}
-					</Select.Item>
-				</Select.Content>
-			</Select.Root>
-		</div>
-		<div class="flex items-center justify-between gap-2 sm:justify-center sm:gap-0">
-			{#if totalsKnown}
-				<div class="flex items-center justify-center text-sm font-medium sm:w-25">
-					{m.common_page_of({ page: currentPage, total: totalPages })}
+	{#if showPageSize}
+		<div class="order-1 flex w-full items-center justify-between gap-2 sm:order-2 sm:w-auto sm:gap-4 sm:space-x-6 lg:space-x-8">
+			{#if showPageSize}
+				<div class="flex items-center justify-between space-x-2 sm:justify-start">
+					<p id="{uid}-rows-per-page" class="text-xs font-normal whitespace-nowrap text-muted-foreground sm:text-sm">
+						{m.common_rows_per_page()}
+					</p>
+					<Select.Root allowDeselect={false} type="single" bind:value={() => selectValue, handlePageSizeChange}>
+						<Select.Trigger id="{uid}-page-size" aria-labelledby="{uid}-rows-per-page {uid}-page-size" class="h-11 w-17.5 sm:h-8">
+							{displayValue}
+						</Select.Trigger>
+						<Select.Content side="top">
+							{#each TABLE_PAGE_SIZE_OPTIONS as size (size)}
+								<Select.Item value={`${size}`}>
+									{size}
+								</Select.Item>
+							{/each}
+							<Select.Item value="all">
+								{m.common_all()}
+							</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
 			{/if}
-			<div class="flex items-center space-x-1 sm:space-x-2">
-				<ArcaneButton
-					action="base"
-					tone="outline"
-					size="icon"
-					icon={DoubleArrowLeftIcon}
-					class="hidden size-8 lg:flex"
-					onclick={() => setPage(1)}
-					disabled={!canPrev}
-					aria-label={m.common_go_first_page()}
-				/>
-				<ArcaneButton
-					action="base"
-					tone="outline"
-					size="icon"
-					icon={ArrowLeftIcon}
-					class="size-11 sm:size-8"
-					onclick={() => setPage(currentPage - 1)}
-					disabled={!canPrev}
-					aria-label={m.common_go_prev_page()}
-				/>
-				<ArcaneButton
-					action="base"
-					tone="outline"
-					size="icon"
-					icon={ArrowRightIcon}
-					class="size-11 sm:size-8"
-					onclick={() => setPage(currentPage + 1)}
-					disabled={!canNext}
-					aria-label={m.common_go_next_page()}
-				/>
-				{#if totalsKnown}
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						size="icon"
-						icon={DoubleArrowRightIcon}
-						class="hidden size-8 lg:flex"
-						onclick={() => setPage(totalPages)}
-						disabled={!canNext}
-						aria-label={m.common_go_last_page()}
-					/>
-				{/if}
-			</div>
+			{#if !singlePage}
+				<div class="flex items-center justify-between gap-2 sm:justify-center sm:gap-0">
+					<div class="flex items-center justify-center text-sm font-medium sm:w-25">
+						{#if totalsKnown}
+							{m.common_page_of({ page: currentPage, total: totalPages })}
+						{:else}
+							{m.common_page({ page: currentPage })}
+						{/if}
+					</div>
+					<div class="flex items-center space-x-1 sm:space-x-2">
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="icon"
+							icon={DoubleArrowLeftIcon}
+							class="hidden size-8 lg:flex"
+							onclick={() => setPage(1)}
+							disabled={!canPrev}
+							aria-label={m.common_go_first_page()}
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="icon"
+							icon={ArrowLeftIcon}
+							class="size-11 sm:size-8"
+							onclick={() => setPage(currentPage - 1)}
+							disabled={!canPrev}
+							aria-label={m.common_go_prev_page()}
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="icon"
+							icon={ArrowRightIcon}
+							class="size-11 sm:size-8"
+							onclick={() => setPage(currentPage + 1)}
+							disabled={!canNext}
+							aria-label={m.common_go_next_page()}
+						/>
+						{#if totalsKnown}
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								size="icon"
+								icon={DoubleArrowRightIcon}
+								class="hidden size-8 lg:flex"
+								onclick={() => setPage(totalPages)}
+								disabled={!canNext}
+								aria-label={m.common_go_last_page()}
+							/>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</div>
-	</div>
+	{/if}
 </div>

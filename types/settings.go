@@ -5,7 +5,6 @@ import (
 )
 
 type (
-	// SettingsUpdate maps setting keys to their new string values.
 	SettingsUpdate map[string]string
 
 	SettingUpdate struct {
@@ -13,124 +12,46 @@ type (
 		Value string `json:"value"`
 	}
 
-	// SettingState describes one setting and how its effective value was resolved.
 	SettingState struct {
-		// Key is the identifier of the setting.
-		//
-		// Required: true
 		Key string `json:"key"`
 
-		// Value is the effective setting value. Sensitive values are masked.
-		//
-		// Required: true
-		Value string `json:"value"`
-
-		// Type is the data type of the setting value.
-		//
-		// Required: true
-		Type string `json:"type"`
-
-		// Default is the built-in default value.
-		//
-		// Required: true
+		Value   string `json:"value"`
+		Type    string `json:"type"`
 		Default string `json:"default"`
 
-		// Source is where the effective value comes from: default, db, or env.
-		//
-		// Required: true
 		Source string `json:"source" enum:"default,db,env"`
 
-		// LockReason explains why the setting is locked: env or readOnly. Empty when unlocked.
-		//
-		// Required: false
 		LockReason string `json:"lockReason,omitempty" enum:"env,readOnly"`
 
-		// Scope is authentication for login and OIDC settings, manager for other app-wide settings, otherwise environment.
-		//
-		// Required: true
-		Scope string `json:"scope" enum:"manager,authentication,environment"`
-
-		// EnvName is the environment variable that sets the setting.
-		//
-		// Required: true
-		EnvName string `json:"envName"`
-
-		// Locked indicates the setting cannot be changed through the UI, API, or CLI.
-		//
-		// Required: true
-		Locked bool `json:"locked"`
-
-		// Sensitive indicates the value is a secret and is masked in responses.
-		//
-		// Required: true
-		Sensitive bool `json:"sensitive"`
+		Scope     string `json:"scope" enum:"manager,authentication,environment"`
+		EnvName   string `json:"envName"`
+		Locked    bool   `json:"locked"`
+		Sensitive bool   `json:"sensitive"`
 	}
 
-	// SettingsRuntime carries runtime values derived from server configuration.
 	SettingsRuntime struct {
-		// BackupVolumeName is the Docker volume that stores backups.
-		//
-		// Required: false
-		BackupVolumeName string `json:"backupVolumeName,omitzero"`
-
-		// FrontendTracingEnabled indicates the frontend may relay traces.
-		//
-		// Required: true
-		FrontendTracingEnabled bool `json:"frontendTracingEnabled"`
-
-		// FrontendMetricsEnabled indicates the frontend may relay metrics.
-		//
-		// Required: true
-		FrontendMetricsEnabled bool `json:"frontendMetricsEnabled"`
-
-		// FrontendLogsEnabled indicates the frontend may relay logs.
-		//
-		// Required: true
-		FrontendLogsEnabled bool `json:"frontendLogsEnabled"`
-
-		// AgentMTLSManagerCAAvailable indicates the manager mTLS CA can be downloaded.
-		//
-		// Required: false
-		AgentMTLSManagerCAAvailable bool `json:"agentMTLSManagerCAAvailable,omitzero"`
-
-		// DepotConfigured indicates both the Depot project ID and token are set.
-		//
-		// Required: false
-		DepotConfigured bool `json:"depotConfigured,omitzero"`
+		BackupVolumeName            string `json:"backupVolumeName,omitzero"`
+		FrontendTracingEnabled      bool   `json:"frontendTracingEnabled"`
+		FrontendMetricsEnabled      bool   `json:"frontendMetricsEnabled"`
+		FrontendLogsEnabled         bool   `json:"frontendLogsEnabled"`
+		AgentMTLSManagerCAAvailable bool   `json:"agentMTLSManagerCAAvailable,omitzero"`
+		DepotConfigured             bool   `json:"depotConfigured,omitzero"`
 	}
 
-	// SettingsSnapshot is the settings state of one environment.
 	SettingsSnapshot struct {
-		// Settings lists every setting visible to the caller.
-		//
-		// Required: true
-		Settings []SettingState `json:"settings"`
-
-		// Runtime carries values derived from server configuration.
-		//
-		// Required: true
-		Runtime SettingsRuntime `json:"runtime"`
-
-		// ReadOnly indicates UI configuration is disabled and every setting is locked.
-		//
-		// Required: true
-		ReadOnly bool `json:"readOnly"`
+		Settings []SettingState  `json:"settings"`
+		Runtime  SettingsRuntime `json:"runtime"`
+		ReadOnly bool            `json:"readOnly"`
 	}
 )
 
 const (
-	// DefaultAccentColor is the fallback accent color used when no override is
-	// provided or the configured value fails validation.
 	DefaultAccentColor = "oklch(0.606 0.25 292.717)"
 )
 
 var (
 	SafeThemeColor = regexp.MustCompile(`^(?:#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab)\([0-9a-zA-Z%. ,/-]{1,64}\))$`)
 
-	// SafeAccentColor accepts only safe CSS color tokens: hex, known named colors,
-	// rgb()/rgba(), hsl()/hsla(), oklch()/oklab(). Values containing semicolons,
-	// angle brackets, or quotes are rejected to prevent CSS/SVG injection when
-	// the value is substituted into a style declaration.
 	SafeAccentColor = regexp.MustCompile(
 		`^(?:#[0-9a-fA-F]{3,8}|(?i:aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|` +
 			`chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|` +

@@ -6,7 +6,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// CurrentUserFromContext retrieves the actor for an authenticated request.
 func CurrentUserFromContext(ctx context.Context) (*types.Actor, bool) {
 	value := ctx.Value(types.CurrentUserContextKey{})
 	if actor, ok := value.(*types.Actor); ok {

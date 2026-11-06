@@ -31,7 +31,6 @@ import (
 )
 
 type (
-	// unresolvedDigests fails every registry digest lookup.
 	unresolvedDigests struct{}
 )
 

@@ -29,7 +29,6 @@
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { DeploymentSnippet, Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
-	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
@@ -463,12 +462,6 @@
 
 {#snippet enabledIndicator()}
 	<label for="env-enabled-header" class="flex shrink-0 cursor-pointer items-center gap-2 text-sm">
-		<span
-			class={cn(
-				'size-2 rounded-full transition-colors',
-				formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
-			)}
-		></span>
 		<span class="hidden sm:inline">{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}</span>
 		<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
 	</label>
@@ -610,16 +603,23 @@
 						error={formInputs.featureVulnerabilityManagementEnabled.error}
 						layout="switch"
 					>
-						<Switch
-							id="vulnerability-management"
-							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
-							disabled={featureSwitchDisabled('vulnerabilityManagement')}
-						/>
+						{#snippet children({ describedBy, errorId })}
+							<Switch
+								id="vulnerability-management"
+								bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+								disabled={featureSwitchDisabled('vulnerabilityManagement')}
+								aria-invalid={!!formInputs.featureVulnerabilityManagementEnabled.error}
+								aria-describedby={describedBy}
+								aria-errormessage={errorId}
+							/>
+						{/snippet}
 					</SettingsRow>
 					{#if swarmActive}
 						<!-- An active cluster keeps Swarm on, so the stored toggle is shown locked. -->
 						<SettingsRow for="swarm" label={m.swarm()} description={m.features_swarm_locked()} layout="switch">
-							<Switch id="swarm" checked={true} disabled />
+							{#snippet children({ describedBy })}
+								<Switch id="swarm" checked={true} disabled aria-describedby={describedBy} />
+							{/snippet}
 						</SettingsRow>
 					{:else}
 						<SettingsRow
@@ -629,7 +629,16 @@
 							error={formInputs.featureSwarmEnabled.error}
 							layout="switch"
 						>
-							<Switch id="swarm" bind:checked={formInputs.featureSwarmEnabled.value} disabled={featureSwitchDisabled('swarm')} />
+							{#snippet children({ describedBy, errorId })}
+								<Switch
+									id="swarm"
+									bind:checked={formInputs.featureSwarmEnabled.value}
+									disabled={featureSwitchDisabled('swarm')}
+									aria-invalid={!!formInputs.featureSwarmEnabled.error}
+									aria-describedby={describedBy}
+									aria-errormessage={errorId}
+								/>
+							{/snippet}
 						</SettingsRow>
 					{/if}
 				{:else}

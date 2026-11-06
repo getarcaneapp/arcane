@@ -19,8 +19,6 @@ import (
 
 var installWriteTestTransportOnce sync.Once
 
-// installWriteTestTransport serves bare repositories on disk over the
-// "http" scheme so the write paths run without a network or the git binary.
 func installWriteTestTransport(t *testing.T) {
 	t.Helper()
 	installWriteTestTransportOnce.Do(func() {
@@ -41,8 +39,6 @@ func noAuth() AuthConfig {
 	return AuthConfig{AuthType: "none"}
 }
 
-// pushCommit commits files onto branch through a separate checkout,
-// standing in for another writer against the same remote.
 func pushCommit(t *testing.T, url, branch, message string, files map[string]string) string {
 	t.Helper()
 	writer := NewClient(t.TempDir())

@@ -4,8 +4,6 @@ import stripAnsi from 'strip-ansi';
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 
-// --- String helpers ---
-
 export function capitalizeFirstLetter(string: string): string {
 	if (!string) return '';
 	return string.charAt(0).toUpperCase() + string.slice(1);
@@ -158,8 +156,6 @@ bytesWithHelpers.format = formatBytes;
 bytesWithHelpers.parse = parseBytes;
 
 export const bytes = bytesWithHelpers;
-
-// --- Locale-aware date/time formatting ---
 
 export type InstantInput = Temporal.Instant | string | null | undefined;
 
@@ -386,9 +382,8 @@ export function setLocale(locale: Locale, reload = true) {
 		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
 
 	void setParaglideLocale(locale, { reload });
+	document.documentElement.lang = locale;
 }
-
-// --- ANSI conversion ---
 
 const ansiConverter = new Convert({
 	fg: '#e4e4e7',
@@ -421,15 +416,11 @@ export function ansiToHtml(text: string): string {
 	return ansiConverter.toHtml(text);
 }
 
-// --- Log text sanitization ---
-
 const LOOSE_ANSI_MARKER_SEQUENCE = /\[(?:\d{1,3}(?:;\d{1,3})*)m/g;
 
 export function sanitizeLogText(input: string): string {
 	return stripAnsi(input.replaceAll('\r', '')).replace(LOOSE_ANSI_MARKER_SEQUENCE, '').trimEnd();
 }
-
-// --- Browser file download ---
 
 export function downloadTextFile(filename: string, content: string, mimeType = 'application/x-pem-file'): void {
 	const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });

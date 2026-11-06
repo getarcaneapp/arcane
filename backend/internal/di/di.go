@@ -1,4 +1,3 @@
-// Package di owns the backend's dependency-injection graph.
 package di
 
 import (
@@ -18,7 +17,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
-	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -44,7 +42,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/role"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
-	"getarcane.dev/arcane/v3/internal/search"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
@@ -66,7 +63,6 @@ import (
 )
 
 var (
-	// ActorOptions provides the durable Francis runtime and admission.
 	ActorOptions = fx.Options(
 		fx.Provide(provideActorRuntime, provideRunCoordinator),
 		fx.Provide(provideAdmissionGate),
@@ -75,7 +71,6 @@ var (
 		fx.Provide(provideTunnelRegistry),
 	)
 
-	// ServiceOptions constructs services once and injects them into route modules.
 	ServiceOptions = fx.Options(
 		fx.Supply(
 			resources.FS,
@@ -115,7 +110,6 @@ var (
 			build.NewBuildService,
 			project.NewLifecycleService,
 			container.NewContainerService,
-			dashboard.NewDashboardService,
 			network.NewNetworkService,
 			port.NewPortService,
 			swarm.NewSwarmService,
@@ -143,7 +137,6 @@ var (
 				}),
 			),
 		),
-		// These providers bind config values, callbacks, or managed resource lifetimes.
 		fx.Provide(
 			provideJWKSetManager,
 			provideDockerClientService,
@@ -244,7 +237,6 @@ var (
 			gitops.New,
 			variable.New,
 			upload.New,
-			search.New,
 			health.New,
 			func(service *activity.ActivityService, localEnvironment *environment.EnvironmentService, eventService *event.EventService) *activity.Module {
 				return activity.New(service, activity.EnvironmentDependencies{
@@ -288,8 +280,6 @@ var (
 		),
 	)
 
-	// JobOptions provides every scheduler job. Registration and settings callbacks
-	// remain bootstrap concerns because their ordering is application-specific.
 	JobOptions = fx.Options(
 		fx.Provide(
 			fx.Annotate(scheduler.NewAutoUpdateJob, fx.ResultTags(`name:"auto-update"`)),

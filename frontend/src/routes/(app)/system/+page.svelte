@@ -2,7 +2,6 @@
 	import { resolve } from '$app/paths';
 
 	import SettingsIndexPage from '#lib/components/settings/settings-index-page.svelte';
-	import { MonitorIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	import type { PageProps } from './$types';
@@ -12,7 +11,6 @@
 
 <SettingsIndexPage
 	rootUrl={resolve('/(app)/system')}
-	headerIcon={MonitorIcon}
 	title={m.system()}
 	subtitle={m.system_subtitle()}
 	searchPlaceholder={m.search_system_settings()}

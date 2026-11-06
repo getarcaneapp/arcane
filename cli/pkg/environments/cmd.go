@@ -13,7 +13,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for environment operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

@@ -1,4 +1,3 @@
-// Package swarm owns Docker Swarm management and its HTTP routes.
 package swarm
 
 import (

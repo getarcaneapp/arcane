@@ -12,7 +12,6 @@ import (
 )
 
 type (
-	// Handler serves the system prune endpoint.
 	Handler struct {
 		service *Service
 		appCtx  context.Context
@@ -42,7 +41,6 @@ func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInpu
 	}, nil
 }
 
-// PruneAll removes unused Docker resources.
 func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handlerutil.Out[types.PruneAllResult], error) {
 	slog.InfoContext(ctx, "System prune operation initiated",
 		"containers", input.Body.Containers,

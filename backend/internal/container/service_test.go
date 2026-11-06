@@ -454,13 +454,10 @@ func newGroupedContainerSummary(name, localProject string) types.ContainerSummar
 	}
 }
 
-// dockerTestPath strips the /v1.NN version prefix Docker clients prepend, so
-// fake Docker servers can match on the bare path.
 func dockerTestPath(path string) string {
 	return dockerAPIVersionPrefix.ReplaceAllString(path, "")
 }
 
-// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
@@ -479,7 +476,6 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-// setupProjectTestDB builds an in-memory DB migrated for project-related tests.
 func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -531,7 +527,6 @@ func TestMergeEditMountsPreservesMountOptions(t *testing.T) {
 		{Type: mount.TypeTmpfs, Target: "/tmp/scratch", TmpfsOptions: &mount.TmpfsOptions{SizeBytes: 1024}},
 	}
 
-	// Round-trip the volume mount (toggling read-only) and drop the tmpfs one.
 	requested := []types.ContainerMountCreate{{Type: "volume", Source: "data", Target: "/data", ReadOnly: true}}
 
 	out := mergeEditMounts(existing, requested)
@@ -672,7 +667,6 @@ func TestBuildEditNetworkingConfig(t *testing.T) {
 	require.NotNil(t, out)
 	require.Contains(t, out.EndpointsConfig, "my-net")
 
-	// explicit desired set: keep my-net with new alias + static IP, add other-net
 	req := &types.ContainerNetworkingConfigCreate{
 		EndpointsConfig: map[string]types.ContainerEndpointSettingsCreate{
 			"my-net":    {Aliases: []string{"renamed"}, IPv4Address: "10.5.0.9"},

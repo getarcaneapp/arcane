@@ -14,9 +14,8 @@ import (
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
-// serveMuxSession serves manager requests over a multiplexed session with the agent's own router until the session ends.
-func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteCloser) error {
-	session, err := yamux.Client(rw, newMuxConfig(true))
+func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteCloser, streamWindowMiB int) error {
+	session, err := yamux.Client(rw, newMuxConfig(true, streamWindowMiB))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)
@@ -37,10 +36,9 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteClose
 		}),
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       180 * time.Second,
-		// Manager requests are logged by the agent's request logger, like any other API call.
-		BaseContext: func(net.Listener) context.Context { return ctx },
-		ConnContext: httpx.WithConn,
-		ErrorLog:    slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ConnContext:       httpx.WithConn,
+		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 	}
 	// Closing the server closes the session it listens on and every stream.
 	defer func() { _ = srv.Close() }()

@@ -12,8 +12,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// ProxyHTTP upgrades the client connection and bridges it to remoteWS, dialed through client. checkOrigin must be
-// the local WebSocket Origin validator: the session cookie is already validated, so any Origin would allow cross-site terminals.
 func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header, checkOrigin func(*http.Request) bool, client *http.Client) error {
 	if checkOrigin == nil {
 		return errors.New("websocket proxy requires an origin validator")
@@ -38,7 +36,6 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		HTTPClient: client,
 	})
 	dialCancel()
-	// Ensure the response body is drained & closed to avoid leaking resources.
 	if resp != nil && resp.Body != nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()

@@ -49,7 +49,7 @@
 		</div>
 		{#if canFetch}
 			<div class="ml-auto">
-				<ArcaneButton action="refresh" size="sm" disabled={processesQuery.isFetching} onclick={() => processesQuery.refetch()} />
+				<ArcaneButton action="refresh" disabled={processesQuery.isFetching} onclick={() => processesQuery.refetch()} />
 			</div>
 		{/if}
 	</Card.Header>

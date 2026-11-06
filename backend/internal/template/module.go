@@ -1,4 +1,3 @@
-// Package template owns compose templates and the template HTTP surface.
 package template
 
 import (
@@ -34,11 +33,9 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterTemplates(api, m.service)
 }
 
-// RegisterTemplates registers all template management endpoints.
 func RegisterTemplates(api huma.API, templateService *TemplateService) {
 	h := &TemplateHandler{templateService: templateService}
 
-	// Template registry endpoint.
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "fetchTemplateRegistry",
 		Method:      "GET",
@@ -85,7 +82,6 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Tags:        []string{"Templates"},
 	}, authz.PermTemplatesRead, h.GetTemplateContent)
 
-	// Protected endpoints
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createTemplate",
 		Method:      "POST",

@@ -10,11 +10,11 @@
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog//index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -36,7 +36,6 @@
 		InfoIcon,
 		GlobeIcon,
 		ContainersIcon,
-		BoxIcon,
 		FileTextIcon,
 		AlertIcon
 	} from '#lib/icons/index.js';
@@ -80,7 +79,6 @@
 	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
 	const currentEnvId = $derived(data.envId);
-	// A volume opened from another environment follows that environment's settings.
 	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
 	const volumeSettings = $derived(environmentSettings.current?.runtime);
 	// Until the backup volume name is known, the volume cannot be removed.
@@ -874,7 +872,7 @@
 						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 							<a
 								href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: c.id })}
-								class="flex items-center text-primary hover:underline"
+								class="flex items-center text-primary-text hover:underline"
 							>
 								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 								{c.name}
@@ -892,14 +890,13 @@
 				{/each}
 			</div>
 		{:else if volume.containers && volume.containers.length > 0}
-			<!-- Fallback to IDs if names not resolved -->
 			<div class="divide-y rounded-lg border">
 				{#each volume.containers as id (id)}
 					<div class="flex items-center justify-between gap-3 p-3">
 						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
 						<a
 							href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: id })}
-							class="text-sm text-primary hover:underline">{m.common_view()}</a
+							class="text-sm text-primary-text hover:underline">{m.common_view()}</a
 						>
 					</div>
 				{/each}
@@ -1141,7 +1138,10 @@
 	<TabbedPageLayout backUrl="/volumes" backLabel={m.resource_volumes_cap()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
-				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
+				<div class="flex min-w-0 items-center">
+					<EnvironmentDestinationSelect value={currentEnvId} variant="prefix" readonly />
+					<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
+				</div>
 				<div class="flex flex-wrap items-center gap-2 pt-1">
 					<InUseStatus inUse={volume.inUse} />
 					{#if volume.driver}
@@ -1150,7 +1150,6 @@
 					{#if volume.scope}
 						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
-					<EnvironmentCell value={currentEnvId} plain />
 				</div>
 			</div>
 		{/snippet}
@@ -1181,7 +1180,7 @@
 {:else}
 	<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 		<div class="mb-4 rounded-full bg-muted/30 p-4">
-			<BoxIcon class="size-10 text-muted-foreground opacity-70" />
+			<ContainersIcon class="size-10 text-muted-foreground opacity-70" />
 		</div>
 		<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.resource_volumes_cap() })}</h2>
 		<p class="mb-6 text-muted-foreground">
@@ -1192,7 +1191,6 @@
 			action="cancel"
 			customLabel={m.common_back_to({ resource: m.resource_volumes_cap() })}
 			onclick={() => goto(resolve('/(app)/volumes'))}
-			size="sm"
 		/>
 	</div>
 {/if}

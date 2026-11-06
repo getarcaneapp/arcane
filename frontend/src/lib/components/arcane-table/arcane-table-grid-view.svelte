@@ -66,7 +66,6 @@
 		onToggleRowExpanded?: (rowId: string) => void;
 		scrollElement?: HTMLElement;
 		initialScrollTop?: number;
-		/** First-load flag — when set and there's no data, render skeleton cards. */
 		loading?: boolean;
 		empty: Snippet;
 	} = $props();
@@ -76,7 +75,6 @@
 	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 	const CONTROL_COLUMNS = new Set(['select', 'actions']);
 
-	// Cards render the list's own cells; each visible column gets a card slot once per column change.
 	const cardLayout = $derived.by(() => {
 		const slots = table
 			.getVisibleLeafColumns()
@@ -150,7 +148,6 @@
 
 	const displayEntries = $derived(getTableDisplayEntries(table.getRowModel().rows, rowIndex, groupedRows, groupCollapsedState));
 
-	// Pack consecutive rows into fixed-width grid lines so each line can be virtualized as one item.
 	const entries = $derived.by((): GridEntry[] => {
 		const out: GridEntry[] = [];
 		let pending: ArcaneRow<TData>[] = [];

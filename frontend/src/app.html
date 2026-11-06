@@ -15,6 +15,8 @@
 		<script>
 			try {
 				const root = document.documentElement;
+				const locale = document.cookie.match(/(?:^|;\s*)locale=([^;]*)/);
+				root.lang = (locale && decodeURIComponent(locale[1])) || 'en';
 				const mode = localStorage.getItem('mode-watcher-mode') || 'system';
 				const dark = mode === 'dark' || (mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
 				root.classList.toggle('dark', dark);

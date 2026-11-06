@@ -45,6 +45,7 @@
 		}).filter((resource) => resource.total > 0)
 	);
 	const total = $derived(resources.reduce((sum, resource) => sum + resource.total, 0));
+	const largestTotal = $derived(Math.max(0, ...resources.map((resource) => resource.total)));
 	const topEnvironments = $derived(
 		usage
 			.map((entry) => ({ environment: entry.environment, bytes: totalReclaimableBytes(entry.data) }))
@@ -61,7 +62,7 @@
 <DashboardPanel title={m.reclaimable_space()}>
 	{#snippet actions()}
 		{#if onPrune}
-			<ArcaneButton action="prune" size="sm" customLabel={m.prune()} onclick={onPrune} />
+			<ArcaneButton action="prune" customLabel={m.prune()} onclick={onPrune} />
 		{/if}
 	{/snippet}
 	{#if loading && usage.length === 0}
@@ -81,15 +82,20 @@
 							<span class="truncate text-muted-foreground">{resource.label}</span>
 							<span class="font-medium whitespace-nowrap tabular-nums">{formatBytes(resource.total)}</span>
 						</div>
-						<div class="flex h-2 gap-0.5">
-							{#each resource.segments as segment (segment.environment.id)}
-								<div
-									class="h-full grow-(--segment-grow) rounded-full bg-(--segment-color)"
-									style:--segment-grow={segment.bytes}
-									style:--segment-color={environmentColor(segment.environment.id) ?? 'var(--color-primary)'}
-									title={`${segment.environment.name}: ${formatBytes(segment.bytes)}`}
-								></div>
-							{/each}
+						<div class="h-2 rounded-full bg-muted">
+							<div
+								class="flex h-full w-(--bar-width) min-w-1 gap-0.5"
+								style:--bar-width={`${(resource.total / largestTotal) * 100}%`}
+							>
+								{#each resource.segments as segment (segment.environment.id)}
+									<div
+										class="h-full grow-(--segment-grow) rounded-full bg-(--segment-color)"
+										style:--segment-grow={segment.bytes}
+										style:--segment-color={environmentColor(segment.environment.id) ?? 'var(--color-primary)'}
+										title={`${segment.environment.name}: ${formatBytes(segment.bytes)}`}
+									></div>
+								{/each}
+							</div>
 						</div>
 					</li>
 				{/each}

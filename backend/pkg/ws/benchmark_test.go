@@ -14,9 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// benchWSServer creates a test WebSocket server for benchmarks.
-// The server keeps connections open until the returned cleanup is called.
-
 func benchWSServer(b *testing.B) (url string, cleanup func()) {
 	b.Helper()
 
@@ -28,7 +25,6 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 			return
 		}
 		go func() {
-			// Drain reads until context cancelled
 			for {
 				if _, _, readErr := conn.Read(ctx); readErr != nil {
 					return
@@ -46,8 +42,6 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 	}
 }
 
-// benchHub creates a hub with N connected clients whose send channels are drained.
-// Returns the hub and its cleanup function.
 func benchHub(b *testing.B, numClients, hubBuf int) (*Hub, func()) {
 	b.Helper()
 
@@ -68,14 +62,12 @@ func benchHub(b *testing.B, numClients, hubBuf int) (*Hub, func()) {
 		c := NewClient(conn, 4096)
 		h.register <- c
 
-		// Drain send channel to simulate fast client
 		go func() {
 			for range c.send {
 			}
 		}()
 	}
 
-	// Wait for all clients to register
 	for h.Len() < numClients {
 		time.Sleep(time.Millisecond)
 	}
@@ -89,11 +81,6 @@ func benchHub(b *testing.B, numClients, hubBuf int) (*Hub, func()) {
 	}
 }
 
-// ============================================================================
-// Hub Benchmarks
-// ============================================================================
-
-// BenchmarkHub_Broadcast measures hub broadcast throughput with varying client counts.
 func BenchmarkHub_Broadcast(b *testing.B) {
 	for _, numClients := range []int{1, 10, 50, 100} {
 		b.Run(fmt.Sprintf("clients_%d", numClients), func(b *testing.B) {
@@ -112,7 +99,6 @@ func BenchmarkHub_Broadcast(b *testing.B) {
 	}
 }
 
-// BenchmarkHub_BroadcastMessageSizes measures broadcast performance at different message sizes.
 func BenchmarkHub_BroadcastMessageSizes(b *testing.B) {
 	for _, size := range []int{64, 256, 1024, 4096, 16384} {
 		b.Run(fmt.Sprintf("bytes_%d", size), func(b *testing.B) {
@@ -135,11 +121,6 @@ func BenchmarkHub_BroadcastMessageSizes(b *testing.B) {
 	}
 }
 
-// ============================================================================
-// Parse Benchmarks
-// ============================================================================
-
-// BenchmarkNormalizeContainerLine measures log line parsing performance.
 func BenchmarkNormalizeContainerLine(b *testing.B) {
 	cases := map[string]string{
 		"plain":              "hello world this is a normal log message",
@@ -161,7 +142,6 @@ func BenchmarkNormalizeContainerLine(b *testing.B) {
 	}
 }
 
-// BenchmarkNormalizeProjectLine measures project log line parsing performance.
 func BenchmarkNormalizeProjectLine(b *testing.B) {
 	cases := map[string]string{
 		"with_service":    "web | Starting server on port 8080",
@@ -180,11 +160,6 @@ func BenchmarkNormalizeProjectLine(b *testing.B) {
 	}
 }
 
-// ============================================================================
-// JSON Marshaling Benchmarks
-// ============================================================================
-
-// BenchmarkLogMessage_Marshal measures JSON marshaling cost for a single log message.
 func BenchmarkLogMessage_Marshal(b *testing.B) {
 	msg := LogMessage{
 		Seq:         42,
@@ -205,7 +180,6 @@ func BenchmarkLogMessage_Marshal(b *testing.B) {
 	}
 }
 
-// BenchmarkLogMessageBatch_Marshal measures batch JSON marshaling cost.
 func BenchmarkLogMessageBatch_Marshal(b *testing.B) {
 	for _, batchSize := range []int{1, 10, 50, 100} {
 		b.Run(fmt.Sprintf("batch_%d", batchSize), func(b *testing.B) {
@@ -232,11 +206,6 @@ func BenchmarkLogMessageBatch_Marshal(b *testing.B) {
 	}
 }
 
-// ============================================================================
-// Bridge Throughput Benchmarks
-// ============================================================================
-
-// BenchmarkForwardLogJSONBatched_Throughput measures end-to-end batched forwarding throughput.
 func BenchmarkForwardLogJSONBatched_Throughput(b *testing.B) {
 	for _, batchSize := range []int{1, 10, 50} {
 		b.Run(fmt.Sprintf("maxBatch_%d", batchSize), func(b *testing.B) {
@@ -264,7 +233,6 @@ func BenchmarkForwardLogJSONBatched_Throughput(b *testing.B) {
 	}
 }
 
-// BenchmarkForwardLines_Throughput measures plain text line forwarding throughput.
 func BenchmarkForwardLines_Throughput(b *testing.B) {
 	h, cleanup := benchHub(b, 1, 8192)
 	defer cleanup()
@@ -282,11 +250,6 @@ func BenchmarkForwardLines_Throughput(b *testing.B) {
 	ForwardLines(ctx, h, lines)
 }
 
-// ============================================================================
-// Memory Benchmarks
-// ============================================================================
-
-// BenchmarkHub_MemoryPerClient measures memory overhead per connected client.
 func BenchmarkHub_MemoryPerClient(b *testing.B) {
 	for _, sendBuf := range []int{16, 64, 256} {
 		b.Run(fmt.Sprintf("sendBuffer_%d", sendBuf), func(b *testing.B) {

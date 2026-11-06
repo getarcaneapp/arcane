@@ -54,7 +54,6 @@ import (
 )
 
 type (
-	// patchSlot is one patch task's output; failures travel as task errors.
 	patchSlot struct {
 		Skipped bool `json:"skipped,omitempty"`
 	}
@@ -98,9 +97,7 @@ type (
 		Config               *config.Config
 	}
 
-	// PullRequest describes one pull through Pull.
 	PullRequest struct {
-		// Ref is the reference pulled from the registry.
 		Ref string
 		// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
 		Tag         string
@@ -117,8 +114,6 @@ type (
 )
 
 const (
-	// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
-	// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
 	projectIDCacheTTL = 5 * time.Second
 )
 
@@ -147,8 +142,6 @@ func NewImageService(p ImageServiceParams) *ImageService {
 	}
 }
 
-// RegisterWorkflows defines the scheduled auto-patch: find images with fixable
-// findings, patch each one in turn, then report. Call it before the host starts.
 func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 	patchWorkflow, err := engine.Define(flow.Definition{
 		Name:        "auto-patch",
@@ -255,12 +248,8 @@ func (s *ImageService) RecoverInterruptedPatches(ctx context.Context) error {
 	return s.patch.RecoverInterruptedPatches(ctx)
 }
 
-// PatchWorkflow is the scheduled auto-patch workflow.
 func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
-// GetImageDetail returns a DetailSummary for the given image ID. It fetches ImageInspect
-// and ImageList concurrently so the size field reflects the same metric shown in the
-// image table (docker image ls / docker system df).
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
 	var (
 		inspect    image.InspectResponse
@@ -412,7 +401,6 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	return nil
 }
 
-// cleanupRemovedImages drops update and vulnerability records for images Docker deleted or untagged.
 func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image.DeleteResponse, extraIDs ...string) {
 	idsToDelete := make([]string, 0, len(deleted)+len(extraIDs))
 	for _, img := range deleted {
@@ -549,9 +537,6 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	return nil
 }
 
-// ImageLastTagTime returns when the local image was last tagged, zero when the
-// engine doesn't report it. Pull-policy refresh windows compare against this
-// timestamp, the same clock compose v5.5.0 uses.
 func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
 	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
@@ -562,7 +547,6 @@ func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (
 	return inspect.Metadata.LastTagTime, nil
 }
 
-// Pull pulls req.Ref within the dockerImagePullTimeout setting and reconciles the pulled reference's update state.
 func (s *ImageService) Pull(ctx context.Context, req PullRequest) error {
 	pullCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer cancel()
@@ -595,7 +579,6 @@ func (s *ImageService) Pull(ctx context.Context, req PullRequest) error {
 	return nil
 }
 
-// RemoteDigest resolves imageRef's registry digest within the registry timeout setting.
 func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error) {
 	digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	defer cancel()
@@ -607,7 +590,6 @@ func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, creden
 	return kit.FromPtr(result).Digest, nil
 }
 
-// TagImage adds a repository tag to an existing image.
 func (s *ImageService) TagImage(ctx context.Context, source string, req types.ImageTagRequest, user types.Actor) error {
 	source = strings.TrimSpace(source)
 	repository := strings.TrimSpace(req.Repository)
@@ -659,7 +641,6 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req types.Im
 	return nil
 }
 
-// GetImageHistory returns layer history for an image.
 func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([]types.ImageHistoryItem, error) {
 	imageName = strings.TrimSpace(imageName)
 	if imageName == "" {
@@ -687,7 +668,6 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 	return items, nil
 }
 
-// SearchImages searches the configured Docker registry for images.
 func (s *ImageService) SearchImages(ctx context.Context, term string) ([]types.ImageSearchResult, error) {
 	term = strings.TrimSpace(term)
 	if term == "" {
@@ -713,7 +693,6 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]types.I
 	return items, nil
 }
 
-// ExportImage returns a tar stream for one Docker image.
 func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.ReadCloser, error) {
 	imageName = strings.TrimSpace(imageName)
 	if imageName == "" {
@@ -749,7 +728,6 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	// ImageLoad accepts a tar archive reader and optional load options
 	loadResp, err := dockerClient.ImageLoad(ctx, limitedReader)
 	if err != nil {
 		if limitedReader.exceeded.Load() {
@@ -839,7 +817,6 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (client.ImagePullOptions, error) {
 	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
 
-	// Check external credentials first
 	for _, cred := range externalCreds {
 		if !cred.Enabled || cred.Username == "" || cred.Token == "" {
 			continue
@@ -934,8 +911,6 @@ func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImage
 	return &report.Report, nil
 }
 
-// GetUpdateInfoByImageIDs returns a map of image ID to UpdateInfo for the given image IDs.
-// This is used by the container service to populate update info for containers.
 func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []string) (map[string]*types.ImageUpdateInfo, error) {
 	if len(imageIDs) == 0 {
 		return make(map[string]*types.ImageUpdateInfo), nil
@@ -954,12 +929,6 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	return result, nil
 }
 
-// GetUpdateInfoByContainers returns the stored check matching each container's
-// current policy, keyed by container ID. Digest policies read the image-level
-// record for the container's runtime image ID, so a check recorded under another
-// local tag of the same image still applies. Tag policies read the container's
-// own record and require an exact policy key. Containers that opted out of update
-// checks are omitted; disabling automatic installation does not hide results.
 func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*types.ImageUpdateInfo, error) {
 	result := make(map[string]*types.ImageUpdateInfo)
 	if len(containers) == 0 {
@@ -1011,8 +980,6 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 	return result, nil
 }
 
-// GetUpdateInfoByImageRefs returns persisted update information keyed by the
-// original image reference string.
 func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs []string) (map[string]*types.ImageUpdateInfo, error) {
 	result := make(map[string]*types.ImageUpdateInfo)
 	if len(imageRefs) == 0 {
@@ -1104,7 +1071,6 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	// Fetch Docker images
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "image worker")
 
@@ -1116,7 +1082,6 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil
 	})
 
-	// Fetch containers to determine usage
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "image worker")
 
@@ -1209,9 +1174,6 @@ func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiRespo
 	})
 }
 
-// BuildProjectIDMap returns a map of compose project name → project ID for any
-// containers that carry the com.docker.compose.project label. The lookup uses a
-// short-TTL cache shared across all callers of this ImageService instance.
 func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []container.Summary) map[string]string {
 	projectIDs := make(map[string]string)
 	projectNameSet := make(map[string]struct{})

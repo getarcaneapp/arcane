@@ -1,9 +1,8 @@
 <script lang="ts">
-	import type { Component, Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
-	import HeaderCard from '#lib/components/header-card.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Card } from '#lib/components/ui/card/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
@@ -24,33 +23,23 @@
 	}
 
 	interface Props {
-		// Header
-		headerIcon: Component;
 		title: string;
 		subtitle: string;
-		// Search input
 		searchPlaceholder: string;
 		clearSearchLabel: string;
-		// Search-results empty/loading states
 		searchingLabel: string;
 		searchFailedLabel: string;
 		noResultsTitle: string;
 		noResultsDescription: string;
-		// Matching-items section
 		matchingItemsLabel: string;
-		// Go-to-page button on each result card
 		goToPageLabel: string;
-		// Data
 		groups: CategoryGroup[];
 		categorySearch: CategorySearch;
-		navigate: (href: string) => void;
-		// Structurally-different regions rendered by the parent page
 		resultsHeading: Snippet;
 		moreKeywords: Snippet<[number]>;
 	}
 
 	let {
-		headerIcon,
 		title,
 		subtitle,
 		searchPlaceholder,
@@ -63,34 +52,22 @@
 		goToPageLabel,
 		groups,
 		categorySearch,
-		navigate,
 		resultsHeading,
 		moreKeywords
 	}: Props = $props();
-
-	const HeaderIcon = $derived(headerIcon);
 </script>
 
 <div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
-	<HeaderCard>
-		<div class="flex items-center justify-between gap-4">
-			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
-				<div
-					class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
-				>
-					<HeaderIcon class="size-4 sm:size-5" />
-				</div>
-				<div class="min-w-0">
-					<h1 class="text-3xl font-semibold tracking-tight">{title}</h1>
-					<p class="mt-1 text-sm text-muted-foreground sm:text-base">{subtitle}</p>
-				</div>
+	<header class="space-y-4 pt-3 sm:space-y-6 md:pt-5">
+		<div class="flex items-start justify-between gap-4">
+			<div class="min-w-0">
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+				<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
 			</div>
-			<div class="flex items-center gap-3">
-				<SettingLock />
-			</div>
+			<SettingLock />
 		</div>
 
-		<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
+		<div class="relative w-full sm:max-w-md">
 			<InputGroup.Root>
 				<InputGroup.Input
 					placeholder={searchPlaceholder}
@@ -110,9 +87,9 @@
 						<ArcaneButton
 							action="base"
 							tone="ghost"
-							size="sm"
+							size="icon"
 							onclick={categorySearch.clearSearch}
-							class="h-6 w-6 p-0"
+							class="size-6"
 							icon={CloseIcon}
 							showLabel={false}
 							customLabel={clearSearchLabel}
@@ -123,7 +100,7 @@
 				</InputGroup.Addon>
 			</InputGroup.Root>
 		</div>
-	</HeaderCard>
+	</header>
 
 	{#if !categorySearch.showSearchResults}
 		<div class="space-y-6">
@@ -131,22 +108,21 @@
 				<SettingsSection title={group.title}>
 					{#each group.categories as category (category.id)}
 						{@const Icon = category.icon}
-						<button
-							type="button"
-							onclick={() => navigate(category.href)}
-							class="flex w-full cursor-pointer items-center gap-3 hover-glow px-4 py-3 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4"
+						<a
+							href={category.href}
+							class="flex w-full cursor-pointer items-center gap-3 hover-glow px-4 py-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset sm:gap-4"
 						>
 							<span
-								class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 ring-inset"
+								class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary-text ring-1 ring-primary/20 ring-inset"
 							>
 								<Icon class="size-4" />
 							</span>
 							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium">{category.title}</span>
-								<span class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{category.description}</span>
+								<span class="block truncate text-sm font-semibold">{category.title}</span>
+								<span class="mt-0.5 line-clamp-2 text-xs-plus leading-5 text-muted-foreground">{category.description}</span>
 							</span>
-							<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground/60" />
-						</button>
+							<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
+						</a>
 					{/each}
 				</SettingsSection>
 			{/each}
@@ -184,7 +160,7 @@
 							<div class="flex items-center justify-between gap-3 border-b border-border/70 p-4 sm:p-5">
 								<div class="flex min-w-0 items-center gap-3 sm:gap-4">
 									<span
-										class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 ring-inset"
+										class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary-text ring-1 ring-primary/20 ring-inset"
 									>
 										<Icon class="size-5" />
 									</span>
@@ -195,17 +171,9 @@
 										</p>
 									</div>
 								</div>
-								<ArcaneButton
-									action="base"
-									tone="outline"
-									size="sm"
-									onclick={() => navigate(result.href)}
-									class="shrink-0"
-									customLabel={goToPageLabel}
-								/>
+								<ArcaneButton action="base" tone="outline" href={result.href} class="shrink-0" customLabel={goToPageLabel} />
 							</div>
 
-							<!-- Show matching items with descriptions -->
 							{#if result.matchingItems && result.matchingItems.length > 0}
 								<div class="space-y-2 p-4 sm:p-5">
 									<h4 class="text-2xs font-medium tracking-widest text-muted-foreground uppercase">

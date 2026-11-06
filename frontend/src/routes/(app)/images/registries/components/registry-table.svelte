@@ -1,0 +1,325 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import type { Snippet } from 'svelte';
+	import { toast } from 'svelte-sonner';
+
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
+	import EnabledStatusCell from '#lib/components/arcane-table/cells/enabled-status-cell.svelte';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, FolderOpenIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import type { Paginated } from '#lib/types/base.js';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/containerregistry.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { getRegistryDisplayName } from '#lib/utils/registry.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	let {
+		registries,
+		selectedIds = $bindable(),
+		requestOptions = $bindable(),
+		pullUsageByRegistry = {},
+		onEditRegistry,
+		emptyState
+	}: {
+		registries: Paginated<ContainerRegistry>;
+		selectedIds: string[];
+		requestOptions: SearchPaginationSortRequest;
+		pullUsageByRegistry?: Record<string, ContainerRegistryPullUsage>;
+		onEditRegistry: (registry: ContainerRegistry) => void;
+		emptyState?: Snippet;
+	} = $props();
+
+	const queryClient = useQueryClient();
+
+	let removingId = $state<string | null>(null);
+	let testingId = $state<string | null>(null);
+
+	const canDeleteRegistry = $derived(hasShownPermission('registries:delete'));
+	const canBrowseRegistry = $derived(hasShownPermission('registries:read') && hasShownPermission('registries:browse'));
+
+	function maskAccessKeyId(keyId: string | undefined): string {
+		if (!keyId) return m.registries_aws_iam_role();
+		if (keyId.length <= 4) return keyId;
+		return '*'.repeat(11) + keyId.slice(-4);
+	}
+
+	function formatPullUsage(item: ContainerRegistry) {
+		const usage = pullUsageByRegistry[item.id];
+		if (!usage) return m.common_unavailable();
+		if (usage.remaining !== undefined && usage.limit !== undefined) {
+			return m.registries_pull_limit_value({ remaining: usage.remaining, limit: usage.limit });
+		}
+		return m.registries_observed_pulls_value({ count: usage.observedPulls });
+	}
+
+	function handleDeleteSelected(ids: string[]) {
+		if (!ids?.length) return;
+		const selectedRegistryIds = [...ids];
+
+		bulkConfirmAndRun({
+			ids: selectedRegistryIds,
+			title: m.registries_remove_selected_title({ count: selectedRegistryIds.length }),
+			message: m.registries_remove_selected_message({ count: selectedRegistryIds.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => {
+				removingId = id;
+				return containerRegistryService.deleteRegistry(id);
+			},
+			messages: {
+				success: (count) => m.registries_bulk_remove_success({ count }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.registries_title() }),
+				failure: () => m.registries_bulk_remove_failed({ count: selectedRegistryIds.length })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async ({ success }) => {
+				removingId = null;
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
+		});
+	}
+
+	function handleDeleteOne(id: string, url: string) {
+		const safeUrl = url ?? m.common_unknown();
+		confirmAndRun({
+			title: m.common_remove_title({ resource: m.resource_registry() }),
+			message: m.registries_remove_message({ url: safeUrl }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			setLoading: (loading) => (removingId = loading ? id : null),
+			run: () => containerRegistryService.deleteRegistry(id),
+			failureMessage: m.registries_delete_failed({ url: safeUrl }),
+			onSuccess: async () => {
+				toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
+			}
+		});
+	}
+
+	async function handleTest(id: string, url: string) {
+		testingId = id;
+		const safeUrl = url ?? m.common_unknown();
+		const result = await tryCatch(containerRegistryService.testRegistry(id));
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.registries_test_failed({ url: safeUrl }),
+			setLoadingState: (value) => (value ? null : (testingId = null)),
+			onSuccess: (resp) => {
+				const msg =
+					resp && typeof resp === 'object' && 'message' in resp ? String(resp.message ?? m.common_unknown()) : m.common_unknown();
+				toast.success(m.registries_test_success({ url: safeUrl, message: msg }));
+				testingId = null;
+			}
+		});
+	}
+
+	const columns = [
+		{ accessorKey: 'id', title: m.common_id(), hidden: true },
+		{
+			accessorKey: 'url',
+			title: m.registries_url(),
+			sortable: true,
+			cell: UrlCell
+		},
+		{
+			accessorKey: 'username',
+			title: m.registries_username_key_label(),
+			sortable: true,
+			cell: UsernameCell
+		},
+		{
+			accessorKey: 'description',
+			title: m.common_description(),
+			sortable: true,
+			cell: DescriptionCell
+		},
+		{
+			accessorKey: 'enabled',
+			title: m.common_status(),
+			sortable: true,
+			cellComponent: EnabledStatusCell
+		},
+		{
+			id: 'pullUsage',
+			accessorFn: (row) => row.id,
+			title: m.registries_pull_usage(),
+			cell: PullUsageCell
+		},
+		{
+			accessorKey: 'createdAt',
+			title: m.common_created(),
+			sortable: true,
+			cellComponent: CreatedAtCell
+		}
+	] satisfies ColumnSpec<ContainerRegistry>[];
+
+	const mobileFields = [
+		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'username', label: m.registries_username_key_label(), defaultVisible: true },
+		{ id: 'description', label: m.common_description(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
+		{ id: 'pullUsage', label: m.registries_pull_usage(), defaultVisible: true },
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
+	];
+
+	const isLoading = $state({
+		removing: false
+	});
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onclick: handleDeleteSelected,
+			loading: isLoading.removing,
+			disabled: !canDeleteRegistry || isLoading.removing,
+			icon: TrashIcon
+		}
+	]);
+
+	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+</script>
+
+{#snippet UrlCell({ item }: { item: ContainerRegistry })}
+	<div class="flex flex-col">
+		{#if canBrowseRegistry}
+			<a class="font-medium hover:underline" href={resolve('/(app)/images/registries/[id]', { id: item.id })}
+				>{item.url || 'docker.io'}</a
+			>
+		{:else}
+			<span class="font-medium">{item.url || 'docker.io'}</span>
+		{/if}
+		<span class="text-xs text-muted-foreground">{getRegistryDisplayName(item)}</span>
+	</div>
+{/snippet}
+
+{#snippet UsernameCell({ item }: { item: ContainerRegistry })}
+	{#if item.registryType === 'ecr'}
+		<span class="font-mono text-sm">{maskAccessKeyId(item.awsAccessKeyId)}</span>
+	{:else}
+		<span class="font-mono text-sm">{String(item.username ?? m.common_na())}</span>
+	{/if}
+{/snippet}
+
+{#snippet DescriptionCell({ value }: { value: unknown })}
+	<span class="text-sm text-muted-foreground">{String(value ?? m.common_no_description())}</span>
+{/snippet}
+
+{#snippet PullUsageCell({ item }: { item: ContainerRegistry })}
+	<span class="text-sm">{formatPullUsage(item)}</span>
+{/snippet}
+
+{#snippet RegistryMobileCardSnippet({
+	item,
+	mobileFieldVisibility
+}: {
+	item: ContainerRegistry;
+	mobileFieldVisibility: MobileFieldVisibility;
+})}
+	<UniversalMobileCard
+		{item}
+		icon={{ component: RegistryIcon, variant: 'purple' as const }}
+		title={(item) => item.url}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
+		href={canBrowseRegistry ? (item: ContainerRegistry) => resolve('/(app)/images/registries/[id]', { id: item.id }) : undefined}
+		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
+		fields={[
+			{
+				label: item.registryType === 'ecr' ? m.registries_username_key_label() : m.common_username(),
+				getValue: (item: ContainerRegistry) =>
+					item.registryType === 'ecr' ? maskAccessKeyId(item.awsAccessKeyId) : item.username,
+				icon: UserIcon,
+				iconVariant: 'gray' as const,
+				show: (mobileFieldVisibility['username'] ?? true) && (item.registryType === 'ecr' || item.username !== undefined)
+			},
+			{
+				label: m.common_description(),
+				getValue: (item: ContainerRegistry) => item.description,
+				icon: ExternalLinkIcon,
+				iconVariant: 'gray' as const,
+				show: (mobileFieldVisibility['description'] ?? true) && item.description !== undefined
+			},
+			{
+				label: m.registries_pull_usage(),
+				getValue: (item: ContainerRegistry) => formatPullUsage(item),
+				icon: RegistryIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['pullUsage'] ?? true
+			}
+		]}
+		rowActions={RowActions}
+	/>
+{/snippet}
+
+{#snippet RowActions({ item }: { item: ContainerRegistry })}
+	<RowActionsMenu name={getRegistryDisplayName(item)}>
+		{#if canBrowseRegistry}
+			<DropdownMenu.Item onclick={() => goto(resolve('/(app)/images/registries/[id]', { id: item.id }))}>
+				<FolderOpenIcon class="size-4" />
+				{m.registries_browse()}
+			</DropdownMenu.Item>
+		{/if}
+
+		<IfPermitted perm="registries:test">
+			<ActionMenuItem
+				icon={TestIcon}
+				label={m.test_connection()}
+				onclick={() => handleTest(item.id, item.url)}
+				loading={testingId === item.id}
+			/>
+		</IfPermitted>
+
+		<IfPermitted perm="registries:update">
+			<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+
+		{#if canDeleteRegistry}
+			<DropdownMenu.Separator />
+
+			<ActionMenuItem
+				icon={TrashIcon}
+				label={m.common_remove()}
+				onclick={() => handleDeleteOne(item.id, item.url)}
+				loading={removingId === item.id}
+				destructive
+			/>
+		{/if}
+	</RowActionsMenu>
+{/snippet}
+
+<div>
+	<ArcaneTable
+		{emptyState}
+		persistKey="arcane-registries-table"
+		items={registries}
+		bind:requestOptions
+		bind:selectedIds
+		bind:mobileFieldVisibility
+		{bulkActions}
+		{columns}
+		{mobileFields}
+		rowActions={RowActions}
+		mobileCard={RegistryMobileCardSnippet}
+	/>
+</div>

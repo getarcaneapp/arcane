@@ -53,14 +53,11 @@ type (
 )
 
 const (
-	// DefaultNetworkMode is used when no scan network is configured or detected.
 	DefaultNetworkMode = "bridge"
 	CacheMountTarget   = "/root/.cache"
 	RegistryConfigDir  = "/tmp/arcane-registry-auth"
-	// NanoCPUsPerCore and BytesPerMB convert configured limits to Docker units.
-	NanoCPUsPerCore = int64(1_000_000_000)
-	BytesPerMB      = int64(1024 * 1024)
-	// ContainerFilesDir is where generated files are copied inside the scan container.
+	NanoCPUsPerCore    = int64(1_000_000_000)
+	BytesPerMB         = int64(1024 * 1024)
 	ContainerFilesDir  = "/tmp"
 	RegistryConfigFile = "arcane-registry-auth/config.json"
 	TrivyConfigFile    = "trivy-config.yaml"

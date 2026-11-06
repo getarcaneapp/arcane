@@ -33,7 +33,6 @@ import (
 )
 
 type (
-	// Service browses repositories and tags through the distribution API.
 	Service struct {
 		resolve       func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error)
 		lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
@@ -41,7 +40,6 @@ type (
 		names         *hot.HotCache[string, []string]
 	}
 
-	// target is a configured registry resolved for the distribution API.
 	target struct {
 		registry name.Registry
 		// prefix is the repository namespace configured in the registry URL, if any.
@@ -83,8 +81,6 @@ func (s *Service) cachedNames(key string, list func() ([]string, error)) ([]stri
 	return names, nil
 }
 
-// ListRepositories lists the repositories of a configured registry through the
-// catalog API, limited to the namespace of the registry URL.
 func (s *Service) ListRepositories(ctx context.Context, id string, params pagination.QueryParams) (listed []types.ContainerRegistryRepository, paging pagination.Response, listErr error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_repositories", trace.WithAttributes(attribute.String("arcane.registry.id", id)))
 	defer func() {
@@ -116,7 +112,6 @@ func (s *Service) ListRepositories(ctx context.Context, id string, params pagina
 	return items, response, nil
 }
 
-// ListRepositoryTags lists the tags of a repository, fetching manifest details only for the requested page.
 // A manifest failure is recorded on its tag so it does not hide the rest of the page.
 func (s *Service) ListRepositoryTags(
 	ctx context.Context,
@@ -166,8 +161,6 @@ func (s *Service) ListRepositoryTags(
 	return items, response, nil
 }
 
-// DeleteRepositoryTag deletes the manifest a tag points to. Registries delete
-// manifests by digest, so every tag sharing that digest is removed too.
 func (s *Service) DeleteRepositoryTag(ctx context.Context, id, repository, tag string) (deleted string, opErr error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.delete_tag", trace.WithAttributes(
 		attribute.String("arcane.registry.id", id),
@@ -206,8 +199,6 @@ func (s *Service) DeleteRepositoryTag(ctx context.Context, id, repository, tag s
 	return descriptor.Digest.String(), nil
 }
 
-// target resolves a stored registry into a registry name, its
-// namespace prefix, and the remote options carrying auth and transport.
 func (s *Service) target(ctx context.Context, id string) (*target, error) {
 	reg, credential, err := s.resolve(ctx, id)
 	if err != nil {
@@ -235,7 +226,6 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 	}, nil
 }
 
-// repository parses a repository name and keeps it inside the registry namespace.
 func (t *target) repository(repository string) (name.Repository, error) {
 	if strings.Trim(strings.TrimSpace(repository), "/") == "" {
 		return name.Repository{}, common.Classify(common.ErrValidation, errors.New("repository is required"))
@@ -250,7 +240,6 @@ func (t *target) repository(repository string) (name.Repository, error) {
 	return repo, nil
 }
 
-// classifyBrowseError maps distribution API failures to API error kinds.
 func classifyBrowseError(err error, message string) error {
 	if err == nil {
 		return nil
@@ -280,7 +269,6 @@ func IsUnauthorizedRegistryError(err error) bool {
 		return false
 	}
 
-	// Prefer structured error type check from the Docker SDK / containerd.
 	if errdefs.IsUnauthorized(err) || errdefs.IsPermissionDenied(err) {
 		return true
 	}
@@ -304,7 +292,6 @@ func IsUnauthorizedRegistryError(err error) bool {
 	})
 }
 
-// tagPlatform describes one platform image with its compressed config and layer size.
 func tagPlatform(img v1.Image, platform *v1.Platform, digest v1.Hash) (types.ContainerRegistryTagPlatform, error) {
 	manifest, err := img.Manifest()
 	if err != nil {
@@ -323,8 +310,6 @@ func tagPlatform(img v1.Image, platform *v1.Platform, digest v1.Hash) (types.Con
 	}, nil
 }
 
-// tagDetails resolves the manifest behind a tag. A single image yields
-// one platform; an index yields one per platform image, skipping attestations.
 func tagDetails(repo name.Repository, options []remote.Option, tagName string) types.ContainerRegistryRepositoryTag {
 	descriptor, err := remote.Get(repo.Tag(tagName), options...)
 	if err != nil {

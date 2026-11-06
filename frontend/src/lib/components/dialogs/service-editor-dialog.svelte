@@ -283,7 +283,6 @@
 	}
 
 	function handleSubmit() {
-		// Validation
 		if (!form.name.value.trim()) {
 			form.name.error = m.common_name_required();
 			return;
@@ -311,7 +310,6 @@
 			spec['Mode'] = { GlobalJob: structuredClone(asRecord(baseMode?.['GlobalJob']) ?? {}) };
 		}
 
-		// Add optional container config
 		const commandParts = form.command.value.trim().split(' ').filter(Boolean);
 		if (commandParts.length > 0) {
 			containerSpec['Command'] = commandParts;
@@ -330,7 +328,6 @@
 		assignOptional(containerSpec, 'User', form.user.value);
 		assignOptional(containerSpec, 'Hostname', form.hostname.value);
 
-		// Add environment variables
 		const filteredEnvVars = form.envVars.filter((entry) => entry.key.trim());
 		if (filteredEnvVars.length > 0) {
 			containerSpec['Env'] = filteredEnvVars.map((entry) => `${entry.key}=${entry.value}`);
@@ -338,7 +335,6 @@
 			delete containerSpec['Env'];
 		}
 
-		// Add mounts
 		const filteredMounts = form.mounts.filter((mount) => mount.source.trim() && mount.target.trim());
 		if (filteredMounts.length > 0) {
 			containerSpec['Mounts'] = filteredMounts.map((mount) => ({
@@ -350,7 +346,6 @@
 			delete containerSpec['Mounts'];
 		}
 
-		// Add labels
 		const filteredLabels = form.labels.filter((label) => label.key.trim());
 		if (filteredLabels.length > 0) {
 			const nextLabels: Record<string, string> = {};
@@ -362,7 +357,6 @@
 			delete spec['Labels'];
 		}
 
-		// Add ports
 		const filteredPorts = form.ports.filter((port) => port.target.trim());
 		if (filteredPorts.length > 0) {
 			const endpointSpec = ensureRecord(spec, 'EndpointSpec');
@@ -401,7 +395,6 @@
 				<Alert.Description>{m.swarm_service_spec_parse_failed()} {specParseError}</Alert.Description>
 			</Alert.Root>
 		{/if}
-		<!-- Basic Config -->
 		<div class="space-y-4">
 			<FormInput input={form.name} label={m.common_name()} placeholder="my-service" disabled={isLoading} />
 			<FormInput
@@ -432,10 +425,8 @@
 			{/if}
 		</div>
 
-		<!-- Advanced Options -->
 		<Accordion.Root class="w-full" type="multiple">
 			<div class="space-y-5">
-				<!-- Ports -->
 				<Accordion.Item value="ports">
 					<Accordion.Trigger>{m.common_ports()}</Accordion.Trigger>
 					<Accordion.Content>
@@ -450,16 +441,15 @@
 											<span class="uppercase">{port.protocol}</span>
 										</Select.Trigger>
 										<Select.Content>
-											<Select.Item value="tcp" label="TCP">TCP</Select.Item>
-											<Select.Item value="udp" label="UDP">UDP</Select.Item>
+											<Select.Item value="tcp" label={m.protocol_tcp()}>{m.protocol_tcp()}</Select.Item>
+											<Select.Item value="udp" label={m.protocol_udp()}>{m.protocol_udp()}</Select.Item>
 										</Select.Content>
 									</Select.Root>
-									<ArcaneButton action="remove" size="sm" onclick={() => removePort(i)} disabled={isLoading} icon={TrashIcon} />
+									<ArcaneButton action="remove" onclick={() => removePort(i)} disabled={isLoading} icon={TrashIcon} />
 								</div>
 							{/each}
 							<ArcaneButton
 								action="create"
-								size="sm"
 								onclick={addPort}
 								disabled={isLoading}
 								icon={AddIcon}
@@ -469,7 +459,6 @@
 					</Accordion.Content>
 				</Accordion.Item>
 
-				<!-- Environment Variables -->
 				<Accordion.Item value="env">
 					<Accordion.Trigger>{m.common_environment_variables()}</Accordion.Trigger>
 					<Accordion.Content>
@@ -479,12 +468,11 @@
 									<Input placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">=</span>
 									<Input placeholder="value" bind:value={env.value} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeEnvVar(i)} disabled={isLoading} icon={TrashIcon} />
+									<ArcaneButton action="remove" onclick={() => removeEnvVar(i)} disabled={isLoading} icon={TrashIcon} />
 								</div>
 							{/each}
 							<ArcaneButton
 								action="create"
-								size="sm"
 								onclick={addEnvVar}
 								disabled={isLoading}
 								icon={AddIcon}
@@ -494,7 +482,6 @@
 					</Accordion.Content>
 				</Accordion.Item>
 
-				<!-- Mounts -->
 				<Accordion.Item value="mounts">
 					<Accordion.Trigger>{m.swarm_service_form_mounts()}</Accordion.Trigger>
 					<Accordion.Content>
@@ -506,19 +493,18 @@
 											<span class="capitalize">{mount.type}</span>
 										</Select.Trigger>
 										<Select.Content>
-											<Select.Item value="volume" label="Volume">Volume</Select.Item>
-											<Select.Item value="bind" label="Bind">Bind</Select.Item>
+											<Select.Item value="volume" label={m.resource_volume_cap()}>{m.resource_volume_cap()}</Select.Item>
+											<Select.Item value="bind" label={m.bind()}>{m.bind()}</Select.Item>
 										</Select.Content>
 									</Select.Root>
 									<Input placeholder="source" bind:value={mount.source} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">→</span>
 									<Input placeholder="/target" bind:value={mount.target} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeMount(i)} disabled={isLoading} icon={TrashIcon} />
+									<ArcaneButton action="remove" onclick={() => removeMount(i)} disabled={isLoading} icon={TrashIcon} />
 								</div>
 							{/each}
 							<ArcaneButton
 								action="create"
-								size="sm"
 								onclick={addMount}
 								disabled={isLoading}
 								icon={AddIcon}
@@ -528,7 +514,6 @@
 					</Accordion.Content>
 				</Accordion.Item>
 
-				<!-- Labels -->
 				<Accordion.Item value="labels">
 					<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
 					<Accordion.Content>
@@ -538,22 +523,14 @@
 									<Input placeholder="key" bind:value={label.key} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">=</span>
 									<Input placeholder="value" bind:value={label.value} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeLabel(i)} disabled={isLoading} icon={TrashIcon} />
+									<ArcaneButton action="remove" onclick={() => removeLabel(i)} disabled={isLoading} icon={TrashIcon} />
 								</div>
 							{/each}
-							<ArcaneButton
-								action="create"
-								size="sm"
-								onclick={addLabel}
-								disabled={isLoading}
-								icon={AddIcon}
-								customLabel={m.add_label()}
-							/>
+							<ArcaneButton action="create" onclick={addLabel} disabled={isLoading} icon={AddIcon} customLabel={m.add_label()} />
 						</div>
 					</Accordion.Content>
 				</Accordion.Item>
 
-				<!-- Advanced Container Config -->
 				<Accordion.Item value="advanced">
 					<Accordion.Trigger>{m.swarm_service_form_advanced()}</Accordion.Trigger>
 					<Accordion.Content>

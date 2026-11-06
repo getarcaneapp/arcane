@@ -179,7 +179,6 @@ func (a *coordinatorActor) flush(ctx context.Context, state *types.SchedulerCoor
 	return a.dispatchRun(ctx, state, *selected, selected.AttemptCount+1)
 }
 
-// reconcileDispatch recovers a lost job ID before considering redelivery.
 func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *types.SchedulerCoordinatorState, run types.SchedulerRun) (bool, error) {
 	key := fmt.Sprintf("%s-%d", run.ID, run.AttemptCount)
 	previous, exists := state.Dispatches[key]
@@ -390,8 +389,6 @@ func (a *coordinatorActor) install(ctx context.Context, state types.SchedulerCoo
 	}, nil)
 }
 
-// repair flushes coordinators so schedule alarms and dispatches are restored.
-// Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
 func (q *Coordinator) repair(ctx context.Context, states []coordinatorSummary, all bool) (busy bool, err error) {
 	unfinished := func(state coordinatorSummary) bool {
 		return slices.ContainsFunc(state.Record.Runs, func(run runSummary) bool {

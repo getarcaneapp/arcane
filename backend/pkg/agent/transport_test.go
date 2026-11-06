@@ -265,14 +265,14 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegistry, s
 	}
 
 	responseBody := make([]byte, payloadSize)
-	agent := &TunnelClient{handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	agent := &TunnelClient{streamWindowMiB: testStreamWindowMiB, handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(responseBody)
 	})}
 	agentConn := NewGRPCAgentTunnelConn(stream, func() {})
 	agentDone := make(chan struct{})
 	go func() {
 		defer close(agentDone)
-		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx))
+		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx), testStreamWindowMiB())
 	}()
 
 	waitForBenchmarkTunnel(b, tunnels, envID)
@@ -291,7 +291,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 	b.Helper()
 
 	responseBody := make([]byte, payloadSize)
-	agent := &TunnelClient{handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	agent := &TunnelClient{streamWindowMiB: testStreamWindowMiB, handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(responseBody)
 	})}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +299,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()))
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB())
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -316,7 +316,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 	serveDone := make(chan struct{})
 	go func() {
 		defer close(serveDone)
-		_ = (&TunnelServer{}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
+		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 	}()
 
 	return tunnels, tunnel.EnvironmentID, func() {

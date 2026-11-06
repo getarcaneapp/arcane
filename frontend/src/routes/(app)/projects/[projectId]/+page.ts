@@ -4,7 +4,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 import { variableService } from '#lib/services/variable-service.js';
-import { throwPageLoadError } from '#lib/utils/api.js';
+import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -12,20 +12,14 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import type { PageLoad } from './$types';
 
 async function loadGlobalVariables(queryClient: QueryClient) {
-	return tryCatch(
+	const result = await tryCatch(
 		queryClient.query({
 			queryKey: queryKeys.variables.list(),
 			queryFn: () => variableService.list()
 		})
-	).then((result) => {
-		if (result.error) {
-			const err: Error = result.error;
-
-			console.warn('Failed to load global variables:', err);
-			return [];
-		}
-		return result.data;
-	});
+	);
+	if (result.error !== null) return { globalVariables: [], globalVariablesError: extractApiErrorMessage(result.error) };
+	return { globalVariables: result.data, globalVariablesError: null };
 }
 
 export const load: PageLoad = async ({ params, parent, url }) => {
@@ -57,7 +51,9 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		queryFn: () => projectWorkspaceService.getWorkspace(params.projectId, envId)
 	});
 
-	const globalVariables = userHasPermission(user, 'variables:list') ? await loadGlobalVariables(queryClient) : [];
+	const { globalVariables, globalVariablesError } = userHasPermission(user, 'variables:list')
+		? await loadGlobalVariables(queryClient)
+		: { globalVariables: [], globalVariablesError: null };
 
 	const editorState = {
 		name: project.name || '',
@@ -76,6 +72,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		project,
 		editorState,
 		globalVariables,
+		globalVariablesError,
 		error: null as string | null
 	};
 };

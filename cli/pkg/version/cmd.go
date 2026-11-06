@@ -15,7 +15,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command displays CLI and server versions.
 func Command() *cobra.Command {
 	return &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

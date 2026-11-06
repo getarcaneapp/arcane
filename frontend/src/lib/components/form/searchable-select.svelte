@@ -38,7 +38,9 @@
 		variant = 'outline',
 		size = 'sm',
 		showCheckboxes = true,
-		class: className
+		class: className,
+		'aria-describedby': ariaDescribedby,
+		'aria-errormessage': ariaErrormessage
 	}: {
 		items: SearchableSelectItem[];
 		value?: string;
@@ -59,6 +61,8 @@
 		size?: ArcaneButtonSize;
 		showCheckboxes?: boolean;
 		class?: string;
+		'aria-describedby'?: string;
+		'aria-errormessage'?: string;
 	} = $props();
 
 	let open = $state(false);
@@ -130,6 +134,9 @@
 				{...props}
 				role="combobox"
 				aria-expanded={open}
+				aria-invalid={!!ariaErrormessage}
+				aria-describedby={ariaDescribedby}
+				aria-errormessage={ariaErrormessage}
 				{disabled}
 				id={triggerId}
 				class={cn(

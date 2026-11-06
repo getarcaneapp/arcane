@@ -25,7 +25,6 @@
 	}
 
 	function isValidColor(color: string): boolean {
-		// Create a temporary element to test if the color is valid
 		const testElement = document.createElement('div');
 		testElement.style.color = color;
 		return testElement.style.color !== '';

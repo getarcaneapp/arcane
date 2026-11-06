@@ -5,7 +5,6 @@
 	import { untrack } from 'svelte';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
-	import { ShieldAlertIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleListQuery } from '#lib/query/roles.js';
@@ -40,13 +39,7 @@
 	);
 </script>
 
-<SettingsPageLayout
-	title={m.roles_title()}
-	description={m.roles_subtitle()}
-	icon={ShieldAlertIcon}
-	pageType="management"
-	{actionButtons}
->
+<SettingsPageLayout title={m.roles_title()} description={m.roles_subtitle()} pageType="management" {actionButtons}>
 	{#snippet mainContent()}
 		<RolesTable
 			{roles}

@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// Client represents a single WebSocket connection.
 	Client struct {
 		conn     *websocket.Conn
 		send     chan []byte
@@ -38,16 +37,6 @@ func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 	}
 }
 
-// ServeClientWithOnRemove registers the client with the hub and starts read/write pumps.
-// Caller is responsible for creating/closing the websocket.Conn.
-// If onRemove is non-nil, it is invoked when the client is removed from the hub.
-//
-// It reports whether registration succeeded. Registration fails when the hub's
-// Run has already exited (or ctx is done) — landing on that boundary used to
-// block forever on the unbuffered register channel, leaking the caller's
-// goroutine and the socket. On failure nothing is registered and onRemove is
-// never invoked, so the caller can retry against a fresh hub with the same
-// connection, or close it and release its own bookkeeping.
 func ServeClientWithOnRemove(ctx context.Context, hub *Hub, conn *websocket.Conn, onRemove func()) bool {
 	c := NewClient(conn, clientSendBuffer)
 	c.onRemove = onRemove

@@ -110,14 +110,7 @@
 				<input type="checkbox" bind:checked={autoScroll} class="size-3.5" />
 				{m.common_autoscroll()}
 			</label>
-			<ArcaneButton
-				action="base"
-				tone="ghost"
-				size="sm"
-				icon={TrashIcon}
-				customLabel={m.common_clear()}
-				onclick={() => (logs = [])}
-			/>
+			<ArcaneButton action="base" tone="ghost" icon={TrashIcon} customLabel={m.common_clear()} onclick={() => (logs = [])} />
 		</div>
 	</div>
 

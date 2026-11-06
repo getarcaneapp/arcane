@@ -114,6 +114,8 @@ export type Settings = {
 	registryTimeout: number;
 	registryTagTimeout: number;
 	proxyRequestTimeout: number;
+	http2ReceiveWindowMb?: number;
+	agentTunnelStreamWindowMb?: number;
 	buildProvider: 'local' | 'depot';
 	buildsDirectory: string;
 	buildTimeout: number;

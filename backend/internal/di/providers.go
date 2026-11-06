@@ -231,7 +231,6 @@ func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClien
 	return service
 }
 
-// provideImageUpdateService registers the image-check workflow while the host is still unstarted.
 func provideImageUpdateService(p imageupdate.ImageUpdateServiceParams, engine *flow.Engine) (*imageupdate.ImageUpdateService, error) {
 	service := imageupdate.NewImageUpdateService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
@@ -240,7 +239,6 @@ func provideImageUpdateService(p imageupdate.ImageUpdateServiceParams, engine *f
 	return service, nil
 }
 
-// provideImageService registers the auto-patch workflow while the host is still unstarted.
 func provideImageService(p image.ImageServiceParams, engine *flow.Engine) (*image.ImageService, error) {
 	service := image.NewImageService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
@@ -249,7 +247,6 @@ func provideImageService(p image.ImageServiceParams, engine *flow.Engine) (*imag
 	return service, nil
 }
 
-// provideVulnerabilityService registers the scheduled scan workflow while the host is still unstarted.
 func provideVulnerabilityService(p vulnerability.VulnerabilityServiceParams, engine *flow.Engine) (*vulnerability.VulnerabilityService, error) {
 	service := vulnerability.NewVulnerabilityService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
@@ -311,7 +308,6 @@ func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (
 	return job, nil
 }
 
-// provideGitOpsSyncService registers the gitops-sync workflow while the host is still unstarted.
 func provideGitOpsSyncService(p gitops.GitOpsSyncServiceParams, engine *flow.Engine) (*gitops.GitOpsSyncService, error) {
 	service := gitops.NewGitOpsSyncService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
@@ -320,7 +316,6 @@ func provideGitOpsSyncService(p gitops.GitOpsSyncServiceParams, engine *flow.Eng
 	return service, nil
 }
 
-// provideVolumeService registers the volume backup workflows while the host is still unstarted.
 func provideVolumeService(lc fx.Lifecycle, p volume.VolumeServiceParams, engine *flow.Engine) (*volume.VolumeService, error) {
 	service := volume.NewVolumeService(p)
 	if err := service.RegisterWorkflows(engine); err != nil {
@@ -335,7 +330,6 @@ func provideVolumeService(lc fx.Lifecycle, p volume.VolumeServiceParams, engine 
 	return service, nil
 }
 
-// provideSystemService registers the system backup workflows while the host is still unstarted.
 func provideSystemService(
 	p system.SystemServiceParams,
 	environments *environment.EnvironmentService,

@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestWSPair creates a connected client/server WebSocket pair using httptest.
 func newTestWSPair(t *testing.T) (serverConn *websocket.Conn, cleanup func()) {
 	t.Helper()
 	serverReady := make(chan *websocket.Conn, 1)
@@ -85,7 +84,6 @@ func TestHub_Broadcast(t *testing.T) {
 	msg := []byte("hello world")
 	h.Broadcast(msg)
 
-	// Message should appear on the client's send channel
 	select {
 	case received := <-c.send:
 		assert.Equal(t, msg, received)
@@ -137,7 +135,6 @@ func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	// Create a client with a tiny send buffer so it fills up fast
 	serverConn, cleanup := newTestWSPair(t)
 	defer cleanup()
 
@@ -148,10 +145,8 @@ func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Fill the client's send buffer
 	c.send <- []byte("fill")
 
-	// Now broadcast — the client's channel is full, so it should get dropped
 	h.Broadcast([]byte("overflow"))
 
 	require.Eventually(t, func() bool {
@@ -220,7 +215,6 @@ func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 		callCount.Add(1)
 	})
 
-	// Register two clients
 	sc1, cleanup1 := newTestWSPair(t)
 	defer cleanup1()
 	sc2, cleanup2 := newTestWSPair(t)
@@ -235,7 +229,6 @@ func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 		return h.Len() == 2
 	}, time.Second, 5*time.Millisecond)
 
-	// Unregister first — should NOT trigger onEmpty
 	h.unregister <- c1
 	require.Eventually(t, func() bool {
 		return h.Len() == 1
@@ -244,7 +237,6 @@ func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, int32(0), callCount.Load(), "onEmpty should not fire while clients remain")
 
-	// Unregister last — should trigger onEmpty exactly once
 	h.unregister <- c2
 	require.Eventually(t, func() bool {
 		return callCount.Load() == 1
@@ -275,12 +267,10 @@ func TestHub_ContextCancellation(t *testing.T) {
 
 	select {
 	case <-done:
-		// Hub exited as expected
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "Hub.Run did not exit after context cancellation")
 	}
 
-	// After closeAll, clients map should be empty
 	assert.Equal(t, 0, h.Len())
 }
 
@@ -328,7 +318,6 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	const goroutines = 10
 	var wg sync.WaitGroup
 
-	// Create all pairs in the test goroutine (newTestWSPair uses t).
 	pairs := make([]struct {
 		sc      *websocket.Conn
 		cleanup func()
@@ -355,7 +344,6 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 
 	wg.Wait()
 
-	// All clients should be gone
 	require.Eventually(t, func() bool {
 		return h.Len() == 0
 	}, 2*time.Second, 10*time.Millisecond)
@@ -376,14 +364,12 @@ func TestHub_DoubleUnregister(t *testing.T) {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Unregister twice — should not panic
 	h.unregister <- c
 
 	require.Eventually(t, func() bool {
 		return h.Len() == 0
 	}, time.Second, 5*time.Millisecond)
 
-	// Second unregister should be harmless
 	h.unregister <- c
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, 0, h.Len())

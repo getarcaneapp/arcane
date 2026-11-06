@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
-	import { PersistedState } from 'runed';
+	import { PersistedState, watch } from 'runed';
 	import { onMount, tick, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
@@ -131,8 +131,6 @@
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
-	// Project lifecycle permissions are evaluated per-button inside
-	// <ActionButtons/> directly; no need to derive them here.
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
@@ -407,8 +405,6 @@
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let overrideOpen = $state(false);
-	// Editor action toggles for the encapsulated override editor in the classic
-	// view, mirroring the buttons CodePanel's card header normally provides.
 	let overrideOutlineOpen = $state(false);
 	let overrideDiffOpen = $state(false);
 	let overrideCommandPaletteOpen = $state(false);
@@ -494,10 +490,6 @@
 			pending: treeTabPending(key)
 		}))
 	);
-	// Validity check covers both include files (editable) and directory files
-	// (read-only — currently used to surface the pre-deploy script alongside
-	// includes in classic layout). A path that no longer exists in either set
-	// is forgotten so a removed file doesn't leave a dangling tab selection.
 	const selectedIncludeTab = $derived.by(() => {
 		if (!selectedIncludeTabPreference) return null;
 		if (includeFilePaths.has(selectedIncludeTabPreference)) return selectedIncludeTabPreference;
@@ -679,10 +671,6 @@
 		inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		projectWorkspaceChanges = [];
 		projectWorkspaceContents = savedProjectWorkspaceContents;
-		// Seed the per-file UI-state records for every retained path. A mounted
-		// CodePanel binds these entries; handing a bound $bindable-with-fallback
-		// prop an undefined entry throws props_invalid_value and kills the page's
-		// effect tree (stale editor shown until a full refresh).
 		projectWorkspaceHasErrors = Object.fromEntries(
 			Object.keys(savedProjectWorkspaceContents).map((relativePath) => [relativePath, false])
 		);
@@ -801,7 +789,6 @@
 
 	afterNavigate(initializeProjectPreferences);
 
-	// Resolves true once the project has no unsaved changes left.
 	async function handleSaveChanges(): Promise<boolean> {
 		if (!project) return false;
 		if (!hasChanges) return true;
@@ -1173,18 +1160,12 @@
 		openFileTab(key);
 	}
 
-	// Reveal the override editor for a project that has no override yet: mark it
-	// active (so the tab/panel renders), expand it, and focus its tab.
 	function handleAddOverride() {
 		overrideEditorRequested = true;
 		overrideOpen = true;
 		openFileTab('override');
 	}
 
-	// Remove the override. A not-yet-saved "add" is discarded client-side; an
-	// existing on-disk override is deleted by persisting the now-blank content
-	// (the backend treats a blank override as a delete). Either way the editor
-	// collapses back to the "add override" affordance.
 	async function handleRemoveOverride() {
 		overrideEditorRequested = false;
 		overrideOpen = false;
@@ -1293,6 +1274,13 @@
 			void loadProjectWorkspaceFile('directory', sourcePath);
 		}
 	}
+
+	watch(
+		() => data.globalVariablesError,
+		(error) => {
+			if (error) toast.error(m.common_load_failed({ resource: m.variables_title() }), { description: error });
+		}
+	);
 
 	onMount(() => {
 		let active = true;
@@ -1726,7 +1714,6 @@
 								<ArcaneButton
 									action="base"
 									tone="outline"
-									size="sm"
 									icon={ResetIcon}
 									customLabel={m.common_reset()}
 									disabled={isLoading.saving}
@@ -1736,7 +1723,6 @@
 							<ArcaneButton
 								action="save"
 								tone={hasChanges ? 'outline-warning' : undefined}
-								size="sm"
 								class="min-w-20"
 								disabled={!canSave}
 								loading={isLoading.saving}
@@ -2272,7 +2258,6 @@
 					<ArcaneButton
 						action="base"
 						tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
-						size="sm"
 						class="shrink-0"
 						onclick={() => toggleIncludeFileTab(includeFile.relativePath)}
 						icon={FileTextIcon}
@@ -2284,7 +2269,6 @@
 					<ArcaneButton
 						action="base"
 						tone={selectedIncludeTab === scriptPath ? 'outline-primary' : 'ghost'}
-						size="sm"
 						class="shrink-0"
 						onclick={() => toggleIncludeFileTab(scriptPath)}
 						icon={CodeIcon}

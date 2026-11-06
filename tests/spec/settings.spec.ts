@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { createTestApiKeys, deleteTestApiKeys, waitForDialogReady } from '../utils/playwright.util';
 import { fetchApiKeysWithRetry } from '../utils/fetch.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 
 test.describe('API keys', () => {
 	const API_KEYS_ROUTE = '/system/api-keys';
@@ -12,12 +12,10 @@ test.describe('API keys', () => {
 	}
 
 	test.describe('API Keys Page', () => {
-		// Each test starts with its own required keys.
 		test.beforeEach(async () => {
 			await createTestApiKeys(3);
 		});
 
-		// Remove fixture keys before the next test.
 		test.afterEach(async ({ page }) => {
 			await deleteTestApiKeys();
 			await expect
@@ -37,10 +35,8 @@ test.describe('API keys', () => {
 			const dialog = page.getByRole('dialog');
 			await expect(dialog).toBeVisible();
 
-			// Try to submit without filling required name field
 			await dialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
-			// Should show validation error for name field
 			await expect(dialog.getByText('Name is required', { exact: true })).toBeVisible();
 		});
 
@@ -53,10 +49,8 @@ test.describe('API keys', () => {
 
 			const apiKeyName = `test-api-key-created-${Date.now()}`;
 
-			// Fill in the name field
 			await createDialog.getByLabel('Name', { exact: true }).fill(apiKeyName);
 
-			// Optionally fill description
 			const descInput = createDialog.getByLabel('Description', { exact: true });
 			await descInput.fill('E2E test API key');
 
@@ -66,10 +60,8 @@ test.describe('API keys', () => {
 				.fill('containers:list');
 			await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
 
-			// Submit the form
 			await createDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
-			// Should show success toast
 			await expect(
 				page
 					.getByRole('region', { name: 'Notifications alt+T', exact: true })
@@ -77,7 +69,6 @@ test.describe('API keys', () => {
 					.first()
 			).toBeVisible({ timeout: 10000 });
 
-			// Should show the API key reveal dialog
 			await expect(page.getByText('API Key Created')).toBeVisible();
 			await expect(
 				page.getByText("Copy your API key now. You won't be able to see it again!", {
@@ -85,20 +76,16 @@ test.describe('API keys', () => {
 				})
 			).toBeVisible();
 
-			// The key should be visible in a code/snippet element
 			await expect(page.locator('code').first()).toBeVisible();
 
-			// Close the dialog
 			await page.getByRole('button', { name: 'Done' }).click();
 
-			// The new key should appear in the table
 			await expect(
 				page.getByRole('row').filter({ has: page.getByText(apiKeyName, { exact: true }) })
 			).toBeVisible();
 		});
 
 		test('should delete an API key', async ({ page }) => {
-			// First create a key to delete
 			await navigateToApiKeys(page);
 
 			await page.getByRole('button', { name: 'Create API Key' }).click();
@@ -115,14 +102,12 @@ test.describe('API keys', () => {
 
 			await createDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
-			// Wait for creation success and close reveal dialog
 			const createdDialog = page.getByRole('dialog', { name: 'API Key Created' });
 			await expect(createdDialog).toBeVisible({ timeout: 10000 });
 			await createdDialog.getByRole('button', { name: 'Done' }).click();
 
 			await expect(createdDialog).toBeHidden();
 
-			// Now delete the key
 			const keyRow = page
 				.getByRole('row')
 				.filter({ has: page.getByText(apiKeyName, { exact: true }) });
@@ -131,50 +116,42 @@ test.describe('API keys', () => {
 			const menu = await openRowActionsMenu(page, keyRow);
 			await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
-			// Confirm deletion
 			await expect(
 				page.getByRole('heading', { name: `Delete API Key "${apiKeyName}"?`, exact: true })
 			).toBeVisible();
-			await page.getByRole('button', { name: 'Delete' }).click();
+			await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
-			// Should show success toast for deletion
 			await expect(
 				page.getByText(`API key "${apiKeyName}" deleted successfully`, { exact: true })
 			).toBeVisible({ timeout: 10000 });
 
-			// Key should no longer be in the table
 			await expect(keyRow).toBeHidden();
 		});
 
 		test('should select multiple API keys and show bulk delete option', async ({ page }) => {
 			await navigateToApiKeys(page);
 
-			// Select first two checkboxes
 			const checkboxes = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.getByRole('checkbox');
 			await expect(checkboxes.nth(1)).toBeVisible();
 
 			await checkboxes.nth(0).check();
 			await checkboxes.nth(1).check();
 
-			// Remove Selected button should appear
 			const removeSelectedBtn = page.getByRole('button', {
 				name: 'Remove Selected (2)',
 				exact: true
 			});
 			await expect(removeSelectedBtn).toBeVisible();
 
-			// Click it to open confirmation
 			await removeSelectedBtn.click();
 
-			// Should show bulk delete confirmation
 			await expect(
 				page.getByRole('heading', { name: 'Delete 2 API Key(s)?', exact: true })
 			).toBeVisible();
 
-			// Cancel
 			await page.getByRole('button', { name: 'Cancel' }).click();
 		});
 	});
@@ -268,7 +245,6 @@ test.describe('Notifications', () => {
 			await trigger.click();
 		};
 
-		// Shared setup for all notification tests
 		const setupNotificationTest = async (
 			page: Page,
 			provider: string,
@@ -343,7 +319,6 @@ test.describe('Notifications', () => {
 				await route.continue();
 			});
 
-			// Stub the specific test endpoint
 			await page.route(`**/api/notifications/settings/${provider}?action=test**`, async (route) => {
 				testEndpointCalled = true;
 				await route.fulfill({
@@ -441,16 +416,13 @@ test.describe('Notifications', () => {
 			await openProviderTab(page, 'Email');
 			await enableCurrentProvider(page);
 
-			// Fill fields
 			await page.getByPlaceholder('smtp.example.com').fill('smtp.example.com');
 			await page.getByPlaceholder('notifications@example.com').fill('notifications@example.com');
 			await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
 
-			// Trigger test
 			await openTestMenu(page);
 			await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
-			// Handle Save & Test if needed
 			const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 			await saveAndTestButton.click();
 
@@ -464,7 +436,6 @@ test.describe('Notifications', () => {
 			await openProviderTab(page, 'Discord');
 			await enableCurrentProvider(page);
 
-			// Discord split fields
 			await page.getByPlaceholder('Enter webhook ID').fill('123456789');
 			await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
 
@@ -547,7 +518,6 @@ test.describe('Notifications', () => {
 			await expect(telegramRow(page, 1).topicId).toHaveValue('42');
 			await expect(saveButton).toBeDisabled();
 
-			// A second topic in the same group plus a plain chat.
 			await panel.getByRole('button', { name: 'Add destination' }).click();
 			await telegramRow(page, 2).chatId.fill(' -1001234567890 ');
 			await telegramRow(page, 2).topicId.fill(' 7 ');
@@ -629,7 +599,6 @@ test.describe('Notifications', () => {
 			expect(wasSaveEndpointCalled()).toBe(false);
 			expect(wasTestEndpointCalled()).toBe(false);
 
-			// Fixing the row lets the save go through.
 			await telegramRow(page, 0).chatId.fill('-1001234567890');
 			await expect(panel.getByText(/Chat ID cannot contain a colon/)).toHaveCount(0);
 			await saveButton.click();

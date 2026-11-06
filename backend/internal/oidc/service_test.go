@@ -56,8 +56,6 @@ func TestValidateMobileRedirectURITrimsAllowlistWhitespace(t *testing.T) {
 	require.Error(t, s.ValidateMobileRedirectURI(ctx, "  arcane-mobile://a  "))
 }
 
-// Test fixtures shared by this package's tests.
-
 func setupSettingsTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

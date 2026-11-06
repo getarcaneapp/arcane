@@ -72,15 +72,14 @@ type (
 		environments   *environment.EnvironmentService
 		roles          *role.RoleService
 		// upgradeJobWorkflow upgrades agents in parallel, then the manager last.
-		upgradeJobWorkflow *flow.Workflow
-		db                 *database.DB
-		dockerService      *dockerInternal.DockerClientService
-		versionService     *version.VersionService
-		eventService       *event.EventService
-		settingsService    *settings.SettingsService
-		projectService     *project.ProjectService
-		registryService    *registry.ContainerRegistryService
-		// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
+		upgradeJobWorkflow    *flow.Workflow
+		db                    *database.DB
+		dockerService         *dockerInternal.DockerClientService
+		versionService        *version.VersionService
+		eventService          *event.EventService
+		settingsService       *settings.SettingsService
+		projectService        *project.ProjectService
+		registryService       *registry.ContainerRegistryService
 		resolveRuntimeOptions func(
 			ctx context.Context,
 			dockerHost string,
@@ -97,22 +96,19 @@ type (
 		keepUpgrader bool
 	}
 
-	// remoteAgent is one environment the upgrade job workflow upgrades.
 	remoteAgent struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 
-	// upgradeJobInput is the upgrade job payload: the job and the API key that requested it.
 	upgradeJobInput struct {
 		JobID string `json:"jobId"`
 		KeyID string `json:"keyId,omitempty"`
 	}
 
 	preparedUpgrade struct {
-		current      container.InspectResponse
-		dockerClient *client.Client
-		// saveCompose persists a tag change in the container's Compose project.
+		current       container.InspectResponse
+		dockerClient  *client.Client
 		saveCompose   func(context.Context)
 		containerName string
 		binaryPath    string
@@ -128,7 +124,6 @@ type (
 		managerSucceeded bool
 	}
 
-	// upgraderExit is how much the watcher learned about an upgrader run.
 	upgraderExit int
 
 	ServiceParams struct {
@@ -206,8 +201,6 @@ func NewService(p ServiceParams) *Service {
 	}
 }
 
-// RegisterWorkflows defines the upgrade job workflow while the host is still unstarted. Its payload names the job;
-// the job row holds every result, so a redelivered task resumes from what the row records.
 func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService, roles *role.RoleService) error {
 	var err error
 	s.flow, s.environments, s.roles = engine, environments, roles
@@ -227,7 +220,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environme
 	return err
 }
 
-// CanUpgrade checks if self-upgrade is possible.
 func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -243,7 +235,6 @@ func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// TriggerUpgradeViaCLI runs the upgrade from a separate upgrader container and returns its ID.
 // A zero-value target resolves the image from the version check; an explicit target is used as-is.
 func (s *Service) TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error) {
 	prepared, err := s.prepareUpgrade(ctx, user, target, "")
@@ -253,8 +244,6 @@ func (s *Service) TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, ta
 	return s.runPreparedUpgrade(ctx, prepared)
 }
 
-// TriggerUpgradeAsync validates synchronously, then pulls and spawns the upgrader in the background (#3628).
-// The run follows the app lifecycle with a deadline so a stalled daemon cannot hold the upgrading guard forever.
 func (s *Service) TriggerUpgradeAsync(ctx context.Context, user types.Actor, targetVersion string) error {
 	prepared, err := s.prepareUpgrade(ctx, user, updater.SelfUpdateTarget{}, targetVersion)
 	if err != nil {
@@ -292,7 +281,6 @@ func (s *Service) TriggerUpgradeAsync(ctx context.Context, user types.Actor, tar
 	return nil
 }
 
-// prepareUpgrade takes the upgrading guard, released by runPreparedUpgrade (or here on error).
 func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget, targetVersion string) (prepared *preparedUpgrade, err error) {
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return nil, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
@@ -333,7 +321,6 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 		if inspectErr == nil {
 			return inspect.Container, nil
 		}
-		// Fall back to a prefix match across every container.
 		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
 			return cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 		})
@@ -618,7 +605,6 @@ func (s *Service) followUpgrader(ctx context.Context, upgraderID string) {
 	s.progress.finish(kit.Ternary(exit == upgraderExitFailed, fmt.Sprintf("Upgrader exited with code %d", exitCode), "Upgrader exited without restarting Arcane"))
 }
 
-// configuredTargetImage spells targetImage like the container's Compose service (or its runtime image when unmanaged).
 // A tag change also returns the Compose edit to save before the upgrader starts.
 func (s *Service) configuredTargetImage(ctx context.Context, current container.InspectResponse, targetImage string) (string, func(context.Context), error) {
 	// Digest targets cannot be written as Compose tags.
@@ -653,8 +639,6 @@ func (s *Service) configuredTargetImage(ctx context.Context, current container.I
 	}, nil
 }
 
-// resolveSelfUpgradeTargetImage moves exact release tags to the newest release and digest pins to the newest digest;
-// mutable channels keep their reference. Unresolved or older exact-version targets fail (#3687).
 func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionInfo) (string, error) {
 	currentImageRef = strings.TrimSpace(currentImageRef)
 	if currentImageRef == "" {
@@ -712,8 +696,6 @@ func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionIn
 	return withTag.String(), nil
 }
 
-// StartUpgradeJob records an upgrade job and submits the workflow that upgrades the requested agents, then the manager.
-// No environment IDs means every enabled environment. Each one pulls the latest image, whether or not it reports an update.
 func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environmentIDs []string) (*UpgradeJob, error) {
 	// Closes the in-process check-then-create window (e.g. a double-click); the job row is the durable guard.
 	if !s.startingJob.CompareAndSwap(false, true) {
@@ -775,8 +757,6 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 	return job, nil
 }
 
-// watchUpgradeJob fails a job whose workflow ends without reaching the manager step, which would leave it running
-// and refuse every later run.
 func (s *Service) watchUpgradeJob(ctx context.Context, jobID, instanceID string) {
 	outcome, err := s.flow.Wait(ctx, s.upgradeJobWorkflow, instanceID)
 	if err != nil || outcome.Status == types.RunStatusSucceeded {
@@ -789,8 +769,6 @@ func (s *Service) watchUpgradeJob(ctx context.Context, jobID, instanceID string)
 	s.markUpgradeJobFailed(ctx, current, cmp.Or(outcome.Message, "upgrade job did not finish"))
 }
 
-// ResumeUpgradeJobOnStartup finalizes a job the manager left pending_restart by self-upgrading,
-// and fails a running job whose workflow is gone or whose manager was upgraded outside it. It is a no-op when nothing is pending.
 func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	job, err := s.FindUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
@@ -843,7 +821,6 @@ func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Finalized upgrade job after manager restart", "jobId", job.ID, "managerUpgraded", action.managerSucceeded)
 }
 
-// resolveResumeAction marks a pending_restart job stale after the threshold, otherwise reports whether the manager upgrade landed.
 func resolveResumeAction(job *UpgradeJob, currentVersion, currentDigest string, now time.Time) resumeAction {
 	if now.Sub(job.CreatedAt) > upgradeJobStaleThreshold {
 		return resumeAction{markStale: true}
@@ -851,8 +828,6 @@ func resolveResumeAction(job *UpgradeJob, currentVersion, currentDigest string, 
 	return resumeAction{managerSucceeded: upgradeLanded(job.ManagerVersionAtStart, job.ManagerDigestAtStart, job.ManagerTargetVersion, currentVersion, currentDigest)}
 }
 
-// upgradeLanded reports whether the version or digest moved off its baseline, or already matches target (a version or
-// digest), so a force-update that recreates the same image still counts.
 func upgradeLanded(fromVersion, fromDigest, target, currentVersion, currentDigest string) bool {
 	versionChanged := fromVersion != "" && currentVersion != fromVersion
 	// An agent whose Docker lookup failed reports no digest, which proves nothing.
@@ -861,7 +836,6 @@ func upgradeLanded(fromVersion, fromDigest, target, currentVersion, currentDiges
 	return versionChanged || digestChanged || onTarget
 }
 
-// discoverAgents lists the remote environments the job targets, which the agents step upgrades in parallel.
 func (s *Service) discoverAgents(ctx context.Context, t flow.Task) (any, error) {
 	var input upgradeJobInput
 	if err := t.Payload(&input); err != nil {
@@ -880,7 +854,6 @@ func (s *Service) discoverAgents(ctx context.Context, t flow.Task) (any, error) 
 	return agents, nil
 }
 
-// upgradeAgentTask triggers and confirms one remote environment's upgrade, persisting each stage for the status endpoint.
 // A redelivered task skips an agent whose result is already terminal.
 func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err error) {
 	var input upgradeJobInput
@@ -1093,8 +1066,6 @@ func (s *Service) acquireAgentSlot(ctx context.Context) func() {
 	}
 }
 
-// upgradeManagerTask triggers the manager's own self-upgrade last. The job is persisted pending_restart BEFORE the
-// trigger, so a redelivery never triggers twice and the next boot finalizes it.
 func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, error) {
 	var input upgradeJobInput
 	if err := t.Payload(&input); err != nil {
@@ -1204,8 +1175,6 @@ func (s *Service) triggerManagerUpgrade(ctx context.Context, job *UpgradeJob, ma
 	s.watchManagerUpgrader(ctx, sink, events, upgraderID, wasAlreadyNewest)
 }
 
-// watchManagerUpgrader closes out a pending_restart job whose manager was never recreated, which a recreate would have
-// prevented by stopping this process. wasAlreadyNewest is the pre-trigger check that a no-op run was expected.
 func (s *Service) watchManagerUpgrader(
 	ctx context.Context,
 	sink *progressSink,
@@ -1291,7 +1260,6 @@ func (s *Service) waitForUpgrader(ctx context.Context, upgraderID string) (upgra
 	return exit, exitCode
 }
 
-// upsertPendingResult returns the index of envID's result row, appending a pending row when seeding missed it.
 func upsertPendingResult(job *UpgradeJob, envID, envName string) int {
 	if idx := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool { return r.EnvironmentID == envID }); idx >= 0 {
 		return idx
@@ -1316,8 +1284,6 @@ func upsertPendingResult(job *UpgradeJob, envID, envName string) int {
 	return len(job.Results) - 1
 }
 
-// upgradeJobAgentFailureStatus classifies a failed agent pre-check: a reached environment whose request failed or timed
-// out is a failure; only a never-reachable one is an offline skip.
 func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return UpgradeResultStatusFailed
@@ -1328,7 +1294,6 @@ func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 	return UpgradeResultStatusSkippedOffline
 }
 
-// setUpdateStage records result's step and persists the job; re-entering the current stage keeps its start time.
 func (s *Service) setUpdateStage(ctx context.Context, job *UpgradeJob, index int, stage UpgradeStage) {
 	result := &job.Results[index]
 	if result.Stage == stage {
@@ -1539,7 +1504,6 @@ func (p *progressSink) follow(ctx context.Context, events <-chan types.UpgradePr
 	}
 }
 
-// findUpgradeJob returns the newest job matching the inline GORM conditions, or nil when none does.
 func (s *Service) FindUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob, error) {
 	var jobs []UpgradeJob
 	if err := s.db.WithContext(ctx).Order("created_at DESC").Limit(1).Find(&jobs, conds...).Error; err != nil {
@@ -1551,7 +1515,6 @@ func (s *Service) FindUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob
 	return &jobs[0], nil
 }
 
-// loadUpgradeJob loads a job by ID, failing when it no longer exists.
 func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, error) {
 	job, err := s.FindUpgradeJob(ctx, "id = ?", id)
 	if err == nil && job == nil {
@@ -1560,9 +1523,6 @@ func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, e
 	return job, err
 }
 
-// authorizeUpgradeJob reports whether the job's requester may still upgrade, failing the job when not.
-// A task recovered after a restart never passed the request's permission check. Shutdown returns its
-// error so the task resumes instead of failing the job.
 func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID string) (bool, error) {
 	permissions, err := s.roles.ResolveExecutionPermissions(ctx, job.UserID, keyID)
 	if ctx.Err() != nil {
@@ -1633,7 +1593,6 @@ func (s *Service) markUpgradeJobFailed(ctx context.Context, job *UpgradeJob, rea
 	slog.WarnContext(ctx, "Upgrade job failed", "jobId", job.ID, "reason", reason)
 }
 
-// finalizeUpgradeJob settles the manager row, completes the job and records the audit event.
 func (s *Service) finalizeUpgradeJob(ctx context.Context, job *UpgradeJob, managerStatus UpgradeResultStatus, managerVersion string) {
 	results := make(UpgradeJobResults, 0, len(job.Results))
 	failed := 0
@@ -1716,7 +1675,6 @@ func (s *Service) finalizeUpgradeJob(ctx context.Context, job *UpgradeJob, manag
 	}
 }
 
-// PruneUpgradeLogs removes expired upgrade logs from this instance's data directory.
 func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time.Time) (int, error) {
 	retentionDays := s.settingsService.GetIntSetting(ctx, "upgradeLogRetentionDays")
 	if retentionDays == 0 {

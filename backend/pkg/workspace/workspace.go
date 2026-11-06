@@ -36,8 +36,6 @@ func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileCha
 	return nil
 }
 
-// ValidateContentSize enforces the per-file workspace upload limit. Content
-// may be any bytes: text and binary files are both allowed.
 func ValidateContentSize(content []byte, maxBytes int64) error {
 	if int64(len(content)) > maxBytes {
 		return fmt.Errorf("file exceeds %d MiB limit", maxBytes/(1024*1024))

@@ -55,8 +55,6 @@ type (
 		eventService       *event.EventService
 		environmentService *environment.EnvironmentService
 
-		// actions tracks in-flight background webhook actions accepted with a 202
-		// so shutdown can drain them instead of dropping acknowledged work.
 		actions      sync.WaitGroup
 		tokenMu      sync.RWMutex
 		tokenWriteMu sync.Mutex
@@ -84,15 +82,14 @@ const (
 )
 
 var (
-	ErrWebhookNotFound      = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
-	ErrWebhookInvalid       = errors.New("invalid webhook token")
-	ErrWebhookDisabled      = errors.New("webhook is disabled")
-	ErrWebhookInvalidType   = common.Classify(common.ErrValidation, errors.New("invalid target type, must be 'container', 'project', 'updater', or 'gitops'"))
-	ErrWebhookInvalidAction = common.Classify(common.ErrValidation, errors.New("invalid action type for target type"))
-	ErrWebhookMissingName   = common.Classify(common.ErrValidation, errors.New("webhook name is required"))
-	ErrWebhookMissingTarget = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
-	ErrWebhookForbidden     = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
-	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
+	ErrWebhookNotFound           = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
+	ErrWebhookInvalid            = errors.New("invalid webhook token")
+	ErrWebhookDisabled           = errors.New("webhook is disabled")
+	ErrWebhookInvalidType        = common.Classify(common.ErrValidation, errors.New("invalid target type, must be 'container', 'project', 'updater', or 'gitops'"))
+	ErrWebhookInvalidAction      = common.Classify(common.ErrValidation, errors.New("invalid action type for target type"))
+	ErrWebhookMissingName        = common.Classify(common.ErrValidation, errors.New("webhook name is required"))
+	ErrWebhookMissingTarget      = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
+	ErrWebhookForbidden          = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
 	remoteWebhookTargetListPaths = map[string]string{
 		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
 		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
@@ -134,8 +131,6 @@ func NewWebhookService(p WebhookServiceParams) *WebhookService {
 	}
 }
 
-// generateWebhookToken creates a new random webhook token and returns the raw token
-// (to be shown to the user once), its SHA-256 hash, and the lookup prefix.
 func generateWebhookToken() (raw, hash, prefix string, err error) {
 	b := make([]byte, webhookTokenLength)
 	if _, err = rand.Read(b); err != nil {
@@ -166,7 +161,6 @@ func parseWebhookPrefix(raw string) (string, error) {
 	return webhookTokenPrefix + hexPart[:webhookTokenPrefixLen], nil
 }
 
-// LoadTokenHashes loads the rate-limit index before the server accepts requests.
 func (s *WebhookService) LoadTokenHashes(ctx context.Context) error {
 	s.tokenWriteMu.Lock()
 	defer s.tokenWriteMu.Unlock()
@@ -184,8 +178,6 @@ func (s *WebhookService) LoadTokenHashes(ctx context.Context) error {
 	return nil
 }
 
-// IsKnownToken checks stored token identity without decrypting or querying the database.
-// TriggerByToken still checks existence and enabled state before accepting an action.
 func (s *WebhookService) IsKnownToken(raw string) bool {
 	if len(raw) > len(webhookTokenPrefix)+webhookTokenHexLen || !strings.HasPrefix(raw, webhookTokenPrefix) {
 		return false
@@ -266,8 +258,6 @@ func resolvedWebhookActionType(targetType, actionType string) string {
 	return resolvedActionType
 }
 
-// CreateWebhook creates a new webhook targeting a stack, the environment-wide updater, or a gitops sync.
-// It returns the webhook record with the raw token populated (only available at creation time).
 func (s *WebhookService) CreateWebhook(
 	ctx context.Context,
 	name, targetType, actionType, targetID, environmentID string,
@@ -353,7 +343,6 @@ func (s *WebhookService) CreateWebhook(
 	return wh, raw, nil
 }
 
-// ListWebhooks returns all webhooks for an environment.
 func (s *WebhookService) ListWebhooks(ctx context.Context, environmentID string) ([]Webhook, error) {
 	var webhooks []Webhook
 	if err := s.db.WithContext(ctx).
@@ -419,7 +408,6 @@ func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.A
 	}, nil
 }
 
-// remoteWebhookTargetNames fetches target names keyed by target type and ID from a remote environment.
 func (s *WebhookService) remoteWebhookTargetNames(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
 	names := map[string]map[string]string{}
 	if environmentID == "" || environmentID == types.LocalDockerEnvironmentID {
@@ -487,7 +475,6 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 	}
 }
 
-// GetWebhookByID returns a single webhook by ID, scoped to an environment.
 func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID string) (*Webhook, error) {
 	var wh Webhook
 	err := s.db.WithContext(ctx).
@@ -502,7 +489,6 @@ func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID s
 	return &wh, nil
 }
 
-// DeleteWebhook removes a webhook by ID, scoped to an environment.
 func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID string, actor types.Actor) error {
 	wh, err := s.GetWebhookByID(ctx, id, environmentID)
 	if err != nil {
@@ -541,7 +527,6 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 	return nil
 }
 
-// UpdateWebhook updates the enabled state of a webhook, scoped to an environment.
 func (s *WebhookService) UpdateWebhook(
 	ctx context.Context,
 	id, environmentID string,
@@ -585,10 +570,6 @@ func (s *WebhookService) UpdateWebhook(
 	return &wh, nil
 }
 
-// TriggerByToken looks up a webhook by its raw token, validates it, and starts
-// the configured action in the background so the HTTP caller gets an immediate
-// acknowledgement instead of holding the connection for the full action
-// duration (#3469). The action outcome is recorded in the event log.
 func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) error {
 	prefix, err := parseWebhookPrefix(rawToken)
 	if err != nil {
@@ -645,8 +626,6 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 	return nil
 }
 
-// DrainActions blocks until all accepted background webhook actions finish or
-// ctx expires, so shutdown does not silently drop acknowledged work.
 func (s *WebhookService) DrainActions(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -674,10 +653,6 @@ func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, 
 	}
 }
 
-// remoteWebhookRequest maps a webhook action to the env-scoped API
-// request forwarded to the remote environment. Paths use the agent-local
-// environment ID, matching the environment proxy's path-rewriting convention.
-// wantResult reports whether the response carries an updatertypes.Result payload.
 func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, wantResult bool, err error) {
 	apiPrefix := "/api/environments/" + types.LocalDockerEnvironmentID
 

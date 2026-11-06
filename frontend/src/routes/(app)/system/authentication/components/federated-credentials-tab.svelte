@@ -127,7 +127,6 @@ steps:
 			<IfPermitted perm="federated:create" envId={GLOBAL_SCOPE}>
 				<ArcaneButton
 					action="create"
-					size="sm"
 					onclick={openCreateDialog}
 					loading={isLoading.creating}
 					disabled={isLoading.creating}

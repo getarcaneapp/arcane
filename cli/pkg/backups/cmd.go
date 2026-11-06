@@ -33,7 +33,6 @@ type (
 	}
 )
 
-// Command is the parent command for Arcane system backup operations (admin-only).
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "backups",

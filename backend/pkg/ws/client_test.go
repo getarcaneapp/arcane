@@ -20,7 +20,6 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	// Set up a test WS server that upgrades and serves the client
 	serverReady := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
@@ -41,15 +40,12 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 
 	<-serverReady
 
-	// Wait for registration
 	require.Eventually(t, func() bool {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Broadcast a message
 	h.Broadcast([]byte("test message"))
 
-	// Client should receive it
 	readCtx, readCancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer readCancel()
 	_, msg, err := clientConn.Read(readCtx)
@@ -79,10 +75,8 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Close the client connection
 	_ = clientConn.CloseNow()
 
-	// The hub should eventually remove the client
 	require.Eventually(t, func() bool {
 		return h.Len() == 0
 	}, 5*time.Second, 50*time.Millisecond)
@@ -115,10 +109,8 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Cancel the client context
 	clientCancel()
 
-	// Client should be removed from hub
 	require.Eventually(t, func() bool {
 		return h.Len() == 0
 	}, 5*time.Second, 50*time.Millisecond)
@@ -214,7 +206,6 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
-	// Send multiple messages and verify order
 	messages := []string{"first", "second", "third", "fourth", "fifth"}
 	for _, m := range messages {
 		h.Broadcast([]byte(m))
@@ -229,10 +220,6 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 	}
 }
 
-// A reconnect can land on a hub whose Run has already exited (e.g. the idle
-// teardown fired between lookup and registration). That used to block forever
-// on the unbuffered register channel, leaking the caller's goroutine and the
-// socket; registration must now fail so the caller can retry with a fresh hub.
 func TestServeClient_StoppedHubDoesNotBlock(t *testing.T) {
 	h := NewHub(10)
 	ctx, cancel := context.WithCancel(t.Context())

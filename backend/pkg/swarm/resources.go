@@ -173,19 +173,13 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 	return result, nil
 }
 
-// ensureSwarmVolumes pre-creates named volumes that carry a driver or
-// driver_opts so that Swarm services pick up the correct volume configuration.
-// Without this step Docker creates a plain local volume on first use and the
-// driver options are silently ignored — the root cause of issue #2376.
 func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) error {
 	volumeNameByKey := planVolumes(project, ns)
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		cfg := project.Volumes[key]
-		// External volumes must already exist; nothing to create.
 		if cfg.External {
 			continue
 		}
-		// Only act when driver or driver_opts are explicitly set.
 		if cfg.Driver == "" && len(cfg.DriverOpts) == 0 {
 			continue
 		}

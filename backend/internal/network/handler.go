@@ -204,10 +204,8 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 
-	// Ensure ID is mapped correctly
 	out.ID = cmp.Or(out.ID, networkInspect.ID) // keep: enriches the mapped DTO
 
-	// Populate ContainersList
 	containers := make([]types.NetworkContainerEndpoint, 0, len(out.Containers))
 	for id, container := range out.Containers {
 		containers = append(containers, types.NetworkContainerEndpoint{
@@ -220,13 +218,11 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		})
 	}
 
-	// Sort ContainersList
 	slices.SortFunc(containers, func(a, b types.NetworkContainerEndpoint) int {
 		if input.Sort == "ip" {
 			return kit.Ternary(input.Order == "desc", -1, 1) * kit.CompareAddresses(cmp.Or(a.IPv4Address, a.IPv6Address), cmp.Or(b.IPv4Address, b.IPv6Address))
 		}
 
-		// Default to Name
 		return kit.Ternary(input.Order == "desc", -1, 1) * strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 	out.ContainersList = containers // keep: enriches the mapped DTO

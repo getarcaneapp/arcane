@@ -32,7 +32,6 @@ type (
 	}
 )
 
-// NewComposeCache caches Compose-derived values and their file dependencies.
 // clone, when supplied, isolates stored values from mutations by callers.
 func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T] {
 	return &composeCache[T]{entries: hot.NewHotCache[string, composeCacheEntry[T]](hot.LRU, capacity).Build(), clone: clone}
@@ -133,7 +132,6 @@ func validComposeCacheEntry(stamps map[string]composeCacheStamp) bool {
 	return true
 }
 
-// LoadCachedComposeProject resolves an executable model with isolated cached state.
 func LoadCachedComposeProject(ctx context.Context,
 	cache types.ComposeCache[*composetypes.Project],
 	projectID,
@@ -178,8 +176,6 @@ func LoadCachedComposeProject(ctx context.Context,
 	return model, nil
 }
 
-// ComposeCacheDependencies returns the compose and env files a model loaded
-// from composePath depends on. ok is false when they cannot be discovered.
 func ComposeCacheDependencies(
 	ctx context.Context,
 	model *composetypes.Project,

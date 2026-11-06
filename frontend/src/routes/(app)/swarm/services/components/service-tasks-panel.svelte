@@ -47,7 +47,7 @@
 					{m.swarm_service_tasks_count({ count: tasks.length })}
 				</Card.Description>
 			</div>
-			<ArcaneButton action="refresh" size="sm" onclick={() => tasksQuery.refetch()} disabled={isLoading}>
+			<ArcaneButton action="refresh" onclick={() => tasksQuery.refetch()} disabled={isLoading}>
 				{m.common_refresh()}
 			</ArcaneButton>
 		</div>

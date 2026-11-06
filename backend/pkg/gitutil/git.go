@@ -44,12 +44,10 @@ import (
 )
 
 type (
-	// Client handles git operations
 	Client struct {
 		workDir string
 	}
 
-	// AuthConfig holds authentication configuration
 	AuthConfig struct {
 		AuthType               string
 		Username               string
@@ -58,23 +56,19 @@ type (
 		SSHHostKeyVerification string // strict, accept_new, skip
 	}
 
-	// BranchInfo holds information about a git branch
 	BranchInfo struct {
 		Name      string
 		IsDefault bool
 	}
 
-	// SyncFileInfo holds information about a file to be synced
 	SyncFileInfo struct {
-		RelativePath string // Path relative to the sync directory
+		RelativePath string
 		Content      []byte
 		Size         int64
 		IsBinary     bool
-		// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
-		Executable bool
+		Executable   bool
 	}
 
-	// DirectoryWalkResult holds the result of walking a directory for sync
 	DirectoryWalkResult struct {
 		Files           []SyncFileInfo
 		TotalFiles      int
@@ -84,16 +78,13 @@ type (
 )
 
 const (
-	// binarySniffBytes is how much of a file is inspected to classify it as binary.
-	binarySniffBytes = 512
-	// CloneScratchPrefix names the per-run clone scratch dirs created by Clone.
+	binarySniffBytes   = 512
 	CloneScratchPrefix = "gitops-"
 	errUnsupportedURL  = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
-	// SSH host key verification modes
 
-	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
-	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
-	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
+	SSHHostKeyVerificationStrict    = "strict"
+	SSHHostKeyVerificationAcceptNew = "accept_new"
+	SSHHostKeyVerificationSkip      = "skip" // Skip host key verification (insecure)
 	defaultKnownHostsDataDir        = "/app/data"
 	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
@@ -110,8 +101,6 @@ func init() {
 	}
 }
 
-// normalizeURL coerces a repository URL onto a network transport, never the file transport.
-// Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
 func normalizeURL(raw string) (string, error) {
 	url := strings.TrimSpace(raw)
 	if url == "" {
@@ -138,14 +127,12 @@ func normalizeURL(raw string) (string, error) {
 	return "https://" + url, nil
 }
 
-// NewClient creates a new git client
 func NewClient(workDir string) *Client {
 	return &Client{
 		workDir: workDir,
 	}
 }
 
-// getAuth returns the appropriate transport.AuthMethod.
 func (c *Client) getAuth(ctx context.Context, url string, localConfig AuthConfig) (transport.AuthMethod, error) {
 	switch localConfig.AuthType {
 	case "http":
@@ -198,7 +185,6 @@ func (c *Client) getAuth(ctx context.Context, url string, localConfig AuthConfig
 	}
 }
 
-// getSSHHostKeyCallback returns the SSH host key callback for the verification mode.
 func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.HostKeyCallback, error) {
 	if mode == SSHHostKeyVerificationSkip {
 		return gossh.InsecureIgnoreHostKey(), nil //nolint:gosec // User explicitly chose to skip verification
@@ -287,7 +273,6 @@ func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.
 	}, nil
 }
 
-// getKnownHostsPaths returns trusted known_hosts files; new keys are saved to the first.
 func getKnownHostsPaths(
 	workDir string,
 	getenv func(string) string,
@@ -344,7 +329,6 @@ func getKnownHostsPaths(
 	}
 }
 
-// RepositoryAttribute names the repository on spans without credentials or query tokens.
 func RepositoryAttribute(rawURL string) attribute.KeyValue {
 	endpoint, err := transport.NewEndpoint(rawURL)
 	if err != nil {
@@ -357,8 +341,6 @@ func RepositoryAttribute(rawURL string) attribute.KeyValue {
 	return attribute.String("arcane.git.repository", endpoint.String())
 }
 
-// Clone clones a repository to a temporary directory. A depth of 0 fetches the
-// full history; read-only callers pass 1 to fetch only the branch tip.
 func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (repoPath string, err error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
 		attribute.String("arcane.git.branch", branch),
@@ -417,7 +399,6 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig,
 	return tmpDir, nil
 }
 
-// GetCurrentCommit returns the HEAD commit hash of a cloned repository
 func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -435,7 +416,6 @@ func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string,
 	return ref.Hash().String(), nil
 }
 
-// ListBranches lists a remote repository's branches, default branch first.
 func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
 	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
@@ -468,7 +448,6 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	return branches, nil
 }
 
-// ProbeRemote verifies that a remote repository is reachable without cloning it.
 func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) error {
 	_, err := c.listRemoteReferences(ctx, url, auth)
 	return err
@@ -503,7 +482,6 @@ func (c *Client) listRemoteReferences(ctx context.Context, url string, auth Auth
 	return refs, nil
 }
 
-// ValidatePath ensures the path is safe and doesn't escape the repo
 func ValidatePath(repoPath, requestedPath string) error {
 	cleanRepoPath := filepath.Clean(repoPath)
 	cleanRequestedPath := filepath.Clean(filepath.Join(repoPath, requestedPath))
@@ -519,8 +497,6 @@ func ValidatePath(repoPath, requestedPath string) error {
 	return nil
 }
 
-// BrowseTree returns the file tree at targetPath, confined to the clone directory: escaping paths and
-// symlinks pointing outside it are rejected rather than followed.
 func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]types.FileTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -562,15 +538,12 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	return nodes, nil
 }
 
-// Discard removes a scratch checkout, logging instead of failing when removal breaks.
 func (c *Client) Discard(ctx context.Context, repoPath string) {
 	if err := os.RemoveAll(repoPath); err != nil {
 		slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", err)
 	}
 }
 
-// PurgeScratchDirs removes clone scratch dirs ("gitops-*") under the work dir
-// whose mtime is older than maxAge. maxAge <= 0 removes all (boot sweep).
 func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (int, error) {
 	root := cmp.Or(c.workDir, os.TempDir())
 
@@ -610,7 +583,6 @@ func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (in
 	return removed, nil
 }
 
-// TestConnection tests if the repository can be accessed with the given credentials
 func (c *Client) TestConnection(ctx context.Context, url, branch string, auth AuthConfig) error {
 	tmpDir, err := c.Clone(ctx, url, branch, auth, 1)
 	if err != nil {
@@ -620,7 +592,6 @@ func (c *Client) TestConnection(ctx context.Context, url, branch string, auth Au
 	return nil
 }
 
-// FileExists checks if a file exists in the repository
 func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool {
 	if err := ctx.Err(); err != nil {
 		return false
@@ -629,7 +600,6 @@ func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool
 	return err == nil && exists
 }
 
-// ReadFile reads a file from the repository
 func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -641,8 +611,6 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	return string(content), nil
 }
 
-// WalkDirectory returns every file in the compose file's directory, enforcing file count and
-// total size limits and skipping large binary files.
 func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string,
 	maxFiles int, maxTotalSize, maxBinarySize int64,
 ) (*DirectoryWalkResult, error) {

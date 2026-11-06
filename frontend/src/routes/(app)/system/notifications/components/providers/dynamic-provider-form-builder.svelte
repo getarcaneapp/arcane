@@ -85,30 +85,38 @@
 {#snippet renderField(field: ProviderFormField<T>)}
 	{#if field.kind === 'input'}
 		<SettingsRow for={getFieldId(field)} label={field.label} helpText={field.helpText} error={getFieldError(field)}>
-			<Input
-				id={getFieldId(field)}
-				value={getInputValue(field.key)}
-				oninput={(event) => setInputValue(field, (event.currentTarget as HTMLInputElement).value)}
-				{disabled}
-				placeholder={field.placeholder ?? ''}
-				type={field.inputType ?? 'text'}
-				autocomplete={field.autocomplete ?? (field.inputType === 'password' ? 'new-password' : 'off')}
-				required={field.required ?? false}
-				aria-invalid={!!getFieldError(field)}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id={getFieldId(field)}
+					value={getInputValue(field.key)}
+					oninput={(event) => setInputValue(field, (event.currentTarget as HTMLInputElement).value)}
+					{disabled}
+					placeholder={field.placeholder ?? ''}
+					type={field.inputType ?? 'text'}
+					autocomplete={field.autocomplete ?? (field.inputType === 'password' ? 'new-password' : 'off')}
+					required={field.required ?? false}
+					aria-invalid={!!getFieldError(field)}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	{:else if field.kind === 'textarea'}
 		<SettingsRow for={getFieldId(field)} label={field.label} helpText={field.helpText} error={getFieldError(field)} layout="wide">
-			<Textarea
-				id={getFieldId(field)}
-				value={getStringValue(field.key)}
-				oninput={(event) => setStringValue(field.key, (event.target as HTMLTextAreaElement).value)}
-				{disabled}
-				autocomplete={field.autocomplete ?? 'off'}
-				placeholder={field.placeholder ?? ''}
-				rows={field.rows ?? 2}
-				aria-invalid={!!getFieldError(field)}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Textarea
+					id={getFieldId(field)}
+					value={getStringValue(field.key)}
+					oninput={(event) => setStringValue(field.key, (event.target as HTMLTextAreaElement).value)}
+					{disabled}
+					autocomplete={field.autocomplete ?? 'off'}
+					placeholder={field.placeholder ?? ''}
+					rows={field.rows ?? 2}
+					aria-invalid={!!getFieldError(field)}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	{:else if field.kind === 'switch'}
 		<SettingsRow
@@ -118,25 +126,34 @@
 			error={getFieldError(field)}
 			layout="switch"
 		>
-			<Switch
-				id={getFieldId(field)}
-				checked={getBooleanValue(field.key)}
-				onCheckedChange={(value) => setBooleanValue(field.key, value)}
-				{disabled}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<Switch
+					id={getFieldId(field)}
+					checked={getBooleanValue(field.key)}
+					onCheckedChange={(value) => setBooleanValue(field.key, value)}
+					{disabled}
+					aria-invalid={!!getFieldError(field)}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	{:else if field.kind === 'select' || field.kind === 'native-select'}
 		<SettingsRow for={getFieldId(field)} label={field.label} description={field.description} error={getFieldError(field)}>
-			<SelectWithLabel
-				id={getFieldId(field)}
-				hideLabel
-				value={getStringValue(field.key)}
-				onValueChange={(value) => setSelectValue(field, value)}
-				{disabled}
-				label={field.label}
-				placeholder={field.kind === 'select' ? field.placeholder : undefined}
-				options={field.options.map((option) => ({ ...option, value: String(option.value) }))}
-			/>
+			{#snippet children({ describedBy, errorId })}
+				<SelectWithLabel
+					id={getFieldId(field)}
+					hideLabel
+					value={getStringValue(field.key)}
+					onValueChange={(value) => setSelectValue(field, value)}
+					{disabled}
+					label={field.label}
+					placeholder={field.kind === 'select' ? field.placeholder : undefined}
+					options={field.options.map((option) => ({ ...option, value: String(option.value) }))}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
 		</SettingsRow>
 	{/if}
 {/snippet}

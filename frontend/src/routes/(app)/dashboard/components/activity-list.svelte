@@ -71,7 +71,7 @@
 						<span class={cn('mt-1.5 size-2 shrink-0 rounded-full', activityStatusAccentClass(activity.status))}></span>
 						<span class="min-w-0 space-y-1">
 							<span class="flex min-w-0 items-center gap-1.5 text-sm">
-								<span class="truncate">
+								<span class="line-clamp-2 wrap-break-word sm:line-clamp-1">
 									<span class="font-medium">{activity.status === 'failed' ? m.job_failed({ job: title }) : title}</span>
 									{#if activity.resourceName}<span class="text-muted-foreground"> {activity.resourceName}</span>{/if}
 								</span>
@@ -81,7 +81,7 @@
 							</span>
 							<EnvironmentCell value={environmentId} />
 						</span>
-						<span class="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+						<span class="col-start-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums sm:col-start-auto">
 							{formatRelativeTime(activity.endedAt || activity.startedAt)}
 						</span>
 					</button>
@@ -89,11 +89,13 @@
 			{/each}
 		</ul>
 	{/if}
-	<button
-		type="button"
-		class="mt-auto self-start text-xs font-medium text-primary hover:underline"
-		onclick={() => activityStore.openCenter()}
-	>
-		{m.common_view_all()}
-	</button>
+	{#snippet footer()}
+		<button
+			type="button"
+			class="text-xs font-medium text-primary-text hover:underline"
+			onclick={() => activityStore.openCenter()}
+		>
+			{m.common_view_all()}
+		</button>
+	{/snippet}
 </DashboardPanel>

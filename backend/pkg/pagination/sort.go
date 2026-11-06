@@ -23,12 +23,6 @@ const (
 	SortDesc SortOrder = "desc"
 )
 
-// sortFunction always sorts: when params.Sort is empty or matches no binding it
-// falls back to the first binding, and when a non-first binding is used its ties
-// are broken by the first binding's ascending comparator. Pagination slices the
-// sorted result by index, so an unsorted (or tie-ambiguous) order would make
-// page walks skip and duplicate items whenever the source order shifts between
-// requests (e.g. Docker's map-iteration order for volumes and networks).
 func sortFunction[T any](items []T, params SortParams, sorts []SortBinding[T]) []T {
 	if len(sorts) == 0 {
 		return items
@@ -57,9 +51,6 @@ func sortFunction[T any](items []T, params SortParams, sorts []SortBinding[T]) [
 	return items
 }
 
-// chainSortFn falls through to tieBreak when primary considers two items equal.
-// The tie-break is applied after any desc adjustment and always ascending: its
-// job is a deterministic total order, not a meaningful secondary sort.
 func chainSortFn[T any](primary, tieBreak SortOption[T]) SortOption[T] {
 	return func(a, b T) int {
 		if c := primary(a, b); c != 0 {

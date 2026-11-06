@@ -1,13 +1,8 @@
 package types
 
 type (
-	// TimeFormat controls how absolute times are displayed for a user.
 	TimeFormat string
 
-	// UserPreferences holds the per-user display/UI preferences. Every field is a
-	// pointer so that "unset" (nil) is distinguishable from an explicit value and
-	// falls back to the frontend default. It doubles as the GORM serializer target
-	// on the user model and as the wire DTO.
 	UserPreferences struct {
 		ThemeMode                  *string `json:"themeMode,omitempty" enum:"light,dark,system" doc:"Light/dark mode preference"`
 		ApplicationTheme           *string `json:"applicationTheme,omitempty" pattern:"^[a-z0-9-]{1,48}$" doc:"Theme preset or custom theme ID"`
@@ -18,7 +13,6 @@ type (
 		AnimationsEnabled          *bool   `json:"animationsEnabled,omitempty" doc:"Enable decorative interface animations"`
 		SidebarHoverExpansion      *bool   `json:"sidebarHoverExpansion,omitempty" doc:"Expand the desktop sidebar on hover"`
 		KeyboardShortcutsEnabled   *bool   `json:"keyboardShortcutsEnabled,omitempty" doc:"Enable keyboard shortcuts and shortcut hints"`
-		MobileNavigationMode       *string `json:"mobileNavigationMode,omitempty" enum:"floating,docked" doc:"Mobile navigation style"`
 		MobileNavigationShowLabels *bool   `json:"mobileNavigationShowLabels,omitempty" doc:"Show text labels in mobile navigation"`
 		DefaultLandingPage         *string `json:"defaultLandingPage,omitempty" doc:"Route opened after signing in"`
 		DefaultProjectEditorLayout *string `json:"defaultProjectEditorLayout,omitempty" enum:"auto,classic,tree" doc:"Initial layout of the project editor; auto keeps workspace detection"`
@@ -29,6 +23,9 @@ type (
 		EnvironmentLabelStyle *string                  `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
 		DashboardLayout       *[]DashboardWidgetLayout `json:"dashboardLayout,omitempty" doc:"Dashboard widgets with their grid position, size, and visibility"`
 		CustomThemes          *[]CustomTheme           `json:"customThemes,omitempty" maxItems:"20" doc:"Imported custom color themes"`
+		InterfaceFont         *string                  `json:"interfaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for interface text; empty uses the default"`
+		MonospaceFont         *string                  `json:"monospaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for monospace text; empty uses the default"`
+		CodeFont              *string                  `json:"codeFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for code blocks; empty uses the default"`
 	}
 
 	CustomTheme struct {
@@ -97,16 +94,12 @@ type (
 		SyntaxOperator           string `json:"syntax-operator" required:"true"`
 	}
 
-	// RoleAssignmentSummary is a compact form of a user's role assignment used
-	// inside the User payload (so the frontend can render the assignments table
-	// without a separate request).
 	RoleAssignmentSummary struct {
 		RoleID        string  `json:"roleId" doc:"Role ID granted by this assignment"`
 		EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
 		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
 	}
 
-	// User represents a user in API responses.
 	User struct {
 		FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 		DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
@@ -129,7 +122,6 @@ type (
 		RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
 	}
 
-	// Actor identifies a user performing domain work without exposing persistence data.
 	Actor struct {
 		Preferences UserPreferences `json:"preferences"`
 		DisplayName *string         `json:"displayName,omitempty"`
@@ -137,10 +129,8 @@ type (
 		Username    string          `json:"username"`
 	}
 
-	// ActorProvider supplies an actor from an authenticated user model.
 	ActorProvider interface{ Actor() *Actor }
 
-	// CurrentUserContextKey holds the authenticated user or actor in a request context.
 	CurrentUserContextKey struct{}
 )
 
@@ -150,5 +140,4 @@ const (
 	TimeFormat24Hour TimeFormat = "24h"
 )
 
-// SystemUser identifies work initiated by Arcane itself.
 var SystemUser = Actor{Username: "System"}

@@ -10,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGPUMonitorStatsCachedWithinTTL verifies that repeated Stats calls
-// within gpuStatsTTL share one vendor-tool fork instead of launching
-// nvidia-smi per call.
 func TestGPUMonitorStatsCachedWithinTTL(t *testing.T) {
 	binDir := t.TempDir()
 	countFile := filepath.Join(binDir, "calls")

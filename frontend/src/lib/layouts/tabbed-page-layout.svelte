@@ -48,7 +48,7 @@
 			<div class="flex items-start gap-3">
 				<div class="flex max-w-7-10 min-w-0 items-start gap-2">
 					{#if backUrl}
-						<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
+						<ArcaneButton action="base" tone="ghost" href={backUrl}>
 							<ArrowLeftIcon class="size-4" />
 							{backLabel ?? ''}
 						</ArcaneButton>

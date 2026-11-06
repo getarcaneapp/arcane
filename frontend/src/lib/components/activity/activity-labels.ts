@@ -10,9 +10,8 @@ import {
 	RedeployIcon,
 	RefreshIcon,
 	RestartIcon,
-	ScanIcon,
+	SearchIcon,
 	ShieldCheckIcon,
-	StartIcon,
 	StopIcon,
 	TrashIcon,
 	ZapIcon
@@ -47,7 +46,7 @@ const typeDisplay = new Map(
 		project_down: { label: m.activity_type_project_down, icon: StopIcon },
 		project_restart: { label: m.activity_type_project_restart, icon: RestartIcon },
 		project_destroy: { label: m.activity_type_project_destroy, icon: TrashIcon },
-		container_start: { label: m.activity_type_container_start, icon: StartIcon },
+		container_start: { label: m.activity_type_container_start, icon: PlayIcon },
 		container_stop: { label: m.activity_type_container_stop, icon: StopIcon },
 		container_restart: { label: m.activity_type_container_restart, icon: RestartIcon },
 		container_redeploy: { label: m.activity_type_container_redeploy, icon: RedeployIcon },
@@ -56,7 +55,7 @@ const typeDisplay = new Map(
 		container_kill: { label: m.activity_type_container_kill, icon: ZapIcon },
 		container_pause: { label: m.activity_type_container_pause, icon: PauseIcon },
 		container_unpause: { label: m.activity_type_container_unpause, icon: PlayIcon },
-		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: ScanIcon },
+		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: SearchIcon },
 		auto_update: { label: m.auto_update, icon: RefreshIcon },
 		system_prune: { label: m.activity_type_system_prune, icon: TrashIcon },
 		resource_action: { label: m.activity_type_resource_action, icon: ActivityIcon }
@@ -131,7 +130,6 @@ export function activityRunStatusLabel(activity: Activity): string {
 		: activityStatusLabel(activity.status);
 }
 
-// Finished activities report durationMs; running ones measure against now.
 export function activityDurationLabel(activity: Activity | null | undefined): string {
 	const startedAt = parseInstant(activity?.startedAt);
 	const durationMs = activity?.durationMs ?? (startedAt ? startedAt.until(Temporal.Now.instant()).total('milliseconds') : 0);

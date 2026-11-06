@@ -5,7 +5,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
+	import { PlayIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerDetails } from '#lib/types/container.js';
@@ -19,7 +19,6 @@
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;
 		autoUpdateLabelControlled?: boolean;
-		/** False when the agent did not report a status; the toggle is then disabled. */
 		autoUpdateStatusAvailable?: boolean;
 		onAutoUpdateChange?: (enabled: boolean) => void | Promise<void>;
 		onViewPortMappings?: () => void;
@@ -69,18 +68,12 @@
 
 	const restartPolicy = $derived(container.hostConfig?.restartPolicy || 'no');
 
-	// Deduplicate and categorize ports
 	const uniquePorts = $derived.by(() => {
 		if (!container.ports?.length) return { published: 0, exposed: 0, total: 0 };
 
 		const publicPorts = Array.from(
 			Map.groupBy(
-				container.ports.map((p) => {
-					const privatePort = (p as any).privatePort ?? (p as any).target ?? 0;
-					const publicPort = (p as any).publicPort ?? (p as any).hostPort ?? (p as any).published ?? null;
-					const proto = (p as any).type ?? (p as any).protocol ?? 'tcp';
-					return { key: `${publicPort ?? ''}:${privatePort}/${proto}`, publicPort };
-				}),
+				container.ports.map((p) => ({ key: `${p.publicPort ?? ''}:${p.privatePort}/${p.type}`, publicPort: p.publicPort })),
 				(entry) => entry.key
 			).values(),
 			(group) => group[0]?.publicPort
@@ -96,7 +89,7 @@
 	const metaItems = $derived.by(() => {
 		const items: DetailMetaItem[] = [{ icon: VolumesIcon, value: container.image || m.common_na(), mono: true }];
 		if (container.state?.running) {
-			items.push({ icon: StartIcon, label: m.common_uptime(), value: formatElapsedTime(startedInstant) || m.common_na() });
+			items.push({ icon: PlayIcon, label: m.common_uptime(), value: formatElapsedTime(startedInstant) || m.common_na() });
 		} else {
 			items.push({ icon: StopIcon, value: container.state?.status || m.common_stopped() });
 		}
@@ -206,7 +199,7 @@
 					{/if}
 				</div>
 				{#if onViewPortMappings && uniquePorts.total > 0}
-					<button type="button" class="w-fit text-xs font-medium text-primary hover:underline" onclick={onViewPortMappings}>
+					<button type="button" class="w-fit text-xs font-medium text-primary-text hover:underline" onclick={onViewPortMappings}>
 						{m.common_view_details()} → {m.resource_networks_cap()}
 					</button>
 				{/if}

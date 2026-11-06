@@ -15,7 +15,6 @@ import (
 )
 
 type (
-	// ApiKeyHandler provides Huma-based API key management endpoints.
 	ApiKeyHandler struct {
 		apiKeyService *ApiKeyService
 	}
@@ -50,7 +49,6 @@ type (
 	}
 )
 
-// ListApiKeys returns a paginated list of API keys.
 func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*handlerutil.Page[types.ApiKey], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
@@ -68,8 +66,6 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 	}, nil
 }
 
-// CreateApiKey creates a new scoped API key. Requested grants are capped by
-// the calling credential's effective permissions.
 func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*handlerutil.Out[types.ApiKeyCreatedDto], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -91,7 +87,6 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 	}, nil
 }
 
-// GetApiKey returns details of a specific API key.
 func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*handlerutil.Out[types.ApiKey], error) {
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
@@ -106,7 +101,6 @@ func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*
 	}, nil
 }
 
-// UpdateApiKey updates an existing API key.
 func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInput) (*handlerutil.Out[types.ApiKey], error) {
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
@@ -146,7 +140,6 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 	}, nil
 }
 
-// DeleteApiKey deletes an API key.
 func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, ErrApiKeyNotFound) {
@@ -161,7 +154,6 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 	return handlerutil.MessageOutput("API key deleted successfully", ""), nil
 }
 
-// ListMyApiKeys lists API keys owned by the current user (self-service).
 func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*handlerutil.Out[[]types.ApiKey], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -181,9 +173,6 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*ha
 	}, nil
 }
 
-// CreateMyApiKey creates a new personal API key owned by the current user
-// (self-service). Personal keys inherit the owner's role permissions, and may
-// only be minted from an interactive session — never by another API key.
 func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKeyInput) (*handlerutil.Out[types.ApiKeyCreatedDto], error) {
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.
@@ -210,9 +199,6 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 	}, nil
 }
 
-// DeleteMyApiKey deletes one of the current user's API keys, validating
-// ownership before removal so the endpoint can't be used to delete other
-// users' keys.
 func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyInput) (*handlerutil.Out[types.MessageResponse], error) {
 	// Defense in depth alongside the BearerAuth-only Security requirement:
 	// only session auth sets a session ID, so API-key and sudo callers stop here.

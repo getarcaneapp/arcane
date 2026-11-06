@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// Handler serves the swarm config endpoints.
 	Handler struct {
 		service  *Service
 		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
@@ -60,16 +59,6 @@ func NewHandler(
 	return &Handler{service: service, audit: audit, mapError: mapError}
 }
 
-// ListConfigs lists swarm configs in the current environment.
-//
-// It delegates to the swarm service and normalizes nil config slices to empty
-// arrays in the response body.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose configs should be listed.
-//
-// Returns the current swarm configs.
-// Returns a mapped HTTP error when config enumeration fails.
 func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[types.SwarmConfig], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -93,17 +82,6 @@ func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput)
 	}, nil
 }
 
-// GetConfig returns details for a single swarm config.
-//
-// It delegates to the swarm service and maps missing configs to
-// `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment and swarm config to inspect.
-//
-// Returns the config summary when the config exists.
-// Returns `404 Not Found` when the config does not exist or another mapped HTTP
-// error when inspection fails.
 func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*handlerutil.Out[types.SwarmConfig], error) {
 	cfg, err := h.service.GetConfig(ctx, input.ConfigID)
 	if err != nil {
@@ -116,17 +94,6 @@ func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*h
 	return &handlerutil.Out[types.SwarmConfig]{Body: types.ApiResponse[types.SwarmConfig]{Success: true, Data: *cfg}}, nil
 }
 
-// CreateConfig creates a new swarm config.
-//
-// It requires admin privileges, delegates the creation request to the swarm
-// service, and records an audit event containing the created config ID and name.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the config specification.
-//
-// Returns the created config summary.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when validation or creation fails.
 func (h *Handler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*handlerutil.Out[types.SwarmConfig], error) {
 	cfg, err := h.service.CreateConfig(ctx, input.Body)
 	if err != nil {
@@ -152,17 +119,6 @@ func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInpu
 	return &handlerutil.Out[types.SwarmConfig]{Body: types.ApiResponse[types.SwarmConfig]{Success: true, Data: *updated}}, nil
 }
 
-// DeleteConfig removes a swarm config.
-//
-// It requires admin privileges, delegates removal to the swarm service, maps
-// missing configs to `404 Not Found`, and records an audit event on success.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the config to remove.
-//
-// Returns a confirmation response when the config is removed.
-// Returns an authorization error for non-admin callers, `404 Not Found` when
-// the config does not exist, or another mapped HTTP error when removal fails.
 func (h *Handler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveConfig(ctx, input.ConfigID); err != nil {
 		if errdefs.IsNotFound(err) {

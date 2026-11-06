@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import type { Snippet } from 'svelte';
 
@@ -37,8 +38,8 @@
 	<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />
 {/snippet}
 
-<Collapsible.Root open={getIsOpen(item.url, item.isActive)} {onOpenChange} class="group/collapsible">
-	<Sidebar.MenuItem class="flex-col *:flex-auto">
+<Sidebar.MenuItem class="flex-col *:flex-auto">
+	<Collapsible.Root open={getIsOpen(item.url, item.isActive)} {onOpenChange} class="group/collapsible">
 		{@const Icon = item.icon}
 		<Sidebar.MenuButton
 			tooltipContent={showTooltip ? tooltipContent : undefined}
@@ -46,7 +47,7 @@
 			class="group-data-[collapsible=icon]:mx-auto"
 		>
 			{#snippet child({ props })}
-				<a href={item.url} {...props}>
+				<a href={item.url} {...props} aria-current={page.url.pathname === item.url ? 'page' : undefined}>
 					{#if item.icon}
 						<Icon />
 					{/if}
@@ -64,5 +65,5 @@
 		{#if content}
 			{@render content()}
 		{/if}
-	</Sidebar.MenuItem>
-</Collapsible.Root>
+	</Collapsible.Root>
+</Sidebar.MenuItem>

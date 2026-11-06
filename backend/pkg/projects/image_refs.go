@@ -18,8 +18,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// ParseImageRefsJSON parses a JSON array of image references, returning nil
-// for empty or invalid input.
 func ParseImageRefsJSON(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -32,8 +30,6 @@ func ParseImageRefsJSON(raw string) []string {
 	return refs
 }
 
-// MarshalImageRefsJSON serializes image references to JSON, returning an empty
-// string when there are no refs or encoding fails.
 func MarshalImageRefsJSON(refs []string) string {
 	if len(refs) == 0 {
 		return ""
@@ -42,8 +38,6 @@ func MarshalImageRefsJSON(refs []string) string {
 	return kit.Ternary(err != nil, "", string(data))
 }
 
-// ImageRefsFromComposeServices returns unique, non-empty image references from
-// a compose service map in stable service-name order.
 func ImageRefsFromComposeServices(services composetypes.Services) []string {
 	serviceNames := slices.Sorted(maps.Keys(services))
 
@@ -55,9 +49,6 @@ func ImageRefsFromComposeServices(services composetypes.Services) []string {
 	return ImageRefsFromComposeConfigs(serviceConfigs)
 }
 
-// BuildImageRefsFromComposeProject returns the image references produced by
-// services with build directives, including Compose's default image name when
-// a service does not declare image explicitly.
 func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 	if project == nil {
 		return nil
@@ -77,8 +68,6 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 	})
 }
 
-// ImageRefsFromComposeConfigs returns unique, non-empty image references from
-// compose service configs while preserving first-seen order.
 func ImageRefsFromComposeConfigs(services []composetypes.ServiceConfig) []string {
 	return uniqueImageRefs(len(services), func(yield func(string)) {
 		for _, svc := range services {
@@ -87,8 +76,6 @@ func ImageRefsFromComposeConfigs(services []composetypes.ServiceConfig) []string
 	})
 }
 
-// ImageRefsFromRuntimeServices returns unique, non-empty image references from
-// runtime service DTOs while preserving first-seen order.
 func ImageRefsFromRuntimeServices(services []types.ProjectRuntimeService) []string {
 	return uniqueImageRefs(len(services), func(yield func(string)) {
 		for _, svc := range services {
@@ -103,7 +90,6 @@ func uniqueImageRefs(size int, collect func(yield func(string))) []string {
 	return kit.Unique(kit.TrimNonEmpty(refs))
 }
 
-// PullableImageRefs includes service images and registry-only hook and volume images.
 func PullableImageRefs(project *composetypes.Project) []string {
 	if project == nil {
 		return nil
@@ -125,7 +111,6 @@ func PullableImageRefs(project *composetypes.Project) []string {
 	})
 }
 
-// RefreshComposeImageLabel updates an existing Compose digest label in place.
 func RefreshComposeImageLabel(labels map[string]string, imageDigest string) {
 	if imageDigest == "" {
 		return
@@ -137,12 +122,6 @@ func RefreshComposeImageLabel(labels map[string]string, imageDigest string) {
 	}
 }
 
-// ComposeImageDigest selects the digest compose v5.5.0 records in the
-// com.docker.compose.image label: the host platform's image-manifest digest,
-// which stays stable across attested rebuilds, falling back to the top-level
-// image ID when the engine reports no manifest data (mirrors compose's
-// localContentDigest). Writing any other value would make compose flag the
-// container as diverged and recreate it on the next up.
 func ComposeImageDigest(inspect client.ImageInspectResult) string {
 	matcher := platforms.Default()
 	var available []image.ManifestSummary

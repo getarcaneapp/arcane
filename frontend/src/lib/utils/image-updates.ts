@@ -13,7 +13,8 @@ export function formatImageUpdateValue(
 
 	// A tag update is about the version that moved: the digest of the configured
 	// tag can be unchanged, so showing it would hide the actual change.
-	if (updateInfo.updateType === 'tag') {
+	const latestVersion = updateInfo.latestVersion?.trim() ?? '';
+	if (updateInfo.updateType === 'tag' || (latestVersion && latestVersion !== updateInfo.currentVersion?.trim())) {
 		return version || digest || '-';
 	}
 	return digest || version || '-';

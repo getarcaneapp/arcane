@@ -103,7 +103,6 @@ func (s *ApplicationImagesService) GetImageWithColor(name, colorOverride string,
 	return data, mimeType, nil
 }
 
-// IsLogoVariant reports whether the image name is one of the accent-colorable logo SVGs.
 func IsLogoVariant(name string) bool {
 	switch name {
 	case "logo", "logo-full", "logo-animated", "logo-full-animated":

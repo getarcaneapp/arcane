@@ -11,7 +11,6 @@ import (
 	"kit.getarcane.app"
 )
 
-// NormalizeBaseURL validates an outbound HTTP URL and strips endpoint-specific components.
 func NormalizeBaseURL(rawURL string) (string, error) {
 	parsed, err := ValidateOutboundHTTPURL(rawURL)
 	if err != nil {
@@ -24,8 +23,6 @@ func NormalizeBaseURL(rawURL string) (string, error) {
 	return parsed.String(), nil
 }
 
-// ManagerBaseURL returns the base URL of the manager application.
-// It strips any trailing slashes or /api suffix from ARCANE_MANAGER_API_URL.
 func ManagerBaseURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
@@ -35,7 +32,6 @@ func ManagerBaseURL(rawURL string) string {
 	return managerURL
 }
 
-// ManagerGRPCAddr returns the manager gRPC address in host:port form.
 func ManagerGRPCAddr(rawURL string) string {
 	baseURL := ManagerBaseURL(rawURL)
 	if baseURL == "" {
@@ -57,10 +53,6 @@ func ManagerGRPCAddr(rawURL string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// ValidateOutboundHTTPURL parses and validates an outbound HTTP(S) target URL.
-// It intentionally performs syntactic hardening (scheme/host/credentials)
-// without restricting private network ranges, because environment agents may be
-// deployed on trusted private subnets.
 func ValidateOutboundHTTPURL(rawURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {

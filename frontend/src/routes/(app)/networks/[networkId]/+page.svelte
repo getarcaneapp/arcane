@@ -5,7 +5,6 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -282,7 +281,7 @@
 									href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(data.envId)}`, {
 										containerId: container.id
 									})}
-									class="flex items-center text-primary hover:underline"
+									class="flex items-center text-primary-text hover:underline"
 								>
 									<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 									{container.name}
@@ -321,6 +320,7 @@
 <ResourceDetailLayout
 	backUrl="/networks"
 	backLabel={m.resource_networks_cap()}
+	environmentId={data.envId}
 	title={network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
 	subtitle={`${m.common_id()}: ${shortId}`}
 	{actions}
@@ -335,7 +335,6 @@
 			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
 		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
-		<EnvironmentCell value={data.envId} plain />
 	{/snippet}
 
 	{#if errorMessage}
@@ -398,7 +397,6 @@
 				action="cancel"
 				customLabel={m.common_back_to({ resource: m.resource_networks_cap() })}
 				onclick={() => goto(resolve('/(app)/networks'))}
-				size="sm"
 			/>
 		</div>
 	{/if}

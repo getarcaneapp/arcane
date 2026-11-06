@@ -29,7 +29,6 @@ function parseEnvVariables(envContent: string): Map<string, string> {
 	let multiLineParts: string[] = [];
 
 	for (const rawLine of lines) {
-		// Inside a multi-line quoted value — accumulate until closing quote
 		if (multiLineQuote !== null && multiLineKey !== null) {
 			multiLineParts.push(rawLine);
 			if (hasClosingQuote(rawLine, multiLineQuote)) {

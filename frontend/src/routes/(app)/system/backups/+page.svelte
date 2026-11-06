@@ -38,6 +38,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
@@ -443,7 +444,7 @@
 			activity.metadata?.['action'] === 'create_system_backup' ||
 			activity.metadata?.['action'] === 'scheduled_system_backup' ||
 			activity.metadata?.['action'] === 'run_system_volume_backups',
-		refresh
+		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
 	);
 
 	async function submitAction() {
@@ -482,12 +483,13 @@
 						}
 						actionOpen = false;
 						loading = false;
-						void tryCatch(refresh()).then((result) => {
-							if (result.error) {
-								const error: Error = result.error;
-								return console.warn('Failed to refresh backup history', error);
-							}
-							return result.data;
+						void tryCatch(
+							queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
+						).then((result) => {
+							if (result.error === null) return;
+							toast.error(m.common_refresh_failed({ resource: m.backup_history() }), {
+								description: extractApiErrorMessage(result.error)
+							});
 						});
 					} else if (action === 'restore' && selected) {
 						await systemBackupService.restore(selected.id, recoveryKey);
@@ -598,7 +600,6 @@
 
 {#snippet backupsEmptyState()}
 	<EmptyState
-		variant="plain"
 		icon={BackupIcon}
 		title={m.system_backups_empty_title()}
 		description={m.system_backups_empty_description()}
@@ -617,7 +618,6 @@
 			{#if canManageRecoveryKey}
 				<ArcaneButton
 					action="edit"
-					size="sm"
 					customLabel={m.system_backups_setup_recovery_key()}
 					loading={generatingKey}
 					onclick={openRecoveryKey}
@@ -771,7 +771,6 @@
 					<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
 					<ArcaneButton
 						action="edit"
-						size="sm"
 						customLabel={m.system_backups_setup_recovery_key()}
 						loading={generatingKey}
 						onclick={() => {
@@ -871,7 +870,6 @@
 <SettingsPageLayout
 	title={m.system_backups_title()}
 	description={m.system_backups_description()}
-	icon={BackupIcon}
 	pageType="management"
 	showReadOnlyTag={isReadOnly}
 	{actionButtons}
@@ -912,7 +910,6 @@
 						{m.backups_running()}
 						<ArcaneButton
 							action="inspect"
-							size="sm"
 							customLabel={m.activity_view_activity()}
 							onclick={() => activityStore.openCenter(activityId)}
 						/>

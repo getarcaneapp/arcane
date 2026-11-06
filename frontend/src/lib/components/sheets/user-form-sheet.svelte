@@ -92,8 +92,6 @@
 					environmentId: z.string().optional()
 				})
 			)
-			// OIDC users may get all their roles from OIDC mappings, so zero
-			// manual assignments is valid for them.
 			.refine((assignments) => isOidcUser || assignments.length >= 1, m.users_role_assignments_required())
 	});
 
@@ -115,13 +113,10 @@
 	}
 
 	async function handleSubmit() {
-		// createForm trims strings for ordinary text fields. Passwords are opaque,
-		// so preserve exactly what the user entered after validating the raw value.
 		const password = form.inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
-		// For OIDC users, only allow role assignment changes
 		if (isOidcUser) {
 			await submitUser({
 				user: { roleAssignments: data.roleAssignments },
@@ -229,7 +224,7 @@
 					<div class="mb-3">
 						<p class="text-xs text-muted-foreground">
 							{m.oidc_synced_role_assignments()}
-							<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary underline"
+							<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary-text underline"
 								>{m.users_role_assignments_oidc_link()}</a
 							>
 						</p>

@@ -24,7 +24,6 @@ type (
 		active  int
 	}
 
-	// Service correlates Docker daemon observations with local Arcane actions.
 	Service struct {
 		expectations       map[expectation]time.Time
 		windows            map[windowKey]window
@@ -56,14 +55,12 @@ func (c *Service) prune(now time.Time) {
 	}
 }
 
-// Prune drops expired expectations and closed windows past their grace period.
 func (c *Service) Prune() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.prune(c.now())
 }
 
-// MarkExpectation correlates subsequent daemon observations with a local Arcane action.
 func (c *Service) MarkExpectation(resourceType, resourceID, resourceName string) {
 	switch resourceType {
 	case "container", "image", "volume", "network":
@@ -86,8 +83,6 @@ func (c *Service) MarkExpectation(resourceType, resourceID, resourceName string)
 	c.expectations[expectation{resourceType, resourceID, resourceName}] = now.Add(expectationTTL)
 }
 
-// BeginComposeWindow covers daemon events labeled with the Compose project.
-// Unlabeled resources require an explicit resource expectation to avoid hiding unrelated activity.
 func (c *Service) BeginComposeWindow(composeProject string) func() {
 	if composeProject == "" {
 		return func() {}
@@ -95,7 +90,6 @@ func (c *Service) BeginComposeWindow(composeProject string) func() {
 	return c.beginWindows([]windowKey{{kind: "compose", name: composeProject}})
 }
 
-// BeginResourceWindow covers a mutation for its full duration and cleanup grace.
 func (c *Service) BeginResourceWindow(resourceType, resourceID, resourceName string) func() {
 	if resourceName == "name" {
 		resourceName = ""
@@ -106,7 +100,6 @@ func (c *Service) BeginResourceWindow(resourceType, resourceID, resourceName str
 	return c.beginWindows([]windowKey{{kind: "resource", resource: expectation{resourceType, resourceID, resourceName}}})
 }
 
-// BeginTypeWindow covers bulk daemon operations whose per-item IDs are unknown until they finish.
 func (c *Service) BeginTypeWindow(resourceType string) func() {
 	if resourceType == "" {
 		return func() {}
@@ -138,14 +131,12 @@ func (c *Service) beginWindows(keys []windowKey) func() {
 	})
 }
 
-// SetUpdatingContainers supplies the updater's live identities without coupling domains.
 func (c *Service) SetUpdatingContainers(source func() []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.updatingContainers = source
 }
 
-// ShouldSuppress reports whether a daemon observation matches a recent local action.
 func (c *Service) ShouldSuppress(resourceType, actorID, actorName, composeProject string) bool {
 	c.mu.Lock()
 	updating := c.updatingContainers

@@ -13,14 +13,12 @@ import (
 )
 
 type (
-	// Declining prints Cancelled to stderr and returns false without an error.
 	ConfirmOptions struct {
 		Label string
 		Force bool
 	}
 )
 
-// ClientFromCommand returns a configured authenticated client for the command.
 func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if cmd == nil {
 		return nil, errors.New("nil command")
@@ -31,7 +29,6 @@ func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	return client.NewFromConfig()
 }
 
-// UnauthClientFromCommand returns a configured unauthenticated client for the command.
 func UnauthClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if cmd == nil {
 		return nil, errors.New("nil command")
@@ -42,7 +39,6 @@ func UnauthClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	return client.NewFromConfigUnauthenticated()
 }
 
-// JSONOutputEnabled reads the parsed local or inherited --json flag, then runtime output mode.
 // Runtime JSON mode includes --output json, even when --json is explicitly false.
 func JSONOutputEnabled(cmd *cobra.Command) bool {
 	if cmd == nil {
@@ -58,7 +54,6 @@ func JSONOutputEnabled(cmd *cobra.Command) bool {
 	return false
 }
 
-// AssumeYes reads the global --yes flag or invocation consent.
 func AssumeYes(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return false
@@ -68,7 +63,6 @@ func AssumeYes(cmd *cobra.Command) bool {
 	return yes || ok && app.AssumeYes
 }
 
-// AllowPrompt reports whether interactive prompts are allowed for this command.
 func AllowPrompt(cmd *cobra.Command) bool {
 	return !JSONOutputEnabled(cmd) && prompt.IsInteractive()
 }

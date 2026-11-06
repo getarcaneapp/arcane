@@ -13,17 +13,15 @@
 		fill = false
 	}: {
 		activity: Activity;
-		/** Let the output grow into the remaining height instead of capping it. */
 		fill?: boolean;
 	} = $props();
 
-	// Prefer the freshest activity data from the store (messages stream may update it).
 	const liveActivity = $derived(activityStore.getActivity(activity.id) ?? activity);
 	const detail = $derived(activityStore.getDetail(activity.id));
 	const messages = $derived(detail?.messages ?? []);
 	const outputText = $derived(messages.map((message) => message.message).join('\n'));
 	const isLoading = $derived(activityStore.isDetailLoading(activity.id));
-	const isDetailError = $derived(activityStore.isDetailError(activity.id));
+	const detailError = $derived(activityStore.detailError(activity.id));
 </script>
 
 <div class={cn('flex flex-col gap-3', fill && 'min-h-0 flex-1')}>
@@ -47,13 +45,14 @@
 					fill && 'min-h-56 flex-1'
 				)}
 			>
-				{#if isDetailError && messages.length === 0}
+				{#if detailError && messages.length === 0}
 					<div class="flex min-h-32 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
 						<span>{m.activity_output_load_failed()}</span>
+						<span class="text-xs">{detailError}</span>
 						<button
 							type="button"
 							onclick={() => activityStore.retryLoadDetail(activity.id)}
-							class="cursor-pointer text-xs text-primary hover:underline"
+							class="cursor-pointer text-xs text-primary-text hover:underline"
 						>
 							{m.common_retry()}
 						</button>

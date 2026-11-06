@@ -89,7 +89,8 @@
 		outlineOpen = $bindable(false),
 		diffOpen = $bindable(false),
 		commandPaletteOpen = $bindable(false),
-		statusBar = true
+		statusBar = true,
+		'aria-describedby': ariaDescribedby
 	}: {
 		value?: string;
 		language?: CodeLanguage;
@@ -109,6 +110,7 @@
 		diffOpen?: boolean;
 		commandPaletteOpen?: boolean;
 		statusBar?: boolean;
+		'aria-describedby'?: string;
 	} = $props();
 	void hasErrors;
 
@@ -342,7 +344,7 @@
 
 	function goToLine() {
 		if (!activeView) return;
-		const raw = window.prompt('Go to line', String(diagnosticSummary.cursorLine));
+		const raw = window.prompt(m.go_to_line(), String(diagnosticSummary.cursorLine));
 		if (!raw) return;
 		const lineNumber = Number.parseInt(raw, 10);
 		if (Number.isNaN(lineNumber)) return;
@@ -422,17 +424,17 @@
 
 	const commandItems = $derived.by(() => {
 		const items = [
-			{ id: 'format', label: 'Format document', shortcut: 'Shift+Alt+F' },
-			{ id: 'next-diagnostic', label: 'Next diagnostic', shortcut: 'F8' },
-			{ id: 'prev-diagnostic', label: 'Previous diagnostic', shortcut: 'Shift+F8' },
-			{ id: 'toggle-outline', label: outlineOpen ? 'Hide outline' : 'Show outline' },
-			{ id: 'fold-all', label: 'Fold all' },
-			{ id: 'unfold-all', label: 'Unfold all' },
-			{ id: 'jump-line', label: 'Jump to line' }
+			{ id: 'format', label: m.format_document(), shortcut: 'Shift+Alt+F' },
+			{ id: 'next-diagnostic', label: m.next_diagnostic(), shortcut: 'F8' },
+			{ id: 'prev-diagnostic', label: m.previous_diagnostic(), shortcut: 'Shift+F8' },
+			{ id: 'toggle-outline', label: outlineOpen ? m.hide_outline() : m.show_outline() },
+			{ id: 'fold-all', label: m.fold_all() },
+			{ id: 'unfold-all', label: m.unfold_all() },
+			{ id: 'jump-line', label: m.jump_to_line() }
 		];
 
 		if (enableDiff && originalValue !== undefined) {
-			items.splice(4, 0, { id: 'toggle-diff', label: diffOpen ? 'Hide diff' : 'Show diff' });
+			items.splice(4, 0, { id: 'toggle-diff', label: diffOpen ? m.hide_diff() : m.show_diff() });
 		}
 
 		return items;
@@ -523,7 +525,7 @@
 					create() {
 						const dom = document.createElement('div');
 						dom.className = 'arcane-hover';
-						dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+						dom.innerHTML = `<strong>${variableRef.name}</strong><div>${m.podman_pod_mount_source()}: ${variableRef.source}</div>`;
 						return { dom };
 					}
 				};
@@ -548,11 +550,13 @@
 					const dom = document.createElement('div');
 					dom.className = 'arcane-hover';
 					const examples =
-						doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
+						doc.examples && doc.examples.length > 0
+							? `<div><strong>${m.examples()}:</strong> ${doc.examples.join(', ')}</div>`
+							: '';
 					dom.innerHTML = `
 						<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
 						${doc.description ? `<div>${doc.description}</div>` : ''}
-						${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
+						${doc.defaultValue ? `<div><strong>${m.common_default()}:</strong> ${doc.defaultValue}</div>` : ''}
 						${examples}
 					`;
 					return { dom };
@@ -779,7 +783,8 @@
 		...getLanguageExtension(language),
 		theme,
 		indentUnit.of(' '.repeat(tabWidth)),
-		EditorState.tabSize.of(tabWidth)
+		EditorState.tabSize.of(tabWidth),
+		...(ariaDescribedby ? [EditorView.contentAttributes.of({ 'aria-describedby': ariaDescribedby })] : [])
 	]);
 
 	const styles = $derived({
@@ -852,7 +857,7 @@
 						<div
 							class="absolute top-2 right-2 z-(--arcane-z-sticky) max-h-full-inset w-64 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-lg"
 						>
-							<div class="border-b px-3 py-2 text-xs font-bold">Outline</div>
+							<div class="border-b px-3 py-2 text-xs font-bold">{m.outline()}</div>
 							<div class="max-h-80 overflow-auto p-1">
 								{#each activeOutlineItems as item (item.id)}
 									<button

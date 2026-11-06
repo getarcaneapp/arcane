@@ -1,4 +1,3 @@
-// Package image owns Docker image operations, metadata, attestations, patching, and routes.
 package image
 
 import (
@@ -79,7 +78,6 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	patch.RegisterRoutes(api, m.service.patch, appCtx)
 }
 
-// RegisterImages registers image management routes using Huma.
 func RegisterImages(
 	api huma.API,
 	dockerService *docker.DockerClientService,

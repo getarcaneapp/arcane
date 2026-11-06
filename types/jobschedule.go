@@ -5,7 +5,6 @@ import (
 )
 
 type (
-	// JobScheduleConfig contains cron schedules for Arcane background jobs.
 	JobScheduleConfig struct {
 		EnvironmentHealthInterval      string `json:"environmentHealthInterval" required:"false"`
 		EventCleanupInterval           string `json:"eventCleanupInterval" required:"false"`
@@ -19,7 +18,6 @@ type (
 		AutoHealInterval               string `json:"autoHealInterval" required:"false"`
 	}
 
-	// JobStatus represents the current status and metadata for a background job.
 	JobStatus struct {
 		CurrentRun     *SchedulerRun          `json:"currentRun,omitempty"`
 		LastRun        *SchedulerRun          `json:"lastRun,omitempty"`
@@ -41,14 +39,12 @@ type (
 		CanRunManually bool                   `json:"canRunManually"`
 	}
 
-	// JobPrerequisite represents a requirement that must be met for a job to run.
 	JobPrerequisite struct {
 		SettingKey string `json:"settingKey"`
 		Label      string `json:"label"`
 		IsMet      bool   `json:"isMet"`
 	}
 
-	// JobListResponse contains all jobs and system mode information.
 	JobListResponse struct {
 		ObservedAt  time.Time   `json:"observedAt"`
 		Timezone    string      `json:"timezone,omitempty"`
@@ -58,7 +54,6 @@ type (
 		IsAgent     bool        `json:"isAgent"`
 	}
 
-	// JobRunResponse is the response after manually triggering a job.
 	JobRunResponse struct {
 		RunID   string    `json:"runId,omitempty"`
 		Status  RunStatus `json:"status,omitempty"`
@@ -66,7 +61,6 @@ type (
 		Success bool      `json:"success"`
 	}
 
-	// JobSubmitRunInput preserves identity across manager-to-agent delivery retries.
 	JobSubmitRunInput struct {
 		RunID string `json:"runId"`
 	}

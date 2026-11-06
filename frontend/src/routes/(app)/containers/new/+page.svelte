@@ -55,7 +55,6 @@
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				size="sm"
 				href="/containers"
 				class="gap-2 bg-transparent"
 				icon={ArrowLeftIcon}

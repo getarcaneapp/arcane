@@ -55,7 +55,6 @@ const (
 	managerCALockTimeout        = 2 * time.Minute
 	managerCALockPollInterval   = 100 * time.Millisecond
 
-	// caKeyEncryptedPrefix marks a CA key file holding the libcrypto.Encrypt output of the PEM key.
 	caKeyEncryptedPrefix = "ARCANE-ENC-V1:"
 )
 
@@ -65,8 +64,7 @@ var (
 	errEnrollUnreachable        = errors.New("agent mTLS enrollment request failed")
 	ErrMTLSEnrollUnavailable    = errors.New("agent mTLS enrollment is not available")
 	ErrMTLSEnrollCooldown       = errors.New("agent mTLS enrollment was recently completed; retry later")
-	// caKeyEncrypt is a variable so tests can force encryption failures.
-	caKeyEncrypt = libcrypto.Encrypt
+	caKeyEncrypt                = libcrypto.Encrypt
 )
 
 func NewMTLS(cfg MTLSConfig) *MTLS {
@@ -560,7 +558,6 @@ func hasVerifiedPeerCertificate(state *tls.ConnectionState) bool {
 	return state != nil && len(state.PeerCertificates) > 0 && len(state.VerifiedChains) > 0
 }
 
-// certificateHasURISAN reports whether cert carries expected as a URI SAN, ignoring case and a trailing dot in the host.
 func certificateHasURISAN(cert *x509.Certificate, expected *url.URL) bool {
 	return slices.ContainsFunc(cert.URIs, func(uri *url.URL) bool {
 		return uri != nil && strings.EqualFold(uri.Scheme, expected.Scheme) && uri.Path == expected.Path &&
@@ -568,8 +565,6 @@ func certificateHasURISAN(cert *x509.Certificate, expected *url.URL) bool {
 	})
 }
 
-// ensureManagerCA returns the generated CA, creating it unless the existing one decrypts,
-// matches its key, and uses a supported algorithm.
 func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bool, error) {
 	// The assets dir is the acfs confinement root for callers, so os creates it.
 	if err := os.MkdirAll(assetsDir, fs.DirPerm); err != nil {
@@ -652,8 +647,6 @@ func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bo
 	return tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: privateKey, Leaf: leaf}, true, nil
 }
 
-// loadClientCertificate loads a client key pair, or returns why it must be (re)issued: unreadable,
-// mismatched, outside its validity window, or within renewBefore of expiry.
 func loadClientCertificate(certPath, keyPath string, now time.Time, renewBefore time.Duration) (tls.Certificate, string) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	switch {
@@ -669,7 +662,6 @@ func loadClientCertificate(certPath, keyPath string, now time.Time, renewBefore 
 	return cert, ""
 }
 
-// supportedGeneratedKey reports whether a generated certificate uses ECDSA P-384 or ML-DSA-87.
 func supportedGeneratedKey(publicKey crypto.PublicKey) bool {
 	switch key := publicKey.(type) {
 	case *ecdsa.PublicKey:
@@ -680,8 +672,6 @@ func supportedGeneratedKey(publicKey crypto.PublicKey) bool {
 	return false
 }
 
-// lockAgentMTLSPath serializes asset generation in this process and, through an O_EXCL lock
-// file (which acfs cannot create), across processes sharing the directory.
 func lockAgentMTLSPath(ctx context.Context, dir, lockName string) (func(), error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -724,7 +714,6 @@ func lockAgentMTLSPath(ctx context.Context, dir, lockName string) (func(), error
 	}
 }
 
-// removeStaleLock removes a lock file whose owning process is gone or that is far older than any holder.
 func removeStaleLock(lockPath string) bool {
 	content, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -758,7 +747,6 @@ func removeStaleLock(lockPath string) bool {
 	return removeErr == nil || errors.Is(removeErr, os.ErrNotExist)
 }
 
-// fileExists reports whether localPath is a regular file. Paths may be configured anywhere on the host.
 func fileExists(localPath string) bool {
 	info, err := os.Stat(localPath)
 	return err == nil && !info.IsDir()

@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Reproduces issue #3309: a project directory containing a bind-mount data
-// folder Arcane cannot read must still list everything else. Before the fix a
-// single EACCES from fs.WalkDir aborted the walk, so the whole tree (and the
-// revision that gates workspace edits) came back empty.
 func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits are ignored when running as root")

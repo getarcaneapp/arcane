@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -154,12 +153,10 @@
 				show: mobileFieldVisibility['containerName'] ?? true
 			}
 		]}
-		onclick={() =>
-			void goto(
-				resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
-					containerId: item.containerId
-				})
-			)}
+		href={() =>
+			resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+				containerId: item.containerId
+			})}
 	/>
 {/snippet}
 

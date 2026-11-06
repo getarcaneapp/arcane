@@ -21,8 +21,6 @@ const (
 
 var statementTracer = otel.Tracer(logging.InstrumentationName)
 
-// startStatementSpan opens a client span only inside an existing trace, so
-// background queries do not create root traces.
 func startStatementSpan(tx *gorm.DB) {
 	ctx := tx.Statement.Context
 	if !trace.SpanContextFromContext(ctx).IsValid() {
@@ -32,7 +30,6 @@ func startStatementSpan(tx *gorm.DB) {
 	tx.InstanceSet(statementSpanKey, span)
 }
 
-// endStatementSpan names and ends the span with the placeholder SQL; parameter values are never recorded.
 func endStatementSpan(tx *gorm.DB) {
 	value, _ := tx.InstanceGet(statementSpanKey)
 	span, ok := value.(trace.Span)

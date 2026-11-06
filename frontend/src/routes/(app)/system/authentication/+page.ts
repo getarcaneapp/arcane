@@ -21,9 +21,6 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	// OIDC mappings live alongside the OIDC config in this page. We load them
-	// here (instead of a standalone /settings/oidc-mappings route) so admins
-	// configure groups claim + the mappings that read from it in one place.
 	const [mappings, federatedCredentials, roles, environmentsPage] = await Promise.all([
 		queryClient.query(oidcMappingListQuery()),
 		queryClient.query(federatedCredentialListQuery(federatedCredentialRequestOptions)),

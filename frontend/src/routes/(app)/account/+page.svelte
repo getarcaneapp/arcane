@@ -4,7 +4,6 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
-	import HeaderCard from '#lib/components/header-card.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Avatar from '#lib/components/ui/avatar/index.js';
 	import * as ImageCropper from '#lib/components/ui/image-cropper/index.js';
@@ -198,21 +197,10 @@
 </script>
 
 <div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
-	<HeaderCard>
-		<div class="flex items-center justify-between gap-4">
-			<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
-				<div
-					class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
-				>
-					<UserIcon class="size-4 sm:size-5" />
-				</div>
-				<div class="min-w-0">
-					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{m.common_account()}</h1>
-					<p class="mt-1 text-sm text-muted-foreground">{m.account_subtitle()}</p>
-				</div>
-			</div>
-		</div>
-	</HeaderCard>
+	<header class="pt-3 md:pt-5">
+		<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{m.common_account()}</h1>
+		<p class="mt-1 text-sm text-muted-foreground">{m.account_subtitle()}</p>
+	</header>
 
 	{#if currentUser}
 		<Tabs.Root value={activeTab}>
@@ -284,7 +272,6 @@
 											<div class="mt-1 flex items-center gap-2">
 												<ArcaneButton
 													action="remove"
-													size="sm"
 													tone="ghost"
 													customLabel={m.common_remove()}
 													showLabel={true}

@@ -8,9 +8,6 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient, user } = await parent();
 
-	// Role creation is reserved for global admins (matches RequireGlobalAdmin
-	// on POST /roles). Guard here so non-admins are bounced before the
-	// permissions manifest is fetched.
 	if (!userIsGlobalAdmin(user)) {
 		throw redirect(302, '/system/roles');
 	}

@@ -9,11 +9,6 @@ import (
 )
 
 const (
-	// MetaRequiredPermission is the huma.Operation.Metadata key under which the
-	// environment-scoped registration helper records the permission an operation
-	// requires. The remote environment proxy reads this metadata (via the OpenAPI
-	// document) to enforce the same permission locally before forwarding a request
-	// to an agent.
 	MetaRequiredPermission = "arcane:requiredPermission"
 
 	MetaEnvironmentAggregate = "arcane:environmentAggregate"
@@ -33,14 +28,6 @@ const (
 	envPathPrefix = "/environments/{id}"
 )
 
-// CollectFromHumaAPI walks every operation registered on humaAPI and records,
-// for each environment-scoped operation, the permission it requires. The
-// permission is read from the operation metadata set by the registration
-// helper (see MetaRequiredPermission).
-//
-// Operation paths are stored as the resource suffix after /environments/{id}
-// (for example "/containers/{containerId}/start") so the remote environment
-// proxy can match them against forwarded request paths.
 func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 	oapi := humaAPI.OpenAPI()
 	if oapi == nil || oapi.Paths == nil {
@@ -74,10 +61,6 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				m.Add(method, suffix, perm)
 				continue
 			}
-			// An environment-scoped operation that declares no required
-			// permission is only allowed through the proxy when it is an
-			// explicitly public endpoint (empty Security). Anything else is
-			// left unmapped and denied by default.
 			if op.Security != nil && len(op.Security) == 0 {
 				m.AddPublic(method, suffix)
 			}
@@ -85,10 +68,6 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 	}
 }
 
-// envResourceSuffix returns the resource path after /environments/{id}
-// for environment-scoped operation paths, e.g. "/containers" for
-// "/environments/{id}/containers". It returns None for paths that are not
-// environment-scoped resource paths (including the bare "/environments/{id}").
 func envResourceSuffix(path string) mo.Option[string] {
 	if !strings.HasPrefix(path, envPathPrefix+"/") {
 		return mo.None[string]()

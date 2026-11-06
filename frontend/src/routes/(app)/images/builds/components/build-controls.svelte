@@ -65,7 +65,6 @@
 		<ArcaneButton
 			action="start_all"
 			type="button"
-			size="sm"
 			hoverEffect="lift"
 			customLabel={m.build()}
 			onclick={() => onBuild?.()}

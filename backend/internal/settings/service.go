@@ -141,8 +141,6 @@ func NewSettingsService(p SettingsServiceParams) (*SettingsService, error) {
 	return svc, nil
 }
 
-// SubscribeSettingsChanges invokes callback once with the matching values when any subscribed key
-// is present in a successful update. Callbacks run serially on the effects worker, outside the write mutex.
 func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func() {
 	if callback == nil || len(keys) == 0 {
 		return func() {}
@@ -166,8 +164,6 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 	})
 }
 
-// NotifySettingsChanges publishes current values for keys through the settings
-// write mutex. It is used when another settings-table workflow performs persistence.
 func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...string) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -249,7 +245,6 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) error {
 	return nil
 }
 
-// DefaultSettingsConfig returns the canonical default settings model used by Arcane.
 func DefaultSettingsConfig() *Settings {
 	cfg := &Settings{}
 	rv := reflect.ValueOf(cfg).Elem()
@@ -279,8 +274,6 @@ func (s *SettingsService) GetSettings(_ context.Context) (*Settings, error) {
 	return s.GetSettingsConfig(), nil
 }
 
-// GetSettingsOrDefaults logs any settings load failure and always returns a non-nil *Settings;
-// a zero-valued struct makes SettingVariable helpers fall back to the caller's default.
 func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
 	cfg, err := s.GetSettings(ctx)
 	if err != nil {
@@ -303,8 +296,6 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 	return s.persistSettings(ctx, []SettingVariable{{Key: key, Value: value}})
 }
 
-// UpdateSettingValues persists a group of internal setting values atomically
-// and publishes the refreshed snapshot before returning.
 func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []types.SettingUpdate) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -332,8 +323,6 @@ func (s *SettingsService) ValidateScope(scope SettingScope, updates types.Settin
 	return nil
 }
 
-// UpdateSettings publishes the refreshed snapshot before returning. Each
-// subscriber's effects remain ordered and may finish after this method returns.
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.SettingsUpdate) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -720,8 +709,6 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
-// SetContainerAutoUpdateExclusion adds (excluded) or removes a container name
-// in the autoUpdateExcludedContainers setting.
 func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, containerName string, excluded bool) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -867,7 +854,6 @@ func (s *SettingsService) enqueueEffect(effect func()) error {
 	return nil
 }
 
-// Stop drains accepted effects and joins the settings worker.
 func (s *SettingsService) Stop(ctx context.Context) error {
 	s.writes.Lock()
 	s.effectsMu.Lock()
@@ -886,7 +872,6 @@ func (s *SettingsService) Stop(ctx context.Context) error {
 	}
 }
 
-// IsFeatureEnabled resolves feature availability on this environment.
 func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.FeatureID) bool {
 	definition, ok := types.LookupFeature(id)
 	if !ok {
@@ -901,7 +886,6 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.Feature
 	return kit.Ternary(err != nil, definition.DefaultEnabled, enabled)
 }
 
-// RequireFeature rejects operations when their runtime feature is disabled.
 func (s *SettingsService) RequireFeature(ctx context.Context, id types.FeatureID) error {
 	if s.IsFeatureEnabled(ctx, id) {
 		return nil
@@ -910,10 +894,9 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id types.FeatureID
 }
 
 func NewSettingsSearchService() *SettingsSearchService {
-	return &SettingsSearchService{categories: search.BuildCategories[Settings](types.SearchProfileSettings)}
+	return &SettingsSearchService{categories: search.BuildCategories[Settings]()}
 }
 
-// GetSettingsCategories returns the category index initialized by the service.
 func (s *SettingsSearchService) GetSettingsCategories() []types.Category {
 	return s.categories
 }

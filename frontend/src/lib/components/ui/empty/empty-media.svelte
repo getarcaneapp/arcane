@@ -1,12 +1,14 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn } from '#lib/utils.js';
 
 	export const emptyMediaVariants = tv({
 		base: 'mb-2 flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0',
 		variants: {
 			variant: {
 				default: 'bg-transparent',
-				icon: "flex size-13 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/5 text-primary ring-6 ring-primary/5 [&_svg:not([class*='size-'])]:size-6"
+				icon: "flex size-13 shrink-0 items-center justify-center rounded-xl border border-primary-tint/25 bg-primary-tint/5 text-primary-text ring-6 ring-primary-tint/5 [&_svg:not([class*='size-'])]:size-6"
 			}
 		},
 		defaultVariants: {
@@ -19,8 +21,6 @@
 
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-
-	import { cn } from '#lib/utils.js';
 
 	let {
 		class: className,

@@ -13,11 +13,9 @@ import (
 )
 
 type (
-	// RemoteJSONProxy is the remote environment transport operation used by domain handlers.
 	RemoteJSONProxy func(context.Context, string, string, string, []byte, any) error
 )
 
-// JSON marshals a request, invokes the environment proxy, and translates transport errors for Huma.
 func (p RemoteJSONProxy) JSON[T any](
 	ctx context.Context,
 	environmentID string,
@@ -49,7 +47,6 @@ func marshalRemoteRequestBody(requestBody any) ([]byte, error) {
 	}
 }
 
-// TranslateRemoteProxyError converts environment transport failures into Huma errors.
 func TranslateRemoteProxyError(err error) error {
 	if transportErr, ok := errors.AsType[*agent.TransportError](err); ok {
 		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())

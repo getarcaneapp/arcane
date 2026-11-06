@@ -1,6 +1,3 @@
-// Package s3 provides reusable S3 configuration and connectivity helpers. It
-// deals in infrastructure configuration only; mapping from API DTOs belongs to
-// the backup destination domain.
 package s3
 
 import (
@@ -31,7 +28,6 @@ import (
 )
 
 type (
-	// Configuration contains the credentials and addressing options for an S3 destination.
 	Configuration struct {
 		ID              string
 		Name            string
@@ -56,7 +52,6 @@ const (
 	connectionTestPayload             = "arcane-s3-connection-test"
 )
 
-// Normalized returns a copy with surrounding whitespace and prefix separators removed.
 func (c Configuration) Normalized() Configuration {
 	c.ID = strings.TrimSpace(c.ID)
 	c.Name = strings.TrimSpace(c.Name)
@@ -69,8 +64,6 @@ func (c Configuration) Normalized() Configuration {
 	return c
 }
 
-// ValidateEndpoint checks a custom endpoint: only HTTP or HTTPS with a host,
-// no userinfo, query, or fragment. Private and self-hosted hosts are allowed.
 func ValidateEndpoint(endpoint string) error {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
@@ -99,7 +92,6 @@ func ValidateEndpoint(endpoint string) error {
 	return nil
 }
 
-// Validate verifies the fields required to connect to the configured destination.
 func (c Configuration) Validate(requireSecret bool) error {
 	c = c.Normalized()
 	if c.Name == "" {
@@ -123,9 +115,6 @@ func (c Configuration) Validate(requireSecret bool) error {
 	return nil
 }
 
-// ConnectionFieldsEqual reports whether two configurations address the same
-// service the same way. A change in any of these fields means a stored secret
-// may no longer be combined with the configuration.
 func ConnectionFieldsEqual(a, b Configuration) bool {
 	a, b = a.Normalized(), b.Normalized()
 	return a.Endpoint == b.Endpoint &&
@@ -136,7 +125,6 @@ func ConnectionFieldsEqual(a, b Configuration) bool {
 		a.ForcePathStyle == b.ForcePathStyle
 }
 
-// EndpointURL returns the normalized endpoint URL, applying UseSSL to custom endpoints.
 func (c Configuration) EndpointURL() string {
 	endpoint := strings.TrimSpace(c.Endpoint)
 	if endpoint == "" {
@@ -147,7 +135,6 @@ func (c Configuration) EndpointURL() string {
 	return scheme + strings.TrimRight(endpoint, "/")
 }
 
-// RusticEnvironment builds the environment used by Rustic's OpenDAL S3 backend.
 func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 	c = c.Normalized()
 	repositoryParts := append([]string{"/", c.Prefix}, rootParts...)
@@ -174,7 +161,6 @@ func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 	return environment
 }
 
-// TestConnection verifies upload, download, and delete access for a destination.
 func TestConnection(ctx context.Context, configuration Configuration) (err error) {
 	configuration = configuration.Normalized()
 	if validateErr := configuration.Validate(true); validateErr != nil {
@@ -214,7 +200,6 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 	return nil
 }
 
-// CheckRepository reads only the config and, when supplied, one snapshot object.
 func CheckRepository(ctx context.Context, configuration Configuration, root, snapshotID string) (types.BackupRepositoryObservation, error) {
 	configuration = configuration.Normalized()
 	if err := configuration.Validate(true); err != nil {
@@ -261,7 +246,6 @@ func checkBackupObject(ctx context.Context, client *awss3.Client, bucket, key st
 	return object.Body.Close()
 }
 
-// ListRepositoryRoots returns the first-level prefixes below root, one per Arcane instance.
 func ListRepositoryRoots(ctx context.Context, configuration Configuration, root string) ([]string, error) {
 	configuration = configuration.Normalized()
 	if err := configuration.Validate(true); err != nil {

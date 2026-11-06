@@ -1,4 +1,3 @@
-// Package schedule provides reusable schedule validation.
 package schedule
 
 import (
@@ -26,7 +25,6 @@ func Normalize(value, subject string) (string, error) {
 	return normalized, nil
 }
 
-// Or returns spec when it parses and fallback otherwise; job names the schedule in the warning.
 func Or(ctx context.Context, spec, fallback, job string) string {
 	spec = cmp.Or(spec, fallback)
 	if _, err := cron.ParseStandard(spec); err != nil {

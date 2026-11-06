@@ -8,7 +8,6 @@
 	import WebhookFormSheet from '#lib/components/sheets/webhook-form-sheet.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
-	import { GlobeIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -94,7 +93,6 @@
 <SettingsPageLayout
 	title={m.webhook_page_title()}
 	description={m.webhook_page_description()}
-	icon={GlobeIcon}
 	pageType="management"
 	{actionButtons}
 >

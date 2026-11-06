@@ -104,8 +104,6 @@ func writeNormalizationError(api huma.API, ctx huma.Context, status int, message
 	}
 }
 
-// Read the original request with the same limits Huma applies.
-// It closes the original reader and reports errors with Huma HTTP status codes.
 func readNormalizationBody(ctx huma.Context) ([]byte, error) {
 	op := ctx.Operation()
 	if op.BodyReadTimeout != 0 {

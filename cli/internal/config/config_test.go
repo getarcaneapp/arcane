@@ -58,7 +58,6 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 	require.Equal(t, "info", cfg.LogLevel,
 		"LogLevel=%q, want %q", cfg.LogLevel, "info")
 
-	// Ensure callers cannot mutate cached config state.
 	cfg.ServerURL = "https://mutated.invalid"
 	cfg2, err := Load()
 

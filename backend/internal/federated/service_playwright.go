@@ -16,8 +16,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/user"
 )
 
-// CreatePlaywrightCredential creates the service identity, credential, and role
-// assignment required by the federated-auth end-to-end flow in one transaction.
 func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Context, issuerURL string, audiences []string, subject, roleID string, tokenTTLSeconds int) (string, error) {
 	if strings.TrimSpace(issuerURL) == "" || strings.TrimSpace(subject) == "" || strings.TrimSpace(roleID) == "" || len(audiences) == 0 {
 		return "", errors.New("issuerUrl, subject, roleId, and audiences are required")

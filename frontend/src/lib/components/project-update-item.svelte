@@ -169,13 +169,18 @@
 	{/if}
 {/snippet}
 
-<UpdateStatusPopover bind:open={isOpen} interactive={canCheck} directTrigger={directCheckFromTrigger} contentWidth="xl">
+<UpdateStatusPopover
+	bind:open={isOpen}
+	label={indicatorLabel}
+	interactive={canCheck}
+	directTrigger={directCheckFromTrigger}
+	contentWidth="xl"
+>
 	{#snippet trigger({ props })}
 		{#if checking}
 			<span
 				{...props}
 				class="inline-flex size-4 items-center justify-center align-middle {className}"
-				aria-label={indicatorLabel}
 				data-testid="project-update-trigger"
 			>
 				<Spinner tone="info" class="size-4" />
@@ -193,7 +198,7 @@
 				data-testid="project-update-trigger"
 			>
 				{#if status === 'error'}
-					<AlertIcon class="size-4 text-destructive transition-colors group-hover:text-info" />
+					<AlertIcon class="size-4 text-destructive transition-colors group-hover:text-info" aria-hidden="true" />
 				{:else}
 					<span class="flex size-4 items-center justify-center text-muted-foreground transition-colors group-hover:text-info">
 						<UncheckedRingIcon />
@@ -204,17 +209,16 @@
 			<span
 				{...props}
 				class="inline-flex size-4 items-center justify-center align-middle {className}"
-				aria-label={indicatorLabel}
 				data-testid="project-update-trigger"
 			>
 				{#if status === 'error'}
-					<AlertIcon class="size-4 text-destructive" />
+					<AlertIcon class="size-4 text-destructive" aria-hidden="true" />
 				{:else if status === 'up_to_date'}
-					<VerifiedCheckIcon class="size-4 text-success" />
+					<VerifiedCheckIcon class="size-4 text-success" aria-hidden="true" />
 				{:else if status === 'has_update'}
-					<CircleArrowUpIcon class="size-4 text-info" />
+					<CircleArrowUpIcon class="size-4 text-info" aria-hidden="true" />
 				{:else if status === 'not_pulled'}
-					<DownloadIcon class="size-4 text-info" />
+					<DownloadIcon class="size-4 text-info" aria-hidden="true" />
 				{:else}
 					<div class="flex size-4 items-center justify-center text-muted-foreground opacity-60">
 						<UncheckedRingIcon />

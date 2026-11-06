@@ -52,8 +52,6 @@ type (
 )
 
 const (
-	// AppContextKey is the context key under which the CLI's AppContext is stored;
-	// set it with context.WithValue and read it back with From.
 	AppContextKey  contextKey = "arcane_app_context"
 	OutputModeText OutputMode = "text"
 	OutputModeJSON OutputMode = "json"
@@ -141,7 +139,6 @@ func (a *AppContext) AllEnvironments() bool {
 	return a != nil && a.EnvOverride == "" && a.selectedEnv == ""
 }
 
-// SelectEnvironment pins subsequent requests without changing persisted configuration.
 func (a *AppContext) SelectEnvironment(id string) {
 	a.selectedEnv = id
 	if a.client != nil {
@@ -149,7 +146,6 @@ func (a *AppContext) SelectEnvironment(id string) {
 	}
 }
 
-// Environments loads the complete visible, enabled environment list once per invocation.
 func (a *AppContext) Environments(ctx context.Context) ([]types.Environment, error) {
 	a.environmentsOnce.Do(func() {
 		c, err := a.Client()

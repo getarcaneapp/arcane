@@ -25,12 +25,10 @@ type (
 	}
 )
 
-// IsInteractive reports whether stdin is a terminal.
 func IsInteractive() bool {
 	return term.IsTerminal(os.Stdin.Fd())
 }
 
-// Select prompts the user to select from a list of options and returns the zero-based index.
 func Select(label string, options []string) (int, error) {
 	if len(options) == 0 {
 		return -1, fmt.Errorf("no %s options available", label)

@@ -36,17 +36,14 @@ func TestLister_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T
 		}
 	}
 
-	// nil = no restriction: every non-hidden environment is returned.
 	all, _, err := lister.ListEnvironmentsPaginated(ctx, newParams(""), nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"0", "env-a", "env-b"}, environmentIDs(all))
 
-	// A non-nil allow-list restricts the result on the DB path.
 	scoped, _, err := lister.ListEnvironmentsPaginated(ctx, newParams(""), []string{"env-a"})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"env-a"}, environmentIDs(scoped))
 
-	// The runtime-filter path (type filter) honors the allow-list too.
 	scopedTyped, _, err := lister.ListEnvironmentsPaginated(ctx, newParams("agent"), []string{"env-a"})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"env-a"}, environmentIDs(scopedTyped))
@@ -131,7 +128,6 @@ func TestLister_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
 	}{
 		{name: "agent", typeFilter: "agent", wantIDs: []string{"env-agent"}},
 		{name: "grpc", typeFilter: "grpc", wantIDs: []string{"env-grpc"}},
-		// Disconnected agents classify by the transport they last used.
 		{name: "websocket", typeFilter: "websocket", wantIDs: []string{"env-websocket", "env-last-ws"}},
 		{name: "multiple", typeFilter: "agent,grpc", wantIDs: []string{"env-agent", "env-grpc"}},
 	}

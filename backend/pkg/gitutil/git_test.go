@@ -29,10 +29,6 @@ type (
 	}
 )
 
-// Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
-// go-git's default UnsupportedCapabilities strips them and clones fail with
-// "invalid reset option: object not found" (#3168).
-
 func TestInitAllowsMultiAckCapabilities(t *testing.T) {
 	assert.False(t, len(transport.UnsupportedCapabilities) != 1 || transport.UnsupportedCapabilities[0] != capability.ThinPack,
 		"expected UnsupportedCapabilities to contain only thin-pack, got %v", transport.UnsupportedCapabilities)
@@ -278,7 +274,6 @@ func TestAddHostKey(t *testing.T) {
 		tmpDir := t.TempDir()
 		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 
-		// Generate a test key
 		key := generateTestPublicKey(t)
 
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
@@ -289,7 +284,6 @@ func TestAddHostKey(t *testing.T) {
 		require.NoError(t, err,
 			"unexpected error: %v", err)
 
-		// Verify file was created and contains content
 		content, err := os.ReadFile(knownHostsPath)
 
 		require.NoError(t, err,
@@ -310,7 +304,6 @@ func TestAddHostKey(t *testing.T) {
 		var wg sync.WaitGroup
 		errChan := make(chan error, 10)
 
-		// Simulate concurrent writes
 		for i := range 10 {
 			wg.Add(1)
 			go func(idx int) {
@@ -329,7 +322,6 @@ func TestAddHostKey(t *testing.T) {
 			assert.Failf(t, "unexpected failure", "concurrent write error: %v", err)
 		}
 
-		// Verify file exists and has content
 		content, err := os.ReadFile(knownHostsPath)
 
 		require.NoError(t, err,
@@ -356,7 +348,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 			"expected non-nil callback")
 		{
 
-			// Verify directory was created
 			_, statErr := os.Stat(filepath.Dir(knownHostsPath))
 			assert.False(t, os.IsNotExist(statErr),
 				"expected known_hosts directory to be created")
@@ -382,7 +373,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		require.NoError(t, err,
 			"callback returned error: %v", err)
 
-		// Verify host was added to file
 		content, err := os.ReadFile(knownHostsPath)
 
 		require.NoError(t, err,
@@ -406,7 +396,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		key := generateTestPublicKey(t)
 		addr := &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 22}
 
-		// First call adds the key
 		err = callback("192.168.1.1:22", addr, key)
 
 		require.NoError(t, err,
@@ -436,13 +425,11 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		key2 := generateTestPublicKeyVariant(t)
 		addr := &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 22}
 
-		// First call adds key1
 		err = callback("192.168.1.1:22", addr, key1)
 
 		require.NoError(t, err,
 			"first callback returned error: %v", err)
 
-		// Second call with different key for same host should fail
 		err = callback("192.168.1.1:22", addr, key2)
 		if err == nil {
 			assert.Fail(t, "expected error for host key mismatch, got nil")
@@ -767,17 +754,13 @@ func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 	}
 }
 
-// generateTestPublicKey creates a test ED25519 public key for testing
 func generateTestPublicKey(t *testing.T) gossh.PublicKey {
 	t.Helper()
 
-	// Use a fixed ED25519 public key for deterministic tests
-	// This is a valid ED25519 public key format
 	pubKeyBytes := []byte{
 		0x00, 0x00, 0x00, 0x0b, // key type length (11)
 		's', 's', 'h', '-', 'e', 'd', '2', '5', '5', '1', '9', // "ssh-ed25519"
 		0x00, 0x00, 0x00, 0x20, // key length (32)
-		// 32 bytes of key data
 		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
 		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
@@ -792,7 +775,6 @@ func generateTestPublicKey(t *testing.T) gossh.PublicKey {
 	return key
 }
 
-// generateTestPrivateKeyPEM creates an OpenSSH-encoded ED25519 client key.
 func generateTestPrivateKeyPEM(t *testing.T) string {
 	t.Helper()
 
@@ -804,7 +786,6 @@ func generateTestPrivateKeyPEM(t *testing.T) string {
 	return string(pem.EncodeToMemory(block))
 }
 
-// generateTestPublicKeyVariant creates a different test ED25519 public key
 func generateTestPublicKeyVariant(t *testing.T) gossh.PublicKey {
 	t.Helper()
 
@@ -812,7 +793,6 @@ func generateTestPublicKeyVariant(t *testing.T) gossh.PublicKey {
 		0x00, 0x00, 0x00, 0x0b, // key type length (11)
 		's', 's', 'h', '-', 'e', 'd', '2', '5', '5', '1', '9', // "ssh-ed25519"
 		0x00, 0x00, 0x00, 0x20, // key length (32)
-		// 32 bytes of different key data
 		0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8,
 		0xF7, 0xF6, 0xF5, 0xF4, 0xF3, 0xF2, 0xF1, 0xF0,
 		0xEF, 0xEE, 0xED, 0xEC, 0xEB, 0xEA, 0xE9, 0xE8,

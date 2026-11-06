@@ -16,7 +16,6 @@ import (
 )
 
 func TestLoadEnvironment(t *testing.T) {
-	// Setup temp dirs
 	tmpDir := t.TempDir()
 	projectsDir := filepath.Join(tmpDir, "projects")
 	workdir := filepath.Join(projectsDir, "myproject")
@@ -24,12 +23,10 @@ func TestLoadEnvironment(t *testing.T) {
 	err := os.MkdirAll(workdir, fs.DirPerm)
 	require.NoError(t, err)
 
-	// Create .env.global
 	globalEnvContent := "GLOBAL_VAR=global_value\nSHARED_VAR=global_shared"
 	err = os.WriteFile(filepath.Join(projectsDir, ".env.global"), []byte(globalEnvContent), fs.FilePerm)
 	require.NoError(t, err)
 
-	// Create .env
 	projectEnvContent := "PROJECT_VAR=project_value\nSHARED_VAR=project_shared"
 	err = os.WriteFile(filepath.Join(workdir, ".env"), []byte(projectEnvContent), fs.FilePerm)
 	require.NoError(t, err)
@@ -41,12 +38,10 @@ func TestLoadEnvironment(t *testing.T) {
 		envMap, injectionVars, loadEnvironmentErr := loader.LoadEnvironment(ctx)
 		require.NoError(t, loadEnvironmentErr)
 
-		// Verify envMap (should contain all vars, project overrides global)
 		assert.Equal(t, "global_value", envMap["GLOBAL_VAR"])
 		assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
 		assert.Equal(t, "project_shared", envMap["SHARED_VAR"])
 
-		// Verify injectionVars (should ONLY contain global vars)
 		assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
 		assert.Equal(t, "global_shared", injectionVars["SHARED_VAR"])
 
@@ -61,16 +56,33 @@ func TestLoadEnvironment(t *testing.T) {
 		envMap, injectionVars, loadEnvironmentErr := loader.LoadEnvironment(ctx)
 		require.NoError(t, loadEnvironmentErr)
 
-		// Verify envMap
 		assert.Equal(t, "global_value", envMap["GLOBAL_VAR"])
 		assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
 		assert.Equal(t, "project_shared", envMap["SHARED_VAR"])
 
-		// Verify injectionVars (should contain both global and project vars)
 		assert.Equal(t, "global_value", injectionVars["GLOBAL_VAR"])
 		assert.Equal(t, "project_value", injectionVars["PROJECT_VAR"])
 		assert.Equal(t, "project_shared", injectionVars["SHARED_VAR"])
 	})
+}
+
+func TestLoadEnvironment_SkipsInjectionForNoInjectGlobalKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectsDir := filepath.Join(tmpDir, "projects")
+	workdir := filepath.Join(projectsDir, "myproject")
+	require.NoError(t, os.MkdirAll(workdir, fs.DirPerm))
+	globalEnvPath := filepath.Join(projectsDir, GlobalEnvFileName)
+	require.NoError(t, os.WriteFile(globalEnvPath, []byte("# Global\n# arcane:noinject DB_PASSWORD\n\nPUID=1000\nDB_PASSWORD=secret\n"), fs.FilePerm))
+
+	envMap, injectionVars, err := NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "secret", envMap["DB_PASSWORD"])
+	assert.Equal(t, EnvMap{"PUID": "1000"}, injectionVars)
+
+	require.NoError(t, os.WriteFile(globalEnvPath, []byte("PUID=1000\n# arcane:noinject DB_PASSWORD\nDB_PASSWORD=secret\n"), fs.FilePerm))
+	_, injectionVars, err = NewEnvLoader(projectsDir, workdir, false).LoadEnvironment(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, EnvMap{"PUID": "1000", "DB_PASSWORD": "secret"}, injectionVars)
 }
 
 func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {

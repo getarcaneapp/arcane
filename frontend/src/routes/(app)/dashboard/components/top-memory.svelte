@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
+	import ResourceName from '#lib/components/resource-name.svelte';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
@@ -49,11 +50,11 @@
 						})}
 						class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md hover-glow px-2 py-2.5"
 					>
-						<span class="min-w-0 space-y-1">
-							<span class="block truncate text-sm font-medium">{getContainerDisplayName(container)}</span>
+						<span class="flex min-w-0 flex-col items-start gap-1">
+							<ResourceName name={getContainerDisplayName(container)} class="text-sm font-medium" />
 							<EnvironmentCell value={container.environmentId} />
 						</span>
-						<span class="text-sm whitespace-nowrap text-muted-foreground tabular-nums">
+						<span class="text-right text-sm whitespace-nowrap text-muted-foreground tabular-nums">
 							{bytes.format(container.resourceSample?.memoryUsageBytes ?? 0, { unitSeparator: ' ' }) ?? '-'}
 						</span>
 					</a>

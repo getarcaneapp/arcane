@@ -1,6 +1,5 @@
 import type { GrammarState, HighlighterCore, ThemedToken } from 'shiki/core';
 
-// Add the languages you need. Each one loads the first time it is used.
 const languages = {
 	bash: () => import('shiki/langs/shellscript.mjs'),
 	css: () => import('shiki/langs/css.mjs'),
@@ -122,7 +121,6 @@ export type HighlightedToken = {
 	class?: string;
 };
 
-// A line of plain text, or the highlighted tokens of a line.
 export type HighlightedLine = string | HighlightedToken[];
 
 const tokenColorClasses: Record<string, string> = {
@@ -170,8 +168,6 @@ function toHighlightedLine(tokens: ThemedToken[]): HighlightedToken[] {
 
 export type Highlighter = NonNullable<Awaited<ReturnType<typeof loadHighlighter>>>;
 
-// Loads a language and returns a highlighter for it, or null for a language
-// that is not listed.
 export async function loadHighlighter(language: string) {
 	const lang = getLanguage(language);
 
@@ -208,7 +204,6 @@ export async function loadHighlighter(language: string) {
 	};
 }
 
-// Returns the tokens of each line, or null for a language that is not listed.
 export async function highlightCode(code: string, language: string) {
 	const highlighter = await loadHighlighter(language);
 

@@ -3,7 +3,6 @@ package backup
 import "getarcane.dev/arcane/v3/internal/database"
 
 type (
-	// SystemBackupRecoveryConfig stores the encrypted recovery key; it must be reversible because Rustic needs the plaintext.
 	SystemBackupRecoveryConfig struct {
 		database.BaseModel
 
@@ -11,5 +10,4 @@ type (
 	}
 )
 
-// TableName is the recovery key table.
 func (SystemBackupRecoveryConfig) TableName() string { return "system_backup_recovery_config" }

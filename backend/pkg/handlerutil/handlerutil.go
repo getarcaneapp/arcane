@@ -23,24 +23,18 @@ import (
 )
 
 type (
-	// Out is the huma response envelope for endpoints returning base.ApiResponse[T].
-	// It replaces the per-endpoint `type XxxOutput struct { Body base.ApiResponse[T] }`
-	// wrappers; outputs carrying extra fields (headers, status) keep their own type.
 	Out[T any] struct {
 		Body types.ApiResponse[T]
 	}
 
-	// Page is the huma response envelope for endpoints returning base.Paginated[T].
 	Page[T any] struct {
 		Body types.Paginated[T]
 	}
 
-	// ActivityAppContext carries the app lifecycle context through handler registration.
 	ActivityAppContext struct {
 		ctx context.Context
 	}
 
-	// ProblemError is an RFC 9457 problem that also carries API error details such as the invalid field.
 	ProblemError struct {
 		*huma.ErrorModel
 
@@ -48,7 +42,6 @@ type (
 	}
 )
 
-// MessageOutput is a success response carrying a message and, when an activity tracks the work, its ID.
 func MessageOutput(message, activityID string) *Out[types.MessageResponse] {
 	return &Out[types.MessageResponse]{Body: types.ApiResponse[types.MessageResponse]{
 		Success: true,
@@ -59,17 +52,14 @@ func MessageOutput(message, activityID string) *Out[types.MessageResponse] {
 	}}
 }
 
-// NewActivityAppContext wraps the app lifecycle context for handler constructors.
 func NewActivityAppContext(ctx context.Context) ActivityAppContext {
 	return ActivityAppContext{ctx: ctx}
 }
 
-// Context returns the wrapped app lifecycle context.
 func (c ActivityAppContext) Context() context.Context {
 	return c.ctx
 }
 
-// PaginationParams converts query parameters to pagination.QueryParams.
 // A limit of -1 means "show all items" (no pagination).
 func PaginationParams(start, limit int, sortCol, sortDir, search string) pagination.QueryParams {
 	// limit = -1 means "show all" and 0 means "no pagination"; only invalid values default to 20
@@ -87,7 +77,6 @@ func PaginationParams(start, limit int, sortCol, sortDir, search string) paginat
 	}
 }
 
-// PaginationResponse converts the pagination package's response into the API response shape.
 func PaginationResponse(p pagination.Response) types.PaginationResponse {
 	return types.PaginationResponse{
 		TotalPages:      p.TotalPages,
@@ -99,7 +88,6 @@ func PaginationResponse(p pagination.Response) types.PaginationResponse {
 	}
 }
 
-// RequireUser returns the authenticated user from the request context or a 401 error.
 func RequireUser(ctx context.Context) (*types.Actor, error) {
 	user, exists := CurrentUserFromContext(ctx)
 	if !exists || user == nil {
@@ -108,7 +96,6 @@ func RequireUser(ctx context.Context) (*types.Actor, error) {
 	return user, nil
 }
 
-// APIError converts a service error into a problem response that keeps its API error details.
 func APIError(err error) huma.StatusError {
 	apiErr := common.ToAPIError(err)
 	return &ProblemError{
@@ -121,7 +108,6 @@ func APIError(err error) huma.StatusError {
 	}
 }
 
-// Error400BadRequestWithType returns RFC 9457 problem details with a stable type and the error's API details.
 func Error400BadRequestWithType(err error, problemType string) huma.StatusError {
 	return &ProblemError{
 		ErrorModel: &huma.ErrorModel{
@@ -134,7 +120,6 @@ func Error400BadRequestWithType(err error, problemType string) huma.StatusError 
 	}
 }
 
-// ParseMultipartJSONPart decodes one required JSON-valued multipart field.
 func ParseMultipartJSONPart[T any](form multipart.Form, partName string) (T, error) {
 	var result T
 	values := form.Value[partName]
@@ -147,7 +132,6 @@ func ParseMultipartJSONPart[T any](form multipart.Form, partName string) (T, err
 	return result, nil
 }
 
-// ReadWorkspaceUploads reads and validates text files from a workspace multipart request.
 func ReadWorkspaceUploads(form multipart.Form, maxFileSizeBytes int64) (map[int][]byte, error) {
 	headers := form.File["files"]
 	uploads := make(map[int][]byte, len(headers))
@@ -176,7 +160,6 @@ func ReadWorkspaceUploads(form multipart.Form, maxFileSizeBytes int64) (map[int]
 	return uploads, nil
 }
 
-// WorkspaceMultipartRequestBody describes the shared workspace multipart schema.
 func WorkspaceMultipartRequestBody(manifestDescription string) *huma.RequestBody {
 	return &huma.RequestBody{Content: map[string]*huma.MediaType{"multipart/form-data": {Schema: &huma.Schema{Type: "object", Properties: map[string]*huma.Schema{
 		"manifest": {Type: "string", Description: manifestDescription},
@@ -229,7 +212,6 @@ func DefaultOperationSecurity() []map[string][]string {
 	}
 }
 
-// SessionMetaFromContext builds the session metadata recorded on login.
 func SessionMetaFromContext(ctx context.Context, userAgent string) types.SessionMeta {
 	return types.SessionMeta{
 		UserAgent: userAgent,
@@ -237,8 +219,6 @@ func SessionMetaFromContext(ctx context.Context, userAgent string) types.Session
 	}
 }
 
-// DownloadResponse streams an attachment and closes its reader when streaming
-// ends. A negative size means unknown and omits Content-Length.
 func DownloadResponse(reader io.ReadCloser, size int64, filename string) *huma.StreamResponse {
 	return &huma.StreamResponse{Body: func(ctx huma.Context) {
 		defer func() { _ = reader.Close() }()
@@ -251,7 +231,6 @@ func DownloadResponse(reader io.ReadCloser, size int64, filename string) *huma.S
 	}}
 }
 
-// FeatureDisabledError identifies a disabled runtime feature in problem details.
 func FeatureDisabledError(id types.FeatureID) *types.FeatureDisabledError {
 	return &types.FeatureDisabledError{
 		Status:  http.StatusForbidden,

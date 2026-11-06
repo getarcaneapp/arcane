@@ -6,12 +6,13 @@
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import RiskGauge from '#lib/components/vulnerability/risk-gauge.svelte';
 	import RiskTrendChart from '#lib/components/vulnerability/risk-trend-chart.svelte';
 	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';
-	import { AlertTriangleIcon, ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ArrowDownIcon, ArrowUpIcon, InfoIcon, SearchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { RiskDrivers, RiskImage } from '#lib/types/vulnerability.js';
@@ -39,7 +40,6 @@
 	const trendPoints = $derived(overview.trend.slice(-Number(trendDays)));
 	const topFindings = $derived(findingRank === 'risk' ? overview.riskiestFindings : overview.prevalentFindings);
 	const severitySegments = $derived(getSeveritySegments(overview.summary));
-	// One hue stepped by exposure: running findings carry full weight, unused the least.
 	const exposureSegments = $derived<ShareBarSegment[]>([
 		{ key: 'running', label: m.security_exposure_running(), count: overview.exposure.running, barClass: 'bg-primary' },
 		{ key: 'stopped', label: m.security_image_stopped(), count: overview.exposure.stopped, barClass: 'bg-primary/50' },
@@ -59,10 +59,8 @@
 		key: keyof RiskDrivers;
 		label: string;
 		help: string;
-		// Worsening drivers show a week-over-week delta; the rest show their denominator.
 		trackDelta: boolean;
 		context?: string;
-		// Threat-data counters are unavailable, not zero, until the feeds have synced.
 		unavailable?: boolean;
 	};
 
@@ -153,7 +151,7 @@
 {/snippet}
 
 {#if overview.failedEnvironments.length > 0}
-	<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+	<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<Alert.Description>
 				{m.all_environments_unavailable({
@@ -162,13 +160,13 @@
 						.join(', ')
 				})}
 			</Alert.Description>
-			<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={onRetry} />
+			<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={onRetry} />
 		</div>
 	</Alert.Root>
 {/if}
 
 {#if overview.excludedEnvironments.length > 0}
-	<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon} class="mt-3">
+	<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon} class="mt-3">
 		<Alert.Description>
 			{m.all_environments_excluded({
 				count: overview.excludedEnvironments.length,
@@ -179,10 +177,7 @@
 {/if}
 
 {#if overview.drivers.imagesScanned === 0}
-	<div class="flex flex-col items-center gap-3 py-16 text-center">
-		<ScanIcon class="size-10 text-muted-foreground/50" />
-		<p class="text-sm text-muted-foreground">{m.security_overview_empty()}</p>
-	</div>
+	<EmptyState icon={SearchIcon} title={m.security_not_scanned_title()} description={m.security_not_scanned_description()} />
 {:else}
 	<div class="space-y-12 py-6">
 		<section class="grid items-center gap-10 lg:grid-cols-4 lg:gap-12">

@@ -68,7 +68,7 @@ func TestTunnelMessageToManagerProto_UnsupportedType(t *testing.T) {
 
 func TestGRPCAgentTunnelConn_ReceiveSkipsUnknownPayload(t *testing.T) {
 	stream := &scriptedAgentStream{ctx: t.Context(), msgs: []*tunnelpb.ManagerMessage{
-		{}, // nil payload, decodes as unknown
+		{},
 		tunnelpb.ManagerMessage_builder{
 			RegisterResponse: tunnelpb.RegisterResponse_builder{Id: "reg-2"}.Build(),
 		}.Build(),

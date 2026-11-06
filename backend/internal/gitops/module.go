@@ -1,4 +1,3 @@
-// Package gitops owns GitOps synchronization, scheduling, persistence, and routes.
 package gitops
 
 import (
@@ -37,7 +36,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterGitOpsSyncs(api, m.service)
 }
 
-// RegisterGitOpsSyncs registers all GitOps sync endpoints.
 func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	h := &GitOpsSyncHandler{syncService: syncService}
 

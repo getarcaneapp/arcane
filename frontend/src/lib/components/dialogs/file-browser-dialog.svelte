@@ -17,22 +17,10 @@
 		repositoryId: string;
 		branch: string;
 		onSelect: (filePath: string) => void;
-		// title/description override the dialog heading. Defaults are generic so the
-		// component carries no domain assumption (compose vs script vs anything else).
 		title?: string;
 		description?: string;
-		// rootPath scopes browsing to a subdirectory of the repo. Navigation cannot
-		// escape this root, the breadcrumb hides everything above it, and the
-		// onSelect callback receives a path relative to this root. Use this when
-		// the selectable file must live inside a specific subtree (e.g. a script
-		// must live inside the sync directory so the deploy-time runner can find
-		// it). Default empty = full repo.
 		rootPath?: string;
 		fileFilter?: (file: FileTreeNode) => boolean;
-		// Optional UI decorations rendered per file (badge) and beneath the
-		// list (hint). Callers compose these to add domain-specific affordances
-		// (e.g. a "COMPOSE" badge + an explanatory hint) without the dialog
-		// knowing anything about the domain.
 		fileBadge?: Snippet<[FileTreeNode]>;
 		footerHint?: Snippet;
 	};
@@ -50,9 +38,6 @@
 		footerHint
 	}: FileBrowserDialogProps = $props();
 
-	// Internal navigation is stored as a path relative to the dialog's root, so the
-	// query key and breadcrumb stay consistent the moment the dialog opens — there's
-	// no race between "set currentPath" and "query enables when open=true".
 	let userPath = $state('');
 	const currentPath = $derived(joinPath(rootPath, userPath));
 	const pathSegments = $derived(userPath.split('/').filter(Boolean));
@@ -112,8 +97,6 @@
 	contentClass="max-w-2xl"
 >
 	<div class="space-y-4">
-		<!-- Breadcrumb navigation. "Root" is the dialog's configured root (or the
-		     repo root when no rootPath was passed). Navigation stops there. -->
 		<div class="flex items-center gap-2 text-sm">
 			<Button variant="ghost" size="sm" onclick={() => (userPath = '')} disabled={atRoot} class="h-8">
 				<FolderOpenIcon class="size-4" />
@@ -127,7 +110,6 @@
 			{/each}
 		</div>
 
-		<!-- File list -->
 		<div class="h-96 overflow-hidden rounded-md border">
 			<ScrollArea class="h-full">
 				{#if loading}

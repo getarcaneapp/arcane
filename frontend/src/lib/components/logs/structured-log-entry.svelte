@@ -1,6 +1,4 @@
 <script lang="ts">
-	// Dozzle reference: the compact structured-log summary and expandable details pattern
-	// here were informed by amir20/dozzle's ComplexLogItem.vue and LogDetails.vue.
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon, ArrowRightIcon, CheckIcon, CopyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -27,7 +25,6 @@
 
 	const SUMMARY_LIMIT = 6;
 
-	// Common field names used by various structured logging frameworks
 	const LEVEL_KEYS = ['level', 'severity', 'log.level', 'loglevel', 'lvl', 'levelname', 'priority'];
 	const MESSAGE_KEYS = ['message', 'msg', 'text', 'body', 'event', 'log', 'content'];
 	const TIMESTAMP_KEYS = ['timestamp', 'time', 'ts', '@timestamp', 'datetime', 'date', 'created', 'time_local'];
@@ -287,7 +284,7 @@
 					<button
 						{...props}
 						type="button"
-						class="flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+						class="flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring"
 					>
 						{@render entrySummary(true)}
 

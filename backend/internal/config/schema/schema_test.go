@@ -70,6 +70,7 @@ var (
 	expectedSettingKeys = []string{
 		"activityHistoryMaxEntries",
 		"activityHistoryRetentionDays",
+		"agentTunnelStreamWindowMb",
 		"allEnvironmentsLimit",
 		"analyticsEnabled",
 		"apnsEnabled",
@@ -118,6 +119,7 @@ var (
 		"githubToken",
 		"gpuMonitoringEnabled",
 		"gpuType",
+		"http2ReceiveWindowMb",
 		"httpClientTimeout",
 		"imageAutoPatchEnabled",
 		"imageAutoPatchInterval",

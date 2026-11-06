@@ -12,6 +12,8 @@ export interface ImageUpdateInfo {
 	latestVersion: string;
 	currentDigest: string;
 	latestDigest: string;
+	currentCreated?: string;
+	latestCreated?: string;
 	error: string;
 	authMethod?: 'none' | 'anonymous' | 'credential' | 'unknown';
 	authUsername?: string;

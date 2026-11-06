@@ -137,7 +137,6 @@ func NewTunnelRegistry() *TunnelRegistry {
 	}
 }
 
-// Active returns the environment's tunnel when its connection is still open.
 func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	if tunnel, _ := r.Get(envID).Get(); tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		return mo.Some(tunnel)
@@ -145,7 +144,6 @@ func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	return mo.None[*AgentTunnel]()
 }
 
-// WaitForActive waits until the environment has an open tunnel or timeout elapses.
 func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
 	if tunnel := r.Active(envID); tunnel.IsPresent() {
 		return tunnel
@@ -353,7 +351,6 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 	return removed
 }
 
-// Stop drains registry mutations and closes active tunnels.
 func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	r.stopped.Store(true)
 	fallback := r.tunnels.Values()
@@ -369,25 +366,51 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	return err
 }
 
-// ObserveAgents reports connected agents by transport through the arcane.agents gauge.
 func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration, error) {
-	gauge, err := meter.Int64ObservableGauge("arcane.agents",
+	gauge, gaugeErr := meter.Int64ObservableGauge("arcane.agents",
 		metric.WithDescription("Connected agents by transport"),
 		metric.WithUnit("{agent}"),
 	)
-	if err != nil {
+	traffic, trafficErr := meter.Int64ObservableCounter("arcane.agent.tunnel.io",
+		metric.WithDescription("Bytes the manager received from and transmitted to an agent in its current tunnel session"),
+		metric.WithUnit("By"),
+	)
+	rtt, rttErr := meter.Float64ObservableGauge("arcane.agent.tunnel.rtt",
+		metric.WithDescription("Last keepalive round trip to an agent"),
+		metric.WithUnit("s"),
+	)
+	streams, streamsErr := meter.Int64ObservableGauge("arcane.agent.tunnel.streams",
+		metric.WithDescription("Open multiplexed streams on an agent tunnel"),
+		metric.WithUnit("{stream}"),
+	)
+	if err := errors.Join(gaugeErr, trafficErr, rttErr, streamsErr); err != nil {
 		return nil, err
 	}
 	return meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		counts := map[string]int64{TransportWebSocket: 0, TransportGRPC: 0}
 		for _, tunnel := range r.tunnels.Values() {
-			if tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
-				counts[tunnel.Conn.Transport()]++
+			if tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+				continue
+			}
+			counts[tunnel.Conn.Transport()]++
+			tunnelAttrs := metric.WithAttributes(
+				attribute.String("arcane.environment.id", tunnel.EnvironmentID),
+				attribute.String("host.name", kit.FromPtr(tunnel.MetadataSnapshot().Host).Hostname),
+				attribute.String("arcane.agent.transport", tunnel.Conn.Transport()),
+			)
+			received, transmitted := tunnel.mux.traffic()
+			o.ObserveInt64(traffic, received, tunnelAttrs, metric.WithAttributes(attribute.String("network.io.direction", "receive")))
+			o.ObserveInt64(traffic, transmitted, tunnelAttrs, metric.WithAttributes(attribute.String("network.io.direction", "transmit")))
+			if last := tunnel.mux.rtt.Load(); last > 0 {
+				o.ObserveFloat64(rtt, time.Duration(last).Seconds(), tunnelAttrs)
+			}
+			if session := tunnel.mux.session.Load(); session != nil {
+				o.ObserveInt64(streams, int64(session.NumStreams()), tunnelAttrs)
 			}
 		}
 		for transport, count := range counts {
 			o.ObserveInt64(gauge, count, metric.WithAttributes(attribute.String("arcane.agent.transport", transport)))
 		}
 		return nil
-	}, gauge)
+	}, gauge, traffic, rtt, streams)
 }

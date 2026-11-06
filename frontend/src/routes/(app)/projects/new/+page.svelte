@@ -48,7 +48,7 @@
 		hasTemplateEditorErrors,
 		validateTemplateEditorForm
 	} from '#lib/utils/template-editor.js';
-	import { globalVariablesToMap, type TemplateAuthoringResource } from '#lib/utils/template-load.js';
+	import { globalVariablesToMap, templateLoadNotices } from '#lib/utils/template-load.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
 		planWorkspaceFileMove,
@@ -137,19 +137,7 @@
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 	const canUseTemplates = $derived(data.templatePermissions.canListTemplates && data.templatePermissions.canReadTemplates);
-	const resourceLabels: Record<TemplateAuthoringResource, () => string> = {
-		defaultTemplates: m.templates_defaults_title,
-		templates: m.templates_title,
-		globalVariables: m.variables_title
-	};
-	const templateLoadNotices = $derived.by(() => {
-		const notices: string[] = data.templateLoadErrors.map((item) =>
-			m.compose_optional_resource_load_failed({ resource: resourceLabels[item.resource](), message: item.message })
-		);
-		if (data.selectedTemplateForbidden) notices.push(m.templates_load_forbidden());
-		if (data.selectedTemplateError) notices.push(`${m.templates_load_failed()}: ${data.selectedTemplateError}`);
-		return notices;
-	});
+	const loadNotices = $derived(templateLoadNotices(data));
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
 	const newProjectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
@@ -396,7 +384,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					href="/projects"
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
@@ -474,11 +461,11 @@
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
 
-				{#if templateLoadNotices.length > 0}
+				{#if loadNotices.length > 0}
 					<Alert.Root variant="warning" size="sm">
 						<AlertIcon class="size-4" />
 						<Alert.Description>
-							{#each templateLoadNotices as notice (notice)}
+							{#each loadNotices as notice (notice)}
 								<p>{notice}</p>
 							{/each}
 						</Alert.Description>

@@ -14,8 +14,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterOidc registers all OIDC authentication endpoints (plus the OIDC
-// group → role mapping CRUD) using Huma.
 func RegisterOidc(
 	api huma.API,
 	authService *auth.AuthService,
@@ -86,8 +84,6 @@ func RegisterOidc(
 		Tags:        []string{"OIDC"},
 		Security:    []map[string][]string{},
 	}, h.ExchangeDeviceToken)
-
-	// --- OIDC role mapping endpoints ---
 
 	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
 		OperationID: "list-oidc-role-mappings",

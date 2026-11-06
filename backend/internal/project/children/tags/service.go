@@ -1,5 +1,3 @@
-// Package tags owns project tag rules: UI and Compose sources, colors,
-// per-project limits and the effective tag view.
 package tags
 
 import (
@@ -16,8 +14,6 @@ import (
 )
 
 type (
-	// Store reads and writes one project's tag assignments inside the caller's
-	// transaction.
 	Store interface {
 		CountTag(projectID, name string, source types.ProjectTagSource) (int64, error)
 		CountSource(projectID string, source types.ProjectTagSource) (int64, error)
@@ -35,10 +31,8 @@ type (
 	}
 )
 
-// ErrComposeTagReadOnly rejects UI edits of a tag the Compose file owns.
 var ErrComposeTagReadOnly = errors.New("tag is defined in Compose and can only be changed through x-arcane metadata")
 
-// NormalizeUpdate validates a UI tag change; detached tags keep the neutral color.
 func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (string, types.ProjectTagColor, error) {
 	normalized, err := projects.NormalizeProjectTag(name)
 	if err != nil {
@@ -54,8 +48,6 @@ func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (s
 	return normalized, normalizedColor, nil
 }
 
-// ApplyUpdate attaches or detaches a normalized UI tag. Compose-owned names are
-// read-only, attaching is idempotent and UI tags are capped per project.
 func ApplyUpdate(store Store, projectID string, update TagUpdate) error {
 	composeCount, err := store.CountTag(projectID, update.Name, types.ProjectTagSourceCompose)
 	if err != nil {
@@ -102,7 +94,6 @@ func ApplyUpdate(store Store, projectID string, update TagUpdate) error {
 	return nil
 }
 
-// ReplaceCompose replaces a project's Compose-owned tags with normalized ones.
 func ReplaceCompose(store Store, projectID string, normalized []types.ProjectTagOption) error {
 	if err := store.DeleteSource(projectID, types.ProjectTagSourceCompose); err != nil {
 		return fmt.Errorf("clear Compose project tags: %w", err)
@@ -125,7 +116,6 @@ func ReplaceCompose(store Store, projectID string, normalized []types.ProjectTag
 	return nil
 }
 
-// AttachInitial attaches the UI tags chosen when a project is created.
 func AttachInitial(store Store, projectID string, uiTags []string, colors map[string]types.ProjectTagColor) error {
 	if len(uiTags) == 0 {
 		return nil
@@ -154,8 +144,6 @@ func AttachInitial(store Store, projectID string, uiTags []string, colors map[st
 	return nil
 }
 
-// Group merges stored assignments into effective tags per project, sorted by
-// name with the UI source first.
 func Group(rows []types.ProjectTagAssignment) map[string][]types.ProjectTag {
 	result := make(map[string][]types.ProjectTag)
 	for _, row := range rows {

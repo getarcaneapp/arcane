@@ -17,7 +17,6 @@
 		permission,
 		environments,
 		variant = 'toolbar',
-		size = 'default',
 		allOption = false,
 		readonly = false
 	}: {
@@ -25,7 +24,6 @@
 		permission?: string;
 		environments?: EnvironmentRef[];
 		variant?: 'toolbar' | 'field' | 'prefix';
-		size?: 'sm' | 'default';
 		allOption?: boolean;
 		readonly?: boolean;
 	} = $props();
@@ -84,7 +82,6 @@
 						{...props}
 						action="base"
 						tone={variant === 'prefix' ? 'ghost' : undefined}
-						size={variant === 'prefix' ? 'sm' : size}
 						title={current?.name}
 						class="shrink-0"
 					>
@@ -122,10 +119,10 @@
 		{/if}
 	</div>
 {:else if variant === 'prefix' && currentId}
-	<div class="flex shrink-0 items-center gap-2 pr-2 text-sm text-muted-foreground" title={environmentName(currentId)}>
-		<span class="inline-flex items-center gap-1.5">
+	<div class="flex min-w-0 items-center gap-2 pr-2 text-sm text-muted-foreground sm:shrink-0" title={environmentName(currentId)}>
+		<span class="inline-flex min-w-0 items-center gap-1.5">
 			{@render environmentGlyph(currentId)}
-			<span class="max-w-48 truncate">{environmentName(currentId)}</span>
+			<span class="max-w-24 truncate sm:max-w-48">{environmentName(currentId)}</span>
 		</span>
 		{@render prefixSeparator()}
 	</div>

@@ -11,7 +11,7 @@ import {
 	type ImageUpdateInfo,
 	type ImageUpdateSummary
 } from '../types/image.type';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 import { waitForDialogReady } from '../utils/playwright.util';
 
 test.describe('Management', () => {
@@ -206,7 +206,7 @@ test.describe('Management', () => {
 			await route.continue();
 		});
 
-		return { imageId, repository, pinnedReference, alternateReference };
+		return { imageId, repository, digest, alternateDigest, pinnedReference, alternateReference };
 	}
 
 	let realImages: ImageSummary[] = [];
@@ -260,18 +260,17 @@ test.describe('Management', () => {
 		});
 
 		test('should display full pinned references without enabling tag actions', async ({ page }) => {
-			const { imageId, repository, pinnedReference, alternateReference } =
+			const { imageId, repository, digest, alternateDigest, pinnedReference, alternateReference } =
 				await mockPinnedImageFlow(page);
 			await page.reload();
 
 			const row = page.getByRole('row').filter({
 				has: page.getByRole('link', { name: repository, exact: true })
 			});
-			await expect(row.getByText(pinnedReference, { exact: true })).toBeVisible();
-
-			const overflow = row.getByText('+1', { exact: true });
-			await overflow.hover();
-			await expect(page.getByText(alternateReference, { exact: true })).toBeVisible();
+			await expect(row.getByText('2.1.3', { exact: true })).toBeVisible();
+			await expect(row.getByText(digest, { exact: true })).toBeVisible();
+			await expect(row.getByText('stable', { exact: true })).toBeVisible();
+			await expect(row.getByText(alternateDigest, { exact: true })).toBeVisible();
 
 			const menu = await openRowActionsMenu(page, row);
 			await expect(menu.getByRole('menuitem', { name: 'Pull', exact: true })).toBeDisabled();
@@ -294,7 +293,7 @@ test.describe('Management', () => {
 
 			const firstRow = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.first();
 			const menu = await openRowActionsMenu(page, firstRow);
 			await menu.getByRole('menuitem', { name: 'Inspect' }).click();
@@ -400,10 +399,6 @@ test.describe('Management', () => {
 
 			const dialog = page.getByRole('dialog', { name: 'Remove image', exact: true });
 			await expect(dialog).toBeVisible();
-			// The post-remove refresh goes through queryClient.fetchQuery, which joins an
-			// already in-flight background refetch instead of issuing a new request, so
-			// asserting on fresh network calls here races under parallel load. The bulk
-			// removal tests below cover the refresh path with stubbed list/count endpoints.
 			await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
 			await expect.poll(() => removeRequestCount).toBe(1);
 
@@ -663,7 +658,6 @@ test.describe('Update checks', () => {
 			const checkAllResponse = await checkAllResponsePromise;
 			expect(checkAllResponse.ok()).toBeTruthy();
 
-			// Eventually a success or completion toast should appear
 			await expect(
 				page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 			).toBeVisible({ timeout: 60000 });
@@ -678,10 +672,8 @@ test.describe('Update checks', () => {
 
 			await navigateToImages(page);
 
-			// Wait for images table
 			await expect(page.getByRole('table')).toBeVisible();
 
-			// Find the first row's update status area (the Updates column)
 			const firstRow = page
 				.getByRole('row')
 				.filter({ has: page.getByTestId('image-update-trigger') })
@@ -788,7 +780,6 @@ test.describe('Update checks', () => {
 
 			const json = await readApiData<Record<string, ImageUpdateInfo>>(res, 'Check image updates');
 
-			// Each requested image should have a result
 			for (const ref of imageRefs) {
 				expect(json[ref]).toBeDefined();
 			}
@@ -808,10 +799,8 @@ test.describe('Update checks', () => {
 
 			const json = await readApiData<Record<string, ImageUpdateInfo>>(res, 'Check image updates');
 
-			// The Public ECR image should succeed.
 			expect(json[TEST_IMAGE_REFS.nginx]).toBeDefined();
 
-			// Invalid image should have an error
 			const invalidResult = json['invalid-registry.example.com/nonexistent:latest'];
 			expect(invalidResult.error).toBeTruthy();
 		});

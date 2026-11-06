@@ -1,4 +1,3 @@
-// Package project owns compose project persistence, lifecycle, discovery, and routes.
 package project
 
 import (
@@ -38,8 +37,6 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	RegisterProjects(api, m.service, m.activity, appCtx)
 }
 
-// RegisterProjects registers project management routes using Huma.
-// WebSocket and streaming endpoints live in api/ws.
 func RegisterProjects(api huma.API, projectService *ProjectService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
 	h := &ProjectHandler{
 		projectService:  projectService,

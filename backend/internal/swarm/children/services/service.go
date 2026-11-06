@@ -28,7 +28,6 @@ import (
 )
 
 type (
-	// Service manages swarm services.
 	Service struct {
 		docker        *dockerInternal.DockerClientService
 		ensureManager func(ctx context.Context) error
@@ -88,7 +87,6 @@ func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.Q
 	return s.PaginateSummaries(ctx, servicesResult.Items, params)
 }
 
-// PaginateSummaries summarizes services with their running nodes and networks, then paginates them.
 func (s *Service) PaginateSummaries(
 	ctx context.Context,
 	services []swarm.Service,
@@ -293,7 +291,6 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 		return nil, err
 	}
 
-	// Unmarshal spec from JSON
 	var spec swarm.ServiceSpec
 	// Docker encodes durations as integer nanoseconds.
 	if unmarshalErr := json.Unmarshal(req.Spec, &spec, jsonx.DurationNano); unmarshalErr != nil {
@@ -302,7 +299,6 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 
 	optionsPayload := kit.FromPtr(req.Options)
 
-	// Sanitize spec to avoid empty UID/GID in secret/config refs
 	sanitizeServiceSpec(&spec)
 
 	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceCreateResult, error) {
@@ -340,7 +336,6 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req types
 
 	optionsPayload := kit.FromPtr(req.Options)
 
-	// Sanitize spec to avoid empty UID/GID in secret/config refs
 	sanitizeServiceSpec(&req.Spec)
 
 	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceUpdateResult, error) {

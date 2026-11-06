@@ -9,7 +9,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterRoutes registers the volume workspace endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
 	basePath := "/environments/{id}/volumes/{volumeName}/workspace"
 	tag := "Volume Workspace"

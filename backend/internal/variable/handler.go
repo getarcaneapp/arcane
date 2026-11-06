@@ -11,8 +11,6 @@ import (
 )
 
 type (
-	// VariableHandler handles manager-level global variables and the separate
-	// agent-only materialization channel used to push effective values.
 	VariableHandler struct {
 		variableService *VariableService
 		proxyRemoteJSON handlerutil.RemoteJSONProxy
@@ -129,8 +127,6 @@ func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableS
 	}, nil
 }
 
-// GetMaterializedVariables returns the environment's materialized .env.global
-// content (local file for environment "0", proxied to the agent otherwise).
 func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.EnvVariable], error) {
 	if input.EnvironmentID != "0" {
 		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.EnvVariable]](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
@@ -153,8 +149,6 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *t
 	}, nil
 }
 
-// UpdateMaterializedVariables replaces the environment's materialized
-// .env.global content (local file for environment "0", proxied otherwise).
 func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.EnvironmentID != "0" {
 		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.MessageResponse]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)

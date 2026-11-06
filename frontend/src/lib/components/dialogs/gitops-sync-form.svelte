@@ -550,7 +550,7 @@
 						<RadioGroupPrimitive.Item
 							id={`sync-mode-${option.value}`}
 							value={option.value}
-							class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=checked]:bg-primary/15 data-[state=checked]:text-primary data-[state=checked]:ring-1 data-[state=checked]:ring-primary/30 dark:data-[state=checked]:text-primary-tint"
+							class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=checked]:bg-primary/15 data-[state=checked]:text-primary-text data-[state=checked]:ring-1 data-[state=checked]:ring-primary/30"
 						>
 							{option.label}
 						</RadioGroupPrimitive.Item>

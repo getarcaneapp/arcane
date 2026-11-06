@@ -13,24 +13,11 @@ import (
 )
 
 type (
-	// CSRFMiddleware rejects cross-origin state-changing requests to the cookie-backed
-	// API. It complements the SameSite=Lax session cookie with server-side origin
-	// verification (Sec-Fetch-Site, with an Origin/Host fallback) via the standard
-	// library's net/http.CrossOriginProtection.
-	//
-	// Header-credentialed requests (Bearer / X-API-Key / agent token) are not CSRF-able
-	// — a browser cannot attach those headers to a forged cross-origin request — so they
-	// are left untouched, as are non-browser clients that send no Origin header.
 	CSRFMiddleware struct {
 		cfg *config.Config
 	}
 )
 
-// publicCrossOriginBypassPaths are endpoints intentionally reachable cross-origin
-// by non-browser callers that authenticate with their OWN token carried in the
-// path or request body (not the session cookie). Cross-origin protection must not
-// block them, since a legitimate external caller (CI, webhook source) may attach
-// an Origin header. Patterns use net/http ServeMux syntax, matched against URL path.
 var publicCrossOriginBypassPaths = []string{
 	"/api/webhooks/trigger/{token}",
 	"/api/auth/federated/token",
@@ -41,8 +28,6 @@ func NewCSRFMiddleware(cfg *config.Config) *CSRFMiddleware {
 }
 
 func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
-	// Agent mode: skip. The agent only receives server-to-server requests
-	// through the agent tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
 	if m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
@@ -85,9 +70,6 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	}
 }
 
-// hasHeaderCredential reports whether the request carries a credential in a
-// header that a browser cannot forge on a cross-origin request, meaning it is not
-// susceptible to CSRF and should bypass the cross-origin check.
 func hasHeaderCredential(req *http.Request) bool {
 	return strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
 		req.Header.Get(HeaderApiKey) != "" ||

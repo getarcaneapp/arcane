@@ -122,7 +122,7 @@ export function runWithActivityBatchId<T>(batchId: string, fn: () => T): T {
 	}
 }
 
-async function parseResponseBody(response: Response, responseType: APIRequestConfig['responseType'] = 'json'): Promise<any> {
+async function parseResponseBody(response: Response, responseType: APIRequestConfig['responseType'] = 'json'): Promise<unknown> {
 	if (responseType === 'blob') {
 		return response.blob();
 	}
@@ -324,8 +324,10 @@ class APIClient {
 				const response = await this.client(requestUrl, options);
 				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
 				if (session?.aborted) throw new SessionCancelledError();
-				if (Array.isArray(parsed?.failedEnvironments)) config.onFailedEnvironments?.(parsed.failedEnvironments);
-				if (Array.isArray(parsed?.environments)) config.onEnvironments?.(parsed.environments);
+				const parsedRecord = asRecord(parsed);
+				if (Array.isArray(parsedRecord?.['failedEnvironments']))
+					config.onFailedEnvironments?.(parsedRecord['failedEnvironments']);
+				if (Array.isArray(parsedRecord?.['environments'])) config.onEnvironments?.(parsedRecord['environments']);
 				return {
 					data: parsed as T,
 					headers: response.headers,

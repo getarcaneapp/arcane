@@ -2,18 +2,13 @@ package pagination
 
 type (
 	Params struct {
-		Start int
-		Limit int
-		// SkipCount opts out of the COUNT(*) query that backs TotalItems/TotalPages.
-		// When true, paginated DB helpers return UnknownTotal (-1) for both fields and
-		// the response is suitable for infinite-scroll UIs that don't render page numbers.
-		// Default (false) preserves the historical behaviour for all existing callers.
+		Start     int
+		Limit     int
 		SkipCount bool
 	}
 )
 
 const (
-	// UnknownTotal is the sentinel returned in TotalItems/TotalPages when SkipCount is set.
 	UnknownTotal int64 = -1
 )
 

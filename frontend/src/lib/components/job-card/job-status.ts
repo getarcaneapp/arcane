@@ -20,7 +20,6 @@ export function jobStatusLabel(status: string, isWorker = false): string {
 	return labels[status]?.() ?? m.jobs_status_unknown();
 }
 
-/** Label for a workflow step, falling back to its name. */
 export function jobStepLabel(name: string): string {
 	const labels: Record<string, () => string> = {
 		prepare: m.jobs_step_prepare,
@@ -67,7 +66,6 @@ export function jobNameLabel(job: JobStatus): string {
 	return target.length ? m.jobs_dynamic_job_name({ name: label, target: target.join(':') }) : label;
 }
 
-/** Badge tone for a run or worker status. */
 export function jobStatusTone(status: string | undefined): 'green' | 'red' | 'amber' | 'blue' | 'gray' {
 	switch (status) {
 		case 'succeeded':

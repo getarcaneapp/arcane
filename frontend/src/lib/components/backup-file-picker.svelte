@@ -279,7 +279,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					customLabel={m.common_retry()}
 					onclick={() => loadPageInternal(row.folder, state.continuationStart ?? 0, state.entries.length === 0)}
 				/>
@@ -302,11 +301,10 @@
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				size="sm"
 				onclick={selectAllInternal}
 				customLabel={search.trim() ? m.backup_file_browser_select_all_matches() : m.common_select_all()}
 			/>
-			<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelectionInternal} customLabel={m.common_clear()} />
+			<ArcaneButton action="base" tone="ghost" onclick={clearSelectionInternal} customLabel={m.common_clear()} />
 		</div>
 	</div>
 
@@ -319,13 +317,7 @@
 			<div class="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm" data-backup-file-root-error>
 				<span class="font-medium">{m.backup_file_browser_load_failed()}</span>
 				<span class="text-xs text-muted-foreground">{rootError}</span>
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					customLabel={m.common_retry()}
-					onclick={() => loadPageInternal('', 0, true)}
-				/>
+				<ArcaneButton action="base" tone="ghost" customLabel={m.common_retry()} onclick={() => loadPageInternal('', 0, true)} />
 			</div>
 		{:else if rootEmpty}
 			<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">

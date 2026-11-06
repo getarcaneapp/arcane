@@ -305,7 +305,6 @@
 	>
 		{#snippet emptyState()}
 			<EmptyState
-				variant="plain"
 				icon={HammerIcon}
 				title={m.image_build_history_empty_title()}
 				description={m.image_build_history_empty_description()}
@@ -339,7 +338,6 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							size="sm"
 							icon={RedeployIcon}
 							customLabel={m.build_rebuild()}
 							onclick={applySelectedBuild}

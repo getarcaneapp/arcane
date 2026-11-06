@@ -13,8 +13,6 @@ type (
 	}
 )
 
-// BuildResponse creates a pagination Response from raw counts.
-// Handles the special case where limit = -1 means "show all".
 func BuildResponse(totalCount, totalAvailable int64, params QueryParams) Response {
 	limit := params.Limit
 
@@ -24,7 +22,6 @@ func BuildResponse(totalCount, totalAvailable int64, params QueryParams) Respons
 
 	switch {
 	case limit == -1:
-		// "Show all" mode: single page with all items
 		totalPages = 1
 		page = 1
 		itemsPerPage = int(totalCount)
@@ -33,7 +30,6 @@ func BuildResponse(totalCount, totalAvailable int64, params QueryParams) Respons
 		page = (params.Start / limit) + 1
 		itemsPerPage = limit
 	default:
-		// Fallback for invalid limit values
 		totalPages = 1
 		page = 1
 		itemsPerPage = int(totalCount)

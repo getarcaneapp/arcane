@@ -86,7 +86,6 @@
 						<ArcaneButton
 							action="base"
 							tone="ghost"
-							size="sm"
 							class="h-auto w-full justify-start p-2 text-left font-mono text-xs break-all whitespace-normal"
 							onclick={() => useExample(command)}
 							icon={CopyIcon}

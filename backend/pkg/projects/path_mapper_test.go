@@ -174,8 +174,6 @@ func TestPathMapper_TranslateVolumeSourcesKeepsArcaneReadFiles(t *testing.T) {
 	assert.Equal(t, "/app/data/swarm/sources/0/stack/config.yaml", project.Configs["config"].File)
 }
 
-// A bind-backed named volume's device is opened by the Docker daemon, so it needs
-// the same container->host translation as a bind mount source.
 func TestPathMapper_TranslateVolumeSourcesDriverOptsDevice(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "/host/arcane-data/projects")
 	project := &composetypes.Project{
@@ -204,9 +202,6 @@ func TestPathMapper_TranslateVolumeSourcesDriverOptsDevice(t *testing.T) {
 	assert.Equal(t, "data", project.Volumes["unresolved-bind"].DriverOpts["device"])
 }
 
-// The mount table must keep winning for relative paths that stay inside a nested
-// independently-bind-mounted directory; only paths it cannot resolve fall back to
-// being re-resolved against the host project directory.
 func TestRemapEscapedRelativeSources_MountTableTakesPrecedence(t *testing.T) {
 	pm := NewPathMapperFromMounts([]HostMount{
 		{Destination: "/app/data", Source: "/docker/112/arcane/arcane-data"},

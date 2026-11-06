@@ -136,17 +136,15 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(
-				resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(item.environmentId)}`, {
-					name: encodeURIComponent(item.name)
-				})
-			)}
+		href={() =>
+			resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(item.environmentId)}`, {
+				name: encodeURIComponent(item.name)
+			})}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: QuadletRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() =>
 				goto(

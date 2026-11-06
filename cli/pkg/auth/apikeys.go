@@ -15,8 +15,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// apiKeysCmd manages personal keys, which inherit the owner's role permissions.
-// Scoped keys are managed through `arcane admin api-keys`.
 func newAPIKeysCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "api-keys",

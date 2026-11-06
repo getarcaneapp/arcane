@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	// tunnelConnectPath is the manager route for both the WebSocket and gRPC tunnel, so reverse proxies need one rule.
 	tunnelConnectPath = "/api/tunnel/connect"
 )
 
@@ -34,7 +33,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 
 	dialOpts := []grpc.DialOption{
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGRPCTunnelMessageSize)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGRPCTunnelMessageSize), grpc.ForceCodecV2(tunnelCodec)),
 		// Larger socket buffers suit the single long-lived tunnel stream; window sizes stay unset so BDP probing tunes them.
 		grpc.WithReadBufferSize(256 << 10),
 		grpc.WithWriteBufferSize(256 << 10),

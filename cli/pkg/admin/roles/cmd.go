@@ -1,4 +1,3 @@
-// Package roles manages roles and user assignments.
 package roles
 
 import (
@@ -18,7 +17,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for role operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "roles",
@@ -35,8 +33,6 @@ func Command() *cobra.Command {
 	command.AddCommand(newAssignCmd())
 	return command
 }
-
-// ---------- Role CRUD ----------
 
 func newListCmd() *cobra.Command {
 	var opts struct {
@@ -245,8 +241,6 @@ func newDeleteCmd() *cobra.Command {
 	return command
 }
 
-// ---------- Permission manifest ----------
-
 func newPermissionsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "permissions",
@@ -280,8 +274,6 @@ func newPermissionsCmd() *cobra.Command {
 		},
 	}
 }
-
-// ---------- User assignments ----------
 
 func newAssignmentsCmd() *cobra.Command {
 	return &cobra.Command{

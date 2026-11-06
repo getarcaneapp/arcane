@@ -674,9 +674,6 @@ func TestUpdaterService_PendingImageUpdatesAdapter(t *testing.T) {
 	assert.Equal(t, &lastError, records[0].LastError)
 }
 
-// TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications guards
-// newEmptyContainerListDockerService stubs the container listing the
-// notification flush uses to resolve update-check eligibility.
 func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientService {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -693,9 +690,6 @@ func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientServic
 	return newSettingsDockerService(t, newTestDockerClient(t, server))
 }
 
-// PendingImageUpdates must not hand records to the engine when the flush could
-// not determine what to send (#3532): consuming them would lose the pending
-// notification for good instead of retrying once Docker is reachable again.
 func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnresolved(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
@@ -734,9 +728,6 @@ func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnre
 	require.False(t, reloaded.NotificationSent)
 }
 
-// issue #3132: the updater consumes and clears has_update records without checking
-// notification_sent, so an "Updates Available" notification pending at consumption
-// time was silently lost. PendingImageUpdates must flush it before the engine runs.
 func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
@@ -792,9 +783,6 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 	assert.True(t, reloaded.NotificationSent)
 }
 
-// With no providers configured, PendingImageUpdates still returns the records and
-// leaves notification_sent false (preserves the #3079 "don't mark when nothing
-// delivered" semantics).
 func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
@@ -1467,7 +1455,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 		Outcome:      types.SchedulerOutcome{Targets: []types.TargetOutcome{{ID: "auto-update", RecoveryData: frozenPlan}}},
 	}, nil)
 	result, err := svc.ApplyPending(ctx, types.UpdaterOptions{})
-	require.ErrorContains(t, err, "self-update was triggered")
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
@@ -1492,7 +1480,6 @@ func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 	}
 }
 
-// createTestPullRegistry inserts an enabled generic registry with an encrypted token.
 func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, token string) {
 	t.Helper()
 
@@ -1509,7 +1496,6 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 	require.NoError(t, db.WithContext(t.Context()).Create(reg).Error)
 }
 
-// decodeRegistryAuth decodes a base64 X-Registry-Auth header.
 func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
 	t.Helper()
 
@@ -1518,7 +1504,6 @@ func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig 
 	return *cfg
 }
 
-// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
@@ -1537,7 +1522,6 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-// newImagePullServerWithObserver is NewImagePullServer with a pull callback.
 func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
@@ -1593,7 +1577,6 @@ func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]docker
 	return server
 }
 
-// setupProjectTestDB builds an in-memory DB migrated for project-related tests.
 func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

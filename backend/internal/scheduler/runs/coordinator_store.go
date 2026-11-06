@@ -31,10 +31,8 @@ const (
 var (
 	compactableStatuses = []types.RunStatus{types.RunStatusSucceeded, types.RunStatusSkipped, types.RunStatusCanceled}
 
-	// ErrRunNotFound indicates that neither a run nor its receipt exists.
 	ErrRunNotFound = errors.New("job run not found")
 
-	// ErrRunConflict indicates that execution ownership or state changed.
 	ErrRunConflict = errors.New("job run state changed")
 )
 
@@ -247,8 +245,6 @@ func (q *Coordinator) Record(ctx context.Context, environmentID, jobID string) (
 	return state.Record, nil
 }
 
-// Get retrieves a run by environment, job, and run ID, including compacted
-// idempotency receipts. It returns ErrRunNotFound when no matching record exists.
 func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	record, err := q.Record(ctx, environmentID, jobID)
 	if err != nil {
@@ -275,8 +271,6 @@ func (q *Coordinator) listRecords(ctx context.Context, environmentID, jobID stri
 	return []types.SchedulerQueueRecord{record}, err
 }
 
-// List returns retained run history newest first, excluding compacted receipts.
-// An empty job ID includes every job in the environment; pages are one-based.
 func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, page, limit int) (types.SchedulerRunList, error) {
 	records, err := q.listRecords(ctx, environmentID, jobID)
 	if err != nil {
@@ -299,8 +293,6 @@ func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, pag
 	return types.SchedulerRunList{Runs: runs[start:end], Total: len(runs), Page: page, Limit: limit}, nil
 }
 
-// UpdateRun atomically changes a persisted run or terminal receipt using compare
-// and swap. The callback may run more than once and must not perform external side effects.
 func (q *Coordinator) UpdateRun(ctx context.Context, run types.SchedulerRun, change func(*types.SchedulerRun) error) error {
 	wake := false
 	err := q.mutate(ctx, run.EnvironmentID, run.JobID, func(record *types.SchedulerQueueRecord) error {

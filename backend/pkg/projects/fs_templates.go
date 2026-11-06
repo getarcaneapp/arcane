@@ -64,9 +64,6 @@ var (
 	slugDashRunPattern      = regexp.MustCompile(`-+`)
 )
 
-// ReadFolderComposeTemplate stays on os.* for its reads: template folders are
-// user-managed on disk, so compose/env files may be symlinks resolving outside
-// any confinement root, which acfs cannot follow.
 func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (string, *string, string, bool, error) {
 	folderPath := filepath.Join(baseDir, folder)
 	composePath, err := DetectComposeFile(ctx, "", folderPath)
@@ -140,7 +137,6 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	return &envContent, nil
 }
 
-// EnsureDefaultTemplates writes missing default templates and upgrades unedited retired defaults.
 func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
 	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
 	if err != nil {
@@ -275,13 +271,11 @@ NGINX_HOST_PORT=8080
 `
 }
 
-// ParseComposeServices extracts service names from a compose file content using compose-go
 func ParseComposeServices(ctx context.Context, composeContent string) []string {
 	if composeContent == "" {
 		return []string{}
 	}
 
-	// Create a temp directory with dummy .env file to satisfy env_file references
 	// System temp scratch: no acfs root exists for it.
 	tmpDir, err := os.MkdirTemp("", "arcane-compose-parse-*")
 	if err != nil {
@@ -296,7 +290,6 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", writeFileWithPermErr)
 	}
 
-	// Parse using compose-go
 	configDetails := composetypes.ConfigDetails{
 		ConfigFiles: []composetypes.ConfigFile{
 			{
@@ -321,7 +314,6 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 	return serviceNames
 }
 
-// ResolveTemplateIconURL reads Arcane icon metadata from template Compose content.
 func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent string) *string {
 	if strings.TrimSpace(composeContent) == "" {
 		return nil

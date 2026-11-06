@@ -1,15 +1,8 @@
-// Package authz defines the permission taxonomy and authorization primitives
-// used across Arcane handlers. Permissions are strings of the form
-// "<resource>:<action>" and are classified as either org-level (require a
-// globally-scoped role) or env-scoped (resolved against the environment ID
-// from the request path).
 package authz
 
 import "slices"
 
 const (
-	// Built-in role IDs. Stable across migrations so other code may reference them
-	// safely. All six built-in roles are seeded by migration 054_add_rbac.
 	BuiltInRoleAdmin         = "role_admin"
 	BuiltInRoleEditor        = "role_editor"
 	BuiltInRoleNoShellEditor = "role_no_shell_editor"
@@ -254,10 +247,6 @@ const (
 var (
 	orgLevelPermissions = buildOrgLevelPermissions()
 
-	// allPermissionsSet is the canonical exact-set lookup of every defined
-	// permission, built once from AllPermissions(). Anchors IsKnownPermission and
-	// IsEnvScoped to exact membership so PermissionSet.IsGlobalAdmin can rely on
-	// "ps.Global ⊆ allPermissionsSet" as a true invariant.
 	allPermissionsSet = func() map[string]struct{} {
 		all := AllPermissions()
 		m := make(map[string]struct{}, len(all))
@@ -267,9 +256,6 @@ var (
 		return m
 	}()
 
-	// totalPermissionsCount caches len(allPermissionsSet) so callers on the auth
-	// hot path (notably PermissionSet.IsGlobalAdmin) don't re-allocate and walk a
-	// ~100-element slice on every authenticated request.
 	totalPermissionsCount = len(allPermissionsSet)
 
 	orderedPermissions = AllPermissions()
@@ -298,15 +284,11 @@ func buildOrgLevelPermissions() map[string]struct{} {
 	return out
 }
 
-// IsOrgLevel reports whether the given permission requires a globally-scoped
-// role assignment (and applies only to org-level endpoints).
 func IsOrgLevel(perm string) bool {
 	_, ok := orgLevelPermissions[perm]
 	return ok
 }
 
-// IsEnvScoped reports whether the given permission is resolved against an
-// environment ID. Returns false for permissions not in AllPermissions().
 func IsEnvScoped(perm string) bool {
 	if _, ok := allPermissionsSet[perm]; !ok {
 		return false
@@ -314,12 +296,8 @@ func IsEnvScoped(perm string) bool {
 	return !IsOrgLevel(perm)
 }
 
-// TotalPermissionsCount returns the number of distinct permission constants
-// the package defines. Computed once at init; cheap to call repeatedly.
 func TotalPermissionsCount() int { return totalPermissionsCount }
 
-// AllPermissions returns every recognized permission constant. Used to seed
-// the Admin built-in role and to validate role definitions.
 func AllPermissions() []string {
 	var count int
 	for _, resource := range permissionCatalog {
@@ -334,8 +312,6 @@ func AllPermissions() []string {
 	return out
 }
 
-// IsKnownPermission reports whether perm matches any defined permission
-// constant. Used to reject role definitions referencing unknown permissions.
 func IsKnownPermission(perm string) bool {
 	_, ok := allPermissionsSet[perm]
 	return ok
@@ -368,12 +344,8 @@ func ExpandPermissions(perms []string) []string {
 	return out
 }
 
-// BuiltInEditorPermissions returns the permission set for the Editor built-in
-// role: read+write on Docker resources and read on most org-level resources.
-// Excludes user/role/key management and settings writes.
 func BuiltInEditorPermissions() []string {
 	return []string{
-		// Read on org-level
 		PermUsersList, PermUsersRead,
 		PermRolesList, PermRolesRead,
 		PermApiKeysList, PermApiKeysRead,
@@ -387,7 +359,6 @@ func BuiltInEditorPermissions() []string {
 		// Editor can run volume backups, so it needs to pick a destination.
 		PermS3DestinationsList, PermS3DestinationsRead,
 		PermEventsList,
-		// Full env-scoped Docker management
 		PermContainersList,
 		PermContainersRead,
 		PermContainersLogs,
@@ -433,9 +404,6 @@ func BuiltInEditorPermissions() []string {
 	}
 }
 
-// BuiltInDeployerPermissions returns the permission set for the Deployer
-// built-in role: container/project lifecycle and read-only on everything else.
-// Cannot create or delete resources; cannot manage settings/users/roles/keys.
 func BuiltInDeployerPermissions() []string {
 	return []string{
 		PermEnvironmentsList, PermEnvironmentsRead,
@@ -476,8 +444,6 @@ func BuiltInDeployerPermissions() []string {
 	}
 }
 
-// BuiltInViewerPermissions returns the permission set for the Viewer built-in
-// role: read-only access across every resource.
 func BuiltInViewerPermissions() []string {
 	return []string{
 		PermUsersList, PermUsersRead,
@@ -517,9 +483,6 @@ func BuiltInViewerPermissions() []string {
 	}
 }
 
-// BuiltInMonitorPermissions returns the permission set for the Monitor
-// built-in role: observability-only access — read Docker resources, view logs,
-// dashboards, and events. No mutations, no exec, no user/role/settings access.
 func BuiltInMonitorPermissions() []string {
 	return []string{
 		PermEnvironmentsList, PermEnvironmentsRead,
@@ -546,9 +509,6 @@ func BuiltInMonitorPermissions() []string {
 	}
 }
 
-// BuiltInNoShellEditorPermissions returns the Editor permission set minus
-// PermContainersExec. For teams that want full Docker management but no
-// interactive shell access into running containers.
 func BuiltInNoShellEditorPermissions() []string {
 	return slices.DeleteFunc(BuiltInEditorPermissions(), func(p string) bool {
 		return p == PermContainersExec

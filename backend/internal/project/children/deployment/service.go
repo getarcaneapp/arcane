@@ -1,4 +1,3 @@
-// Package deployment runs the image and bind-directory side of project deployments.
 package deployment
 
 import (
@@ -46,7 +45,6 @@ func New(imageService *image.ImageService, dockerService *docker.DockerClientSer
 	}
 }
 
-// NamespaceDependents treats every dependent as running on a ComposePs failure, since a dangling namespace reference is worse.
 func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetypes.Project, services []string) (running, stopped []string) {
 	if len(services) == 0 {
 		return nil, nil

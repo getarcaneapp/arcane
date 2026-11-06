@@ -18,7 +18,6 @@
 	const healthcheck = $derived<ContainerHealthcheck | undefined>(container?.config?.healthcheck);
 	const health = $derived(container?.state?.health);
 
-	// Docker sends duration values in nanoseconds. Convert to a compact human string.
 	function formatDurationNs(ns: number | undefined | null): string {
 		if (!ns || ns <= 0) return m.common_unknown();
 		const ms = Temporal.Duration.from({ nanoseconds: Math.trunc(ns) }).total('milliseconds');
@@ -47,7 +46,6 @@
 
 	const logs = $derived(normalizeLog(health?.log));
 
-	// Reverse — most recent first for display.
 	const recentProbes = $derived([...logs].reverse());
 
 	const lastProbe = $derived(logs.length > 0 ? logs[logs.length - 1] : null);
@@ -64,7 +62,6 @@
 		const test = healthcheck?.test;
 		if (!test || test.length === 0) return { type: 'inherit', text: '' };
 		if (test.length === 1 && test[0] === 'NONE') return { type: 'none', text: '' };
-		// First element is typically "CMD" or "CMD-SHELL".
 		const [head, ...rest] = test;
 		if (head === 'CMD-SHELL') return { type: 'cmd', text: rest.join(' ') };
 		if (head === 'CMD') return { type: 'cmd', text: rest.join(' ') };
@@ -76,7 +73,6 @@
 		() => 'shell'
 	);
 
-	// Estimate the next probe time: lastProbe.end + interval (clamped to "now" if overdue).
 	const nextCheck = $derived.by<{ at: Temporal.Instant; overdue: boolean } | null>(() => {
 		if (!container?.state?.running) return null;
 		const intervalNs = healthcheck?.interval;
@@ -257,7 +253,7 @@
 										</span>
 									</div>
 									{#if probe.output}
-										<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
+										<button type="button" class="text-xs text-primary-text hover:underline" onclick={() => toggleExpanded(key)}>
 											{expanded[key] ? m.common_hide() : m.common_show()}
 										</button>
 									{/if}

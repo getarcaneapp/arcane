@@ -31,11 +31,6 @@ import (
 )
 
 type (
-	// PrepareProjectFunc runs against a loaded project after service selection,
-	// include/override merging, and local path resolution, but before Docker host
-	// path translation, so bind sources are still local filesystem paths. It may
-	// mutate the filesystem (e.g. create missing bind directories) and a returned
-	// error aborts the load.
 	PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
 
 	LoadOptions struct {
@@ -68,17 +63,11 @@ const (
 	lenientUndefinedPlaceholder = "/placeholder-undefined"
 )
 
-// ProjectFileCandidates enumerates known project files: base compose names,
-// compose override names, and .env. It is used as a membership set for
-// recognizing and skipping known files during discovery; it is NOT the
-// base-detection order (see ComposeFileCandidates for that).
 var ProjectFileCandidates = append(
 	append(slices.Clone(ComposeFileCandidates), ComposeOverrideFileCandidates...),
 	".env",
 )
 
-// IsProjectFile reports whether filename is a known project file or a plausible
-// custom YAML filename worth watching for compose discovery.
 func IsProjectFile(filename string) bool {
 	if slices.Contains(ProjectFileCandidates, filename) {
 		return true
@@ -107,14 +96,6 @@ func stripTrailingProjectCounter(name string) string {
 	return withoutDigits[:len(withoutDigits)-1]
 }
 
-// DetectComposeFile returns the base compose file for dir. COMPOSE_FILE in the
-// project's .env takes precedence over standard detection, mirroring `docker
-// compose`; projectsDir locates .env.global for the COMPOSE_DISABLE_ENV_FILE
-// check and may be empty where no projects directory applies. An unreadable
-// project .env falls back to filename detection and returns the found path
-// together with a common.ErrProjectEnvUnreadable error: that pairing is an
-// identification-only result for discovery and diagnostics, and callers that
-// check err != nil remain strict and must keep doing so.
 func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, error) {
 	var envErr error
 	if files, err := ComposeFileEnvSelection(ctx, projectsDir, dir); err != nil {
@@ -207,7 +188,6 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	}
 }
 
-// LoadComposeProjectFromContent loads a Compose project from in-memory source content.
 func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeContentOptions) (project *composetypes.Project, err error) {
 	defer recoverComposeLoadPanic(ctx, "in-memory compose content", &project, &err)
 
@@ -266,14 +246,6 @@ func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeConten
 	return finishLoadedProject(ctx, project, workingDir, opts.PathMapper, false, rawSources, nil)
 }
 
-// wrapTypeCastMappingLenient prepares the interp type-cast mapping for lenient
-// loading: every existing cast falls back to "0" when it fails (so the lenient
-// placeholder for an undefined variable doesn't abort interpolation), and casts
-// are added for typed struct fields that compose-go would otherwise decode at
-// the mapstructure stage (NanoCPUs, UnitBytes under deploy.resources). Without
-// the added casts, the placeholder string reaches mapstructure and fails to
-// parse — handling it at interp time lets us hand mapstructure a typed value
-// it accepts directly.
 func wrapTypeCastMappingLenient(mapping map[tree.Path]interp.Cast) map[tree.Path]interp.Cast {
 	wrapped := make(map[tree.Path]interp.Cast, len(mapping)+4)
 	for path, original := range mapping {
@@ -322,18 +294,6 @@ func lenientCastSize(value string) (any, error) {
 	return int(n), nil
 }
 
-// ApplyLenientLoaderOptions configures a compose loader.Options for tolerant
-// loading: structural validation and consistency checks are skipped, and
-// unresolvable ${VAR} references are substituted with a placeholder instead of
-// an empty string (which would otherwise produce invalid volume/bind specs
-// like ":/path"). Callers use this when a .env file may not yet exist or may
-// not define every variable the compose file references.
-//
-// The placeholder is applied at the substitution level, not the lookup level:
-// the lookup must keep reporting undefined variables as missing so compose-go
-// resolves default operators (${VAR:-default}, ${VAR-default}) normally.
-// Reporting the placeholder as the variable's value would suppress those
-// defaults and feed the placeholder into fields like ports host entries.
 func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, composeFile string) {
 	opts.SkipValidation = true
 	opts.SkipConsistencyCheck = true
@@ -368,12 +328,6 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 	}
 }
 
-// LoadComposeProject loads a compose project from composeFile. envOverride,
-// configureLoader, and prepare are optional and may be nil. When lenient is true, undefined
-// ${VAR} references are tolerated: instead of substituting them with an empty
-// string (which produces invalid volume/bind specs like ":/path"), they are
-// replaced with a placeholder value so structural validation can succeed. This
-// is useful during GitSync validation where a .env file may not yet exist.
 func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *composetypes.Project, err error) {
 	defer recoverComposeLoadPanic(ctx, opts.ComposeFile, &project, &err)
 
@@ -381,7 +335,6 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 
 	envLoader := NewEnvLoader(opts.ProjectsDirectory, workdir, opts.AutoInjectEnv)
 
-	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
 		if errors.Is(err, common.ErrProjectEnvUnreadable) {
@@ -393,21 +346,17 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 	// Override wins: maps.Copy(dst, src) copies src into dst.
 	maps.Copy(fullEnvMap, opts.EnvOverride)
 
-	// Set PWD
 	if absWorkdir, absErr := filepath.Abs(workdir); absErr == nil {
 		fullEnvMap["PWD"] = absWorkdir
 	} else {
 		slog.WarnContext(ctx, "Failed to set PWD environment variable", "workdir", workdir, "error", absErr)
 	}
 
-	// Deployment-relevant COMPOSE_* variables (COMPOSE_FILE, COMPOSE_PROFILES,
-	// COMPOSE_PROJECT_NAME) come from the merged project environment.
 	envOpts, envOptsErr := ParseComposeEnvOptions(workdir, fullEnvMap)
 	if envOptsErr != nil {
 		return nil, envOptsErr
 	}
 
-	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
 	var configFiles []composetypes.ConfigFile
 	switch {
 	case len(envOpts.ConfigFiles) > 0:
@@ -422,12 +371,6 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 		}
 	default:
 		configFiles = []composetypes.ConfigFile{{Filename: opts.ComposeFile}}
-		// Merge a Docker Compose override file (compose.override.yaml, etc.) when
-		// present alongside the base file, as `docker compose` does. Only auto-load an
-		// override when the base was discovered by its standard filename: `docker
-		// compose` never auto-loads overrides for an explicit custom `-f` file, and
-		// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
-		// override after the base makes it take precedence.
 		if slices.Contains(ComposeFileCandidates, filepath.Base(opts.ComposeFile)) {
 			if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
 				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
@@ -529,17 +472,6 @@ func finishLoadedProject(ctx context.Context,
 	return project, nil
 }
 
-// harvestRawSources re-parses the same Compose input with path
-// resolution disabled, so the raw still-relative paths survive for
-// RemapEscapedRelativeSources. The resolved project on its own cannot tell a
-// relative path that escaped the projects mount from an intentionally absolute
-// one, and only the former may be re-resolved against the host directory.
-//
-// Best effort by design: any failure yields a nil map and the caller then
-// behaves exactly as it did before. Environment resolution is skipped because
-// env_file paths are left relative here and would otherwise be read against the
-// process working directory; label_file is read regardless, which is one of the
-// reasons this cannot be fatal.
 func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
 	defer func() {
 		if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
@@ -628,7 +560,6 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	for i, s := range project.Services {
 		s.CustomLabels = applyCustomLabels(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
 
-		// Initialize environment if nil
 		if s.Environment == nil {
 			s.Environment = make(composetypes.MappingWithEquals)
 		}
@@ -725,7 +656,6 @@ func recordComposeDependencies(project *composetypes.Project, dependencies *type
 	}
 }
 
-// ValidateComposeContentForUpdate validates proposed editor content without persisting it.
 // Missing includes are tolerated here; deployment uses strict executable loading.
 func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeRequest) (err error) {
 	defer func() {
@@ -750,12 +680,6 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 	var configFiles []composetypes.ConfigFile
 	switch {
 	case len(envOpts.ConfigFiles) > 0:
-		// The compose tab edits the base (first) file. Later entries are read
-		// from disk; existence was already checked while parsing COMPOSE_FILE. An
-		// Arcane-managed override lives in the project root and only applies when
-		// that exact path is listed in the selection (docker skips auto-overrides
-		// for an explicit file set); a same-named file in a subdirectory is not
-		// the managed override.
 		overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
 		overridePath := ""
 		if absProjectPath, absErr := filepath.Abs(filepath.Clean(req.ProjectPath)); absErr == nil {
@@ -775,9 +699,6 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 		configFiles = []composetypes.ConfigFile{
 			{Filename: filepath.Join(req.ProjectPath, "compose.yaml"), Content: []byte(req.ComposeContent)},
 		}
-		// When an override is supplied, validate the *merged* config as `docker
-		// compose` would deploy it. Overrides can add services and are layered on
-		// top (listed after the base so the override wins).
 		if req.OverrideContent != nil {
 			overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
 			configFiles = append(configFiles, composetypes.ConfigFile{

@@ -1,5 +1,3 @@
-// Package user owns user persistence, password hashing, authorization guards,
-// and the user HTTP surface.
 package user
 
 import (
@@ -38,7 +36,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterUsers(api, m.service, m.invalidateUserTokenCache, m.settings)
 }
 
-// RegisterUsers registers all user management endpoints.
 func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCache func(string), settingsService *settings.SettingsService) {
 	h := &UserHandler{userService: userService, invalidateUserTokenCache: invalidateUserTokenCache, settingsService: settingsService}
 

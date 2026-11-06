@@ -19,22 +19,12 @@ import (
 )
 
 type (
-	// logsDemuxCompatibleDockerCli exposes an API client that keeps
-	// stderr metadata alive in non-TTY container log streams. Used only by
-	// ComposeLogs; other compose operations keep the unmodified client.
 	logsDemuxCompatibleDockerCli struct {
 		command.Cli
 
 		apiClient client.APIClient
 	}
 
-	// logsDemuxDockerClient records each container's TTY state from the
-	// inspect calls Compose already performs, and reworks non-TTY multiplexed log
-	// responses so stderr entries stay identifiable: stderr lines are prefixed
-	// with Arcane's stderr marker and every entry is re-framed as a stdout
-	// stdcopy frame, which Compose merges through its stdout consumer path. TTY
-	// containers pass through untouched because their stream carries no stderr
-	// metadata.
 	logsDemuxDockerClient struct {
 		client.APIClient
 
@@ -43,12 +33,6 @@ type (
 		ttyMu sync.RWMutex
 	}
 
-	// stderrMarkedDemuxedStream transforms a multiplexed Docker log
-	// response, pulled frame by frame on demand, into stdout stdcopy frames of
-	// one log line each, with stderr lines prefixed by Arcane's stderr marker.
-	// Lines are assembled per source stream before merging so frames interleaved
-	// mid-line cannot corrupt each other. Closing it closes the upstream
-	// response, which also unblocks any pending read.
 	stderrMarkedDemuxedStream struct {
 		upstream io.ReadCloser
 		err      error
@@ -59,8 +43,6 @@ type (
 )
 
 const (
-	// maxLogEntryBytes caps re-framed entries: a newline-less run is
-	// split into cap-sized entries so per-line buffering stays bounded end to end.
 	maxLogEntryBytes = 64 * 1024
 )
 

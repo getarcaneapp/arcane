@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -18,9 +19,10 @@
 		eventTypeLabel
 	} from '#lib/components/events/events-labels.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons/index.js';
+	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EventsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
@@ -77,14 +79,28 @@
 
 	const columns = [
 		{
+			id: 'environment',
+			title: m.resource_environment_cap(),
+			width: 'min',
+			cell: EnvironmentCell
+		},
+		{
 			accessorKey: 'title',
 			title: m.events_col_event(),
 			cell: SummaryCell
 		},
 		{
+			accessorKey: 'timestamp',
+			title: m.events_col_time(),
+			sortable: true,
+			width: 'min',
+			cellComponent: RelativeTimeCell
+		},
+		{
 			accessorKey: 'severity',
 			title: m.events_col_severity(),
 			sortable: true,
+			width: 'min',
 			cell: SeverityCell
 		},
 		{
@@ -100,43 +116,30 @@
 			cell: ResourceCell
 		},
 		{
-			id: 'environment',
-			title: m.resource_environment_cap(),
-			cell: EnvironmentCell
-		},
-		{
 			accessorKey: 'username',
 			title: m.common_user(),
 			sortable: true,
+			width: 'min',
 			cell: UserCell
-		},
-		{
-			accessorKey: 'timestamp',
-			title: m.events_col_time(),
-			sortable: true,
-			cellComponent: RelativeTimeCell
 		}
 	] satisfies ColumnSpec<Event>[];
 
 	const mobileFields = [
+		{ id: 'timestamp', label: m.events_col_time(), defaultVisible: true },
 		{ id: 'severity', label: m.events_col_severity(), defaultVisible: true },
 		{ id: 'type', label: m.common_type(), defaultVisible: true },
-		{ id: 'resource', label: m.resource(), defaultVisible: true },
 		{ id: 'environment', label: m.resource_environment_cap(), defaultVisible: true },
-		{ id: 'username', label: m.common_user(), defaultVisible: true },
-		{ id: 'timestamp', label: m.events_col_time(), defaultVisible: true }
+		{ id: 'resource', label: m.resource(), defaultVisible: true },
+		{ id: 'username', label: m.common_user(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
 {#snippet SummaryCell({ item }: { item: Event })}
-	<div class="max-w-xl min-w-48 py-1 whitespace-normal">
-		<p class="text-sm font-semibold break-words">{item.title}</p>
-		{#if item.description}
-			<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground" title={item.description}>{item.description}</p>
-		{/if}
-	</div>
+	<p class="line-clamp-1 max-w-event-summary min-w-48 text-sm font-medium break-words whitespace-normal" title={item.title}>
+		{item.title}
+	</p>
 {/snippet}
 
 {#snippet SeverityCell({ value }: { value: unknown })}
@@ -149,7 +152,7 @@
 	{@const TypeIcon = eventTypeIcon(type)}
 	<div class="flex min-w-0 items-center gap-2">
 		<TypeIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-		<span class="truncate text-sm" title={type}>{eventTypeLabel(type)}</span>
+		<span class="text-sm whitespace-nowrap" title={type}>{eventTypeLabel(type)}</span>
 	</div>
 {/snippet}
 
@@ -186,9 +189,18 @@
 	<EventDetailPanel event={item} />
 {/snippet}
 
-{#snippet EventMobileCardSnippet({ item, mobileFieldVisibility }: { item: Event; mobileFieldVisibility: MobileFieldVisibility })}
+{#snippet EventMobileCardSnippet({
+	item,
+	mobileFieldVisibility,
+	expander
+}: {
+	item: Event;
+	mobileFieldVisibility: MobileFieldVisibility;
+	expander?: Snippet;
+})}
 	<UniversalMobileCard
 		{item}
+		{expander}
 		icon={(item: Event) => ({
 			component: NotificationsIcon,
 			variant: eventSeverityIconVariant(item.severity)
@@ -240,16 +252,12 @@
 			}
 		]}
 		rowActions={RowActions}
-	>
-		{#if item.description}
-			<p class="text-xs leading-relaxed break-words text-muted-foreground">{item.description}</p>
-		{/if}
-	</UniversalMobileCard>
+	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}
 	<IfPermitted perm="events:delete" envId={GLOBAL_SCOPE}>
-		<RowActionsMenu>
+		<RowActionsMenu name={item.title}>
 			<DropdownMenu.Item
 				variant="destructive"
 				onclick={() => handleDeleteEvent(item.id, item.title)}
@@ -274,4 +282,8 @@
 	rowActions={RowActions}
 	mobileCard={EventMobileCardSnippet}
 	expandedRowContent={ExpandedEvent}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={EventsIcon} title={m.no_events_yet()} description={m.events_appear_as_they_happen()} />
+	{/snippet}
+</ArcaneTable>

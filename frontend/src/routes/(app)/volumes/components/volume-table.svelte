@@ -13,6 +13,8 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ResourceName from '#lib/components/resource-name.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
@@ -40,7 +42,7 @@
 		rowKey,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
-	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -232,9 +234,7 @@
 	}
 
 	function handleDeleteSelected(ids: string[]) {
-		// A volume's id IS its name (backend sets ID: v.Name), so ids can be
-		// passed to the delete endpoint directly — no per-page name lookup, which
-		// would break for selections carried across pages.
+		// A volume id is its name, so selections across pages delete by id directly.
 		const idsToDelete = ids.filter((key) => {
 			const { environmentId, id } = parseRowKey(key);
 			return environmentId !== undefined && !isBackupVolumeName(id, environmentId);
@@ -266,7 +266,7 @@
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
-		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
+		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell, align: 'right' },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'driver', title: m.common_driver(), sortable: true }
 	] satisfies ColumnSpec<VolumeRow>[]);
@@ -303,13 +303,11 @@
 </script>
 
 {#snippet NameCell({ item }: { item: VolumeRow })}
-	<a
-		class="font-medium hover:underline"
+	<ResourceName
+		name={item.name}
 		href={resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id })}
-		title={item.name}
-	>
-		{truncateString(item.name, 40)}
-	</a>
+		class="font-mono text-xs-plus leading-5 font-medium"
+	/>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: VolumeRow })}
@@ -319,17 +317,17 @@
 {#snippet SizeCell({ item }: { item: VolumeRow })}
 	{@const sizeInfo = sizesMap.get(rowKey(item))}
 	{#if sizeInfo && sizeInfo.size >= 0}
-		<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
+		<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size, { unitSeparator: ' ' })}</span>
 	{:else if sizesLoading && sizesMap.size === 0}
 		{#if item.size > 0}
-			<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+			<span class="text-sm tabular-nums">{bytes.format(item.size, { unitSeparator: ' ' })}</span>
 		{:else}
-			<span class="flex items-center gap-1 text-sm text-muted-foreground">
+			<span class="flex items-center justify-end gap-1 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 			</span>
 		{/if}
 	{:else if item.size > 0}
-		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+		<span class="text-sm tabular-nums">{bytes.format(item.size, { unitSeparator: ' ' })}</span>
 	{:else if sizesEnabled && sizesQuery.isError}
 		<span
 			class="text-sm text-muted-foreground"
@@ -378,13 +376,12 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() =>
-			goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
+		href={() => resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: VolumeRow })}
-	<RowActionsMenu>
+	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() =>
 				goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
@@ -447,7 +444,11 @@
 	rowActions={RowActions}
 	mobileCard={VolumeMobileCardSnippet}
 	customViewOptions={CustomViewOptions}
-/>
+>
+	{#snippet emptyState()}
+		<EmptyState icon={VolumesIcon} title={m.no_volumes_yet()} description={m.create_volume_to_keep_data()} />
+	{/snippet}
+</ArcaneTable>
 
 {#if renameSession > 0}
 	{#key renameSession}

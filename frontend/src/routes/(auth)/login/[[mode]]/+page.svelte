@@ -66,9 +66,7 @@
 	const oidcProviderLogoUrl = $derived(data.settings?.oidcProviderLogoUrl || '');
 	const oidcButtonLabel = $derived(oidcProviderName || m.common_oidc());
 
-	// Only an explicit redirect is handed to the OIDC flow. Resolving the account
-	// landing page here would bake the signed-out default into the OIDC round
-	// trip, where it would then outrank the user's saved preference.
+	// Only an explicit redirect goes to OIDC so the saved landing preference still wins.
 	const oidcLoginHref = $derived(
 		data.redirectTo
 			? resolve(`/(auth)/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}`)
@@ -151,7 +149,6 @@
 	function handleOidcLogin() {
 		oidcLoginMutation.mutate(undefined, {
 			onError: () => {
-				// Fallback to direct navigation when mutation fails unexpectedly
 				void goto(oidcLoginHref);
 			}
 		});
@@ -288,7 +285,7 @@
 									autocomplete="on"
 								>
 									<div class="space-y-2">
-										<Label for="username" size="xs">{m.common_username()}</Label>
+										<Label for="username">{m.username_or_email()}</Label>
 										<InputGroup.Root role={undefined}>
 											<InputGroup.Addon role={undefined}>
 												<UserIcon />
@@ -298,7 +295,7 @@
 												name="username"
 												type="text"
 												autocomplete="username"
-												aria-label={m.common_username()}
+												aria-label={m.username_or_email()}
 												required
 												bind:value={username}
 												placeholder={m.auth_username_placeholder()}
@@ -307,7 +304,7 @@
 										</InputGroup.Root>
 									</div>
 									<div class="space-y-2">
-										<Label for="password" size="xs">{m.common_password()}</Label>
+										<Label for="password">{m.common_password()}</Label>
 										<InputGroup.Root role={undefined}>
 											<InputGroup.Addon role={undefined}>
 												<LockIcon />
@@ -368,6 +365,7 @@
 									{#if showPasskeyLoginButton}
 										<ArcaneButton
 											action="login"
+											tone="outline"
 											icon={ApiKeyIcon}
 											customLabel={m.common_passkey()}
 											hoverEffect="none"
@@ -389,7 +387,7 @@
 				<div class="relative hidden flex-col items-center justify-center gap-4 bg-muted/20 md:flex">
 					<img class="size-36 drop-shadow-md drop-shadow-primary/15" src={markUrl} alt={m.layout_title()} />
 					{#if data.versionInformation?.displayVersion}
-						<span class="font-mono text-3xs tracking-ultrawide text-muted-foreground/60 uppercase"
+						<span class="font-mono text-xs tracking-ultrawide text-muted-foreground uppercase"
 							>{data.versionInformation.displayVersion}</span
 						>
 					{/if}
@@ -402,7 +400,7 @@
 				href="https://github.com/getarcaneapp/arcane"
 				target="_blank"
 				rel="noopener noreferrer"
-				class="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground"
+				class="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<GithubIcon class="size-3.5" />
 				{m.common_view_on_github()}

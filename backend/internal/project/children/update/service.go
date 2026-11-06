@@ -1,5 +1,3 @@
-// Package update owns project content updates: compose image edits and the
-// rename journal that makes project renames recoverable.
 package update
 
 import (
@@ -40,7 +38,6 @@ import (
 )
 
 type (
-	// Service edits Compose sources for image updates and persists rename journals in the KV store.
 	// Project rows stay with the parent, which supplies their state through callbacks.
 	Service struct {
 		kv              *kv.KVService
@@ -60,13 +57,11 @@ type (
 		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
 	}
 
-	// SyncState holds the paths an in-flight rename protects from filesystem sync.
 	SyncState struct {
 		SkipDiscoveredPaths map[string]struct{}
 		ProtectSeenPaths    map[string]struct{}
 	}
 
-	// composeImageEdit is an image scalar's source byte span and its replacement text.
 	composeImageEdit struct {
 		text       []byte
 		start, end int
@@ -94,7 +89,6 @@ func New(p Params) *Service {
 	}
 }
 
-// SyncState collects the paths pending renames protect during filesystem sync.
 func (s *Service) SyncState(ctx context.Context) SyncState {
 	state := SyncState{
 		SkipDiscoveredPaths: make(map[string]struct{}),
@@ -126,8 +120,6 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 	return state
 }
 
-// Prepare builds the journal for renaming a project, or nil when the name
-// does not change.
 func (s *Service) Prepare(req RenameRequest) *types.ProjectRenameJournal {
 	newName := strings.TrimSpace(kit.FromPtr(req.Name))
 	if newName == "" || req.OldName == newName {
@@ -157,7 +149,6 @@ func (s *Service) Prepare(req RenameRequest) *types.ProjectRenameJournal {
 	}
 }
 
-// WriteJournal stores the journal at the given phase.
 func (s *Service) WriteJournal(ctx context.Context, journal *types.ProjectRenameJournal, phase string) error {
 	if journal == nil {
 		return nil
@@ -193,7 +184,6 @@ func (s *Service) clearRollbackCleanup(ctx context.Context, projectID string) er
 	return s.kv.Delete(ctx, types.ProjectRenameRollbackCleanupKeyPrefix+projectID)
 }
 
-// RecoverAll replays every pending rename journal and rollback cleanup.
 func (s *Service) RecoverAll(ctx context.Context) error {
 	entries, err := s.kv.ListByPrefix(ctx, types.ProjectRenameJournalKeyPrefix)
 	if err != nil {
@@ -262,7 +252,6 @@ func (s *Service) RecoverAll(ctx context.Context) error {
 	return recoverErr
 }
 
-// RecoverProject replays one project's pending rename journal.
 func (s *Service) RecoverProject(ctx context.Context, projectID string) error {
 	if strings.TrimSpace(projectID) == "" {
 		return nil
@@ -287,8 +276,6 @@ func (s *Service) RecoverProject(ctx context.Context, projectID string) error {
 	return projects.RecoverRenameJournal(ctx, &journal, found && (name == journal.NewName || filepath.Clean(path) == filepath.Clean(journal.NewPath)), s.Operations())
 }
 
-// RollbackFailedUpdate rolls a directory rename back, restores the pre-update files,
-// and replays an active rename journal.
 func (s *Service) RollbackFailedUpdate(
 	ctx context.Context,
 	projectID, projectsDirectory, originalPath, currentPath string,
@@ -296,8 +283,6 @@ func (s *Service) RollbackFailedUpdate(
 	journalActive bool,
 	err error,
 ) error {
-	// The rollback runs detached so a cancelled update cannot leave the directory renamed. Paths sharing a parent
-	// stay confined; an imported project elsewhere crosses roots and cannot be confined.
 	renameErr := func() error {
 		switch {
 		case currentPath == originalPath:
@@ -323,7 +308,6 @@ func (s *Service) RollbackFailedUpdate(
 	return err
 }
 
-// Operations exposes journal persistence to the shared rename engine.
 func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
 	return types.ProjectRenameRecoveryOperations{
 		Docker: func(ctx context.Context, dockerRequired bool) (*client.Client, error) {
@@ -487,8 +471,6 @@ func PrepareProjectServiceImages(source []byte, effective *composetypes.Project,
 	return updated, serviceNames, nil
 }
 
-// composeImageSourceEdit finds an image scalar's single-line source span using YAML's line-break rules
-// and renders the target in the scalar's original style.
 func composeImageSourceEdit(source []byte, node *yaml.Node, target string) (composeImageEdit, error) {
 	const lineBreaks = "\r\n\u0085\u2028\u2029"
 	start := len(source) - len(bytes.TrimPrefix(source, []byte("\xEF\xBB\xBF")))
@@ -527,8 +509,6 @@ func composeImageSourceEdit(source []byte, node *yaml.Node, target string) (comp
 	return composeImageEdit{start: start, end: end, text: bytes.TrimSuffix(text, []byte("\n"))}, nil
 }
 
-// EnsureProjectEnvReadable rejects operator-driven file writes into a project
-// whose .env exists but cannot be read by the runtime user.
 func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPath string) error {
 	cfgErr := projects.CheckProjectEnvAccess(ctx, projectsDirectory, projectPath)
 	if !kit.FromPtr(cfgErr).BlocksOperations {
@@ -545,8 +525,6 @@ func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPat
 	)
 }
 
-// ImageChanges discovers newer image tags allowed by each service's update
-// policy. GitOps-managed projects cannot have their source edited.
 func (s *Service) ImageChanges(ctx context.Context, effective *composetypes.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
 	policy := updater.DefaultLabelPolicy()
 	selected := projects.NormalizeBuildSelections(servicesToUpdate)
@@ -604,8 +582,6 @@ func (s *Service) ImageChanges(ctx context.Context, effective *composetypes.Proj
 	return changes, nil
 }
 
-// ApplyImageChanges rewrites the image fields of the single authoritative
-// Compose file and returns the services whose images changed.
 func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
 	if len(effective.ComposeFiles) != 1 {
 		return nil, errors.New("tag updates require one authoritative Compose file; multi-file selections and overrides must be updated manually")

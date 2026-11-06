@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-// NormalizeQuery converts mattn-style SQLite DSN options to _pragma values and
-// drops every foreign_keys setting so callers control enforcement.
 func NormalizeQuery(query url.Values) url.Values {
 	qs := make(url.Values, len(query))
 	for k, v := range query {
@@ -44,14 +42,12 @@ func NormalizeQuery(query url.Values) url.Values {
 	return qs
 }
 
-// HasPragma reports whether query sets the named _pragma.
 func HasPragma(query url.Values, name string) bool {
 	return slices.ContainsFunc(query["_pragma"], func(pragma string) bool {
 		return strings.EqualFold(pragmaName(pragma), name)
 	})
 }
 
-// pragmaName strips arguments, schema qualifiers, and quotes from a _pragma value.
 func pragmaName(pragma string) string {
 	name := strings.TrimSpace(pragma)
 	if end := strings.IndexAny(name, "=( \t\r\n"); end >= 0 {

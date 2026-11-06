@@ -37,7 +37,6 @@ var precompressedVariants = []precompressedVariant{
 	{encoding: "gzip", extension: ".gz"},
 }
 
-// RegisterFrontend serves embedded assets and the SPA fallback outside /api.
 func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {

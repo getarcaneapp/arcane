@@ -26,7 +26,7 @@
 
 <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
 	<span class="text-sm text-muted-foreground">{m.applying_settings_for()}</span>
-	<EnvironmentDestinationSelect bind:value={() => selectedId, select} {environments} allOption size="sm" />
+	<EnvironmentDestinationSelect bind:value={() => selectedId, select} {environments} allOption />
 	{#if offlineCount > 0}
 		<span class="text-xs text-warning">{m.offline_environments_not_included({ count: offlineCount })}</span>
 	{/if}

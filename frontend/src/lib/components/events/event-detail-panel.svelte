@@ -36,6 +36,10 @@
 
 <div class="flex min-w-0 flex-col gap-4">
 	<div class="flex flex-col gap-4">
+		{#if event.description && event.description !== eventErrorMessage}
+			<p class="text-sm break-words text-muted-foreground">{event.description}</p>
+		{/if}
+
 		{#if eventErrorMessage}
 			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm break-words text-destructive">
 				{eventErrorMessage}
@@ -64,7 +68,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					customLabel={`${showRawEvent ? m.common_hide() : m.common_show()} ${m.common_raw()}`}
 					onclick={() => (showRawEvent = !showRawEvent)}
 				/>

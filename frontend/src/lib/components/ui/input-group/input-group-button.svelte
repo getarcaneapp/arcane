@@ -1,5 +1,7 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn } from '#lib/utils.js';
 
 	const inputGroupButtonVariants = tv({
 		base: 'flex items-center gap-2 text-sm shadow-none',
@@ -21,7 +23,6 @@
 
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		class?: string;

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { TableViewMode } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
-	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import VersionCellView from '#lib/components/arcane-table/cells/version-cell.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import {
 		UniversalMobileCard,
@@ -82,12 +82,9 @@
 			imageSummary = `${firstRef} +${summaryRefs.length - 1} more`;
 		}
 
-		// The list response already carries the per-reference result that raised the
-		// notification, with the project's update policy applied, so the row must read
-		// that record rather than the image-level check for the same reference.
+		// Read the per-reference result from the list response, not the image-level check.
 		const info = updatedRefs.length === 1 ? updateInfo?.updateInfoByRef?.[firstRef] : undefined;
-		// The backend blanks the target when services sharing a reference disagree, so
-		// fall back to the multi-update summary instead of picking one arbitrarily.
+		// A blank target means services sharing the reference disagree.
 		const hasSingleTarget = !!info && (!!info.latestVersion?.trim() || !!info.latestDigest?.trim());
 
 		let currentValue = '-';
@@ -125,21 +122,19 @@
 	const columns = $derived([
 		...environmentColumns<ProjectUpdateRow>(),
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'currentValue', id: 'version', title: m.common_version(), sortable: false, cell: VersionCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
+		{ accessorKey: 'checkedAt', title: m.last_check(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ProjectUpdateRow>[]);
 
 	const mobileFields = [
-		{ id: 'imageSummary', label: m.common_image(), defaultVisible: true },
 		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
 		{ id: 'latestValue', label: m.image_update_latest_label(), defaultVisible: true },
-		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
+		{ id: 'imageSummary', label: m.common_image(), defaultVisible: true },
+		{ id: 'checkedAt', label: m.last_check(), defaultVisible: true }
 	];
 
-	// A scoped updater run only touches the services whose images actually
-	// changed, unlike a full project redeploy.
+	// A scoped updater run only touches services whose images changed.
 	function handleUpdateProject(item: ProjectUpdateRow) {
 		confirmAndRun({
 			title: m.common_update(),
@@ -193,13 +188,18 @@
 	);
 </script>
 
+{#snippet VersionCell({ item, view }: { item: ProjectUpdateRow; view: TableViewMode })}
+	<VersionCellView current={item.currentValue} latest={item.latestValue} wrap={view === 'grid'} />
+{/snippet}
+
 {#snippet NameCell({ item }: { item: ProjectUpdateRow })}
 	{#if item.project.isDiscovered}
-		<span class="font-medium">{item.name}</span>
+		<span class="block max-w-resource-name truncate font-medium" title={item.name}>{item.name}</span>
 	{:else}
 		<a
-			class="font-medium hover:underline"
+			class="block max-w-resource-name truncate font-medium hover:underline"
 			href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId })}
+			title={item.name}
 		>
 			{item.name}
 		</a>
@@ -209,7 +209,7 @@
 {#snippet ImageCell({ item }: { item: ProjectUpdateRow })}
 	<div class="flex items-center gap-2">
 		<ImagesIcon class="size-3.5 shrink-0 text-muted-foreground" />
-		<span class="truncate text-sm" title={item.imageSummary !== '-' ? item.imageSummary : undefined}>
+		<span class="max-w-image-reference truncate text-sm" title={item.imageSummary !== '-' ? item.imageSummary : undefined}>
 			{item.imageSummary}
 		</span>
 	</div>
@@ -217,7 +217,7 @@
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
 	<IfPermitted perm={['image-updates:read', 'image-updates:apply']} envId={item.environmentId}>
-		<RowActionsMenu>
+		<RowActionsMenu name={item.name}>
 			{#if item.releaseNotesRef}
 				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
 					<DropdownMenu.Item
@@ -265,15 +265,15 @@
 				getValue: (item: ProjectUpdateRow) => item.latestValue
 			},
 			{
-				label: m.common_updated(),
+				label: m.last_check(),
 				getValue: (item: ProjectUpdateRow) => formatImageUpdateCheckedAt(item.checkedAt)
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: ProjectUpdateRow) => {
-			if (item.project.isDiscovered) return;
-			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId }));
-		}}
+		href={(item: ProjectUpdateRow) =>
+			item.project.isDiscovered
+				? undefined
+				: resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId })}
 	/>
 {/snippet}
 

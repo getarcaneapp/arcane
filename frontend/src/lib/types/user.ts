@@ -95,7 +95,6 @@ export type UserPreferences = {
 	animationsEnabled?: boolean;
 	sidebarHoverExpansion?: boolean;
 	keyboardShortcutsEnabled?: boolean;
-	mobileNavigationMode?: 'floating' | 'docked';
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
@@ -104,6 +103,9 @@ export type UserPreferences = {
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;
 	dashboardLayout?: DashboardWidgetLayout[];
+	interfaceFont?: string;
+	monospaceFont?: string;
+	codeFont?: string;
 };
 
 export type RoleAssignmentSummary = {

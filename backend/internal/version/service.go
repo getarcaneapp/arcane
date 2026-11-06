@@ -205,15 +205,12 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
-	// Ensure both versions have 'v' prefix for semver package
 	latest = s.normalizeVersion(latest)
 	current = s.normalizeVersion(current)
 
-	// Use semver.Compare: returns 1 if latest > current
 	return semver.Compare(latest, current) > 0
 }
 
-// normalizeVersion ensures version has 'v' prefix and is valid semver format
 func (s *VersionService) normalizeVersion(ver string) string {
 	ver = strings.TrimSpace(ver)
 	if ver == "" {
@@ -224,13 +221,10 @@ func (s *VersionService) normalizeVersion(ver string) string {
 		return ver
 	}
 	ver = kit.EnsurePrefix(ver, "v")
-	// If not valid semver, try to make it valid
 	if !semver.IsValid(ver) {
-		// Extract just the numeric part before any suffix
 		if idx := strings.IndexAny(ver, "-+"); idx > 0 {
 			ver = ver[:idx]
 		}
-		// Ensure at least v0.0.0 format
 		parts := strings.Split(strings.TrimPrefix(ver, "v"), ".")
 		for len(parts) < 3 {
 			parts = append(parts, "0")
@@ -268,8 +262,6 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 	}, err
 }
 
-// isChannelBuild reports whether this build tracks a rolling prerelease channel: a
-// -next. or -beta. version, or a container running the next or vN-beta image tag.
 func (s *VersionService) isChannelBuild(currentTag string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(s.version)), "-next.") ||
 		strings.Contains(strings.ToLower(strings.TrimSpace(s.version)), "-beta.") ||
@@ -277,9 +269,6 @@ func (s *VersionService) isChannelBuild(currentTag string) bool {
 		strings.HasSuffix(strings.TrimSpace(currentTag), "-beta")
 }
 
-// resolveNextImage returns the normalized version label and source revision of the
-// image an upgrade would pull; unresolvable fields stay empty. It prefers the
-// digest reference so the result and NewestDigest describe the same artifact.
 func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, newestDigest string) nextImage {
 	newestDigest, tag = strings.TrimSpace(newestDigest), strings.TrimSpace(tag)
 	if strings.TrimSpace(imageRef) == "" || (newestDigest == "" && tag == "") {
@@ -288,27 +277,26 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 
 	lookupRef := kit.Ternary(newestDigest != "", imageRef+"@"+newestDigest, imageRef+":"+tag)
 
-	labels, err := s.containerRegistryService.ImageLabels(ctx, lookupRef)
+	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, registry.ImageConfigOptions{})
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve next-channel image labels", "imageRef", lookupRef, "error", err)
+		slog.WarnContext(ctx, "Failed to resolve next-channel image config", "imageRef", lookupRef, "error", err)
 		return nextImage{}
 	}
-	if strings.TrimSpace(labels[registry.OCIImageVersionLabel]) == "" {
+	if strings.TrimSpace(cfg.Config.Labels[registry.OCIImageVersionLabel]) == "" {
 		slog.WarnContext(ctx, "Next-channel image has no version label", "imageRef", lookupRef)
 		return nextImage{}
 	}
 
-	normalized := s.normalizeVersion(labels[registry.OCIImageVersionLabel])
+	normalized := s.normalizeVersion(cfg.Config.Labels[registry.OCIImageVersionLabel])
 	if !semver.IsValid(normalized) {
-		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", labels[registry.OCIImageVersionLabel])
+		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", cfg.Config.Labels[registry.OCIImageVersionLabel])
 	}
 	return nextImage{
 		Version:  kit.Ternary(semver.IsValid(normalized), normalized, ""),
-		Revision: strings.TrimSpace(labels[registry.OCIImageRevisionLabel]),
+		Revision: strings.TrimSpace(cfg.Config.Labels[registry.OCIImageRevisionLabel]),
 	}
 }
 
-// updateCheckImageRef points the digest lookup at the configured registry; "auto" keeps the running reference.
 func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
 	target := strings.TrimSpace(s.settingsService.GetSettingsConfig().UpdateCheckRegistry.Value)
 	if target == "" || target == "auto" {
@@ -334,7 +322,6 @@ func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
 	return kit.Ternary(host == reference.Domain(named) && repoPath == reference.Path(named), currentImageRef, host+"/"+repoPath)
 }
 
-// GetAppVersionInfo returns application version information including display version
 func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionInfo {
 	isSemver := semver.IsValid(kit.EnsurePrefix(s.version, "v"))
 	ver := s.normalizeVersion(s.version)
@@ -453,7 +440,6 @@ func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, current 
 	return updateAvailable, latestDigest
 }
 
-// detectCurrentImageInfo attempts to detect the current container's image tag and digest
 func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected currentImageInfo) {
 	if cached, found, _ := s.currentImage.Get(struct{}{}); found {
 		return cached
@@ -540,7 +526,6 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 	return base
 }
 
-// RunStreamProducer shares one version poll loop across every connected client and emits a snapshot whenever it changes.
 func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- types.VersionStreamEvent) {
 	s.streamHub.Subscribe(ctx, "local",
 		func(runCtx context.Context, publish func(types.VersionStreamEvent)) {

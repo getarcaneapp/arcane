@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -16,22 +18,20 @@ import (
 )
 
 const (
-	// tunnelCapabilityMux is offered by agents that can run the multiplexed data plane.
 	tunnelCapabilityMux = "mux-v1"
 	// tunnelCapabilityMuxGrant switches both peers to mux; only managers that serve mux send it, since older ones echo offers.
 	tunnelCapabilityMuxGrant = "mux-grant-v1"
 
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
+	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
 
-	// MuxAgentBaseURL is the synthetic origin for requests a manager sends through a multiplexed tunnel.
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"
 	muxEventsPath     = "/api/tunnel/events"
 
-	muxStreamWindowSize = 4 << 20
-	muxMaxFrameSize     = 1 << 20
-	muxMaxPendingWrite  = 1 << 20
-	muxWriteTimeout     = 30 * time.Second
+	muxMaxFrameSize    = 1 << 20
+	muxMaxPendingWrite = 1 << 20
+	muxWriteTimeout    = 30 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
 	muxDialTimeout = 30 * time.Second
 	// ProxyResponseHeaderTimeout is generous because proxied operations such as deploys can run for minutes before responding.
@@ -39,28 +39,35 @@ const (
 )
 
 var (
-	// errTunnelMuxActive rejects register messages once a connection carries a multiplexed session.
 	errTunnelMuxActive    = errors.New("agent tunnel connection carries a multiplexed session")
 	errAgentMuxRequired   = errors.New("agent does not support the multiplexed data plane; upgrade the agent")
 	errManagerMuxRequired = errors.New("manager did not grant the multiplexed data plane; upgrade the manager")
 )
 
-// newMuxConfig returns the yamux settings both peers use. Only the agent enables yamux keepalive; the manager
-// pings explicitly from serveMuxTunnel to record RTT and heartbeats.
-func newMuxConfig(keepAlive bool) *yamux.Config {
+func newMuxConfig(keepAlive bool, streamWindowMiB int) *yamux.Config {
 	return &yamux.Config{
 		AcceptBacklog:          256,
 		EnableKeepAlive:        keepAlive,
 		KeepAliveInterval:      DefaultHeartbeatInterval,
 		ConnectionWriteTimeout: muxWriteTimeout,
-		MaxStreamWindowSize:    muxStreamWindowSize,
+		MaxStreamWindowSize:    uint32(streamWindowMiB) << 20,
 		StreamOpenTimeout:      75 * time.Second,
 		StreamCloseTimeout:     5 * time.Minute,
 		Logger:                 slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 	}
 }
 
-// newMuxHTTPClient returns a traced client whose connections are streams opened by dial.
+func muxStreamWindowMiB(capabilities []string, fallback int) int {
+	for _, capability := range capabilities {
+		if value, ok := strings.CutPrefix(capability, tunnelCapabilityMuxWindowPrefix); ok {
+			if windowMiB, err := strconv.ParseUint(value, 10, 16); err == nil {
+				return int(min(max(windowMiB, 1), 64))
+			}
+		}
+	}
+	return fallback
+}
+
 func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Client {
 	return httpx.NewHTTPClient(httpx.ClientConfig{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -79,8 +86,6 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 	})
 }
 
-// openMuxStream opens a stream but returns as soon as ctx ends. yamux's Open cannot be cancelled while it
-// waits for an in-flight SYN slot, so a stream that opens after the caller left is closed; no other stream is touched.
 func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -114,19 +119,18 @@ func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error
 	}
 }
 
-// newMuxConn starts the sender that coalesces writes, so a yamux header and body share one transport message.
-// Batches are never reused, since gRPC forbids modifying a message after Send.
 func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTransport func() error) *muxConn {
 	c := &muxConn{recv: recv, closeTransport: closeTransport}
 	c.cond.L = &c.mu
 	go func() {
+		var spare []byte
 		for {
 			c.mu.Lock()
 			for c.err == nil && len(c.pending) == 0 {
 				c.cond.Wait()
 			}
 			batch, err := c.pending, c.err
-			c.pending = nil
+			c.pending = spare[:0]
 			c.cond.Broadcast()
 			c.mu.Unlock()
 			if err != nil {
@@ -138,6 +142,7 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 					return
 				}
 			}
+			spare = batch
 		}
 	}()
 	return c
@@ -158,7 +163,6 @@ func (c *muxConn) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Read is called only by the yamux receive loop.
 func (c *muxConn) Read(p []byte) (int, error) {
 	for len(c.unread) == 0 {
 		frame, err := c.recv()
@@ -181,7 +185,6 @@ func (c *muxConn) Close() error {
 	return err
 }
 
-// fail records the first error and wakes blocked writers and the sender.
 func (c *muxConn) fail(err error) {
 	c.mu.Lock()
 	if c.err == nil {

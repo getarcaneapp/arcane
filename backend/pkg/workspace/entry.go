@@ -8,7 +8,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// FileEntry converts ACFS metadata to Arcane's shared workspace entry type.
 func FileEntry(entry acfstypes.Entry) types.WorkspaceFileEntry {
 	modTime := entry.ModTime
 	if entry.ModTimeUnixNano != 0 {

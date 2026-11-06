@@ -35,7 +35,6 @@ import (
 )
 
 type (
-	// Service manages swarm nodes, their agent bindings, and Easy Join.
 	Service struct {
 		docker             *dockerInternal.DockerClientService
 		ensureManager      func(ctx context.Context) error
@@ -191,8 +190,6 @@ func (s *Service) inspectNode(ctx context.Context, environmentID, nodeID string)
 	return new(types.NewSwarmNode(nodeResult.Node)), nil
 }
 
-// ReconcileNodeAgents verifies visible environment identities and persists only
-// unique node matches. Ambiguous and mismatched identities remain unchanged.
 func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string) (*types.NodeAgentReconcileResponse, error) {
 	items, _, err := s.ListNodesPaginated(ctx, environmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
@@ -230,8 +227,6 @@ func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string)
 	return &types.NodeAgentReconcileResponse{Results: results}, nil
 }
 
-// BindNodeAgent verifies that a visible environment currently reports the
-// requested node identity before persisting the binding.
 func (s *Service) BindNodeAgent(ctx context.Context, parentEnvironmentID, nodeID string, request types.NodeAgentBindingRequest) (*environment.Environment, error) {
 	localEnvironment, err := s.environmentService.GetEnvironmentByID(ctx, request.EnvironmentID)
 	if err != nil {
@@ -472,7 +467,6 @@ func (s *Service) applyNodeAgentCoverage(environmentID string, item *types.Swarm
 
 	boundEnvs := coverage.boundEnvsByNodeID[nodeID]
 	if len(boundEnvs) > 0 {
-		// Prefer the first visible environment, falling back to the first one.
 		localEnvironment := boundEnvs[max(0, slices.IndexFunc(boundEnvs, func(env environment.Environment) bool { return !env.Hidden }))]
 		item.Agent = s.buildNodeAgentStatus(nodeID, &localEnvironment, coverage.runtimeByEnvID[localEnvironment.ID])
 		return
@@ -509,8 +503,6 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 	}
 }
 
-// JoinEnvironments joins visible remote environments to the selected swarm
-// manager and returns an independent result for every target.
 func (s *Service) JoinEnvironments(ctx context.Context, managerEnvironmentID string, request types.SwarmJoinEnvironmentsRequest) (*types.SwarmJoinEnvironmentsResponse, error) {
 	if len(request.Targets) == 0 {
 		return &types.SwarmJoinEnvironmentsResponse{Results: []types.SwarmJoinEnvironmentResult{}}, nil
@@ -822,7 +814,6 @@ func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode]
 	}
 }
 
-// GetJoinCandidates lists environments available to join the selected manager.
 func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) ([]types.SwarmJoinCandidate, error) {
 	var identity *SwarmNodeIdentity
 	var err error
@@ -874,9 +865,6 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 	return candidates, nil
 }
 
-// describeSwarmJoinFailure turns a proxied join failure into a concise,
-// token-free message. Agent HTTP errors contribute their detail; transport
-// errors keep their own text.
 func describeSwarmJoinFailure(err error, joinToken string) string {
 	var status *agent.StatusError
 	if !errors.As(err, &status) {
@@ -897,7 +885,6 @@ func describeSwarmJoinFailure(err error, joinToken string) string {
 	return fmt.Sprintf("swarm join failed with HTTP %d from the target agent", status.StatusCode)
 }
 
-// redactSwarmJoinToken masks the join token wherever it appears in message.
 func RedactSwarmJoinToken(message, joinToken string) string {
 	if joinToken == "" {
 		return message
@@ -905,8 +892,6 @@ func RedactSwarmJoinToken(message, joinToken string) string {
 	return strings.ReplaceAll(message, joinToken, "[redacted]")
 }
 
-// selectSwarmManagerAddresses prefers explicit manager addresses and
-// otherwise uses the addresses advertised by the cluster's manager nodes.
 func selectSwarmManagerAddresses(explicit []string, nodes []types.SwarmNode) ([]string, error) {
 	addrs := kit.TrimNonEmpty(explicit)
 	if len(addrs) > 0 {

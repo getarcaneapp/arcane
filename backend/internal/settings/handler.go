@@ -23,7 +23,6 @@ import (
 )
 
 type (
-	// SettingsHandler provides Huma-based settings management endpoints.
 	SettingsHandler struct {
 		settingsService       *SettingsService
 		settingsSearchService *SettingsSearchService
@@ -80,7 +79,6 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 	}
 }
 
-// GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	_, authenticated := middleware.GetUserIDFromContext(ctx)
 	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(authenticated, SettingVisibilityNonAdmin, SettingVisibilityPublic))
@@ -169,7 +167,6 @@ func (h *SettingsHandler) updateLocal(ctx context.Context, updates types.Setting
 	}
 }
 
-// Search searches settings by query.
 func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput) (*SearchSettingsOutput, error) {
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest("Query parameter is required")
@@ -179,11 +176,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 	if err != nil {
 		return nil, err
 	}
-	results := search.Search(categories.Body, input.Body.Query, types.SearchProfileSettings)
+	results := search.Search(categories.Body, input.Body.Query)
 	return &SearchSettingsOutput{Body: results}, nil
 }
 
-// GetCategories returns the settings categories reachable at any scope.
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	categories := []types.Category{}
 	ps, _ := middleware.PermissionsFromContext(ctx)

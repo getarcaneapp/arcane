@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// registerCollector registers a client on the hub and returns its send channel.
-// Must be called before broadcasting so the client is present to receive messages.
 func registerCollector(t *testing.T, h *Hub) *Client {
 	t.Helper()
 	sc, cleanup := newTestWSPair(t)
@@ -27,7 +25,6 @@ func registerCollector(t *testing.T, h *Hub) *Client {
 	return c
 }
 
-// drainClient reads count messages from the client's send channel.
 func drainClient(t *testing.T, c *Client, count int) [][]byte {
 	t.Helper()
 	var msgs [][]byte
@@ -48,7 +45,6 @@ func TestForwardLines(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	// Register collector BEFORE starting forwarder
 	c := registerCollector(t, h)
 
 	lines := make(chan string, 5)
@@ -83,7 +79,6 @@ func TestForwardLines_ContextCancellation(t *testing.T) {
 
 	select {
 	case <-done:
-		// ForwardLines exited as expected
 	case <-time.After(time.Second):
 		require.FailNow(t, "ForwardLines did not exit after context cancellation")
 	}
@@ -228,7 +223,6 @@ func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T)
 
 	msgs := drainClient(t, c, 2)
 
-	// Each message should be a single object, not an array
 	var m1 LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &m1))
 	assert.Equal(t, "single", m1.Message)
@@ -242,7 +236,6 @@ func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 	c := registerCollector(t, h)
 
 	logs := make(chan LogMessage, 10)
-	// Send 2 messages but maxBatch is 100 — should flush on channel close
 	logs <- LogMessage{Seq: 1, Message: "flush on close", Timestamp: "2024-01-15T10:30:45Z"}
 	logs <- LogMessage{Seq: 2, Message: "also flushed", Timestamp: "2024-01-15T10:30:46Z"}
 	close(logs)
@@ -265,7 +258,6 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 
 	c := registerCollector(t, h)
 
-	// Use an unbuffered channel so we can control exactly when messages are sent
 	logs := make(chan LogMessage)
 	forwardCtx, forwardCancel := context.WithCancel(t.Context())
 
@@ -275,10 +267,8 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 		close(done)
 	}()
 
-	// Send one message
 	logs <- LogMessage{Seq: 1, Message: "flush on cancel", Timestamp: "2024-01-15T10:30:45Z"}
 
-	// Give the forwarder time to buffer it
 	time.Sleep(50 * time.Millisecond)
 	forwardCancel()
 
@@ -288,7 +278,6 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 		require.FailNow(t, "ForwardLogJSONBatched did not exit after context cancellation")
 	}
 
-	// The buffered message should have been flushed
 	msgs := drainClient(t, c, 1)
 	var batch []LogMessage
 	require.NoError(t, json.Unmarshal(msgs[0], &batch))

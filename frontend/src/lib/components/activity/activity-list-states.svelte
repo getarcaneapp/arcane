@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	import { ActivityIcon, AlertTriangleIcon, SearchIcon } from '#lib/icons/index.js';
+	import { ActivityIcon, AlertIcon, SearchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 
@@ -9,7 +9,6 @@
 		filtered = true,
 		children
 	}: {
-		/** Whether the content honours search and filters; unfiltered views never show "no results". */
 		filtered?: boolean;
 		children: Snippet;
 	} = $props();
@@ -25,7 +24,7 @@
 
 {#if activityStore.environmentFailures.length > 0}
 	<div class="mx-3 mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs">
-		<AlertTriangleIcon class="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+		<AlertIcon class="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
 		<div class="min-w-0 flex-1 space-y-0.5 text-muted-foreground">
 			{#each activityStore.environmentFailures as failure (failure.environmentId)}
 				<p>{m.activity_environment_load_failed({ environment: failure.environmentName })}</p>
@@ -34,7 +33,21 @@
 		<button
 			type="button"
 			onclick={() => activityStore.retryStream()}
-			class="shrink-0 cursor-pointer font-medium text-primary hover:underline"
+			class="shrink-0 cursor-pointer font-medium text-primary-text hover:underline"
+		>
+			{m.common_retry()}
+		</button>
+	</div>
+{/if}
+
+{#if activityStore.streamError && activityStore.environmentFailures.length === 0}
+	<div class="mx-3 mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs">
+		<AlertIcon class="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+		<p class="min-w-0 flex-1 text-muted-foreground">{m.activity_stream_unavailable()}</p>
+		<button
+			type="button"
+			onclick={() => activityStore.retryStream()}
+			class="shrink-0 cursor-pointer font-medium text-primary-text hover:underline"
 		>
 			{m.common_retry()}
 		</button>
@@ -60,7 +73,7 @@
 		<button
 			type="button"
 			onclick={() => activityStore.clearFilters()}
-			class="mt-1 cursor-pointer text-xs font-medium text-primary hover:underline"
+			class="mt-1 cursor-pointer text-xs font-medium text-primary-text hover:underline"
 		>
 			{m.common_clear_filters()}
 		</button>

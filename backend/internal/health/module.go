@@ -7,18 +7,15 @@ import (
 )
 
 type (
-	// Module owns the liveness and readiness routes.
 	Module struct {
 		service *Service
 	}
 )
 
-// New builds the health module that registers the liveness and readiness routes.
 func New(service *Service) *Module {
 	return &Module{service: service}
 }
 
-// RegisterRoutes registers the liveness and readiness routes; readiness is hidden from the OpenAPI spec.
 func (m *Module) RegisterRoutes(api huma.API) {
 	handler := &healthHandler{service: m.service}
 

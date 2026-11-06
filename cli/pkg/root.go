@@ -1,4 +1,3 @@
-// Package cli provides the root command and entry point for the Arcane CLI.
 package cli
 
 import (
@@ -62,7 +61,6 @@ type (
 	}
 )
 
-// NewRootCommand builds a fresh Arcane CLI command tree.
 func NewRootCommand() *cobra.Command {
 	opts := &rootOptions{}
 	root := &cobra.Command{

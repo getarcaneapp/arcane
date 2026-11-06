@@ -1,8 +1,3 @@
-// Package vuln drives Trivy scans: building and parsing scanner invocations,
-// plus the container-level mechanics of running one — runtime/network
-// detection, container spec and resources, temp files, log copy and tar
-// extraction, and report decoding. Nothing here depends on Arcane's database or
-// service graph, so it is unit-testable in isolation.
 package vuln
 
 import (
@@ -24,18 +19,13 @@ import (
 )
 
 const (
-	// DefaultDockerHostURI is the fallback Docker endpoint used when none is configured.
 	DefaultDockerHostURI = "unix:///var/run/docker.sock"
 
-	// DBRepository / JavaDBRepository / ChecksBundleRepository are the Arcane-mirrored Trivy database paths without a registry host.
 	DBRepository           = "getarcaneapp/trivy-db:2"
 	JavaDBRepository       = "getarcaneapp/trivy-java-db:1"
 	ChecksBundleRepository = "getarcaneapp/trivy-checks:1"
 )
 
-// ParseVersion extracts the version string from `trivy --version` output. It
-// returns the value after a "Version:" prefix when present, otherwise the
-// trimmed output as-is.
 func ParseVersion(output string) string {
 	output = strings.TrimSpace(output)
 	if output == "" {
@@ -50,8 +40,6 @@ func ParseVersion(output string) string {
 	return strings.TrimSpace(output)
 }
 
-// ParseSecurityOpts splits a comma- or newline-separated list of security options
-// into a cleaned slice, returning nil when there are no non-empty entries.
 func ParseSecurityOpts(value string) []string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -66,8 +54,6 @@ func ParseSecurityOpts(value string) []string {
 	return kit.Ternary(len(opts) == 0, nil, opts)
 }
 
-// ParseDockerHost validates and decomposes a Docker host URI into its scheme and,
-// for unix sockets, the socket path. An empty host falls back to DefaultDockerHostURI.
 func ParseDockerHost(dockerHost string) (scheme, socketPath string, err error) {
 	dockerHost = cmp.Or(strings.TrimSpace(dockerHost), DefaultDockerHostURI)
 
@@ -95,7 +81,6 @@ func ParseDockerHost(dockerHost string) (scheme, socketPath string, err error) {
 	}
 }
 
-// BuildDockerHostEnv returns the DOCKER_HOST environment entry for a non-empty host.
 func BuildDockerHostEnv(dockerHost string) []string {
 	dockerHost = strings.TrimSpace(dockerHost)
 	if dockerHost == "" {
@@ -104,8 +89,6 @@ func BuildDockerHostEnv(dockerHost string) []string {
 	return []string{"DOCKER_HOST=" + dockerHost}
 }
 
-// ProxyEnv returns HTTP_PROXY, HTTPS_PROXY and NO_PROXY entries for the non-empty values
-// so Trivy containers download databases through the same proxy as Arcane (#4163).
 func ProxyEnv(httpProxy, httpsProxy, noProxy string) []string {
 	values := [...][2]string{{"HTTP_PROXY", httpProxy}, {"HTTPS_PROXY", httpsProxy}, {"NO_PROXY", noProxy}}
 	env := make([]string, 0, len(values))
@@ -117,9 +100,6 @@ func ProxyEnv(httpProxy, httpsProxy, noProxy string) []string {
 	return kit.Ternary(len(env) == 0, nil, env)
 }
 
-// ScanCacheBackendArgsForArch returns the Trivy cache-backend flags for a GOARCH.
-// The default BoltDB-backed cache can fail with ENOMEM on arm/v7 and 386 because
-// Go's heap reservations fragment the limited 32-bit virtual address space.
 func ScanCacheBackendArgsForArch(arch string) []string {
 	switch arch {
 	case "arm", "386", "mips", "mipsle":
@@ -129,7 +109,6 @@ func ScanCacheBackendArgsForArch(arch string) []string {
 	}
 }
 
-// RepositoryArgs returns the Trivy DB repository flags pointing at the Arcane-mirrored databases on the given registry.
 func RepositoryArgs(registrySetting string) []string {
 	host := registry.ArcaneRegistryHost(registrySetting)
 	return []string{
@@ -139,13 +118,6 @@ func RepositoryArgs(registrySetting string) []string {
 	}
 }
 
-// ScanSourceArgs returns the Trivy flags selecting where vulnerability data comes
-// from. In client/server mode (serverURL set) the client never opens the local
-// BoltDB, so --server replaces the cache-backend and DB-repository flags. This is
-// the supported path on 32-bit hosts (arm/v7) where the local DB cannot be
-// memory-mapped. With an empty serverURL it falls back to the standalone
-// local-database flags. The server token is passed via ServerTokenEnv rather than
-// a flag so it is not exposed in the process arguments.
 func ScanSourceArgs(serverURL, registrySetting string) []string {
 	serverURL = strings.TrimSpace(serverURL)
 	if serverURL == "" {
@@ -155,9 +127,6 @@ func ScanSourceArgs(serverURL, registrySetting string) []string {
 	return []string{"--server", serverURL}
 }
 
-// ServerTokenEnv returns the TRIVY_TOKEN environment entry for a non-empty Trivy
-// server token. Passing the token through the environment instead of a --token CLI
-// flag keeps it out of the container's process arguments (/proc/<pid>/cmdline, ps).
 func ServerTokenEnv(token string) []string {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -166,8 +135,6 @@ func ServerTokenEnv(token string) []string {
 	return []string{"TRIVY_TOKEN=" + token}
 }
 
-// IgnoreUnfixedArgs returns --ignore-unfixed when enabled so Trivy only reports
-// vulnerabilities that have a known fix.
 func IgnoreUnfixedArgs(enabled bool) []string {
 	if enabled {
 		return []string{"--ignore-unfixed"}
@@ -175,9 +142,6 @@ func IgnoreUnfixedArgs(enabled bool) []string {
 	return nil
 }
 
-// BuildDockerConfigJSON encodes registry auth configs into a docker config.json
-// payload (base64 user:password under each host). It returns (nil, nil) when there
-// are no usable credentials.
 func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]byte, error) {
 	if len(authConfigs) == 0 {
 		return nil, nil
@@ -208,7 +172,6 @@ func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]
 	}{Auths: auths})
 }
 
-// BuildContainerConfig assembles the container.Config for a Trivy scan container.
 func BuildContainerConfig(scannerImage string, cmdArgs, env []string) *containertypes.Config {
 	return &containertypes.Config{
 		Image:      scannerImage,

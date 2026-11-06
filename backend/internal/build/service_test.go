@@ -162,7 +162,6 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 		"",
 	)
 	require.Error(t, err)
-	// HTTP(S) URLs without a .git suffix now reach the remote probe step instead of failing suffix validation.
 	assert.Contains(t, err.Error(), "failed to verify remote git repository")
 	assert.Contains(t, err.Error(), "archive.tar.gz")
 	require.NoError(t, cleanup())
@@ -512,7 +511,6 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 	require.Len(t, records, 1)
 	assert.Nil(t, records[0].Output)
 
-	// The detail endpoint must still return the stored output.
 	detail, err := svc.GetImageBuildByID(t.Context(), "0", "build-omit-output")
 	require.NoError(t, err)
 	require.NotNil(t, detail.Output)

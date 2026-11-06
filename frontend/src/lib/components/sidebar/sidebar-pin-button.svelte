@@ -5,15 +5,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: {
-		ref?: HTMLElement | null;
-		class?: string;
-		[key: string]: any;
-	} = $props();
+	let { ref = $bindable(null), class: className }: { ref?: HTMLElement | null; class?: string } = $props();
 
 	const sidebar = useSidebar();
 	const isPinned = $derived(sidebar.isPinned);
@@ -42,7 +34,6 @@
 			}
 		}
 	}}
-	{...restProps}
 >
 	{#if isPinned}
 		<PinOnIcon />

@@ -20,7 +20,6 @@ import (
 )
 
 type (
-	// UserHandler handles user management endpoints.
 	UserHandler struct {
 		userService              *UserService
 		invalidateUserTokenCache func(string)
@@ -64,7 +63,6 @@ type (
 	}
 )
 
-// ListUsers returns a paginated list of users.
 func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*handlerutil.Page[types.User], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
@@ -82,7 +80,6 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ha
 	}, nil
 }
 
-// CreateUser creates a new user.
 func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*handlerutil.Out[types.User], error) {
 	username, err := normalizeUsername(input.Body.Username)
 	if err != nil {
@@ -138,7 +135,6 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 	}, nil
 }
 
-// GetUser returns a user by ID.
 func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*handlerutil.Out[types.User], error) {
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
@@ -158,7 +154,6 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*handle
 	}, nil
 }
 
-// UpdateUser updates a user.
 func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*handlerutil.Out[types.User], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -244,11 +239,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}, nil
 }
 
-// DeleteUser deletes a user.
 func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*handlerutil.Out[types.MessageResponse], error) {
-	// Privilege ordering: a non-admin caller may not delete a global admin
-	// target. The service enforces the same check; this pre-check produces a
-	// clean 403 without entering the delete path.
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	caller, _ := handlerutil.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
@@ -279,7 +270,6 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	return handlerutil.MessageOutput("User deleted successfully", ""), nil
 }
 
-// GetUserAvatar returns the custom profile picture for a user.
 func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInput) (*GetUserAvatarOutput, error) {
 	data, mimeType, err := h.userService.GetAvatar(ctx, input.UserID)
 	if err != nil {
@@ -301,9 +291,6 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 	}, nil
 }
 
-// checkUpdateUserPrivileges enforces that a non-admin caller may not
-// modify a global admin target, nor set another user's password. The service
-// re-enforces the target-admin check.
 func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	caller, _ := handlerutil.CurrentUserFromContext(ctx)

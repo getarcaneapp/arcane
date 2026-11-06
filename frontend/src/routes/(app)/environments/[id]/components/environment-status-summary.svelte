@@ -7,7 +7,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 
 	let {
@@ -37,19 +36,11 @@
 		}
 	});
 
-	let statusDotClass = $derived.by((): string => {
-		switch (statusBadge.variant) {
-			case 'green':
-				return 'bg-success shadow-glow shadow-success';
-			case 'amber':
-				return 'bg-warning';
-			default:
-				return 'bg-destructive';
-		}
-	});
-
 	let localDisplayVersion = $derived(
-		versionInformation?.displayVersion || versionInformation?.currentTag || versionInformation?.currentVersion || 'Unknown'
+		versionInformation?.displayVersion ||
+			versionInformation?.currentTag ||
+			versionInformation?.currentVersion ||
+			m.common_unknown()
 	);
 
 	let remoteDisplayVersion = $derived(
@@ -71,10 +62,8 @@
 	});
 </script>
 
-<!-- Inline header chips: status, version, and agent heartbeat. -->
 <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
 	<Badge variant={statusBadge.variant} minWidth="20">
-		<span class={cn('size-1.5 rounded-full', statusDotClass)}></span>
 		{statusBadge.text}
 	</Badge>
 	<div class="flex items-center gap-1.5 text-xs text-muted-foreground">

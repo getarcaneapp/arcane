@@ -1,5 +1,7 @@
 <script lang="ts" module>
-	import { type VariantProps, tv } from 'tailwind-variants';
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv } from '#lib/utils.js';
 
 	// Without a title the icon centers on the description's first 20px line: 1rem of padding plus 2px.
 	export const alertVariants = tv({

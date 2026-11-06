@@ -75,7 +75,7 @@
 	}
 </script>
 
-<ResourcePageLayout title={m.auto_update()} subtitle={m.podman_autoupdate_subtitle()} icon={UpdateIcon}>
+<ResourcePageLayout title={m.auto_update()} subtitle={m.podman_autoupdate_subtitle()}>
 	{#snippet mainContent()}
 		{#if podmanEnvs.length === 0}
 			<EmptyState icon={UpdateIcon} title={m.common_unavailable()} description={m.podman_autoupdate_unavailable()} />
@@ -181,7 +181,7 @@
 									</Table.Root>
 								</div>
 							{:else if result.mode === 'rest'}
-								<EmptyState icon={UpdateIcon} title={m.podman_autoupdate_no_reports()} variant="plain" />
+								<EmptyState icon={UpdateIcon} title={m.podman_autoupdate_no_reports()} />
 							{/if}
 
 							{#if (result.errors ?? []).length > 0}

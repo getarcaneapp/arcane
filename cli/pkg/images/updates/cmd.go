@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -19,7 +20,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command builds the updates command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "updates",
@@ -170,8 +170,6 @@ func newSummaryCmd() *cobra.Command {
 	}
 }
 
-// printBatchResults prints every requested reference, including
-// up-to-date and failed checks.
 func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 	var result types.ImageUpdateBatchResponse
 	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
@@ -208,7 +206,13 @@ func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 		}
 		if update.HasUpdate {
 			updatesAvailable++
-			rows = append(rows, []string{imageRef, "Yes", update.CurrentVersion, update.LatestVersion, update.UpdateType})
+			rows = append(rows, []string{
+				imageRef,
+				"Yes",
+				update.CurrentVersion,
+				cmp.Or(update.LatestVersion, update.LatestDigest[:min(len(update.LatestDigest), 19)]),
+				update.UpdateType,
+			})
 			continue
 		}
 		rows = append(rows, []string{imageRef, "No", update.CurrentVersion, "", ""})
@@ -230,7 +234,7 @@ func printUpdateStatus(data types.ImageUpdateResponse, imageRef string) error {
 	if data.HasUpdate {
 		output.KeyValue("Update Type", data.UpdateType)
 		output.KeyValue("Current Version", data.CurrentVersion)
-		output.KeyValue("Latest Version", data.LatestVersion)
+		output.KeyValue("Latest Version", cmp.Or(data.LatestVersion, data.LatestDigest[:min(len(data.LatestDigest), 19)]))
 	}
 	output.KeyValue("Check Time", data.CheckTime.String())
 	output.KeyValue("Response Time", fmt.Sprintf("%dms", data.ResponseTimeMs))

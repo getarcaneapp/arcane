@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -28,7 +29,7 @@ export const load: PageLoad = async ({ params, url }) => {
 		if ('status' in err && err.status === 404) {
 			throw err;
 		}
-		throw error(500, err.message || 'Failed to load service details');
+		throw error(500, err.message || m.failed_to_load_service_details());
 	} else {
 		return operationResult.data;
 	}

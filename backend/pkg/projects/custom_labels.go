@@ -29,42 +29,29 @@ import (
 type (
 	IconSet = iconcatalog.IconSet
 
-	// ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
 	ArcaneComposeMetadata struct {
-		// ServiceIconSets maps service names to their fallback, light, and dark icon values.
-		ServiceIconSets map[string]IconSet
-		// ProjectIcon contains fallback, light, and dark icon values for the project.
-		ProjectIcon IconSet
-		// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
-		ProjectURLS []string
-		// ProjectTags are normalized tags managed by Compose metadata.
-		ProjectTags []types.ProjectTagOption
-		// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
-		ComposeFiles []string
-		// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
-		EnvFiles []string
-		// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
+		ServiceIconSets          map[string]IconSet
+		ProjectIcon              IconSet
+		ProjectURLS              []string
+		ProjectTags              []types.ProjectTagOption
+		ComposeFiles             []string
+		EnvFiles                 []string
 		ProjectTagsAuthoritative bool
 	}
 )
 
 const (
-	// ArcaneIconLabel is the full reverse-DNS label key for fallback service-level icons.
-	ArcaneIconLabel = "com.getarcaneapp.arcane.icon"
-	// ArcaneIconLightLabel is the full reverse-DNS label key for light service-level icons.
-	ArcaneIconLightLabel = "com.getarcaneapp.arcane.icon-light"
-	// ArcaneIconDarkLabel is the full reverse-DNS label key for dark service-level icons.
-	ArcaneIconDarkLabel = "com.getarcaneapp.arcane.icon-dark"
-	arcaneBlockKey      = "x-arcane"
-	arcaneIconKey       = "icon"
-	arcaneIconsKey      = "icons"
-	arcaneIconLightKey  = "icon-light"
-	arcaneIconDarkKey   = "icon-dark"
-	arcaneURLsKey       = "urls"
-	arcaneTagsKey       = "tags"
-	// ProjectTagMaxLength is the maximum number of Unicode characters in a tag name.
-	ProjectTagMaxLength = 64
-	// ProjectTagsPerSourceLimit is the maximum number of UI or Compose tags on one project.
+	ArcaneIconLabel           = "com.getarcaneapp.arcane.icon"
+	ArcaneIconLightLabel      = "com.getarcaneapp.arcane.icon-light"
+	ArcaneIconDarkLabel       = "com.getarcaneapp.arcane.icon-dark"
+	arcaneBlockKey            = "x-arcane"
+	arcaneIconKey             = "icon"
+	arcaneIconsKey            = "icons"
+	arcaneIconLightKey        = "icon-light"
+	arcaneIconDarkKey         = "icon-dark"
+	arcaneURLsKey             = "urls"
+	arcaneTagsKey             = "tags"
+	ProjectTagMaxLength       = 64
 	ProjectTagsPerSourceLimit = 50
 )
 
@@ -79,7 +66,6 @@ var projectTagColors = map[types.ProjectTagColor]struct{}{
 	types.ProjectTagColorPink:   {},
 }
 
-// ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
 // When projectsDirectory is set, Arcane's project env loading is used so .env.global is available.
 func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDirectory string, autoInjectEnv bool) (ArcaneComposeMetadata, error) {
 	if composeFilePath == "" {
@@ -110,9 +96,6 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	return meta, nil
 }
 
-// resolveComposeEnvFiles resolves the COMPOSE_ENV_FILES entries env
-// declares against workdir, skipping entries that escape it, mirroring what
-// EnvLoader merges for that directory.
 func resolveComposeEnvFiles(workdir string, env EnvMap) []string {
 	entries := ComposeEnvFileEntriesFromEnv(env)
 	resolved := make([]string, 0, len(entries))
@@ -376,8 +359,6 @@ func loadComposeEnvironment(workdir string) map[string]string {
 	return envMap
 }
 
-// mergeEnvFromDotEnv layers workdir's .env under envMap (existing keys win) and
-// also returns the .env values on their own.
 func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]string, EnvMap) {
 	merged := make(map[string]string, len(envMap)+1)
 	maps.Copy(merged, envMap)
@@ -413,8 +394,6 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]st
 	return merged, fileEnv
 }
 
-// FindArcaneIconSet attempts to locate Arcane icon labels within service labels.
-// It supports both map[string]string and []string label formats.
 func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
 	if labelMap, ok := kit.AsStringMap(labels); ok {
@@ -462,7 +441,6 @@ func normalizeArcaneIconLabel(key string) string {
 	}
 }
 
-// parseLabelPair parses a "KEY=VALUE" string into its components.
 func parseLabelPair(raw string) (string, string, bool) {
 	parts := strings.SplitN(raw, "=", 2)
 	if len(parts) != 2 {
@@ -471,7 +449,6 @@ func parseLabelPair(raw string) (string, string, bool) {
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }
 
-// NormalizeProjectTag validates and normalizes a project tag name.
 func NormalizeProjectTag(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	if normalized == "" {
@@ -491,7 +468,6 @@ func NormalizeProjectTag(name string) (string, error) {
 	return normalized, nil
 }
 
-// NormalizeProjectTags validates, normalizes, and de-duplicates project tags.
 func NormalizeProjectTags(names []string) ([]string, error) {
 	result := make([]string, 0, min(len(names), ProjectTagsPerSourceLimit))
 	seen := make(map[string]struct{}, len(names))
@@ -512,7 +488,6 @@ func NormalizeProjectTags(names []string) ([]string, error) {
 	return result, nil
 }
 
-// NormalizeProjectTagColor validates and normalizes a project tag color.
 func NormalizeProjectTagColor(color types.ProjectTagColor) (types.ProjectTagColor, error) {
 	normalized := types.ProjectTagColor(strings.ToLower(strings.TrimSpace(string(color))))
 	if normalized == "" {
@@ -524,8 +499,6 @@ func NormalizeProjectTagColor(color types.ProjectTagColor) (types.ProjectTagColo
 	return normalized, nil
 }
 
-// applyServiceLabelMetadata translates Compose metadata into the labels the
-// services consume, before previews or deployment use the model.
 func applyServiceLabelMetadata(project *composetypes.Project) error {
 	blockLabels := func(block any) (map[string]string, error) {
 		labels, err := updaterMetadataLabels(block)
@@ -630,8 +603,6 @@ func updaterMetadataLabels(block any) (map[string]string, error) {
 	return result, nil
 }
 
-// metadataHours accepts a whole, non-negative number of hours. YAML decoders
-// may surface it as any numeric type or as a numeric string.
 func metadataHours(value any) (int, error) {
 	hours, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(value)))
 	if err != nil || hours < 0 || hours > imageref.MaxUpdateDelayHours {

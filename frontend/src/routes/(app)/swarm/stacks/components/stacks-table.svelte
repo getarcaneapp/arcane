@@ -12,7 +12,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { LayersIcon, InspectIcon, TrashIcon, StopIcon, StartIcon } from '#lib/icons/index.js';
+	import { LayersIcon, InspectIcon, TrashIcon, StopIcon, PlayIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
@@ -133,7 +133,7 @@
 		href={resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(item.environmentId)}`, {
 			name: encodeURIComponent(item.name)
 		})}
-		class="text-sm font-medium text-primary hover:underline"
+		class="text-sm font-medium text-primary-text hover:underline"
 	>
 		{item.name}
 	</a>
@@ -184,7 +184,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: StackRow })}
-	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+	<RowActionsMenu name={item.name} triggerClass="relative size-8 p-0" iconClass="">
 		<DropdownMenu.Item onclick={() => inspectStack(item)}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
@@ -197,7 +197,7 @@
 				</DropdownMenu.Item>
 			{:else if item.hasSource}
 				<DropdownMenu.Item onclick={() => handleUp(item)} disabled={isLoading}>
-					<StartIcon class="size-4" />
+					<PlayIcon class="size-4" />
 					{m.common_up()}
 				</DropdownMenu.Item>
 			{/if}

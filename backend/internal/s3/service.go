@@ -84,8 +84,6 @@ func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]typ
 	return result, nil
 }
 
-// DestinationsByID indexes destinations to decorate backup records, such as with their names. Decoration never fails
-// its caller, so a failed listing yields an empty index.
 func (s *S3DestinationService) DestinationsByID(ctx context.Context) map[string]types.S3Destination {
 	destinations, err := s.ListAllS3Destinations(ctx)
 	if err != nil {
@@ -179,8 +177,6 @@ func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id strin
 	if err != nil {
 		return nil, err
 	}
-	// The persisted configuration without the
-	// decrypted secret, for comparing connection fields against an update.
 	stored := s3.Configuration{
 		ID:             destination.ID,
 		Name:           destination.Name,
@@ -256,8 +252,6 @@ func (s *S3DestinationService) ensureUnused(ctx context.Context, id string) erro
 	return nil
 }
 
-// DestinationInUse reports whether any local backup record or policy
-// references the destination.
 func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) (bool, error) {
 	db := s.db.WithContext(ctx)
 	counts := []*gorm.DB{
@@ -286,7 +280,6 @@ func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id strin
 	return s.db.WithContext(ctx).Model(&S3Destination{}).Where("id = ?", id).Count(&count).Error == nil && count == 1
 }
 
-// SyncS3Destinations replaces an agent's destination cache with the manager-owned destinations.
 func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []types.S3Destination) error {
 	if err := normalization.Normalize(&destinations); err != nil {
 		return err
@@ -365,7 +358,6 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 	return removeErr
 }
 
-// Configuration returns a destination's decrypted runtime configuration for backup domains.
 func (s *S3DestinationService) Configuration(ctx context.Context, id string) (s3.Configuration, error) {
 	destination, err := s.getS3DestinationModel(ctx, id)
 	if err != nil {

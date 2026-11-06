@@ -11,9 +11,6 @@ import (
 )
 
 type (
-	// PruningVolumeHelperJob periodically removes idle volume workspace helper
-	// containers. The run frequency is fixed (every 5 minutes); how stale a helper must
-	// be pruned is driven by the volumeHelperIdleTimeout setting.
 	PruningVolumeHelperJob struct {
 		volumeService   *volume.VolumeService
 		settingsService *settings.SettingsService
@@ -21,9 +18,7 @@ type (
 )
 
 const (
-	PruningVolumeHelperJobName = "pruning-volume-helper"
-	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
-	// long a volume workspace helper container may sit idle before it is reaped.
+	PruningVolumeHelperJobName     = "pruning-volume-helper"
 	volumeHelperIdleTimeoutSetting = "volumeHelperIdleTimeout"
 	volumeHelperPruningSchedule    = "*/5 * * * *"
 )
@@ -39,8 +34,6 @@ func (j *PruningVolumeHelperJob) Name() string {
 	return PruningVolumeHelperJobName
 }
 
-// Schedule runs the pruning job every 5 minutes. This is intentionally not
-// configurable; the idle timeout (read in Run) is the user-facing knob.
 func (j *PruningVolumeHelperJob) Schedule(ctx context.Context) string {
 	return volumeHelperPruningSchedule
 }
@@ -67,6 +60,5 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcom
 }
 
 func (j *PruningVolumeHelperJob) Reschedule(ctx context.Context) error {
-	// Fixed schedule; the idle-timeout setting only affects Run behavior.
 	return nil
 }

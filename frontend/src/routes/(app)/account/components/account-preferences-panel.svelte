@@ -3,6 +3,7 @@
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '#lib/components/application-theme/application-theme-picker.svelte';
+	import FontFamilyPicker from '#lib/components/font-family-picker.svelte';
 	import FontSizePicker from '#lib/components/font-size-picker.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
@@ -12,21 +13,17 @@
 	import TimeFormatPicker from '#lib/components/time-format-picker.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
-	import { DockIcon, MonitorSpeakerIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/user.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/user.js';
-	import { cn } from '#lib/utils.js';
-	import { getMobileNavigation } from '#lib/utils/navigation.js';
 	import { applyAccentColor, applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	import AllEnvironmentsPreferences from './all-environments-preferences.svelte';
 
-	const mobileNavigation = getMobileNavigation();
 	const currentUser = $derived(userStore.current);
 	const preferences = $derived(currentUser?.preferences ?? {});
 	const applicationThemeValue = $derived<ApplicationTheme>(preferences.applicationTheme ?? 'default');
@@ -39,7 +36,6 @@
 	const animationsEnabled = $derived(preferences.animationsEnabled ?? true);
 	const sidebarHoverExpansionEnabled = $derived(preferences.sidebarHoverExpansion ?? true);
 	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
-	const mobileNavigationMode = $derived(preferences.mobileNavigationMode ?? 'floating');
 	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
 	const projectEditorLayoutValue = $derived<ProjectEditorLayout>(preferences.defaultProjectEditorLayout ?? 'auto');
 	const isDarkMode = $derived(mode.current === 'dark');
@@ -94,114 +90,164 @@
 		pendingPreferences = { ...pendingPreferences, ...patch };
 		flushPreferences();
 	}
-
-	function selectMobileNavigationMode(value: 'floating' | 'docked') {
-		if (value === mobileNavigationMode) return;
-		mobileNavigation.visible = true;
-		void saveUserPreferences({ mobileNavigationMode: value });
-	}
 </script>
 
 <div class="space-y-8">
 	<SettingsSection title={m.general_title()}>
 		<SettingsRow label={m.language()} description={m.account_language_desc()} layout="switch">
-			<LocalePicker inline id="accountLocalePicker" />
+			{#snippet children({ describedBy })}
+				<LocalePicker inline id="accountLocalePicker" aria-describedby={describedBy} />
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.time_format()} description={m.account_time_format_desc()} layout="switch">
-			<TimeFormatPicker id="accountTimeFormatPicker" />
+			{#snippet children({ describedBy })}
+				<TimeFormatPicker id="accountTimeFormatPicker" aria-describedby={describedBy} />
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.project_editor_layout()} description={m.project_editor_layout_description()} layout="switch">
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-project-editor-layout"
-					label={m.project_editor_layout()}
-					hideLabel
-					triggerSize="sm"
-					value={projectEditorLayoutValue}
-					options={projectEditorLayoutOptions}
-					onValueChange={(value) => void saveUserPreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-project-editor-layout"
+						label={m.project_editor_layout()}
+						hideLabel
+						triggerSize="sm"
+						value={projectEditorLayoutValue}
+						options={projectEditorLayoutOptions}
+						onValueChange={(value) => void saveUserPreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.editor_tab_width()} description={m.editor_tab_width_description()} layout="switch">
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-editor-tab-width"
-					label={m.editor_tab_width()}
-					hideLabel
-					triggerSize="sm"
-					value={String(preferences.editorTabWidth ?? 2)}
-					options={editorTabWidthOptions}
-					onValueChange={(value) => void saveUserPreferences({ editorTabWidth: Number(value) as EditorTabWidth })}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-editor-tab-width"
+						label={m.editor_tab_width()}
+						hideLabel
+						triggerSize="sm"
+						value={String(preferences.editorTabWidth ?? 2)}
+						options={editorTabWidthOptions}
+						onValueChange={(value) => void saveUserPreferences({ editorTabWidth: Number(value) as EditorTabWidth })}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
 	<SettingsSection title={m.appearance_title()}>
 		<SettingsRow label={m.account_theme()} description={m.appearance_theme_current_user_description()} layout="switch">
-			<ThemeModeSelector />
+			{#snippet children({ describedBy })}
+				<ThemeModeSelector aria-describedby={describedBy} />
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="switch">
-			<FontSizePicker />
+			{#snippet children({ describedBy })}
+				<FontSizePicker aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.interface_font()} description={m.interface_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="interface" aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.monospace_font()} description={m.monospace_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="monospace" aria-describedby={describedBy} />
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow label={m.code_font()} description={m.code_font_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<FontFamilyPicker kind="code" aria-describedby={describedBy} />
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.layout_mode()} description={m.layout_mode_description()} layout="switch">
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-layout-mode"
-					label={m.layout_mode()}
-					hideLabel
-					triggerSize="sm"
-					value={layoutModeValue}
-					options={layoutModeOptions}
-					onValueChange={(value) => (layoutModeStore.current = value as LayoutMode)}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-layout-mode"
+						label={m.layout_mode()}
+						hideLabel
+						triggerSize="sm"
+						value={layoutModeValue}
+						options={layoutModeOptions}
+						onValueChange={(value) => (layoutModeStore.current = value as LayoutMode)}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.toast_position()} description={m.toast_position_description()} layout="switch">
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-toast-position"
-					label={m.toast_position()}
-					hideLabel
-					triggerSize="sm"
-					value={toastPositionValue}
-					options={toastPositionOptions}
-					onValueChange={(value) => void saveUserPreferences({ toastPosition: value as ToastPosition })}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-toast-position"
+						label={m.toast_position()}
+						hideLabel
+						triggerSize="sm"
+						value={toastPositionValue}
+						options={toastPositionOptions}
+						onValueChange={(value) => void saveUserPreferences({ toastPosition: value as ToastPosition })}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()} layout="switch">
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-icon-catalog"
-					label={m.icon_catalog()}
-					hideLabel
-					triggerSize="sm"
-					value={iconCatalogValue}
-					options={iconCatalogOptions}
-					onValueChange={(value) => void saveUserPreferences({ iconCatalog: value as IconCatalog })}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-icon-catalog"
+						label={m.icon_catalog()}
+						hideLabel
+						triggerSize="sm"
+						value={iconCatalogValue}
+						options={iconCatalogOptions}
+						onValueChange={(value) => void saveUserPreferences({ iconCatalog: value as IconCatalog })}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.application_theme()} description={m.application_theme_description()} layout="wide">
-			<ApplicationThemePicker
-				selectedTheme={applicationThemeValue}
-				accentColor={accentColorValue}
-				onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
-			/>
+			{#snippet children({ describedBy })}
+				<ApplicationThemePicker
+					selectedTheme={applicationThemeValue}
+					accentColor={accentColorValue}
+					onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.accent_color()} description={m.accent_color_description()} layout="wide">
-			<AccentColorPicker
-				previousColor={accentColorValue}
-				selectedColor={accentColorValue}
-				onSelect={(value) => {
-					applyAccentColor(value);
-					savePreferencesDebounced({ accentColor: value });
-				}}
-			/>
+			{#snippet children({ describedBy })}
+				<AccentColorPicker
+					previousColor={accentColorValue}
+					selectedColor={accentColorValue}
+					onSelect={(value) => {
+						applyAccentColor(value);
+						savePreferencesDebounced({ accentColor: value });
+					}}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-oled-mode"
+					checked={oledModeEnabled}
+					disabled={!isDefaultApplicationTheme}
+					onCheckedChange={(checked) => {
+						applyOledMode(checked);
+						void saveUserPreferences({ oledMode: checked });
+					}}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 			{#snippet helpText()}
 				{#if !isDefaultApplicationTheme}
 					<span class="italic">{m.oled_mode_requires_default_theme()}</span>
@@ -209,35 +255,32 @@
 					<span class="italic">{m.oled_mode_requires_dark()}</span>
 				{/if}
 			{/snippet}
-			<Switch
-				id="account-oled-mode"
-				checked={oledModeEnabled}
-				disabled={!isDefaultApplicationTheme}
-				onCheckedChange={(checked) => {
-					applyOledMode(checked);
-					void saveUserPreferences({ oledMode: checked });
-				}}
-			/>
 		</SettingsRow>
 		<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="switch">
-			<Switch
-				id="account-glass-effects"
-				checked={glassEffectsEnabled}
-				onCheckedChange={(checked) => {
-					applyGlassEffects(checked);
-					void saveUserPreferences({ glassEffectsEnabled: checked });
-				}}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-glass-effects"
+					checked={glassEffectsEnabled}
+					onCheckedChange={(checked) => {
+						applyGlassEffects(checked);
+						void saveUserPreferences({ glassEffectsEnabled: checked });
+					}}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="switch">
-			<Switch
-				id="account-animations"
-				checked={animationsEnabled}
-				onCheckedChange={(checked) => {
-					applyInterfaceAnimations(checked);
-					void saveUserPreferences({ animationsEnabled: checked });
-				}}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-animations"
+					checked={animationsEnabled}
+					onCheckedChange={(checked) => {
+						applyInterfaceAnimations(checked);
+						void saveUserPreferences({ animationsEnabled: checked });
+					}}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
@@ -247,69 +290,61 @@
 			description={m.navigation_default_landing_page_description()}
 			layout="switch"
 		>
-			<div class="w-52">
-				<SelectWithLabel
-					id="account-default-landing-page"
-					label={m.navigation_default_landing_page_label()}
-					hideLabel
-					triggerSize="sm"
-					value={landingValue}
-					options={landingPageOptions}
-					onValueChange={(value) => void saveUserPreferences({ defaultLandingPage: value })}
-				/>
-			</div>
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-default-landing-page"
+						label={m.navigation_default_landing_page_label()}
+						hideLabel
+						triggerSize="sm"
+						value={landingValue}
+						options={landingPageOptions}
+						onValueChange={(value) => void saveUserPreferences({ defaultLandingPage: value })}
+						aria-describedby={describedBy}
+					/>
+				</div>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			label={m.navigation_sidebar_hover_expansion_label()}
 			description={m.navigation_sidebar_hover_expansion_description()}
 			layout="switch"
 		>
-			<Switch
-				id="account-sidebar-hover-expansion"
-				checked={sidebarHoverExpansionEnabled}
-				onCheckedChange={(checked) => void saveUserPreferences({ sidebarHoverExpansion: checked })}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-sidebar-hover-expansion"
+					checked={sidebarHoverExpansionEnabled}
+					onCheckedChange={(checked) => void saveUserPreferences({ sidebarHoverExpansion: checked })}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 		<SettingsRow
 			label={m.navigation_keyboard_shortcuts_label()}
 			description={m.navigation_keyboard_shortcuts_description()}
 			layout="switch"
 		>
-			<Switch
-				id="account-keyboard-shortcuts"
-				checked={keyboardShortcutsEnabled}
-				onCheckedChange={(checked) => void saveUserPreferences({ keyboardShortcutsEnabled: checked })}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-keyboard-shortcuts"
+					checked={keyboardShortcutsEnabled}
+					onCheckedChange={(checked) => void saveUserPreferences({ keyboardShortcutsEnabled: checked })}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 
 	<SettingsSection title={m.navigation_mobile_appearance_title()}>
-		<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} layout="switch">
-			<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
-				{#each [{ value: 'floating' as const, label: m.navigation_mode_floating(), icon: MonitorSpeakerIcon }, { value: 'docked' as const, label: m.navigation_mode_docked(), icon: DockIcon }] as option (option.value)}
-					<button
-						type="button"
-						aria-pressed={mobileNavigationMode === option.value}
-						onclick={() => selectMobileNavigationMode(option.value)}
-						class={cn(
-							'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-							mobileNavigationMode === option.value
-								? 'bg-background text-foreground shadow-sm'
-								: 'text-muted-foreground hover:text-foreground'
-						)}
-					>
-						<option.icon class="size-3.5" />
-						{option.label}
-					</button>
-				{/each}
-			</div>
-		</SettingsRow>
 		<SettingsRow label={m.navigation_show_labels_label()} description={m.navigation_show_labels_description()} layout="switch">
-			<Switch
-				id="account-mobile-nav-labels"
-				checked={mobileNavigationShowLabels}
-				onCheckedChange={(checked) => void saveUserPreferences({ mobileNavigationShowLabels: checked })}
-			/>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="account-mobile-nav-labels"
+					checked={mobileNavigationShowLabels}
+					onCheckedChange={(checked) => void saveUserPreferences({ mobileNavigationShowLabels: checked })}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
 

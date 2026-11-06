@@ -25,7 +25,6 @@ const (
 	defaultComposeTimeout = 30 * time.Minute
 )
 
-// detachFromHTTPContext keeps parent values but drops its cancellation so compose survives HTTP timeouts.
 func detachFromHTTPContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if activity.IsAppLifecycleContext(parent) {
 		return context.WithTimeout(parent, timeout)
@@ -99,7 +98,6 @@ func ComposeUp(ctx context.Context, opts types.ComposeUpOptions) error {
 	return c.svc.Up(composeCtx, selected, composeUpOptions(opts, waitTimeout, envOpts))
 }
 
-// ComposeCreate force-recreates services without starting them, so stopped containers stay stopped.
 func ComposeCreate(ctx context.Context, opts types.ComposeCreateOptions) error {
 	selected, err := SelectServices(opts.Project, opts.Services)
 	if err != nil {
@@ -139,7 +137,6 @@ func composeUpOptions(opts types.ComposeUpOptions, waitTimeout time.Duration, en
 	}
 }
 
-// ComposePs reuses the shared read-only client; an empty DockerHost uses the environment-resolved host.
 func ComposePs(ctx context.Context, opts types.ComposePsOptions) ([]api.ContainerSummary, error) {
 	c, err := plainComposeClient(opts.DockerHost)
 	if err != nil {
@@ -179,7 +176,6 @@ func ComposeDown(ctx context.Context, opts types.ComposeDownOptions) error {
 	})
 }
 
-// ComposeLogs uses a one-shot demuxing client so non-TTY containers keep their stderr metadata.
 func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Writer, opts types.LogStreamOptions) error {
 	c, err := NewClient(ctx, ClientConfig{DockerHost: dockerHost, DemuxLogs: true})
 	if err != nil {
@@ -195,7 +191,6 @@ func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Wri
 	})
 }
 
-// ListGlobalComposeContainers falls back to a compose client for dockerHost when dockerClient is nil.
 func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APIClient, dockerHost string) ([]container.Summary, error) {
 	cli := dockerClient
 	if cli == nil {
@@ -220,7 +215,6 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 	return listResult.Items, nil
 }
 
-// FindComposeServiceContainerID prefers a running service container over a stopped predecessor.
 func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName, serviceName string) (string, error) {
 	containers, err := ComposePs(ctx, types.ComposePsOptions{
 		Project:    &composetypes.Project{Name: projectName},
@@ -244,7 +238,6 @@ func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName,
 	return firstMatch, nil
 }
 
-// FindComposeReplica matches a replacement by project, service, and its recorded replica number.
 func FindComposeReplica(containers []container.Summary, labels map[string]string) (container.Summary, bool) {
 	projectName := docker.ComposeProjectLabel(labels)
 	serviceName := docker.ComposeServiceLabel(labels)
@@ -264,7 +257,6 @@ func FindComposeReplica(containers []container.Summary, labels map[string]string
 	return container.Summary{}, false
 }
 
-// FormatPorts renders "published:target/proto", or "target/proto" when unpublished.
 func FormatPorts(publishers []api.PortPublisher) []string {
 	var ports []string
 	for _, pub := range publishers {

@@ -20,8 +20,6 @@ const (
 	passwordPolicyProblemTypePrefix = "urn:arcane:problem:password-policy:" // #nosec G101 -- public problem type, not a credential
 )
 
-// PasswordPolicyProblemType returns the stable problem type for a policy tier.
-// Unknown policy values mirror validation behavior and fall back to strong.
 func PasswordPolicyProblemType(policy string) string {
 	switch policy {
 	case PasswordPolicyBasic, PasswordPolicyStandard:
@@ -31,7 +29,6 @@ func PasswordPolicyProblemType(policy string) string {
 	return passwordPolicyProblemTypePrefix + policy
 }
 
-// ValidatePasswordPolicy checks a password against the named policy tier.
 // Unknown policy values are treated as strong so a corrupted setting fails closed.
 func ValidatePasswordPolicy(password, policy string) error {
 	var length int
@@ -67,8 +64,6 @@ func ValidatePasswordPolicy(password, policy string) error {
 	return nil
 }
 
-// ValidateCredentialTargetChange prevents stored credentials from being reused
-// against a changed target unless the update explicitly handles them.
 func ValidateCredentialTargetChange(
 	targetName string,
 	currentTarget string,

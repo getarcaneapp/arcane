@@ -1,6 +1,3 @@
-// Package upload owns chunked upload sessions: filesystem-backed staging for
-// large files that arrive as independently retryable chunks, consumed by the
-// image, volume-backup, and build-workspace endpoints.
 package upload
 
 import (
@@ -27,10 +24,6 @@ import (
 )
 
 type (
-	// UploadService stages chunked upload sessions on local disk. Sessions are
-	// node-local by design: chunks and the consuming request must reach the same
-	// instance, which holds for Arcane's single-instance-per-node deployment (for
-	// remote environments the session lives on that environment's agent).
 	UploadService struct {
 		locks           concurrency.KeyedMutex
 		settingsService *settings.SettingsService
@@ -43,12 +36,8 @@ const (
 	sessionDataFilename = "data"
 )
 
-// uploadIDPattern matches the random hex component acfs.MkdirTemp generates
-// for session directories; anything else is rejected before touching disk.
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// NewUploadService builds the session service rooted in the system temp
-// directory; the root is created lazily on first session.
 func NewUploadService(settingsService *settings.SettingsService) *UploadService {
 	return &UploadService{
 		settingsService: settingsService,
@@ -70,8 +59,6 @@ func validFilenameForKind(kind, filename string) bool {
 	return false
 }
 
-// CreateSession validates the request against the kind's filename and size
-// rules and stages a new empty session on disk.
 func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
 	filename := path.Base(strings.ReplaceAll(request.Filename, "\\", "/"))
 	if filename == "" || filename == "." || filename == "/" {
@@ -161,7 +148,6 @@ func (s *UploadService) writeMeta(ctx context.Context, session *types.UploadSess
 	return nil
 }
 
-// WriteChunk stores one chunk at its final offset and records it as received.
 // Re-sending an already-received chunk is an idempotent overwrite.
 func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, index int, data []byte) (*types.UploadSession, error) {
 	defer s.locks.Lock(uploadID)()
@@ -197,14 +183,11 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 	return session, nil
 }
 
-// GetSession reports the session state, including which chunks have been
-// received so clients can resume.
 func (s *UploadService) GetSession(ctx context.Context, kind, uploadID string) (*types.UploadSession, error) {
 	defer s.locks.RLock(uploadID)()
 	return s.loadMeta(ctx, kind, uploadID)
 }
 
-// DeleteSession aborts a session and discards its received chunks.
 func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string) error {
 	defer s.locks.Lock(uploadID)()
 
@@ -217,9 +200,6 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 	return nil
 }
 
-// IngestSession creates a session already containing the complete file. It
-// backs the deprecated single-request multipart compatibility path, applying
-// the same per-kind validation as chunked sessions.
 func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*types.UploadSession, error) {
 	session, err := s.CreateSession(ctx, kind, types.CreateUploadSessionRequest{Filename: filename, Size: size})
 	if err != nil {
@@ -239,11 +219,6 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	return session, nil
 }
 
-// Consume validates that the session matches kind and is complete, then opens
-// the assembled file for reading. The session metadata is removed under the
-// session lock before returning, so a session can be consumed at most once
-// even by concurrent requests; the returned cleanup closes the file and
-// deletes the remaining session data.
 func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *types.UploadSession, func(), error) {
 	defer s.locks.Lock(uploadID)()
 
@@ -279,12 +254,6 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 	return file, session, cleanup, nil
 }
 
-// PurgeExpiredSessions removes sessions that have been idle for longer than
-// maxAge. Idleness is judged by the newest modification time among the
-// session's files — the data file advances on every chunk write and the
-// metadata on every chunk recorded — so a slow but active upload is never
-// swept, and the check runs under the session lock so an in-flight chunk
-// write cannot race the removal.
 func (s *UploadService) PurgeExpiredSessions(ctx context.Context, maxAge time.Duration) (int, error) {
 	if _, err := os.Stat(s.root); os.IsNotExist(err) {
 		return 0, nil

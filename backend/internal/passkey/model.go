@@ -8,10 +8,6 @@ import (
 )
 
 type (
-	// Passkey stores the WebAuthn credential record required to validate future
-	// assertions. The raw attestation fields are retained so the credential can
-	// be audited or revalidated if the WebAuthn library's verification policy
-	// evolves.
 	Passkey struct {
 		database.BaseModel
 
@@ -44,8 +40,6 @@ type (
 		CloneWarning                  bool   `json:"cloneWarning" gorm:"column:clone_warning;not null;default:false"`
 	}
 
-	// PasskeyCeremony holds the opaque server-side state between WebAuthn begin
-	// and finish calls. It is intentionally never serialized to the client.
 	PasskeyCeremony struct {
 		database.BaseModel
 
@@ -60,9 +54,6 @@ type (
 		SessionData string `json:"-" gorm:"column:session_data;type:text;not null"`
 	}
 
-	// AuthTransaction links a primary authentication result to its pending
-	// passkey MFA or step-up ceremony. The client receives only ID/secret values;
-	// primary credentials and WebAuthn SessionData remain server-side.
 	AuthTransaction struct {
 		database.BaseModel
 
@@ -79,8 +70,6 @@ type (
 		Status string `json:"status" gorm:"column:status;not null;index"`
 	}
 
-	// PasskeyRecoveryCode stores only a one-way digest of a recovery code. The
-	// plaintext is returned once during generation and is never recoverable.
 	PasskeyRecoveryCode struct {
 		database.BaseModel
 

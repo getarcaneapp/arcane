@@ -28,7 +28,6 @@ import (
 )
 
 type (
-	// ProjectHandler provides Huma-based project management endpoints.
 	ProjectHandler struct {
 		projectService  *ProjectService
 		activityService *activity.ActivityService
@@ -50,7 +49,6 @@ type (
 		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	}
 
-	// UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
 	UpdateProjectTagInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
@@ -99,15 +97,8 @@ type (
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 	}
 
-	// DeployProject deploys a Docker Compose project.
-	// projectStreamOperationConfig describes one streamed project
-	// operation (deploy, redeploy, pull, build): the activity it records and the
-	// action whose raw docker CLI output is streamed to the client.
 	projectStreamOperationConfig struct {
-		Metadata database.JSON
-		// Action runs the operation. ctx carries the stream writer under
-		// types.ProgressWriterKey; it is also passed directly for actions
-		// that take a writer parameter.
+		Metadata       database.JSON
 		Action         func(ctx context.Context, writer io.Writer) error
 		ActivityType   types.ActivityType
 		Step           string
@@ -128,9 +119,7 @@ type (
 		FailureMessage  string
 		SuccessComplete string
 		SuccessMessage  string
-		// Queue routes the activity through the per-environment concurrency
-		// limiter; set for long-running deploy-like actions, not quick restarts.
-		Queue bool
+		Queue           bool
 	}
 
 	GetProjectWorkspaceInput struct {
@@ -151,7 +140,6 @@ type (
 	}
 )
 
-// ListProjects returns a paginated list of projects.
 func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*handlerutil.Page[types.Project], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
@@ -197,7 +185,6 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}, nil
 }
 
-// GetProjectStatusCounts returns counts of projects by status.
 func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ProjectStatusCounts], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjectCounts(ctx)
@@ -219,7 +206,6 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *type
 	}, nil
 }
 
-// ListProjectTags returns the reusable project tag catalog for an environment.
 func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectTagOption], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjectTags(ctx)
@@ -235,7 +221,6 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.Environme
 	return &handlerutil.Out[[]types.ProjectTagOption]{Body: types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: kit.Ternary(options == nil, []types.ProjectTagOption{}, options)}}, nil
 }
 
-// ListProjectReferences returns the ID and name of every project in an environment.
 func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectReference], error) {
 	references, err := h.projectService.ListProjectReferences(ctx)
 	if err != nil {
@@ -244,7 +229,6 @@ func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *types.Env
 	return &handlerutil.Out[[]types.ProjectReference]{Body: types.ApiResponse[[]types.ProjectReference]{Success: true, Data: references}}, nil
 }
 
-// UpdateProjectTag applies one UI-managed project tag association change.
 func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*handlerutil.Out[types.UpdateProjectTagResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -293,7 +277,6 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 	}}, nil
 }
 
-// projectActivityName returns the project's name for activity records, falling back to its ID.
 func (h *ProjectHandler) projectActivityName(ctx context.Context, projectID string) string {
 	proj, err := h.projectService.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil || proj.Name == "" {
@@ -302,10 +285,6 @@ func (h *ProjectHandler) projectActivityName(ctx context.Context, projectID stri
 	return proj.Name
 }
 
-// streamProjectOperation is the shared scaffold for the streamed
-// project endpoints: NDJSON headers, activity lifecycle (started frame, queue
-// slot, completion), the activity-teeing writer, and the terminal done/error
-// frames.
 func (h *ProjectHandler) streamProjectOperation(environmentID, projectID string, user *types.Actor, cfg projectStreamOperationConfig) *huma.StreamResponse {
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) {
@@ -471,7 +450,6 @@ func (h *ProjectHandler) RunProjectAction(ctx context.Context, input *ProjectAct
 	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, cfg)
 }
 
-// CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*handlerutil.Out[types.CreateProjectResponse], error) {
 	projectInput, err := handlerutil.ParseMultipartJSONPart[types.CreateProject](input.RawBody, "project")
 	if err != nil {
@@ -555,7 +533,6 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	}, nil
 }
 
-// GetProject returns a project by ID.
 func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.Project], error) {
 	return h.getProjectDetailsWithOptions(ctx, input, types.ProjectDetailsOptions{})
 }
@@ -603,7 +580,6 @@ func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjec
 	})
 }
 
-// DestroyProject destroys a Docker Compose project.
 func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
 	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, projectActivityActionConfig{
 		ActivityType:    types.ActivityTypeProjectDestroy,
@@ -630,7 +606,6 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	})
 }
 
-// UpdateProject updates a Docker Compose project.
 func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*handlerutil.Out[types.Project], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
@@ -813,7 +788,6 @@ func (h *ProjectHandler) unarchiveProject(ctx context.Context, projectID string)
 	return handlerutil.MessageOutput("Project unarchived successfully", ""), nil
 }
 
-// BuildProjectImages builds compose services with build directives.
 func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")

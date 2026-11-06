@@ -15,12 +15,9 @@
 		...restProps
 	}: WithElementRef<
 		HTMLAttributes<HTMLDivElement> & {
-			variant?: 'default' | 'glass';
-			/** `sm` tightens the content padding for dense tiles. */
+			variant?: 'default' | 'glass' | 'embedded';
 			size?: 'default' | 'sm';
-			/** Hover affordance for cards that act as links or choices. */
 			interactive?: boolean | 'subtle';
-			/** Highlights the current or chosen card. */
 			selected?: boolean;
 			onclick?: (e: MouseEvent) => void;
 		}
@@ -28,7 +25,6 @@
 
 	function handleClick(e: MouseEvent) {
 		if (onclick) {
-			// Check if the clicked element is interactive (button, link, or has onclick)
 			const target = e.target as HTMLElement;
 			const isInteractive = target.closest('button, a, [onclick], [role="button"]');
 
@@ -43,9 +39,11 @@
 	bind:this={ref}
 	data-slot="card"
 	data-size={size}
+	data-variant={variant}
 	class={cn(
 		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 bg-card/10 p-0 text-card-foreground shadow-none transition-colors duration-200',
 		variant === 'glass' && 'bg-card/60 shadow-xs backdrop-blur-md dark:bg-surface/40',
+		variant === 'embedded' && 'max-md:rounded-none max-md:border-0 max-md:bg-transparent',
 		onclick && 'cursor-pointer',
 		onclick &&
 			!interactive &&

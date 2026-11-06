@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 import { type Activity } from '../../frontend/src/lib/types/activity';
 
 test.describe('Workspace restore', () => {
@@ -274,7 +274,7 @@ test.describe('Workspace restore', () => {
 		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 		await expect(page.getByText(BACKUP_ID, { exact: true }).first()).toBeVisible();
 		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
-		await backupRow.getByRole('button', { name: 'Open menu' }).click();
+		await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
 		await page.getByRole('menuitem', { name: 'Restore files' }).click();
 		await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
 	}
@@ -456,7 +456,7 @@ test.describe('Workspace restore', () => {
 	async function openSystemRestoreDialog(page: Page) {
 		await expect(page.getByText(SYSTEM_BACKUP_ID, { exact: false }).first()).toBeVisible();
 		const backupRow = page.getByRole('row').filter({ hasText: SYSTEM_BACKUP_ID }).first();
-		await backupRow.getByRole('button', { name: 'Open menu' }).click();
+		await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
 		await page.getByRole('menuitem', { name: 'Restore files' }).click();
 		await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
 	}
@@ -623,7 +623,7 @@ test.describe('Workspace restore', () => {
 			await setCodeMirrorValue(editor, 'local draft');
 			await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 			const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
-			await backupRow.getByRole('button', { name: 'Open menu' }).click();
+			await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
 			await page.getByRole('menuitem', { name: 'Restore', exact: true }).click();
 
 			const confirmDialog = page.getByRole('dialog', { name: 'Restore Volume' });
@@ -1188,7 +1188,6 @@ test.describe('S3 storage', () => {
 				expect(destination.bucket).toBe(S3_BUCKET);
 				expect(destination.secretConfigured).toBe(true);
 
-				// Uploads, downloads, and deletes a probe object in the bucket.
 				const test = await page.request.post(`/api/backups/s3/${destination.id}?action=test`);
 				expect(test.status(), await test.text()).toBe(200);
 			} finally {
@@ -1595,7 +1594,9 @@ test.describe('System and volume restore', () => {
 			await expect(runningBackup).toBeHidden({
 				timeout: 15000
 			});
-			await expect(page.getByRole('table').getByText('completed-batch-volume')).toBeVisible();
+			await expect(
+				page.getByRole('table').getByText('completed-batch-volume', { exact: true })
+			).toBeVisible();
 			expect(mock.runRequests()).toContainEqual({ policyId: 'volume-nightly' });
 
 			await page.getByRole('button', { name: 'Create', exact: true }).first().click();
@@ -1640,17 +1641,17 @@ test.describe('System and volume restore', () => {
 				await page.getByTestId('facet-type-trigger').click();
 				await page.getByTestId('facet-type-option-system').click();
 				const historyTable = page.getByRole('table');
-				await expect(historyTable.getByText('central-volume')).toBeVisible();
-				await expect(historyTable.getByText(volumeName)).toHaveCount(0);
+				await expect(historyTable.getByText('central-volume', { exact: true })).toBeVisible();
+				await expect(historyTable.getByText(volumeName, { exact: true })).toHaveCount(0);
 
 				await page.getByTestId('facet-type-option-system').click();
 				await page.getByTestId('facet-type-option-volume').click();
-				await expect(historyTable.getByText(volumeName)).toBeVisible();
-				await expect(historyTable.getByText('central-volume')).toHaveCount(0);
+				await expect(historyTable.getByText(volumeName, { exact: true })).toBeVisible();
+				await expect(historyTable.getByText('central-volume', { exact: true })).toHaveCount(0);
 
 				await page.keyboard.press('Escape');
 				const row = page.getByRole('row').filter({ hasText: volumeName });
-				await row.getByRole('button', { name: 'Open menu' }).click();
+				await row.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
 				await page.getByRole('menuitem', { name: 'Open volume backups' }).click();
 				await expect(page).toHaveURL(
 					new RegExp(`/volumes/${encodeURIComponent(volumeName)}\\?tab=backups`)

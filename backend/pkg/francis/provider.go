@@ -19,14 +19,11 @@ import (
 	sqliteutil "getarcane.dev/arcane/v3/pkg/sqlite"
 )
 
-// StorePath names the dedicated Francis SQLite file beside the Arcane database.
 func StorePath(databasePath string) string {
 	extension := filepath.Ext(databasePath)
 	return strings.TrimSuffix(databasePath, extension) + ".francis" + cmp.Or(extension, ".db")
 }
 
-// StoreURL resolves Francis storage: a sibling SQLite file with the Arcane SQLite
-// settings except foreign_keys, which Francis enforces, or the Postgres URL unchanged.
 func StoreURL(databaseURL string) (string, error) {
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
@@ -71,7 +68,6 @@ func providerOption(storeURL string) local.HostOption {
 	return local.WithPostgresProvider(postgres.PostgresProviderOptions{ConnectionString: storeURL, TablePrefix: TablePrefix})
 }
 
-// openProvider opens an offline Francis provider on storeURL. Close it when done.
 func openProvider(ctx context.Context, storeURL string) (components.ActorProvider, error) {
 	cfg := components.NewProviderConfig()
 	cfg.HostHealthCheckDeadline = 90 * time.Second
@@ -92,8 +88,6 @@ func openProvider(ctx context.Context, storeURL string) (components.ActorProvide
 	return provider, nil
 }
 
-// ClearRestoredHosts removes copied live host ownership from an offline restored
-// database. Never call this against a running Arcane database.
 func ClearRestoredHosts(ctx context.Context, databaseURL string) (err error) {
 	storeURL, err := StoreURL(databaseURL)
 	if err != nil {

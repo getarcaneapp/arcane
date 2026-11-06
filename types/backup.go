@@ -6,29 +6,24 @@ import (
 )
 
 type (
-	// BackupFileEntry describes one file or directory under a backup's logical
-	// restore root.
 	BackupFileEntry struct {
 		Path        string `json:"path"`
 		Name        string `json:"name"`
 		IsDirectory bool   `json:"isDirectory"`
 	}
 
-	// BackupRestoreSelection selects explicit paths or every eligible backup entry.
 	BackupRestoreSelection struct {
 		Search    string   `json:"search,omitempty"`
 		Paths     []string `json:"paths,omitempty"`
 		SelectAll bool     `json:"selectAll,omitempty"`
 	}
 
-	// BackupRepositoryObservation describes a read-only S3 metadata check.
 	BackupRepositoryObservation struct {
 		Reason            string
 		Available         bool
 		SnapshotAvailable bool
 	}
 
-	// BackupRequester is who started a manual backup; its workflow re-checks their permission on every delivery.
 	BackupRequester struct {
 		UserID        string `json:"userId"`
 		APIKeyID      string `json:"apiKeyId,omitempty"`
@@ -36,7 +31,6 @@ type (
 		Permission    string `json:"permission"`
 	}
 
-	// S3DestinationUsage reports whether a destination is referenced by backups.
 	S3DestinationUsage struct {
 		InUse bool `json:"inUse"`
 	}
@@ -92,8 +86,6 @@ type (
 		S3Enabled         bool             `json:"s3Enabled"`
 	}
 
-	// UpdateBackupPolicy is the shared policy-update payload for every backup
-	// domain; StopContainers only applies to volume backups.
 	UpdateBackupPolicy struct {
 		ID              string `json:"id,omitempty"`
 		Schedule        string `json:"schedule"`
@@ -129,7 +121,6 @@ type (
 		PolicyID        string                  `json:"policyId,omitempty"`
 	}
 
-	// RestoreSystemBackupFilesRequest selects project files to restore from a system backup.
 	RestoreSystemBackupFilesRequest struct {
 		RecoveryKey string `json:"recoveryKey"`
 		BackupRestoreSelection
@@ -149,13 +140,10 @@ type (
 		RecoveryKey     string `json:"recoveryKey"`
 	}
 
-	// BackupManagementType identifies which Arcane configuration orchestrated a backup.
 	BackupManagementType string
 
-	// SystemVolumeSelectionMode controls how configured volume names affect live Docker volumes.
 	SystemVolumeSelectionMode string
 
-	// SystemVolumeBackupPolicy is one manager-owned policy for local Docker volumes.
 	SystemVolumeBackupPolicy struct {
 		LastRun           *SystemBackupRun          `json:"lastRun,omitempty"`
 		ID                string                    `json:"id"`
@@ -172,7 +160,6 @@ type (
 		IgnoreAnonymous   bool                      `json:"ignoreAnonymous"`
 	}
 
-	// UpdateSystemVolumeBackupPolicy is the writable centralized policy shape.
 	UpdateSystemVolumeBackupPolicy struct {
 		SelectionMode SystemVolumeSelectionMode `json:"selectionMode"`
 		VolumeNames   []string                  `json:"volumeNames"`
@@ -189,7 +176,6 @@ type (
 		Policies []UpdateSystemVolumeBackupPolicy `json:"policies"`
 	}
 
-	// SystemVolumeBackupCustomRun is a transient policy used by Create -> Backup.
 	SystemVolumeBackupCustomRun struct {
 		Destination     SystemBackupDestination   `json:"destination"`
 		S3DestinationID string                    `json:"s3DestinationId,omitempty"`
@@ -199,26 +185,22 @@ type (
 		IgnoreAnonymous bool                      `json:"ignoreAnonymous"`
 	}
 
-	// RunSystemVolumeBackupsRequest selects a saved policy or supplies a transient custom policy.
 	RunSystemVolumeBackupsRequest struct {
 		Custom   *SystemVolumeBackupCustomRun `json:"custom,omitempty"`
 		PolicyID string                       `json:"policyId,omitempty"`
 	}
 
-	// SystemVolumeBackupOption describes a selectable live or unavailable configured volume.
 	SystemVolumeBackupOption struct {
 		Name      string `json:"name"`
 		Anonymous bool   `json:"anonymous"`
 		Available bool   `json:"available"`
 	}
 
-	// SystemVolumeBackupFailure records one candidate that could not be backed up.
 	SystemVolumeBackupFailure struct {
 		VolumeName string `json:"volumeName"`
 		Error      string `json:"error"`
 	}
 
-	// SystemVolumeBackupRunResult summarizes a centralized multi-volume execution.
 	SystemVolumeBackupRunResult struct {
 		Failures  []SystemVolumeBackupFailure `json:"failures"`
 		Matched   int                         `json:"matched"`
@@ -227,7 +209,6 @@ type (
 		Skipped   int                         `json:"skipped"`
 	}
 
-	// SystemVolumeBackupHistoryEntry is a common view over Arcane recovery and volume backup records.
 	SystemVolumeBackupHistoryEntry struct {
 		EnvironmentTag
 		CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
@@ -250,7 +231,6 @@ type (
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
-	// BackupRunAccepted identifies a backup operation accepted for background execution.
 	BackupRunAccepted struct {
 		ActivityID string `json:"activityId"`
 		Status     string `json:"status"`
@@ -262,7 +242,6 @@ const (
 	SystemBackupDestinationS3      SystemBackupDestination = "s3"
 	SystemBackupDestinationLocalS3 SystemBackupDestination = "local_s3"
 
-	// System backup run statuses and triggers.
 	SystemBackupStatusRunning    = "running"
 	SystemBackupStatusSucceeded  = "succeeded"
 	SystemBackupStatusFailed     = "failed"
@@ -270,15 +249,13 @@ const (
 	SystemBackupTriggerScheduled = "scheduled"
 	SystemBackupTriggerSafety    = "safety"
 
-	BackupManagementTypeSystem BackupManagementType = "system"
-	BackupManagementTypeVolume BackupManagementType = "volume"
-	// SystemVolumePolicyPrefix marks volume-backup records created by the centralized system policy.
+	BackupManagementTypeSystem     BackupManagementType      = "system"
+	BackupManagementTypeVolume     BackupManagementType      = "volume"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"
 
-	// Volume backup run statuses and triggers.
 	VolumeBackupStatusRunning    = "running"
 	VolumeBackupStatusSucceeded  = "succeeded"
 	VolumeBackupStatusFailed     = "failed"
@@ -287,7 +264,6 @@ const (
 	VolumeBackupTriggerSafety    = "safety"
 )
 
-// BackupManagementTypeForPolicy reports which configuration orchestrated a backup created under policyID.
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
 	if strings.HasPrefix(policyID, SystemVolumePolicyPrefix) {
 		return BackupManagementTypeSystem

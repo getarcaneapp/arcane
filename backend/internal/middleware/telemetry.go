@@ -26,8 +26,6 @@ var authenticatedRequests = func() metric.Int64Counter {
 	return counter
 }()
 
-// RecordAuthenticatedRequest tags the request span with the acting user and
-// counts the request by credential type.
 func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *types.Actor) {
 	method := "session"
 	switch {
@@ -44,8 +42,6 @@ func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *t
 	authenticatedRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("arcane.auth.method", method)))
 }
 
-// SpanEnvironment tags the request span with the routed environment's ID, and with its name once the request
-// succeeds, so unauthenticated or unknown-environment requests never trigger a lookup.
 func SpanEnvironment(environmentName func(ctx context.Context, id string) string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {

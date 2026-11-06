@@ -16,7 +16,6 @@ func TestRestoreProjectUpdateBackup_UndoesRenameWhenSourceWasRecreated(t *testin
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "a"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a", "keep.txt"), []byte("keep\n"), 0o644))
 
-	// Batch: rename a -> b, create_folder a, then a later change fails.
 	scope := ProjectUpdateBackupScope{
 		Paths:       []string{"a"},
 		RenamedDirs: [][2]string{{"a", "b"}},

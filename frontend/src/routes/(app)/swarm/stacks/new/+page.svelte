@@ -13,13 +13,14 @@
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
-	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmSyncFile } from '#lib/types/swarm.js';
@@ -33,7 +34,7 @@
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
-	import { globalVariablesToMap } from '#lib/utils/template-load.js';
+	import { globalVariablesToMap, templateLoadNotices } from '#lib/utils/template-load.js';
 	import {
 		planWorkspaceFileCreate,
 		planWorkspaceFileMove,
@@ -241,6 +242,7 @@
 	}
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const loadNotices = $derived(templateLoadNotices(data));
 	const stackEditorContext = $derived({
 		envContent: inputs.envContent.value,
 		composeContents: [inputs.composeContent.value, overrideContent].filter((content) => content.length > 0),
@@ -337,7 +339,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					href={backHref}
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
@@ -417,6 +418,16 @@
 				</div>
 
 				<form class="flex h-full min-h-0 flex-1 flex-col gap-3 px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
+					{#if loadNotices.length > 0}
+						<Alert.Root variant="warning" size="sm">
+							<AlertIcon class="size-4" />
+							<Alert.Description>
+								{#each loadNotices as notice (notice)}
+									<p>{notice}</p>
+								{/each}
+							</Alert.Description>
+						</Alert.Root>
+					{/if}
 					{#if !isEditMode}
 						<div class="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
 							<div class="flex items-center gap-2">

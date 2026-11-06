@@ -21,19 +21,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// ============================================================================
-// Container Exec WebSocket Endpoint
-// ============================================================================
-
-// ContainerExec provides interactive terminal access to a container.
-//
-//	@Summary		Execute command in container via WebSocket
-//	@Description	Interactive terminal access to a container over WebSocket
-//	@Tags			WebSocket
-//	@Param			id			path	string	true	"Environment ID"
-//	@Param			containerId	path	string	true	"Container ID"
-//	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
-//	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
 func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
@@ -80,9 +67,6 @@ func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.
 		closeExec(ctx, conn, containerID, execID, started, fmt.Errorf("attach exec: %w", err))
 		return
 	}
-	// Cleanup must proceed even if the parent ctx is canceled, and must also
-	// run on cancellation while the stdout pipe is blocked in a read — closing
-	// the session is what unblocks it.
 	cleanup := sync.OnceFunc(func() {
 		slog.DebugContext(ctx, "Cleaning up exec session", "execId", execID, "containerId", containerID, "contextErr", ctx.Err())
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -114,9 +98,6 @@ func (h *WebSocketHandler) writeExecError(ctx context.Context, conn *websocket.C
 	_ = conn.Write(wctx, websocket.MessageText, []byte(err.Error()+"\r\n"))
 }
 
-// closeExec completes the close handshake with a status and reason
-// derived from the terminating cause, so the browser can show why the
-// session ended, and logs the outcome with the session duration.
 func closeExec(ctx context.Context, conn *websocket.Conn, containerID, execID string, started time.Time, cause error) {
 	status, reason, level := websocket.StatusNormalClosure, "shell exited", slog.LevelInfo
 	switch {

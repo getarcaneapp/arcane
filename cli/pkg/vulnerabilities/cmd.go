@@ -1,4 +1,3 @@
-// Package vulnerabilities provides image vulnerability scanning commands.
 package vulnerabilities
 
 import (
@@ -37,7 +36,6 @@ var ignoreRef = cmdutil.ResourceRef[types.IgnoredVulnerability, types.IgnoredVul
 	IdentifierOf: func(item types.IgnoredVulnerability) string { return item.ID },
 }
 
-// Command builds the vulnerabilities command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeResource},
@@ -426,8 +424,6 @@ func printSeveritySummary(s *types.VulnerabilitySeveritySummary) {
 	output.KeyValue("Total", s.Total)
 }
 
-// resolveImageID resolves an image name, tag, or (partial) ID to a full image
-// ID via the shared images resolver.
 func resolveImageID(ctx context.Context, c *client.Client, identifier string) (string, error) {
 	resolved, _, err := images.ImageRef.Resolve(ctx, c, identifier, false)
 	if err != nil {

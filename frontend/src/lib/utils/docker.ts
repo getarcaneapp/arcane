@@ -6,9 +6,6 @@ import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swar
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { VulnerabilityScanSummary } from '#lib/types/vulnerability.js';
 import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
-
-// --- Compose / Swarm management labels ---
 
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
 export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
@@ -17,8 +14,6 @@ export const SWARM_STACK_LABEL = 'com.docker.stack.namespace';
 export function getManagedByLabel(labels?: Record<string, string> | null): string | undefined {
 	return labels?.[COMPOSE_PROJECT_LABEL] || labels?.[SWARM_STACK_LABEL] || undefined;
 }
-
-// --- Container stats math ---
 
 export function calculateCPUPercent(stats: ContainerStats | null): number {
 	if (!stats?.cpu_stats || !stats?.precpu_stats) return 0;
@@ -87,8 +82,6 @@ export function getCustomHostname(container: Pick<ContainerDetails, 'id' | 'conf
 	return hostname === shortId ? undefined : hostname;
 }
 
-// --- Swarm service mode helpers ---
-
 export type SwarmServiceModeBadgeVariant = 'green' | 'blue' | 'amber' | 'purple' | 'gray';
 
 export function getSwarmServiceModeFromSpec(mode: SwarmServiceModeSpec | undefined): SwarmServiceModeName {
@@ -133,8 +126,6 @@ export function parseImageRef(imageRef: string): { repo: string; tag: string } {
 	return { repo: namedRef, tag: 'latest' };
 }
 
-// --- Project update status display ---
-
 type ProjectUpdateStatus = ProjectUpdateInfo['status'];
 export type ProjectUpdateBadgeVariant = 'blue' | 'green' | 'gray' | 'red';
 
@@ -169,8 +160,6 @@ export function getProjectUpdateTooltip(updateInfo?: ProjectUpdateInfo): string 
 			return undefined;
 	}
 }
-
-// --- Updates filter transforms ---
 
 const updatesFilter = 'has_update';
 
@@ -210,17 +199,7 @@ export function extractErrorMessage(data: unknown, fallbackMessage: string): str
 	return fallbackMessage;
 }
 
-// --- Vulnerability scan polling ---
-
 const SCAN_IN_PROGRESS_STATUSES = new Set(['pending', 'scanning']);
-
-export type VulnerabilityScanPollOptions = {
-	intervalMs?: number;
-	maxAttempts?: number;
-	onUpdate?: (summary: VulnerabilityScanSummary) => void;
-	onComplete?: (summary: VulnerabilityScanSummary) => void;
-	onError?: (error: unknown) => void;
-};
 
 export type VulnerabilityScanStabilizeOptions = {
 	scanRequestedAt?: string | number | Temporal.Instant | null;
@@ -290,57 +269,6 @@ export async function stabilizeFailedVulnerabilitySummary(
 	return summary;
 }
 
-export function startVulnerabilityScanPolling(
-	imageId: string,
-	fetchSummary: (imageId: string) => Promise<VulnerabilityScanSummary>,
-	options: VulnerabilityScanPollOptions = {}
-): () => void {
-	const { intervalMs = 2000, maxAttempts = 0, onUpdate, onComplete, onError } = options;
-	let attempts = 0;
-	let cancelled = false;
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-	const schedule = () => {
-		if (cancelled) return;
-		timeoutId = setTimeout(run, intervalMs);
-	};
-
-	const run = async () => {
-		if (cancelled) return;
-		attempts += 1;
-		const result = await tryCatch(
-			(async () => {
-				const summary = await fetchSummary(imageId);
-				onUpdate?.(summary);
-				const isScanning = isVulnerabilityScanInProgress(summary?.status);
-				if (!isScanning) onComplete?.(summary);
-				return isScanning;
-			})()
-		);
-		if (result.error !== null) {
-			onError?.(result.error);
-		} else if (!result.data) {
-			return;
-		}
-
-		if (maxAttempts > 0 && attempts >= maxAttempts) {
-			onError?.(new Error('Scan polling exceeded max attempts.'));
-			return;
-		}
-
-		schedule();
-	};
-
-	void run();
-
-	return () => {
-		cancelled = true;
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	};
-}
-
 export type ThemedIconSource = {
 	iconLightUrl?: string | null;
 	iconDarkUrl?: string | null;
@@ -353,8 +281,6 @@ export function getThemedIconUrl(source?: ThemedIconSource | null, themeMode?: s
 	}
 	return source.iconLightUrl?.trim() || null;
 }
-
-// --- App image URLs ---
 
 export function getApplicationLogo(
 	full = false,
@@ -397,8 +323,6 @@ export function getDefaultProfilePicture(): string {
 	return '/api/app/images/profile';
 }
 
-// --- Status variants ---
-
 export type StatusVariant = 'red' | 'purple' | 'green' | 'blue' | 'gray' | 'amber';
 
 const STATUS_VARIANT_MAP: Record<string, StatusVariant> = {
@@ -417,8 +341,6 @@ export function getStatusVariant(status?: string | null): StatusVariant {
 	if (!status) return 'gray';
 	return STATUS_VARIANT_MAP[String(status).toLowerCase()] ?? 'gray';
 }
-
-// --- Environment status resolution ---
 
 type RuntimeEnvironmentState = Pick<Environment, 'id' | 'connected' | 'status'>;
 

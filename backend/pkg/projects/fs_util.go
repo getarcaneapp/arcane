@@ -24,10 +24,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 )
 
-// ErrProjectDirExists is returned by CreateExactDir when the target directory
-// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
-// must never mint "-N" duplicate projects on a broken binding) use this to fail
-// loudly instead of suffixing.
 var ErrProjectDirExists = errors.New("project directory already exists")
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
@@ -108,9 +104,6 @@ func isBackendModuleRoot(path string) bool {
 	return true
 }
 
-// ReadProjectFiles stays on os.*: compose and env files may be symlinks
-// resolving outside any confinement root, and projectPath can be an imported
-// project outside the projects directory; acfs cannot follow either.
 func ReadProjectFiles(ctx context.Context, projectPath, composePath string) (composeContent, envContent string, err error) {
 	if strings.TrimSpace(composePath) == "" {
 		detected, derr := DetectComposeFile(ctx, "", projectPath)
@@ -200,8 +193,6 @@ func syncedProjectFileMatches(ctx context.Context, projectPath string, file Sync
 	return bytes.Equal(existingContent, file.Content), nil
 }
 
-// pathExists stays on os.*: it probes arbitrary absolute paths,
-// including imported projects outside any acfs root.
 func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -266,10 +257,6 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 	return false, nil
 }
 
-// StaleComposeFiles lists project-root compose files a directory sync no longer
-// manages: other standard compose names, plus custom YAML files with compose
-// root keys that are not part of the synced set. A missing project directory
-// has nothing stale.
 func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) ([]string, error) {
 	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
 	for _, file := range syncedFiles {
@@ -323,15 +310,9 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 	return nil
 }
 
-// CreateUniqueDir creates a unique directory within the allowed projectsRoot,
-// suffixing "-N" until an unused name is found. An existing basePath is reused
-// instead when it is a real directory that claimed reports as unowned and in
-// which Compose detection finds no file (an ambiguous result counts as one);
-// reused reports that case.
 func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode, claimed func(dir string) (bool, error)) (path, folderName string, reused bool, err error) {
 	sanitized := SanitizeProjectName(name)
 
-	// Reject empty or invalid sanitized names
 	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
 		return "", "", false, errors.New("invalid project name: results in empty directory name")
 	}
@@ -374,9 +355,6 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	}
 }
 
-// CreateExactDir creates basePath (the sanitized project directory) under
-// projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
-// when the directory already exists, leaving the caller to decide how to proceed.
 func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
 	sanitized := SanitizeProjectName(name)
 	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
@@ -416,7 +394,6 @@ func SanitizeProjectName(name string) string {
 	}, name)
 }
 
-// IsSafeSubdirectory reports whether subdir is baseDir or lies beneath it, comparing absolute paths.
 func IsSafeSubdirectory(baseDir, subdir string) bool {
 	absBase, err1 := filepath.Abs(baseDir)
 	absSubdir, err2 := filepath.Abs(subdir)
@@ -427,7 +404,6 @@ func IsSafeSubdirectory(baseDir, subdir string) bool {
 	return err == nil && filepath.IsLocal(rel)
 }
 
-// ResolvePathWithinDir resolves path and rejects paths that escape baseDir.
 func ResolvePathWithinDir(baseDir, path string) (string, error) {
 	resolvedBase, err := filepath.Abs(filepath.Clean(baseDir))
 	if err != nil {

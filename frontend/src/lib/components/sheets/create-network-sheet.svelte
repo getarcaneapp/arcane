@@ -64,7 +64,6 @@
 		gateway: ''
 	});
 
-	// Dynamic labels state for the key-value pairs
 	let labels = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
 
 	function addLabel() {
@@ -79,7 +78,6 @@
 		const data = form.validate();
 		if (!data) return;
 
-		// Combine textarea labels with dynamic labels
 		const textareaLabels = parseKeyValuePairs(data.networkLabels || '');
 		const dynamicLabels: Record<string, string> = {};
 
@@ -91,7 +89,6 @@
 
 		const finalLabels = { ...textareaLabels, ...dynamicLabels };
 
-		// Parse driver options (e.g., parent=eth0 for macvlan)
 		const driverOptions = parseKeyValuePairs(data.driverOptions || '');
 
 		const options: NetworkCreateOptions = {
@@ -102,7 +99,6 @@
 			options: Object.keys(driverOptions).length > 0 ? driverOptions : undefined
 		};
 
-		// Add IPAM configuration if enabled
 		if (data.enableIpam && (data.subnet?.trim() || data.ipRange?.trim() || data.gateway?.trim())) {
 			const ipamConfig: NetworkIPAMConfig = {};
 
@@ -198,8 +194,8 @@
 							<Label>{m.labels_key_value_label()}</Label>
 							{#each labels as label, index (label)}
 								<div class="flex items-center gap-2">
-									<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
-									<Input type="text" placeholder="Value" bind:value={label.value} disabled={isLoading} class="flex-1" />
+									<Input type="text" placeholder={m.key()} bind:value={label.key} disabled={isLoading} class="flex-1" />
+									<Input type="text" placeholder={m.value()} bind:value={label.value} disabled={isLoading} class="flex-1" />
 									<ArcaneButton
 										action="base"
 										tone="ghost"
@@ -212,14 +208,7 @@
 									/>
 								</div>
 							{/each}
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								size="sm"
-								onclick={addLabel}
-								disabled={isLoading}
-								customLabel={m.add_label()}
-							/>
+							<ArcaneButton action="base" tone="outline" onclick={addLabel} disabled={isLoading} customLabel={m.add_label()} />
 						</div>
 
 						<div class="space-y-2">

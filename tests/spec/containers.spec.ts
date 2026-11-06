@@ -2,7 +2,11 @@ import { stat } from 'node:fs/promises';
 import { test, expect, type Page, type Locator } from '../fixtures/test.fixture';
 import { readApiData, removeApiResource, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from '../types/containers.type';
-import { openRowActionsMenu } from '../utils/table-actions.util';
+import {
+	openRowActionsMenu,
+	ROW_ACTIONS_TRIGGER_NAME,
+	sortByColumn
+} from '../utils/table-actions.util';
 import { waitForDialogReady } from '../utils/playwright.util';
 
 test.describe('Management', () => {
@@ -110,7 +114,7 @@ test.describe('Management', () => {
 
 			const firstRow = page
 				.getByRole('row')
-				.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+				.filter({ has: page.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
 				.first();
 			const menu = await openRowActionsMenu(page, firstRow);
 			await menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
@@ -214,20 +218,18 @@ test.describe('Management', () => {
 			const runningRow = page
 				.getByRole('row')
 				.filter({ has: page.getByRole('link', { name: runningName, exact: true }) });
+			await expect(runningRow.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
 			const runningMenu = await openRowActionsMenu(page, runningRow);
 			await expect(
 				runningMenu.getByRole('menuitem', { name: 'Restart', exact: true })
 			).toBeVisible();
-			await expect(runningMenu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
 
 			const stoppedName = stopped!.names?.[0]?.replace(/^\/+/, '') ?? stopped!.id;
 			const stoppedRow = page
 				.getByRole('row')
 				.filter({ has: page.getByRole('link', { name: stoppedName, exact: true }) });
-			const stoppedMenu = await openRowActionsMenu(page, stoppedRow);
-			await expect(stoppedMenu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
-			await page.keyboard.press('Escape');
+			await expect(stoppedRow.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
 		});
 
 		test('should open the Remove dialog from row actions and allow cancel', async ({ page }) => {
@@ -319,6 +321,9 @@ test.describe('Management', () => {
 			});
 
 			await navigateToContainers(page);
+			await page.getByRole('button', { name: 'View', exact: true }).click();
+			await page.getByRole('menuitemcheckbox', { name: 'IP Address', exact: true }).click();
+			await page.keyboard.press('Escape');
 
 			const row = page.getByRole('row').filter({
 				has: page.getByRole('link', { name: 'wordpress', exact: true })
@@ -1369,14 +1374,6 @@ test.describe('Resource sorting', () => {
 		await page.getByRole('option', { name: size, exact: true }).click();
 	}
 
-	async function sortByHeader(page: Page, name: string, direction: 'asc' | 'desc') {
-		// The sortable header button opens a menu; the direction is chosen from it.
-		await page.getByRole('columnheader', { name, exact: true }).getByRole('button').click();
-		await page
-			.getByRole('menuitem', { name: direction === 'desc' ? 'Desc' : 'Asc', exact: true })
-			.click();
-	}
-
 	test('memory sort orders globally by bytes and renders matching samples', async ({ page }) => {
 		const scenario: Scenario = { supported: true, fixtures: basicFixtures, requests: [] };
 		await installContainersMock(page, scenario);
@@ -1384,7 +1381,7 @@ test.describe('Resource sorting', () => {
 
 		await expect(page.getByRole('row').filter({ hasText: 'small' }).first()).toBeVisible();
 
-		await sortByHeader(page, 'Memory Usage', 'desc');
+		await sortByColumn(page, 'Memory Usage', 'desc');
 
 		await expect
 			.poll(() => rowIds(page), { timeout: 10000 })
@@ -1399,7 +1396,6 @@ test.describe('Resource sorting', () => {
 		const brokenRow = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: 'broken' }) });
-		// Both the CPU and memory cells fall back to the unavailable label.
 		await expect(brokenRow.getByText('Unavailable', { exact: true })).toHaveCount(2);
 	});
 
@@ -1424,7 +1420,7 @@ test.describe('Resource sorting', () => {
 				'filler-9'
 			]);
 
-		await sortByHeader(page, 'Memory Usage', 'desc');
+		await sortByColumn(page, 'Memory Usage', 'desc');
 
 		await expect
 			.poll(() => rowIds(page), { timeout: 10000 })
@@ -1451,7 +1447,7 @@ test.describe('Resource sorting', () => {
 		await installContainersMock(page, scenario);
 		await openContainers(page);
 
-		await sortByHeader(page, 'CPU Usage', 'desc');
+		await sortByColumn(page, 'CPU Usage', 'desc');
 		await expect
 			.poll(() => rowIds(page), { timeout: 10000 })
 			.toEqual(['high-percent', 'big-bytes', 'small', 'broken']);
@@ -1495,11 +1491,15 @@ test.describe('Resource sorting', () => {
 
 		await expect(page.getByText('needs a newer agent for this environment')).toBeVisible();
 		await expect(
-			page.getByRole('columnheader', { name: 'Memory Usage', exact: true }).getByRole('button')
-		).toHaveCount(0);
+			page.getByRole('columnheader', { name: 'Memory Usage', exact: true })
+		).toBeVisible();
 		await expect(
-			page.getByRole('columnheader', { name: 'CPU Usage', exact: true }).getByRole('button')
+			page.getByRole('button', { name: 'Sort by Memory Usage', exact: true })
 		).toHaveCount(0);
+		await expect(page.getByRole('columnheader', { name: 'CPU Usage', exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Sort by CPU Usage', exact: true })).toHaveCount(
+			0
+		);
 	});
 });
 

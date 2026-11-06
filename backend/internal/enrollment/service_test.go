@@ -185,6 +185,9 @@ func startEnrollmentTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID
 	t.Helper()
 	manager := echo.New()
 	manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+		StreamWindowMiB: func() int {
+			return 16
+		},
 		Registry: tunnels,
 		Resolver: func(context.Context, string) (string, error) {
 			return envID, nil
@@ -199,6 +202,9 @@ func startEnrollmentTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID
 		tunnels.Unregister(envID)
 	})
 	_, startErr := agent.NewTunnelClient(agent.TunnelClientConfig{
+		StreamWindowMiB: func() int {
+			return 16
+		},
 		Config: &agent.Config{
 			MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
 			AgentEnabled:   true,

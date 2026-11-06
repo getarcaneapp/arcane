@@ -39,8 +39,6 @@ func (m *BaseModel) BeforeUpdate(_ *gorm.DB) (err error) {
 	return nil
 }
 
-// JSONValue marshals a JSON TEXT column value. isNil stores SQL NULL instead
-// of the JSON literal "null" for nil maps/slices.
 func JSONValue(isNil bool, value any) (driver.Value, error) {
 	if isNil {
 		return nil, nil
@@ -48,7 +46,6 @@ func JSONValue(isNil bool, value any) (driver.Value, error) {
 	return json.Marshal(value)
 }
 
-// JSONScan unmarshals a JSON TEXT column into dest, treating NULL as the zero value.
 func JSONScan[T any](dest *T, value any) error {
 	if value == nil {
 		var zero T

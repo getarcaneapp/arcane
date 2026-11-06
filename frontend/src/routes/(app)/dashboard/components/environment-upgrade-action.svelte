@@ -97,7 +97,6 @@
 {#if shouldShowUpgrade && render !== 'dialog'}
 	<ArcaneButton
 		action="update"
-		size="sm"
 		class="shrink-0"
 		onclick={() => (open = true)}
 		disabled={upgrading || checkingUpgrade}

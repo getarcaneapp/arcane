@@ -1,5 +1,3 @@
-// Package apikey owns API-key persistence, permission grants, validation, and
-// the API-key HTTP surface.
 package apikey
 
 import (
@@ -37,7 +35,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterApiKeys(api, m.service)
 }
 
-// RegisterApiKeys registers API key management routes using Huma.
 func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	h := &ApiKeyHandler{
 		apiKeyService: apiKeyService,
@@ -93,8 +90,6 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermApiKeysDelete, h.DeleteApiKey)
 
-	// Self-service endpoints — no admin permission required, scoped to the
-	// caller's own keys via current-user context.
 	huma.Register(api, huma.Operation{
 		OperationID: "list-my-api-keys",
 		Method:      http.MethodGet,

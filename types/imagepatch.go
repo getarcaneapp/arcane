@@ -5,29 +5,19 @@ import (
 )
 
 type (
-	// PatchMode describes how package updates for a patch run were determined.
 	PatchMode string
 
-	// PatchStatus is the lifecycle state of a patch run.
 	PatchStatus string
 
-	// PatchOptions are the caller-provided options for patching an image.
 	PatchOptions struct {
-		// Suffix overrides the configured patched-tag suffix (e.g. "patched").
-		Suffix string `json:"suffix,omitempty" doc:"Suffix appended to the source tag for the patched image"`
-		// PatchedTag fully overrides the patched tag (takes precedence over Suffix).
+		Suffix     string `json:"suffix,omitempty" doc:"Suffix appended to the source tag for the patched image"`
 		PatchedTag string `json:"patchedTag,omitempty" doc:"Explicit tag for the patched image"`
-		// ScanID selects a stored vulnerability scan whose report drives the patch.
 		// When empty, all outdated OS packages are updated.
-		ScanID string `json:"scanId,omitempty" doc:"Vulnerability scan ID to patch from; empty patches all outdated packages"`
-		// TimeoutSeconds overrides the configured patch timeout.
-		TimeoutSeconds int `json:"timeoutSeconds,omitempty" doc:"Timeout for the patch operation in seconds"`
-		// IgnoreErrors continues patching remaining packages when one fails.
-		IgnoreErrors bool `json:"ignoreErrors,omitempty" doc:"Continue patching when individual package updates fail"`
+		ScanID         string `json:"scanId,omitempty" doc:"Vulnerability scan ID to patch from; empty patches all outdated packages"`
+		TimeoutSeconds int    `json:"timeoutSeconds,omitempty" doc:"Timeout for the patch operation in seconds"`
+		IgnoreErrors   bool   `json:"ignoreErrors,omitempty" doc:"Continue patching when individual package updates fail"`
 	}
 
-	// PatchScanSummary is the scan outcome of a patched image, used to verify a
-	// patch actually removed the fixable vulnerabilities.
 	PatchScanSummary struct {
 		ScanTime     time.Time `json:"scanTime"`
 		Status       string    `json:"status"`
@@ -35,8 +25,6 @@ type (
 		TotalCount   int       `json:"totalCount"`
 	}
 
-	// PatchTarget describes a scanned image from the patching point of view: how
-	// many of its vulnerabilities are fixable and what the latest patch run did.
 	PatchTarget struct {
 		ScanTime      time.Time         `json:"scanTime"`
 		LastPatch     *PatchRecord      `json:"lastPatch,omitempty"`
@@ -47,12 +35,9 @@ type (
 		ImageRef     string `json:"imageRef"`
 		FixableCount int    `json:"fixableCount"`
 		TotalCount   int    `json:"totalCount"`
-		// LocalOnly marks images that were built locally and never pushed or
-		// pulled; they have no registry source, so they cannot be patched.
-		LocalOnly bool `json:"localOnly,omitempty"`
+		LocalOnly    bool   `json:"localOnly,omitempty"`
 	}
 
-	// PatchRecord describes one image patch run.
 	PatchRecord struct {
 		CreatedAt       time.Time   `json:"createdAt"`
 		PackagesUpdated *int        `json:"packagesUpdated,omitempty"`
@@ -72,9 +57,7 @@ type (
 )
 
 const (
-	// PatchModeUpdateAll patches every outdated OS package in the image.
-	PatchModeUpdateAll PatchMode = "update-all"
-	// PatchModeReport patches only packages flagged by a vulnerability scan report.
+	PatchModeUpdateAll   PatchMode   = "update-all"
 	PatchModeReport      PatchMode   = "report"
 	PatchStatusPatching  PatchStatus = "patching"
 	PatchStatusCompleted PatchStatus = "completed"

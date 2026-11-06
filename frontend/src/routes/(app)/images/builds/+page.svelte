@@ -488,7 +488,6 @@
 		}
 
 		resetState();
-		// Prefer showing progress immediately once a build begins.
 		rightPanelTab = 'output';
 		buildTab = 'output';
 		isBuilding = true;
@@ -627,11 +626,9 @@
 {#snippet historyContent()}
 	<ImageBuildHistoryPanel onApplyBuild={applyBuildConfig} />
 {/snippet}
-<!-- Right panel with tabs (config + output) -->
 {#snippet rightPanel()}
 	<div class="flex h-full flex-col">
 		<Tabs.Root bind:value={rightPanelTab} class="flex h-full flex-col">
-			<!-- Tabs header with refined styling -->
 			<div class="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/40 px-3 py-2">
 				<Tabs.List class="flex items-center">
 					<Tabs.Trigger value="config" size="sm">

@@ -17,9 +17,9 @@ const AVATAR_PATH = fileURLToPath(
 type UserPreferences = {
 	themeMode?: 'light' | 'dark' | 'system';
 	keyboardShortcutsEnabled?: boolean;
-	mobileNavigationMode?: 'floating' | 'docked';
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree';
+	interfaceFont?: string;
 };
 
 type AccountUser = {
@@ -45,11 +45,15 @@ type Passkey = {
 
 async function login(page: Page, username: string, password: string, expectedPath = '/dashboard') {
 	await page.goto('/login');
-	await page.getByLabel('Username', { exact: true }).fill(username);
+	await page.getByLabel('Username or email', { exact: true }).fill(username);
 	await page.getByLabel('Password', { exact: true }).fill(password);
 	await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 	await expect(page).toHaveURL(expectedPath);
 	await expect(page.locator('main').first()).toBeVisible();
+}
+
+function readRootFontVariable(page: Page, variable: string) {
+	return page.evaluate((name) => document.documentElement.style.getPropertyValue(name), variable);
 }
 
 async function waitForProfileUpdate(page: Page, action: () => Promise<void>) {
@@ -247,15 +251,20 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				preferences: { keyboardShortcutsEnabled }
 			});
 
-			const mobileNavigationMode =
-				original.preferences?.mobileNavigationMode === 'docked' ? 'floating' : 'docked';
-			const mobileNavigationLabel = mobileNavigationMode === 'docked' ? 'Docked' : 'Floating';
-			const mobileNavigationResponse = await waitForProfileUpdate(accountPage, () =>
-				accountPage.getByRole('button', { name: mobileNavigationLabel, exact: true }).click()
+			const interfaceFontTrigger = accountPage.getByLabel('Interface font', { exact: true });
+			await interfaceFontTrigger.click();
+			await accountPage.getByRole('option', { name: 'Custom', exact: true }).click();
+			const customFontInput = accountPage.getByLabel('Custom font', { exact: true });
+			await customFontInput.fill('0xProto');
+			const interfaceFontResponse = await waitForProfileUpdate(accountPage, () =>
+				customFontInput.press('Enter')
 			);
-			expect(mobileNavigationResponse.request().postDataJSON()).toEqual({
-				preferences: { mobileNavigationMode }
+			expect(interfaceFontResponse.request().postDataJSON()).toEqual({
+				preferences: { interfaceFont: '0xProto' }
 			});
+			await expect
+				.poll(() => readRootFontVariable(accountPage, '--font-sans-user'))
+				.toBe('"0xProto"');
 
 			const persisted = await readApiData<AccountUser>(
 				await accountPage.request.get('/api/auth/me'),
@@ -268,7 +277,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 					defaultLandingPage: landingPage,
 					defaultProjectEditorLayout: projectEditorLayout,
 					keyboardShortcutsEnabled,
-					mobileNavigationMode
+					interfaceFont: '0xProto'
 				}
 			});
 
@@ -277,9 +286,20 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				'data-state',
 				keyboardShortcutsEnabled ? 'checked' : 'unchecked'
 			);
-			await expect(
-				accountPage.getByRole('button', { name: mobileNavigationLabel, exact: true })
-			).toHaveAttribute('aria-pressed', 'true');
+			await expect(customFontInput).toHaveValue('0xProto');
+			await expect
+				.poll(() => readRootFontVariable(accountPage, '--font-sans-user'))
+				.toBe('"0xProto"');
+
+			const defaultFontResponse = await waitForProfileUpdate(accountPage, async () => {
+				await interfaceFontTrigger.click();
+				await accountPage.getByRole('option', { name: 'Default', exact: true }).click();
+			});
+			expect(defaultFontResponse.request().postDataJSON()).toEqual({
+				preferences: { interfaceFont: '' }
+			});
+			await expect(customFontInput).toBeHidden();
+			await expect.poll(() => readRootFontVariable(accountPage, '--font-sans-user')).toBe('');
 
 			await accountPage.getByRole('tab', { name: 'Account', exact: true }).click();
 			const logoutOtherResponsePromise = accountPage.waitForResponse(

@@ -29,12 +29,9 @@ import (
 )
 
 type (
-	// testRegistries is an in-memory registry store keyed by ID.
 	testRegistries map[string]types.ContainerRegistryCredential
 )
 
-// newTestRegistry starts an in-memory OCI registry and returns its
-// host as "localhost:PORT" so go-containerregistry resolves it over plain HTTP.
 func newTestRegistry(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))

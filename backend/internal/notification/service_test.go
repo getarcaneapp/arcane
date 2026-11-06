@@ -580,7 +580,6 @@ func TestNotificationService_NotifyEnabledProviders_SkipsFiltersAndAggregates(t 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "notification errors: telegram: telegram bot token not configured")
 
-	// Each dispatched attempt lands in the event log.
 	var events []event.Event
 	require.NoError(t, db.WithContext(ctx).Where("type = ?", event.EventTypeNotificationSend).Order("created_at").Find(&events).Error)
 	require.Len(t, events, 2)

@@ -16,7 +16,6 @@ import (
 )
 
 type (
-	// WebSocketMetrics tracks active WebSocket connections and their counts.
 	WebSocketMetrics struct {
 		counters    map[string]*atomic.Int64
 		connections map[string]types.WebSocketConnectionInfo
@@ -25,7 +24,6 @@ type (
 	}
 )
 
-// NewWebSocketMetrics creates a new WebSocketMetrics instance.
 func NewWebSocketMetrics() *WebSocketMetrics {
 	return &WebSocketMetrics{
 		counters: map[string]*atomic.Int64{
@@ -41,7 +39,6 @@ func NewWebSocketMetrics() *WebSocketMetrics {
 	}
 }
 
-// Snapshot returns a point-in-time copy of the active connection counts.
 func (m *WebSocketMetrics) Snapshot() types.WebSocketMetricsSnapshot {
 	return types.WebSocketMetricsSnapshot{
 		ProjectLogsActive:   m.counters[types.WSKindProjectLogs].Load(),
@@ -54,7 +51,6 @@ func (m *WebSocketMetrics) Snapshot() types.WebSocketMetricsSnapshot {
 	}
 }
 
-// ObserveConnections reports active connection counts by kind through the arcane.websocket.connections gauge.
 func (m *WebSocketMetrics) ObserveConnections(meter metric.Meter) error {
 	gauge, err := meter.Int64ObservableGauge("arcane.websocket.connections",
 		metric.WithDescription("Active WebSocket connections by kind"),
@@ -72,15 +68,12 @@ func (m *WebSocketMetrics) ObserveConnections(meter metric.Meter) error {
 	return err
 }
 
-// Connections returns a snapshot of all tracked WebSocket connections.
 func (m *WebSocketMetrics) Connections() []types.WebSocketConnectionInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return slices.AppendSeq(make([]types.WebSocketConnectionInfo, 0, len(m.connections)), maps.Values(m.connections))
 }
 
-// RegisterConnection adds a connection to the tracker and increments its kind counter.
-// Returns the assigned connection ID.
 func (m *WebSocketMetrics) RegisterConnection(info types.WebSocketConnectionInfo) string {
 	if info.ID == "" {
 		info.ID = "ws-" + strconv.FormatUint(m.seq.Add(1), 10)
@@ -97,7 +90,6 @@ func (m *WebSocketMetrics) RegisterConnection(info types.WebSocketConnectionInfo
 	return info.ID
 }
 
-// UnregisterConnection removes a connection from the tracker and decrements its kind counter.
 func (m *WebSocketMetrics) UnregisterConnection(id string) {
 	m.mu.Lock()
 	info := m.connections[id]

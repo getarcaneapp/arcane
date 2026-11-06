@@ -1,6 +1,8 @@
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import { onMount } from 'svelte';
+import { toast } from 'svelte-sonner';
 
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { activityService } from '#lib/services/activity-service.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
@@ -8,6 +10,7 @@ import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import type { Activity, ActivityStreamEvent } from '#lib/types/activity.js';
+import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function useBackupActivity(
@@ -53,7 +56,10 @@ export function useBackupActivity(
 
 	function refreshHistory() {
 		void tryCatch(onChange()).then((result) => {
-			if (result.error !== null) console.warn('Failed to refresh backup history', result.error);
+			if (result.error === null) return;
+			toast.error(m.common_refresh_failed({ resource: m.backup_history() }), {
+				description: extractApiErrorMessage(result.error)
+			});
 		});
 	}
 

@@ -56,7 +56,6 @@ var (
 	terminalMu     sync.Mutex
 )
 
-// StartTracker renders a checklist only for interactive text output.
 func StartTracker(ctx context.Context, out io.Writer, enabled bool, labels ...string) *tracker {
 	out = cmp.Or(out, io.Discard)
 	t := &tracker{out: out, live: enabled && IsTerminal(out) && IsTerminal(Stdout()) && ctx.Err() == nil, current: -1}
@@ -154,7 +153,6 @@ func StartTracker(ctx context.Context, out io.Writer, enabled bool, labels ...st
 	return t
 }
 
-// NextStep completes the active step and starts the next pending step.
 func (t *tracker) NextStep() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -167,7 +165,6 @@ func (t *tracker) NextStep() {
 	}
 }
 
-// SetProgress updates a distinct step, retaining interleaved layer totals.
 func (t *tracker) SetProgress(key, label string, current, total int64, byteCount bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -186,7 +183,6 @@ func (t *tracker) SetProgress(key, label string, current, total int64, byteCount
 	step.status = stepRunning
 }
 
-// Finish marks one tracked step complete or failed.
 func (t *tracker) Finish(key string, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -197,7 +193,6 @@ func (t *tracker) Finish(key string, err error) {
 	}
 }
 
-// Stop clears loading and waits for the renderer. It is safe to repeat.
 func (t *tracker) Stop() {
 	if t == nil || !t.live {
 		return
@@ -212,7 +207,6 @@ func (t *tracker) Stop() {
 	})
 }
 
-// SuspendProgress pauses every active tracker until the returned function runs.
 func SuspendProgress() func() {
 	trackersMu.Lock()
 	trackers := make([]*tracker, 0, len(activeTrackers))
@@ -243,10 +237,8 @@ func SuspendProgress() func() {
 	}
 }
 
-// Bytes renders a signed byte count in human-readable form.
 func Bytes(value int64) string { return UnsignedBytes(uint64(max(value, 0))) }
 
-// UnsignedBytes renders an unsigned byte count in human-readable form.
 func UnsignedBytes(value uint64) string {
 	if value < units.KiB {
 		return fmt.Sprintf("%d B", value)

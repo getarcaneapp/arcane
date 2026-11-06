@@ -307,9 +307,6 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 	}
 }
 
-// RunRemoteStreamPollers keeps one poller goroutine per
-// enabled remote environment, re-listing periodically so environments added
-// or removed while the stream is open are picked up without a reconnect.
 func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- types.ActivityStreamEvent) {
 	agg.ReconcilePollersByKey(ctx, agg.PollerConfig[environment.Environment]{
 		List: func(ctx context.Context) ([]environment.Environment, error) {
@@ -465,7 +462,6 @@ func applyActivitySource(item *types.Activity, sourceID, sourceName string) {
 	}
 }
 
-// activityListParams maps list input onto pagination params and its filters.
 func activityListParams(input *ListActivitiesInput) pagination.QueryParams {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.SkipCount = !input.IncludeTotal

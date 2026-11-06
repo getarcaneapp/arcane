@@ -16,7 +16,6 @@ import {
 export {
 	Root,
 	type ArcaneButtonProps as Props,
-	//
 	Root as ArcaneButton,
 	arcaneButtonVariants,
 	actionConfigs,

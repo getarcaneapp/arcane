@@ -129,7 +129,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					href="/podman/quadlets"
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}

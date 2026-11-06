@@ -129,11 +129,6 @@ func cleanupStaleManagedResources(
 	return nil
 }
 
-// removeStaleSwarmResource removes a resource, retrying while Swarm still
-// reports it as in use. When tolerateInUse is set the caller is reconciling a live
-// stack and a later cleanup pass picks the resource up, so a single attempt is enough;
-// otherwise the stack is being deleted and a lingering resource must surface as an error
-// instead of being silently orphaned.
 func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove func(context.Context) error) error {
 	attempts := kit.Ternary(tolerateInUse, 1, staleSwarmResourceRemoveAttempts)
 
@@ -157,7 +152,6 @@ func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove fu
 	return kit.Ternary(tolerateInUse, nil, err)
 }
 
-// RemoveStackResources removes configs, secrets, and networks owned by a stack.
 func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client, stackName string) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {

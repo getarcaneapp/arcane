@@ -63,8 +63,6 @@ import (
 )
 
 type (
-	// Store persists system backup runs and policies through their public DTOs;
-	// the system domain owns the persistence models.
 	Store struct {
 		CreateRun                 func(ctx context.Context, run *types.SystemBackupRun) error
 		SaveRun                   func(ctx context.Context, run *types.SystemBackupRun) error
@@ -94,7 +92,6 @@ type (
 		ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
 	}
 
-	// RuntimeOptionsResolver determines how a helper container reaches the Docker daemon.
 	RuntimeOptionsResolver func(
 		ctx context.Context,
 		dockerHost string,
@@ -104,7 +101,6 @@ type (
 		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 	) ([]string, []mount.Mount, container.NetworkMode, error)
 
-	// Dependencies are the services, persistence, and helper hooks system backups run on.
 	Dependencies struct {
 		Store                 Store
 		DB                    *database.DB
@@ -125,8 +121,6 @@ type (
 		Admission             *runs.Admission
 	}
 
-	// Service orchestrates Arcane system recovery backups: runs, policies,
-	// schedules, replication, retention, and restore.
 	Service struct {
 		store                 Store
 		dockerService         *dockerInternal.DockerClientService
@@ -143,19 +137,16 @@ type (
 		snapshots             *snapshots.Service
 		volumes               *volumes.Service
 		flow                  *flow.Engine
-		// backupWorkflow runs backups StartBackup accepted; policyWorkflow runs scheduled policies.
-		backupWorkflow *flow.Workflow
-		policyWorkflow *flow.Workflow
-		operations     metric.Int64Counter
+		backupWorkflow        *flow.Workflow
+		policyWorkflow        *flow.Workflow
+		operations            metric.Int64Counter
 	}
 
-	// manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
 	manualBackupInput struct {
 		Requester  types.BackupRequester `json:"requester"`
 		Checkpoint systemBackupRecovery  `json:"checkpoint"`
 	}
 
-	// systemBackupRecovery is the checkpoint a run records so an interrupted backup can resume.
 	systemBackupRecovery struct {
 		BackupID     string `json:"backupId"`
 		LocalEnabled bool   `json:"localEnabled"`
@@ -236,7 +227,6 @@ func NewService(deps Dependencies) *Service {
 	return service
 }
 
-// recoveryEnvironment is the runtime configuration, secrets included, that a restored instance needs.
 func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 	result := make(map[string]string)
 	var visit func(reflect.Value)
@@ -275,7 +265,6 @@ func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 	return result
 }
 
-// startOperation opens a backup span; the returned func ends it and counts the outcome.
 func (s *Service) startOperation(ctx context.Context, operation string, attrs ...attribute.KeyValue) (context.Context, func(err error, results ...attribute.KeyValue)) {
 	attrs = append(attrs, attribute.String("arcane.environment.id", "0"), attribute.String("arcane.backup.kind", "system"))
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "backup."+operation, trace.WithAttributes(attrs...))
@@ -289,7 +278,6 @@ func (s *Service) startOperation(ctx context.Context, operation string, attrs ..
 	}
 }
 
-// acquireRun takes the shared system backup admission lease.
 func (s *Service) acquireRun(ctx context.Context) (*runs.Lease, error) {
 	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	if err != nil {
@@ -301,7 +289,6 @@ func (s *Service) acquireRun(ctx context.Context) (*runs.Lease, error) {
 	return lease, nil
 }
 
-// RegisterWorkflows defines the manual and scheduled backup workflows while the host is still unstarted.
 func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	var err error
 	s.flow = engine
@@ -429,7 +416,6 @@ func (s *Service) CreateBackup(ctx context.Context, user types.Actor, trigger st
 	return s.executeBackup(ctx, prepared)
 }
 
-// prepareBackup resolves the run's destinations from its policy or destination enum, creates the run row, and records its checkpoint.
 func (s *Service) prepareBackup(ctx context.Context, trigger string, request types.CreateSystemBackupRequest) (*preparedSystemBackup, error) {
 	if !strings.HasPrefix(s.config.DatabaseURL, "file:") {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
@@ -521,7 +507,6 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}, nil
 }
 
-// executeBackup snapshots straight to S3 for S3-only runs, otherwise keeps a local snapshot and optionally replicates it to S3, then records the run's result.
 func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBackup) (_ *types.SystemBackupRun, err error) {
 	run, key, checkpoint := prepared.run, prepared.recoveryKey, prepared.checkpoint
 	ctx, finish := s.startOperation(ctx, "create", attribute.String("arcane.backup.id", run.ID), attribute.String("arcane.backup.trigger", run.Trigger))
@@ -697,7 +682,6 @@ func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams
 	return decorated, response, nil
 }
 
-// BrowseBackupFiles returns one page from the backup's logical project tree.
 func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, requestedPath string, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response, error) {
 	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
 	if err != nil {
@@ -721,8 +705,6 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, reques
 	return s.snapshots.Browse(ctx, dockerClient, key, *run, listPath, recursive, params)
 }
 
-// RestoreBackupFiles restores selected project files into the current projects
-// directory after creating a safety snapshot.
 func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request types.RestoreSystemBackupFilesRequest, user types.Actor) (opErr error) {
 	ctx, finish := s.startOperation(ctx, "restore_files", attribute.String("arcane.backup.id", id),
 		attribute.Int("arcane.result.count", len(request.Paths)), attribute.Bool("arcane.backup.select_all", request.SelectAll))
@@ -774,7 +756,6 @@ func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opE
 	return s.deleteRuns(ctx, []*types.SystemBackupRun{run}, recoveryKey, true)
 }
 
-// deleteRuns forgets snapshots grouped by repository under the caller's run lease.
 func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBackupRun, recoveryKey string, includeRemote bool) error {
 	var localRuns []*types.SystemBackupRun
 	var localIDs []string
@@ -910,8 +891,6 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBack
 	return deleteErr
 }
 
-// PruneLocalRepository frees the data of deleted local system backups once Rustic's keep-delete window passes.
-// Without local backups there is nothing worth pruning, so no Rustic helper, image, or volume is created.
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
 	localBackups, err := s.store.CountLocalRuns(ctx)
 	if err != nil || localBackups == 0 {
@@ -1472,7 +1451,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled Arcane system backup created successfully"}, nil
 }
 
-// resumeScheduledBackup finishes the backup an interrupted scheduled run recorded, then applies retention.
 func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, error) {
 	outcome, err := s.reconcileBackup(ctx, previous, policyID, "")
 	if err == nil && outcome.Status != types.RunStatusSucceeded {
@@ -1573,7 +1551,6 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 	return s.deleteRuns(ctx, expiredRuns, "", includeRemote)
 }
 
-// StartBackup prepares a manual backup, then submits its workflow.
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
@@ -1641,7 +1618,6 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	}, nil
 }
 
-// WatchAcceptedBackups restores, at startup, the watch over manual backups whose saved workflows resume.
 func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 	standalone, err := s.flow.Standalone(ctx)
 	if err != nil {
@@ -1655,8 +1631,6 @@ func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 	return nil
 }
 
-// watchBackup releases the run's held key once its workflow ends, and fails the run's row when the workflow
-// ended without the task completing it, such as a cancel before the task started.
 func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	outcome, err := s.flow.Wait(ctx, s.backupWorkflow, instanceID)
 	if err != nil {
@@ -1675,7 +1649,6 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	}
 }
 
-// reconcileBackup finishes the backup checkpointed under targetID from the snapshots its interrupted run left behind.
 func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, targetID)
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
@@ -1782,7 +1755,6 @@ func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerR
 	return confirm()
 }
 
-// observeBackupSnapshots finds the snapshots an interrupted run already wrote and records any remote one on run.
 func (s *Service) observeBackupSnapshots(
 	ctx context.Context, dockerClient *client.Client, previous types.SchedulerRun, run *types.SystemBackupRun, checkpoint systemBackupRecovery, key string,
 ) (backup.Snapshot, backup.Repository, backup.Repository, error) {
@@ -1856,8 +1828,6 @@ func (s *Service) observeBackupSnapshots(
 	return staged, local, remote, nil
 }
 
-// runManualBackup is the system-backup step. A delivery that finds the checkpoint it recorded
-// resumes that backup; otherwise it takes over the admission StartBackup won and runs it.
 func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err error) {
 	var input manualBackupInput
 	if decodeErr := t.Payload(&input); decodeErr != nil {
@@ -2021,7 +1991,6 @@ func compareHistoryEntries(key string, a, b types.SystemVolumeBackupHistoryEntry
 	}
 }
 
-// ListBackupHistory returns a unified, server-paginated view of local backup records.
 func (s *Service) ListBackupHistory(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 	history, page, err := s.store.ListHistory(ctx, params)
 	if err != nil {
