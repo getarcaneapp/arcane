@@ -19,7 +19,6 @@ import (
 )
 
 type (
-	// Dependencies are the backup storage and repository operations the browser reads through.
 	Dependencies struct {
 		Docker          *docker.DockerClientService
 		Engine          *backup.Engine
@@ -64,7 +63,6 @@ func (s *Service) ListBackupFiles(ctx context.Context, backupID string) ([]strin
 	return s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
 }
 
-// BrowseBackupFiles returns one lazy-loaded page from a volume backup tree.
 func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response, error) {
 	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
 	if err != nil {
@@ -140,7 +138,6 @@ func (s *Service) listArchiveBackupFiles(ctx context.Context, backupID string) (
 	return files, nil
 }
 
-// ArchivePaths lists every member of a legacy tar.gz volume backup.
 func (s *Service) ArchivePaths(ctx context.Context, backupID string) ([]string, error) {
 	filename, err := s.deps.ArchiveFilename(backupID)
 	if err != nil {

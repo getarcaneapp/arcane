@@ -194,7 +194,7 @@
 								<span class="truncate">{result?.error || job?.error || m.environments_update_all_finished_with_issues()}</span>
 							</p>
 						{/if}
-						<ArcaneButton action="base" onclick={handleClose} size="sm" customLabel={m.common_close()} />
+						<ArcaneButton action="base" onclick={handleClose} customLabel={m.common_close()} />
 					</div>
 				{:else}
 					<p class="mt-4 text-xs text-muted-foreground">

@@ -3,7 +3,6 @@ package container
 import "time"
 
 type (
-	// RedeployJournal records a container Arcane renamed to a backup name, so recovery only touches its own backups.
 	RedeployJournal struct {
 		StartedAt    time.Time `json:"startedAt"`
 		OriginalID   string    `json:"originalId"`
@@ -14,6 +13,5 @@ type (
 )
 
 const (
-	// redeployJournalKeyPrefix keys redeploy journals in the KV store by the original container ID.
 	redeployJournalKeyPrefix = "container_redeploy_journal:"
 )

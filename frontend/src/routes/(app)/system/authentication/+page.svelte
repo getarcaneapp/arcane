@@ -62,8 +62,6 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	// OIDC role mappings — co-located with the OIDC settings so admins
-	// configure the groups claim and the mappings that read it in one place.
 	const queryClient = useQueryClient();
 	const oidcMappingsQuery = createQuery(() => oidcMappingListQuery());
 	const oidcMappings = $derived(oidcMappingsQuery.data ?? data.oidcMappings);
@@ -553,7 +551,6 @@
 									<ArcaneButton
 										action="create"
 										tone="outline"
-										size="sm"
 										onclick={openCreateMapping}
 										customLabel={m.common_create_button({ resource: m.resource_oidc_mapping_cap() })}
 									/>

@@ -61,7 +61,6 @@
 							</Alert.Description>
 							<ArcaneButton
 								action="refresh"
-								size="sm"
 								customLabel={m.common_retry()}
 								onClickPromise={async () =>
 									handleApiResultWithCallbacks({ result: await tryCatch(topologyQuery.refetch()), message: m.common_failed() })}

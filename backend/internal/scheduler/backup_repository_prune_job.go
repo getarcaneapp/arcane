@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// BackupRepositoryPruneJob removes packs that deleted backups left marked for deletion.
 	// Internal job: no job_metadata entry, invisible in the Jobs UI.
 	BackupRepositoryPruneJob struct {
 		systemService   *system.SystemService
@@ -24,11 +23,9 @@ type (
 )
 
 const (
-	// BackupRepositoryPruneJobName identifies the periodic prune of the local backup repositories.
 	BackupRepositoryPruneJobName = "backup-repository-prune"
 )
 
-// NewBackupRepositoryPruneJob builds the prune job for the scheduler.
 func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeService *volume.VolumeService, settingsService *settings.SettingsService) *BackupRepositoryPruneJob {
 	return &BackupRepositoryPruneJob{
 		systemService:   systemService,
@@ -37,21 +34,16 @@ func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeServ
 	}
 }
 
-// Name returns the job name.
 func (j *BackupRepositoryPruneJob) Name() string {
 	return BackupRepositoryPruneJobName
 }
 
-// Schedule runs the prune twice a day, staggered after the default 03:00
-// system backup schedule. Rustic keeps marked packs for 23 hours, so a daily
-// run could leave deleted data on disk for almost two days.
 func (j *BackupRepositoryPruneJob) Schedule(ctx context.Context) string {
 	instance := fnv.New32a()
 	_, _ = instance.Write([]byte(j.settingsService.GetStringSetting(ctx, "instanceId")))
 	return fmt.Sprintf("%d 4,16 * * *", instance.Sum32()%60)
 }
 
-// Run prunes the local system and volume backup repositories.
 func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	var pruneErr error
 	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
@@ -67,7 +59,6 @@ func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutc
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
-// Reschedule is a no-op: the schedule is fixed.
 func (j *BackupRepositoryPruneJob) Reschedule(_ context.Context) error {
 	return nil
 }

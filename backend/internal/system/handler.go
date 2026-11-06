@@ -16,7 +16,6 @@ import (
 )
 
 type (
-	// SystemHandler handles system management endpoints.
 	SystemHandler struct {
 		systemService *SystemService
 		appCtx        context.Context
@@ -50,7 +49,6 @@ func NewHandler(systemService *SystemService, appCtx context.Context) *SystemHan
 	return &SystemHandler{systemService: systemService, appCtx: appCtx}
 }
 
-// Health checks if the Docker daemon is responsive.
 func (h *SystemHandler) Health(ctx context.Context, input *types.EnvironmentInput) (*struct{}, error) {
 	if err := h.systemService.PingDocker(ctx); err != nil {
 		return nil, huma.Error503ServiceUnavailable("Docker is not responsive: " + err.Error())
@@ -59,7 +57,6 @@ func (h *SystemHandler) Health(ctx context.Context, input *types.EnvironmentInpu
 	return nil, nil
 }
 
-// GetDockerInfo returns Docker daemon version and system information.
 func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *types.EnvironmentInput) (*GetDockerInfoOutput, error) {
 	info, err := h.systemService.GetDockerInfo(ctx)
 	if err != nil {
@@ -97,7 +94,6 @@ func (h *SystemHandler) RunContainersAction(ctx context.Context, input *Containe
 	}, nil
 }
 
-// ConvertDockerRun converts a docker run command to docker-compose format.
 func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDockerRunInput) (*ConvertDockerRunOutput, error) {
 	result, err := convert.Convert(input.Body.DockerRunCommand, converttypes.Options{})
 	if err != nil {

@@ -70,7 +70,6 @@
 	let userScaleReplicasServiceId = $state<string | null>(null);
 	const isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
 
-	// Editor state
 	let editOpen = $state(false);
 
 	type ServiceContainerSpecShape = {
@@ -94,7 +93,6 @@
 		};
 	};
 
-	// Parse spec fields
 	const spec = $derived(service?.spec as ServiceSpecShape | undefined);
 	const containerSpec = $derived(spec?.TaskTemplate?.ContainerSpec);
 	const serviceName = $derived(spec?.Name || '');
@@ -266,7 +264,6 @@
 		await refreshAll();
 	}
 
-	// Editor
 	const editVersion = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const editSpec = $derived(JSON.stringify(spec ?? {}, null, 2));
 

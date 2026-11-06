@@ -192,13 +192,12 @@ func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
 		Host:       "signal.example.com",
 		Port:       8080,
 		Token:      "token",
-		Source:     "+1 (555) 123-4567", // Phone with special chars
+		Source:     "+1 (555) 123-4567",
 		Recipients: []string{"+1 (555) 987-6543"},
 	}
 
 	gotURL, err := BuildSignalURL(config)
 	require.NoError(t, err)
 
-	// Phone numbers should be in the URL path
 	assert.Contains(t, gotURL, "/+1%20%28555%29%20123-4567/+1%20%28555%29%20987-6543")
 }

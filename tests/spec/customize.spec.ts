@@ -493,11 +493,9 @@ test.describe('Registries', () => {
 			const dialog = page.getByRole('dialog');
 			await expect(dialog).toBeVisible();
 
-			// Submit without URL -> expect validation error
 			await dialog.getByRole('button', { name: 'Add Registry', exact: true }).click();
 			await expect(dialog.getByText('Registry URL is required', { exact: true })).toBeVisible();
 
-			// Close dialog
 			await page.keyboard.press('Escape');
 			await expect(dialog).toBeHidden();
 		});
@@ -529,14 +527,12 @@ test.describe('Registries', () => {
 		});
 
 		test('should create, test, edit, and delete a registry', async ({ page }) => {
-			// Create
 			await page.getByRole('button', { name: 'Add Registry' }).first().click();
 			const dialog = page.getByRole('dialog');
 			await waitForDialogReady(dialog);
 
 			const url = `e2e.example.com-${Date.now()}`;
 
-			// URL
 			await dialog.getByLabel('Registry URL', { exact: true }).fill(url);
 			// Username (frontend requires it)
 			await dialog.getByLabel('Username', { exact: true }).fill('e2e');
@@ -544,7 +540,6 @@ test.describe('Registries', () => {
 			const tokenInput = dialog.getByLabel('Token', { exact: true });
 			await tokenInput.fill(TOKEN);
 
-			// Optional description
 			const desc = dialog.getByLabel('Description', { exact: true });
 			await desc.fill('E2E test registry');
 
@@ -561,7 +556,6 @@ test.describe('Registries', () => {
 			// Creation complete when dialog closes
 			await expect(dialog).toBeHidden({ timeout: 10000 });
 
-			// Row should appear
 			const row = page
 				.getByRole('row')
 				.filter({ has: page.getByText(url, { exact: true }) })

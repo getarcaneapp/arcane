@@ -10,7 +10,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterFederatedCredentials registers federated credential management routes.
 func RegisterFederatedCredentials(api huma.API, federatedCredentialService *FederatedCredentialService) {
 	h := &FederatedCredentialHandler{
 		federatedCredentialService: federatedCredentialService,

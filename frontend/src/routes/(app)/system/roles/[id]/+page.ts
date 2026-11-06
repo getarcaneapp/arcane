@@ -9,9 +9,6 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent, params }) => {
 	const { queryClient, user } = await parent();
 
-	// Role editing is reserved for global admins (matches RequireGlobalAdmin on
-	// PATCH /roles/{id}). Guard here so the role payload isn't fetched for users
-	// who'll be redirected by the layout effect anyway.
 	if (!userIsGlobalAdmin(user)) {
 		throw redirect(302, '/system/roles');
 	}

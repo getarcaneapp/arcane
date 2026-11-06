@@ -2,21 +2,6 @@ import type { GrammarState } from 'shiki/core';
 
 import { loadHighlighter, type Highlighter, type HighlightedLine } from '#lib/highlighter.js';
 
-/**
- * Highlights `code` in `language`. `current` holds one entry per line: a plain
- * string until the highlighter loads, then the line's tokens. Pass each one to
- * the `code` prop of a `CodeBlock.Line`.
- *
- * ```svelte
- * <script lang="ts">
- * 	const lines = useHighlightedCode(() => code, () => "json");
- * </script>
- *
- * {#each lines.current as line, index (index)}
- * 	<CodeBlock.Line code={line} />
- * {/each}
- * ```
- */
 export function useHighlightedCode(value: () => string, language: () => string) {
 	let loaded = $state.raw<{
 		language: string;

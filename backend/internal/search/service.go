@@ -12,7 +12,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// BuildCategories extracts searchable metadata in model field order.
 func BuildCategories[T any]() []types.Category {
 	catMetaMap := normalization.ExtractCategoryMetadata[T]()
 
@@ -73,7 +72,6 @@ func BuildCategories[T any]() []types.Category {
 	return results
 }
 
-// Search matches category metadata by query.
 func Search(categories []types.Category, query string) types.SearchResponse {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {

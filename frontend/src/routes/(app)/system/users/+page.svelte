@@ -47,10 +47,6 @@
 	// still update profile fields but must not call the assignments endpoint.
 	const isAdmin = $derived(userStore.isGlobalAdmin());
 
-	// availableRoleAssignments for the edit form — manual assignments only,
-	// stripped to (roleId, environmentId) tuples. OIDC-sourced assignments must
-	// not round-trip: PUT /users/{id}/roles replaces source='manual'
-	// rows, so resubmitting oidc rows would duplicate them as manual.
 	const editingAssignments = $derived(
 		userToEdit?.roleAssignments
 			?.filter((a) => a.source !== 'oidc')
@@ -109,8 +105,6 @@
 
 		if (isEditMode && userId) {
 			const safeUsername = userToEdit?.username || m.common_unknown();
-			// Split: profile fields go to PATCH /users/{id}; role assignments
-			// go to PUT /users/{id}/roles (separate endpoint).
 			const { roleAssignments, ...profile } = user;
 
 			// OIDC users submit role assignments only — skip the empty profile PUT.
@@ -189,7 +183,6 @@
 		}
 	}
 
-	// Avatar policy: server-wide settings that belong with user management.
 	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2

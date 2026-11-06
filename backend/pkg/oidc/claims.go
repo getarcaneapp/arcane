@@ -11,7 +11,6 @@ import (
 	"kit.getarcane.app"
 )
 
-// GetStringClaim extracts a string claim from a map
 func GetStringClaim(m map[string]any, key string) string {
 	if v, ok := m[key]; ok {
 		switch t := v.(type) {
@@ -24,7 +23,6 @@ func GetStringClaim(m map[string]any, key string) string {
 	return ""
 }
 
-// GetBoolClaim extracts a boolean claim from a map
 func GetBoolClaim(m map[string]any, key string) bool {
 	if v, ok := m[key]; ok {
 		switch t := v.(type) {
@@ -44,9 +42,6 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
-// GetStringSliceClaim extracts a string slice claim from a map. A single
-// string value is split on commas or spaces (group/role claims are commonly
-// delivered that way).
 func GetStringSliceClaim(m map[string]any, key string) []string {
 	v, ok := m[key]
 	if !ok || v == nil {
@@ -57,7 +52,6 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 		if s == "" {
 			return nil
 		}
-		// Support comma or space separated strings
 		if out := kit.TrimNonEmpty(strings.Split(s, ",")); strings.Contains(s, ",") && len(out) > 0 {
 			return out
 		}
@@ -66,7 +60,6 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 	return kit.Unique(kit.TrimNonEmpty(kit.Collect(v, func(item any) string { return kit.As(item, "") })))
 }
 
-// ParseJWTClaims parses unverified JWT metadata for pre-verification routing.
 func ParseJWTClaims(idToken string) map[string]any {
 	token, err := jwt.ParseInsecure([]byte(idToken), jwt.WithStrictStringClaims(true))
 	if err != nil {
@@ -80,7 +73,6 @@ func ParseJWTClaims(idToken string) map[string]any {
 	return claims
 }
 
-// GetByPath extracts a value from a nested map using a dot-separated path
 func GetByPath(m map[string]any, path string) mo.Option[any] {
 	if m == nil {
 		return mo.None[any]()

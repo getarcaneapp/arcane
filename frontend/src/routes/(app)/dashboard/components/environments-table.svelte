@@ -151,6 +151,9 @@
 								<Badge variant="purple" size="sm">{m.podman()}</Badge>
 							{/if}
 						</div>
+						{#if statsStatus === 'unavailable'}
+							<p class="text-xs text-muted-foreground">{m.stats_unavailable()}</p>
+						{/if}
 					</td>
 					<td class={bodyCell}>
 						{#if row.versionText}

@@ -467,8 +467,6 @@ func truncate(s string, limit int) string {
 	return string(r[:limit-1]) + "…"
 }
 
-// Enqueue queues a push for every subscribed device and reports whether one was
-// queued. The outbox retries delivery to the relay, so a queued push counts as delivered.
 func (s *ApnsService) Enqueue(ctx context.Context, environmentID, environmentName string, eventType notifications.NotificationEventType, subject string, metadata database.JSON) (bool, error) {
 	if !s.Enabled(ctx) {
 		return false, nil

@@ -128,12 +128,6 @@ func TestPrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
 	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
 }
 
-// TestPrepareServiceBuildRequest_KeepsContainerPaths is a
-// regression test for #2314: Arcane's local build pipeline (the docker and
-// buildkit providers both read the build context via the Arcane process's own
-// filesystem) cannot use host paths, so prepareServiceBuildRequest must leave
-// the build context and any absolute Dockerfile path as container paths even
-// when the projects mount has a non-matching host prefix.
 func TestPrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
 
@@ -159,12 +153,6 @@ func TestPrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
 }
 
-// TestPrepareServiceBuildRequest_BuildDotKeepsContainerPath
-// reproduces the exact configuration from #2314: a compose file with
-// `build: .` next to its Dockerfile, on an installation where the projects
-// directory is bind-mounted from a different host path than the container
-// path. The resulting BuildRequest must point at the container path so the
-// local builder can stat / tar the directory.
 func TestPrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
 

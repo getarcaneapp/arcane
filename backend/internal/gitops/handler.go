@@ -17,7 +17,6 @@ import (
 )
 
 type (
-	// GitOpsSyncHandler handles GitOps sync management endpoints.
 	GitOpsSyncHandler struct {
 		syncService *GitOpsSyncService
 	}
@@ -129,7 +128,6 @@ func (h *GitOpsSyncHandler) requireBackupSyncPermission(ctx context.Context, env
 	return requireConditionPermissions(ctx, environmentID, authz.GitOpsSyncModeConditions, "mode", sync.Mode)
 }
 
-// ListSyncs returns a paginated list of GitOps syncs.
 func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSyncsInput) (*ListGitOpsSyncsOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	for key, value := range map[string]string{"mode": input.Mode, "projectId": input.ProjectID, "repositoryId": input.RepositoryID, "autoSync": input.AutoSync} {
@@ -159,7 +157,6 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 	}, nil
 }
 
-// CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -194,7 +191,6 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 	}, nil
 }
 
-// ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*handlerutil.Out[types.ImportGitOpsSyncResponse], error) {
 	for _, item := range input.Body {
 		if err := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsPreDeployConditions, "preDeploy", strconv.FormatBool(item.HasPreDeployConfig())); err != nil {
@@ -217,7 +213,6 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 	}, nil
 }
 
-// GetSync returns a GitOps sync by ID.
 func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
@@ -237,7 +232,6 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 	}, nil
 }
 
-// UpdateSync updates an existing GitOps sync.
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -272,7 +266,6 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	}, nil
 }
 
-// DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
 		return nil, err
@@ -287,7 +280,6 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 	return handlerutil.MessageOutput("Sync deleted successfully", ""), nil
 }
 
-// PerformSync manually triggers a sync operation.
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncActionInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
 		return nil, err
@@ -312,7 +304,6 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncAc
 	}, nil
 }
 
-// GetStatus returns the current status of a GitOps sync.
 func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*handlerutil.Out[types.GitOpsSyncStatus], error) {
 	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
@@ -328,7 +319,6 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 	}, nil
 }
 
-// BrowseFiles returns the file tree at the specified path in the repository.
 func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*handlerutil.Out[types.GitOpsBrowseResponse], error) {
 	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
@@ -344,7 +334,6 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFi
 	}, nil
 }
 
-// PreviewBackup shows what the next backup would commit.
 func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPreviewInput) (*handlerutil.Out[types.GitOpsBackupPreview], error) {
 	preview, err := h.syncService.PreviewBackup(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
@@ -360,7 +349,6 @@ func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPrev
 	}, nil
 }
 
-// BackupHistory lists revisions affecting the backup.
 func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHistoryInput) (*handlerutil.Out[types.GitOpsBackupHistoryResponse], error) {
 	history, err := h.syncService.GetBackupHistory(ctx, input.EnvironmentID, input.SyncID, min(input.Limit, maxBackupHistoryLimit))
 	if err != nil {
@@ -376,7 +364,6 @@ func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHist
 	}, nil
 }
 
-// BackupRevision returns one revision with diffs.
 func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRevisionInput) (*handlerutil.Out[types.GitOpsBackupRevision], error) {
 	revision, err := h.syncService.GetBackupRevision(ctx, input.EnvironmentID, input.SyncID, input.Commit)
 	if err != nil {
@@ -392,7 +379,6 @@ func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRev
 	}, nil
 }
 
-// ResolveBackupConflict resolves a backup that needs attention.
 func (h *GitOpsSyncHandler) ResolveBackupConflict(ctx context.Context, input *ResolveBackupConflictInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
 	actor := handlerutil.CurrentActor(ctx)
 

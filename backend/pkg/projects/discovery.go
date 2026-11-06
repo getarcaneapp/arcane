@@ -27,27 +27,12 @@ type (
 )
 
 const (
-	// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
-	// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
-	// Arcane-managed and must never be discovered or imported as user projects.
 	ArcaneTrashPrefix = ".arcane-trash-"
 )
 
 var (
-	// gitOpsScratchEmbeddedNameRe matches the legacy name-embedded gitops scratch
-	// directory form, e.g. "Makerra.gitops-backup-1780656786384743013". That form always
-	// used a time.Now().UnixNano() suffix (≥18 digits), so a long digit run is required:
-	// it keeps a real user project ending in "<base>.gitops-backup-notes" (non-numeric) or
-	// "<base>.gitops-backup-2024" (short, year-like) from being mistaken for Arcane scratch.
-	// The hidden os.MkdirTemp forms (".gitops-backup-*", ".gitops-sync-stage-*") are matched
-	// by prefix, not by this regex.
 	gitOpsScratchEmbeddedNameRe = regexp.MustCompile(`\.gitops-(?:backup|sync-stage)-\d{10,}$`)
 
-	// filesystemSnapshotDirNames are directory names used by filesystems and NAS
-	// appliances for read-only snapshots or trash. They contain point-in-time
-	// copies of real project directories and must never be discovered as projects:
-	// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
-	// (snapper/btrbk), .zfs (ZFS snapdir).
 	filesystemSnapshotDirNames = map[string]bool{
 		"#snapshot":  true,
 		"#recycle":   true,
@@ -57,8 +42,6 @@ var (
 	}
 )
 
-// IsProjectDirectoryEntry reports whether a directory entry should be treated as a project directory.
-// Regular directories are always accepted. Symlinked directories are accepted only when enabled.
 func IsProjectDirectoryEntry(entry os.DirEntry, path string, followSymlinks bool) bool {
 	if entry == nil {
 		return false
@@ -80,12 +63,6 @@ func IsProjectDirectoryEntry(entry os.DirEntry, path string, followSymlinks bool
 	return info.IsDir()
 }
 
-// IsProjectDirectoryPath reports whether an existing path should be treated as a project directory.
-// Regular directories are always accepted. Symlinked directories are accepted only when enabled.
-//
-// Discovery stays on os.*: with followSymlinks enabled it deliberately follows
-// symlinked project directories whose targets live outside the projects
-// directory, which the root-confined acfs API cannot do.
 func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -172,14 +149,6 @@ func walkProjectDirectories(ctx context.Context,
 	ancestors[identity] = struct{}{}
 	defer delete(ancestors, identity)
 
-	// If this directory contains a compose file, treat it as a single project
-	// and stop descending. Nested compose files are assumed to belong to the
-	// parent project (e.g. via compose `include:` directives) and should not
-	// be discovered as separate top-level projects.
-	//
-	// The projects root directory itself is exempt — we always descend into it
-	// so siblings under the root are all discovered, even if the root happens
-	// to contain its own compose file.
 	switch composePath, detectComposeFileErr := DetectComposeFile(ctx, root, path); {
 	case detectComposeFileErr == nil, errors.Is(detectComposeFileErr, common.ErrProjectEnvUnreadable) && composePath != "":
 		if detectComposeFileErr != nil {
@@ -240,10 +209,6 @@ func walkProjectDirectories(ctx context.Context,
 	return nil
 }
 
-// IsGitOpsScratchDirName reports whether name is an Arcane GitOps scratch directory:
-// the hidden staging/backup temp dirs (".gitops-sync-stage-*", ".gitops-backup-*")
-// or the legacy name-embedded backup form ("<name>.gitops-backup-<digits>"). These are
-// Arcane-internal working directories and must never be imported as user projects.
 func IsGitOpsScratchDirName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -255,8 +220,6 @@ func IsGitOpsScratchDirName(name string) bool {
 	return gitOpsScratchEmbeddedNameRe.MatchString(name)
 }
 
-// IsFilesystemSnapshotDirName reports whether name is a well-known filesystem
-// snapshot/trash directory (see filesystemSnapshotDirNames).
 func IsFilesystemSnapshotDirName(name string) bool {
 	return filesystemSnapshotDirNames[strings.ToLower(strings.TrimSpace(name))]
 }
@@ -270,12 +233,6 @@ func PathHasSegment(relPath string, match func(string) bool) bool {
 	return false
 }
 
-// IsInternalScratchDirName reports whether name is any Arcane-managed scratch
-// directory that must never be discovered or imported as a user project: the
-// project-update preview/backup temp dirs, the quarantine/trash dirs (see
-// ArcaneTrashPrefix), or the GitOps sync-stage/backup dirs (see
-// IsGitOpsScratchDirName). This is the single source of truth for the discovery
-// walker and the DB cleanup pass.
 func IsInternalScratchDirName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -290,17 +247,10 @@ func IsInternalScratchDirName(name string) bool {
 	return IsGitOpsScratchDirName(name)
 }
 
-// IsIgnoredProjectDirName reports whether discovery and the filesystem watcher
-// must skip name: Arcane scratch directories and filesystem snapshot directories.
 func IsIgnoredProjectDirName(name string) bool {
 	return IsInternalScratchDirName(name) || IsFilesystemSnapshotDirName(name)
 }
 
-// ComposeContentProjectName returns the normalized top-level `name:` from
-// compose YAML content, or "" when the key is absent or unusable. Interpolated
-// names (containing `${`) are treated as absent so the backend and the
-// frontend name lock behave identically; parse errors are ignored here because
-// the full compose validation reports them with proper context.
 func ComposeContentProjectName(composeContent string) string {
 	var doc struct {
 		Name string `yaml:"name"`
@@ -315,8 +265,6 @@ func ComposeContentProjectName(composeContent string) string {
 	return loader.NormalizeProjectName(raw)
 }
 
-// NormalizeProjectName returns compose-go's normalized project name. If
-// compose-go returns empty, the input is returned unchanged.
 func NormalizeProjectName(name string) string {
 	if name == "" {
 		return ""
@@ -345,8 +293,6 @@ func ResolveDirectoryIdentity(path string) (string, error) {
 	return filepath.Clean(absPath), nil
 }
 
-// ComposeEnvRequiresDirectorySync reports whether environment file selections require
-// files beyond the Compose file, its sibling override, and the effective .env file.
 func ComposeEnvRequiresDirectorySync(composePath, overrideFileName string, envContent *string) bool {
 	if envContent == nil {
 		return false

@@ -8,8 +8,6 @@ import (
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
 )
 
-// errUnknownTunnelPayload marks a proto payload this peer cannot decode, such as a oneof case
-// added by a newer peer. Receivers skip it, as unknown websocket message types are skipped.
 var errUnknownTunnelPayload = errors.New("unknown tunnel payload type")
 
 func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, error) {

@@ -56,10 +56,6 @@ func TestCurrentContainerInspectTarget(t *testing.T) {
 }
 
 func TestInspectCurrentArcaneContainer_FallsBackToLabelWhenHostnameIsSidecar(t *testing.T) {
-	// With network_mode: service:<sidecar> both the hostname and the cgroup
-	// mountinfo fallback resolve the sidecar container (no Arcane label);
-	// detection must fall back to the label lookup instead of trusting the
-	// derived inspect (#3544, #3693).
 	dockerClient := newTestDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -81,10 +77,6 @@ func TestInspectCurrentArcaneContainer_FallsBackToLabelWhenHostnameIsSidecar(t *
 }
 
 func TestInspectCurrentArcaneContainer_KeepsUnlabeledHitOverUnrelatedLabeledInstance(t *testing.T) {
-	// The hostname resolves to the actual (unlabeled custom-image) Arcane
-	// container; a second, labeled Arcane instance also runs on the daemon but
-	// does not share the hostname container's network namespace, so it must not
-	// hijack detection.
 	dockerClient := newTestDockerClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {

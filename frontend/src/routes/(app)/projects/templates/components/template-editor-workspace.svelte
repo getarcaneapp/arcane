@@ -66,7 +66,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}

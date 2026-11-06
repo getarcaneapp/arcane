@@ -13,45 +13,22 @@ import (
 )
 
 type (
-	// Content is the provider-independent description of one notification: the
-	// message text per format plus the per-event knobs that vary between events.
 	Content struct {
-		// Text holds the message body per format, built once per fan-out via the
-		// messages.go builders.
 		Text map[MessageFormat]string
 
-		// RenderEmail lazily renders the email subject and HTML body. Built as a
-		// closure by the caller so template resources and app config stay out of
-		// this package. Nil means the provider map's email deliverer errors.
 		RenderEmail func() (subject, html string, err error)
 
-		// Vars carries per-event variables (environment, environmentId, event,
-		// timestamp) for the generic webhook's payload template. They are only
-		// injected into the outgoing request when a payload template is configured,
-		// so existing template-less generic webhooks keep their exact payload.
-		Vars map[string]string
-
-		// Title is the generic-webhook title.
-		Title string
-
-		// NtfyTitle is the event-specific ntfy title used when the provider does
-		// not have a custom title configured.
+		Vars      map[string]string
+		Title     string
 		NtfyTitle string
 
-		// DefaultTitle is applied to pushover/gotify when their config has no
-		// title; "" means don't default.
-		DefaultTitle string
-
-		// RequireNtfyTopic preserves the per-event ntfy topic validation.
-		RequireNtfyTopic bool
-
-		// ValidatePushoverUser preserves the per-event pushover token/user validation.
+		DefaultTitle         string
+		RequireNtfyTopic     bool
 		ValidatePushoverUser bool
 	}
 
 	delivererFunc func(ctx context.Context, config database.JSON, c Content) error
 
-	// deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
 	deliveryError struct {
 		err     error
 		message string
@@ -73,12 +50,9 @@ var (
 		NotificationProviderGeneric:    deliverGeneric,
 	}
 
-	// webhookURL matches http(s) URLs in provider errors. Webhook tokens often sit in the path or userinfo,
-	// so only the scheme and host are kept.
 	webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[^\s"']*`)
 )
 
-// Deliver sends c to a single provider. handled is false for unknown providers.
 func Deliver(ctx context.Context, provider NotificationProvider, config database.JSON, c Content) (handled bool, err error) {
 	deliver, ok := providerDeliverers[provider]
 	if !ok {
@@ -111,7 +85,6 @@ func deliverDiscord(ctx context.Context, config database.JSON, c Content) error 
 	return nil
 }
 
-// ValidateEmailAddresses checks that the sender and every recipient parse as RFC 5322 addresses.
 func ValidateEmailAddresses(config EmailConfig) error {
 	if _, err := mail.ParseAddress(config.FromAddress); err != nil {
 		return &types.FieldError{Field: "fromAddress", Err: fmt.Errorf("invalid from address: %w", err)}
@@ -309,8 +282,6 @@ func deliverGeneric(ctx context.Context, config database.JSON, c Content) error 
 	return nil
 }
 
-// TextByFormat builds the per-format message map for Content.Text from a
-// single messages.go builder closure.
 func TextByFormat(build func(MessageFormat) string) map[MessageFormat]string {
 	formats := []MessageFormat{
 		MessageFormatMarkdown,

@@ -47,7 +47,6 @@ function createOperationWatchStore() {
 		},
 
 		start(title: string) {
-			// Replacing a previous session releases its resources first.
 			runCloseHookInternal();
 			_title = title;
 			_lines = [];
@@ -59,7 +58,6 @@ function createOperationWatchStore() {
 			_lines = [..._lines, line];
 		},
 
-		/** onLine callback for readNdjsonStream: appends raw log frames. */
 		onLine(data: unknown) {
 			if (!data || typeof data !== 'object') {
 				return;

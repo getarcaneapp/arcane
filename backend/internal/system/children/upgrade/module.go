@@ -13,7 +13,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// RegisterRoutes registers the self-upgrade and upgrade job endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-upgrade",

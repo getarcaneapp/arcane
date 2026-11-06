@@ -8,7 +8,6 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
 )
 
-// BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildSignalURL(config SignalConfig) (string, error) {
 	notifySelf := true
 	if config.NotifySelf != nil {
@@ -31,7 +30,6 @@ func BuildSignalURL(config SignalConfig) (string, error) {
 	return url.String(), nil
 }
 
-// SendSignal sends a message via Shoutrrr Signal using proper service configuration
 func SendSignal(ctx context.Context, config SignalConfig, message string) error {
 	if config.Host == "" {
 		return errors.New("signal host is empty")
@@ -46,7 +44,6 @@ func SendSignal(ctx context.Context, config SignalConfig, message string) error 
 		return errors.New("no signal recipients configured")
 	}
 
-	// Validate authentication
 	hasBasicAuth := config.User != "" && config.Password != ""
 	hasTokenAuth := config.Token != ""
 	if !hasBasicAuth && !hasTokenAuth {

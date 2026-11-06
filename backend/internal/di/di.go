@@ -1,4 +1,3 @@
-// Package di owns the backend's dependency-injection graph.
 package di
 
 import (
@@ -64,7 +63,6 @@ import (
 )
 
 var (
-	// ActorOptions provides the durable Francis runtime and admission.
 	ActorOptions = fx.Options(
 		fx.Provide(provideActorRuntime, provideRunCoordinator),
 		fx.Provide(provideAdmissionGate),
@@ -73,7 +71,6 @@ var (
 		fx.Provide(provideTunnelRegistry),
 	)
 
-	// ServiceOptions constructs services once and injects them into route modules.
 	ServiceOptions = fx.Options(
 		fx.Supply(
 			resources.FS,
@@ -140,7 +137,6 @@ var (
 				}),
 			),
 		),
-		// These providers bind config values, callbacks, or managed resource lifetimes.
 		fx.Provide(
 			provideJWKSetManager,
 			provideDockerClientService,
@@ -284,8 +280,6 @@ var (
 		),
 	)
 
-	// JobOptions provides every scheduler job. Registration and settings callbacks
-	// remain bootstrap concerns because their ordering is application-specific.
 	JobOptions = fx.Options(
 		fx.Provide(
 			fx.Annotate(scheduler.NewAutoUpdateJob, fx.ResultTags(`name:"auto-update"`)),

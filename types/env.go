@@ -15,8 +15,6 @@ type (
 		Variables []EnvVariable `json:"variables"`
 	}
 
-	// GlobalVariable is the manager-level variable resource. Value is empty on
-	// reads when IsSecret is true.
 	GlobalVariable struct {
 		CreatedAt            time.Time  `json:"createdAt" readOnly:"true"`
 		UpdatedAt            *time.Time `json:"updatedAt,omitempty" readOnly:"true"`

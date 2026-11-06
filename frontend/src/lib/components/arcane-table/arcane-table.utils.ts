@@ -32,13 +32,6 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	return out;
 }
 
-/**
- * Inverse of {@link toFilterMap}: rebuilds tanstack `ColumnFiltersState` from a
- * request `FilterMap`. Used to reflect externally-set `requestOptions.filters`
- * (e.g. a clickable stat card) back into the faceted-filter UI. Values are kept
- * as-is so they match the facet option `value` types (array, boolean, string).
- * The environment filter keeps only shown environments, so a stale one never shows as active.
- */
 export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	if (!map) return [];
 	const out: ColumnFiltersState = [];
@@ -198,7 +191,6 @@ const FOOTER_COLUMNS = new Set([
 	'expiresAt'
 ]);
 
-/** Where a column lands on a grid card. Titles are picked separately from the remaining fields. */
 export function getCardSlot(columnId: string, explicit?: CardSlot): CardSlot {
 	if (explicit) return explicit;
 	if (columnId === ENVIRONMENT_FILTER) return 'context';

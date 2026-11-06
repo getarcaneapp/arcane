@@ -8,7 +8,6 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/discord"
 )
 
-// BuildDiscordURL converts DiscordConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildDiscordURL(config DiscordConfig) (string, error) {
 	discordConfig := &discord.Config{
 		WebhookID: config.WebhookID,
@@ -21,7 +20,6 @@ func BuildDiscordURL(config DiscordConfig) (string, error) {
 	return url.String(), nil
 }
 
-// SendDiscord sends a message via Shoutrrr Discord using proper service configuration
 func SendDiscord(ctx context.Context, config DiscordConfig, message string) error {
 	if config.WebhookID == "" {
 		return errors.New("discord webhook ID is empty")

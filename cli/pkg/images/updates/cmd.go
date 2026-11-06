@@ -20,7 +20,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command builds the updates command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "updates",
@@ -171,8 +170,6 @@ func newSummaryCmd() *cobra.Command {
 	}
 }
 
-// printBatchResults prints every requested reference, including
-// up-to-date and failed checks.
 func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 	var result types.ImageUpdateBatchResponse
 	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {

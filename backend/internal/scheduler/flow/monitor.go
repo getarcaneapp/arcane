@@ -20,18 +20,14 @@ import (
 )
 
 type (
-	// instanceMonitor is the single poller for one root instance. It owns the
-	// instance's activity and broadcasts step changes and the final outcome.
 	instanceMonitor struct {
-		outcome *types.SchedulerOutcome
-		changed chan struct{}
-		cancel  context.CancelFunc
-		// children caches the workflow serving each child instance.
+		outcome  *types.SchedulerOutcome
+		changed  chan struct{}
+		cancel   context.CancelFunc
 		children map[string]*Workflow
 		steps    []types.StepOutcome
 		mu       sync.Mutex
 	}
-	// activityProjection remembers what was last written to the activity.
 	activityProjection struct {
 		statuses map[string]types.RunStatus
 		step     string
@@ -152,13 +148,11 @@ func (e *Engine) finish(ctx context.Context, wf *Workflow, instanceID string, mo
 	monitor.cancel()
 }
 
-// stop ends a monitor whose instance was superseded.
 func (m *instanceMonitor) stop() {
 	m.cancel()
 	m.publish(nil, &types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Workflow instance was superseded"})
 }
 
-// publish records a change and wakes waiters; it reports whether anything changed.
 func (m *instanceMonitor) publish(steps []types.StepOutcome, outcome *types.SchedulerOutcome) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -178,7 +172,6 @@ func (m *instanceMonitor) snapshot() ([]types.StepOutcome, *types.SchedulerOutco
 	return m.steps, m.outcome, m.changed
 }
 
-// projectSteps maps Francis steps onto run steps; a child step reports its child's fan-out totals.
 func (e *Engine) projectSteps(ctx context.Context, monitor *instanceMonitor, status workflow.InstanceStatus) []types.StepOutcome {
 	steps := make([]types.StepOutcome, 0, len(status.Steps))
 	for _, view := range status.Steps {
@@ -211,7 +204,6 @@ func (e *Engine) projectSteps(ctx context.Context, monitor *instanceMonitor, sta
 	return steps
 }
 
-// childStatus reads a child instance, resolving its workflow once per monitor.
 func (e *Engine) childStatus(ctx context.Context, monitor *instanceMonitor, childID string) (workflow.InstanceStatus, bool) {
 	if wf := monitor.children[childID]; wf != nil {
 		status, err := wf.svc.GetStatus(ctx, childID)
@@ -247,7 +239,6 @@ func stepStatus(status workflow.StepStatus, failed int) types.RunStatus {
 	return types.RunStatusQueued
 }
 
-// decodeOutcome decodes a terminal instance into the run outcome contract.
 func decodeOutcome(status workflow.InstanceStatus, steps []types.StepOutcome, activityID string) types.SchedulerOutcome {
 	var outcome types.SchedulerOutcome
 	switch status.Status {
@@ -270,7 +261,6 @@ func decodeOutcome(status workflow.InstanceStatus, steps []types.StepOutcome, ac
 	return outcome
 }
 
-// projectActivity writes overall progress and step transitions to the activity.
 func (e *Engine) projectActivity(ctx context.Context, wf *Workflow, activityID string, projection *activityProjection, steps []types.StepOutcome) {
 	if activityID == "" || len(steps) == 0 {
 		return

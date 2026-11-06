@@ -96,7 +96,6 @@ func ResolveRemoveOrphans(gitOpsManaged bool, options *types.ProjectDeployOption
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
 
-// UpdateServices validates scope before pulling or stopping any service.
 func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.ComposeServiceUpdate) error {
 	scope := slices.Concat(request.Services, request.Dependents)
 	selected, err := SelectServices(request.Project, slices.Concat(scope, request.StoppedDependents))
@@ -149,7 +148,6 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 	return nil
 }
 
-// SelectServices enables requested profiles and returns a separate, scoped model.
 func SelectServices(model *composetypes.Project, services []string) (*composetypes.Project, error) {
 	if model == nil {
 		return nil, errors.New("compose project is nil")
@@ -165,7 +163,6 @@ func SelectServices(model *composetypes.Project, services []string) (*composetyp
 	return selected.WithoutUnnecessaryResources(), nil
 }
 
-// NamespaceDependents mirrors compose's parentNamespaceRecreated cascade, transitively.
 func NamespaceDependents(model *composetypes.Project, services []string) []string {
 	if model == nil {
 		return nil
@@ -459,7 +456,6 @@ func (c *composeCoordinator) BuildServices(ctx context.Context,
 	return nil
 }
 
-// NormalizeBuildSelections drops blanks; an empty set means every service.
 func NormalizeBuildSelections(services []string) map[string]struct{} {
 	selected := map[string]struct{}{}
 	for _, name := range services {
@@ -472,7 +468,6 @@ func NormalizeBuildSelections(services []string) map[string]struct{} {
 	return selected
 }
 
-// ServiceSelected treats an empty selection as selecting everything.
 func ServiceSelected(selected map[string]struct{}, name string) bool {
 	if len(selected) == 0 {
 		return true
@@ -481,7 +476,6 @@ func ServiceSelected(selected map[string]struct{}, name string) bool {
 	return ok
 }
 
-// EnsureServiceImage gives a build-only service a deterministic local tag and reports whether it changed.
 func EnsureServiceImage(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (string, composetypes.ServiceConfig, bool) {
 	imageName := strings.TrimSpace(svc.Image)
 	if imageName == "" {
@@ -501,7 +495,6 @@ func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc 
 	return updatedSvc, resolvedImage, updated
 }
 
-// ShouldPullDeployImage mirrors compose up: a present image is re-pulled only once its refresh window elapsed.
 func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged time.Time) bool {
 	if decision.PullAlways {
 		return true
@@ -515,7 +508,6 @@ func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged
 	return false
 }
 
-// SelectedImageRefs excludes build services, since their images come from a build.
 func SelectedImageRefs(compProj *composetypes.Project, servicesToUpdate []string) []string {
 	if compProj == nil {
 		return nil

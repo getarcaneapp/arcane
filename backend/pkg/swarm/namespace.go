@@ -34,8 +34,7 @@ const (
 
 var (
 	stackNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
-	// ErrInvalidStack identifies invalid stack source or conversion input.
-	ErrInvalidStack = errors.New("invalid swarm stack")
+	ErrInvalidStack  = errors.New("invalid swarm stack")
 )
 
 func (n namespace) Scope(key string) string {

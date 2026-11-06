@@ -10,7 +10,6 @@ DELETE FROM settings WHERE key IN ('dockerClientRefreshInterval', 'autoHealInter
 `
 )
 
-// Migration 95 drops retired schedule defaults. The current defaults apply without them, so down restores nothing.
 func init() {
 	goose.AddMigrationContext(run(v95Up, v95Up), nil)
 }

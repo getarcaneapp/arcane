@@ -28,7 +28,6 @@ import (
 )
 
 type (
-	// volumeHelper tracks a reused helper container and its last use for idle reaping.
 	// inUse counts active holds so the reaper never removes a helper mid-request.
 	volumeHelper struct {
 		lastUsedAt time.Time
@@ -113,8 +112,6 @@ func (s *VolumeService) acquireVolumeHelper(ctx context.Context, volumeName stri
 	return "", nil, errors.New("failed to acquire volume helper container")
 }
 
-// resolveHelper returns volumeName's shared helper, creating it once via singleflight so concurrent misses never orphan one.
-// Creation can pull an image, so it runs outside helperMu.
 func (s *VolumeService) resolveHelper(ctx context.Context, volumeName string) (string, error) {
 	resultCh := s.helperGroup.DoChan(volumeName, func() (any, error) {
 		helper, err := s.getReusableHelper(ctx, volumeName)
@@ -159,7 +156,6 @@ func (s *VolumeService) resolveHelper(ctx context.Context, volumeName string) (s
 	return containerID, nil
 }
 
-// acquireHelper takes a hold on volumeName's helper, or reports false if it was removed since being resolved.
 // Release refreshes the idle clock so the timeout counts from the end of the last request.
 func (s *VolumeService) acquireHelper(volumeName, containerID string) (func(), bool) {
 	s.helperMu.Lock()
@@ -183,7 +179,6 @@ func (s *VolumeService) acquireHelper(volumeName, containerID string) (func(), b
 	}, true
 }
 
-// startHelperContainer creates and starts a helper container and returns a cleanup that removes it.
 func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName string) (string, func(), error) {
 	helperImage, err := s.getVolumeHelperImage(ctx)
 	if err != nil {
@@ -267,7 +262,6 @@ func (s *VolumeService) getReusableHelper(ctx context.Context, volumeName string
 	return mo.Some(helper.id), nil
 }
 
-// touchHelper resets the idle clock of volumeName's helper, if any.
 func (s *VolumeService) touchHelper(volumeName string) {
 	s.helperMu.Lock()
 	defer s.helperMu.Unlock()
@@ -296,7 +290,6 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 	}
 }
 
-// ReapIdleHelpers removes tracked helpers idle for idleTimeout; untracked orphans are left to the startup sweep.
 func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Duration) (int, error) {
 	if idleTimeout < 0 {
 		return 0, nil
@@ -318,7 +311,6 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 	return removed, nil
 }
 
-// collectStaleHelperIDs drops idle and nil entries and returns their container IDs.
 // Entries go before the containers so a concurrent request re-creates a fresh helper.
 func (s *VolumeService) collectStaleHelperIDs(now time.Time, idleTimeout time.Duration) []string {
 	staleIDs := make([]string, 0)
@@ -341,7 +333,6 @@ func (s *VolumeService) collectStaleHelperIDs(now time.Time, idleTimeout time.Du
 	return staleIDs
 }
 
-// StopHelper removes the reused helper for a single volume; it is a no-op when none exists.
 func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error {
 	if strings.TrimSpace(volumeName) == "" {
 		return nil
@@ -361,7 +352,6 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 	return nil
 }
 
-// takeHelperID removes volumeName's helper entry and returns its container ID, or "".
 func (s *VolumeService) takeHelperID(volumeName string) string {
 	s.helperMu.Lock()
 	defer s.helperMu.Unlock()

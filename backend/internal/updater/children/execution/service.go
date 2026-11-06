@@ -26,14 +26,12 @@ import (
 )
 
 type (
-	// Dependencies are the updater operations a single-container update runs on.
 	Dependencies struct {
-		Config        *config.Config
-		Roles         *role.RoleService
-		AcquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error)
-		UpdateBusy    error
-		RunUpdate     func(ctx context.Context, containerID, activityID string) (*types.UpdaterResult, error)
-		// RecordUpdate saves the result on the activity and summarizes it as the run outcome.
+		Config           *config.Config
+		Roles            *role.RoleService
+		AcquireUpdate    func(ctx context.Context, ids []string) (context.Context, func(), error)
+		UpdateBusy       error
+		RunUpdate        func(ctx context.Context, containerID, activityID string) (*types.UpdaterResult, error)
 		RecordUpdate     func(ctx context.Context, activityID string, result *types.UpdaterResult, runErr error) types.SchedulerOutcome
 		FreezeContainer  func(ctx context.Context, containerID string) (*types.FrozenUpdateTarget, error)
 		ConfirmTarget    func(ctx context.Context, target types.FrozenUpdateTarget) (bool, bool, error)
@@ -41,14 +39,12 @@ type (
 		WithFrozenTarget func(ctx context.Context, target *types.FrozenUpdateTarget, persist func() error) context.Context
 	}
 
-	// Service runs accepted single-container updates as container-update workflows.
 	Service struct {
 		deps     Dependencies
 		flow     *flow.Engine
 		workflow *flow.Workflow
 	}
 
-	// updateInput is an accepted update: the container and who asked for it.
 	updateInput struct {
 		ContainerID string `json:"containerId"`
 		UserID      string `json:"userId,omitempty"`
@@ -60,7 +56,6 @@ func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
 
-// RegisterWorkflows defines the container-update workflow while the host is still unstarted.
 func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	defined, err := engine.Define(flow.Definition{
 		Name:        "container-update",
@@ -88,7 +83,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-// Submit accepts an update of the container and returns its activity ID; activity describes that activity.
 func (s *Service) Submit(ctx context.Context, containerID string, activity activitylib.StartRequest) (string, error) {
 	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	return s.flow.Submit(ctx, s.workflow, updateInput{
@@ -98,8 +92,6 @@ func (s *Service) Submit(ctx context.Context, containerID string, activity activ
 	}, activity)
 }
 
-// update is the container-update step. A delivery that finds the target it froze confirms that target's effect
-// before touching Docker again; while another update holds the updater, the task is handed back.
 func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	var input updateInput
 	if err := t.Payload(&input); err != nil {

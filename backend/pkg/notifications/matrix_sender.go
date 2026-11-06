@@ -10,32 +10,26 @@ import (
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
-// BuildMatrixURL converts MatrixConfig to Shoutrrr URL format
-// URL example: matrix://user:password@host[:port]/[?rooms=!roomID1[,roomAlias2]][&disableTLS=yes]
 func BuildMatrixURL(config MatrixConfig) (string, error) {
 	if config.Host == "" {
 		return "", errors.New("matrix host is required")
 	}
 
-	// Build the base URL
 	u := &url.URL{
 		Scheme: "matrix",
 	}
 
-	// Add authentication if provided (username can be empty)
 	if config.Password != "" {
 		u.User = url.UserPassword(config.Username, config.Password)
 	}
 
 	host := config.Host
-	// Set host and port
 	if config.Port > 0 {
 		u.Host = fmt.Sprintf("%s:%d", host, config.Port)
 	} else {
 		u.Host = host
 	}
 
-	// Add query parameters
 	q := u.Query()
 
 	if config.Rooms != "" {
@@ -54,7 +48,6 @@ func BuildMatrixURL(config MatrixConfig) (string, error) {
 	return u.String(), nil
 }
 
-// SendMatrix sends a message via Shoutrrr Matrix using proper service configuration
 func SendMatrix(ctx context.Context, config MatrixConfig, message string) error {
 	shoutrrrURL, err := BuildMatrixURL(config)
 	if err != nil {

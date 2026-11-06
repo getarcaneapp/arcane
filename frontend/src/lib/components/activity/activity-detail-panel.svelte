@@ -21,7 +21,7 @@
 	const messages = $derived(detail?.messages ?? []);
 	const outputText = $derived(messages.map((message) => message.message).join('\n'));
 	const isLoading = $derived(activityStore.isDetailLoading(activity.id));
-	const isDetailError = $derived(activityStore.isDetailError(activity.id));
+	const detailError = $derived(activityStore.detailError(activity.id));
 </script>
 
 <div class={cn('flex flex-col gap-3', fill && 'min-h-0 flex-1')}>
@@ -45,9 +45,10 @@
 					fill && 'min-h-56 flex-1'
 				)}
 			>
-				{#if isDetailError && messages.length === 0}
+				{#if detailError && messages.length === 0}
 					<div class="flex min-h-32 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
 						<span>{m.activity_output_load_failed()}</span>
+						<span class="text-xs">{detailError}</span>
 						<button
 							type="button"
 							onclick={() => activityStore.retryLoadDetail(activity.id)}

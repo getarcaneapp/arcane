@@ -15,8 +15,6 @@ const (
 	autoPatchDefaultCron = "0 3 * * *"
 )
 
-// NewAutoPatchJob runs the durable auto-patch workflow. It is opt-in via the
-// "imageAutoPatchEnabled" setting and defaults to daily at 03:00.
 func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, settingsService *settings.SettingsService) *flow.Job {
 	return &flow.Job{
 		Engine:   engine,

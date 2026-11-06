@@ -4,6 +4,7 @@
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 
@@ -11,6 +12,7 @@
 		backUrl?: string;
 		backLabel?: string;
 		title: string;
+		environmentId?: string;
 		subtitle?: string;
 		actions?: ActionButton[];
 		badges?: Snippet;
@@ -23,6 +25,7 @@
 		backUrl,
 		backLabel,
 		title,
+		environmentId,
 		subtitle,
 		actions = [],
 		badges,
@@ -73,7 +76,12 @@
 				{/if}
 				<div class="min-w-0 flex-1">
 					<div class="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-						<h1 class="truncate text-lg font-semibold tracking-tight" {title}>{title}</h1>
+						<div class="flex min-w-0 items-center">
+							{#if environmentId}
+								<EnvironmentDestinationSelect value={environmentId} variant="prefix" readonly />
+							{/if}
+							<h1 class="truncate text-lg font-semibold tracking-tight" {title}>{title}</h1>
+						</div>
 						{@render badges?.()}
 					</div>
 					{#if subtitle}

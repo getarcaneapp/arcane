@@ -7,12 +7,7 @@ import (
 )
 
 type (
-	// PermissionSet is the effective permission set for one caller in one request.
 	// Built once by the auth bridge and stashed in the request context.
-	//
-	// Global permissions apply to every environment and to org-level endpoints.
-	// PerEnv permissions apply only when the caller is acting on that specific
-	// environment. Sudo bypasses all checks (used for the agent token path).
 	PermissionSet struct {
 		Global map[string]struct{}
 		PerEnv map[string]map[string]struct{}
@@ -25,9 +20,6 @@ type (
 	}
 )
 
-// Allows reports whether the caller may perform `perm`. For env-scoped
-// permissions, envID is the target environment's ID. For org-level
-// permissions, pass envID = "" — only Global permissions count.
 func (ps *PermissionSet) Allows(perm, envID string) bool {
 	if ps == nil {
 		return false
@@ -49,9 +41,6 @@ func (ps *PermissionSet) Allows(perm, envID string) bool {
 	return false
 }
 
-// AllowsAny reports whether the caller may perform perm in at least one
-// effective scope. Global and sudo permissions satisfy the check immediately;
-// otherwise every explicitly granted environment is considered.
 func (ps *PermissionSet) AllowsAny(perm string) bool {
 	if ps == nil {
 		return false
@@ -83,10 +72,6 @@ func (ps *PermissionSet) AccessibleEnvironmentIDs() []string {
 	}
 }
 
-// IsGlobalAdmin reports whether the caller holds enough global permissions to
-// be considered an administrator. True for sudo callers and for callers whose
-// Global set contains every defined permission. Used by the backward-compat
-// IsAdminFromContext helper and by last-admin guards.
 func (ps *PermissionSet) IsGlobalAdmin() bool {
 	if ps == nil {
 		return false
@@ -102,15 +87,10 @@ func (ps *PermissionSet) IsGlobalAdmin() bool {
 	return true
 }
 
-// SudoPermissionSet returns a PermissionSet that allows every action. Used for
-// the agent token path, which bypasses per-user permission resolution entirely.
 func SudoPermissionSet() *PermissionSet {
 	return &PermissionSet{Sudo: true}
 }
 
-// EnvironmentPermissionSet returns the effective permission set for a
-// per-environment access token. It grants every environment-scoped permission
-// only for envID and no global or sudo permissions.
 func EnvironmentPermissionSet(envID string) *PermissionSet {
 	ps := NewPermissionSet()
 	if envID == "" {
@@ -156,7 +136,6 @@ func (f ForwardedPermissions) PermissionSet(envID string) *PermissionSet {
 	return ps
 }
 
-// NewPermissionSet builds an empty PermissionSet ready for population.
 func NewPermissionSet() *PermissionSet {
 	return &PermissionSet{
 		Global: make(map[string]struct{}),
@@ -164,7 +143,6 @@ func NewPermissionSet() *PermissionSet {
 	}
 }
 
-// AddGlobal grants `perms` at global scope.
 func (ps *PermissionSet) AddGlobal(perms ...string) {
 	if ps.Global == nil {
 		ps.Global = make(map[string]struct{})
@@ -174,7 +152,6 @@ func (ps *PermissionSet) AddGlobal(perms ...string) {
 	}
 }
 
-// AddEnv grants `perms` scoped to envID.
 func (ps *PermissionSet) AddEnv(envID string, perms ...string) {
 	if envID == "" {
 		ps.AddGlobal(perms...)
@@ -193,10 +170,6 @@ func (ps *PermissionSet) AddEnv(envID string, perms ...string) {
 	}
 }
 
-// EnvIDFromPath extracts the environment ID from a Huma operation path of the
-// form /environments/{id}/... Returns "" for paths without an env segment.
-// Tolerates a leading /api prefix for safety, though the Huma group already
-// strips it.
 func EnvIDFromPath(path string) string {
 	path = strings.TrimPrefix(path, "/api")
 	if !strings.HasPrefix(path, "/environments/") {

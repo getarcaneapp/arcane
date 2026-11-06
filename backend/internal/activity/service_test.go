@@ -469,7 +469,6 @@ func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
-	// Mirror the handler flow: work runs under an app-lifecycle runtime context.
 	appCtx := activitylib.WithAppLifecycleContext(t.Context())
 	runtimeCtx := activitylib.ActivityRuntimeContext(t.Context(), appCtx)
 
@@ -483,7 +482,6 @@ func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	workCtx := service.Track(runtimeCtx, created.ID)
 	require.NoError(t, workCtx.Err())
 
-	// A tracked activity is found and cancelled with the ErrCanceled cause.
 	require.True(t, service.RequestCancel(created.ID))
 	require.ErrorIs(t, workCtx.Err(), context.Canceled)
 	require.ErrorIs(t, context.Cause(workCtx), activitylib.ErrCanceled)
@@ -496,7 +494,6 @@ func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
 	require.Equal(t, "cancelled", string(completed.Status))
 	require.NotNil(t, completed.EndedAt)
 
-	// Completing the activity releases the registration.
 	require.False(t, service.RequestCancel(created.ID))
 }
 
@@ -505,7 +502,6 @@ func TestActivityServiceCancelActivity(t *testing.T) {
 	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
-	// An untracked running activity (e.g. after a restart) is finalized directly.
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          types.ActivityTypeSystemPrune,
@@ -518,11 +514,9 @@ func TestActivityServiceCancelActivity(t *testing.T) {
 	require.Equal(t, "cancelled", string(cancelled.Status))
 	require.NotNil(t, cancelled.EndedAt)
 
-	// Cancelling an already-terminal activity is rejected.
 	_, err = service.CancelActivity(ctx, "0", created.ID, "Tester")
 	require.ErrorIs(t, err, ErrActivityNotCancelable)
 
-	// Unknown activity reports not found.
 	_, err = service.CancelActivity(ctx, "0", "missing", "Tester")
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
@@ -704,9 +698,6 @@ func receiveActivityEvent(t *testing.T, events <-chan types.ActivityStreamEvent)
 	}
 }
 
-// TestActivityServiceAppendMessagesBatch verifies a batch lands all
-// messages in order and coalesces the activity update to the batch's last
-// message, last progress, and last step.
 func TestActivityServiceAppendMessagesBatch(t *testing.T) {
 	ctx := t.Context()
 	db := setupActivityServiceTestDB(t)
@@ -723,7 +714,7 @@ func TestActivityServiceAppendMessagesBatch(t *testing.T) {
 	progress := 60
 	messages, err := service.AppendMessages(ctx, created.ID, []AppendActivityMessageRequest{
 		{Message: "layer 1/3", Step: "download"},
-		{Message: "   "}, // blank lines are dropped, not persisted
+		{Message: "   "},
 		{Message: "layer 2/3", Progress: &progress},
 		{Message: "layer 3/3"},
 	})
@@ -739,14 +730,11 @@ func TestActivityServiceAppendMessagesBatch(t *testing.T) {
 	require.Equal(t, "layer 2/3", detail.Messages[1].Message)
 	require.Equal(t, "layer 3/3", detail.Messages[2].Message)
 
-	// Coalesced activity update: last message wins, last non-nil progress
-	// and last non-empty step stick.
 	require.Equal(t, "layer 3/3", detail.Activity.LatestMessage)
 	require.NotNil(t, detail.Activity.Progress)
 	require.Equal(t, 60, *detail.Activity.Progress)
 	require.Equal(t, "download", detail.Activity.Step)
 
-	// Unknown activity IDs are still rejected.
 	_, err = service.AppendMessages(ctx, "missing", []AppendActivityMessageRequest{{Message: "x"}})
 	require.ErrorContains(t, err, "activity not found")
 }
@@ -771,13 +759,11 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	count, err := service.ResolveOrphanedQueuedActivities(t.Context())
 	require.NoError(t, err)
 	require.Zero(t, count)
-	// Repair a legacy summary even when its durable timestamp has not changed.
 	run.EnvironmentID = "remote"
 	var legacy Activity
 	require.NoError(t, db.First(&legacy, "id = ?", run.ActivityID).Error)
 	legacy.Metadata["environmentId"] = "remote"
 	require.NoError(t, db.Model(&legacy).Update("metadata", legacy.Metadata).Error)
-	// Startup reconciliation also repairs legacy rows without replaying the job.
 	require.NoError(t, db.Model(&legacy).Update("environment_id", "0").Error)
 	events, _, unsubscribe := service.pubsub.Subscribe("remote")
 	defer unsubscribe()

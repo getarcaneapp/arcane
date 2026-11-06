@@ -94,7 +94,6 @@ func tunnelRoutes(server *agent.TunnelServer) []middleware.EchoRoute {
 	}}
 }
 
-// handleAgentStatusChange stores the tunnel state, logs real transitions, and wakes status streams.
 func handleAgentStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
 	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 	if getErr != nil {

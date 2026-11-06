@@ -4,22 +4,12 @@ import authUtil from '../utils/auth.util';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_COOKIE = 'arcane_refresh_test=complete';
 
-/**
- * Register an addInitScript that plants a token expiry in localStorage
- * BEFORE any page JavaScript runs on every navigation. Unlike page.evaluate(),
- * addInitScript survives page.goto() calls made later in the test.
- */
 async function registerTokenSeeding(page: Page) {
 	await page.addInitScript((expiryKey: string) => {
 		localStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
 	}, TOKEN_EXPIRY_KEY);
 }
 
-/**
- * Keep returning a version-mismatch 401 until the refresh response's cookie is
- * present. This verifies that a retry is authenticated by refreshed browser state
- * instead of passing merely because it happens to be the second request.
- */
 async function injectVersionMismatchUntilRefresh(page: Page, urlPattern: string | RegExp) {
 	await page.route(urlPattern, async (route) => {
 		if (!route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
@@ -37,9 +27,6 @@ async function injectVersionMismatchUntilRefresh(page: Page, urlPattern: string 
 	});
 }
 
-/**
- * Intercept every request matching urlPattern with a 401.
- */
 async function injectExpired401Always(page: Page, urlPattern: string | RegExp) {
 	await page.route(urlPattern, async (route) => {
 		await route.fulfill({
@@ -50,10 +37,6 @@ async function injectExpired401Always(page: Page, urlPattern: string | RegExp) {
 	});
 }
 
-/**
- * Mock /auth/refresh to return a synthetic 200 and browser cookie. Returns a
- * getter to assert how many refresh requests were made.
- */
 async function mockRefreshSuccess(page: Page): Promise<() => number> {
 	let callCount = 0;
 	await page.route(/\/api\/auth\/refresh$/, async (route) => {

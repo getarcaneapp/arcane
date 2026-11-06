@@ -14,8 +14,6 @@ class RoleAPIService extends BaseAPIService {
 	}
 
 	async getAll(): Promise<Role[]> {
-		// Unpaginated convenience for selects. Backend caps at a generous
-		// limit (1000) which is well above any realistic role count.
 		const res = await this.api.get('/roles', {
 			params: { limit: 1000, sort: 'name', order: 'asc' }
 		});

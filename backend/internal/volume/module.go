@@ -1,5 +1,3 @@
-// Package volume owns Docker volumes: CRUD and pruning, the helper-container
-// file browser, backup and restore, and the HTTP surface for all of it.
 package volume
 
 import (
@@ -20,7 +18,6 @@ import (
 )
 
 type (
-	// Module wires the volume domain and mounts its routes.
 	Module struct {
 		service            *VolumeService
 		dockerService      *docker.DockerClientService
@@ -40,13 +37,10 @@ type (
 	}
 )
 
-// New wires volume routes around an existing service.
 func New(p Params) *Module {
 	return &Module{service: p.Service, dockerService: p.DockerService, activityService: p.ActivityService, environmentService: p.EnvironmentService, uploadService: p.UploadService}
 }
 
-// Service exposes the volume service to collaborators that use it directly,
-// such as the helper-container reaper job.
 func (m *Module) Service() *VolumeService {
 	if m == nil {
 		return nil
@@ -54,8 +48,6 @@ func (m *Module) Service() *VolumeService {
 	return m.service
 }
 
-// RegisterRoutes mounts the volume endpoints. A nil module still registers, so
-// OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		m = &Module{}
@@ -76,7 +68,6 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	}))
 }
 
-// RegisterVolumes registers volume management routes using Huma.
 func RegisterVolumes(
 	api huma.API,
 	dockerService *docker.DockerClientService,

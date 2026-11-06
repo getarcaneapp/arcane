@@ -10,22 +10,16 @@ import (
 )
 
 type (
-	// UploadSessionsCleanupJob purges upload sessions that have been idle for
-	// longer than uploadSessionMaxAge. It runs on managers and agents alike,
-	// since sessions live on whichever node serves the environment.
 	UploadSessionsCleanupJob struct {
 		uploadService *upload.UploadService
 	}
 )
 
 const (
-	// UploadSessionsCleanupJobName identifies the hourly purge of idle chunked
-	// upload sessions.
 	UploadSessionsCleanupJobName = "upload-sessions-cleanup"
 	uploadSessionMaxAge          = 24 * time.Hour
 )
 
-// NewUploadSessionsCleanupJob builds the cleanup job for the scheduler.
 func NewUploadSessionsCleanupJob(uploadService *upload.UploadService) *UploadSessionsCleanupJob {
 	return &UploadSessionsCleanupJob{uploadService: uploadService}
 }

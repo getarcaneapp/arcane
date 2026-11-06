@@ -4,14 +4,15 @@
 	import { page } from '$app/state';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
+	import { watch } from 'runed';
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { parse as parseYaml } from 'yaml';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -192,6 +193,13 @@
 		},
 		() => container.id
 	);
+	watch(
+		() => data.projectError,
+		(error) => {
+			if (error) toast.error(m.common_load_failed({ resource: m.resource_project() }), { description: error });
+		}
+	);
+
 	onMount(() => {
 		updateViewMounted = true;
 		const unsubscribe = activityStore.subscribeActivities(updateActivities.observe);
@@ -291,10 +299,6 @@
 		return first.split('/').pop() || 'compose.yml';
 	});
 
-	// Find which file (root compose or an include file) directly defines this service.
-	// Returns { includeFile: null } for root compose, { includeFile: <file> } for a sub-file,
-	// or null if the service isn't found anywhere (hides the tab).
-	//
 	// Include file content is lazy-loaded, so fetch it from Project Workspace on
 	// demand and stop as soon as the service is found.
 	const hasServiceInContent = (content: string, serviceName: string): boolean => {
@@ -313,12 +317,10 @@
 	): Promise<{ includeFile: ProjectIncludeFile | null } | null> {
 		if (!proj || !svcName || !info) return null;
 
-		// Check root compose first (content is always present)
 		if (proj.composeContent && hasServiceInContent(proj.composeContent, svcName)) {
 			return { includeFile: null };
 		}
 
-		// Lazy-fetch include file contents one at a time until we find the service
 		const includes = proj.includeFiles ?? [];
 		if (includes.length === 0) return null;
 
@@ -492,15 +494,20 @@
 			class="size-5"
 			containerClass="size-9"
 		/>
-		<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={containerDisplayName}>
-			{containerDisplayName}
-		</h1>
+		<div class="flex min-w-0 items-center">
+			<EnvironmentDestinationSelect value={currentEnvId} variant="prefix" readonly />
+			<h1
+				class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88"
+				title={containerDisplayName}
+			>
+				{containerDisplayName}
+			</h1>
+		</div>
 		{#if container?.state}
 			<Badge variant={getStateBadgeVariant(container.state.status)} minWidth="20"
 				>{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
-		<EnvironmentCell value={currentEnvId} plain />
 		{#if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}

@@ -9,8 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// IsRetryableWriteError reports whether a database write failed because the
-// database was temporarily busy or timed out.
 func IsRetryableWriteError(err error) bool {
 	if err == nil {
 		return false
@@ -24,13 +22,6 @@ func IsRetryableWriteError(err error) bool {
 		strings.Contains(errMsg, "timeout")
 }
 
-// FirstWhere fetches a single row of T matching the provided WHERE clause.
-// It maps gorm.ErrRecordNotFound to notFound (when non-nil) and otherwise wraps
-// the error with a generic "failed to query <T>" prefix.
-//
-// Example:
-//
-//	user, err := sqlite.FirstWhere[user.User](ctx, s.db.DB, ErrUserNotFound, "username = ?", username)
 func FirstWhere[T any](ctx context.Context, db *gorm.DB, notFound error, where string, args ...any) (*T, error) {
 	var out T
 	if err := db.WithContext(ctx).Where(where, args...).First(&out).Error; err != nil {

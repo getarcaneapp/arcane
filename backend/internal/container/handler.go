@@ -39,7 +39,6 @@ type (
 		appCtx           context.Context
 	}
 
-	// ContainerPaginatedResponse is the paginated list response for containers.
 	ContainerPaginatedResponse struct {
 		Data                  []types.ContainerSummary      `json:"data"`
 		Groups                []types.ContainerSummaryGroup `json:"groups,omitempty"`
@@ -100,7 +99,6 @@ type (
 		RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
 	}
 
-	// SetAutoUpdateInput is the request input for toggling container auto-update.
 	SetAutoUpdateInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -447,7 +445,6 @@ func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *Contai
 	return h.runContainerAction(ctx, input, cfg)
 }
 
-// containerActivityName returns the container's name for activity records, falling back to its ID.
 func (h *ContainerHandler) containerActivityName(ctx context.Context, containerID string) string {
 	name, err := h.containerService.GetContainerNameByReference(ctx, containerID)
 	if err != nil || name == "" {
@@ -554,7 +551,6 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetCont
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeployed", nil)
 
-	// Fetch full container details to return (consistent with other endpoints)
 	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
 	if inspectErr != nil {
 		// Container was redeployed successfully, but we couldn't fetch full details.
@@ -654,7 +650,6 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edited", nil)
 
-	// Fetch full container details to return (consistent with redeploy)
 	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
 	if inspectErr != nil {
 		// Container was recreated successfully, but we couldn't fetch full details.
@@ -737,7 +732,6 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
-	// Resolve container name from ID
 	containerName, err := h.containerService.GetContainerNameByReference(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error404NotFound("container not found")

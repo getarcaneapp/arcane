@@ -19,7 +19,6 @@ import (
 )
 
 type (
-	// Service manages swarm configs.
 	Service struct {
 		docker        *docker.DockerClientService
 		ensureManager func(ctx context.Context) error

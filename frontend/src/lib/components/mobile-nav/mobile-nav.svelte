@@ -125,7 +125,6 @@
 			'shadow-sm transition duration-300 ease-out select-none',
 			'flex items-center',
 			'rounded-3xl border',
-			// On very small screens, tighten spacing so labeled items + center action fit.
 			showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5',
 			visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-full scale-95 opacity-0',
 			className
@@ -148,12 +147,10 @@
 	data-testid="mobile-floating-nav"
 	aria-label={m.mobile_navigation()}
 >
-	<!-- Left side items -->
 	{#each leftItems as item (item.url)}
 		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />
 	{/each}
 
-	<!-- Center action button -->
 	<MobileNavMenuButton {showLabels} onclick={() => setMenuOpen(true)} />
 
 	{#each rightItems as item (item.url)}

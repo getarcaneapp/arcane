@@ -4,7 +4,7 @@
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -31,7 +31,7 @@
 		StopIcon,
 		RefreshIcon,
 		TrashIcon,
-		BoxIcon,
+		ContainersIcon,
 		ClockIcon,
 		EditIcon,
 		ImagesIcon,
@@ -148,17 +148,21 @@
 		return queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) });
 	}
 
-	$effect(() => {
-		if (containers.resourceSortSupported === true || !isResourceSort(requestOptions?.sort)) return;
-		untrack(() => {
-			tablePreferences?.persistSort(defaultSort);
-			requestOptions = {
-				...requestOptions,
-				sort: defaultSort,
-				pagination: { page: 1, limit: getCurrentLimit() }
-			};
-		});
-	});
+	const tableRequestOptions = $derived(
+		containers.resourceSortSupported !== true && isResourceSort(requestOptions?.sort)
+			? { ...requestOptions, sort: defaultSort }
+			: requestOptions
+	);
+
+	function withSupportedSort(next: SearchPaginationSortRequest): SearchPaginationSortRequest {
+		if (containers.resourceSortSupported === true || !isResourceSort(next?.sort)) return next;
+		tablePreferences?.persistSort(defaultSort);
+		return {
+			...next,
+			sort: defaultSort,
+			pagination: { page: 1, limit: next?.pagination?.limit ?? getCurrentLimit() }
+		};
+	}
 
 	function getCurrentLimit() {
 		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
@@ -327,6 +331,7 @@
 				pagination: { page: 1, limit: getCurrentLimit() }
 			};
 		}
+		requestOptions = withSupportedSort(requestOptions);
 
 		return () => {
 			updateTableMounted = false;
@@ -750,7 +755,7 @@
 			<IconImage
 				src={iconUrl}
 				alt=""
-				fallback={BoxIcon}
+				fallback={ContainersIcon}
 				class="size-6 {iconTextClass[iconVariant]}"
 				containerClass="size-10 shrink-0 rounded-xl {iconBgClass[iconVariant]}"
 			/>
@@ -771,7 +776,7 @@
 			<IconImage
 				src={iconUrl}
 				alt=""
-				fallback={BoxIcon}
+				fallback={ContainersIcon}
 				class="size-6 {iconTextClass[iconVariant]}"
 				containerClass="size-8 shrink-0 {iconBgClass[iconVariant]}"
 			/>
@@ -910,7 +915,7 @@
 		icon={(item) => {
 			const iconUrl = getThemedIconUrl(item, mode.current);
 			return {
-				component: BoxIcon,
+				component: ContainersIcon,
 				variant: getContainerIconVariant(item.state),
 				imageUrl: iconUrl ?? undefined,
 				alt: getContainerDisplayName(item)
@@ -1181,7 +1186,7 @@
 	bind:this={tablePreferences}
 	persistKey="arcane-container-table"
 	items={containers}
-	bind:requestOptions
+	bind:requestOptions={() => tableRequestOptions, (next) => (requestOptions = withSupportedSort(next))}
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
@@ -1202,7 +1207,7 @@
 	onGroupToggle={toggleGroup}
 >
 	{#snippet emptyState()}
-		<EmptyState icon={BoxIcon} title={m.no_containers_yet()} description={m.containers_you_run_appear_here()} />
+		<EmptyState icon={ContainersIcon} title={m.no_containers_yet()} description={m.containers_you_run_appear_here()} />
 	{/snippet}
 </ArcaneTable>
 

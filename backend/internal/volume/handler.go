@@ -26,7 +26,6 @@ import (
 )
 
 type (
-	// VolumeHandler provides Huma-based volume management endpoints.
 	VolumeHandler struct {
 		volumeService      *VolumeService
 		dockerService      *docker.DockerClientService
@@ -35,8 +34,6 @@ type (
 		appCtx             context.Context
 	}
 
-	// VolumeUsageCountsData represents the counts of volumes by usage status.
-	// This is a local type to avoid schema naming conflicts with image.UsageCounts.
 	VolumeUsageCountsData struct {
 		Inuse  int `json:"inuse"`
 		Unused int `json:"unused"`
@@ -81,8 +78,6 @@ type (
 		Force         bool   `query:"force" doc:"Force removal"`
 	}
 
-	// VolumePruneReportData represents the result of a volume prune operation.
-	// This is a local type to avoid schema naming conflicts with image.PruneReport.
 	VolumePruneReportData struct {
 		ActivityID     *string  `json:"activityId,omitempty"`
 		VolumesDeleted []string `json:"volumesDeleted,omitempty"`
@@ -94,7 +89,6 @@ type (
 		VolumeName    string `path:"volumeName" doc:"Volume name"`
 	}
 
-	// VolumeUsageResponse represents volume usage information.
 	VolumeUsageResponse struct {
 		Containers []string `json:"containers"`
 		InUse      bool     `json:"inUse"`
@@ -105,7 +99,6 @@ type (
 		IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 	}
 
-	// VolumeSizeInfo represents size information for a single volume.
 	VolumeSizeInfo struct {
 		types.EnvironmentTag
 
@@ -115,7 +108,6 @@ type (
 	}
 )
 
-// ListVolumes returns a paginated list of volumes.
 func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput) (*ListVolumesOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
@@ -154,7 +146,6 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}, nil
 }
 
-// GetVolume returns a volume by name.
 func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
@@ -169,7 +160,6 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 	}, nil
 }
 
-// CreateVolume creates a new Docker volume.
 func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -218,7 +208,6 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	}, nil
 }
 
-// RenameVolume renames an unused Docker volume.
 func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	if input.EnvironmentID != "0" {
 		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
@@ -278,7 +267,6 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 	return &handlerutil.Out[*types.Volume]{Body: types.ApiResponse[*types.Volume]{Success: true, Data: response}}, nil
 }
 
-// RemoveVolume removes a Docker volume.
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -310,7 +298,6 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 	return handlerutil.MessageOutput("Volume removed successfully", activityID), nil
 }
 
-// PruneVolumes removes all unused Docker volumes.
 func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[VolumePruneReportData], error) {
 	var report *types.VolumePruneReport
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
@@ -343,7 +330,6 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *types.Environme
 	}, nil
 }
 
-// GetVolumeUsage returns containers using a specific volume.
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
@@ -361,7 +347,6 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 	}, nil
 }
 
-// GetVolumeUsageCounts returns counts of volumes by usage status.
 func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*handlerutil.Out[VolumeUsageCountsData], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.volumeService.AggregateVolumeCounts(ctx)
@@ -388,8 +373,6 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 	}, nil
 }
 
-// GetVolumeSizes returns disk usage sizes for all volumes.
-// This is a slow operation as it requires calculating disk usage.
 func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]VolumeSizeInfo], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.volumeService.AggregateVolumeSizes(ctx)

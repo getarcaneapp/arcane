@@ -75,7 +75,6 @@
 		<ArcaneButton
 			action="base"
 			tone="outline"
-			size="sm"
 			onclick={addDestination}
 			{disabled}
 			class="w-fit"

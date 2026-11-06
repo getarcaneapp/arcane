@@ -213,7 +213,7 @@ func TestEnvIDFromPath(t *testing.T) {
 		"/environments/abc-123/containers":     "abc-123",
 		"/environments/abc-123/containers/foo": "abc-123",
 		"/api/environments/abc-123/projects":   "abc-123",
-		"/environments/abc-123":                "", // org-level env detail
+		"/environments/abc-123":                "",
 		"/users":                               "",
 		"":                                     "",
 	}

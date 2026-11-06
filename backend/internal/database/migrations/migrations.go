@@ -1,4 +1,3 @@
-// Package migrations registers Goose Go migrations during initialization.
 // Set Dialect to the target database dialect before running migrations.
 package migrations
 
@@ -10,8 +9,6 @@ import (
 )
 
 const (
-	// BaselineVersion is the final Arcane v2 schema version.
-	// Older databases must upgrade to Arcane the latest v2 before running v3.
 	BaselineVersion int64 = 94
 )
 

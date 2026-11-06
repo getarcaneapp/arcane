@@ -1,5 +1,3 @@
-// Package slots bounds how many queue-opted activities run concurrently per
-// environment and tracks which activity holds each slot.
 package slots
 
 import (
@@ -13,18 +11,10 @@ import (
 )
 
 type (
-	// Service reads the limit from settings on every acquisition attempt, while
-	// held slots are counted independently of it — so changing the limit
-	// mid-flight never miscounts running work: existing holders keep occupying
-	// capacity until they release, and waiters are re-evaluated against the new
-	// limit.
 	Service struct {
 		settings *settings.SettingsService
 
-		state map[string]*environmentSlots
-
-		// releases maps an activity ID to the release func of the slot it holds;
-		// the slot is freed when the activity completes.
+		state    map[string]*environmentSlots
 		releases map[string]func()
 
 		mu         sync.Mutex
@@ -32,9 +22,6 @@ type (
 	}
 
 	environmentSlots struct {
-		// wake is closed (and replaced) on every release to broadcast to waiters;
-		// each re-checks against the current limit, so a raised limit can admit
-		// more than one of them.
 		wake chan struct{}
 		held int
 	}
@@ -45,7 +32,6 @@ const (
 	slotWaitRecheckInterval           = 2 * time.Second
 )
 
-// NewService returns a slot limiter sized from the local settings.
 func NewService(localSettings *settings.SettingsService) *Service {
 	return &Service{
 		settings: localSettings,
@@ -63,9 +49,6 @@ func (s *Service) stateLocked(environmentID string) *environmentSlots {
 	return slots
 }
 
-// TryAcquire grabs a slot without blocking; None means the caller should
-// queue and block via Await. Held slots are counted even while the limit is
-// unlimited, so enabling a limit later still sees the work already running.
 func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Option[func()] {
 	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 
@@ -79,9 +62,6 @@ func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Optio
 	return mo.Some(s.releaser(environmentID))
 }
 
-// Await blocks until activityID holds a slot or ctx is cancelled, reporting
-// whether a slot was newly acquired. The limit is re-read on every attempt so
-// setting changes apply to queued waiters.
 func (s *Service) Await(ctx context.Context, activityID, environmentID string) (bool, error) {
 	s.releasesMu.Lock()
 	_, held := s.releases[activityID]
@@ -115,8 +95,6 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 	}
 }
 
-// Register records release as the slot held by activityID, freeing any slot
-// it previously held.
 func (s *Service) Register(activityID string, release func()) {
 	s.releasesMu.Lock()
 	if existing, ok := s.releases[activityID]; ok {
@@ -126,7 +104,6 @@ func (s *Service) Register(activityID string, release func()) {
 	s.releasesMu.Unlock()
 }
 
-// Release frees the slot held by activityID, if any.
 func (s *Service) Release(activityID string) {
 	s.releasesMu.Lock()
 	release, ok := s.releases[activityID]

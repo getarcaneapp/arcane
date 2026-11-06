@@ -9,7 +9,6 @@
 		class: className
 	}: {
 		messages: ActivityMessage[];
-		/** Height constraints; defaults suit an inline log. */
 		class?: string;
 	} = $props();
 

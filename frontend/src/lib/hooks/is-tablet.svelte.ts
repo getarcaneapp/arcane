@@ -2,7 +2,6 @@ import { MediaQuery } from 'svelte/reactivity';
 
 import { getLayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 
-// Breakpoint for tablet/small desktop where sidebar should auto-collapse
 const TABLET_BREAKPOINT = 1024;
 
 export class IsTablet extends MediaQuery {

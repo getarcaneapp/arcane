@@ -44,19 +44,8 @@ type (
 		pubsub  *pubsub.Service
 		slots   *slots.Service
 		sweeps  *sweeps.Service
-
-		// running maps an active activity ID to the cancel function of its work
-		// context, so cancellation requests can interrupt in-flight work. Entries
-		// are added by Track and removed when the activity is completed.
 		running map[string]context.CancelCauseFunc
 
-		// publishLocks serializes the commit→publish window of the non-terminal
-		// snapshot writers (AppendMessages, UpdateActivity) per activity, so their
-		// events reach subscribers in commit order — without it, a batch that
-		// commits first but publishes second would revert progress/step/status
-		// fields a concurrent update already streamed. Terminal snapshots are
-		// ordered separately by the pubsub terminal latch. Striped by activity
-		// ID hash so no per-activity lifecycle management is needed.
 		publishLocks [64]sync.Mutex
 
 		runningMu sync.Mutex
@@ -74,7 +63,6 @@ const (
 	cancelledMessage             = "Cancelled by user"
 	deleteActivitiesBatchSize    = 500
 
-	// remoteActivityPageCeiling mirrors the agent's page clamp in PaginateAndSortDB.
 	remoteActivityPageCeiling = 100
 )
 
@@ -100,10 +88,6 @@ func NewActivityService(db *database.DB, settingsService *settings.SettingsServi
 	}
 }
 
-// Track derives a cancelable work context bound to activityID and registers its
-// cancel function so RequestCancel can interrupt the work. The registration is
-// released when the activity is completed (see CompleteActivity) or when the
-// returned context is otherwise no longer needed. Implements activitylib.Tracker.
 func (s *ActivityService) Track(ctx context.Context, activityID string) context.Context {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -124,9 +108,6 @@ func (s *ActivityService) Track(ctx context.Context, activityID string) context.
 	return workCtx
 }
 
-// RequestCancel cancels the work context registered for activityID, signalling
-// activitylib.ErrCanceled as the cause. It returns whether a running activity
-// was found in this process.
 func (s *ActivityService) RequestCancel(activityID string) bool {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -241,11 +222,6 @@ func (s *ActivityService) StartTrackedActivity(ctx context.Context, req StartAct
 	return started, workCtx, nil
 }
 
-// AwaitActivitySlot blocks until the queued activity holds a concurrency slot,
-// then flips its status to running. It returns immediately when the activity
-// already took a slot at creation. On cancellation the context cause is
-// returned and the activity stays queued for its caller to finalize.
-// Implements activitylib.SlotWaiter.
 func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, environmentID string) error {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -264,10 +240,6 @@ func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, env
 	return nil
 }
 
-// AwaitActivitySlotBounded waits for a concurrency slot like AwaitActivitySlot
-// but gives up after timeouts.DefaultActivitySlotWait, returning
-// ActivitySlotWaitTimeoutError so the caller fails the queued activity loudly
-// instead of parking forever behind long-running slot holders.
 func (s *ActivityService) AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error {
 	slotCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultActivitySlotWait)
 	defer cancel()
@@ -348,15 +320,6 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 	return &messages[0], nil
 }
 
-// AppendMessages persists a batch of output lines in one transaction — a
-// single multi-row message INSERT plus one coalesced Activity update —
-// instead of an INSERT+UPDATE+re-SELECT transaction per line, which turned
-// an image pull into hundreds of fsync'd SQLite transactions. The activity
-// publish DTO is re-SELECTed inside the transaction after the update (once
-// per batch, not per line) so it reflects lifecycle fields a concurrent
-// CompleteActivity/UpdateActivity committed first; a terminal write that
-// commits after this transaction but publishes before this snapshot is
-// handled by the pubsub terminal latch dropping the stale event.
 func (s *ActivityService) AppendMessages(ctx context.Context, activityID string, reqs []AppendActivityMessageRequest) ([]types.ActivityMessage, error) {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -368,10 +331,6 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 		return nil, nil
 	}
 
-	// Hold the per-activity publish lock across commit and publish so this
-	// batch's snapshot cannot be overtaken on the stream by a concurrent
-	// UpdateActivity that committed later — subscribers must see the two
-	// snapshots in commit order.
 	lock := s.publishLock(activityID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -420,9 +379,6 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 	return out, nil
 }
 
-// buildAppendBatch turns the request batch into insertable message rows
-// plus the coalesced Activity column updates (latest message/progress/step from
-// the last request carrying each).
 func buildAppendBatch(activityID string, reqs []AppendActivityMessageRequest) ([]*ActivityMessage, map[string]any) {
 	now := time.Now()
 	messages := make([]*ActivityMessage, 0, len(reqs))
@@ -475,8 +431,6 @@ func buildAppendBatch(activityID string, reqs []AppendActivityMessageRequest) ([
 	return messages, updates
 }
 
-// retryWrite runs a write transaction, retrying transient SQLite contention
-// (SQLITE_BUSY under bulk activity writes) up to three times.
 func (s *ActivityService) retryWrite(ctx context.Context, activityID, what string, write func(tx *gorm.DB) error) error {
 	const attempts = 3
 	for attempt := 1; ; attempt++ {
@@ -560,15 +514,6 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 	return &dto, nil
 }
 
-// publishTerminalSnapshot publishes an activity's terminal event from
-// a snapshot re-read under the per-activity publish lock. Terminal writers
-// cannot hold that lock across their own transactions (CompleteActivity
-// appends its final message through the locked AppendMessages path), so a
-// snapshot captured in-transaction can be overtaken by an append or update
-// that commits later but publishes first; re-reading under the lock
-// guarantees the terminal event carries every field already streamed. The
-// passed model is published as-is if the re-read fails, and is updated in
-// place otherwise so callers return the published state.
 func (s *ActivityService) publishTerminalSnapshot(ctx context.Context, model *Activity) types.Activity {
 	lock := s.publishLock(model.ID)
 	lock.Lock()
@@ -585,11 +530,6 @@ func (s *ActivityService) publishTerminalSnapshot(ctx context.Context, model *Ac
 	return dto
 }
 
-// CancelActivity requests cancellation of a running or queued activity. When the
-// activity's work is running in this process it interrupts it (the work finalizes
-// its own terminal status); otherwise it marks the activity cancelled directly,
-// but only if it is still active. Returns ErrActivityNotCancelable if the activity
-// has already reached a terminal state, or gorm.ErrRecordNotFound if it is unknown.
 func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, activityID, requestedBy string) (*types.Activity, error) {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -608,7 +548,6 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	case types.ActivityStatusSuccess, types.ActivityStatusFailed, types.ActivityStatusCancelled:
 		return nil, ErrActivityNotCancelable
 	case types.ActivityStatusQueued, types.ActivityStatusRunning:
-		// Active states — cancellation can proceed.
 	}
 
 	requestedBy = cmp.Or(strings.TrimSpace(requestedBy), "a user")
@@ -621,10 +560,6 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	}
 
 	if s.RequestCancel(activityID) {
-		// The running work observes the cancelled context and writes its own
-		// terminal status, which reaches clients via the activity stream. Return
-		// the pre-cancel snapshot rather than reloading here: the worker has not
-		// finished unwinding yet, so a reload would still report "running".
 		return new(activityToDTO(&model)), nil
 	}
 
@@ -659,9 +594,6 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	return &dto, nil
 }
 
-// FailStaleImageUpdateChecks marks image update checks that were left running
-// across a prior process lifetime as failed. It intentionally scopes cleanup to
-// old image-update-check activities so startup repair cannot affect other work.
 func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64, error) {
 	return s.finalizeSwept(ctx, "stale image update check",
 		func() ([]sweeps.Candidate, error) { return s.sweeps.StaleImageUpdateChecks(ctx) },
@@ -672,8 +604,6 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	)
 }
 
-// finalizeSwept completes each swept candidate with the status and message
-// resolve picks; failed ones also record the message as their error.
 func (s *ActivityService) finalizeSwept(
 	ctx context.Context,
 	label string,
@@ -699,18 +629,6 @@ func (s *ActivityService) finalizeSwept(
 	return finalized, errors.Join(errs...)
 }
 
-// FailAbandonedActivities marks queued/running activities whose worker is no
-// longer alive in this process as failed, releasing any concurrency slot they
-// still hold. Liveness comes from the running map, not age: every creation
-// path Tracks its activity right after StartActivity, and the short grace
-// period covers that create→Track window. This assumes exactly one Arcane
-// process owns the database (managers and agents each own theirs); running
-// multiple replicas against one database would make each replica sweep the
-// other's live work.
-//
-// The terminal write is status-guarded like CancelActivity's untracked
-// fallback: a worker completing concurrently wins the race and the row is
-// skipped here.
 func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, error) {
 	activeStatuses := []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}
 	s.runningMu.Lock()
@@ -771,9 +689,6 @@ func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, e
 	return int64(len(finalized)), nil
 }
 
-// ResolveOrphanedQueuedActivities fails any activity still queued at startup.
-// Queued state is owned by a live goroutine blocked on AwaitActivitySlot, so a
-// queued row after a restart can never start running.
 func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context, protectedIDs ...string) (int64, error) {
 	return s.finalizeSwept(ctx, "orphaned queued",
 		func() ([]sweeps.Candidate, error) { return s.sweeps.OrphanedQueued(ctx, protectedIDs) },
@@ -783,8 +698,6 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context, p
 	)
 }
 
-// PatchActivityMetadata merges patch into the activity's existing metadata,
-// unlike UpdateActivity which replaces the metadata wholesale.
 func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID string, patch database.JSON) error {
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
@@ -812,10 +725,6 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 	})
 }
 
-// ResolveStaleAutoUpdateActivities finalizes auto-update activities left
-// running by a prior process lifetime. A run whose metadata marks a triggered
-// self-update completed by restarting Arcane, so it is recorded as success;
-// anything else still running at startup was interrupted and is failed.
 func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context, protectedIDs ...string) (int64, error) {
 	return s.finalizeSwept(ctx, "stale auto-update",
 		func() ([]sweeps.Candidate, error) { return s.sweeps.StaleAutoUpdates(ctx, protectedIDs) },
@@ -1104,7 +1013,6 @@ func deleteActivitiesByID(tx *gorm.DB, activityIDs []string) (int64, error) {
 	return totalDeleted, nil
 }
 
-// FailInterruptedBackups finalizes backup activities before startup admits work.
 func (s *ActivityService) FailInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	_, err := s.finalizeSwept(ctx, "interrupted backup",
 		func() ([]sweeps.Candidate, error) {
@@ -1123,8 +1031,6 @@ func (s *ActivityService) FailInterruptedBackups(ctx context.Context, protectedI
 	return err
 }
 
-// SyncJobRun updates a durable job summary without taking an execution slot.
-// Only the queue owns its lifecycle, including reopening it for an explicit retry.
 func (s *ActivityService) SyncJobRun(ctx context.Context, run types.SchedulerRun, name string) error {
 	if run.ActivityID == "" {
 		return errors.New("job activity ID is required")
@@ -1301,8 +1207,6 @@ func jobActivity(run types.SchedulerRun, name string) Activity {
 	}
 }
 
-// normalizeRemoteActivityParams applies the agent's paging bounds so both
-// sources are cut the same way; -1 stays the explicit "show all" sentinel.
 func normalizeRemoteActivityParams(params pagination.QueryParams) pagination.QueryParams {
 	params.Start = max(params.Start, 0)
 	switch {
@@ -1315,8 +1219,6 @@ func normalizeRemoteActivityParams(params pagination.QueryParams) pagination.Que
 	return params
 }
 
-// collectActivityWindow reads window rows from a source in pages the
-// agent accepts, stopping early when the source runs out. -1 reads everything.
 func collectActivityWindow(window int, fetchPage func(start, limit int) ([]types.Activity, int64, error)) ([]types.Activity, int64, error) {
 	if window == -1 {
 		return fetchPage(0, -1)
@@ -1338,9 +1240,6 @@ func collectActivityWindow(window int, fetchPage func(start, limit int) ([]types
 	return rows, total, nil
 }
 
-// ListRemoteActivities combines manager-owned summaries with agent-owned work
-// before slicing the page. The remote records must already match the filters
-// and be the agent's newest window; remoteTotal is the agent's filtered count.
 func (s *ActivityService) ListRemoteActivities(
 	ctx context.Context,
 	environmentID string,

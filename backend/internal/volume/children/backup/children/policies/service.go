@@ -26,7 +26,6 @@ import (
 )
 
 type (
-	// Dependencies are the backup operations scheduled policies run through.
 	Dependencies struct {
 		DB             *database.DB
 		S3Destinations *s3.S3DestinationService
@@ -40,7 +39,6 @@ type (
 		Admission      *runs.Admission
 	}
 
-	// Service owns per-volume backup policies and their scheduled jobs.
 	Service struct {
 		deps     Dependencies
 		jobs     *entityjobs.Registry
@@ -48,7 +46,6 @@ type (
 		workflow *flow.Workflow
 	}
 
-	// scheduledBackupInput is the policy a scheduled backup job runs for.
 	scheduledBackupInput struct {
 		PolicyID string `json:"policyId"`
 	}
@@ -71,7 +68,6 @@ func NewService(deps Dependencies) *Service {
 	}
 }
 
-// RegisterWorkflows defines the scheduled backup workflow while the host is still unstarted.
 func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	var err error
 	s.flow = engine
@@ -99,7 +95,6 @@ func (s *Service) policies(ctx context.Context, volumeName string) ([]VolumeBack
 	return policies, nil
 }
 
-// Policy loads one policy of the volume; an empty or unknown ID returns nil.
 func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*VolumeBackupPolicy, error) {
 	if strings.TrimSpace(policyID) == "" {
 		return nil, nil
@@ -176,7 +171,6 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 	return s.GetBackupPolicies(ctx, volumeName)
 }
 
-// HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
 func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
 	var count int64
 	if err := s.deps.DB.WithContext(ctx).Model(&VolumeBackupPolicy{}).
@@ -186,16 +180,11 @@ func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string)
 	return count > 0, nil
 }
 
-// runScheduledBackup is the volume-backup-policy step. A delivery that finds the checkpoint
-// it recorded resumes that backup instead of starting another.
 func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, error) {
 	var input scheduledBackupInput
 	if err := t.Payload(&input); err != nil {
 		return nil, err
 	}
-	// The run belongs to one policy, so its checkpoint is found by kind; it names the volume as the backup did,
-	// even if the volume was renamed since the job was registered.
-	// A retry after a rename can leave an older checkpoint first, so the latest one is the run's own.
 	previous, _ := jobcontext.Run(ctx)
 	for _, target := range slices.Backward(previous.Outcome.Targets) {
 		if target.ResourceType != "volume_backup" || len(target.RecoveryData) == 0 {
@@ -300,7 +289,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", len(policies))
 }
 
-// Remove unregisters and deletes every policy of a removed volume.
 func (s *Service) Remove(ctx context.Context, volumeName string) {
 	policies, err := s.policies(ctx, volumeName)
 	if err != nil {
@@ -314,7 +302,6 @@ func (s *Service) Remove(ctx context.Context, volumeName string) {
 	}
 }
 
-// Rename moves a renamed volume's policies inside the caller's transaction.
 func (s *Service) Rename(tx *gorm.DB, oldName, newName string) error {
 	return tx.Model(&VolumeBackupPolicy{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error
 }

@@ -137,7 +137,7 @@ func NewService(deps Dependencies) *Service {
 			remote, err := s.remoteRusticRepository(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
 			return remote, entry.RemoteSnapshotID, err
 		}
-		return backup.Repository{}, "", errors.New("volume backup has no Rustic snapshot")
+		return backup.Repository{}, "", common.ErrVolumeBackupNoSnapshot
 	}
 	s.policies = policies.NewService(policies.Dependencies{
 		DB:             deps.DB,
@@ -268,7 +268,7 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	destination := request.Destination
 	validDestinations := []types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}
 	if destination != "" && !slices.Contains(validDestinations, destination) {
-		return backupPlan{}, errors.New("invalid volume backup destination")
+		return backupPlan{}, common.Classify(common.ErrBadRequest, errors.New("invalid volume backup destination"))
 	}
 	if trigger != types.VolumeBackupTriggerSafety && policy == nil {
 		var err error
@@ -276,7 +276,7 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 			return backupPlan{}, err
 		}
 		if request.PolicyID != "" && policy == nil {
-			return backupPlan{}, errors.New("volume backup policy not found")
+			return backupPlan{}, common.ErrVolumeBackupPolicyNotFound
 		}
 	}
 	plan := backupPlan{LocalEnabled: true, S3DestinationID: strings.TrimSpace(request.S3DestinationID), Policy: policy}
@@ -290,17 +290,17 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 		plan.S3Enabled = destination != types.VolumeBackupDestinationLocal
 	}
 	if !plan.LocalEnabled && !plan.S3Enabled {
-		return backupPlan{}, errors.New("select at least one volume backup destination")
+		return backupPlan{}, common.Classify(common.ErrBadRequest, errors.New("select at least one volume backup destination"))
 	}
 	if !plan.S3Enabled {
 		plan.S3DestinationID = ""
 		return plan, nil
 	}
 	if strings.TrimSpace(plan.S3DestinationID) == "" {
-		return backupPlan{}, errors.New("select an S3 destination for the volume backup")
+		return backupPlan{}, common.Classify(common.ErrBadRequest, errors.New("select an S3 destination for the volume backup"))
 	}
 	if _, err := s.deps.S3Destinations.Configuration(ctx, plan.S3DestinationID); err != nil {
-		return backupPlan{}, errors.New("select a valid S3 destination for the volume backup")
+		return backupPlan{}, fmt.Errorf("load S3 destination: %w", err)
 	}
 	return plan, nil
 }
@@ -322,7 +322,7 @@ func (s *Service) CreateBackup(ctx context.Context, volumeName string, user type
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
 func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName string, user types.Actor, trigger, policyID string, policy types.UpdateBackupPolicy) (*types.VolumeBackup, error) {
 	if !strings.HasPrefix(policyID, types.SystemVolumePolicyPrefix) {
-		return nil, errors.New("invalid system-managed volume backup policy id")
+		return nil, common.Classify(common.ErrBadRequest, errors.New("invalid system-managed volume backup policy id"))
 	}
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	transient := &policies.VolumeBackupPolicy{
@@ -534,10 +534,10 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 		return nil, err
 	}
 	if entry.Status != types.VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
-		return nil, errors.New("only successful local volume backups can be uploaded")
+		return nil, common.ErrVolumeBackupNotUploadable
 	}
 	if entry.RemoteSnapshotID != "" {
-		return nil, errors.New("volume backup has already been uploaded")
+		return nil, common.ErrVolumeBackupAlreadyUploaded
 	}
 	if strings.TrimSpace(s3DestinationID) == "" {
 		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the upload"))
@@ -717,7 +717,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		return nil, 0, err
 	}
 	if entry.Format != types.VolumeBackupFormatArchive && entry.LocalSnapshotID == "" {
-		return nil, 0, errors.New("only local volume backups can be downloaded")
+		return nil, 0, common.ErrVolumeBackupNotDownloadable
 	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -820,7 +820,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 	}
 	configuration, err := s.deps.S3Destinations.Configuration(ctx, destinationID)
 	if err != nil {
-		return 0, nil, errors.New("the selected S3 backup destination is not configured")
+		return 0, nil, fmt.Errorf("the selected S3 backup destination is not configured: %w", err)
 	}
 	roots, err := s3util.ListRepositoryRoots(ctx, configuration, backup.VolumeRoot)
 	if err != nil {

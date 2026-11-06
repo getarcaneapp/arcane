@@ -29,7 +29,6 @@ import (
 )
 
 type (
-	// WriteCheckout is a scratch clone prepared for committing to one branch.
 	WriteCheckout struct {
 		repo         *git.Repository
 		RepoPath     string
@@ -39,14 +38,12 @@ type (
 		BranchExists bool
 	}
 
-	// CommitFile is one file to write into the checkout, repo-relative.
 	CommitFile struct {
 		Path       string
 		Content    []byte
 		Executable bool
 	}
 
-	// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
 	CollectOptions struct {
 		SkipDir      func(name string) bool
 		SkipFile     func(name string) bool
@@ -62,7 +59,6 @@ type (
 		totalSize int64
 	}
 
-	// CommitRequest describes the tree mutation to commit and push.
 	CommitRequest struct {
 		SignKey     *openpgp.Entity
 		Message     string
@@ -72,14 +68,12 @@ type (
 		Remove      []string
 	}
 
-	// CommitIdentity is the author Arcane commits as for one repository.
 	CommitIdentity struct {
 		SignKey *openpgp.Entity
 		Name    string
 		Email   string
 	}
 
-	// HistoryEntry is one commit touching a directory.
 	HistoryEntry struct {
 		Hash    string
 		Author  string
@@ -89,7 +83,6 @@ type (
 		Files   []string
 	}
 
-	// FileDiff is the unified diff of one file within a commit.
 	FileDiff struct {
 		Path  string
 		Patch string
@@ -97,7 +90,6 @@ type (
 )
 
 var (
-	// ErrPushRejected reports that the remote branch advanced between checkout and push.
 	ErrPushRejected        = errors.New("push rejected: remote branch was updated by another writer")
 	ErrInvalidCommit       = errors.New("invalid commit hash")
 	ErrSelectionUnreadable = errors.New("selection is unreadable")
@@ -105,7 +97,6 @@ var (
 	ErrSelectionInvalid    = errors.New("selection is invalid")
 )
 
-// CollectFiles reads the selected files and directories under root as commit files, sorted by path.
 func CollectFiles(ctx context.Context, root string, selection []string, opts CollectOptions) ([]CommitFile, error) {
 	c := &fileCollector{root: root, opts: opts, seen: make(map[string]struct{})}
 	for _, selected := range selection {
@@ -175,8 +166,6 @@ func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
 	return nil
 }
 
-// ParseSigningKey loads an armored OpenPGP private key and unlocks it with
-// passphrase when the key material is encrypted.
 func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 	entities, err := openpgp.ReadArmoredKeyRing(strings.NewReader(armored))
 	if err != nil {
@@ -207,9 +196,6 @@ func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 	return nil, errors.New("signing key does not contain a private key")
 }
 
-// CheckoutForWrite clones url at branch into a scratch directory. A branch that
-// does not exist yet is created from the remote default branch, and an empty
-// repository is initialized locally so the first push creates the branch.
 func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth AuthConfig) (*WriteCheckout, error) {
 	if strings.TrimSpace(branch) == "" {
 		return nil, errors.New("branch is required")
@@ -291,10 +277,6 @@ func (c *Client) checkoutNewBranch(ctx context.Context, url, branch string, auth
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
 }
 
-// CommitAndPush writes the requested files, removes the listed paths, commits
-// when the tree changed, pushes without force, and verifies the remote branch
-// points at the pushed commit. It returns the resulting head and whether a new
-// commit was created.
 func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req CommitRequest, auth AuthConfig) (string, bool, error) {
 	if checkout == nil || checkout.repo == nil {
 		return "", false, errors.New("checkout is not prepared for writing")
@@ -323,8 +305,6 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 	return hash.String(), true, nil
 }
 
-// stageCommitFiles writes through acfs so a symlink committed in the
-// repository can never redirect a write outside the checkout.
 func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *git.Worktree, req CommitRequest) error {
 	for _, file := range req.Files {
 		if err := ValidatePath(checkout.RepoPath, file.Path); err != nil {
@@ -359,8 +339,6 @@ func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *gi
 	return nil
 }
 
-// pushBranch pushes the checkout branch without force and verifies the
-// remote now points at commit.
 func (c *Client) pushBranch(ctx context.Context, checkout *WriteCheckout, commit string, auth AuthConfig) error {
 	authMethod, err := c.getAuth(ctx, checkout.url, auth)
 	if err != nil {
@@ -399,7 +377,6 @@ func isPushRejected(err error) bool {
 	return strings.Contains(message, "non-fast-forward") || strings.Contains(message, "command error") || strings.Contains(message, "failed to update ref")
 }
 
-// RemoteBranchHead resolves the remote head of branch without cloning.
 func (c *Client) RemoteBranchHead(ctx context.Context, url, branch string, auth AuthConfig) (string, bool, error) {
 	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
@@ -414,7 +391,6 @@ func (c *Client) RemoteBranchHead(ctx context.Context, url, branch string, auth 
 	return "", false, nil
 }
 
-// DirectoryHistory lists the newest commits that touched directory, newest first.
 func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory string, limit int) ([]HistoryEntry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -467,7 +443,6 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 	return entries, nil
 }
 
-// CommitDiff returns the commit and the per-file unified diffs inside directory.
 func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory string) (HistoryEntry, []FileDiff, error) {
 	if err := ctx.Err(); err != nil {
 		return HistoryEntry{}, nil, err
@@ -536,8 +511,6 @@ func historyEntry(commit *object.Commit, files []string) HistoryEntry {
 	}
 }
 
-// commitChanges diffs a commit against its first parent. Nil opts
-// disables rename detection.
 func commitChanges(ctx context.Context, commit *object.Commit, opts *object.DiffTreeOptions) (object.Changes, error) {
 	var parentTree *object.Tree
 	if commit.NumParents() > 0 {
@@ -561,8 +534,6 @@ func commitChanges(ctx context.Context, commit *object.Commit, opts *object.Diff
 	return changes, nil
 }
 
-// changePathInDirectory picks the side of a change that lives under
-// prefix, so renames into or out of the directory are still reported.
 func changePathInDirectory(change *object.Change, prefix string) (string, string, bool) {
 	for _, name := range []string{change.To.Name, change.From.Name} {
 		if name == "" {

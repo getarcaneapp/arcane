@@ -5,11 +5,6 @@ import { m } from '#lib/paraglide/messages.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-/**
- * Opens a confirmation dialog and, on confirm, requests cancellation of the
- * activity. Shared by the activity center row action and the detail panel so the
- * confirm copy, toasts, and the already-finished (409) handling stay in one place.
- */
 export function confirmCancelActivity(activityId: string) {
 	openConfirmDialog({
 		title: m.activity_cancel_title(),

@@ -1,13 +1,3 @@
-/**
- * Auto-update exclusion helpers shared by the environment jobs tab, the
- * container detail page and the updates table. The backend stores exclusions
- * as a CSV of container *names* in `autoUpdateExcludedContainers`, and the
- * Docker label `com.getarcaneapp.arcane.updater=false` overrides that setting.
- * Container responses carry the resolved `autoUpdateEnabled` status. Both
- * controls only stop automatic installation; update checks and notifications
- * are opted out separately with `UPDATE_CHECK_LABEL`.
- */
-
 const AUTO_UPDATE_LABEL = 'com.getarcaneapp.arcane.updater';
 /** Setting this label to a false-like value disables update checks and notifications. */
 export const UPDATE_CHECK_LABEL = 'com.getarcaneapp.arcane.update-check';
@@ -15,14 +5,12 @@ export const UPDATE_CHECK_LABEL = 'com.getarcaneapp.arcane.update-check';
 export const UPDATE_DELAY_LABEL = 'com.getarcaneapp.arcane.updater.delay';
 const DISABLED_LABEL_VALUES = ['false', '0', 'no', 'off'];
 
-/** True when the Docker label opts the container out of auto-updates. */
 export function isAutoUpdateLabelDisabled(labels?: Record<string, string>): boolean {
 	if (!labels) return false;
 	const value = Object.entries(labels).find(([key]) => key.toLowerCase() === AUTO_UPDATE_LABEL)?.[1];
 	return !!value && DISABLED_LABEL_VALUES.includes(value.trim().toLowerCase());
 }
 
-/** Parses an `autoUpdateExcludedContainers`-style CSV into normalized names. */
 export function parseExcludedContainerSet(csv?: string): Set<string> {
 	return new Set(
 		(csv || '')

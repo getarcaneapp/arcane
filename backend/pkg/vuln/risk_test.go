@@ -202,7 +202,6 @@ func TestBuildScanInsights_UnknownSeverity(t *testing.T) {
 	)
 	intel := map[string]ThreatIntel{"CVE-KEV": {KnownExploited: true}}
 	insights = BuildScanInsights(mixed, intel, types.ImageExposureRunning)
-	// The unscored finding is left out of the score.
 	require.Equal(t, 70, insights.RiskScore)
 	require.Equal(t, types.VulnerabilityScoreStatusComplete, insights.ScoreStatus)
 }

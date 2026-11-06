@@ -290,7 +290,6 @@
 					{#if selecting}
 						<ArcaneButton
 							action="remove"
-							size="sm"
 							customLabel={m.registries_delete_tags_selected_count({ count: selected.length })}
 							disabled={selected.length === 0 || bulkDeleting}
 							loading={bulkDeleting}
@@ -298,14 +297,13 @@
 						/>
 						<ArcaneButton
 							action="cancel"
-							size="sm"
 							onclick={() => {
 								selecting = false;
 								selected = [];
 							}}
 						/>
 					{:else}
-						<ArcaneButton action="base" size="sm" customLabel={m.common_select()} onclick={() => (selecting = true)} />
+						<ArcaneButton action="base" customLabel={m.common_select()} onclick={() => (selecting = true)} />
 					{/if}
 				</div>
 			{/if}
@@ -388,14 +386,12 @@
 					<div class="flex gap-2">
 						<ArcaneButton
 							action="base"
-							size="sm"
 							customLabel={m.common_previous()}
 							disabled={tags.pagination.currentPage <= 1}
 							onclick={() => navigate({ page: tags.pagination.currentPage - 1 })}
 						/>
 						<ArcaneButton
 							action="base"
-							size="sm"
 							customLabel={m.common_next()}
 							disabled={tags.pagination.currentPage >= tags.pagination.totalPages}
 							onclick={() => navigate({ page: tags.pagination.currentPage + 1 })}

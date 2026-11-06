@@ -396,8 +396,6 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 	}
 }
 
-// TestEnvScopedOperationsDeclarePermission ensures every authenticated env-scoped operation
-// declares the permission the remote-environment proxy enforces before forwarding.
 func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 	api := SetupAPIForSpec()
 	oapi := api.OpenAPI()

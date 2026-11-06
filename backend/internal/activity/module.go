@@ -1,5 +1,3 @@
-// Package activity owns background activity persistence, execution tracking,
-// streaming, and the HTTP surface used to inspect and cancel work.
 package activity
 
 import (

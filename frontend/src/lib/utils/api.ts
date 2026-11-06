@@ -5,20 +5,19 @@ import { APIError, extractServerMessage, isSessionCancelledError } from '#lib/se
 import type { Result } from '#lib/types/ui/result.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-// --- API error extraction ---
-
-export function extractApiErrorMessage(error: any): string {
+export function extractApiErrorMessage(error: unknown): string {
 	if (!error) return 'Unknown error';
-
-	const respData = error?.response?.data;
+	const record: Record<string, unknown> = typeof error === 'object' ? (error as Record<string, unknown>) : {};
+	const response = record['response'];
+	const respData = response !== null && typeof response === 'object' ? (response as Record<string, unknown>)['data'] : undefined;
 	const serverMsg = extractServerMessage(respData, true);
 	if (serverMsg) return serverMsg;
 
-	const bodyMsg = extractServerMessage(error?.body, true);
+	const bodyMsg = extractServerMessage(record['body'], true);
 	if (bodyMsg) return bodyMsg;
 
 	for (const key of ['error', 'reason', 'stderr', 'data', 'message']) {
-		const value = error?.[key];
+		const value = record[key];
 		if (typeof value === 'string' && value.trim()) return value;
 	}
 
@@ -78,8 +77,6 @@ export async function handleApiResultWithCallbacks<T>({
 	}
 }
 
-// --- Page load error helpers ---
-
 export function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
 	if (err && typeof err === 'object') {
 		const maybeResponse = (err as { response?: { status?: unknown } }).response;
@@ -105,7 +102,6 @@ export function extractApiErrorStatus(err: unknown, fallbackStatus = 500): numbe
 	return fallbackStatus;
 }
 
-/** True when the server explicitly rejected the caller's credentials (401/403). */
 export function isAuthRejectionError(err: unknown): boolean {
 	const status = extractApiErrorStatus(err, 0);
 	return status === 401 || status === 403;
@@ -117,16 +113,14 @@ export function throwPageLoadError(err: unknown, fallbackMessage: string): never
 	kitError(status, message);
 }
 
-// --- Refresh helpers ---
-
 export interface RefreshTask<T> {
 	fetch: () => Promise<T>;
 	onSuccess: (data: T) => void;
 	errorMessage: string;
 }
 
-export async function parallelRefresh<T extends Record<string, RefreshTask<any>>>(
-	tasks: T,
+export async function parallelRefresh<T extends Record<string, unknown>>(
+	tasks: { [K in keyof T]: RefreshTask<T[K]> },
 	setLoading: (loading: boolean) => void
 ): Promise<void> {
 	setLoading(true);

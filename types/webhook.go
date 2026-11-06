@@ -5,7 +5,6 @@ import (
 )
 
 type (
-	// Webhook is returned in list responses — the token is masked.
 	Webhook struct {
 		CreatedAt       time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
 		LastTriggeredAt *time.Time `json:"lastTriggeredAt,omitempty" readOnly:"true" doc:"Timestamp of last successful trigger"`
@@ -20,7 +19,6 @@ type (
 		Enabled     bool   `json:"enabled" required:"false" doc:"Whether the webhook is active"`
 	}
 
-	// WebhookCreated is returned once when a webhook is first created, including the raw token.
 	WebhookCreated struct {
 		CreatedAt  time.Time `json:"createdAt" doc:"Creation timestamp"`
 		ID         string    `json:"id" doc:"Webhook ID"`

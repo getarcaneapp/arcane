@@ -30,7 +30,6 @@ type (
 		seq             atomic.Uint64
 	}
 
-	// logStreamParams holds the standard query parameters shared by every WS log endpoint.
 	logStreamParams struct {
 		format  string
 		stream  types.LogStreamOptions
@@ -58,8 +57,6 @@ func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty 
 	return stream
 }
 
-// releaseLogStream drops a client reference, or marks the source finished when done is set,
-// and tears the stream down once no clients remain.
 func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, done bool) {
 	var cancel context.CancelFunc
 
@@ -95,10 +92,6 @@ func parseLogStreamParams(c *echo.Context) logStreamParams {
 	}
 }
 
-// serveLogStream is the shared scaffold for all three WS log endpoints (project, container, service).
-// It performs upgrade, builds the stream key, gets-or-creates the multiplexing hub, registers metrics,
-// and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
-// when no hub already exists for streamKey.
 func (h *WebSocketHandler) serveLogStream(
 	c *echo.Context,
 	kind, resourceID string,
@@ -130,17 +123,12 @@ func (h *WebSocketHandler) serveLogStream(
 	}
 	// The hub owns connection cleanup, so it outlives the request and ends with the app.
 	if !wshub.ServeClientWithOnRemove(h.ctx, stream.hub, conn, release) {
-		// The stream refcount normally keeps this hub alive, so a stopped hub
-		// here means it was torn down out from under us; drop our reference
-		// rather than leaking the connection and the metrics entry.
 		slog.DebugContext(c.Request().Context(), "log stream hub stopped before client registration", "streamKey", streamKey)
 		_ = conn.CloseNow()
 		release()
 	}
 }
 
-// broadcastLogStreamError emits an error message to every client of a log stream.
-// label is the human-readable resource noun (e.g. "project").
 func broadcastLogStreamError(ctx context.Context, label, resourceID, format string, err error, ls *wsLogStream) {
 	slog.WarnContext(ctx, "log stream failed", "kind", label, "resourceId", resourceID, "error", err)
 	errorPrefix := "Failed to stream " + label + " logs: "
@@ -162,24 +150,6 @@ func broadcastLogStreamError(ctx context.Context, label, resourceID, format stri
 	ls.hub.Broadcast([]byte(errorPrefix + err.Error()))
 }
 
-// ============================================================================
-// Project WebSocket/Streaming Endpoints
-// ============================================================================
-
-// ProjectLogs streams project logs over WebSocket.
-//
-//	@Summary		Get project logs via WebSocket
-//	@Description	Stream project logs over WebSocket connection
-//	@Tags			WebSocket
-//	@Param			id			path	string	true	"Environment ID"
-//	@Param			projectId	path	string	true	"Project ID"
-//	@Param			follow		query	bool	false	"Follow log output"						default(true)
-//	@Param			tail		query	string	false	"Number of lines to show from the end"	default(100)
-//	@Param			since		query	string	false	"Show logs since timestamp"
-//	@Param			timestamps	query	bool	false	"Show timestamps"				default(false)
-//	@Param			format		query	string	false	"Output format (text or json)"	default(text)
-//	@Param			batched		query	bool	false	"Batch log messages"			default(false)
-//	@Router			/api/environments/{id}/ws/projects/{projectId}/logs [get]
 func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
@@ -361,24 +331,6 @@ func mapLogLines[T any](ctx context.Context, lines <-chan string, transform func
 	return mapped
 }
 
-// ============================================================================
-// Container WebSocket Endpoints
-// ============================================================================
-
-// ContainerLogs streams container logs over WebSocket.
-//
-//	@Summary		Get container logs via WebSocket
-//	@Description	Stream container logs over WebSocket connection
-//	@Tags			WebSocket
-//	@Param			id			path	string	true	"Environment ID"
-//	@Param			containerId	path	string	true	"Container ID"
-//	@Param			follow		query	bool	false	"Follow log output"						default(true)
-//	@Param			tail		query	string	false	"Number of lines to show from the end"	default(100)
-//	@Param			since		query	string	false	"Show logs since timestamp"
-//	@Param			timestamps	query	bool	false	"Show timestamps"				default(false)
-//	@Param			format		query	string	false	"Output format (text or json)"	default(text)
-//	@Param			batched		query	bool	false	"Batch log messages"			default(false)
-//	@Router			/api/environments/{id}/ws/containers/{containerId}/logs [get]
 func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
@@ -406,24 +358,6 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	return nil
 }
 
-// ============================================================================
-// Swarm Service WebSocket/Streaming Endpoints
-// ============================================================================
-
-// ServiceLogs streams swarm service logs over WebSocket.
-//
-//	@Summary		Get swarm service logs via WebSocket
-//	@Description	Stream swarm service logs over WebSocket connection
-//	@Tags			WebSocket
-//	@Param			id			path	string	true	"Environment ID"
-//	@Param			serviceId	path	string	true	"Service ID"
-//	@Param			follow		query	bool	false	"Follow log output"						default(true)
-//	@Param			tail		query	string	false	"Number of lines to show from the end"	default(100)
-//	@Param			since		query	string	false	"Show logs since timestamp"
-//	@Param			timestamps	query	bool	false	"Show timestamps"				default(false)
-//	@Param			format		query	string	false	"Output format (text or json)"	default(text)
-//	@Param			batched		query	bool	false	"Batch log messages"			default(false)
-//	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
 func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {

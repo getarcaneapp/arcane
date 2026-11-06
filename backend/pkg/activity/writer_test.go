@@ -23,8 +23,6 @@ type (
 
 	failingWriter struct{}
 
-	// gatedAppender blocks its first AppendMessages call until release is
-	// closed, letting a test queue lines behind a known-stalled drain goroutine.
 	gatedAppender struct {
 		started chan struct{}
 		release chan struct{}
@@ -117,9 +115,6 @@ func (g *gatedAppender) AppendMessages(ctx context.Context, activityID string, r
 	return g.recordingAppender.AppendMessages(ctx, activityID, reqs)
 }
 
-// TestWriterBatchesQueuedLinesIntoOneAppend verifies lines already
-// queued when the drain goroutine wakes are persisted through a single
-// AppendMessages call, in order, rather than one call per line.
 func TestWriterBatchesQueuedLinesIntoOneAppend(t *testing.T) {
 	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}
 	writer := NewWriter(t.Context(), WriterOptions{
@@ -167,11 +162,6 @@ func TestWriterReturnsWrappedWriteErrorWithoutActivity(t *testing.T) {
 	require.ErrorContains(t, err, "client disconnected")
 }
 
-// TestWriterPersistsQueuedLinesAfterCancel verifies that cancelling
-// the work context does not abandon lines the writer already accepted:
-// batches persist on a detached context and the drain goroutine empties the
-// queue before exiting, since the lines queued at cancellation are usually
-// the ones explaining it.
 func TestWriterPersistsQueuedLinesAfterCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	appender := &gatedAppender{started: make(chan struct{}), release: make(chan struct{})}

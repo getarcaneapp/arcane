@@ -1,10 +1,11 @@
 <script lang="ts" generics="T">
-	import type { Snippet, Component } from 'svelte';
+	import type { Snippet } from 'svelte';
 
 	import TableCheckbox from '#lib/components/arcane-table/arcane-table-checkbox.svelte';
 	import { getMobileRowSelection, hasMobileRowSelection } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import type { IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 	import { rowKey } from '#lib/utils/environments.js';
@@ -17,7 +18,7 @@
 	type BadgeVariant = 'green' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'orange';
 
 	interface IconConfig {
-		component: Component<any>;
+		component: IconType;
 		variant: IconVariant;
 		imageUrl?: string;
 		alt?: string;
@@ -32,9 +33,9 @@
 
 	interface FieldDefinition<T> {
 		label: string;
-		getValue: (item: T) => any;
+		getValue: (item: T) => unknown;
 		type?: FieldType;
-		icon?: Component<any>;
+		icon?: IconType;
 		iconVariant?: IconVariant;
 		badgeVariant?: BadgeVariant;
 		component?: Snippet<[value: any]>;
@@ -45,7 +46,7 @@
 	interface FooterConfig<T> {
 		label: string;
 		getValue: (item: T) => string;
-		icon: Component<any>;
+		icon: IconType;
 	}
 
 	let {
@@ -107,7 +108,7 @@
 	}
 </script>
 
-{#snippet FieldValue(field: FieldDefinition<T>, value: any)}
+{#snippet FieldValue(field: FieldDefinition<T>, value: unknown)}
 	{#if field.type === 'badge' && field.badgeVariant}
 		<Badge variant={field.badgeVariant} size="sm" minWidth="20">{String(value)}</Badge>
 	{:else if field.type === 'mono'}

@@ -14,10 +14,6 @@ import (
 	"kit.getarcane.app/fs"
 )
 
-// TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable verifies that a
-// chmod 000 .env (e.g. root-owned or foreign-owned) is reported as present but
-// unreadable instead of failing the whole read, so callers can leave it
-// untouched rather than aborting a git sync.
 func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits are ignored when running as root")
@@ -35,7 +31,6 @@ func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T)
 	assert.False(t, state.HasEffective)
 	assert.Empty(t, state.EffectiveContent)
 
-	// The file itself is left untouched.
 	require.NoError(t, os.Chmod(envPath, 0o644))
 	content, err := os.ReadFile(envPath)
 	require.NoError(t, err)

@@ -1,5 +1,3 @@
-// Package snippets renders agent deployment snippets and issues the agent mTLS
-// assets they reference.
 package snippets
 
 import (
@@ -14,7 +12,6 @@ import (
 )
 
 type (
-	// Service issues agent mTLS assets and records their audit events.
 	Service struct {
 		eventService *event.EventService
 	}
@@ -76,8 +73,6 @@ func Agent(p AgentParams) (string, string) {
 		), "\n")
 }
 
-// GenerateMTLS issues manager-signed agent mTLS assets and renders the snippets
-// that enroll with them. Nil assets mean only the basic snippets apply.
 func (s *Service) GenerateMTLS(ctx context.Context, mtls *agent.MTLS, envID, envName, managerURL, apiKey string) (*agent.GeneratedMTLSAssets, string, string) {
 	generatedAssets, err := mtls.IssueClient(ctx, agent.IssueClientOptions{
 		EnvironmentID:   envID,

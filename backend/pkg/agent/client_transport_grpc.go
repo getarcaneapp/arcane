@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	// tunnelConnectPath is the manager route for both the WebSocket and gRPC tunnel, so reverse proxies need one rule.
 	tunnelConnectPath = "/api/tunnel/connect"
 )
 

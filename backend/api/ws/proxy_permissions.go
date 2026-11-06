@@ -56,12 +56,6 @@ func (h *WebSocketHandler) proxiedRoutes() []middleware.EchoRoute {
 	}
 }
 
-// AddProxiedPermissions registers the permissions required by proxied WebSocket
-// routes with the environment proxy permission matcher. These streams are
-// served by Echo (not Huma), so they are absent from the OpenAPI document and
-// must be registered with the matcher separately. The paths are stored relative
-// to /environments/{id} (i.e. prefixed with "/ws"), matching the resource
-// suffix the proxy computes for forwarded requests.
 func AddProxiedPermissions(m *authz.PermissionMatcher) {
 	var h WebSocketHandler
 	for _, r := range h.proxiedRoutes() {

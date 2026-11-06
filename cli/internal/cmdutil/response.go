@@ -15,7 +15,6 @@ import (
 )
 
 type (
-	// HTTPStatusError represents a non-2xx HTTP response.
 	HTTPStatusError struct {
 		Body       string
 		StatusCode int
@@ -34,7 +33,6 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, body)
 }
 
-// EnsureSuccessStatus returns an error for non-2xx responses.
 func EnsureSuccessStatus(resp *http.Response) error {
 	if resp == nil {
 		return errors.New("nil HTTP response")
@@ -49,7 +47,6 @@ func EnsureSuccessStatus(resp *http.Response) error {
 	}
 }
 
-// DecodeJSON decodes into out; callers must first enforce HTTP success with EnsureSuccessStatus.
 func DecodeJSON(resp *http.Response, out any) error {
 	if out == nil {
 		return errors.New("nil decode target")
@@ -60,7 +57,6 @@ func DecodeJSON(resp *http.Response, out any) error {
 	return nil
 }
 
-// ReadJSONBody enforces HTTP and API success while retaining every response field.
 func ReadJSONBody(resp *http.Response) ([]byte, error) {
 	if err := EnsureSuccessStatus(resp); err != nil {
 		return nil, err
@@ -79,7 +75,6 @@ func ReadJSONBody(resp *http.Response) ([]byte, error) {
 	return body, nil
 }
 
-// PrintRawJSON pretty-prints a raw JSON document, falling back to the bytes as-is.
 func PrintRawJSON(body []byte) error {
 	value := jsontext.Value(bytes.Clone(body))
 	if value.Indent(jsontext.WithIndent("  ")) == nil {
@@ -91,7 +86,6 @@ func PrintRawJSON(body []byte) error {
 	return err
 }
 
-// PrintJSON prints indented JSON to stdout.
 func PrintJSON(v any) error {
 	b, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {

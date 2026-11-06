@@ -100,7 +100,7 @@ const (
 )
 
 var (
-	ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
+	ErrVolumeBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup is already running for this volume"))
 
 	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )

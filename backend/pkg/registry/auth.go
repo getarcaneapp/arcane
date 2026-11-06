@@ -33,8 +33,6 @@ func ExtractRegistryHost(imageRef string) string {
 	return kit.Ternary(!strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") && hostCandidate != "localhost", "docker.io", hostCandidate)
 }
 
-// SplitRegistryURL separates a registry URL into its comparison host and an
-// optional repository namespace: "https://ghcr.io/acme/" yields ("ghcr.io", "acme").
 func SplitRegistryURL(url string) (host, namespace string) {
 	url = strings.TrimSpace(url)
 	for _, scheme := range []string{"https://", "http://"} {

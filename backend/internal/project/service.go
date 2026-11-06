@@ -100,9 +100,7 @@ type (
 		containerRegistryService    *registry.ContainerRegistryService
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
-
-		// FilesChanged lets Git backups react to saved project files without polling.
-		FilesChanged *concurrency.Signal[string]
+		FilesChanged                *concurrency.Signal[string]
 
 		opLock concurrency.KeyedMutex
 
@@ -268,7 +266,6 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSy
 	return nil
 }
 
-// ValidateComposeDirectory uses the same settings, path mapping and validation as managed projects.
 func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectName, projectPath, composeFileName string) (int, error) {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -340,7 +337,6 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 	return env
 }
 
-// preloadGitOpsComposePaths merges into env so list paths can widen the preloaded set.
 func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
@@ -624,7 +620,6 @@ func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, s
 	return proj.ID, service.Image, nil
 }
 
-// EnsureProjectPathUnderRoot moves an outside path to `<projectsRoot>/<dirName or sanitized name>`.
 func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *Project, persist bool) error {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -684,7 +679,6 @@ func (s *ProjectService) invalidateProjectCaches(projectID string) {
 	s.metaCache.Invalidate(projectID)
 }
 
-// ResolveProjectComposeFile mirrors `docker compose`: COMPOSE_FILE, then the GitOps compose path, then detection.
 func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
 	return s.resolveProjectComposeFile(ctx, proj, nil)
 }
@@ -871,7 +865,6 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 	}
 }
 
-// NewLifecycleService gets the Docker client per hook run so reconnects are transparent.
 func NewLifecycleService(p LifecycleServiceParams) *LifecycleService {
 	return &LifecycleService{
 		db:              p.DB,
@@ -881,7 +874,6 @@ func NewLifecycleService(p LifecycleServiceParams) *LifecycleService {
 	}
 }
 
-// runPreDeploy aborts the deploy on any hook failure and records the last run on the sync.
 func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, actor types.Actor) error {
 	if strings.TrimSpace(kit.FromPtr(project.GitOpsManagedBy)) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return nil
@@ -1356,7 +1348,6 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
-// CreateProject appends "-N" on a directory collision unless allowNameSuffix is false.
 func (s *ProjectService) CreateProject(
 	ctx context.Context,
 	name, composeContent string,
@@ -2819,7 +2810,6 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return s.reconcileComposeTagsForProject(ctx, &existing)
 }
 
-// ApplyGitSyncEnvToDirectory returns the effective env content before and after the managed merge.
 func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	return projectsync.ApplyGitSyncEnv(ctx, projectPath, projectsDirectory, gitEnvContent)
 }
@@ -2992,7 +2982,6 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	return proj, nil
 }
 
-// applyProjectUpdate rolls an applied volume migration back on any failure before the save.
 func (s *ProjectService) applyProjectUpdate(
 	ctx context.Context,
 	proj *Project,
@@ -3199,7 +3188,6 @@ func (s *ProjectService) ensureProjectNameAvailable(ctx context.Context, name, e
 	return nil
 }
 
-// prepareProjectRenameVolumeMigration plans against a scratch preview so content changes are reflected.
 func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	ctx context.Context,
 	proj *Project,
@@ -3602,7 +3590,6 @@ func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.Pro
 	return references, nil
 }
 
-// UpdateProjectTag rejects Compose-owned tag names.
 func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID string, tagUpdate ProjectTagUpdate, user types.Actor) ([]types.ProjectTag, error) {
 	normalized, normalizedColor, err := tags.NormalizeUpdate(tagUpdate.Name, tagUpdate.Color, tagUpdate.Attached)
 	if err != nil {

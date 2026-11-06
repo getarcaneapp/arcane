@@ -352,7 +352,6 @@
 										<ArcaneButton
 											action="base"
 											tone="outline"
-											size="sm"
 											customLabel={m.diagnostics_tab_profiling()}
 											onclick={() => urlTab.select('profiling')}
 										/>
@@ -568,7 +567,6 @@
 											<ArcaneButton
 												action="base"
 												tone="outline"
-												size="sm"
 												icon={DownloadIcon}
 												customLabel={m.diagnostics_download()}
 												loading={downloading === p.id}

@@ -61,7 +61,7 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
+					size="icon"
 					icon={SettingsIcon}
 					showLabel={false}
 					customLabel={m.build_workspace_open_settings()}

@@ -33,7 +33,6 @@ type (
 	}
 )
 
-// health reports DOWN once the Francis host has exited; startup stays UP.
 func health[T healthOutputs](h *healthHandler) func(context.Context, *struct{}) (*T, error) {
 	return func(context.Context, *struct{}) (*T, error) {
 		status, body := http.StatusOK, types.HealthResponse{Status: "UP"}
@@ -53,7 +52,6 @@ func health[T healthOutputs](h *healthHandler) func(context.Context, *struct{}) 
 	}
 }
 
-// ready serves the readiness probe; 503 lists the failing check.
 func (h *healthHandler) ready(ctx context.Context, _ *struct{}) (*readyOutput, error) {
 	result := h.service.Ready(ctx)
 	return &readyOutput{

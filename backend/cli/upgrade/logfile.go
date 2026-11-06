@@ -48,13 +48,8 @@ func (w *LogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Name reports the path of the log file.
 func (w *LogWriter) Name() string { return w.path }
 
-// SetupMessageOnlyLogFile writes normal slog output to stdout and message-only
-// output to a timestamped file under dataDir. Every entry is persisted as it is
-// logged, so the returned writer needs no closing -- it is returned so the
-// caller can report where the log landed.
 func SetupMessageOnlyLogFile(dataDir, filePrefix string, minLevel slog.Level) (*LogWriter, error) {
 	if strings.TrimSpace(dataDir) == "" {
 		return nil, errors.New("dataDir is required")

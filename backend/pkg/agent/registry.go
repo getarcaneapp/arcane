@@ -137,7 +137,6 @@ func NewTunnelRegistry() *TunnelRegistry {
 	}
 }
 
-// Active returns the environment's tunnel when its connection is still open.
 func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	if tunnel, _ := r.Get(envID).Get(); tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		return mo.Some(tunnel)
@@ -145,7 +144,6 @@ func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	return mo.None[*AgentTunnel]()
 }
 
-// WaitForActive waits until the environment has an open tunnel or timeout elapses.
 func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
 	if tunnel := r.Active(envID); tunnel.IsPresent() {
 		return tunnel
@@ -353,7 +351,6 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 	return removed
 }
 
-// Stop drains registry mutations and closes active tunnels.
 func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	r.stopped.Store(true)
 	fallback := r.tunnels.Values()
@@ -369,7 +366,6 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	return err
 }
 
-// ObserveAgents reports connected agents by transport and each open tunnel's traffic, round trip, and streams.
 func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration, error) {
 	gauge, gaugeErr := meter.Int64ObservableGauge("arcane.agents",
 		metric.WithDescription("Connected agents by transport"),

@@ -80,7 +80,7 @@
 				aria-label={m.common_search()}
 			/>
 		</div>
-		<ArcaneButton action="refresh" size="sm" {loading} onclick={load} />
+		<ArcaneButton action="refresh" {loading} onclick={load} />
 	</div>
 
 	{#if error}

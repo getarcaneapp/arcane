@@ -19,7 +19,6 @@ ALTER TABLE gitops_syncs DROP COLUMN IF EXISTS pending_redeploy;
 `
 )
 
-// Migration 103 records GitOps redeploys that started but never finished.
 func init() {
 	goose.AddMigrationContext(run(v103SQLiteUp, v103PostgresUp), run(v103SQLiteDown, v103PostgresDown))
 }

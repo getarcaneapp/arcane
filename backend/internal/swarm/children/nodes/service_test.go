@@ -220,7 +220,6 @@ func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *te
 	require.True(t, identity.SwarmActive)
 }
 
-// TestService_BuildNodeAgentStatus covers the state classification.
 func TestService_BuildNodeAgentStatus(t *testing.T) {
 	const nodeID = "node-abc"
 	now := time.Now()

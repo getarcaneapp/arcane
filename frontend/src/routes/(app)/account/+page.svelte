@@ -272,7 +272,6 @@
 											<div class="mt-1 flex items-center gap-2">
 												<ArcaneButton
 													action="remove"
-													size="sm"
 													tone="ghost"
 													customLabel={m.common_remove()}
 													showLabel={true}

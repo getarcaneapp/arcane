@@ -1,5 +1,3 @@
-// Package sweeps selects the activity rows that periodic and startup repair
-// sweeps finalize.
 package sweeps
 
 import (
@@ -14,26 +12,20 @@ import (
 )
 
 type (
-	// Candidate is the part of an activity row a sweep decides on.
 	Candidate struct {
 		StartedAt time.Time
 		Metadata  database.JSON `gorm:"type:text"`
 		ID        string
 	}
 
-	// Service runs the candidate queries behind the periodic activity sweeps.
 	Service struct {
 		db *database.DB
 	}
 )
 
 const (
-	staleImageUpdateCheckAge = 6 * time.Hour
-	// abandonedActivityGrace is how old an untracked queued/running activity
-	// must be before the periodic sweep fails it. It covers the window between
-	// StartActivity's row creation and the worker's Track call.
-	abandonedActivityGrace = 2 * time.Minute
-	// abandonedActivitySweepLimit bounds one sweep; later sweeps take the rest.
+	staleImageUpdateCheckAge    = 6 * time.Hour
+	abandonedActivityGrace      = 2 * time.Minute
 	abandonedActivitySweepLimit = 500
 )
 
@@ -45,7 +37,6 @@ var backupActions = []string{
 	"scheduled_system_backup",
 }
 
-// NewService returns a sweeps query service over db.
 func NewService(db *database.DB) *Service {
 	return &Service{db: db}
 }
@@ -54,8 +45,6 @@ func (s *Service) activities(ctx context.Context) *gorm.DB {
 	return s.db.WithContext(ctx).Table("activities")
 }
 
-// StaleImageUpdateChecks returns image update checks left running across a
-// prior process lifetime.
 func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
@@ -64,8 +53,6 @@ func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, erro
 	return rows, err
 }
 
-// Abandoned returns active non-job activities past the grace period that are
-// not in trackedIDs, oldest first.
 func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candidate, error) {
 	query := s.activities(ctx).
 		Select("id", "started_at").
@@ -79,7 +66,6 @@ func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candida
 	return rows, err
 }
 
-// OrphanedQueued returns queued non-job activities outside protectedIDs.
 func (s *Service) OrphanedQueued(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
@@ -100,7 +86,6 @@ func (s *Service) OrphanedJobRuns(ctx context.Context, protectedIDs []string) ([
 	return rows, err
 }
 
-// StaleAutoUpdates returns running auto-update activities outside protectedIDs.
 func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
@@ -110,7 +95,6 @@ func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) (
 	return rows, err
 }
 
-// InterruptedBackups returns active backup activities outside protectedIDs.
 func (s *Service) InterruptedBackups(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	if err := s.activities(ctx).

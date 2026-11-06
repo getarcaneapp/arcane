@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { watch } from 'runed';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -328,15 +329,12 @@
 	}
 
 	const scopeKey = () => environmentStore.shownKey;
-	let wasFeatureEnabled = true;
-	$effect(() => {
-		const enabled = vulnerabilityManagementEnabled;
-		// Disabled content is hidden by the template; re-enabling reloads it.
-		if (enabled && !wasFeatureEnabled) {
-			untrack(() => void refreshAll(true));
+	watch(
+		() => vulnerabilityManagementEnabled,
+		(enabled, wasEnabled) => {
+			if (enabled && wasEnabled === false) void refreshAll(true);
 		}
-		wasFeatureEnabled = enabled;
-	});
+	);
 	const canScanVuln = $derived(
 		vulnerabilityManagementEnabled &&
 			vulnerabilityEnvironments().some(
@@ -411,7 +409,7 @@
 						<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 							<div class="flex flex-wrap items-center justify-between gap-2">
 								<Alert.Description>{extractApiErrorMessage(overviewQuery.error)}</Alert.Description>
-								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refreshOverview} />
+								<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={refreshOverview} />
 							</div>
 						</Alert.Root>
 					{/if}
@@ -453,7 +451,7 @@
 						<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon} class="mb-3">
 							<div class="flex flex-wrap items-center justify-between gap-2">
 								<Alert.Description>{extractApiErrorMessage(patchTargetsQuery.error)}</Alert.Description>
-								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={loadPatches} />
+								<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={loadPatches} />
 							</div>
 						</Alert.Root>
 					{/if}

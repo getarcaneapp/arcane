@@ -251,9 +251,6 @@ func TestLoadComposeProject_DoesNotMergeOverrideForCustomBaseName(t *testing.T) 
 	t.Parallel()
 
 	dir := t.TempDir()
-	// A custom base filename (not a standard compose candidate) is the explicit
-	// `-f` case: `docker compose` does not auto-load an override for it, so neither
-	// do we, even though compose.override.yaml sits right beside it.
 	basePath := filepath.Join(dir, "mystack.yaml")
 	overridePath := filepath.Join(dir, "compose.override.yaml")
 	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
@@ -345,10 +342,6 @@ func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlob
 func TestLoadComposeProjectLenient_ToleratesUndefinedVariables(t *testing.T) {
 	t.Parallel()
 
-	// Reproduces the GitSync chicken-and-egg problem: a compose file references
-	// ${CONFIG_FILE} in a bind-mount source, but no .env exists yet.  The strict
-	// loader would resolve ${CONFIG_FILE} to "" and produce ":/etc/app/app.conf"
-	// (empty section between colons).  The lenient loader must succeed instead.
 	dir := t.TempDir()
 	composePath := filepath.Join(dir, "compose.yaml")
 	require.NoError(t, os.WriteFile(composePath, []byte(`services:
@@ -372,11 +365,6 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedVariables(t *testing.T) {
 func TestLoadComposeProjectLenient_ToleratesUndefinedTypedFieldVariables(t *testing.T) {
 	t.Parallel()
 
-	// Same chicken-and-egg problem for typed fields: deploy.resources.limits.cpus
-	// is parsed as a float and memory as a size. With no .env the strict loader
-	// fails with `strconv.ParseFloat: parsing "": invalid syntax` and
-	// `invalid size: ''`. Lenient mode must succeed so the GitOps sync can
-	// create the project and let the user supply real values afterward.
 	dir := t.TempDir()
 	composePath := filepath.Join(dir, "compose.yaml")
 	require.NoError(t, os.WriteFile(composePath, []byte(`services:
@@ -403,11 +391,6 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedTypedFieldVariables(t *test
 func TestLoadComposeProjectLenient_AppliesVariableDefaults(t *testing.T) {
 	t.Parallel()
 
-	// The lenient loader used to report the placeholder as every undefined
-	// variable's value, which suppressed
-	// ${VAR:-default} resolution and fed "/placeholder-undefined" into the
-	// ports host entry ("invalid hostPort"). Defaults must resolve normally;
-	// only variables with no default fall back to the placeholder.
 	dir := t.TempDir()
 	composePath := filepath.Join(dir, "compose.yaml")
 	require.NoError(t, os.WriteFile(composePath, []byte(`services:
@@ -557,10 +540,6 @@ func TestResolveRelativeProjectPaths(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "config.conf"), service.Volumes[0].Source)
 }
 
-// Reproduces the reported case where a relative bind path escaping the projects
-// mount resolved against Arcane's container path instead of the host path
-// `docker compose up` would use, while checking that in-mount relative paths and
-// intentionally absolute paths keep their current behavior.
 func TestLoadComposeProject_RemapsRelativeBindEscapingProjectsMount(t *testing.T) {
 	t.Parallel()
 
@@ -603,10 +582,6 @@ func TestLoadComposeProject_RemapsRelativeBindEscapingProjectsMount(t *testing.T
 	assert.Equal(t, "/mnt/nas/media", sources["/media"])
 }
 
-// The prepare callback must observe local, resolved bind sources: after
-// relative paths are anchored to the project directory, but before host path
-// translation rewrites them for the Docker daemon. Read-only loads pass nil
-// and must not touch the filesystem.
 func TestLoadComposeProject_PrepareRunsBeforeHostPathTranslation(t *testing.T) {
 	t.Parallel()
 

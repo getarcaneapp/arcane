@@ -211,7 +211,6 @@
 			return;
 		}
 
-		// Prevent starting if already streaming or connecting
 		if (connecting || (shouldBeStreaming && wsClient)) {
 			return;
 		}
@@ -227,7 +226,6 @@
 					shouldBeStreaming = true;
 					error = null;
 					await startWebSocketStream(sessionId);
-					// Only notify after successful start
 					isStreaming = true;
 					onStart?.();
 					return;
@@ -378,7 +376,6 @@
 		return logs.length;
 	}
 
-	// Keep short logs on the plain render path.
 	const VIRTUALIZE_THRESHOLD = 100;
 	const shouldVirtualize = $derived(displayLogs.length > VIRTUALIZE_THRESHOLD);
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
@@ -414,7 +411,6 @@
 			return;
 		}
 
-		// If key changed while streaming, restart with new key
 		if (currentStreamKey && currentStreamKey !== key) {
 			currentStreamKey = key;
 
@@ -435,7 +431,6 @@
 				cancelled = true;
 			};
 		} else if (!currentStreamKey) {
-			// First time - just set the key, don't auto-start
 			currentStreamKey = key;
 		}
 	});
@@ -522,7 +517,7 @@
 					<div class="p-4">
 						<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
 							<div class="mt-3">
-								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+								<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={reset} />
 							</div>
 						</Alert.Root>
 					</div>

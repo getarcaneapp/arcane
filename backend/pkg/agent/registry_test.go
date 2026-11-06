@@ -75,25 +75,20 @@ func TestTunnelRegistry(t *testing.T) {
 	r := NewTunnelRegistry()
 	envID := "env-1"
 
-	// Create a tunnel
 	conn := createTestConn(t)
 	defer func() { _ = conn.CloseNow() }()
 	tunnel := newWebSocketAgentTunnel(envID, conn)
 
-	// Register
 	registerTestTunnel(t, r, tunnel)
 
-	// Get
 	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
 	assert.Equal(t, tunnel, got)
 
-	// Unregister
 	r.Unregister(envID)
 	_, ok = r.Get(envID).Get()
 	assert.False(t, ok)
 
-	// Test Connection Closed after Unregister
 	assert.True(t, tunnel.Conn.IsClosed())
 }
 
@@ -248,14 +243,12 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	defer func() { _ = conn.CloseNow() }()
 	tunnel := newWebSocketAgentTunnel(envID, conn)
 
-	// Manually set last heartbeat to past
 	tunnel.mu.Lock()
 	tunnel.LastHeartbeat = time.Now().Add(-10 * time.Minute)
 	tunnel.mu.Unlock()
 
 	registerTestTunnel(t, r, tunnel)
 
-	// Cleanup
 	removed := r.CleanupStale(t.Context(), 5*time.Minute)
 	require.Len(t, removed, 1)
 	assert.Same(t, tunnel, removed[0])

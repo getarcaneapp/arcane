@@ -1396,7 +1396,6 @@ test.describe('Resource sorting', () => {
 		const brokenRow = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: 'broken' }) });
-		// Both the CPU and memory cells fall back to the unavailable label.
 		await expect(brokenRow.getByText('Unavailable', { exact: true })).toHaveCount(2);
 	});
 

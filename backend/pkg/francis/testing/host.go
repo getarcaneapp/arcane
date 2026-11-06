@@ -1,4 +1,3 @@
-// Package testing starts isolated Francis hosts for owning-logic tests.
 package testing
 
 import (
@@ -14,9 +13,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/francis"
 )
 
-// New constructs a host whose factories can be registered before Start.
-// With no database URL it uses an isolated in-memory provider. Pass a temporary
-// SQLite URL or the gated Postgres test URL to exercise durable persistence.
 func New(t stdtesting.TB, databaseURLs ...string) *francis.Runtime {
 	t.Helper()
 	var lc net.ListenConfig
@@ -53,8 +49,6 @@ func New(t stdtesting.TB, databaseURLs ...string) *francis.Runtime {
 	return runtime
 }
 
-// Start starts a previously registered host, verifies its listener, and joins
-// its shutdown during test cleanup.
 func Start(t stdtesting.TB, runtime *francis.Runtime) {
 	t.Helper()
 	appCtx, cancel := context.WithCancel(t.Context())

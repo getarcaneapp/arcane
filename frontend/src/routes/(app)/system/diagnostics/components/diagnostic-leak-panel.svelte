@@ -106,7 +106,6 @@
 
 		<ArcaneButton
 			action="scan"
-			size="sm"
 			customLabel={m.diagnostics_leaks_scan()}
 			loading={scanning}
 			disabled={scanning || downloading}
@@ -116,7 +115,6 @@
 			<ArcaneButton
 				action="base"
 				tone="outline"
-				size="sm"
 				icon={DownloadIcon}
 				customLabel={m.diagnostics_profile_goroutineleak()}
 				loading={downloading}

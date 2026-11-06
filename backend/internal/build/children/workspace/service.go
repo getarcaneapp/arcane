@@ -24,7 +24,6 @@ import (
 )
 
 type (
-	// Service provides file operations for the manual build workspace.
 	Service struct {
 		buildsDirectory func() string
 	}
@@ -34,7 +33,6 @@ const (
 	defaultBuildsDirectory = "/builds"
 )
 
-// NewService builds the workspace service; buildsDirectory reports the configured workspace root.
 func NewService(buildsDirectory func() string) *Service {
 	return &Service{buildsDirectory: buildsDirectory}
 }
@@ -232,7 +230,6 @@ func sanitizeUploadFilename(filename string) (string, error) {
 		return "", errors.New("invalid filename")
 	}
 
-	// Reject any path separators (handle both Unix and Windows-style separators).
 	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
 		return "", errors.New("invalid filename: must not contain path separators")
 	}

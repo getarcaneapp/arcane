@@ -1,4 +1,3 @@
-// Package flowtest runs workflow engines on isolated Francis hosts for tests.
 package flowtest
 
 import (
@@ -20,7 +19,6 @@ import (
 )
 
 type (
-	// Harness is an engine with its host and coordinator, ready for workflows to be defined.
 	Harness struct {
 		Runtime     *francis.Runtime
 		Coordinator *runs.Coordinator
@@ -28,7 +26,6 @@ type (
 	}
 )
 
-// New builds a harness on an in-memory host, or on the given database URL.
 func New(t testing.TB, activities flow.Activities, databaseURLs ...string) *Harness {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -56,7 +53,6 @@ func New(t testing.TB, activities flow.Activities, databaseURLs ...string) *Harn
 	return &Harness{Runtime: runtime, Coordinator: coordinator, Engine: engine}
 }
 
-// Start starts the host and the engine once every workflow is defined.
 func (h *Harness) Start(t testing.TB) {
 	t.Helper()
 	francistest.Start(t, h.Runtime)
@@ -67,8 +63,6 @@ func (h *Harness) Start(t testing.TB) {
 	t.Cleanup(func() { _ = h.Engine.Stop(context.WithoutCancel(t.Context())) })
 }
 
-// AssertDefinitions fails when a workflow's graph no longer matches the
-// Fingerprint its definition declares, which means it changed without a version bump.
 func AssertDefinitions(t testing.TB, h *Harness) {
 	t.Helper()
 	for _, wf := range h.Engine.Workflows() {

@@ -529,7 +529,6 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 	return kit.Ternary(len(authConfigs) == 0, nil, authConfigs), nil
 }
 
-// RecordImagePull increments Arcane's observed successful pull counter for an image registry.
 func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef string) error {
 	registryHost, err := arcaneregistry.GetRegistryAddress(imageRef)
 	if err != nil {
@@ -543,7 +542,6 @@ func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef
 	return err
 }
 
-// GetRegistryPullUsage returns pull usage visibility for configured registries.
 func (s *ContainerRegistryService) GetRegistryPullUsage(ctx context.Context) (types.ContainerRegistryPullUsageResponse, error) {
 	registries, err := s.GetAllRegistries(ctx)
 	if err != nil {
@@ -732,7 +730,6 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 	return nil
 }
 
-// TestECRRegistry generates an ECR auth token and attempts a Docker login.
 func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *ContainerRegistry) error {
 	ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
 	if err != nil {
@@ -741,7 +738,6 @@ func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *Con
 	return s.TestRegistry(ctx, reg.URL, ecrUser, ecrPass)
 }
 
-// ImageDigest fetches the registry digest of image:tag for non-semver update detection.
 func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef string) (string, error) {
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
@@ -1019,7 +1015,6 @@ func (s *ContainerRegistryService) getDockerClient(ctx context.Context) (Registr
 	return dockerClient, nil
 }
 
-// credentialForRegistry returns nil for anonymous registries.
 func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, reg *ContainerRegistry) (*resolvedRegistryCredential, error) {
 	if reg.RegistryType == RegistryTypeECR {
 		ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
@@ -1051,7 +1046,6 @@ func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, re
 	}, nil
 }
 
-// SyncRegistries creates, updates, and deletes local registries to match the manager's list.
 func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems []types.ContainerRegistrySync) error {
 	if err := normalization.Normalize(&syncItems); err != nil {
 		return err
@@ -1174,7 +1168,6 @@ func IsRateLimitErrorString(msg string) bool {
 	})
 }
 
-// ListImageTags uses digest-check credential precedence; external credentials replace local ones.
 func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (tagList []string, tagsErr error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
 	defer func() {
@@ -1208,7 +1201,6 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 	return tags, err
 }
 
-// GetOrRefreshECRToken reuses the cached token within its window, otherwise refreshes it once per registry via singleflight.
 func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *ContainerRegistry) (username, password string, err error) {
 	if endpointErr := validateECRRegistryEndpoint(reg.URL, reg.Insecure); endpointErr != nil {
 		return "", "", endpointErr

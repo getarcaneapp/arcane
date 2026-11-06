@@ -1,4 +1,3 @@
-// Package event owns persisted system events, manager ingestion, and event HTTP routes.
 package event
 
 import (
@@ -13,18 +12,15 @@ import (
 )
 
 type (
-	// Module owns event persistence and both of the domain's HTTP surfaces.
 	Module struct {
 		service *EventService
 	}
 )
 
-// New assembles the event routes around its service.
 func New(service *EventService) *Module {
 	return &Module{service: service}
 }
 
-// Service exposes event operations to collaborating domains.
 func (m *Module) Service() *EventService {
 	if m == nil {
 		return nil
@@ -32,12 +28,10 @@ func (m *Module) Service() *EventService {
 	return m.service
 }
 
-// RegisterRoutes mounts the typed event endpoints for runtime and schema discovery.
 func (m *Module) RegisterRoutes(api huma.API, resolveEnvironment func(context.Context, string) (string, error)) {
 	RegisterEvents(api, m.Service(), resolveEnvironment)
 }
 
-// RegisterEvents registers all event management endpoints.
 func RegisterEvents(api huma.API, eventService *EventService, resolveEnvironment func(context.Context, string) (string, error)) {
 	h := &EventHandler{
 		eventService:       eventService,

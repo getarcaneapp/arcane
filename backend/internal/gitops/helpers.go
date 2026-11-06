@@ -12,7 +12,6 @@ func normalizeSyncLimitSetting(value, defaultValue int) int {
 	return kit.Ternary(value < 0, defaultValue, value)
 }
 
-// nullableTrimmedString trims p and maps an empty or missing value to nil, which stores NULL.
 func nullableTrimmedString(p *string) *string {
 	trimmed := strings.TrimSpace(kit.FromPtr(p))
 	return kit.Ternary(trimmed == "", nil, &trimmed)

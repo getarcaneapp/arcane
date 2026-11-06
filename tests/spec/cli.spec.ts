@@ -549,9 +549,6 @@ test.describe('arcane-cli e2e', () => {
 			let created: CreatedApiKey | undefined;
 
 			try {
-				// API keys must carry at least one permission grant in the new
-				// RBAC model — the CLI flag mirrors the backend's minItems:1
-				// requirement. Pick a low-risk read-only perm for the e2e key.
 				created = await runCLIJSON<CreatedApiKey>(config.configPath, [
 					'admin',
 					'api-keys',
@@ -621,24 +618,6 @@ test.describe('arcane-cli e2e', () => {
 	});
 });
 
-// Regression coverage for the remote-environment proxy authorization model.
-//
-// The manager proxies /api/environments/{id}/... to the target agent, which runs
-// with a sudo permission set and performs no authorization of its own. The
-// manager must therefore enforce the caller's per-environment permission BEFORE
-// forwarding — otherwise any authenticated user could perform write actions on a
-// remote environment regardless of role.
-//
-// These tests drive the real arcane-cli against a remote agent environment that
-// has no connected agent. With no live tunnel, the outcome distinguishes the two
-// states cleanly:
-//   - a DENIED request returns 403 — the permission check runs before the tunnel
-//     lookup, so it short-circuits regardless of connectivity;
-//   - an AUTHORIZED request gets past the permission check and reaches the tunnel
-//     stage, which returns 503 ("Agent is not connected").
-// The 403-vs-503 split is exactly what proves the permission is enforced per
-// environment and is not a blanket block. The local environment ("0") is served
-// directly (never proxied) and must remain unaffected.
 test.describe('arcane-cli remote environment RBAC', () => {
 	let adminKey = staticApiKey ?? '';
 	let createdAdminKey = false;
@@ -673,9 +652,6 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		}
 	}
 
-	// runExpectingFailure runs the CLI expecting a non-zero exit, returning the
-	// thrown error message (which includes stdout + stderr) for assertions. It
-	// fails the test if the command unexpectedly succeeds.
 	async function runExpectingFailure(configPath: string, args: string[]): Promise<string> {
 		const message = await runCLI(configPath, args)
 			.then(() => null)
@@ -693,9 +669,6 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		const suffix = `${Date.now()}`.slice(-6);
 
-		// Create a remote agent environment. No agent will ever connect to it; it
-		// exists only so the proxy treats requests to it as remote (agent://) and
-		// reaches either the permission check (403) or the tunnel lookup (503).
 		const envResponse = await adminFetch('/api/environments', {
 			method: 'POST',
 			body: JSON.stringify({

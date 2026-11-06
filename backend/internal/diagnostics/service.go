@@ -29,10 +29,6 @@ import (
 )
 
 type (
-	// DiagnosticsService gathers Go runtime, memory, and garbage-collector
-	// statistics for the diagnostics endpoints. It holds no external dependencies;
-	// WebSocket metrics and worker-goroutine counts are merged in at the handler
-	// layer to avoid an import cycle with the api/ws package.
 	DiagnosticsService struct {
 		startedAt    time.Time
 		actors       *francis.Runtime
@@ -49,8 +45,7 @@ const (
 	recentGCPauseSamples     = 16
 	goroutineLeakProfileName = "goroutineleak"
 	leakScanCacheTTL         = 30 * time.Second
-	// maxActorDetailRows caps the instances and failures listed per actor type.
-	maxActorDetailRows = 10
+	maxActorDetailRows       = 10
 )
 
 func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
@@ -121,8 +116,6 @@ func (s *DiagnosticsService) Collect() (types.RuntimeInfo, types.MemoryInfo, typ
 	return rt, mi, gi
 }
 
-// ScanGoroutineLeaks runs a leak-detection GC and returns the leaked-goroutine
-// pprof text (debug=1). debug=2 would dump every goroutine, not only leaks.
 func (s *DiagnosticsService) ScanGoroutineLeaks() (types.GoroutineLeakReport, error) {
 	s.leakMu.Lock()
 	defer s.leakMu.Unlock()
@@ -148,7 +141,6 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (types.GoroutineLeakReport, er
 	return s.leakReport, nil
 }
 
-// Goroutines groups the live goroutines by identical stack, largest group first.
 // Records that differ only by pprof labels share a stack and merge into one group.
 func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 	var buf bytes.Buffer
@@ -158,8 +150,6 @@ func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 
 	profile := types.GoroutineProfile{Groups: []types.GoroutineGroup{}, CapturedAt: time.Now().UTC()}
 	index := map[string]int{}
-	// debug=1 text holds "N @ pcs" records of "#\tpc\tfunc+off\tfile:line" frames, separated by blank lines.
-	// A tabwriter aligns the columns, so a run of tabs is one separator.
 	for record := range strings.SplitSeq(buf.String(), "\n\n") {
 		group := types.GoroutineGroup{Frames: []types.GoroutineFrame{}}
 		for line := range strings.Lines(record) {
@@ -200,8 +190,6 @@ func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 	return profile, nil
 }
 
-// Profile captures a pprof profile in the given debug format. The CPU profile
-// and execution trace sample for seconds or until ctx ends.
 func (s *DiagnosticsService) Profile(ctx context.Context, name string, seconds, debugLevel int) ([]byte, error) {
 	var buf bytes.Buffer
 	sample := func() {
@@ -247,7 +235,6 @@ func leakedGoroutineCount() int {
 	return p.Count()
 }
 
-// CollectActors reports this process's Francis host, actor types, and run queue.
 func (s *DiagnosticsService) CollectActors(ctx context.Context) (types.ActorDiagnostics, error) {
 	d := types.ActorDiagnostics{EnvironmentID: environment.LocalEnvironmentID, Runs: map[string]int{}, CheckedAt: time.Now().UTC()}
 	select {
@@ -285,7 +272,6 @@ func (s *DiagnosticsService) CollectActors(ctx context.Context) (types.ActorDiag
 	return d, err
 }
 
-// collectActorTypes reports counts, recent instances, and dead jobs per registered actor type.
 func (s *DiagnosticsService) collectActorTypes(db *gorm.DB) ([]types.ActorTypeInfo, error) {
 	var actorTypes []actorTypeModel
 	err := db.Table(francis.TablePrefix + "_host_actor_types").
@@ -353,7 +339,6 @@ func (s *DiagnosticsService) collectActorTypes(db *gorm.DB) ([]types.ActorTypeIn
 	return out, nil
 }
 
-// addCounts applies grouped rows to their registered actor type.
 func addCounts(byType map[string]*types.ActorTypeInfo, rows []actorCountModel, apply func(*types.ActorTypeInfo, actorCountModel)) {
 	for _, row := range rows {
 		if info := byType[row.ActorType]; info != nil {
@@ -362,7 +347,6 @@ func addCounts(byType map[string]*types.ActorTypeInfo, rows []actorCountModel, a
 	}
 }
 
-// CollectAllActors gathers actor diagnostics from the local and every active remote environment.
 func (s *DiagnosticsService) CollectAllActors(ctx context.Context) []types.ActorDiagnostics {
 	local, err := s.CollectActors(ctx)
 	if err != nil {

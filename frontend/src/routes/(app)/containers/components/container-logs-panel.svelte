@@ -128,7 +128,6 @@
 		}
 	}
 
-	// Sync isStreaming from viewer callbacks
 	function handleStreamStart() {
 		isStreaming = true;
 		onStart?.();

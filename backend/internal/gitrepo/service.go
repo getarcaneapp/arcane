@@ -150,7 +150,6 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 		Enabled:                kit.Ternary(submitted["enabled"], req.Enabled, true),
 	}
 
-	// Encrypt sensitive fields
 	if req.Token != "" {
 		encrypted, err := crypto.Encrypt(req.Token)
 		if err != nil {
@@ -180,7 +179,6 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 		return nil, fmt.Errorf("failed to create repository: %w", err)
 	}
 
-	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:         event.EventTypeGitRepositoryCreate,
 		Severity:     event.EventSeveritySuccess,
@@ -275,7 +273,6 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 			return nil, fmt.Errorf("failed to update repository: %w", updateRepositoryErr)
 		}
 
-		// Log event
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:         event.EventTypeGitRepositoryUpdate,
 			Severity:     event.EventSeveritySuccess,
@@ -293,7 +290,6 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 }
 
 func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor types.Actor) error {
-	// Check if repository is used by any syncs
 	var count int64
 	if err := s.db.WithContext(ctx).Table("gitops_syncs").Where("repository_id = ?", id).Count(&count).Error; err != nil {
 		return fmt.Errorf("failed to check repository usage: %w", err)
@@ -303,7 +299,6 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 		return common.Classify(common.ErrConflict, fmt.Errorf("repository is used by %d sync configuration(s)", count))
 	}
 
-	// Get repository info before deleting
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return err
@@ -313,7 +308,6 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 		return fmt.Errorf("failed to delete repository: %w", deleteRepositoryErr)
 	}
 
-	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:         event.EventTypeGitRepositoryDelete,
 		Severity:     event.EventSeverityInfo,
@@ -346,7 +340,6 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id, branch st
 
 	err = s.Client.TestConnection(ctx, repository.URL, branch, authConfig)
 	if err != nil {
-		// Log error event
 		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:         event.EventTypeGitRepositoryError,
 			Severity:     event.EventSeverityError,
@@ -361,7 +354,6 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id, branch st
 		return err
 	}
 
-	// Log success event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:         event.EventTypeGitRepositoryTest,
 		Severity:     event.EventSeveritySuccess,
@@ -403,8 +395,6 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *Gi
 	return authConfig, nil
 }
 
-// GetCommitIdentity returns the author for commits Arcane pushes to the
-// repository, with the signing key unlocked when one is stored.
 func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository *GitRepository) (git.CommitIdentity, error) {
 	identity := git.CommitIdentity{Name: repository.CommitAuthorName, Email: repository.CommitAuthorEmail}
 	identity.Name = cmp.Or(identity.Name, defaultCommitAuthorName)
@@ -426,8 +416,6 @@ func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository
 	return identity, err
 }
 
-// encryptSigningKey validates that armored unlocks with passphrase and
-// returns both encrypted for storage.
 func encryptSigningKey(armored, passphrase string) (string, string, error) {
 	if _, err := git.ParseSigningKey(armored, passphrase); err != nil {
 		return "", "", common.Classify(common.ErrValidation, &types.FieldError{Field: "signingKey", Err: err})
@@ -445,8 +433,6 @@ func encryptSigningKey(armored, passphrase string) (string, string, error) {
 	return encryptedKey, encryptedPassphrase, nil
 }
 
-// applySigningKeyUpdate resolves the signing key and passphrase an
-// update leaves in place, re-validating the pair whenever either changes.
 func applySigningKeyUpdate(current *GitRepository, req types.GitRepository, submitted map[string]bool, updates map[string]any) error {
 	if !submitted["signingKey"] && !submitted["signingKeyPassphrase"] {
 		return nil
@@ -530,14 +516,12 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 		return nil, err
 	}
 
-	// Clone the repository
 	repoPath, err := s.Clone(ctx, repository.URL, branch, authConfig, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	defer s.Discard(ctx, repoPath)
 
-	// Browse the tree
 	files, err := s.BrowseTree(ctx, repoPath, path)
 	if err != nil {
 		return nil, err
@@ -549,8 +533,6 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	}, nil
 }
 
-// SyncRepositories syncs repositories from a manager to this agent instance.
-// It creates, updates, or deletes repositories to match the provided list.
 func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems []types.GitRepositorySync) error {
 	if err := normalization.Normalize(&syncItems); err != nil {
 		return err
@@ -562,7 +544,6 @@ func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems [
 
 	syncedIDs := make(map[string]bool)
 
-	// Process each sync item
 	for _, item := range syncItems {
 		syncedIDs[item.ID] = true
 
@@ -571,7 +552,6 @@ func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems [
 		}
 	}
 
-	// Delete repositories that are not in the sync list
 	return s.deleteUnsynced(ctx, existingMap, syncedIDs)
 }
 

@@ -505,7 +505,6 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 	}, nil
 }
 
-// verifySubjectToken discovers the issuer's JWK set once and verifies rawToken against it.
 func (s *FederatedCredentialService) verifySubjectToken(ctx context.Context, issuer, rawToken string) (*oidc.IDToken, map[string]any, error) {
 	s.providerMu.RLock()
 	keySet := s.keySets[issuer]

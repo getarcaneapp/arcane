@@ -17,7 +17,7 @@
 		VerifiedCheckIcon,
 		ApiKeyIcon,
 		CircleArrowUpIcon,
-		BoxIcon,
+		ContainersIcon,
 		ClockIcon,
 		DownloadIcon,
 		FileTextIcon
@@ -356,7 +356,14 @@
 		description={m.image_update_up_to_date_desc()}
 	/>
 	<div class="p-2">
-		{@render diffRow(BoxIcon, m.common_running(), currentVersion, currentDigest, effectiveUpdateInfo?.currentCreated ?? '', '')}
+		{@render diffRow(
+			ContainersIcon,
+			m.common_running(),
+			currentVersion,
+			currentDigest,
+			effectiveUpdateInfo?.currentCreated ?? '',
+			''
+		)}
 		{@render metaLine()}
 	</div>
 	{@render footer()}
@@ -366,7 +373,7 @@
 	<UpdateStatusBanner icon={Icon} tileClass={toneClass} titleClass={toneClass} {title} {description} />
 	<div class="flex flex-col gap-0.5 p-2">
 		{@render diffRow(
-			BoxIcon,
+			ContainersIcon,
 			m.common_current(),
 			currentVersion,
 			effectiveUpdateInfo?.updateType === 'not_pulled' ? '' : currentDigest,
@@ -390,7 +397,7 @@
 
 {#snippet localState()}
 	<UpdateStatusBanner
-		icon={BoxIcon}
+		icon={ContainersIcon}
 		tileClass="text-muted-foreground"
 		titleClass="text-sidebar-foreground"
 		title={m.image_update_local_title()}
@@ -435,7 +442,7 @@
 	<UpdateStatusPopover bind:open={isOpen} label={statusLabel}>
 		{#snippet trigger({ props })}
 			<span {...props} class={statusTriggerClass} data-testid="image-update-trigger">
-				<BoxIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+				<ContainersIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 				{@render statusText()}
 			</span>
 		{/snippet}

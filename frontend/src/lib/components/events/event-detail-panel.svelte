@@ -68,7 +68,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					customLabel={`${showRawEvent ? m.common_hide() : m.common_show()} ${m.common_raw()}`}
 					onclick={() => (showRawEvent = !showRawEvent)}
 				/>

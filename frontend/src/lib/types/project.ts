@@ -20,14 +20,14 @@ export interface ServiceVolume {
 	source: string;
 	target: string;
 	read_only?: boolean;
-	volume?: Record<string, any>;
-	bind?: Record<string, any>;
+	volume?: Record<string, unknown>;
+	bind?: Record<string, unknown>;
 }
 
 export interface ProjectService {
 	name?: string;
 	image?: string;
-	build?: string | Record<string, any>;
+	build?: string | Record<string, unknown>;
 	container_name?: string;
 	command?: string[] | string | null;
 	entrypoint?: string[] | string | null;
@@ -35,13 +35,13 @@ export interface ProjectService {
 	env_file?: string[];
 	ports?: ServicePort[];
 	volumes?: ServiceVolume[];
-	networks?: Record<string, any>;
+	networks?: Record<string, unknown>;
 	restart?: string;
-	depends_on?: Record<string, any>;
+	depends_on?: Record<string, unknown>;
 	labels?: Record<string, string>;
-	healthcheck?: Record<string, any>;
-	deploy?: Record<string, any>;
-	[key: string]: any;
+	healthcheck?: Record<string, unknown>;
+	deploy?: Record<string, unknown>;
+	[key: string]: unknown;
 }
 
 export type ProjectTagSource = 'ui' | 'compose';

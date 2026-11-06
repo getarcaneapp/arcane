@@ -56,9 +56,6 @@ func (c *TokenCache) store(gen uint64, tokenHash string, entry verifiedTokenEntr
 	}
 }
 
-// InvalidateUser purges all cached token verifications for a user.
-// Call this after admin-initiated role changes, account disable, or user
-// deletion so stale verifications cannot grant access for the cache TTL.
 func (c *TokenCache) InvalidateUser(userID string) {
 	if strings.TrimSpace(userID) == "" {
 		return

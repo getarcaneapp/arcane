@@ -218,7 +218,6 @@
 	<ArcaneButton
 		action="base"
 		tone="outline"
-		size="sm"
 		type="button"
 		onclick={addAssignment}
 		{disabled}

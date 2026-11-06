@@ -189,9 +189,6 @@ func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
 	assert.False(t, info.IsSemverVersion)
 }
 
-// Test fixtures shared by this package's tests.
-
-// setupImageUpdateTestDB creates an in-memory SQLite database for testing
 func newVersionSettingsService(t *testing.T, updateCheckEnabled bool) *settings.SettingsService {
 	t.Helper()
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -222,7 +219,6 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
@@ -272,8 +268,6 @@ func TestVersionService_IsChannelBuild(t *testing.T) {
 	}
 }
 
-// newLabelRegistryTestServer starts an in-memory OCI registry and
-// returns its host as "localhost:PORT" so go-containerregistry uses plain HTTP.
 func newLabelRegistryTestServer(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0))))
@@ -283,8 +277,6 @@ func newLabelRegistryTestServer(t *testing.T) string {
 	return "localhost:" + serverURL.Port()
 }
 
-// newNextChannelDockerServer fakes a Docker daemon whose Arcane
-// container runs repo:tag with the given current repo digest.
 func newNextChannelDockerServer(t *testing.T, containerID, imageID, repo, tag, currentDigest string) *httptest.Server {
 	t.Helper()
 	imageRef := repo + ":" + tag
@@ -407,7 +399,6 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		containerID = "arcane-container-1234567890"
 		imageID     = "sha256:arcane-image"
 	)
-	// Registry with no image pushed: the label fetch fails.
 	registryHost := newLabelRegistryTestServer(t)
 	repo := registryHost + "/getarcaneapp/arcane"
 

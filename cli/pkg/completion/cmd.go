@@ -9,7 +9,6 @@ import (
 	"getarcane.dev/cli/v3/internal/cmdutil"
 )
 
-// NewCommand returns an explicit shell completion command.
 func NewCommand(root *cobra.Command) *cobra.Command {
 	return &cobra.Command{
 		Annotations:           map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

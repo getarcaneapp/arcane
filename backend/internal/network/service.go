@@ -81,7 +81,6 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 	return new(networkInspect.Network), nil
 }
 
-// GetNetworkTopology returns a short-TTL cached topology shared by all callers; it must not be mutated.
 func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*types.NetworkTopology, error) {
 	gen := s.topologyGen.Load()
 	if entry := s.topologyCache.Load(); entry != nil && entry.gen == gen && time.Since(entry.builtAt) < networkTopologyCacheTTL {
@@ -310,7 +309,6 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user type
 	return nil
 }
 
-// ConnectContainer connects a container to a network without recreating it.
 func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
 	ipv4, ipv4Err := netip.ParseAddr(strings.TrimSpace(req.IPv4Address))
 	if ipv4Err != nil && strings.TrimSpace(req.IPv4Address) != "" {
@@ -374,7 +372,6 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 	return nil
 }
 
-// DisconnectContainer disconnects a container from a network.
 func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
 	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkDisconnectResult, error) {
 		return dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
@@ -492,9 +489,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	result := s.buildNetworkPaginationConfig().SearchOrderAndPaginate(items, params)
 
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), types.NetworkUsageCounts{
-		Inuse: inUse,
-		// Only count non-default networks as unused
-		// Default networks (bridge, host, none, ingress) are never "unused"
+		Inuse:  inUse,
 		Unused: len(items) - inUse,
 		Total:  len(items),
 	}, nil
@@ -623,7 +618,6 @@ func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[types.
 				Key: "inUse",
 				Fn: func(a, b types.NetworkSummary) int {
 					if (a.InUse || a.IsDefault) == (b.InUse || b.IsDefault) {
-						// Use name as secondary sort key for consistent ordering
 						return strings.Compare(a.Name, b.Name)
 					}
 					return kit.Ternary(a.InUse || a.IsDefault, -1, 1)

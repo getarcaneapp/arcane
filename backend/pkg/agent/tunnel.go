@@ -26,10 +26,8 @@ import (
 )
 
 type (
-	// TunnelMessageType represents the type of message sent over the tunnel.
 	TunnelMessageType string
 
-	// TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
 	TunnelConnection interface {
 		Send(msg *TunnelMessage) error
 		Receive() (*TunnelMessage, error)
@@ -58,25 +56,18 @@ type (
 )
 
 const (
-	maxGRPCTunnelMessageSize = 16 * 1024 * 1024
-	// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
-	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
-	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
-	muxPooledFrameMinSize         = 32 << 10
-	muxDataPayloadField           = protowire.Number(15)
-	muxDataBytesField             = protowire.Number(1)
-	// MessageTypeRegister is the first message sent by the agent on gRPC transport.
-	MessageTypeRegister TunnelMessageType = "register"
-	// MessageTypeRegisterResponse is sent by manager after register validation.
-	MessageTypeRegisterResponse TunnelMessageType = "register_response"
+	maxGRPCTunnelMessageSize                        = 16 * 1024 * 1024
+	maxWebSocketTunnelMessageSize                   = 2 * maxGRPCTunnelMessageSize
+	muxPooledFrameMinSize                           = 32 << 10
+	muxDataPayloadField                             = protowire.Number(15)
+	muxDataBytesField                               = protowire.Number(1)
+	MessageTypeRegister           TunnelMessageType = "register"
+	MessageTypeRegisterResponse   TunnelMessageType = "register_response"
 )
 
 var (
-	// ErrTunnelConnectionClosed is returned by Send and Receive on every transport once the connection is closed.
 	ErrTunnelConnectionClosed = errors.New("agent tunnel connection is closed")
-	// tunnelReadWait bounds an idle websocket read; heartbeats arrive every DefaultHeartbeatInterval.
-	// It is a variable so tests can shorten it.
-	tunnelReadWait = 3 * DefaultHeartbeatInterval
+	tunnelReadWait            = 3 * DefaultHeartbeatInterval
 
 	tunnelCodec  = muxDataCodec{CodecV2: encoding.GetCodecV2(proto.Name)}
 	muxFramePool = sync.Pool{New: func() any {
@@ -113,7 +104,6 @@ func (t *WebSocketTunnelConn) Receive() (*TunnelMessage, error) {
 	return &msg, nil
 }
 
-// muxConn switches the connection to binary frames carrying the multiplexed session.
 func (t *WebSocketTunnelConn) muxConn(ctx context.Context) *muxConn {
 	t.muxed.Store(true)
 	var frame bytes.Buffer
@@ -131,7 +121,6 @@ func (t *WebSocketTunnelConn) muxConn(ctx context.Context) *muxConn {
 	return newMuxConn(send, recv, t.Close)
 }
 
-// write sends one frame. coder/websocket closes the connection after a failed or expired write.
 func (t *WebSocketTunnelConn) write(ctx context.Context, messageType websocket.MessageType, data []byte, timeout time.Duration) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -147,8 +136,6 @@ func (t *WebSocketTunnelConn) write(ctx context.Context, messageType websocket.M
 	return nil
 }
 
-// read receives one frame. Read-timeout expiry and network errors are terminal: coder/websocket
-// closes the connection when a read context expires.
 func (t *WebSocketTunnelConn) read(ctx context.Context, buf *bytes.Buffer) (websocket.MessageType, error) {
 	if t.closed.Load() {
 		return 0, ErrTunnelConnectionClosed
@@ -166,8 +153,6 @@ func (t *WebSocketTunnelConn) read(ctx context.Context, buf *bytes.Buffer) (webs
 	return messageType, err
 }
 
-// Close closes the WebSocket tunnel connection, sending a close frame on the
-// first call so the peer observes a normal closure instead of 1006.
 func (t *WebSocketTunnelConn) Close() error {
 	if t.closed.Swap(true) {
 		return t.conn.CloseNow()
@@ -187,8 +172,6 @@ func (t *WebSocketTunnelConn) Transport() string {
 	return TransportWebSocket
 }
 
-// NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper. A nil stream yields a connection
-// whose Send and Receive report ErrTunnelConnectionClosed.
 func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 	if stream == nil {
 		return &GRPCManagerTunnelConn{}
@@ -216,7 +199,6 @@ func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 	return t.send(protoMsg)
 }
 
-// muxConn switches the stream to MuxData messages carrying the multiplexed session.
 func (t *GRPCManagerTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
@@ -288,7 +270,6 @@ func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 	return t.send(protoMsg)
 }
 
-// muxConn switches the stream to MuxData messages carrying the multiplexed session.
 func (t *GRPCAgentTunnelConn) muxConn(context.Context) *muxConn {
 	t.muxed.Store(true)
 	send := func(p []byte) error {
@@ -320,8 +301,6 @@ func (t *GRPCAgentTunnelConn) Receive() (*TunnelMessage, error) {
 	return receiveGRPC(t.stream.Context(), t.stream.Recv, managerProtoToTunnelMessage, &t.closed)
 }
 
-// Close half-closes the send stream before cancelling, so the manager sees a
-// clean io.EOF instead of codes.Canceled.
 func (t *GRPCAgentTunnelConn) Close() error {
 	if t.closed.Swap(true) {
 		return nil
@@ -353,8 +332,6 @@ func (s *cancelableGRPCManagerStream) Send(msg *tunnelpb.ManagerMessage) error {
 	return s.stream.Send(msg)
 }
 
-// Recv returns the next message, or ctx's error once ctx is done. gRPC Recv ignores ctx,
-// so a single reader goroutine waits on the stream instead.
 func (s *cancelableGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
 	s.recvOnce.Do(func() {
 		go func() {
@@ -384,8 +361,6 @@ func (s *cancelableGRPCManagerStream) Context() context.Context {
 	return s.ctx
 }
 
-// receiveGRPC decodes the next stream message, skipping payloads from newer peers
-// that this build cannot decode, as unknown websocket message types are skipped.
 func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func(P) (*TunnelMessage, error), closed *atomic.Bool) (*TunnelMessage, error) {
 	for {
 		protoMsg, err := recv()
@@ -403,7 +378,6 @@ func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func
 	}
 }
 
-// receiveMuxData returns the next MuxData payload, skipping any other payload still in flight.
 // A gRPC stream is dead after any Recv error.
 func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (P, error), closed *atomic.Bool, frame *[]byte) ([]byte, error) {
 	if cap(*frame) == muxMaxFrameSize {
@@ -451,8 +425,6 @@ func (c muxDataCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	return nil
 }
 
-// isExpectedReceiveError reports normal teardown on either transport: EOF, cancellation,
-// a closed connection, a clean websocket close, or a cancelled gRPC stream.
 func isExpectedReceiveError(err error) bool {
 	if err == nil {
 		return false

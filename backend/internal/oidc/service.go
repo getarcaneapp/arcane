@@ -174,7 +174,6 @@ func configAttributes(cfg *settings.OidcConfig) []attribute.KeyValue {
 	}
 }
 
-// ValidateMobileRedirectURI requires an exact allowlist match; partial matches would allow open redirects.
 func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string) error {
 	if uri == "" {
 		return errors.New("mobile redirect URI is empty")
@@ -256,7 +255,6 @@ func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.O
 	return provider, nil
 }
 
-// discoverProvider fetches provider metadata, retrying once with the issuer's trailing slash toggled.
 func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey) (_ *oidc.Provider, err error) {
 	discoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
@@ -504,7 +502,6 @@ func (s *OidcService) buildUserInfo(
 	return &userInfoDto, tokenResp, nil
 }
 
-// postForm sends an OAuth form POST and decodes the JSON response body, along with the HTTP status code.
 func postForm(ctx context.Context, client *http.Client, endpoint string, values url.Values) (map[string]any, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()))
 	if err != nil {
@@ -524,7 +521,6 @@ func postForm(ctx context.Context, client *http.Client, endpoint string, values 
 	return body, resp.StatusCode, decodeErr
 }
 
-// InitiateDeviceAuth initiates the OIDC device authorization flow.
 func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDeviceAuthResponse, err error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "oidc.device_authorize")
 	defer func() { logging.EndSpan(span, err) }()
@@ -605,7 +601,6 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDevi
 	return response, nil
 }
 
-// ExchangeDeviceToken exchanges a device code for tokens.
 func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "oidc.device_token")
 	defer func() {

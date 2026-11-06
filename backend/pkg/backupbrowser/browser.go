@@ -1,5 +1,3 @@
-// Package backupbrowser provides deterministic backup-tree construction,
-// paging, and restore-selection validation.
 package backupbrowser
 
 import (
@@ -17,7 +15,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// NormalizePath validates and normalizes a path relative to a backup root.
 func NormalizePath(value string, allowEmpty bool) (string, error) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
 	if trimmed == "" || path.Clean(trimmed) == "." {
@@ -37,8 +34,6 @@ func NormalizePath(value string, allowEmpty bool) (string, error) {
 	return cleaned, nil
 }
 
-// ListScope resolves the snapshot listing scope for one browse request: the
-// whole tree when searching, otherwise just the requested folder.
 func ListScope(requestedPath string, params pagination.QueryParams) (listPath string, recursive bool, err error) {
 	browsePath, err := NormalizePath(requestedPath, true)
 	if err != nil || params.Start < 0 {
@@ -50,7 +45,6 @@ func ListScope(requestedPath string, params pagination.QueryParams) (listPath st
 	return browsePath, false, nil
 }
 
-// BuildEntries converts archive or Rustic path output into a synthesized tree.
 // Paths are returned relative to the supplied logical root.
 func BuildEntries(paths []string, browsePath string, recursive bool) []types.BackupFileEntry {
 	root, err := NormalizePath(browsePath, true)
@@ -107,7 +101,6 @@ func compareEntries(left, right types.BackupFileEntry) int {
 	return cmp.Compare(left.Path, right.Path)
 }
 
-// Browse searches, orders, and paginates backup entries using the standard pagination contract.
 func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response) {
 	config := pagination.Config[types.BackupFileEntry]{
 		SearchAccessors: []pagination.SearchAccessor[types.BackupFileEntry]{
@@ -121,8 +114,6 @@ func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]t
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 }
 
-// NormalizeSelection validates explicit selections against eligible entries,
-// deduplicates them, and removes descendants covered by selected directories.
 func NormalizeSelection(selection types.BackupRestoreSelection, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {
 	if selection.SelectAll && len(selection.Paths) > 0 {
 		return nil, errors.New("selectAll cannot be combined with explicit paths")

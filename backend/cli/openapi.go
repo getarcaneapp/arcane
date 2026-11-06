@@ -19,10 +19,8 @@ var openapiCmd = &cobra.Command{
 		downgrade, _ := cmd.Flags().GetBool("downgrade")
 		outputFile, _ := cmd.Flags().GetString("output")
 
-		// Create Huma API for spec generation (no services needed)
 		humaAPI := api.SetupAPIForSpec()
 
-		// Generate output
 		var output []byte
 		var err error
 
@@ -41,7 +39,6 @@ var openapiCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Write to file or stdout
 		if outputFile != "" {
 			if writeFileErr := atomic.WriteFile(outputFile, output, 0o600); writeFileErr != nil {
 				cmd.PrintErrf("Error writing file: %v\n", writeFileErr)

@@ -43,8 +43,6 @@ import (
 )
 
 type (
-	// testProjectRow is a minimal stand-in for project.Project: the project
-	// package imports this one, so the in-package test cannot import it back.
 	testProjectRow struct {
 		database.BaseModel
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
@@ -602,7 +600,6 @@ func TestShouldRetryAnonymousPull_SkipsRetryWithoutUnauthorizedOrAuth(t *testing
 	assert.False(t, ShouldRetryAnonymousPull(client.ImagePullOptions{}, unauthorizedErr))
 }
 
-// decodeRegistryAuth decodes a base64 X-Registry-Auth header.
 func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
 	t.Helper()
 
@@ -611,7 +608,6 @@ func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig 
 	return *cfg
 }
 
-// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
 func newImageTestDockerService(t *testing.T, server *httptest.Server) *docker.DockerClientService {
 	t.Helper()
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

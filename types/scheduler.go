@@ -7,7 +7,6 @@ import (
 )
 
 type (
-	// SchedulerCoordinatorState is the durable state of one environment/job actor.
 	SchedulerCoordinatorState struct {
 		Dispatches          map[string]SchedulerDispatchIntent
 		PendingActivitySync map[string]time.Time
@@ -30,7 +29,6 @@ type (
 		Attempt       int
 	}
 
-	// SchedulerExecutionClaim records whether a delivery acquired its persisted run.
 	SchedulerExecutionClaim struct {
 		Run       SchedulerRun
 		Reconcile bool
@@ -59,20 +57,16 @@ type (
 		Token string
 	}
 
-	// SchedulerActivitySyncCommand acknowledges one persisted activity projection version.
 	SchedulerActivitySyncCommand struct {
 		UpdatedAt time.Time
 		RunID     string
 	}
 
-	// SchedulerCoordinatorImport binds imported state to the exact inactive legacy row.
 	SchedulerCoordinatorImport struct {
 		SourceHash string
 		Record     SchedulerQueueRecord
 	}
 
-	// JobRuntimeState describes the schedule currently installed in a scheduler.
-	// It intentionally exposes only read-only state needed by job-management APIs.
 	JobRuntimeState struct {
 		NextRun   *time.Time
 		Schedule  string
@@ -85,27 +79,21 @@ type (
 		Run(ctx context.Context) (SchedulerOutcome, error)
 	}
 
-	// ConditionalJob allows a job to opt out of cron registration when it is disabled.
-	// Jobs that do not implement this interface are always scheduled.
 	ConditionalJob interface {
 		ShouldSchedule(ctx context.Context) bool
 	}
 
-	// BusWatcher is a continuous event consumer owned by the application scheduler lifecycle.
 	BusWatcher interface {
 		Name() string
 		Start(ctx context.Context) error
 		RunNow(ctx context.Context) error
 	}
 
-	// StoppableBusWatcher lets a continuous watcher perform explicit shutdown work
-	// before its actor runner is joined.
 	StoppableBusWatcher interface {
 		BusWatcher
 		Stop(ctx context.Context) error
 	}
 
-	// DynamicScheduler owns jobs registered and removed while the application is running.
 	DynamicScheduler interface {
 		Submit(ctx context.Context, request SchedulerRequest) (SchedulerRun, error)
 		AddJob(ctx context.Context, job SchedulerJob) error
@@ -113,7 +101,6 @@ type (
 		HasJob(name string) bool
 	}
 
-	// JobController exposes scheduler operations used by job-management services.
 	JobController interface {
 		GetJob(jobID string) (SchedulerJob, bool)
 		GetJobRuntimeState(jobID string) (JobRuntimeState, bool)
@@ -121,14 +108,11 @@ type (
 		RunBusWatcherNow(ctx context.Context, watcherID string) error
 	}
 
-	// WorkerController exposes continuous-worker health and recovery operations.
 	WorkerController interface {
 		RestartWatcher(ctx context.Context, watcherID string) error
 		WatcherHealth(watcherID string) (SchedulerWorkerHealth, bool)
 	}
 
-	// JobScheduler is the shared public contract for the actor-owned scheduler.
-	// Concrete cron and actor state remains private to the backend implementation.
 	JobScheduler interface {
 		ListRegisteredJobs() []SchedulerJob
 		WorkerController
@@ -142,15 +126,6 @@ type (
 		Stop(ctx context.Context) error
 	}
 
-	// GenericJob is a reusable Job built from closures. It lets a service register a
-	// per-entity dynamic job (e.g. one per GitOps sync or one per environment) without
-	// importing the scheduler package: the service constructs a GenericJob and hands it
-	// to the scheduler through the SchedulerJob interface.
-	//
-	// JobName must be unique per logical job; per-entity jobs use a "<subsystem>:<entityID>"
-	// scheme (e.g. "gitops-sync:abc123"). ShouldRunFn is optional — when nil the job is
-	// always scheduled, matching the behavior of a SchedulerJob that does not implement
-	// ConditionalJob.
 	GenericJob struct {
 		ScheduleFn  func(ctx context.Context) string
 		RunFn       func(ctx context.Context) (SchedulerOutcome, error)
@@ -159,14 +134,12 @@ type (
 		JobName     string
 	}
 
-	// RunObserver projects persisted runs into operator-facing activity records.
 	// ActivityID is persisted before projection and is empty for runs that should stay quiet.
 	RunObserver interface {
 		ActivityID(run SchedulerRun) string
 		SyncRunActivity(ctx context.Context, run SchedulerRun) error
 	}
 
-	// SchedulerQueueRecord holds atomic admission, claims, and checkpoints for one job and target.
 	SchedulerQueueRecord struct {
 		Receipts      map[string]SchedulerRun `json:"receipts,omitempty"`
 		JobID         string                  `json:"jobId"`
@@ -176,7 +149,6 @@ type (
 		Runs          []SchedulerRun          `json:"runs"`
 	}
 
-	// RunStatus describes durable execution, independently of the configured schedule.
 	RunStatus string
 
 	TargetOutcome struct {
@@ -188,7 +160,6 @@ type (
 		RecoveryData jsontext.Value `json:"-" msgpack:"recoveryData,omitempty"`
 	}
 
-	// StepOutcome is one workflow step as projected onto its run.
 	StepOutcome struct {
 		StartedAt  *time.Time `json:"startedAt,omitempty"`
 		FinishedAt *time.Time `json:"finishedAt,omitempty"`
@@ -268,37 +239,32 @@ type (
 		LastError string     `json:"lastError,omitempty"`
 	}
 
-	// SchedulerReconciler consults domain state before repeating interrupted work.
 	SchedulerReconciler interface {
 		Reconcile(ctx context.Context, previous SchedulerRun) (SchedulerOutcome, error)
 	}
 
-	// SchedulerOutcomeError carries partial results through error-only watcher contracts.
 	SchedulerOutcomeError struct {
 		Cause   error
 		Outcome SchedulerOutcome
 	}
 
-	// SchedulerRetryValidator rejects retries without safe persisted target evidence.
 	SchedulerRetryValidator interface {
 		ValidateRetry(ctx context.Context, run SchedulerRun) error
 	}
 )
 
 const (
-	RunStatusQueued    RunStatus = "queued"
-	RunStatusWaiting   RunStatus = "waiting"
-	RunStatusRunning   RunStatus = "running"
-	RunStatusRetrying  RunStatus = "retrying"
-	RunStatusSucceeded RunStatus = "succeeded"
-	RunStatusPartial   RunStatus = "partial"
-	RunStatusSkipped   RunStatus = "skipped"
-	RunStatusFailed    RunStatus = "failed"
-	// RunStatusNeedsAttention preserves domain recovery evidence and legacy job outcomes.
+	RunStatusQueued         RunStatus = "queued"
+	RunStatusWaiting        RunStatus = "waiting"
+	RunStatusRunning        RunStatus = "running"
+	RunStatusRetrying       RunStatus = "retrying"
+	RunStatusSucceeded      RunStatus = "succeeded"
+	RunStatusPartial        RunStatus = "partial"
+	RunStatusSkipped        RunStatus = "skipped"
+	RunStatusFailed         RunStatus = "failed"
 	RunStatusNeedsAttention RunStatus = "needs_attention"
 	RunStatusCanceled       RunStatus = "canceled"
 
-	// SchedulerWorkflowTarget marks the target that records a run's workflow instance.
 	SchedulerWorkflowTarget = "workflow"
 )
 
@@ -308,9 +274,6 @@ func (g *GenericJob) Schedule(ctx context.Context) string { return g.ScheduleFn(
 
 func (g *GenericJob) Run(ctx context.Context) (SchedulerOutcome, error) { return g.RunFn(ctx) }
 
-// ShouldSchedule satisfies ConditionalJob. A GenericJob without a ShouldRunFn is
-// always scheduled; the scheduler treats a ConditionalJob returning false as "do
-// not schedule", so nil must map to true rather than a nil-func panic.
 func (g *GenericJob) ShouldSchedule(ctx context.Context) bool {
 	if g.ShouldRunFn == nil {
 		return true

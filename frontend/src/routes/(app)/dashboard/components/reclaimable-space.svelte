@@ -62,7 +62,7 @@
 <DashboardPanel title={m.reclaimable_space()}>
 	{#snippet actions()}
 		{#if onPrune}
-			<ArcaneButton action="prune" size="sm" customLabel={m.prune()} onclick={onPrune} />
+			<ArcaneButton action="prune" customLabel={m.prune()} onclick={onPrune} />
 		{/if}
 	{/snippet}
 	{#if loading && usage.length === 0}

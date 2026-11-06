@@ -160,7 +160,7 @@
 						.join(', ')
 				})}
 			</Alert.Description>
-			<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={onRetry} />
+			<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={onRetry} />
 		</div>
 	</Alert.Root>
 {/if}

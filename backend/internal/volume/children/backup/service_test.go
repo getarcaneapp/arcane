@@ -198,7 +198,6 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x"}))
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "arcane-system-recovery"}))
 
-	// A missing snapshot timestamp falls back to now.
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})
 	require.NotNil(t, fallback)
 	require.False(t, fallback.CreatedAt.IsZero())

@@ -23,7 +23,6 @@ import (
 )
 
 type (
-	// Verifier authenticates checksum bytes against the configured release keys and Sigstore infrastructure.
 	Verifier struct {
 		keys []*verify.Verifier
 	}
@@ -43,7 +42,6 @@ func (c *trustHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return c.client.Do(req.Clone(c.ctx))
 }
 
-// New loads Sigstore infrastructure trust from TUF, using unexpired cached metadata offline.
 func New(ctx context.Context) (*Verifier, error) {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -66,7 +64,6 @@ func New(ctx context.Context) (*Verifier, error) {
 	return NewVerifier(trustedRoot, [][]byte{cosignPublicKey})
 }
 
-// NewVerifier uses injected infrastructure trust and PEM release keys, ignoring bundle public-key hints.
 func NewVerifier(infrastructure root.TrustedMaterial, publicKeys [][]byte) (*Verifier, error) {
 	if len(publicKeys) == 0 {
 		return nil, errors.New("no trusted release keys configured")
@@ -94,7 +91,6 @@ func NewVerifier(infrastructure root.TrustedMaterial, publicKeys [][]byte) (*Ver
 	return v, nil
 }
 
-// Verify requires a release-key signature, transparency-log inclusion, and an observer timestamp.
 func (v *Verifier) Verify(checksums, bundleJSON []byte) error {
 	var entity bundle.Bundle
 	if err := entity.UnmarshalJSON(bundleJSON); err != nil {

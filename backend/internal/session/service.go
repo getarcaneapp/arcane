@@ -170,13 +170,10 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 	return result.RowsAffected, nil
 }
 
-// RevokeAllUserSessionsExcept revokes every active session for userID, leaving
-// exceptSessionID active. Pass "" to revoke all sessions.
 func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID, exceptSessionID string) error {
 	return RevokeAllUserSessionsExceptInDB(ctx, s.db.DB, userID, exceptSessionID)
 }
 
-// RevokeAllUserSessionsExceptInDB revokes sessions using the supplied transaction or database handle.
 func RevokeAllUserSessionsExceptInDB(ctx context.Context, db *gorm.DB, userID, exceptSessionID string) error {
 	if strings.TrimSpace(userID) == "" {
 		return common.ErrInvalidToken
@@ -194,7 +191,6 @@ func RevokeAllUserSessionsExceptInDB(ctx context.Context, db *gorm.DB, userID, e
 	return nil
 }
 
-// ValidateActive verifies that a persisted user session can still authorize requests.
 func ValidateActive(userSession *UserSession) error {
 	if userSession == nil {
 		return common.ErrInvalidToken

@@ -16,7 +16,6 @@ import (
 )
 
 type (
-	// ContainerRegistryHandler handles container registry management endpoints.
 	ContainerRegistryHandler struct {
 		registryService      *ContainerRegistryService
 		syncRemoteRegistries func(context.Context)
@@ -57,12 +56,10 @@ type (
 	}
 )
 
-// NewHandler builds the container registry HTTP handler.
 func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *ContainerRegistryHandler {
 	return &ContainerRegistryHandler{registryService: registryService, syncRemoteRegistries: syncRemoteRegistries}
 }
 
-// ListRegistries returns a paginated list of container registries.
 func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *ListContainerRegistriesInput) (*handlerutil.Page[types.ContainerRegistry], error) {
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search))
 	if err != nil {
@@ -78,7 +75,6 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 	}, nil
 }
 
-// GetPullUsage returns pull usage visibility for configured registries.
 func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *struct{}) (*handlerutil.Out[types.ContainerRegistryPullUsageResponse], error) {
 	usage, err := h.registryService.GetRegistryPullUsage(ctx)
 	if err != nil {
@@ -93,7 +89,6 @@ func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *stru
 	}, nil
 }
 
-// CreateRegistry creates a new container registry.
 func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -118,7 +113,6 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
-// GetRegistry returns a container registry by ID.
 func (h *ContainerRegistryHandler) GetRegistry(ctx context.Context, input *GetContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
@@ -136,7 +130,6 @@ func (h *ContainerRegistryHandler) GetRegistry(ctx context.Context, input *GetCo
 	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
-// UpdateRegistry updates a container registry.
 func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *UpdateContainerRegistryInput) (*handlerutil.Out[types.ContainerRegistry], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -161,7 +154,6 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 	return &handlerutil.Out[types.ContainerRegistry]{Body: body}, nil
 }
 
-// DeleteRegistry deletes a container registry.
 func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *DeleteContainerRegistryInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := common.ToAPIError(err)
@@ -173,7 +165,6 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 	return handlerutil.MessageOutput("Container registry deleted successfully", ""), nil
 }
 
-// TestRegistry tests connectivity to a container registry.
 func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *ContainerRegistryActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
@@ -205,7 +196,6 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Cont
 	), ""), nil
 }
 
-// SyncRegistries syncs container registries from a remote source.
 func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
 		apiErr := common.ToAPIError(err)

@@ -212,7 +212,6 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	// Create user in DB
 	localUser := &user.User{
 		ID:          "u123",
 		Username:    "alice",
@@ -275,7 +274,6 @@ func TestVerifyToken_Expired(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	// Create user in DB
 	localUser := &user.User{
 		ID:       "u1",
 		Username: "bob",
@@ -409,9 +407,6 @@ func TestRefreshToken_Valid(t *testing.T) {
 	require.Equal(t, jwa.MLDSA87().String(), refreshAlgorithm)
 }
 
-// A refresh token minted under an older config.Version must still refresh successfully
-// and the newly issued tokens must carry the current config.Version. This is what keeps
-// users logged in across backend releases — see plans/how-can-we-make-compiled-quilt.md.
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB)
@@ -808,7 +803,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 		Email:             " ne\u0301w@example.com ",
 		PreferredUsername: " Jose\u0301 ",
 		Name:              " Jose\u0301 ",
-		EmailVerified:     false, // provider omitted/false
+		EmailVerified:     false,
 	}
 
 	created, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &types.OidcTokenResponse{AccessToken: "at"})
@@ -824,7 +819,6 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.Equal(t, "José", *created.DisplayName)
 	require.NotEmpty(t, created.Username)
 
-	// Ensure the user actually persisted
 	fetched, err := userSvc.GetUserByOidcSubjectId(ctx, userInfo.Subject)
 	require.NoError(t, err)
 	require.Equal(t, created.ID, fetched.ID)

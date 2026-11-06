@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// Service checks the dependencies the manager needs before it can serve traffic.
 	Service struct {
 		db       *database.DB
 		docker   *docker.DockerClientService
@@ -29,7 +28,6 @@ const (
 	checkTimeout   = 2 * time.Second
 )
 
-// NewService builds the readiness checker over the database, the local Docker client, and the actor runtime's shutdown signal.
 func NewService(db *database.DB, dockerService *docker.DockerClientService, actors *francis.Runtime) *Service {
 	return &Service{
 		db:       db,
@@ -38,7 +36,6 @@ func NewService(db *database.DB, dockerService *docker.DockerClientService, acto
 	}
 }
 
-// Ready pings the database and local Docker daemon; it is never ready while shutting down.
 func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 	select {
 	case <-s.shutdown:

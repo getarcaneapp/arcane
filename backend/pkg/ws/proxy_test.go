@@ -14,8 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// allowAnyOriginForTest stands in for the caller-supplied Origin validator;
-// these tests exercise the proxy bridge, not the Origin policy.
 func allowAnyOriginForTest(*http.Request) bool { return true }
 
 func TestProxyHTTP_RequiresOriginValidator(t *testing.T) {
@@ -24,7 +22,6 @@ func TestProxyHTTP_RequiresOriginValidator(t *testing.T) {
 }
 
 func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
-	// 1. Create a "remote" WebSocket server that echoes messages
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -37,7 +34,6 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 			if readErr != nil {
 				return
 			}
-			// Echo with prefix
 			if writeErr := conn.Write(r.Context(), mt, append([]byte("echo:"), msg...)); writeErr != nil {
 				return
 			}
@@ -47,13 +43,11 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
-	// 2. Create a "proxy" server that uses ProxyHTTP
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 
-	// 3. Connect a client to the proxy
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
@@ -61,7 +55,6 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 		_ = clientConn.CloseNow()
 	}()
 
-	// 4. Send messages and verify they get proxied and echoed
 	testMessages := []string{"hello", "world", "test123"}
 	for _, msg := range testMessages {
 		writeErr := clientConn.Write(t.Context(), websocket.MessageText, []byte(msg))
@@ -76,13 +69,11 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 }
 
 func TestProxyHTTP_RemoteClose(t *testing.T) {
-	// Remote server that closes immediately after upgrade
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		// Close immediately
 		if closeErr := conn.Close(websocket.StatusNormalClosure, "bye"); closeErr != nil {
 			t.Logf("close websocket connection: %v", closeErr)
 		}
@@ -105,7 +96,6 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	}()
 	clientConn.CloseRead(t.Context())
 
-	// The proxy should complete (not hang)
 	select {
 	case proxyErr := <-proxyDone:
 		require.NoError(t, proxyErr)
@@ -137,7 +127,6 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 }
 
 func TestProxyHTTP_BinaryMessages(t *testing.T) {
-	// Remote server that echoes binary messages
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {

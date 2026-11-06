@@ -153,11 +153,6 @@ func TestBuildGenericURL(t *testing.T) {
 				Method:     "POST",
 				MessageKey: "content",
 			},
-			// Shoutrrr's generic service preserves `token=abc123` through to the
-			// outbound HTTP request untouched, while consuming the config keys
-			// (disabletls, template, method, messagekey). This is what PushPlus
-			// needs: POST http://www.pushplus.plus/send?token=abc123 with
-			// {"title":"...","content":"..."} at the root.
 			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&messagekey=content&method=POST&template=json&token=abc123",
 		},
 		{
@@ -188,7 +183,6 @@ func TestBuildGenericURL(t *testing.T) {
 
 			require.NoError(t, err)
 
-			// For tests with multiple headers or all options, just check prefix
 			if tt.name == "webhook with multiple custom headers" || tt.name == "webhook with all options" {
 				assert.Contains(t, gotURL, tt.wantURL)
 			} else {
@@ -230,10 +224,8 @@ func TestBuildGenericURL_HTTPSchemeHandling(t *testing.T) {
 			gotURL, err := BuildGenericURL(config)
 			require.NoError(t, err)
 
-			// Verify the scheme is always "generic"
 			assert.Contains(t, gotURL, "generic://")
 
-			// Verify the host is preserved
 			assert.Contains(t, gotURL, tt.wantHost)
 		})
 	}
@@ -251,11 +243,9 @@ func TestBuildGenericURL_CustomHeadersEncoding(t *testing.T) {
 	gotURL, err := BuildGenericURL(config)
 	require.NoError(t, err)
 
-	// Verify headers are prefixed with @
 	assert.Contains(t, gotURL, "%40Authorization=")
 	assert.Contains(t, gotURL, "%40X-Custom-Value=")
 
-	// Verify special characters and spaces are encoded
 	assert.Contains(t, gotURL, "value+with+spaces")
 }
 
@@ -356,10 +346,6 @@ func TestBuildGenericURL_CustomKeys(t *testing.T) {
 	}
 }
 
-// TestBuildGenericURL_PreservesUserShoutrrrConfigKeys verifies that an
-// explicit Shoutrrr config key embedded by the user in the webhook URL is
-// never silently overwritten by the provider defaults, the configured field
-// values, or the URL-scheme-derived TLS flag.
 func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -418,10 +404,6 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 	}
 }
 
-// TestBuildGenericURL_PayloadTemplate verifies that a configured payload
-// template switches the Shoutrrr template to the named "arcane" template and
-// defaults the content type to JSON, while a user-supplied inline template
-// query key still wins.
 func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
 	gotURL, err := BuildGenericURL(GenericConfig{
 		WebhookURL:      "https://webhook.example.com/notify",
@@ -441,9 +423,6 @@ func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
 	assert.NotContains(t, gotURL, "template=arcane")
 }
 
-// TestRenderGenericPayloadTemplate_EscapesJSON guards the escaping contract: a
-// template embedding values inside JSON string literals must render valid JSON
-// for hostile message content, and the event vars must be available.
 func TestRenderGenericPayloadTemplate_EscapesJSON(t *testing.T) {
 	config := GenericConfig{
 		PayloadTemplate: `{"text": "{{.title}}: {{.message}}", "env": "{{.environment}}", "event": "{{.event}}"}`,
@@ -460,10 +439,6 @@ func TestRenderGenericPayloadTemplate_EscapesJSON(t *testing.T) {
 	assert.Equal(t, "image_update", decoded["event"])
 }
 
-// TestSendGenericWithTitle_PayloadTemplate exercises the Shoutrrr send path
-// end to end: the payload template registered on the located service must
-// reach the endpoint as the rendered request body, with the configured custom
-// headers and JSON content type applied.
 func TestSendGenericWithTitle_PayloadTemplate(t *testing.T) {
 	var gotBody []byte
 	var gotContentType, gotMethod, gotAuth string
@@ -492,8 +467,6 @@ func TestSendGenericWithTitle_PayloadTemplate(t *testing.T) {
 	assert.Equal(t, "Bearer t0ken", gotAuth)
 }
 
-// TestSendGenericWithTitle_TemplateWithSuccessBodyContains verifies the two
-// direct-send features compose: template rendering plus response validation.
 func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -568,10 +541,6 @@ func TestValidateGenericPayloadTemplate(t *testing.T) {
 	}
 }
 
-// TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID guards against
-// the configured payload being registered under an ID the URL does not select:
-// a user-supplied inline `?template=custom` must still resolve to the
-// configured payload template instead of failing template resolution.
 func TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,3 @@
-// Package backup owns the shared Rustic backup engine used by volume and
-// system backups: typed repository operations, per-repository serialization
-// and run admission.
 package backup
 
 import (
@@ -64,7 +61,6 @@ type (
 		} `json:"summary"`
 	}
 
-	// RestoreOptions selects what a snapshot restore writes and where.
 	RestoreOptions struct {
 		// SourcePath restores only this path inside the snapshot when non-empty.
 		SourcePath string
@@ -73,13 +69,9 @@ type (
 		DestinationPath string
 		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
 		ExtraMounts []mount.Mount
-		// DeleteExtra removes files in the target that are absent from the snapshot.
 		DeleteExtra bool
 	}
 
-	// CreateSnapshotInput describes what one snapshot captures: the mounts to
-	// attach to the helper and the helper paths to back up. AsPath rewrites the
-	// snapshot path of a single source and cannot combine with several.
 	CreateSnapshotInput struct {
 		Mounts  []mount.Mount
 		Sources []string
@@ -88,7 +80,6 @@ type (
 		Globs   []string
 	}
 
-	// Engine owns repository serialization and backup admission.
 	Engine struct {
 		imageService *image.ImageService
 		admission    *runs.Admission
@@ -99,13 +90,11 @@ type (
 		mu        sync.Mutex
 	}
 
-	// heldLease is a parked lease and the run entitled to take it.
 	heldLease struct {
 		lease *runs.Lease
 		run   string
 	}
 
-	// DiscoveredSnapshot describes one snapshot found in a repository.
 	DiscoveredSnapshot struct {
 		ID      string    `json:"id"`
 		Time    time.Time `json:"time"`
@@ -116,30 +105,24 @@ type (
 		} `json:"summary"`
 	}
 
-	// RecoveryKeyStore persists the recovery key shared by the system and volume backup domains.
 	RecoveryKeyStore struct {
 		db *database.DB
 	}
 
-	// PolicyReconciliation reconciles a full set of policy updates against the
-	// existing policies of one backup domain, then swaps the scheduled jobs.
 	PolicyReconciliation[P, U any] struct {
 		DB       *database.DB
 		ID       func(*P) string
 		UpdateID func(U) string
 		// New returns the blank policy for created entries, pre-scoped by the
 		// caller (e.g. with the volume name set).
-		New func() P
-		// Build validates an update and applies it to an existing or new policy.
+		New   func() P
 		Build func(ctx context.Context, policy *P, update U) error
 		// Persist overrides the default GORM transaction for settings-backed policies.
 		Persist    func(ctx context.Context, policies []P) error
 		Unregister func(ctx context.Context, policyID string)
 		Reschedule func(ctx context.Context, policy *P)
-		// Domain names the backup flavor in validation errors ("volume", "system").
-		Domain string
-		// Existing is every policy currently persisted for the reconciled scope.
-		Existing []P
+		Domain     string
+		Existing   []P
 	}
 
 	DisableRemoteRequest struct {
@@ -152,15 +135,12 @@ type (
 )
 
 const (
-	VolumeAdmissionScope = "volume-backup"
-	SystemAdmissionScope = "system-backup"
-	// SystemAdmissionID is the one admission key system and system-managed volume backups share.
-	SystemAdmissionID   = "system"
-	RecoveryKeyConfigID = "system-recovery"
-	RunKeyPrefix        = "run:"
-	// VolumeRoot is the S3 prefix under which each instance keeps its volume backup repository.
-	VolumeRoot = "arcane-volume-backups"
-	// rusticRepositoryMissingMessage is how Rustic reports an uninitialized repository.
+	VolumeAdmissionScope           = "volume-backup"
+	SystemAdmissionScope           = "system-backup"
+	SystemAdmissionID              = "system"
+	RecoveryKeyConfigID            = "system-recovery"
+	RunKeyPrefix                   = "run:"
+	VolumeRoot                     = "arcane-volume-backups"
 	rusticRepositoryMissingMessage = "No repository config file found"
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
@@ -168,16 +148,12 @@ const (
 
 var (
 	ErrRecoveryKeyNotConfigured = errors.New("recovery key is not configured")
-	// ErrBackupSettled reports a checkpointed backup whose own attempt already failed it, so there is nothing to
-	// resume; a retry starts a new backup instead.
-	ErrBackupSettled = errors.New("the checkpointed backup already failed")
-	// RecoveryKeyFormat is 8 hyphenated groups of 6 base32 characters, used verbatim as the Rustic password.
-	RecoveryKeyFormat = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
+	ErrBackupSettled            = errors.New("the checkpointed backup already failed")
+	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
 )
 
-// RootSnapshotInput captures one mount with its contents at the snapshot root.
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
 	return CreateSnapshotInput{Mounts: []mount.Mount{source}, Sources: []string{source.Target}, AsPath: "/", Tags: tags}
 }
@@ -203,13 +179,11 @@ func snapshotCommand(label string, input CreateSnapshotInput) ([]string, error) 
 	return append(command, input.Sources...), nil
 }
 
-// NewRequester captures the user, and API key if any, behind a manual backup request.
 func NewRequester(ctx context.Context, requestedBy types.Actor, environmentID, permission string) types.BackupRequester {
 	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
 	return types.BackupRequester{UserID: requestedBy.ID, APIKeyID: keyID, EnvironmentID: environmentID, Permission: permission}
 }
 
-// NewEngine builds the backup engine on the shared admission gate.
 func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
 	return &Engine{
 		imageService: imageService,
@@ -220,13 +194,10 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 	}
 }
 
-// TryAcquireRun takes the admission lease for one backup resource, reporting false while another run holds it.
 func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*runs.Lease, bool, error) {
 	return e.admission.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: scope, ID: id})
 }
 
-// Hold parks a lease won by a manual start for run until that run's task takes it over with AcquireRun.
-// The returned func releases the lease if the run never took it, such as a start that failed to submit.
 func (e *Engine) Hold(scope, id, run string, lease *runs.Lease) func(context.Context) {
 	key := types.SchedulerAdmissionKey{Scope: scope, ID: id}
 	e.mu.Lock()
@@ -245,8 +216,6 @@ func (e *Engine) Hold(scope, id, run string, lease *runs.Lease) func(context.Con
 	}
 }
 
-// AcquireRun takes over the lease held for run, or acquires admission otherwise, such as after a restart.
-// A lease parked for another run stays parked, so that run's task still finds its admission.
 func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.Lease, bool, error) {
 	key := types.SchedulerAdmissionKey{Scope: scope, ID: id}
 	e.mu.Lock()
@@ -261,12 +230,10 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 	return e.TryAcquireRun(ctx, scope, id)
 }
 
-// Authorize checks that the requester may still run the backup.
 func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
 	return e.authorize(ctx, requester)
 }
 
-// Stop releases leases that no workflow task took over.
 func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
@@ -278,8 +245,6 @@ func (e *Engine) Stop(ctx context.Context) error {
 	return nil
 }
 
-// CreateSnapshot backs the input's sources up into the repository as one
-// snapshot. The repository is initialized on first use.
 func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, label string, input CreateSnapshotInput) (Snapshot, error) {
 	command, err := snapshotCommand(label, input)
 	if err != nil {
@@ -299,7 +264,6 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
-// RestoreSnapshot restores a snapshot (or one path inside it) onto the target mount.
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
 	command := []string{"restore", "--verify-existing"}
 	if options.DeleteExtra {
@@ -312,8 +276,6 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 	return err
 }
 
-// ListSnapshotFiles lists a snapshot path and returns paths relative to the
-// snapshot root. A supplied path is nonrecursive unless recursive is true.
 func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
 	command := []string{"ls", "--json"}
 	if recursive {
@@ -350,7 +312,6 @@ func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Cli
 	return qualifySnapshotListing(files, cleanedPath), nil
 }
 
-// qualifySnapshotListing prefixes listed files with the cleaned snapshot path they were listed under.
 func qualifySnapshotListing(files []string, prefix string) []string {
 	qualified := slices.Clone(files)
 	if prefix == "" {
@@ -385,7 +346,6 @@ func markSnapshotDirectories(files []string, longOutput string) ([]string, error
 	return marked, nil
 }
 
-// ReadSnapshotTextFile returns one text file from a snapshot.
 func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string) (string, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{
 		"dump", "--archive", "content", "--", snapshotID + ":/" + strings.TrimPrefix(filePath, "/"),
@@ -396,10 +356,8 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 	return output, nil
 }
 
-// RunSnapshotTag links committed snapshots to their durable backup record.
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
-// ConfirmRunSnapshot makes a validated snapshot discoverable by run ID.
 func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
 	if !fullSnapshotID(snapshotID) {
 		return Snapshot{}, errors.New("a full snapshot ID is required")
@@ -419,7 +377,6 @@ func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Cl
 	return snapshot, nil
 }
 
-// FindRunSnapshot verifies a known snapshot or recovers its committed response by run tag.
 func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
 	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password)
 	if err != nil {
@@ -441,7 +398,6 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 	return found, found.ID != "", nil
 }
 
-// ListSnapshots enumerates every snapshot in the repository.
 func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
 	if err != nil {
@@ -522,8 +478,6 @@ func fullSnapshotID(id string) bool {
 	return err == nil
 }
 
-// ForgetSnapshots removes the snapshots and prunes their data in a single pass;
-// with no IDs it only prunes, skipping an uninitialized repository.
 func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, snapshotIDs []string) error {
 	requested := make([]string, 0, len(snapshotIDs))
 	for _, id := range snapshotIDs {
@@ -573,7 +527,6 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	return err
 }
 
-// ChangeRepositoryPassword re-keys the repository; the scratch Rustic image has no shell, so the new password travels as an argument.
 func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, currentPassword, newPassword string) error {
 	if strings.TrimSpace(newPassword) == "" {
 		return errors.New("new repository password is required")
@@ -638,8 +591,6 @@ func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Cli
 	return nil
 }
 
-// Replicate copies one snapshot into another repository through a temporary volume, never the live data.
-// Rustic's native `copy` needs a TOML profile for the target, which the env-only Repository cannot express.
 func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
 	temporaryVolume := "arcane-rustic-copy-" + uuid.New().String()
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumes.Labels()}); err != nil {
@@ -676,7 +627,6 @@ func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repositor
 	return e.runContainer(ctx, dockerClient, repository, password, command, extraMounts...)
 }
 
-// runContainer runs one Rustic command; callers hold the repository lock.
 func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
 	if _, err := dockerClient.ImageInspect(ctx, rustic.DefaultImage); err != nil {
 		if pullErr := e.imageService.PullImage(ctx, rustic.DefaultImage, io.Discard, types.SystemUser, nil); pullErr != nil {
@@ -701,7 +651,6 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 	)
 }
 
-// ValidateRecoveryKey checks that a key has the generated recovery key format.
 func ValidateRecoveryKey(key string) error {
 	if !RecoveryKeyFormat.MatchString(strings.TrimSpace(key)) {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "recoveryKey", Err: errors.New("enter the generated recovery key (8 groups of 6 characters)")})
@@ -709,7 +658,6 @@ func ValidateRecoveryKey(key string) error {
 	return nil
 }
 
-// GenerateRecoveryKey creates a random recovery key in RecoveryKeyFormat.
 func GenerateRecoveryKey() (string, error) {
 	raw := make([]byte, 30)
 	if _, err := rand.Read(raw); err != nil {
@@ -723,12 +671,10 @@ func GenerateRecoveryKey() (string, error) {
 	return strings.Join(groups, "-"), nil
 }
 
-// NewRecoveryKeyStore builds the recovery key store.
 func NewRecoveryKeyStore(db *database.DB) *RecoveryKeyStore {
 	return &RecoveryKeyStore{db: db}
 }
 
-// Configured reports whether a recovery key is stored.
 func (s *RecoveryKeyStore) Configured(ctx context.Context) (bool, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&SystemBackupRecoveryConfig{}).
@@ -774,8 +720,6 @@ func (s *RecoveryKeyStore) Set(ctx context.Context, id, recoveryKey string) erro
 	return nil
 }
 
-// AcceptedTarget is the progress a manual backup's workflow starts with, so startup recovery protects
-// its record from the moment the backup is accepted.
 func AcceptedTarget(backupID string) types.TargetOutcome {
 	data, _ := json.Marshal(struct {
 		BackupID string `json:"backupId"`
@@ -788,7 +732,6 @@ func AcceptedTarget(backupID string) types.TargetOutcome {
 	}
 }
 
-// AcceptedBackupID returns the backup a manual backup workflow's run owns, from its AcceptedTarget.
 func AcceptedBackupID(run types.SchedulerRun) string {
 	index := slices.IndexFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return strings.HasPrefix(target.ID, "accepted:")
@@ -799,7 +742,6 @@ func AcceptedBackupID(run types.SchedulerRun) string {
 	return strings.TrimPrefix(run.Outcome.Targets[index].ID, "accepted:")
 }
 
-// lockRepository serializes commands against one repository and returns its unlock func.
 func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, errors.New("backup repository ID is required")
@@ -819,7 +761,6 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 	return lock.Unlock, nil
 }
 
-// Run applies updates as the full policy set: it saves them, removes the rest, and reschedules their jobs.
 func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error {
 	byID := make(map[string]P, len(r.Existing))
 	for i := range r.Existing {
@@ -881,7 +822,6 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 	return nil
 }
 
-// ValidatePolicyUpdate applies the shared cron, retention, and destination rules used by backup policies.
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
 	normalized, err := schedule.Normalize(update.Schedule, domain+" backup")
 	if err != nil {
@@ -913,8 +853,6 @@ func ValidatePolicyUpdate(ctx context.Context, domain string, update types.Updat
 	}, nil
 }
 
-// RemoteSnapshotChecker memoizes targeted checks within one response budget; each lookup names the
-// repository root that holds the snapshot. A nil result means the remote copy could not be verified.
 func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationService) func(destinationID, root, snapshotID string) *bool {
 	checked := make(map[string]*types.BackupRepositoryObservation)
 	deadline := time.Now().Add(10 * time.Second)
@@ -946,8 +884,6 @@ func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationSe
 	}
 }
 
-// CheckRemoteRepository probes the destination's repository config within a bounded budget.
-// Transport and credential failures are returned as errors so callers never forget snapshots blindly.
 func CheckRemoteRepository(ctx context.Context, destinations *s3.S3DestinationService, destinationID, root string) (types.BackupRepositoryObservation, error) {
 	configuration, err := destinations.Configuration(ctx, destinationID)
 	if err != nil {
@@ -958,9 +894,6 @@ func CheckRemoteRepository(ctx context.Context, destinations *s3.S3DestinationSe
 	return s3util.CheckRepository(checkCtx, configuration, root, "")
 }
 
-// DisableMissingRemote stops a scheduled policy from using S3 storage that went missing: a policy that also backs up
-// locally loses S3, an S3-only one is disabled. save clears that field on the stored policy unless it changed since it
-// was loaded, and reports whether it did; the loaded flags then follow. It reports whether S3 was turned off.
 func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled *bool, save func(field string) (bool, error)) (bool, error) {
 	if !errors.Is(remoteErr, ErrRemoteRepositoryMissing) {
 		return false, nil
@@ -973,8 +906,6 @@ func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled
 	return true, nil
 }
 
-// DisableStoredRemote is DisableMissingRemote's save for a policy table row, which it changes only while the row still
-// matches the loaded policy.
 func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemoteRequest) (bool, error) {
 	result := db.WithContext(ctx).Model(req.Model).
 		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", req.ID, req.DestinationID, true, true, req.LocalEnabled).
@@ -982,7 +913,6 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 
-// CheckScheduledRemote permits first-use initialization, but detects lost repositories.
 func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, table, destinationID, root string) error {
 	result, err := CheckRemoteRepository(ctx, destinations, destinationID, root)
 	if err != nil || result.Available {
@@ -1002,10 +932,6 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	return fmt.Errorf("%w: %s", ErrRemoteRepositoryMissing, result.Reason)
 }
 
-// ExpiredRunIDs returns the IDs of succeeded and failed runs with snapshots that
-// fall outside the newest keep entries of their status for one policy, oldest
-// last within each status. Callers delete each run through their own delete
-// path so snapshots are forgotten too.
 func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
 	var expired []string
 	for _, status := range []string{"succeeded", "failed"} {

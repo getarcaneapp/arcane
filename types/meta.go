@@ -5,32 +5,12 @@ import (
 )
 
 type (
-	// SettingMetadata represents metadata about a configuration or setting.
 	SettingMetadata struct {
-		// Key is the identifier for the metadata.
-		//
-		// Required: true
-		Key string `json:"key"`
-
-		// Label is the human-readable label for the metadata.
-		//
-		// Required: true
-		Label string `json:"label"`
-
-		// Type is the data type of the metadata value.
-		//
-		// Required: true
-		Type string `json:"type"`
-
-		// Description provides additional information about the metadata.
-		//
-		// Required: false
-		Description string `json:"description,omitempty"`
-
-		// Keywords is a list of keywords associated with the metadata.
-		//
-		// Required: false
-		Keywords []string `json:"keywords,omitempty"`
+		Key         string   `json:"key"`
+		Label       string   `json:"label"`
+		Type        string   `json:"type"`
+		Description string   `json:"description,omitempty"`
+		Keywords    []string `json:"keywords,omitempty"`
 	}
 
 	JobMetadata struct {
@@ -51,47 +31,15 @@ type (
 		Label      string
 	}
 
-	// TemplateMeta represents metadata about a template.
 	TemplateMeta struct {
-		// Version of the template.
-		//
-		// Required: false
-		Version *string `json:"version,omitempty"`
-
-		// Author of the template.
-		//
-		// Required: false
-		Author *string `json:"author,omitempty"`
-
-		// RemoteURL is the URL to the remote template file.
-		//
-		// Required: false
-		RemoteURL *string `json:"remoteUrl,omitempty"`
-
-		// EnvURL is the URL to the environment file.
-		//
-		// Required: false
-		EnvURL *string `json:"envUrl,omitempty"`
-
-		// DocumentationURL is the URL to the template documentation.
-		//
-		// Required: false
-		DocumentationURL *string `json:"documentationUrl,omitempty"`
-
-		// IconURL is the URL to the template icon, from the registry's icon_url for remote templates or x-arcane metadata for local ones.
-		//
-		// Required: false
-		IconURL *string `json:"iconUrl,omitempty"`
-
-		// UpdatedAt is the date and time when the template was last updated.
-		//
-		// Required: false
-		UpdatedAt *string `json:"updatedAt,omitempty"`
-
-		// Tags is a list of tags associated with the template.
-		//
-		// Required: false
-		Tags []string `json:"tags,omitempty"`
+		Version          *string  `json:"version,omitempty"`
+		Author           *string  `json:"author,omitempty"`
+		RemoteURL        *string  `json:"remoteUrl,omitempty"`
+		EnvURL           *string  `json:"envUrl,omitempty"`
+		DocumentationURL *string  `json:"documentationUrl,omitempty"`
+		IconURL          *string  `json:"iconUrl,omitempty"`
+		UpdatedAt        *string  `json:"updatedAt,omitempty"`
+		Tags             []string `json:"tags,omitempty"`
 	}
 )
 

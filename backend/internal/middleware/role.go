@@ -33,17 +33,6 @@ func RegisterEchoRoutes(g *echo.Group, routes []EchoRoute, shared ...echo.Middle
 	}
 }
 
-// RegisterWithPermission registers a Huma operation that requires perm. It
-// attaches the RequirePermission middleware AND records perm in the operation
-// metadata (authz.MetaRequiredPermission) so the remote environment proxy can
-// enforce the same permission for environment-scoped operations before
-// forwarding a request to an agent.
-//
-// Use this instead of huma.Register with an inline RequirePermission middleware
-// for every operation served under /environments/{id}/..., so the required
-// permission stays the single source of truth for both local enforcement and
-// remote-proxy enforcement. It is safe to use for org-level operations too; the
-// recorded metadata is simply unused by the proxy for non-environment paths.
 func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm string, handler func(context.Context, *I) (*O, error)) {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}
@@ -53,13 +42,6 @@ func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm stri
 	huma.Register(api, op, handler)
 }
 
-// RegisterWithActionPermissions registers a Huma operation whose required
-// permission depends on the value of the param query parameter. perms maps each
-// accepted value to its permission. The same map is enforced locally by
-// RequireActionPermission and recorded in the operation's OpenAPI metadata
-// (authz.MetaActionParam, authz.MetaActionPermissions), so the remote
-// environment proxy looks up the identical permission per action before
-// forwarding to an agent.
 func RegisterWithActionPermissions[I, O any](api huma.API, op huma.Operation, param string, perms map[string]string, handler func(context.Context, *I) (*O, error)) {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}
@@ -70,9 +52,6 @@ func RegisterWithActionPermissions[I, O any](api huma.API, op huma.Operation, pa
 	huma.Register(api, op, handler)
 }
 
-// RequireEchoPermission rejects Echo requests lacking perm for the environment
-// in the request path, or globally for organization-level permissions. It must
-// run after auth.AuthMiddleware has attached the caller's permission set.
 func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -92,14 +71,6 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 	}
 }
 
-// RequirePermission returns per-operation Huma middleware that rejects callers
-// lacking `perm`. For env-scoped permissions, the env ID is extracted
-// from the request path (/environments/{id}/...). For org-level permissions,
-// the env ID segment, if any, is ignored.
-//
-// Attach via Operation.Middlewares:
-//
-//	huma.Register(api, huma.Operation{..., Middlewares: middleware.RequirePermission(api, authz.PermContainersStart)}, h.Handler)
 func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
@@ -113,10 +84,6 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	}}
 }
 
-// RequireActionPermission returns middleware that selects the required
-// permission from perms using the value of the param query parameter. A missing
-// or unknown value is rejected with 400, and a caller lacking the selected
-// permission is rejected with 403.
 func RequireActionPermission(api huma.API, param string, perms map[string]string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		perm, ok := perms[ctx.Query(param)]
@@ -146,12 +113,6 @@ func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) b
 	return ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), ""))
 }
 
-// RequireGlobalAdmin returns op with middleware that rejects any caller who is
-// not a global admin (or sudo), recorded as authz.MetaRequireGlobalAdmin. Used for operations that are
-// intentionally not exposed as delegated permissions — role creation/edits,
-// user role assignment, and OIDC mapping management. Keeping these admin-only
-// avoids the meta-escalation surface where a holder of `roles:assign` could
-// promote themselves via a custom role.
 func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}
@@ -170,9 +131,6 @@ func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {
 	return op
 }
 
-// RequireSudo restricts infrastructure-only operations to callers authenticated
-// through the agent-token path. Holding every user-facing permission is not
-// sufficient because these operations may expose materialized secret values.
 func RequireSudo(api huma.API, op huma.Operation) huma.Operation {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}

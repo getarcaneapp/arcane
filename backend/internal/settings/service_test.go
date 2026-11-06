@@ -860,12 +860,8 @@ func TestSettingsService_LoadDatabaseSettings_ReloadsChanges(t *testing.T) {
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Initially empty DB -> defaults (not persisted yet)
-
-	// Update a value directly in DB
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "custom/projects"))
 
-	// Force reload
 	require.NoError(t, svc.LoadDatabaseSettings(ctx))
 
 	cfg := svc.GetSettingsConfig()
@@ -873,7 +869,6 @@ func TestSettingsService_LoadDatabaseSettings_ReloadsChanges(t *testing.T) {
 }
 
 func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *testing.T) {
-	// Set env + disable flag BEFORE service init
 	t.Setenv("ARCANE_UI_CONFIGURATION_DISABLED", "true")
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", "env/projects")
 	// One value as a variable, one as a Docker secret file.
@@ -886,7 +881,6 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Reload explicitly (NewSettingsService already did, but explicit for clarity)
 	require.NoError(t, svc.LoadDatabaseSettings(ctx))
 
 	cfg := svc.GetSettingsConfig()
@@ -1052,13 +1046,11 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 }
 
 func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T) {
-	// Set env + disable flag
 	t.Setenv("ARCANE_UI_CONFIGURATION_DISABLED", "true")
 
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
 
-	// Pre-populate an internal setting in the DB
 	internalKey := "instanceId"
 	internalVal := "test-instance-id"
 	require.NoError(t, db.DB.Create(&SettingVariable{Key: internalKey, Value: internalVal}).Error)
@@ -1066,7 +1058,6 @@ func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T)
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Reload explicitly to trigger the env loading path
 	require.NoError(t, svc.LoadDatabaseSettings(ctx))
 
 	cfg := svc.GetSettingsConfig()
@@ -1080,18 +1071,14 @@ func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Seed with relative path
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
 
-	// Run normalization without env var set (empty string)
 	err = svc.NormalizeProjectsDirectory(ctx)
 	require.NoError(t, err)
 
-	// Verify it was updated to absolute path
 	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 
-	// Should be converted to absolute path
 	expectedPath, _ := filepath.Abs("data/projects")
 	require.Equal(t, expectedPath, setting.Value)
 	require.True(t, filepath.IsAbs(setting.Value), "path should be absolute")
@@ -1103,16 +1090,13 @@ func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Seed with relative path
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
 
-	// Run normalization WITH env var set
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", "/custom/env/path")
 	envSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, envSvc.NormalizeProjectsDirectory(ctx))
 
-	// Verify it was NOT changed
 	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 	require.Equal(t, "data/projects", setting.Value, "should not change when env var is set")
@@ -1127,11 +1111,9 @@ func TestSettingsService_NormalizeProjectsDirectory_LeavesOtherPathsUnchanged(t 
 	customPath := "/custom/projects/path"
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", customPath))
 
-	// Run normalization
 	err = svc.NormalizeProjectsDirectory(ctx)
 	require.NoError(t, err)
 
-	// Verify it was NOT changed
 	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&setting).Error)
 	require.Equal(t, customPath, setting.Value, "should not change custom paths")
@@ -1143,9 +1125,6 @@ func TestSettingsService_NormalizeProjectsDirectory_HandlesNotFound(t *testing.T
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Don't create the setting at all
-
-	// Run normalization - should not error
 	err = svc.NormalizeProjectsDirectory(ctx)
 	require.NoError(t, err)
 }
@@ -1156,19 +1135,15 @@ func TestSettingsService_NormalizeProjectsDirectory_UpdatesCacheAfterNormalizati
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	// Set to relative path
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
 	require.NoError(t, svc.LoadDatabaseSettings(ctx))
 
-	// Verify cache has relative path
 	cfg1 := svc.GetSettingsConfig()
 	require.Equal(t, "data/projects", cfg1.ProjectsDirectory.Value)
 
-	// Run normalization
 	err = svc.NormalizeProjectsDirectory(ctx)
 	require.NoError(t, err)
 
-	// Verify cache was updated to absolute path
 	cfg2 := svc.GetSettingsConfig()
 	expectedPath, _ := filepath.Abs("data/projects")
 	require.Equal(t, expectedPath, cfg2.ProjectsDirectory.Value)
@@ -1196,8 +1171,6 @@ func TestSettingsService_NormalizeProjectsDirectoryPublishesChange(t *testing.T)
 	require.True(t, filepath.IsAbs(updates[0].Value))
 }
 
-// TestSettingsServiceEffectiveSnapshotMaterialized verifies reads share one env-override-applied
-// snapshot per refresh, and an update rebuilds it with the override still applied.
 func TestSettingsServiceEffectiveSnapshotMaterialized(t *testing.T) {
 	ctx := t.Context()
 	t.Setenv("ARCANE_PROJECTS_DIRECTORY", "/env/projects")

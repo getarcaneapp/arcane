@@ -91,7 +91,6 @@ func (h *Hub) Run(ctx context.Context) {
 				onFirst()
 			}
 		case c := <-h.unregister:
-			// remove() handles the onEmpty callback when the last client disconnects.
 			h.remove(c)
 		case msg := <-h.broadcast:
 			h.mu.RLock()
@@ -100,8 +99,6 @@ func (h *Hub) Run(ctx context.Context) {
 				select {
 				case c.send <- msg:
 				default:
-					// backpressure: drop slow client
-					// Collect them to remove outside the lock to avoid spawning goroutines
 					slowClients = append(slowClients, c)
 				}
 			}
@@ -132,8 +129,6 @@ func (h *Hub) Broadcast(msg []byte) {
 	select {
 	case h.broadcast <- msg:
 	default:
-		// prevent global stall if hub buffer fills
-		// This indicates the hub is not processing messages fast enough
 		h.dropped.Add(1)
 
 		now := time.Now().UnixNano()
@@ -153,7 +148,6 @@ func (h *Hub) remove(c *Client) {
 		close(c.send)
 		_ = c.conn.CloseNow()
 	}
-	// Capture onEmpty under the lock so we can call it outside.
 	var onEmpty func()
 	if exists && len(h.clients) == 0 && h.onEmpty != nil {
 		onEmpty = h.onEmpty

@@ -16,7 +16,6 @@ var (
 	errRegister  error
 )
 
-// RegisterFunctions makes normalize(text, form) available to new SQLite connections.
 func RegisterFunctions() error {
 	registerOnce.Do(func() {
 		errRegister = sqlite.RegisterDeterministicScalarFunction("normalize", 2,

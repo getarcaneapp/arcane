@@ -62,7 +62,6 @@ func (e *APIError) HTTPStatus() int {
 	return http.StatusInternalServerError
 }
 
-// NewAPIError creates a new APIError
 func NewAPIError(message string, code APIErrorCode, statusCode int) *APIError {
 	return &APIError{
 		Message:    message,

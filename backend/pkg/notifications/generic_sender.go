@@ -24,14 +24,12 @@ import (
 )
 
 const (
-	// genericPayloadTemplateID names the Shoutrrr template a user's payload template is registered under.
 	genericPayloadTemplateID = "arcane"
 )
 
 // genericHTTPClient bounds generic webhook sends; Shoutrrr's default client has no timeout.
 var genericHTTPClient = httpx.NewHTTPClient(httpx.ClientConfig{Timeout: 15 * time.Second})
 
-// resolveWebhookURL parses the configured webhook URL, adding a default scheme when omitted.
 func resolveWebhookURL(config GenericConfig) (*url.URL, error) {
 	if config.WebhookURL == "" {
 		return nil, errors.New("webhook URL is empty")
@@ -65,7 +63,6 @@ func resolveWebhookURL(config GenericConfig) (*url.URL, error) {
 	return parsed, nil
 }
 
-// BuildGenericURL converts GenericConfig to Shoutrrr URL format for generic webhooks.
 func BuildGenericURL(config GenericConfig) (string, error) {
 	webhookURL, err := resolveWebhookURL(config)
 	if err != nil {
@@ -113,7 +110,6 @@ func BuildGenericURL(config GenericConfig) (string, error) {
 	return shoutrrrURL.String(), nil
 }
 
-// EventVars builds the per-event payload template variables.
 // Names must not collide with Shoutrrr generic config keys, which would mutate the per-send config.
 func EventVars(environmentName, environmentID string, event NotificationEventType) map[string]string {
 	return map[string]string{
@@ -124,7 +120,6 @@ func EventVars(environmentName, environmentID string, event NotificationEventTyp
 	}
 }
 
-// jsonEscapeString escapes value for embedding inside a JSON string literal, without the surrounding quotes.
 func jsonEscapeString(value string) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -133,7 +128,6 @@ func jsonEscapeString(value string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(string(encoded), `"`), `"`)
 }
 
-// RenderGenericPayloadTemplate renders the payload template with the JSON-escaped title, message, and event vars.
 func RenderGenericPayloadTemplate(config GenericConfig, title, message string, vars map[string]string) (string, error) {
 	tmpl, err := template.New(genericPayloadTemplateID).Parse(config.PayloadTemplate)
 	if err != nil {
@@ -155,7 +149,6 @@ func RenderGenericPayloadTemplate(config GenericConfig, title, message string, v
 	return rendered.String(), nil
 }
 
-// ValidateGenericPayloadTemplate checks that a payload template renders, and renders valid JSON for JSON content types.
 func ValidateGenericPayloadTemplate(config GenericConfig) error {
 	if strings.TrimSpace(config.PayloadTemplate) == "" {
 		return nil
@@ -177,7 +170,6 @@ func ValidateGenericPayloadTemplate(config GenericConfig) error {
 	return nil
 }
 
-// SendGenericWithTitle sends a message with title via the Shoutrrr generic webhook.
 // SuccessBodyContains also checks the response body, for providers that always return HTTP 200.
 func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, message string, vars map[string]string) error {
 	if config.WebhookURL == "" {
@@ -242,7 +234,6 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 	return nil
 }
 
-// sendGenericDirect calls the webhook directly so the response body can be checked for SuccessBodyContains.
 // Kept separate from SendGenericWithTitle to stay under the gocognit limit.
 func sendGenericDirect(ctx context.Context, config GenericConfig, title, message string, vars map[string]string) error {
 	webhookURL, err := resolveWebhookURL(config)

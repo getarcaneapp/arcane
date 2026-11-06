@@ -1,6 +1,5 @@
 import type { Component } from 'svelte';
 
-// Normalized meta shape for a matching item within a search result.
 export interface CategoryMatchingItem {
 	key: string;
 	label: string;
@@ -9,7 +8,6 @@ export interface CategoryMatchingItem {
 	description?: string;
 }
 
-// Normalized category / search-result shape shared by both index pages.
 export interface NormalizedCategory {
 	id: string;
 	title: string;

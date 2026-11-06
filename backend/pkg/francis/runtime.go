@@ -1,4 +1,3 @@
-// Package francis owns the embedded Francis host lifecycle.
 package francis
 
 import (
@@ -30,7 +29,6 @@ import (
 )
 
 type (
-	// Runtime starts one durable actor host and publishes its service after readiness.
 	// Services must wait for Ready before using Service, including during startup retries.
 	Runtime struct {
 		runError      error
@@ -65,7 +63,6 @@ type (
 )
 
 const (
-	// TablePrefix namespaces the Francis tables in their store.
 	TablePrefix = "arcane_francis"
 )
 
@@ -107,7 +104,6 @@ func New(cfg Config) (*Runtime, error) {
 	return runtime, nil
 }
 
-// ConfigureIdentity binds the final persisted identity before Start.
 func (r *Runtime) ConfigureIdentity(encryptionKey, instanceID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -131,7 +127,6 @@ func (r *Runtime) Ready() <-chan struct{} { return r.ready }
 
 func (r *Runtime) Done() <-chan struct{} { return r.done }
 
-// Store lazily opens a small pool on Francis storage for diagnostics and backups.
 func (r *Runtime) Store() (*gorm.DB, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -170,7 +165,6 @@ func (r *Runtime) RegisterActor(actorType string, factory actor.Factory, options
 	return nil
 }
 
-// RegisterWorkflow adds a Francis workflow, registered on every host attempt.
 func (r *Runtime) RegisterWorkflow(wf *workflow.Workflow) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -184,8 +178,6 @@ func (r *Runtime) RegisterWorkflow(wf *workflow.Workflow) error {
 	return nil
 }
 
-// Start waits for host registration. appCtx owns the running host; ctx only
-// limits startup. onFailure must cancel the application without blocking.
 func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) error {
 	r.mu.Lock()
 	if r.started {

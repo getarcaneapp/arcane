@@ -257,7 +257,6 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							size="sm"
 							onclick={() => handleDownload(template)}
 							disabled={loadingStates.has(`download-${template.id}`)}
 							loading={loadingStates.has(`download-${template.id}`)}
@@ -268,7 +267,6 @@
 					{/if}
 					<ArcaneButton
 						action="base"
-						size="sm"
 						onclick={() => handleSelect(template)}
 						disabled={loadingStates.has(template.id)}
 						loading={loadingStates.has(template.id)}

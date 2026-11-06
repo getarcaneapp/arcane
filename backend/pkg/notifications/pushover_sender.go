@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// BuildPushoverURL converts PushoverConfig to Shoutrrr URL format.
-// URL example: pushover://:token@user?devices=device1,device2&priority=1&title=Container+Update
 func BuildPushoverURL(config PushoverConfig) (string, error) {
 	user := strings.TrimSpace(config.User)
 	token := strings.TrimSpace(config.Token)
@@ -53,7 +51,6 @@ func BuildPushoverURL(config PushoverConfig) (string, error) {
 	return u.String(), nil
 }
 
-// SendPushover sends a message via Shoutrrr Pushover using proper service configuration.
 func SendPushover(ctx context.Context, config PushoverConfig, message string) error {
 	if strings.TrimSpace(config.Token) == "" {
 		return errors.New("pushover token is empty")

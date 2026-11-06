@@ -23,7 +23,6 @@ type (
 	Env map[string]string
 )
 
-// EnsureInstanceID returns this installation's persisted instance ID, creating it on first start.
 func EnsureInstanceID(ctx context.Context, db *database.DB) (string, error) {
 	return ensureSettingValue(ctx, db, "instanceId", "instance ID", func() (string, error) { return uuid.New().String(), nil })
 }

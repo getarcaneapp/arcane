@@ -1,5 +1,3 @@
-// Package system owns Docker system-wide operations — prune, disk usage, host
-// info, self-upgrade, system backups — and the HTTP surface that exposes them.
 package system
 
 import (
@@ -19,7 +17,6 @@ import (
 )
 
 type (
-	// Module wires the system domain and mounts its routes.
 	Module struct {
 		service         *SystemService
 		activityService *activity.ActivityService
@@ -27,7 +24,6 @@ type (
 	}
 )
 
-// New wires system routes around an existing service.
 func New(
 	service *SystemService,
 	activityService *activity.ActivityService,
@@ -36,7 +32,6 @@ func New(
 	return &Module{service: service, activityService: activityService, cfg: cfg}
 }
 
-// Service exposes the system service to collaborators.
 func (m *Module) Service() *SystemService {
 	if m == nil {
 		return nil
@@ -44,8 +39,6 @@ func (m *Module) Service() *SystemService {
 	return m.service
 }
 
-// RegisterRoutes mounts the system endpoints. A nil module still registers, so
-// OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		m = &Module{}
@@ -58,8 +51,6 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	backup.RegisterRoutes(api, backup.NewHandler(service.backup, m.activityService, appCtx.Context()))
 }
 
-// RegisterSystem registers system management endpoints using Huma.
-// WebSocket statistics endpoints live in api/ws.
 func RegisterSystem(api huma.API, h *SystemHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "system-health",

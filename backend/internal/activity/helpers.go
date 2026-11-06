@@ -40,9 +40,6 @@ func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event 
 	if event.ActivityID == "" {
 		return true
 	}
-	// Only job activities are scoped by target environment. Events that carry a
-	// type hint for any other activity type need no database reread; job
-	// metadata is mutable, so job events are still checked against the row.
 	if event.ActivityType != "" && event.ActivityType != types.ActivityTypeJobRun {
 		return true
 	}

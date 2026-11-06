@@ -91,7 +91,6 @@
 		(networksQuery.data?.data ?? []).map((network) => network.name).filter((name) => name !== 'host' && name !== 'none')
 	);
 
-	// Image suggestions (debounced registry search); free text stays valid.
 	let imageSuggestions = $state.raw<ImageSearchResult[]>([]);
 	let imageSearchTimer: ReturnType<typeof setTimeout> | undefined;
 	function onImageInput() {
@@ -120,7 +119,6 @@
 
 	function handleSubmit() {
 		onSubmit();
-		// Bring failed validation into view on the correct tab.
 		if (inputs.name.error || inputs.image.error) {
 			selectedTab = 'general';
 		} else if (inputs.hostname.error) {
@@ -176,7 +174,6 @@
 		<TabBar items={tabItems} onValueChange={(value) => (selectedTab = value)} />
 
 		<div class="flex-1 py-6">
-			<!-- General -->
 			<Tabs.Content value="general" class="mt-0">
 				<div class="space-y-6">
 					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -265,7 +262,6 @@
 				</div>
 			</Tabs.Content>
 
-			<!-- Environment (env vars + labels) -->
 			<Tabs.Content value="environment" class="mt-0">
 				<div class="space-y-8">
 					<div class="space-y-4">
@@ -284,7 +280,6 @@
 				</div>
 			</Tabs.Content>
 
-			<!-- Ports -->
 			<Tabs.Content value="ports" class="mt-0">
 				<div class="space-y-4">
 					{@render groupTitle(m.common_port_mappings())}
@@ -292,7 +287,6 @@
 				</div>
 			</Tabs.Content>
 
-			<!-- Volumes -->
 			<Tabs.Content value="volumes" class="mt-0">
 				<div class="space-y-4">
 					{@render groupTitle(m.resource_volumes_cap(), mode === 'edit' ? m.mount_options_note() : undefined)}
@@ -300,7 +294,6 @@
 				</div>
 			</Tabs.Content>
 
-			<!-- Networks -->
 			<Tabs.Content value="networks" class="mt-0">
 				<div class="space-y-4">
 					{@render groupTitle(m.resource_networks_cap(), m.aliases_note())}
@@ -315,7 +308,6 @@
 				</div>
 			</Tabs.Content>
 
-			<!-- Advanced (resources, security, healthcheck) -->
 			<Tabs.Content value="advanced" class="mt-0">
 				<div class="space-y-8">
 					<div class="space-y-4">

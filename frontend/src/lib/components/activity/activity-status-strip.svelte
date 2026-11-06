@@ -5,7 +5,6 @@
 
 	import { activityStatusLabel } from './activity-labels';
 
-	// Batches beyond this many members collapse the remainder into a count.
 	const MAX_SEGMENTS = 24;
 
 	let { items, done, total }: { items: Activity[]; done: number; total: number } = $props();

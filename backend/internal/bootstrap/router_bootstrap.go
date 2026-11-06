@@ -83,7 +83,6 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 	}
 	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 		req := c.Request()
-		// Check for API key authentication
 		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
 			key, err := deps.ApiKey.Service().ValidateRawApiKey(ctx, apiKey)
 			if err != nil {
@@ -101,8 +100,6 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 				}
 				return resolveUser(ctx, user.Actor()), user.Actor(), true
 			}
-			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
-			// requests to a remote env whose apiUrl resolves back to this manager.
 			if key.EnvironmentID != nil {
 				return authz.EnvironmentPermissionSet(*key.EnvironmentID), nil, true
 			}
@@ -287,7 +284,6 @@ func newRouter(p RouterParams) *echo.Echo {
 	permissionMatcher.CollectFromHumaAPI(humaAPI)
 	ws.AddProxiedPermissions(permissionMatcher)
 
-	// Remaining echo handlers (WebSocket/streaming)
 	ws.NewWebSocketHandler(
 		p.Context,
 		apiGroup,
@@ -330,8 +326,6 @@ func EchoRoutePermissions() []authz.PermissionRoute {
 	return permissionRoutes
 }
 
-// secureCookieContextMiddleware marks requests as HTTPS for cookies. X-Forwarded-Proto is
-// honored only when the direct TCP peer is in TRUSTED_PROXIES.
 func secureCookieContextMiddleware(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {

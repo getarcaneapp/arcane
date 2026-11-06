@@ -52,7 +52,6 @@ const (
 
 var errProjectRenameRollbackSourceMissing = errors.New("source volume is missing and target volume may contain the only remaining data copy")
 
-// NewMigration prepares generic volume copies with caller-supplied target configuration.
 func NewMigration(cfg MigrationConfig) types.VolumeMigration {
 	if len(cfg.Entries) == 0 {
 		return nil
@@ -66,7 +65,6 @@ func NewMigration(cfg MigrationConfig) types.VolumeMigration {
 	}
 }
 
-// PlanRename validates and prepares an unused Docker volume for a copy-based rename.
 func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName, toolsImage string) (types.VolumeMigration, error) {
 	oldName = strings.TrimSpace(oldName)
 	newName = strings.TrimSpace(newName)

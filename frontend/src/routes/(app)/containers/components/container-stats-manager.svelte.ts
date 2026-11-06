@@ -11,7 +11,6 @@ export const SAMPLE_HISTORY_LIMIT = 60;
 
 interface EnvironmentStream {
 	ws: ReconnectingWebSocket<ContainerResourceSampleBatch>;
-	/** Container ID to table row key. */
 	rowKeys: Map<string, string>;
 }
 

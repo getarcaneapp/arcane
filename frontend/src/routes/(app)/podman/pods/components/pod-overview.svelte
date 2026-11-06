@@ -9,7 +9,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
-	import { BoxIcon, ClockIcon, ContainersIcon, InfoIcon, RestartIcon, TagIcon, TerminalIcon } from '#lib/icons/index.js';
+	import { ClockIcon, ContainersIcon, InfoIcon, RestartIcon, TagIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodInspect } from '#lib/types/podman.js';
 	import { formatDateTime } from '#lib/utils/formatting.js';
@@ -24,7 +24,7 @@
 	const metaItems = $derived<DetailMetaItem[]>([
 		{ icon: ClockIcon, label: m.common_created(), value: formatDateTime(pod.created) || pod.created },
 		{ icon: ContainersIcon, label: m.containers(), value: String(pod.numContainers) },
-		{ icon: BoxIcon, label: m.podman_pod_infra(), value: pod.createInfra ? m.common_yes() : m.common_no() },
+		{ icon: ContainersIcon, label: m.podman_pod_infra(), value: pod.createInfra ? m.common_yes() : m.common_no() },
 		...(pod.restartPolicy ? [{ icon: RestartIcon, label: m.common_restart_policy(), value: pod.restartPolicy }] : [])
 	]);
 

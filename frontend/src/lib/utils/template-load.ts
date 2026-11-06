@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
@@ -53,7 +54,7 @@ export async function loadGlobalVariablesOrEmpty(queryClient: QueryClient): Prom
 	return result.error ? [] : result.data;
 }
 
-const EMPTY_DEFAULT_TEMPLATES = { composeTemplate: '', envTemplate: '' };
+const EMPTY_DEFAULT_TEMPLATES = { composeTemplate: '', swarmStackTemplate: '', swarmStackEnvTemplate: '', envTemplate: '' };
 
 /**
  * Loads compose-authoring resources that live behind global permissions. Each
@@ -81,15 +82,11 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 	}
 
 	const [defaultTemplates, templates, globalVariables] = await Promise.all([
-		loadOptional<{ composeTemplate: string; envTemplate: string }>(
-			'defaultTemplates',
-			permissions.canReadTemplates,
-			EMPTY_DEFAULT_TEMPLATES,
-			() =>
-				client.query({
-					queryKey: queryKeys.templates.defaults(),
-					queryFn: () => templateService.getDefaultTemplates()
-				})
+		loadOptional<typeof EMPTY_DEFAULT_TEMPLATES>('defaultTemplates', permissions.canReadTemplates, EMPTY_DEFAULT_TEMPLATES, () =>
+			client.query({
+				queryKey: queryKeys.templates.defaults(),
+				queryFn: () => templateService.getDefaultTemplates()
+			})
 		),
 		loadOptional<Template[]>('templates', permissions.canListTemplates, [], () =>
 			client.query({
@@ -108,7 +105,6 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 	return { defaultTemplates, templates, globalVariables, permissions, loadErrors };
 }
 
-/** Loads an explicitly requested template; without `templates:read` no request is sent. */
 export async function loadTemplateContent(
 	client: QueryClientLike,
 	templateId: string,
@@ -125,4 +121,24 @@ export async function loadTemplateContent(
 		return { content: null, error: extractApiErrorMessage(result.error), forbidden: false };
 	}
 	return { content: result.data, error: null, forbidden: false };
+}
+
+const resourceLabels: Record<TemplateAuthoringResource, () => string> = {
+	defaultTemplates: m.templates_defaults_title,
+	templates: m.templates_title,
+	globalVariables: m.variables_title
+};
+
+export function templateLoadNotices(load: {
+	templateLoadErrors: TemplateAuthoringLoadError[];
+	selectedTemplateError: string | null;
+	selectedTemplateForbidden: boolean;
+}): string[] {
+	return [
+		...load.templateLoadErrors.map((item) =>
+			m.compose_optional_resource_load_failed({ resource: resourceLabels[item.resource](), message: item.message })
+		),
+		...(load.selectedTemplateForbidden ? [m.templates_load_forbidden()] : []),
+		...(load.selectedTemplateError ? [`${m.templates_load_failed()}: ${load.selectedTemplateError}`] : [])
+	];
 }

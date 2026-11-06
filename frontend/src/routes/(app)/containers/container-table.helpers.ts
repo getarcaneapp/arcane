@@ -25,7 +25,6 @@ function lowestPort(container: ContainerSummary): number | null {
 	);
 }
 
-/** Sort value for a container column whose sort key is not a row field. */
 export function containerSortValue(container: ContainerSummary, column: string): unknown {
 	switch (column) {
 		case 'name':
@@ -82,7 +81,7 @@ export function getStateBadgeVariant(state: string): StateBadgeVariant {
 
 export function getProjectName(container: ContainerSummary): string {
 	const projectLabel = container.labels?.[COMPOSE_PROJECT_LABEL];
-	return projectLabel || 'No Project';
+	return projectLabel || m.no_project();
 }
 
 export function getContainerStatusLabel(state: string): string {

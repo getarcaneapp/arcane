@@ -1,11 +1,9 @@
 import type { KeyValueRow } from '#lib/components/form/key-value-editor.svelte';
 
-/** Splits textarea content into trimmed, non-empty lines. */
 export function parseLines(text: string): string[] {
 	return splitAndTrim(text, '\n');
 }
 
-/** Splits newline or comma separated input into trimmed, non-empty values. */
 export function parseList(text: string): string[] {
 	return splitAndTrim(text.replaceAll(',', '\n'), '\n');
 }

@@ -1,4 +1,3 @@
-// Package client provides authenticated HTTP transport for the Arcane API.
 package client
 
 import (
@@ -34,7 +33,6 @@ type (
 		StatusCode int
 	}
 
-	// Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
 	Client struct {
 		baseURLParsed *url.URL
 		httpClient    *http.Client
@@ -67,7 +65,6 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, e.Body)
 }
 
-// New validates configuration and creates an authenticated client with the configured environment and a ten-minute timeout.
 func New(cfg *clitypes.Config) (*Client, error) {
 	cfg = cfg.Clone()
 	if token := strings.TrimSpace(os.Getenv("ARCANE_TOKEN")); token != "" {
@@ -88,8 +85,6 @@ func New(cfg *clitypes.Config) (*Client, error) {
 	return c, nil
 }
 
-// NewUnauthenticated creates a client that can call unauthenticated endpoints
-// (e.g. /api/auth/login). It only validates that server_url is configured.
 func NewUnauthenticated(cfg *clitypes.Config) (*Client, error) {
 	cfg = cfg.Clone()
 	if strings.TrimSpace(os.Getenv("ARCANE_TOKEN")) != "" {
@@ -120,7 +115,6 @@ func NewUnauthenticated(cfg *clitypes.Config) (*Client, error) {
 	}, nil
 }
 
-// NewFromConfig loads persisted configuration and applies invocation overrides before creating a client.
 func NewFromConfig() (*Client, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -138,7 +132,6 @@ func NewFromConfig() (*Client, error) {
 	return c, nil
 }
 
-// NewFromConfigUnauthenticated loads config and returns an unauthenticated client.
 func NewFromConfigUnauthenticated() (*Client, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -156,30 +149,24 @@ func NewFromConfigUnauthenticated() (*Client, error) {
 	return c, nil
 }
 
-// SetEnvironment changes the environment ID for subsequent requests on this client.
 func (c *Client) SetEnvironment(envID string) {
 	c.envID = envID
 }
 
-// SetTimeout changes the timeout for subsequent requests.
 func (c *Client) SetTimeout(timeout time.Duration) {
 	c.httpClient.Timeout = timeout
 }
 
-// SetRetryPolicy configures retry behavior for idempotent requests.
 func (c *Client) SetRetryPolicy(maxAttempts int, baseBackoff, maxBackoff time.Duration) {
 	c.maxAttempts = max(maxAttempts, 1)
 	c.baseBackoff = baseBackoff
 	c.maxBackoff = maxBackoff
 }
 
-// EnvID returns the current environment ID configured for this client.
-// The environment ID is used to scope API requests to a specific environment.
 func (c *Client) EnvID() string {
 	return c.envID
 }
 
-// Request sends JSON or raw reader bodies with authentication; streaming bodies skip retries and token refresh.
 func (c *Client) Request(ctx context.Context, method, path string, body any, headers ...http.Header) (*http.Response, error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
@@ -229,7 +216,6 @@ func (c *Client) Request(ctx context.Context, method, path string, body any, hea
 	return c.doRequest(ctx, method, fullURL, bodyBytes, true, headers...)
 }
 
-// RequestRaw sends a streaming body with custom headers, without JSON encoding or automatic replay.
 func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
@@ -390,7 +376,6 @@ func (c *Client) waitRetry(ctx context.Context, attempt int) error {
 }
 
 func (c *Client) applyAuth(req *http.Request) {
-	// Prefer JWT bearer token if present.
 	if c.jwtToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.jwtToken)
 		return
@@ -469,7 +454,6 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	return nil
 }
 
-// DoJSON enforces HTTP success and decodes a response without requiring the standard API envelope.
 func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body any, headers ...http.Header) (T, error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
@@ -491,7 +475,6 @@ func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body an
 	return out, nil
 }
 
-// DoEnvelope sends a request and decodes the shared envelope, enforcing HTTP and API success.
 func (c *Client) DoEnvelope[T any](ctx context.Context, method, path string, body any) (*types.ApiResponse[T], error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
@@ -503,19 +486,14 @@ func (c *Client) DoEnvelope[T any](ctx context.Context, method, path string, bod
 	return decodeResponseStrict[T](resp)
 }
 
-// GetJSON performs a GET and decodes the standard API envelope, enforcing
-// HTTP and API success.
 func (c *Client) GetJSON[T any](ctx context.Context, path string) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodGet, path, nil)
 }
 
-// PostJSON performs a POST with a JSON body and decodes the standard API
-// envelope, enforcing HTTP and API success.
 func (c *Client) PostJSON[T any](ctx context.Context, path string, body any) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodPost, path, body)
 }
 
-// DoRaw performs a request and returns the response payload when status is 2xx.
 func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]byte, error) {
 	loading := output.StartLoading(ctx)
 	defer loading.Stop()
@@ -537,19 +515,14 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-// PutJSON performs a PUT with a JSON body and decodes the standard API
-// envelope, enforcing HTTP and API success.
 func (c *Client) PutJSON[T any](ctx context.Context, path string, body any) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodPut, path, body)
 }
 
-// DeleteJSON performs a DELETE and decodes the standard API envelope,
-// enforcing HTTP and API success.
 func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*types.ApiResponse[T], error) {
 	return c.DoEnvelope[T](ctx, http.MethodDelete, path, nil)
 }
 
-// decodeResponseStrict enforces HTTP and API success while decoding the response. The caller owns the response body.
 func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
@@ -579,7 +552,6 @@ func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], er
 	return &result.ApiResponse, nil
 }
 
-// TestConnection checks the API version endpoint and returns transport or status failures.
 func (c *Client) TestConnection(ctx context.Context) error {
 	resp, err := c.Request(ctx, http.MethodGet, "/api/version", nil)
 	if err != nil {

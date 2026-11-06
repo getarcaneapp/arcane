@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	// trustBundleDir is the directory the Rustic binary probes for system roots.
 	trustBundleDir = "/etc/ssl/certs"
 )
 
@@ -38,9 +37,6 @@ var (
 	defaultCertDirs = []string{"/etc/ssl/certs", "/etc/pki/tls/certs"}
 )
 
-// trustBundle returns the PEM roots Arcane itself trusts, honoring
-// SSL_CERT_FILE and SSL_CERT_DIR, so the Rustic image (which ships no CA
-// store) can reach endpoints signed by a private CA.
 func trustBundle() []byte {
 	files := defaultCertFiles
 	if file := os.Getenv("SSL_CERT_FILE"); file != "" {

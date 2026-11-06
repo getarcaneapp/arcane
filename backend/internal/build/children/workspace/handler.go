@@ -13,7 +13,6 @@ import (
 )
 
 type (
-	// Handler provides file browsing endpoints for manual build workspaces.
 	Handler struct {
 		service       *Service
 		uploadService *upload.UploadService

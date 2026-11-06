@@ -21,7 +21,6 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		// Caller has containers:list but NOT containers:start.
 		ps := authz.NewPermissionSet()
 		ps.AddEnv("env-1", authz.PermContainersList)
 		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))

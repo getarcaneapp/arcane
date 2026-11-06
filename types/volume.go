@@ -11,115 +11,38 @@ import (
 )
 
 type (
-	// Volume represents a Docker volume.
 	Volume struct {
-		// Options contains driver-specific options.
-		//
-		// Required: false
-		Options map[string]string `json:"options" required:"false"`
-
-		// Labels contains user-defined metadata for the volume.
-		//
-		// Required: false
-		Labels map[string]string `json:"labels" required:"false"`
-
-		// UsageData contains size and reference count information.
-		//
-		// Required: false
-		UsageData *volume.UsageData `json:"usageData,omitempty" readOnly:"true"`
-
-		// ActivityID is the activity created by a mutating volume action.
-		//
-		// Required: false
-		ActivityID *string `json:"activityId,omitempty" readOnly:"true"`
+		Options    map[string]string `json:"options" required:"false"`
+		Labels     map[string]string `json:"labels" required:"false"`
+		UsageData  *volume.UsageData `json:"usageData,omitempty" readOnly:"true"`
+		ActivityID *string           `json:"activityId,omitempty" readOnly:"true"`
 		EnvironmentTag
-
-		// ID is the unique identifier of the volume.
-		//
-		// Required: true
-		ID string `json:"id" readOnly:"true"`
-
-		// Name of the volume.
-		//
-		// Required: false
-		Name string `json:"name" required:"false"`
-
-		// Driver is the volume driver used.
-		//
-		// Required: false
-		Driver string `json:"driver" required:"false"`
-
-		// Mountpoint is the path where the volume is mounted.
-		//
-		// Required: true
-		Mountpoint string `json:"mountpoint" readOnly:"true"`
-
-		// Scope of the volume (local, global, etc).
-		//
-		// Required: true
-		Scope string `json:"scope" readOnly:"true"`
-
-		// CreatedAt is the time when the volume was created.
-		//
-		// Required: true
-		CreatedAt string `json:"createdAt" readOnly:"true"`
-
-		// Containers is a list of container IDs using this volume.
-		//
-		// Required: true
+		ID         string   `json:"id" readOnly:"true"`
+		Name       string   `json:"name" required:"false"`
+		Driver     string   `json:"driver" required:"false"`
+		Mountpoint string   `json:"mountpoint" readOnly:"true"`
+		Scope      string   `json:"scope" readOnly:"true"`
+		CreatedAt  string   `json:"createdAt" readOnly:"true"`
 		Containers []string `json:"containers" readOnly:"true"`
 
-		// Size is the size of the volume in bytes.
-		//
-		// Required: false
-		Size int64 `json:"size" readOnly:"true"`
-
-		// InUse indicates if the volume is currently in use by a container.
-		//
-		// Required: true
-		InUse bool `json:"inUse" readOnly:"true"`
+		Size  int64 `json:"size" readOnly:"true"`
+		InUse bool  `json:"inUse" readOnly:"true"`
 	}
 
-	// VolumeUsageCounts contains counts of volumes by usage status.
 	VolumeUsageCounts struct {
-		// Inuse is the number of volumes currently in use.
-		//
-		// Required: true
-		Inuse int `json:"inuse"`
-
-		// Unused is the number of volumes not in use.
-		//
-		// Required: true
+		Inuse  int `json:"inuse"`
 		Unused int `json:"unused"`
-
-		// Total is the total number of volumes.
-		//
-		// Required: true
-		Total int `json:"total"`
+		Total  int `json:"total"`
 	}
 
-	// VolumePruneReport is the result of a volume prune operation.
 	VolumePruneReport struct {
-		// ActivityID is the activity created by the prune action.
-		//
-		// Required: false
-		ActivityID *string `json:"activityId,omitempty"`
-		// VolumesDeleted is a list of volume names that were deleted.
-		//
-		// Required: true
+		ActivityID     *string  `json:"activityId,omitempty"`
 		VolumesDeleted []string `json:"volumesDeleted"`
 
-		// SpaceReclaimed is the amount of space reclaimed in bytes.
-		//
-		// Required: true
 		SpaceReclaimed uint64 `json:"spaceReclaimed"`
 	}
 
-	// VolumeRename is used to rename an existing volume.
 	VolumeRename struct {
-		// Name is the new volume name.
-		//
-		// Required: true
 		Name string `json:"name" minLength:"1" doc:"New volume name"`
 	}
 
@@ -146,7 +69,6 @@ type (
 
 	VolumeBackupFormat string
 
-	// VolumeBackup is one volume backup run.
 	VolumeBackup struct {
 		CreatedAt         time.Time               `json:"createdAt"`
 		UpdatedAt         *time.Time              `json:"updatedAt,omitempty"`
@@ -214,7 +136,6 @@ type (
 		Policies []UpdateBackupPolicy `json:"policies"`
 	}
 
-	// VolumeRenameEntry describes a source volume and the target configuration for a copy-based rename.
 	VolumeRenameEntry struct {
 		OldVolume     volume.Volume
 		CreateOptions client.VolumeCreateOptions
@@ -286,10 +207,6 @@ type (
 		NewName       string `json:"newName,omitempty"`
 		NewParentPath string `json:"newParentPath,omitempty"`
 		UploadIndex   *int   `json:"uploadIndex,omitempty" minimum:"0"`
-		// BaselineIndex references an uploaded copy of the content an update_file
-		// change was drafted against. The volume workspace revision is already
-		// content-aware, so the baseline is accepted for API symmetry with
-		// project workspaces but not separately compared.
 		BaselineIndex *int   `json:"baselineIndex,omitempty" minimum:"0"`
 		BackupID      string `json:"backupId,omitempty"`
 		Recursive     bool   `json:"recursive,omitempty"`
@@ -311,10 +228,6 @@ const (
 	FileOpRestoreFile = "restore_file"
 )
 
-// NewVolume creates a Volume from a docker volume.Volume, calculating InUse
-// based on whether the volume has a reference count of 1 or more.
-//
-// InUse is set to true if the volume's UsageData.RefCount is >= 1, false otherwise.
 func NewVolume(v volume.Volume) Volume {
 	mountpoint := v.Mountpoint
 	if v.Options["type"] == "none" && v.Options["device"] != "" {
@@ -342,7 +255,6 @@ func NewVolume(v volume.Volume) Volume {
 	return dto
 }
 
-// Entry is the backup as the API lists it.
 func (b *VolumeBackup) Entry() VolumeBackupEntry {
 	return VolumeBackupEntry{
 		RemoteAvailable:   b.RemoteAvailable,

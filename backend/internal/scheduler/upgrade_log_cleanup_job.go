@@ -14,7 +14,6 @@ const (
 	UpgradeLogCleanupJobName = "upgrade-log-cleanup"
 )
 
-// NewUpgradeLogCleanupJob creates the hourly local upgrade log cleanup job.
 func NewUpgradeLogCleanupJob(service *system.SystemService) types.SchedulerJob {
 	return &types.GenericJob{
 		JobName:    UpgradeLogCleanupJobName,

@@ -20,7 +20,6 @@ const (
 	ProviderGeneric = "generic"
 )
 
-// DetectToken resolves a CI-issued OIDC token from the requested provider.
 func DetectToken(ctx context.Context, provider, audience string, getenv func(string) string, httpClient *http.Client) (string, string, error) {
 	provider = cmp.Or(strings.ToLower(strings.TrimSpace(provider)), ProviderAuto)
 	if getenv == nil {

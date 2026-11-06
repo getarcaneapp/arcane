@@ -17,7 +17,6 @@ import (
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
-	// Save original perms
 	origFilePerm := fs.FilePerm
 	origDirPerm := fs.DirPerm
 	defer func() {
@@ -338,7 +337,6 @@ func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
 
 	root := t.TempDir()
 	project := filepath.Join(root, "myproject")
-	// First write: script committed as +x.
 	_, err := WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 	})
@@ -368,7 +366,6 @@ func TestWriteSyncedDirectory_UpgradesExecutableBitOnUpdate(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "myproject")
 
-	// First write: file committed without +x.
 	_, err := WriteSyncedDirectory(t.Context(), root, project, []SyncFile{
 		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: false},
 	})
@@ -474,7 +471,6 @@ func TestWriteComposeOverrideFile(t *testing.T) {
 	dir := filepath.Join(root, "proj")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 
-	// A stale override under a different candidate name should be cleaned up.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.override.yml"), []byte("stale\n"), 0o600))
 
 	content := "services:\n  app:\n    image: busybox:latest\n"
@@ -487,7 +483,6 @@ func TestWriteComposeOverrideFile(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(dir, "docker-compose.override.yml"))
 	assert.True(t, os.IsNotExist(statErr))
 
-	// Nil content removes all override files.
 	require.NoError(t, WriteComposeOverrideFile(t.Context(), root, dir, nil, ""))
 	_, statErr = os.Stat(filepath.Join(dir, "compose.override.yaml"))
 	assert.True(t, os.IsNotExist(statErr))

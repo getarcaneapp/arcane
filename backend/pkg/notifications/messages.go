@@ -18,7 +18,6 @@ import (
 type (
 	MessageFormat string
 
-	// ContainerUpdateBatchEntry describes one container updated as part of a batch.
 	ContainerUpdateBatchEntry struct {
 		ContainerName string
 		ImageRef      string
@@ -243,7 +242,6 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 	return message.String()
 }
 
-// BuildBatchContainerUpdateNotificationMessage builds a formatted notification for a batch of container updates.
 func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environmentName string, entries []ContainerUpdateBatchEntry) string {
 	sorted := slices.Clone(entries)
 	slices.SortFunc(sorted, func(a, b ContainerUpdateBatchEntry) int { return strings.Compare(a.ContainerName, b.ContainerName) })

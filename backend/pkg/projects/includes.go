@@ -17,22 +17,12 @@ import (
 )
 
 type (
-	// Security Model for Include Files:
-	// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
-	//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
-	//   the compose file points at. Callers must validate containment and symlinks before
-	//   reading include content or returning inc.Content to users.
-	// - WRITE/DELETE: Restricted to files within the project directory only for security.
-	//   Always go through ValidateIncludePathForWrite.
-
 	IncludeFile struct {
 		Path         string `json:"path"`
 		RelativePath string `json:"relative_path"`
 		Content      string `json:"content"`
 	}
 
-	// MissingIncludeStubLoader creates temporary stub compose files for missing
-	// include paths during validation.
 	MissingIncludeStubLoader struct {
 		stubs       map[string]string
 		projectPath string
@@ -108,18 +98,12 @@ func (l *MissingIncludeStubLoader) resolveMissingInclude(localPath string) mo.Op
 	return mo.Some(validatedPath)
 }
 
-// Cleanup removes any temporary validation stub files created by the loader.
 func (l *MissingIncludeStubLoader) Cleanup() {
 	if l.tempDir != "" {
 		_ = os.RemoveAll(l.tempDir)
 	}
 }
 
-// ParseIncludes reads a compose file and extracts all include directives.
-// envMap is used to expand variables (e.g., ${VAR}) in include paths.
-//
-// Include handling stays on os.*: include files are allowed to live outside
-// the project directory (#3556), which the root-confined acfs API cannot reach.
 func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
@@ -129,7 +113,6 @@ func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) (
 	return ParseIncludesFromContent(composeFilePath, content, envMap, includeContent)
 }
 
-// ParseIncludesFromContent extracts include directives from compose content using composeFilePath as the base path.
 func ParseIncludesFromContent(composeFilePath string, content []byte, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	var composeData map[string]any
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
@@ -273,33 +256,26 @@ func readIncludeContent(fullPath, includePath string, includeContent bool) (stri
 		return string(fileContent), nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		// File doesn't exist yet - return empty content so it can be created
 		return "# This file will be created when you save changes\nservices:\n", nil
 	}
 	return "", fmt.Errorf("failed to read include file %s: %w", includePath, err)
 }
 
-// ValidateIncludePathForWrite ensures the include path is safe for write operations
-// Returns the validated absolute path to prevent recomputation after validation
-// Only allows writing within the project directory
 func ValidateIncludePathForWrite(projectDir, includePath string) (string, error) {
 	if includePath == "" {
 		return "", errors.New("include path cannot be empty")
 	}
 
-	// Resolve project directory to absolute path and evaluate symlinks
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid project directory: %w", err)
 	}
 	absProjectDir = filepath.Clean(absProjectDir)
 
-	// Try to resolve symlinks for the project directory if it exists
 	if evalProjectDir, evalSymlinksErr := filepath.EvalSymlinks(absProjectDir); evalSymlinksErr == nil {
 		absProjectDir = evalProjectDir
 	}
 
-	// Resolve include path to absolute path
 	fullPath := includePath
 	if !filepath.IsAbs(includePath) {
 		fullPath = filepath.Join(absProjectDir, includePath)
@@ -311,7 +287,6 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	}
 	absFullPath = filepath.Clean(absFullPath)
 
-	// Resolve symlinks in the include path to prevent symlink-based path traversal attacks
 	evalPath := absFullPath
 	evalFullPath, err := filepath.EvalSymlinks(absFullPath)
 	switch {
@@ -320,7 +295,6 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	case !errors.Is(err, os.ErrNotExist):
 		return "", fmt.Errorf("failed to resolve include path: %w", err)
 	default:
-		// File doesn't exist yet - evaluate parent directory symlinks
 		evalDir, dirErr := filepath.EvalSymlinks(filepath.Dir(absFullPath))
 		if dirErr != nil && !errors.Is(dirErr, os.ErrNotExist) {
 			return "", fmt.Errorf("failed to resolve parent directory: %w", dirErr)
@@ -330,12 +304,10 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 		}
 	}
 
-	// Prevent targeting the project directory itself
 	if evalPath == absProjectDir {
 		return "", errors.New("include path cannot be the project directory itself")
 	}
 
-	// Check if resolved path is within project directory
 	projectPrefix := absProjectDir + string(filepath.Separator)
 	isWithinProject := strings.HasPrefix(evalPath+string(filepath.Separator), projectPrefix)
 

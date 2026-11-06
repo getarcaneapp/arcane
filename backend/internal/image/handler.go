@@ -33,7 +33,6 @@ import (
 )
 
 type (
-	// ImageHandler provides Huma-based image management endpoints.
 	ImageHandler struct {
 		dockerService      *docker.DockerClientService
 		imageService       *ImageService
@@ -45,7 +44,6 @@ type (
 		appCtx             context.Context
 	}
 
-	// ListImagesOutput is the image list response including the upload limit.
 	ListImagesOutput struct {
 		Body types.ImageListResponse
 	}
@@ -138,7 +136,6 @@ type (
 	}
 )
 
-// ListImages returns a paginated list of images.
 func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, cmp.Or(input.Limit, 20), input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
@@ -174,7 +171,6 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 	}, nil
 }
 
-// GetImage returns an image by ID.
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[types.ImageDetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
@@ -192,7 +188,6 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*han
 	}, nil
 }
 
-// TagImage adds a repository tag to an image.
 func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*handlerutil.Out[types.MessageResponse], error) {
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
@@ -214,7 +209,6 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 	return handlerutil.MessageOutput("Image tagged successfully", ""), nil
 }
 
-// GetImageHistory returns Docker image layer history.
 func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*handlerutil.Out[[]types.ImageHistoryItem], error) {
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
@@ -234,7 +228,6 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 	}, nil
 }
 
-// SearchImages searches Docker Hub images.
 func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*handlerutil.Out[[]types.ImageSearchResult], error) {
 	results, err := h.imageService.SearchImages(ctx, input.Term)
 	if err != nil {
@@ -252,7 +245,6 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 	}, nil
 }
 
-// ExportImage streams a Docker image tar archive.
 func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput) (*huma.StreamResponse, error) {
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
@@ -289,7 +281,6 @@ func validateImageName(raw string) (string, error) {
 	return imageName, nil
 }
 
-// RemoveImage removes a Docker image.
 func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -310,7 +301,6 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	return handlerutil.MessageOutput("Image removed successfully", ""), nil
 }
 
-// PullImage pulls a Docker image with streaming progress.
 func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
 	if input.Body.ImageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
@@ -321,7 +311,6 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 		return nil, err
 	}
 
-	// Get full image name with tag and credentials
 	fullImageName := input.Body.GetFullImageName()
 	credentials := input.Body.GetCredentials()
 
@@ -372,7 +361,6 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 	}, nil
 }
 
-// BuildImage builds a Docker image with streaming progress.
 func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
 	if strings.TrimSpace(input.Body.ContextDir) == "" {
 		return nil, huma.Error400BadRequest("contextDir is required")
@@ -425,7 +413,6 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 	}, nil
 }
 
-// ListImageBuilds returns a paginated list of image build history entries.
 func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*handlerutil.Page[types.ImageBuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
@@ -462,7 +449,6 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 	}, nil
 }
 
-// GetImageBuild returns a single build history entry.
 func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*handlerutil.Out[types.ImageBuildRecord], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
@@ -488,7 +474,6 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 	}, nil
 }
 
-// PruneImages removes unused Docker images.
 func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*handlerutil.Out[types.ImagePruneReport], error) {
 	report, err := h.imageService.PruneImages(ctx, types.PruneImagesOptions{
 		Mode: types.PruneImageMode(func() string {
@@ -527,7 +512,6 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 	}, nil
 }
 
-// GetImageUsageCounts returns counts of images by usage status.
 func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ImageUsageCounts], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.imageService.AggregateImageCounts(ctx)
@@ -550,7 +534,6 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *types.Env
 	}, nil
 }
 
-// UploadImage uploads a Docker image from a tar archive.
 func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[types.ImageLoadResult], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {

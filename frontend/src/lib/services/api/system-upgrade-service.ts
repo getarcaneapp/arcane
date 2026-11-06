@@ -9,10 +9,6 @@ type ApiResponse<T> = {
 	message?: string;
 };
 
-/**
- * Check if an environment can perform a self-upgrade.
- * @param environmentId - Environment ID (defaults to the local manager, '0')
- */
 async function checkUpgradeAvailable(environmentId: string = '0'): Promise<UpgradeCheckResult> {
 	const res = await apiClient.get<UpgradeCheckResult>(`/environments/${environmentId}/system/upgrade/check`);
 	return res.data;
@@ -33,10 +29,6 @@ async function getCurrentUpgradeJob(): Promise<UpgradeJob> {
 	return res.data.data;
 }
 
-/**
- * Fetch the running version info (including current digest) for the local system (envId=0)
- * or a remote environment.
- */
 async function getVersionInfo(environmentId: string = '0'): Promise<VersionInfo> {
 	if (environmentId === '0') {
 		const res = await apiClient.get<VersionInfo>('/app/version', { timeout: 5000 });

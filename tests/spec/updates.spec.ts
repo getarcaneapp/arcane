@@ -204,7 +204,6 @@ test.describe('Container updates', () => {
 		await dialog.getByRole('button', { name: 'Update', exact: true }).click();
 	}
 
-	/** Runs the row-level "Update Container" action for one container through its confirm dialog. */
 	async function updateContainerFromRow(page: Page, container: (typeof CONTAINERS)[number]) {
 		const menu = await openRowActionsMenu(page, containerRow(page, container));
 		await menu.getByRole('menuitem', { name: 'Update Container', exact: true }).click();

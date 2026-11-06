@@ -30,13 +30,10 @@ type (
 		dropKeys map[string]struct{}
 	}
 
-	// gormLogger omits SQL parameters and drops traces for canceled requests.
 	gormLogger struct {
 		logger.Interface
 	}
 
-	// telemetryLogHandler applies LOG_LEVEL to the OpenTelemetry bridge and strips raw query strings,
-	// URL queries, and webhook trigger tokens before records are exported.
 	telemetryLogHandler struct {
 		handler slog.Handler
 		level   slog.Leveler
@@ -44,7 +41,6 @@ type (
 )
 
 var (
-	// logLevels maps LOG_LEVEL values to slog levels; unknown values map to the zero value, slog.LevelInfo.
 	logLevels = map[string]slog.Level{
 		"debug":   slog.LevelDebug,
 		"warn":    slog.LevelWarn,
@@ -235,8 +231,6 @@ func redactLogAttrs(attrs []slog.Attr) []slog.Attr {
 	return redacted
 }
 
-// SetupSlogLogger installs the console logger and the diagnostics log tee. When
-// telemetryHandler is set, records are also sent to it at the same level.
 func SetupSlogLogger(cfg *config.Config, telemetryHandler slog.Handler) {
 	lv := new(slog.LevelVar)
 	lv.Set(logLevels[strings.ToLower(cfg.LogLevel)])

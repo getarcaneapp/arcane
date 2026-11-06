@@ -199,13 +199,13 @@
 	</div>
 {/snippet}
 
-{#snippet SizeCell({ item, value }: { item: WorkspaceFileEntry; value: any })}
+{#snippet SizeCell({ item, value }: { item: WorkspaceFileEntry; value: unknown })}
 	<span class="text-sm text-muted-foreground">
 		{item.isDirectory ? '--' : formatBytes(Number(value))}
 	</span>
 {/snippet}
 
-{#snippet CreatedCell({ value }: { value: any })}
+{#snippet CreatedCell({ value }: { value: unknown })}
 	<span class="text-sm text-muted-foreground">
 		{formatDateTimeShort(String(value))}
 	</span>
@@ -225,7 +225,7 @@
 			{#if onRestoreFromBackup && !item.isSymlink}
 				<DropdownMenu.Item onclick={() => onRestoreFromBackup(item)}>
 					<RestartIcon class="size-4" />
-					Restore from backup
+					{m.restore_from_backup()}
 				</DropdownMenu.Item>
 			{/if}
 			<DropdownMenu.Separator />

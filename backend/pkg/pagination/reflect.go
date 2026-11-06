@@ -32,10 +32,6 @@ func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (
 			Desc:   sortDirection == "desc",
 		})
 	}
-	// Without a total order the page cut is undefined: rows can repeat or go
-	// missing across pages when the requested column has ties (or no sort was
-	// requested at all) and the database reorders a plain scan. Tie-break on the
-	// primary key whenever the model has one and the caller did not already.
 	if _, hasID := modelType.FieldByName("ID"); hasID && columnName != "id" && !orderedByID(query) {
 		orderColumns = append(orderColumns, clause.OrderByColumn{
 			Column: clause.Column{Table: clause.CurrentTable, Name: "id"},
@@ -56,14 +52,9 @@ func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (
 		limit = 100
 	}
 
-	// The caller's offset is passed through as-is. Converting it to a page number
-	// and back rounded it down to a page boundary, so ?start=25&limit=20 returned
-	// rows 20-39 instead of 25-44 — and clamping limit above skewed it further,
-	// since the clamped limit divided a start computed from the requested one.
 	return paginateDB(params.Start, limit, query, result, params.SkipCount)
 }
 
-// orderedByID reports whether the query's existing ORDER BY already includes the id column.
 func orderedByID(query *gorm.DB) bool {
 	existing, ok := query.Statement.Clauses["ORDER BY"]
 	if !ok {
@@ -90,7 +81,6 @@ func orderedByID(query *gorm.DB) bool {
 	return false
 }
 
-// paginateDBAll returns all results without pagination limits or a COUNT(*).
 func paginateDBAll[M any](query *gorm.DB, result *[]M) (Response, error) {
 	if err := query.Find(result).Error; err != nil {
 		return Response{}, err
@@ -105,9 +95,6 @@ func paginateDBAll[M any](query *gorm.DB, result *[]M) (Response, error) {
 	}, nil
 }
 
-// paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided,
-// TotalItems/TotalPages are returned as UnknownTotal, and one extra row decides HasNextPage.
-// Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
 func paginateDB[M any](offset, pageSize int, query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
 	if offset < 0 {
 		offset = 0

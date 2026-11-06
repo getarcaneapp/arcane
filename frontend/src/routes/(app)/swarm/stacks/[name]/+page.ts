@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { swarmStackQuery, swarmStackServiceListQuery, swarmStackTaskListQuery } from '#lib/query/swarm.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
@@ -64,7 +65,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		if ('status' in err && err.status === 404) {
 			throw err;
 		}
-		throw error(500, err.message || 'Failed to load stack details');
+		throw error(500, err.message || m.failed_to_load_stack_details());
 	} else {
 		return operationResult.data;
 	}

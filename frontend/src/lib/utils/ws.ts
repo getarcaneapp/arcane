@@ -1,6 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
 import { currentSessionSignal } from '#lib/services/api-service.js';
-import type { ContainerResourceSampleBatch } from '#lib/types/container.js';
+import type { ContainerResourceSampleBatch, ContainerStats } from '#lib/types/container.js';
 import type {
 	SystemStats,
 	ActorDiagnostics,
@@ -286,7 +286,7 @@ export function createStatsWebSocket(opts: {
 export function createContainerStatsWebSocket(opts: {
 	getEnvId: () => string;
 	containerId: string;
-	onMessage: (data: any) => void;
+	onMessage: (data: ContainerStats) => void;
 	onOpen?: () => void;
 	onClose?: () => void;
 	onError?: (err: Event | Error) => void;
@@ -299,9 +299,9 @@ export function createContainerStatsWebSocket(opts: {
 		return `${protocol}://${location.host}/api/environments/${envId}/ws/containers/${opts.containerId}/stats`;
 	};
 
-	return new ReconnectingWebSocket<any>({
+	return new ReconnectingWebSocket<ContainerStats>({
 		buildUrl,
-		parseMessage: (evt) => JSON.parse(evt.data as string),
+		parseMessage: (evt) => JSON.parse(evt.data as string) as ContainerStats,
 		onMessage: opts.onMessage,
 		onOpen: opts.onOpen,
 		onClose: opts.onClose,
@@ -337,7 +337,6 @@ export function createContainersStatsWebSocket(opts: {
 	});
 }
 
-/** Diagnostics stream carrying live snapshots plus request/response commands. */
 export function createDiagnosticsWebSocket(opts: {
 	onSnapshot: (data: Diagnostics) => void;
 	onOpen?: () => void;
@@ -387,7 +386,6 @@ export function createDiagnosticsWebSocket(opts: {
 		},
 		refresh: () => socket.send(JSON.stringify({ id: '', type: 'refresh' })),
 		request,
-		/** Captures a pprof profile over the stream and saves it as a file. */
 		async downloadProfile(profile: PprofProfile) {
 			const msg = await request({ type: 'profile', name: profile });
 			const bytes = Uint8Array.from(atob(msg.data ?? ''), (char) => char.charCodeAt(0));
@@ -444,9 +442,7 @@ function createDiagnosticsStreamWebSocket<T>(
 	});
 }
 
-// --- Debounce helper ---
-
-export function debounced<T extends (...args: any[]) => void>(func: T, delay: number) {
+export function debounced<T extends (...args: never[]) => void>(func: T, delay: number) {
 	let debounceTimeout: ReturnType<typeof setTimeout>;
 
 	return (...args: Parameters<T>) => {

@@ -201,7 +201,6 @@ export function setTelemetry(enabled: Record<Signal, boolean>, version: string):
 	).then(() => {});
 }
 
-// Starts the pageview span that parents this navigation's requests.
 export function startPageView(routeId: string | null | undefined, startTime = performance.now()): void {
 	route =
 		(routeId ?? '')
@@ -226,7 +225,6 @@ export function finishNavigation(routeId: string | null | undefined, type: Navig
 	navigationMetrics?.duration.record(performance.now() - navigationStart, attributes);
 }
 
-// Emits a sanitized error log with the current route and trace context.
 export function recordError(error: unknown, source: string): void {
 	if (!emitErrorLog || (error instanceof Error && CANCELLED_ERRORS.includes(error.name))) return;
 	try {

@@ -133,7 +133,6 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	db := &DB{DB: gormDB}
-	// Close the pool if initialization fails after opening it.
 	defer func() {
 		if err == nil {
 			return
@@ -194,7 +193,6 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	return db, nil
 }
 
-// latestMigrationVersion selects the latest embedded migration.
 func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions, requiredVersion int64) error {
 	dialect, ok := map[string]goose.Dialect{
 		dbProviderSQLite:   goose.DialectSQLite3,
@@ -332,8 +330,6 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 	}).String(), nil
 }
 
-// FindEnvironmentIDByApiKey finds the environment ID that is associated with the given API key.
-// It queries the api_keys table to validate the key and find the associated environment.
 func (db *DB) FindEnvironmentIDByApiKey(ctx context.Context, apiKey string) (string, error) {
 	var envID string
 	err := db.WithContext(ctx).Table("environments").

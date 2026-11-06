@@ -21,7 +21,6 @@ const (
 	secretMask = "********"
 )
 
-// Command is the parent command for global variable operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

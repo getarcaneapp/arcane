@@ -1,5 +1,3 @@
-// Package activities implements the `arcane activities` command group for
-// tracking background operations (the web UI's activity center).
 package activities
 
 import (
@@ -34,7 +32,6 @@ var activityRef = cmdutil.ResourceRef[types.ActivityDetail, types.Activity]{
 	Promote:      func(item types.Activity) *types.ActivityDetail { return &types.ActivityDetail{Activity: item} },
 }
 
-// Command is the parent command for background activity operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "activities",

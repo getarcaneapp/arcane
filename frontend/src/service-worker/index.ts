@@ -42,12 +42,6 @@ self.addEventListener('activate', (event) => {
 		);
 	}
 
-	// Make both the cache cleanup and taking control of already-open tabs part of
-	// the activation lifetime. Returning clients.claim() from the listener isn't
-	// enough — the service worker event system ignores the return value, so the
-	// claim could lose the race to activation completing and leave existing tabs
-	// controlled by the old worker (which still caches /api/ streams) until a full
-	// reload, leaving the multi-tab bug unfixed for the very tabs this repairs.
 	event.waitUntil(Promise.all([deleteOldCaches(), self.clients.claim()]));
 });
 
@@ -57,15 +51,8 @@ self.addEventListener('fetch', (event) => {
 	const url = new URL(event.request.url);
 	if (url.origin !== self.location.origin) return;
 
-	// Never intercept API requests. Caching the never-ending `/api/.../stream`
-	// responses leaked memory and collapsed every tab onto a single cached
-	// connection, so only the first tab received live events. Let API requests
-	// — including streams — go straight to the network, one per tab.
 	if (url.pathname.startsWith(API_PREFIX)) return;
 
-	// Generated application chunks and navigations already carry content-hashed
-	// URLs or need the current backend response. Intercept only the static assets
-	// installed above so an uncached network failure cannot reject respondWith().
 	if (!ASSET_PATHS.has(url.pathname)) return;
 
 	async function respond() {

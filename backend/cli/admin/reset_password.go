@@ -32,8 +32,6 @@ const (
 var (
 	resetPasswordUsername string
 
-	// AdminCmd contains administration commands that run inside the Arcane
-	// container without starting the HTTP server.
 	AdminCmd = &cobra.Command{
 		Use:   "admin",
 		Short: "Manage Arcane administration",

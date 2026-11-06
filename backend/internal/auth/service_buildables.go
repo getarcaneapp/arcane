@@ -10,8 +10,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// GetAutoLoginConfig returns the auto-login configuration for the frontend.
-// The password is never returned. Auto-login is disabled if local auth is disabled.
 func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginConfig, error) {
 	if !buildables.HasBuildFeature("autologin") {
 		return &types.AutoLoginConfig{
@@ -43,9 +41,6 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginC
 	}, nil
 }
 
-// GetAutoLoginPassword returns the auto-login password for internal use only.
-// This should only be called by the login handler to validate auto-login credentials.
-// WARNING: Never expose this value through any API response!
 func (s *AuthService) GetAutoLoginPassword() string {
 	if !buildables.HasBuildFeature("autologin") {
 		return ""

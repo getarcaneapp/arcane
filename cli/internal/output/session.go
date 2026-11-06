@@ -17,7 +17,6 @@ import (
 )
 
 type (
-	// fileDescriptor supplies a writer's descriptor for terminal detection and sizing.
 	fileDescriptor interface {
 		Fd() uintptr
 	}
@@ -33,7 +32,6 @@ var (
 	commandLabel     = "Loading"
 )
 
-// Configure binds output to the current command's writers and output mode.
 func Configure(stdout, stderr io.Writer, jsonMode, noColor bool, label string) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
@@ -44,7 +42,6 @@ func Configure(stdout, stderr io.Writer, jsonMode, noColor bool, label string) {
 	setTheme(detectDarkBackground(stdout, noColor))
 }
 
-// Stdout returns the current command's result writer.
 func Stdout() io.Writer {
 	sessionMu.RLock()
 	defer sessionMu.RUnlock()
@@ -54,7 +51,6 @@ func Stdout() io.Writer {
 	return os.Stdout
 }
 
-// Stderr returns the current command's diagnostic writer.
 func Stderr() io.Writer {
 	sessionMu.RLock()
 	defer sessionMu.RUnlock()
@@ -72,7 +68,6 @@ func humanWriter() io.Writer {
 	return kit.Ternary(jsonMode, Stderr(), Stdout())
 }
 
-// IsTerminal checks the actual writer, including terminal capability.
 func IsTerminal(value any) bool {
 	if writer, ok := value.(*colorprofile.Writer); ok {
 		value = writer.Forward
@@ -95,7 +90,6 @@ func renderFor(w io.Writer, style lipgloss.Style, value string) string {
 	return style.Render(value)
 }
 
-// StartLoading tracks the current command while a request is in progress.
 func StartLoading(ctx context.Context) *tracker {
 	sessionMu.RLock()
 	enabled, label := !plainMode, commandLabel
@@ -108,7 +102,6 @@ func StartLoading(ctx context.Context) *tracker {
 	return t
 }
 
-// CoordinatedWriter clears loading while another writer uses the terminal.
 func CoordinatedWriter(w io.Writer) io.Writer { return coordinatedWriter{out: w} }
 
 func (w coordinatedWriter) Write(p []byte) (int, error) {
@@ -116,7 +109,6 @@ func (w coordinatedWriter) Write(p []byte) (int, error) {
 	return w.out.Write(p)
 }
 
-// WriteError renders the command error once through Fang's error handler.
 func WriteError(w io.Writer, err error) {
 	defer SuspendProgress()()
 	_, _ = fmt.Fprintf(w, "\n  %s\n  %s\n", renderFor(w, headerStyle.Foreground(statusOffline), "Error"), err.Error())

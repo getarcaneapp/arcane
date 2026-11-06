@@ -1,38 +1,18 @@
 package types
 
 type (
-	// NotificationProvider is the type for notification provider identifiers.
 	NotificationProvider string
 
 	NotificationSettings struct {
-		// Config contains the provider-specific configuration.
-		//
-		// Required: true
-		Config JsonObject `json:"config"`
-
-		// Provider is the notification provider type.
-		//
-		// Required: true
+		Config   JsonObject           `json:"config"`
 		Provider NotificationProvider `json:"provider"`
-
-		// ID is the unique identifier of the notification settings.
-		//
-		// Required: true
-		ID uint `json:"id" readOnly:"true"`
-
-		// Enabled indicates if the notification provider is enabled.
-		//
-		// Required: true
-		Enabled bool `json:"enabled"`
+		ID       uint                 `json:"id" readOnly:"true"`
+		Enabled  bool                 `json:"enabled"`
 	}
 
-	// NotificationTestResponse is the result of a test notification send.
 	NotificationTestResponse struct {
-		// Message describes the test outcome.
 		Message string `json:"message"`
 
-		// Warning explains why a real notification of the tested kind would not
-		// send (provider disabled or event unsubscribed). Empty when none applies.
 		Warning string `json:"warning,omitempty"`
 	}
 
@@ -95,27 +75,16 @@ type (
 )
 
 const (
-	// NotificationProviderDiscord is the builtin Discord notification provider.
-	NotificationProviderDiscord NotificationProvider = "discord"
-	// NotificationProviderEmail is the builtin Email notification provider.
-	NotificationProviderEmail NotificationProvider = "email"
-	// NotificationProviderTelegram is the builtin Telegram notification provider.
-	NotificationProviderTelegram NotificationProvider = "telegram"
-	// NotificationProviderSignal is the builtin Signal notification provider.
-	NotificationProviderSignal NotificationProvider = "signal"
-	// NotificationProviderSlack is the builtin Slack notification provider.
-	NotificationProviderSlack NotificationProvider = "slack"
-	// NotificationProviderNtfy is the builtin Ntfy notification provider.
-	NotificationProviderNtfy NotificationProvider = "ntfy"
-	// NotificationProviderPushover is the builtin Pushover notification provider.
-	NotificationProviderPushover NotificationProvider = "pushover"
-	// NotificationProviderGotify is the builtin Gotify notification provider.
-	NotificationProviderGotify NotificationProvider = "gotify"
-	// NotificationProviderMatrix is the builtin Matrix webhook notification provider.
-	NotificationProviderMatrix NotificationProvider = "matrix"
-	// NotificationProviderGoogleChat is the builtin Google Chat notification provider.
-	NotificationProviderGoogleChat NotificationProvider = "googlechat"
-	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
+	NotificationProviderDiscord                  NotificationProvider     = "discord"
+	NotificationProviderEmail                    NotificationProvider     = "email"
+	NotificationProviderTelegram                 NotificationProvider     = "telegram"
+	NotificationProviderSignal                   NotificationProvider     = "signal"
+	NotificationProviderSlack                    NotificationProvider     = "slack"
+	NotificationProviderNtfy                     NotificationProvider     = "ntfy"
+	NotificationProviderPushover                 NotificationProvider     = "pushover"
+	NotificationProviderGotify                   NotificationProvider     = "gotify"
+	NotificationProviderMatrix                   NotificationProvider     = "matrix"
+	NotificationProviderGoogleChat               NotificationProvider     = "googlechat"
 	NotificationProviderGeneric                  NotificationProvider     = "generic"
 	NotificationDispatchKindImageUpdate          NotificationDispatchKind = "image_update"
 	NotificationDispatchKindBatchImageUpdate     NotificationDispatchKind = "batch_image_update"

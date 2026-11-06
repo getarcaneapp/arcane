@@ -32,7 +32,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// setupWebhookServiceTestDB creates an isolated in-memory SQLite DB for each test.
 func setupWebhookServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	initWebhookTokenCryptoForTests()
@@ -64,7 +63,6 @@ func newTestWebhookService(db *database.DB) *WebhookService {
 	}
 }
 
-// fetchWebhook loads a webhook directly from the DB to inspect stored fields.
 func fetchWebhook(t *testing.T, db *database.DB, id string) Webhook {
 	t.Helper()
 	var wh Webhook
@@ -484,7 +482,6 @@ func TestDeleteWebhook_NotFoundForWrongEnvironment(t *testing.T) {
 	err = svc.DeleteWebhook(ctx, created.ID, "env-2", types.Actor{})
 	require.ErrorIs(t, err, ErrWebhookNotFound)
 
-	// Webhook must still exist in the correct environment
 	_, err = svc.GetWebhookByID(ctx, created.ID, "env-1")
 	assert.NoError(t, err)
 }
@@ -577,7 +574,6 @@ func TestTriggerByToken_NotFound(t *testing.T) {
 	db := setupWebhookServiceTestDB(t)
 	svc := newTestWebhookService(db)
 
-	// Well-formatted token but not in the DB
 	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 	err := svc.TriggerByToken(ctx, raw)
 	assert.ErrorIs(t, err, ErrWebhookNotFound)
@@ -591,7 +587,6 @@ func TestTriggerByToken_WrongHash_NotFound(t *testing.T) {
 	_, rawToken, err := svc.CreateWebhook(ctx, "hash-check", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, authz.SudoPermissionSet())
 	require.NoError(t, err)
 
-	// Flip the last character of the token
 	tampered := rawToken[:len(rawToken)-1]
 	if rawToken[len(rawToken)-1] == 'a' {
 		tampered += "b"
@@ -642,8 +637,6 @@ func TestTriggerByToken_UnknownTargetType_ReturnsInvalidType(t *testing.T) {
 	assert.ErrorIs(t, err, ErrWebhookInvalidType)
 }
 
-// insertWebhookDirect inserts a webhook record directly, bypassing CreateWebhook validation,
-// so dispatch tests can use known target types without needing real service dependencies.
 func insertWebhookDirect(t *testing.T, ctx context.Context, db *database.DB, rawToken, targetType, actionType, targetID, envID string) *Webhook {
 	t.Helper()
 	hash := kit.SHA256Hex(rawToken)

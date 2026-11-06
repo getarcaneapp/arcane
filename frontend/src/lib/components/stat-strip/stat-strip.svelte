@@ -5,7 +5,6 @@
 	import { cn } from '#lib/utils.js';
 
 	interface Props {
-		/** Column classes, e.g. `lg:grid-cols-4`. */
 		class?: ClassValue;
 		children: Snippet;
 	}

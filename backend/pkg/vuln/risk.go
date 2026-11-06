@@ -14,44 +14,33 @@ import (
 )
 
 type (
-	// ThreatIntel is the exploitation evidence known for one CVE.
 	ThreatIntel struct {
 		EPSS           *float64
 		KnownExploited bool
-		// KEVOverdue reports a known-exploited CVE past its CISA KEV due date.
-		KEVOverdue bool
+		KEVOverdue     bool
 	}
 
-	// RiskScore collects scored members keyed by ID: distinct fixable findings for an image, scanned images for an environment.
 	RiskScore struct {
-		scores   map[string]float64
-		weights  map[string]float64
-		unscored map[string]struct{}
-		// peak is the highest image score recorded for an environment.
-		peak float64
-		// exploitedRunning counts members with a fixable known-exploited finding on a running (or unknown) image;
-		// overdueExploitedRunning counts those past their KEV due date. For an image they are 0 or 1.
+		scores                  map[string]float64
+		weights                 map[string]float64
+		unscored                map[string]struct{}
+		peak                    float64
 		exploitedRunning        int
 		overdueExploitedRunning int
 	}
 )
 
 const (
-	// ScoringVersion tags risk snapshots; trends only read the current formula.
-	ScoringVersion = 4
-	// TopPackageInsightLimit caps the packages listed in scan insights.
+	ScoringVersion         = 4
 	TopPackageInsightLimit = 5
 	threatFactorNoData     = 0.7
 	usageFactorStopped     = 0.8
 	usageFactorUnused      = 0.5
-	// concentrationPenalty is the most the fixable finding count adds to an image; it saturates over concentrationScale findings.
-	concentrationPenalty = 8
-	concentrationScale   = 40
-	// exposureWeight*Internal set how much a scanned image counts in the environment average; unused and unknown images count once.
-	exposureWeightRunning = 3
-	exposureWeightStopped = 2
-	// peakShare is how far the environment score moves from the image average toward the riskiest image.
-	peakShare = 0.6
+	concentrationPenalty   = 8
+	concentrationScale     = 40
+	exposureWeightRunning  = 3
+	exposureWeightStopped  = 2
+	peakShare              = 0.6
 	// exploitedFloor*Internal set the lowest environment score while fixable known-exploited findings are running:
 	// the base for one image, a step per additional image, a bump once any is past its KEV due date, and a cap.
 	exploitedFloorBase     = 70
@@ -60,10 +49,8 @@ const (
 	exploitedFloorMax      = 95
 )
 
-// rankWeights is the share of each of an image's worst fixable findings that enters its score, worst first.
 var rankWeights = [...]float64{0.70, 0.15, 0.05, 0.02}
 
-// CVSSScore returns the CVSS v3 score, else v2, else 0.
 func CVSSScore(cvss *types.CVSSInfo) float64 {
 	if cvss == nil {
 		return 0
@@ -74,7 +61,6 @@ func CVSSScore(cvss *types.CVSSInfo) float64 {
 	return cvss.V2Score
 }
 
-// BaseScore returns the CVSS score, falling back to a severity midpoint when unscored.
 func BaseScore(cvss float64, severity types.VulnerabilitySeverity) float64 {
 	if cvss > 0 {
 		return cvss
@@ -95,7 +81,6 @@ func BaseScore(cvss float64, severity types.VulnerabilitySeverity) float64 {
 	}
 }
 
-// SeverityRank orders severities from unknown (0) to critical (4).
 func SeverityRank(severity types.VulnerabilitySeverity) int {
 	switch severity {
 	case types.VulnerabilitySeverityCritical:
@@ -113,7 +98,6 @@ func SeverityRank(severity types.VulnerabilitySeverity) int {
 	}
 }
 
-// SeveritySummary counts findings per severity.
 func SeveritySummary(vulns []types.Vulnerability) *types.VulnerabilitySeveritySummary {
 	summary := &types.VulnerabilitySeveritySummary{}
 	for _, v := range vulns {
@@ -136,8 +120,6 @@ func SeveritySummary(vulns []types.Vulnerability) *types.VulnerabilitySeveritySu
 	return summary
 }
 
-// FindingPriority maps a 0-10 severity onto a 0-100 patch priority using exploitation evidence and container usage.
-// A known-exploited finding takes the maximum rating regardless of CVSS, as RS³ does for threats seen in the wild.
 func FindingPriority(base float64, intel ThreatIntel, exposure types.ImageExposure) float64 {
 	threat := threatFactorNoData
 	switch {
@@ -157,8 +139,6 @@ func FindingPriority(base float64, intel ThreatIntel, exposure types.ImageExposu
 	return min(100, 10*base*threat*usage)
 }
 
-// AddFinding scores one finding occurrence, records it when fixable, and returns its 0-100 priority.
-// An unrated non-CVE advisory is left out entirely: it has no CVSS to score and no rating to wait for.
 func (r *RiskScore) AddFinding(vulnerabilityID string, fixable bool, base float64, intel ThreatIntel, exposure types.ImageExposure) float64 {
 	priority := FindingPriority(base, intel, exposure)
 	if !fixable || (priority <= 0 && !strings.HasPrefix(strings.ToUpper(vulnerabilityID), "CVE-")) {
@@ -175,7 +155,6 @@ func (r *RiskScore) AddFinding(vulnerabilityID string, fixable bool, base float6
 	return priority
 }
 
-// AddImage records a scanned image's findings score for the environment, weighted by how exposed the image is.
 func (r *RiskScore) AddImage(imageID string, image *RiskScore, exposure types.ImageExposure) {
 	weight := 1.0
 	switch exposure {
@@ -194,7 +173,6 @@ func (r *RiskScore) AddImage(imageID string, image *RiskScore, exposure types.Im
 	r.overdueExploitedRunning += image.overdueExploitedRunning
 }
 
-// addScore records a member's score; the highest score per ID wins and unavailable members stay out of the total.
 func (r *RiskScore) addScore(id string, score, weight float64, status types.VulnerabilityScoreStatus) {
 	if r.scores == nil {
 		r.scores, r.weights, r.unscored = map[string]float64{}, map[string]float64{}, map[string]struct{}{}
@@ -212,13 +190,10 @@ func (r *RiskScore) addScore(id string, score, weight float64, status types.Vuln
 	r.weights[id] = weight
 }
 
-// Scored returns how many members entered the score.
 func (r *RiskScore) Scored() int {
 	return len(r.scores)
 }
 
-// ImageScore returns an image's unrounded 0-100 score and the rounded API score.
-// Modeled on the RS³ security risk: the worst findings count with shrinking weights and the fixable count adds a little on top.
 func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 	values := slices.Sorted(maps.Values(r.scores))
 	slices.Reverse(values)
@@ -232,9 +207,6 @@ func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 	return total, r.result(total)
 }
 
-// EnvironmentScore returns the environment's unrounded 0-100 score and the rounded API score.
-// Modeled on the overall RS³: the exposure-weighted image average pulled toward the riskiest image, held at a
-// known-exploited floor that rises with each running image carrying a fixable KEV and once any is overdue.
 func (r *RiskScore) EnvironmentScore() (float64, types.VulnerabilityPatchPriority) {
 	basis := r.Basis()
 	total := basis.Score + peakShare*max(0, basis.Peak-basis.Score)
@@ -248,7 +220,6 @@ func (r *RiskScore) EnvironmentScore() (float64, types.VulnerabilityPatchPriorit
 	return total, r.result(total)
 }
 
-// Basis returns the mergeable data behind EnvironmentScore.
 func (r *RiskScore) Basis() types.RiskScoreBasis {
 	sum, weight := 0.0, 0.0
 	for id, score := range r.scores {
@@ -268,7 +239,6 @@ func (r *RiskScore) Basis() types.RiskScoreBasis {
 	}
 }
 
-// AddEnvironment merges another environment's basis into this score.
 func (r *RiskScore) AddEnvironment(environmentID string, basis types.RiskScoreBasis) {
 	if basis.Weight > 0 {
 		r.addScore(environmentID, basis.Score, basis.Weight, types.VulnerabilityScoreStatusComplete)
@@ -278,7 +248,6 @@ func (r *RiskScore) AddEnvironment(environmentID string, basis types.RiskScoreBa
 	r.overdueExploitedRunning += basis.OverdueExploitedRunningImages
 }
 
-// result rounds a score into the API shape; only unscorable members make it unavailable.
 func (r *RiskScore) result(total float64) types.VulnerabilityPatchPriority {
 	result := types.VulnerabilityPatchPriority{RiskScore: int(math.Round(total)), ScoreStatus: types.VulnerabilityScoreStatusComplete}
 	result.RiskBand = RiskBand(result.RiskScore)
@@ -288,7 +257,6 @@ func (r *RiskScore) result(total float64) types.VulnerabilityPatchPriority {
 	return result
 }
 
-// RiskBand labels a 0-100 score.
 func RiskBand(score int) types.RiskBand {
 	switch {
 	case score >= 90:
@@ -304,7 +272,6 @@ func RiskBand(score int) types.RiskBand {
 	}
 }
 
-// isNewerFixedVersion reports whether candidate supersedes current; non-semver fixes keep the first (most severe) one.
 func isNewerFixedVersion(candidate, current string) bool {
 	if current == "" {
 		return true
@@ -313,7 +280,6 @@ func isNewerFixedVersion(candidate, current string) bool {
 	return semver.IsValid(a) && semver.IsValid(b) && semver.Compare(a, b) > 0
 }
 
-// BuildScanInsights scores an image's findings using threat intel (keyed by CVE) and the image's exposure.
 func BuildScanInsights(vulns []types.Vulnerability, intel map[string]ThreatIntel, exposure types.ImageExposure) *types.VulnerabilityScanInsights {
 	sorted := slices.Clone(vulns)
 	slices.SortStableFunc(sorted, func(a, b types.Vulnerability) int {

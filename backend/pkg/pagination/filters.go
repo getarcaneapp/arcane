@@ -21,9 +21,6 @@ type (
 
 	Config[T any] struct {
 		SearchAccessors []SearchAccessor[T]
-		// SortBindings order matters: the first binding is the default sort when the
-		// requested key is empty or unknown, and serves as the tie-break for every
-		// other binding so pagination is deterministic.
 		SortBindings    []SortBinding[T]
 		FilterAccessors []FilterAccessor[T]
 	}
@@ -57,19 +54,11 @@ func (c Config[T]) SearchOrderAndPaginate(items []T, params QueryParams) FilterR
 	}
 }
 
-// OrderAndPaginate sorts items and slices the requested page without applying
-// the search term or filters — for callers that already filtered while
-// building the item list (e.g. dropping non-matches during an incremental
-// decode) and only need ordering plus the page cut.
 func (c Config[T]) OrderAndPaginate(items []T, params QueryParams) []T {
 	items = sortFunction(items, params.SortParams, c.SortBindings)
 	return paginateItemsFunction(items, params.Params)
 }
 
-// MatchesSearchAndFilters reports whether a single item passes params' search
-// term and filters under the config — the same predicate SearchOrderAndPaginate
-// applies. It lets callers that decode large payloads incrementally drop
-// non-matching items as they go instead of materializing everything first.
 func (c Config[T]) MatchesSearchAndFilters(item T, params QueryParams) bool {
 	search := strings.ToLower(strings.TrimSpace(params.Search))
 	if search != "" {

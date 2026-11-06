@@ -112,7 +112,6 @@
 							</div>
 							<ArcaneButton
 								action="save"
-								size="sm"
 								customLabel={m.swarm_node_agent_attach_action()}
 								onclick={() => onAttach?.(candidate.environmentId)}
 								disabled={isLoading}

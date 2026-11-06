@@ -547,7 +547,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
 	})
 
-	createTestEnvironment(t, db, "0", "http://localhost:3552", nil) // local env should be excluded
+	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
 	createTestEnvironment(t, db, "env-1", startTestAgent(t, tunnels, "env-1", env1Agent), &env1Token)
 	createTestEnvironment(t, db, "env-2", startTestAgent(t, tunnels, "env-2", env2Agent), &env2Token)
 
@@ -1749,8 +1749,6 @@ func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
 	require.EqualValues(t, 5, calls.Load(), "an accepted payload is remembered")
 }
 
-// A watcher must see a change signal, and a burst must not block the notifier —
-// it runs on the agent tunnel's connect/disconnect path.
 func TestEnvironmentServiceRuntimeChangeSignalCoalesces(t *testing.T) {
 	tunnels := agent.NewTunnelRegistry()
 	s := NewEnvironmentService(EnvironmentServiceParams{Tunnels: tunnels})

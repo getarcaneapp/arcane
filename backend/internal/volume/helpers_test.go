@@ -124,14 +124,10 @@ func TestCollectStaleHelperIDs(t *testing.T) {
 	require.ElementsMatch(t, []string{"c-stale", "c-atedge"}, stale,
 		"helpers idle >= timeout (and exactly at the edge) should be collected")
 
-	// Only the fresh entry survives; stale, at-edge, and nil entries are dropped.
 	require.Len(t, s.helperByVolume, 1)
 	require.Contains(t, s.helperByVolume, "fresh")
 }
 
-// A helper serving a request longer than the idle timeout (e.g. a slow download)
-// must not be reaped mid-stream; it becomes collectible once released, with the
-// idle clock measured from the release.
 func TestCollectStaleHelperIDsSkipsInUseHelpers(t *testing.T) {
 	now := time.Now()
 	s := &VolumeService{
@@ -166,11 +162,9 @@ func TestTakeHelperID(t *testing.T) {
 		},
 	}
 
-	// Present: returns id and removes the entry.
 	require.Equal(t, "c-a", s.takeHelperID("vol-a"))
 	require.NotContains(t, s.helperByVolume, "vol-a")
 
-	// Absent (idempotent): returns "" without panicking.
 	require.Empty(t, s.takeHelperID("vol-a"))
 	require.Empty(t, s.takeHelperID("never-existed"))
 }
@@ -187,7 +181,6 @@ func TestTouchHelper(t *testing.T) {
 	require.True(t, s.helperByVolume["vol-a"].lastUsedAt.After(old),
 		"touch should reset the idle clock forward")
 
-	// Missing volume is a no-op (must not panic or create an entry).
 	s.touchHelper("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
 }

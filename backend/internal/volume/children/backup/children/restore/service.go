@@ -103,7 +103,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		return err
 	}
 	if entry.VolumeName != volumeName {
-		return errors.New("backup does not belong to volume")
+		return common.ErrVolumeBackupWrongVolume
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -305,7 +305,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		return err
 	}
 	if entry.VolumeName != volumeName {
-		return errors.New("backup does not belong to volume")
+		return common.ErrVolumeBackupWrongVolume
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()

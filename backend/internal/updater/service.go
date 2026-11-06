@@ -62,7 +62,6 @@ import (
 )
 
 type (
-	// UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 	UpdaterService struct {
 		admission  *runs.Admission
 		engine     *updater.Service
@@ -93,8 +92,6 @@ type (
 		TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error)
 	}
 
-	// containerUpdateBatch accumulates per-container update notifications
-	// so a single update batch produces one batched notification.
 	containerUpdateBatch struct {
 		entries []notifications.ContainerUpdateBatchEntry
 		sync.Mutex
@@ -111,7 +108,6 @@ type (
 		mu            sync.Mutex
 		selfTriggered bool
 	}
-	// autoUpdateApplied is the apply step's output, read back by finalize.
 	autoUpdateApplied struct {
 		Error          string              `json:"error,omitempty"`
 		RecordingError string              `json:"recordingError,omitempty"`
@@ -120,10 +116,8 @@ type (
 		SelfTriggered  bool                `json:"selfTriggered,omitempty"`
 		Unresolved     bool                `json:"unresolved,omitempty"`
 		Completed      bool                `json:"completed"`
-		// Busy means another update held the updater, so this run applied nothing; Started means an earlier
-		// delivery had begun applying its plan.
-		Busy    bool `json:"busy,omitempty"`
-		Started bool `json:"started,omitempty"`
+		Busy           bool                `json:"busy,omitempty"`
+		Started        bool                `json:"started,omitempty"`
 	}
 
 	UpdaterServiceParams struct {
@@ -162,7 +156,6 @@ var (
 	}
 )
 
-// NewUpdaterService constructs the Arcane updater facade.
 func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	service := &UpdaterService{
 		admission: p.Admission,
@@ -236,8 +229,6 @@ func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	return service, nil
 }
 
-// ApplyPending executes pending image updates. A project or image scope limits the engine's
-// pending records to its containers; a container scope or a forced run updates each container.
 func (s *UpdaterService) ApplyPending(ctx context.Context, options types.UpdaterOptions) (out *types.UpdaterResult, err error) {
 	containerIDs, err := s.pendingContainerIDs(ctx, options)
 	if err != nil {
@@ -303,8 +294,6 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options types.Updater
 	return out, nil
 }
 
-// applyBatch runs one update batch into out, records its events, and sends its notifications
-// as one batch; an update-all run is capped by a whole-run timeout.
 func (s *UpdaterService) applyBatch(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult) error {
 	batch := &containerUpdateBatch{}
 	ctx = context.WithValue(context.WithValue(ctx, containerUpdateBatchContextKey{}, batch), ignoreSettingsExclusionsKey{}, options.IgnoreSettingsExclusions)
@@ -420,7 +409,6 @@ func (s *UpdaterService) recordContainerIDs(ctx context.Context, records []updat
 	return kit.Unique(kit.TrimNonEmpty(slices.Concat(containerIDs, imageContainerIDs))), nil
 }
 
-// scopedContainerIDs resolves the requested containers, projects, or images to container IDs.
 func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.UpdaterOptions) ([]string, map[string]string, map[string]string, map[string]bool, error) {
 	requested := kit.TrimNonEmpty(options.ResourceIds)
 	scope := strings.ToLower(strings.TrimSpace(options.Type))
@@ -493,8 +481,6 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.U
 	return matched, skips, checkRecords, running, nil
 }
 
-// applyScopedUpdates applies running containers of a project or image scope through the engine's grouped
-// pending path, and stopped ones, a container scope, or a forced run through the single-container path.
 func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.UpdaterOptions, out *types.UpdaterResult) error {
 	containerIDs, skipReasons, checkRecords, running, err := s.scopedContainerIDs(ctx, options)
 	if err != nil {
@@ -676,7 +662,6 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.U
 	return errors.Join(engineErrs...)
 }
 
-// UpdateSingleContainer updates a single container by ID to the latest available image.
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *types.UpdaterResult, err error) {
 	started, workCtx, err := s.deps.Activity.StartTrackedActivity(ctx, s.singleContainerActivityRequest(ctx, containerID))
 	if err != nil {
@@ -689,7 +674,6 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	return s.runSingleContainerUpdate(workCtx, containerID, started.ID)
 }
 
-// AcceptSingleContainerUpdate submits a cancellable container-update workflow and returns its activity.
 func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, containerID string) (*types.Activity, error) {
 	activityID, err := s.execution.Submit(ctx, containerID, s.singleContainerActivityRequest(ctx, containerID))
 	if err != nil {
@@ -741,7 +725,6 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 	return out, err
 }
 
-// GetStatus returns the current in-memory update activity snapshot.
 func (s *UpdaterService) GetStatus() types.UpdaterStatus {
 	status := s.engine.Status()
 	return types.UpdaterStatus{
@@ -752,7 +735,6 @@ func (s *UpdaterService) GetStatus() types.UpdaterStatus {
 	}
 }
 
-// GetHistory returns the most recent auto-update history records, newest first.
 func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdateRecord, error) {
 	var records []AutoUpdateRecord
 	query := s.deps.DB.WithContext(ctx).Order("start_time DESC")
@@ -787,13 +769,11 @@ func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types
 	}, nil
 }
 
-// RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.
 func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]types.UpdaterResourceResult, error) {
 	results, err := s.engine.RestartContainersUsingOldImages(ctx, updater.RestartTargets{ByOldID: oldIDToNewRef, ByOldRef: oldRefToNewRef})
 	return resultFromModule(&updater.Result{Items: results}).Items, err
 }
 
-// TriggerSelfUpdateViaCLI triggers Arcane's detached CLI self-update path.
 func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, containerID, containerName string, labelMap map[string]string) error {
 	if !labels.IsArcaneContainer(labelMap) {
 		return fmt.Errorf("%s: container is not an Arcane self-update target", source)
@@ -839,13 +819,10 @@ func (s *UpdaterService) recordAutoUpdateEvent(ctx context.Context, severity eve
 	}
 }
 
-// DockerClient implements updater.DockerClientProvider for the updater engine.
 func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, error) {
 	return s.deps.Docker.GetClient(ctx)
 }
 
-// PullImage pulls an image through Arcane's image service, which bounds it by the
-// dockerImagePullTimeout setting so a stuck pull cannot hold the auto-update run.
 func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progress io.Writer) error {
 	pulledRef, err := s.recovery.PreparePull(ctx, imageRef)
 	if err != nil {
@@ -872,7 +849,6 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	})
 }
 
-// PendingImageUpdates returns pending image update records from Arcane's database.
 func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
 	records, err := s.loadPendingImageUpdates(ctx)
 	if err != nil {
@@ -961,7 +937,6 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 	if err := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).Where("container_id <> ?", "").Limit(1).Count(&scopedCount).Error; err != nil {
 		return nil, err
 	}
-	// Resolve each container's policy and normalized configured ref once, not per record.
 	type eligibleContainer struct {
 		id      string
 		ref     string
@@ -1056,7 +1031,6 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 	}), nil
 }
 
-// ClearImageUpdateRecord clears a pending image update record after it is handled.
 func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record updater.ImageUpdateRecord) error {
 	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{})
 	if record.ContainerID == "" || strings.HasPrefix(record.ID, "container::") {
@@ -1114,12 +1088,10 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
 }
 
-// ExcludedContainers returns auto-update exclusions from Arcane settings.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
 	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
 }
 
-// ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
 func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (updater.ComposeProject, error) {
 	project, err := s.deps.Projects.GetProjectByComposeName(ctx, composeName)
 	if err != nil {
@@ -1131,12 +1103,10 @@ func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName s
 	return updater.ComposeProject{ID: project.ID, Name: project.Name}, nil
 }
 
-// UpdateServices redeploys selected services through Arcane's project service.
 func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, services []string) error {
 	return s.deps.Projects.UpdateProjectServices(ctx, projectID, services, s.deps.SystemUser, false)
 }
 
-// TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
 func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.SelfUpdateTarget) error {
 	// The frozen digest is only what gets pulled; the recreated container keeps
 	// the selected tag so later runs do not treat it as an immutable reference.
@@ -1240,8 +1210,6 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	return nil
 }
 
-// Notify buffers the container update notification inside an update batch, which sends
-// them as one notification when it ends; outside a batch it sends immediately.
 func (s *UpdaterService) Notify(ctx context.Context, localNotification updater.Notification) error {
 	if buffer, ok := ctx.Value(containerUpdateBatchContextKey{}).(*containerUpdateBatch); ok {
 		buffer.Lock()
@@ -1262,7 +1230,6 @@ func (s *UpdaterService) Notify(ctx context.Context, localNotification updater.N
 	})
 }
 
-// RecordEvent records updater lifecycle events in Arcane's event stream.
 func (s *UpdaterService) RecordEvent(ctx context.Context, evt updater.Event) error {
 	if eventType, ok := containerEventTypes[evt.Phase]; ok {
 		return s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
@@ -1299,7 +1266,6 @@ func activityIDFromContext(ctx context.Context) string {
 	return kit.As(ctx.Value(activityIDContextKey{}), "")
 }
 
-// singleContainerActivityRequest describes a container update's activity, named after the container when it can be inspected.
 func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, containerID string) activitylib.StartRequest {
 	name := func() string {
 		lookupCtx, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
@@ -1346,7 +1312,6 @@ func (s *UpdaterService) finishSingleContainerUpdate(ctx context.Context, activi
 	s.completeAutoUpdateActivity(ctx, activityID, outcome.Message, kit.Ternary(outcome.Status != types.RunStatusSucceeded, outcome.Message, ""))
 }
 
-// recordSingleContainerUpdate saves a container update's result on its activity and summarizes it as an outcome.
 func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activityID string, result *types.UpdaterResult, runErr error) types.SchedulerOutcome {
 	item := func() types.UpdaterResourceResult {
 		if items := kit.FromPtr(result).Items; len(items) > 0 {
@@ -1432,8 +1397,6 @@ func (s *UpdaterService) appendAutoUpdateActivityMessage(ctx context.Context, ac
 	}
 }
 
-// completeAutoUpdateActivity ends the activity with message, or as failed when failure is set;
-// a failure caused by cancelling the activity ends it as cancelled.
 func (s *UpdaterService) completeAutoUpdateActivity(ctx context.Context, activityID, message, failure string) {
 	if activityID == "" {
 		return
@@ -1453,8 +1416,6 @@ func (s *UpdaterService) completeAutoUpdateActivity(ctx context.Context, activit
 	}
 }
 
-// resultFromModule converts an engine result to Arcane's wire type, which carries times as
-// strings and images as maps holding only the "main" entry. Callers set ActivityID.
 func resultFromModule(result *updater.Result) *types.UpdaterResult {
 	if result == nil {
 		return &types.UpdaterResult{Items: []types.UpdaterResourceResult{}}
@@ -1511,7 +1472,6 @@ func (s *UpdaterService) logResultItems(ctx context.Context, result *types.Updat
 	}
 }
 
-// CollectUsedImages returns normalized image references used by running Arcane resources.
 func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	var errs []error
@@ -1664,7 +1624,6 @@ func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (i
 	return result.RowsAffected, nil
 }
 
-// RecordUpdateRun persists one updater resource result into Arcane history.
 func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
 	now := time.Now()
 	recordErr := s.deps.DB.WithContext(ctx).Create(&AutoUpdateRecord{
@@ -1829,7 +1788,6 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 	return err
 }
 
-// ListTags supplies Arcane's registry credentials to the updater's tag checker.
 func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]string, error) {
 	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
 	if err != nil {
@@ -1838,13 +1796,11 @@ func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]strin
 	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, credentials)
 }
 
-// UpdateServiceImages persists and redeploys the selected Compose service images.
 func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {
 	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), "Updating Compose image references", "Persisting image updates", 50)
 	return s.deps.Projects.UpdateProjectServiceImages(ctx, projectID, changes, s.deps.SystemUser)
 }
 
-// CheckProjectUpdates checks effective Compose service policies without deploying containers.
 func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID string) (*types.ProjectUpdateInfo, error) {
 	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
 	if err != nil {
@@ -1946,8 +1902,6 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 	}
 }
 
-// RegisterWorkflows defines the auto-update workflow (fresh candidate check, frozen plan without
-// failed checks, confirm-first apply) and the container-update workflow. Call it before the host starts.
 func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
 	autoUpdate, err := engine.Define(flow.Definition{
 		Name:        "auto-update",
@@ -1991,10 +1945,8 @@ func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
 	return s.execution.RegisterWorkflows(engine)
 }
 
-// AutoUpdateWorkflow is the durable auto-update workflow.
 func (s *UpdaterService) AutoUpdateWorkflow() *flow.Workflow { return s.autoUpdate }
 
-// autoUpdateCandidates selects the monitored images of auto-update eligible containers.
 func (s *UpdaterService) autoUpdateCandidates(ctx context.Context, t flow.Task) (any, error) {
 	used, err := s.CollectUsedImages(ctx)
 	if err != nil {
@@ -2007,13 +1959,11 @@ func (s *UpdaterService) autoUpdateCandidates(ctx context.Context, t flow.Task) 
 	return t.ChildInput(types.ImageUpdateCheckRequest{ImageRefs: monitored})
 }
 
-// autoUpdateResume reports whether the run already holds a frozen plan.
 func (s *UpdaterService) autoUpdateResume(ctx context.Context, _ flow.Task) (any, error) {
 	run, ok := jobcontext.Run(ctx)
 	return ok && s.recovery.Planned(run), nil
 }
 
-// planAutoUpdate freezes the update plan without the images and containers whose check failed.
 func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, error) {
 	run, ok := jobcontext.Run(ctx)
 	if !ok {
@@ -2046,9 +1996,6 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 	return nil, nil
 }
 
-// autoUpdateDeferral reports which pending updates are younger than their
-// auto-update delay. The delay label wins over the environment setting, including 0,
-// and age counts from when Arcane first saw the update.
 func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) (func(updater.ImageUpdateRecord, container.Summary) bool, error) {
 	var seen []imageupdate.ImageUpdateRecord
 	if err := s.deps.DB.WithContext(ctx).Select("id", "latest_seen_at").Where("has_update = ?", true).Find(&seen).Error; err != nil {
@@ -2076,8 +2023,6 @@ func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) 
 	}, nil
 }
 
-// applyAutoUpdate confirms every frozen target on each delivery before
-// applying the ones still unchanged, so redelivery never repeats a Docker change.
 func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any, error) {
 	run, ok := jobcontext.Run(ctx)
 	if !ok {
@@ -2093,8 +2038,6 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 		if unsettled, unsettledErr := s.recovery.Unsettled(run); unsettledErr == nil && unsettled == 0 {
 			return autoUpdateApplied{Completed: true}, nil
 		}
-		// Waiting would hold this run's activity slot against the update holding the updater, so the run ends now:
-		// a plan that already started applying stays retryable, and an untouched one skips as the job always has.
 		return autoUpdateApplied{Busy: true, Started: s.recovery.Started(run)}, nil
 	}
 	if err != nil {
@@ -2156,7 +2099,6 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 	}, nil
 }
 
-// finalizeAutoUpdate records the batch checkpoint and returns the run outcome.
 func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (any, error) {
 	var applied autoUpdateApplied
 	if err := t.DecodeOutput("apply", &applied); err != nil {
@@ -2232,7 +2174,6 @@ func (s *UpdaterService) finalizeAutoUpdate(ctx context.Context, t flow.Task) (a
 	}, nil
 }
 
-// ValidateAutoUpdateRetry allows a retry only while frozen targets remain unsettled.
 func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run types.SchedulerRun) error {
 	unsettled, err := s.recovery.Unsettled(run)
 	if err != nil {
@@ -2244,7 +2185,6 @@ func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run types.Sc
 	return nil
 }
 
-// ReconcilePending resumes only frozen targets whose original container is unchanged.
 func (s *UpdaterService) ReconcilePending(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return s.recovery.ReconcilePending(ctx, run)
 }

@@ -10,7 +10,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// SetObserver connects activity projection before accepting work.
 func (q *Coordinator) SetObserver(observer types.RunObserver) { q.observer = observer }
 
 func (q *Coordinator) associateActivity(run *types.SchedulerRun) {

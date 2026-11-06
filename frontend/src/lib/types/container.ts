@@ -500,4 +500,5 @@ export interface ContainerStats {
 	storage_stats: StorageStats;
 	statsHistory?: ContainerStatsHistorySample[];
 	currentHistorySample?: ContainerStatsHistorySample;
+	removed?: boolean;
 }

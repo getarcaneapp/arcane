@@ -86,7 +86,6 @@ type (
 		Body   types.RestoreSystemBackupFilesRequest
 	}
 
-	// BrowseSystemBackupFilesInput selects one page of a system backup tree.
 	BrowseSystemBackupFilesInput struct {
 		ID     string `path:"id"`
 		Path   string `query:"path" doc:"Folder path relative to the backup root"`
@@ -284,7 +283,6 @@ func (h *Handler) restore(ctx context.Context, input *RestoreSystemBackupInput) 
 	return handlerutil.MessageOutput("Arcane system restore started", activityID), nil
 }
 
-// BrowseFiles returns one lazy-loaded project tree page.
 func (h *Handler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFilesInput) (*handlerutil.Page[types.BackupFileEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.ID, input.Body.RecoveryKey, input.Path, params)

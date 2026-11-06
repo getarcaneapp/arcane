@@ -25,51 +25,33 @@ type (
 		BuildSettings() buildtypes.BuildSettings
 	}
 
-	// projectMetadataEnv carries the request-scoped inputs compose
-	// resolution needs beyond the project itself, resolved once per list request.
 	projectMetadataEnv struct {
-		// settings is the snapshot shared by compose loads.
-		settings *settings.Settings
-		// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
-		// compose paths. Sync IDs that were preloaded but have no row map to "",
-		// which resolves the same way as a missing row; sync IDs absent from the
-		// map are queried per project.
+		settings           *settings.Settings
 		gitOpsComposePaths map[string]string
 		pathMapper         func() *projects.PathMapper
 
 		composeFiles      map[string]string
 		projectsDirectory string
 
-		// composeFiles memoizes successfully resolved compose files by project ID.
-		// Failures are not stored so a later phase in the same request retries
-		// resolution instead of replaying an error that may have been transient.
 		composeFilesMu sync.Mutex
 		autoInjectEnv  bool
 	}
 
-	// composeNameCache maps normalized compose project names to project
-	// IDs so a name lookup skips the projects table scan.
 	composeNameCache struct {
 		byName map[string]string
 		mu     sync.RWMutex
 	}
 
-	// projectCleanupDecision records a project the reconcile pass intends to delete,
-	// alongside the reason logged when the deletion is carried out.
 	projectCleanupDecision struct {
 		reason  string
 		project Project
 	}
 
-	// tagStore persists tag assignments for the tags child inside one transaction.
 	tagStore struct {
 		tx *gorm.DB
 	}
 )
 
-// composeFile memoizes successful compose file resolutions for the request.
-// The lock is not held across resolve, which does I/O; workers resolve
-// distinct projects, so a rare duplicate resolution is harmless.
 func (env *projectMetadataEnv) composeFile(projectID string, resolve func() (string, error)) (string, error) {
 	if env == nil || projectID == "" {
 		return resolve()
@@ -150,7 +132,6 @@ func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	return nil
 }
 
-// projectRecord exposes a stored project's state to child features.
 func projectRecord(p Project) types.ProjectRecord {
 	return types.ProjectRecord{
 		ID:                 p.ID,

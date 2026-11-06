@@ -5,7 +5,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 
 	// Props can be missing in some cases (e.g., 404 on client nav)
-	const props: { error?: any; status?: number } = $props();
+	const props: { error?: App.Error | null; status?: number } = $props();
 
 	const status = $derived(props.status ?? page.status ?? 500);
 	const message = $derived(

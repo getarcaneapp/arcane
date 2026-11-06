@@ -286,7 +286,6 @@ var (
 	commandRoutesIndex = buildCommandRouteIndex(commandRoutes)
 )
 
-// ResolveCommandName returns the agent command for a request, or None when the allowlist does not cover it.
 func ResolveCommandName(method, requestPath string, stream bool) mo.Option[string] {
 	requestPath, _, _ = strings.Cut(strings.TrimSpace(requestPath), "?")
 	root := commandRoutesIndex[commandRouteKey{Method: kit.Ternary(stream, "", strings.ToUpper(strings.TrimSpace(method))), Stream: stream}]
@@ -313,7 +312,6 @@ func (n *commandRouteNode) match(parts []string) *commandRoute {
 	return n.param.match(parts[1:])
 }
 
-// buildCommandRouteIndex builds one path trie per method (or for streams), panicking on duplicate routes.
 func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
 	index := make(commandRouteIndex)
 	for i := range routes {

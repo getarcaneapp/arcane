@@ -38,7 +38,6 @@ func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
 }
 
 func TestTunnelConn(t *testing.T) {
-	// Start a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -51,7 +50,6 @@ func TestTunnelConn(t *testing.T) {
 			if readErr != nil {
 				break
 			}
-			// Echo back
 			readErr = conn.Write(r.Context(), mt, message)
 			if readErr != nil {
 				break
@@ -60,7 +58,6 @@ func TestTunnelConn(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Connect to the server
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	conn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
@@ -68,7 +65,6 @@ func TestTunnelConn(t *testing.T) {
 
 	tunnelConn := NewWebSocketTunnelConn(conn)
 
-	// Test Send and Receive
 	msg := &TunnelMessage{
 		ID:         "test-id",
 		Type:       MessageTypeRegister,
@@ -84,14 +80,12 @@ func TestTunnelConn(t *testing.T) {
 	assert.Equal(t, msg.Type, received.Type)
 	assert.Equal(t, msg.AgentToken, received.AgentToken)
 
-	// Test IsClosed
 	assert.False(t, tunnelConn.IsClosed())
 
 	err = tunnelConn.Close()
 	require.NoError(t, err)
 	assert.True(t, tunnelConn.IsClosed())
 
-	// Test Send on closed connection
 	err = tunnelConn.Send(msg)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrTunnelConnectionClosed)
@@ -182,7 +176,6 @@ func TestTunnelConn_ReceiveDeadlineMarksClosed(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.CloseNow() }()
-		// Keep the socket open but never send anything.
 		_, _, _ = conn.Read(r.Context())
 	}))
 	defer server.Close()

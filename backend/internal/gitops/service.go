@@ -68,12 +68,10 @@ type (
 		sync    *gitopssync.Service
 		backup  *backup.Service
 	}
-	// syncTarget is the gitops-sync workflow input: the sync one scheduled job runs.
 	syncTarget struct {
 		EnvironmentID string `json:"environmentId"`
 		SyncID        string `json:"syncId"`
 	}
-	// lifecycleConfigInput is the pre-deploy hook slice of a create or update request.
 	lifecycleConfigInput struct {
 		targetType    *string
 		scriptPath    *string
@@ -84,7 +82,6 @@ type (
 		networkMode   *string
 		syncDirectory *bool
 	}
-	// backupRuntime holds the in-memory coordination for backup syncs.
 	backupRuntime struct {
 		branches map[string]*sync.Mutex
 		timers   map[string]*time.Timer
@@ -153,7 +150,6 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 
 	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
 	targetTypeChanging := in.targetType != nil && strings.TrimSpace(*in.targetType) != currentTargetType
-	// Nothing lifecycle-related changes, or the result has no script to validate.
 	if !lifecycleFieldSet && (scriptPath == "" || (in.syncDirectory == nil && !targetTypeChanging)) {
 		return nil
 	}
@@ -251,8 +247,6 @@ func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 	return s
 }
 
-// RegisterWorkflows defines the gitops-sync workflow each scheduled sync runs. A sync step retries transient
-// clone failures; a retry replays the run's pinned revision.
 func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 	s.engine = engine
 	syncWorkflow, err := engine.Define(flow.Definition{
@@ -311,7 +305,6 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-// registerSyncJob schedules one sync every intervalMinutes as a gitops-sync workflow run.
 func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environmentID string, intervalMinutes int) {
 	schedule := fmt.Sprintf("@every %dm", max(intervalMinutes, 1))
 	s.jobs.Add(ctx, &flow.Job{
@@ -323,15 +316,12 @@ func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environ
 	})
 }
 
-// kickSync submits one run of a sync's job now, so it does not wait for its next interval.
 func (s *GitOpsSyncService) kickSync(ctx context.Context, syncID, trigger string) {
 	if _, err := s.jobs.Scheduler().Submit(ctx, types.SchedulerRequest{JobID: s.jobs.JobName(syncID), EnvironmentID: "0", Trigger: trigger}); err != nil {
 		slog.ErrorContext(ctx, "gitops sync admission failed", "syncId", syncID, "trigger", trigger, "error", err)
 	}
 }
 
-// RegisterAutoSyncJobsOnStartup registers a job for every auto-sync and kicks the overdue ones, and backups
-// with pending changes, right away.
 func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	var syncs []projectpkg.GitOpsSync
 	if err := s.db.WithContext(ctx).
@@ -358,7 +348,6 @@ func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, 
 	return maxFiles, int64(maxTotalSizeMB) << 20, int64(maxBinarySizeMB) << 20
 }
 
-// getEffectiveSyncLimits returns the sync's own limits, except where an environment override pins the setting.
 func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, syncRecord *projectpkg.GitOpsSync) (int, int64, int64) {
 	maxFiles, maxTotalSize, maxBinarySize := s.getEnvironmentSyncLimits(ctx)
 	if syncRecord == nil {
@@ -616,12 +605,9 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	return s.GetSyncByID(ctx, "", syncRecord.ID)
 }
 
-// insertSyncRecord inserts the sync in one transaction with any linked project locked, so a project never
-// ends up with two Git relationships. It returns the project a deploy sync adopts.
 func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *projectpkg.GitOpsSync, req types.GitOpsSync, submitted map[string]bool, mode string) (*projectpkg.Project, error) {
 	var adoptedProject *projectpkg.Project
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// An adopted project must exist, and must not be deployed from or backed up to Git already.
 		if mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(kit.FromPtr(req.ProjectID)) != "" {
 			if strings.TrimSpace(req.TargetType) == "swarm_stack" {
 				return common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("an existing project cannot be linked to a swarm stack sync")})
@@ -798,7 +784,6 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, newInterval)
 	if !oldAutoSync {
-		// A freshly enabled sync runs now instead of waiting a full interval.
 		s.kickSync(ctx, syncRecord.ID, "startup")
 	}
 
@@ -934,8 +919,6 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 	}, nil
 }
 
-// CleanupLeakedScratchDirsOnStartup removes GitOps scratch directories an interrupted sync left in the projects
-// directory, which discovery would import as phantom projects. It runs before any sync job is registered.
 func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Context) error {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -969,8 +952,6 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 	return nil
 }
 
-// CleanupLeakedCloneDirsOnStartup removes leaked git clone scratch dirs
-// ("gitops-*") under the git work dir; safe because no sync holds a clone yet.
 func (s *GitOpsSyncService) CleanupLeakedCloneDirsOnStartup(ctx context.Context) error {
 	removed, err := s.repoService.PurgeScratchDirs(ctx, 0)
 	if err != nil {
@@ -1061,14 +1042,12 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, 
 		return nil, err
 	}
 
-	// Clone the repository
 	repoPath, err := s.repoService.Clone(browseCtx, repository.URL, syncRecord.Branch, authConfig, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	defer s.repoService.Discard(browseCtx, repoPath)
 
-	// Browse the tree
 	files, err := s.repoService.BrowseTree(browseCtx, repoPath, localPath)
 	if err != nil {
 		return nil, err
@@ -1088,7 +1067,6 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 	}
 
 	for _, importItem := range req {
-		// Find repository by name
 		repo, err := s.repoService.GetRepositoryByName(ctx, importItem.GitRepo)
 		if err != nil {
 			response.FailedCount++
@@ -1184,7 +1162,6 @@ func (r *backupRuntime) cancel(syncID string) {
 	}
 }
 
-// ResolveBackupConflict applies the chosen strategy to a backup that needs attention.
 func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req types.GitOpsResolveBackupConflictRequest, actor types.Actor) (*types.GitOpsSyncResult, error) {
 	if req.Strategy != types.GitOpsBackupConflictUseArcane {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
@@ -1201,7 +1178,6 @@ func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environme
 	})
 }
 
-// SubscribeProjectFileChanges marks backups pending on save and runs them after a debounce when auto backup is on.
 func (s *GitOpsSyncService) SubscribeProjectFileChanges() {
 	runCtx := s.jobs.Context()
 	s.projectService.FilesChanged.Subscribe(func(projectID string) {
@@ -1230,7 +1206,6 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges() {
 	})
 }
 
-// PreviewBackup reports what the next backup run would commit or why it needs attention.
 func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id string) (*types.GitOpsBackupPreview, error) {
 	previewCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -1242,7 +1217,6 @@ func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id
 	return s.backup.Preview(previewCtx, syncRecord)
 }
 
-// GetBackupHistory lists revisions that touched the backup directory.
 func (s *GitOpsSyncService) GetBackupHistory(ctx context.Context, environmentID, id string, limit int) (*types.GitOpsBackupHistoryResponse, error) {
 	historyCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -1254,7 +1228,6 @@ func (s *GitOpsSyncService) GetBackupHistory(ctx context.Context, environmentID,
 	return s.backup.History(historyCtx, syncRecord, limit)
 }
 
-// GetBackupRevision returns one revision with per-file diffs inside the backup directory.
 func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID, id, commit string) (*types.GitOpsBackupRevision, error) {
 	revisionCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -1266,7 +1239,6 @@ func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID
 	return s.backup.Revision(revisionCtx, syncRecord, commit)
 }
 
-// ReconcileInterruptedBackupsOnStartup turns backups left running by a restart into pending failures.
 func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Context, protectedIDs ...string) error {
 	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND last_sync_status = ?", types.GitOpsSyncModeBackup, backup.BackupStatusRunning)
 	if len(protectedIDs) > 0 {

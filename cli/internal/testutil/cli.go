@@ -16,7 +16,6 @@ import (
 
 var stdoutCaptureMu sync.Mutex
 
-// WriteConfig writes isolated configuration for command tests.
 func WriteConfig(t *testing.T, serverURL string) string {
 	t.Helper()
 
@@ -40,7 +39,6 @@ func WriteConfig(t *testing.T, serverURL string) string {
 	return configPath
 }
 
-// Execute runs a freshly built root command and captures its output.
 func Execute(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 

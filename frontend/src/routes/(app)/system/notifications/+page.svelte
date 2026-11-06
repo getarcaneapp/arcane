@@ -151,11 +151,10 @@
 										<div class="flex shrink-0 items-center gap-2">
 											<ArcaneButton
 												action="test"
-												size="sm"
 												loading={testingDeviceId === device.id}
 												onclick={() => testMobileDevice(device)}
 											/>
-											<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
+											<ArcaneButton action="remove" onclick={() => removeMobileDevice(device)} />
 										</div>
 									</li>
 								{/each}

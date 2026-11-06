@@ -84,7 +84,7 @@
 								environments: failedEnvironments.map(({ environment, message }) => `${environment.name} (${message})`).join(', ')
 							})}
 						</Alert.Description>
-						<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={refresh} />
+						<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={refresh} />
 					</div>
 				</Alert.Root>
 			{/if}
@@ -113,17 +113,11 @@
 									{#if row.status?.clusterId && hasPermission('swarm:join', row.environment.id) && hasPermission('swarm:unlock', row.environment.id)}
 										<ArcaneButton
 											action="create"
-											size="sm"
 											customLabel={m.swarm_easy_join_action()}
 											onclick={() => openEasyJoin(row.environment.id)}
 										/>
 									{/if}
-									<ArcaneButton
-										action="inspect"
-										size="sm"
-										customLabel={m.common_inspect()}
-										onclick={() => openPanel(row.environment)}
-									/>
+									<ArcaneButton action="inspect" customLabel={m.common_inspect()} onclick={() => openPanel(row.environment)} />
 								</div>
 							</div>
 						{/each}

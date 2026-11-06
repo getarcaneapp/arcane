@@ -27,17 +27,14 @@ func (GitRepository) TableName() string {
 	return "git_repositories"
 }
 
-// HasToken reports whether an HTTP token is stored.
 func (r GitRepository) HasToken() bool {
 	return r.Token != ""
 }
 
-// HasSshKey reports whether an SSH private key is stored.
 func (r GitRepository) HasSshKey() bool {
 	return r.SSHKey != ""
 }
 
-// HasSigningKey reports whether an OpenPGP signing key is stored.
 func (r GitRepository) HasSigningKey() bool {
 	return r.SigningKey != ""
 }

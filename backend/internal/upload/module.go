@@ -11,19 +11,15 @@ import (
 )
 
 type (
-	// Module wires the upload domain and mounts its routes.
 	Module struct {
 		service *UploadService
 	}
 )
 
-// New builds the upload module around its session service.
 func New(service *UploadService) *Module {
 	return &Module{service: service}
 }
 
-// Service exposes the upload session service to the domain endpoints that
-// consume completed sessions.
 func (m *Module) Service() *UploadService {
 	if m == nil {
 		return nil
@@ -31,9 +27,6 @@ func (m *Module) Service() *UploadService {
 	return m.service
 }
 
-// RegisterRoutes mounts the upload-session endpoints. A nil module still
-// registers, so OpenAPI spec generation can discover the routes without a
-// service graph.
 func (m *Module) RegisterRoutes(api huma.API) {
 	if m == nil {
 		RegisterUploads(api, nil)

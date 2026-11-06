@@ -101,7 +101,6 @@
 
 	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green';
 
-	/** True when the backend reports effective global administrator access. */
 	function isGlobalAdmin(user: User): boolean {
 		return user.isGlobalAdmin === true;
 	}
@@ -118,7 +117,7 @@
 			case BUILT_IN_ROLE_VIEWER:
 				return 'gray';
 			default:
-				return 'green'; // custom roles
+				return 'green';
 		}
 	}
 
@@ -126,13 +125,6 @@
 		return rolesById.get(roleId)?.name ?? m.common_unknown();
 	}
 
-	/**
-	 * Resolves what to render in the Role column for a given user. Three states:
-	 * - no assignments       → single "No access" gray badge
-	 * - holds global Admin   → single "Admin" red badge (collapses any other rows)
-	 * - everything else      → one badge per distinct role, with a tooltip
-	 *                          listing which environments each scope applies to
-	 */
 	function rolesSummary(user: User): { text: string; variant: BadgeVariant; tooltip?: string }[] {
 		const assignments = user.roleAssignments ?? [];
 		if (assignments.length === 0) {

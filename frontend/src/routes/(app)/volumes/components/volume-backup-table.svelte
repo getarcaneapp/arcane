@@ -340,7 +340,6 @@
 	async function handleRestore(backup: VolumeBackupEntry) {
 		const name = volumeName;
 		const environmentId = currentEnvId;
-		// Check if volume is in use
 		let usageWarning = '';
 		const operationResult = await tryCatch(
 			(async () => {
@@ -556,7 +555,6 @@
 					policySession += 1;
 					showBackupPolicy = true;
 				}}
-				size="sm"
 				icon={AddIcon}
 			/>
 			<ButtonGroup.Root>
@@ -566,7 +564,6 @@
 					loading={creating}
 					disabled={creating || backupActivity.activeIds.length > 0}
 					onclick={() => handleCreate()}
-					size="sm"
 					icon={AddIcon}
 				/>
 				{#if canListS3Destinations}
@@ -662,7 +659,6 @@
 				{#if canReadActivities}
 					<ArcaneButton
 						action="inspect"
-						size="sm"
 						customLabel={m.activity_view_activity()}
 						onclick={() => activityStore.openCenter(activityId, undefined, currentEnvId)}
 					/>

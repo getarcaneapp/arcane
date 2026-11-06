@@ -73,12 +73,7 @@
 
 		const publicPorts = Array.from(
 			Map.groupBy(
-				container.ports.map((p) => {
-					const privatePort = (p as any).privatePort ?? (p as any).target ?? 0;
-					const publicPort = (p as any).publicPort ?? (p as any).hostPort ?? (p as any).published ?? null;
-					const proto = (p as any).type ?? (p as any).protocol ?? 'tcp';
-					return { key: `${publicPort ?? ''}:${privatePort}/${proto}`, publicPort };
-				}),
+				container.ports.map((p) => ({ key: `${p.publicPort ?? ''}:${p.privatePort}/${p.type}`, publicPort: p.publicPort })),
 				(entry) => entry.key
 			).values(),
 			(group) => group[0]?.publicPort

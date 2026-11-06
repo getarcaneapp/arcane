@@ -46,7 +46,6 @@ const (
 	ScopeGlobal      = "global"
 )
 
-// SetResource binds raw identifiers through a command-owned closure; call after assigning RunE.
 func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
 	SetScope(ScopeResource, commands...)
 	for _, cmd := range commands {
@@ -96,7 +95,6 @@ func Scope(cmd *cobra.Command) string {
 	return ""
 }
 
-// RunScoped reuses the command's requests and rendering for each selected environment.
 func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
 	scope := Scope(cmd)
 	if scope == "" {
@@ -204,7 +202,6 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	return errors.Join(failures...)
 }
 
-// RunEnvironments executes a command sequentially and reports each environment's result.
 func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, mutation bool) error {
 	app, _ := runtime.From(cmd.Context())
 	if !app.AllEnvironments() {

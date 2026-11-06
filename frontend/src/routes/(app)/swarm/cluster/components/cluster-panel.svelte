@@ -269,7 +269,6 @@
 	<div class="flex justify-end">
 		<ArcaneButton
 			action="refresh"
-			size="sm"
 			customLabel={m.common_refresh()}
 			onclick={refresh}
 			loading={isLoading.refresh}
@@ -286,7 +285,6 @@
 						<Card.Action>
 							<ArcaneButton
 								action="inspect"
-								size="sm"
 								customLabel={m.common_actions()}
 								onclick={() => (securityDialogOpen = true)}
 								disabled={!hasPermission('swarm:unlock', environmentId)}
@@ -318,7 +316,6 @@
 						<Card.Action>
 							<ArcaneButton
 								action="restart"
-								size="sm"
 								customLabel={m.swarm_cluster_rotate_tokens()}
 								onclick={handleRotateTokens}
 								disabled={!hasPermission('swarm:unlock', environmentId) || !isSwarmInitialized || isLoading.rotateTokens}
@@ -415,12 +412,7 @@
 								<Switch id="rotate-unlock-key" bind:checked={updateForm.rotateManagerUnlockKey} />
 								<span>{m.swarm_cluster_rotate_unlock_key()}</span>
 							</label>
-							<ArcaneButton
-								action="inspect"
-								size="sm"
-								customLabel={m.swarm_cluster_load_current_spec()}
-								onclick={loadCurrentSpec}
-							/>
+							<ArcaneButton action="inspect" customLabel={m.swarm_cluster_load_current_spec()} onclick={loadCurrentSpec} />
 						</div>
 					</Card.Action>
 				</Card.Header>

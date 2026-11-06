@@ -145,7 +145,6 @@
 			<ArcaneButton
 				action="base"
 				tone="outline"
-				size="sm"
 				icon={SearchIcon}
 				customLabel={m.browse_installed_fonts()}
 				loading={loadingFonts}

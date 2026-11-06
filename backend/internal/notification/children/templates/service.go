@@ -15,7 +15,6 @@ import (
 )
 
 type (
-	// Service builds the per-event notification content and renders email templates.
 	Service struct {
 		appURL func() string
 	}
@@ -298,7 +297,6 @@ func (s *Service) AutoHeal(environmentName, containerName string) notifications.
 	}
 }
 
-// TestEmail builds the provider test email content.
 func (s *Service) TestEmail(environmentName string) notifications.Content {
 	return notifications.Content{
 		RenderEmail: func() (string, string, error) {

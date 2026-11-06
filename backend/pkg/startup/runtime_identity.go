@@ -26,8 +26,6 @@ type (
 		Enabled       bool
 	}
 
-	// RuntimeIdentityConfig contains the config-backed environment values used to
-	// switch the process runtime identity before the application initializes.
 	RuntimeIdentityConfig struct {
 		PUID              string
 		PGID              string
@@ -52,12 +50,6 @@ const (
 
 var lchownFn = os.Lchown
 
-// ApplyRequestedRuntimeIdentity switches the current process to the configured
-// runtime UID/GID before the rest of the app initializes.
-//
-// This whole bootstrap flow stays on os.* rather than acfs: it creates and
-// chowns the data/config roots before any confinement root exists, and acfs
-// has no chown API.
 func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConfig) error {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
@@ -307,9 +299,6 @@ func ensureSQLiteFilesExist(databaseURL string) error {
 		return nil
 	}
 
-	// Ensure the parent directory exists before creating the file.
-	// This covers the "already the right user" early-return path where
-	// prepareWritablePathsWithRoots is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
 		if mkdirAllErr := os.MkdirAll(dir, fs.DirPerm); mkdirAllErr != nil {
@@ -388,9 +377,6 @@ func parseMountpoints(data string) map[string]struct{} {
 	return mountpoints
 }
 
-// unescapeMountInfoPath decodes the kernel's octal escape sequences
-// used in /proc/self/mountinfo. The kernel only uses \040 (space), \011 (tab),
-// \012 (newline), and \134 (backslash) — no other escape forms appear.
 func unescapeMountInfoPath(path string) string {
 	replacer := strings.NewReplacer(
 		`\040`, " ",

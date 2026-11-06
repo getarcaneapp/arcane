@@ -805,7 +805,7 @@
 		{#snippet failed(_renderError: unknown, reset: () => void)}
 			<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
 				<div class="mt-3">
-					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+					<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={reset} />
 				</div>
 			</Alert.Root>
 		{/snippet}
@@ -821,7 +821,7 @@
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
-							<ArcaneButton {...props} action="base" size="sm" icon={AddIcon} customLabel={m.add_widget()} />
+							<ArcaneButton {...props} action="base" icon={AddIcon} customLabel={m.add_widget()} />
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="max-w-64">
@@ -847,7 +847,6 @@
 				</DropdownMenu.Root>
 				<ArcaneButton
 					action="base"
-					size="sm"
 					icon={ResetIcon}
 					customLabel={m.reset_to_default()}
 					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length))}
@@ -857,17 +856,15 @@
 					<ArcaneButton
 						action="base"
 						tone="outline"
-						size="sm"
 						class="gap-2"
 						icon={ResetIcon}
 						customLabel={m.common_reset()}
 						onclick={() => (draftLayout = savedLayout)}
 					/>
 				{/if}
-				<ArcaneButton action="cancel" size="sm" onclick={() => (editingLayout = false)} />
+				<ArcaneButton action="cancel" onclick={() => (editingLayout = false)} />
 				<ArcaneButton
 					action="save"
-					size="sm"
 					class="min-w-20 gap-2"
 					disabled={!layoutHasChanges}
 					onClickPromise={async () => {
@@ -934,7 +931,7 @@
 							<p class="whitespace-pre-line">{error.value}</p>
 						{/each}
 					</Alert.Description>
-					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refetchEnvironmentQueries} />
+					<ArcaneButton action="refresh" customLabel={m.common_retry()} onClickPromise={refetchEnvironmentQueries} />
 				</div>
 			</Alert.Root>
 		</section>

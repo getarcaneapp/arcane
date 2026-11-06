@@ -42,10 +42,10 @@ export interface DockerInfo {
 	OSType: string;
 	Architecture: string;
 	IndexServerAddress: string;
-	RegistryConfig: any;
+	RegistryConfig: RegistryServiceConfig | null;
 	NCPU: number;
 	MemTotal: number;
-	GenericResources: any[];
+	GenericResources: GenericResource[] | null;
 	DockerRootDir: string;
 	HttpProxy: string;
 	HttpsProxy: string;
@@ -56,7 +56,7 @@ export interface DockerInfo {
 	ServerVersion: string;
 	Runtimes: Record<string, RuntimeWithStatus>;
 	DefaultRuntime: string;
-	Swarm: any;
+	Swarm: SwarmInfo;
 	LiveRestoreEnabled: boolean;
 	Isolation: string;
 	InitBinary: string;
@@ -65,11 +65,11 @@ export interface DockerInfo {
 	InitCommit: Commit;
 	SecurityOptions: string[];
 	ProductLicense?: string;
-	DefaultAddressPools?: any[];
-	FirewallBackend?: any;
+	DefaultAddressPools?: NetworkAddressPool[];
+	FirewallBackend?: FirewallInfo;
 	CDISpecDirs: string[];
-	DiscoveredDevices?: any[];
-	Containerd?: any;
+	DiscoveredDevices?: DeviceInfo[];
+	Containerd?: ContainerdInfo;
 	Warnings: string[];
 }
 
@@ -89,4 +89,52 @@ export interface RuntimeWithStatus {
 export interface Commit {
 	ID: string;
 	Expected: string;
+}
+
+export interface RegistryIndexInfo {
+	Name: string;
+	Mirrors: string[];
+	Secure: boolean;
+	Official: boolean;
+}
+
+export interface RegistryServiceConfig {
+	InsecureRegistryCIDRs: string[];
+	IndexConfigs: Record<string, RegistryIndexInfo>;
+	Mirrors: string[];
+}
+
+export interface GenericResource {
+	NamedResourceSpec?: { Kind: string; Value: string };
+	DiscreteResourceSpec?: { Kind: string; Value: number };
+}
+
+export interface SwarmInfo {
+	NodeID?: string;
+	NodeAddr?: string;
+	LocalNodeState?: string;
+	ControlAvailable?: boolean;
+	Error?: string;
+	Nodes?: number;
+	Managers?: number;
+}
+
+export interface NetworkAddressPool {
+	Base: string;
+	Size: number;
+}
+
+export interface FirewallInfo {
+	Driver: string;
+	Info?: string[][];
+}
+
+export interface DeviceInfo {
+	Source: string;
+	ID: string;
+}
+
+export interface ContainerdInfo {
+	Address?: string;
+	Namespaces?: { Containers: string; Plugins: string };
 }

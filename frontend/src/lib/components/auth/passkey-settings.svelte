@@ -344,7 +344,6 @@
 				<ArcaneButton
 					action={mfaStatus.enabled ? 'remove' : 'confirm'}
 					tone={mfaStatus.enabled ? 'outline-destructive' : 'outline'}
-					size="sm"
 					icon={ShieldCheckIcon}
 					customLabel={mfaStatus.enabled ? m.account_passkey_mfa_disable() : m.account_passkey_mfa_enable()}
 					onclick={() => (mfaDialogOpen = true)}
@@ -353,7 +352,6 @@
 			<ArcaneButton
 				action="create"
 				tone="outline"
-				size="sm"
 				customLabel={m.account_passkey_add()}
 				icon={AddIcon}
 				loading={adding}
@@ -380,18 +378,11 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							size="sm"
 							customLabel={m.account_passkey_mfa_copy_codes()}
 							icon={CopyIcon}
 							onclick={() => void copyRecoveryCodes()}
 						/>
-						<ArcaneButton
-							action="cancel"
-							tone="ghost"
-							size="sm"
-							customLabel={m.common_ive_saved_it()}
-							onclick={dismissRecoveryCodes}
-						/>
+						<ArcaneButton action="cancel" tone="ghost" customLabel={m.common_ive_saved_it()} onclick={dismissRecoveryCodes} />
 					</div>
 				</Alert.Description>
 			</Alert.Root>
@@ -404,13 +395,7 @@
 				<Alert.Description>
 					<div class="space-y-3">
 						<p>{loadError}</p>
-						<ArcaneButton
-							action="refresh"
-							tone="outline"
-							size="sm"
-							customLabel={m.common_retry()}
-							onclick={() => void loadAccountData()}
-						/>
+						<ArcaneButton action="refresh" tone="outline" customLabel={m.common_retry()} onclick={() => void loadAccountData()} />
 					</div>
 				</Alert.Description>
 			</Alert.Root>
@@ -459,7 +444,7 @@
 										<ArcaneButton
 											action="edit"
 											tone="ghost"
-											size="sm"
+											size="icon"
 											icon={EditIcon}
 											customLabel={m.account_passkey_rename()}
 											showLabel={false}
@@ -468,7 +453,7 @@
 										<ArcaneButton
 											action="remove"
 											tone="ghost"
-											size="sm"
+											size="icon"
 											icon={TrashIcon}
 											customLabel={m.account_passkey_delete()}
 											showLabel={false}

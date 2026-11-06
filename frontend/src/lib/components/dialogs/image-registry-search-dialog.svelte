@@ -187,7 +187,6 @@
 						<ArcaneButton
 							action="pull"
 							type="button"
-							size="sm"
 							icon={DownloadIcon}
 							customLabel={m.pull()}
 							loading={pullingImageName === buildPullRef(result.name)}

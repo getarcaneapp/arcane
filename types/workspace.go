@@ -20,13 +20,7 @@ type (
 	}
 
 	WorkspaceFileChange struct {
-		UploadIndex *int `json:"uploadIndex,omitempty" minimum:"0"`
-		// BaselineIndex references an uploaded copy of the content this
-		// update_file change was drafted against. When set, the apply conflicts
-		// if the on-disk content no longer matches it, so a concurrent edit to
-		// the same file is not silently overwritten. Deliberately optional:
-		// imperative clients like the CLI overwrite without ever reading the
-		// file (last-write-wins), while the web editor always sends it.
+		UploadIndex   *int   `json:"uploadIndex,omitempty" minimum:"0"`
 		BaselineIndex *int   `json:"baselineIndex,omitempty" minimum:"0"`
 		Operation     string `json:"operation" binding:"required" enum:"create_file,create_folder,update_file,rename,move,delete"`
 		RelativePath  string `json:"relativePath" binding:"required"`

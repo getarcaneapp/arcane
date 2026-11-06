@@ -37,7 +37,6 @@ import (
 )
 
 type (
-	// Service reads in-toto attestations attached to local images and registry references.
 	Service struct {
 		dockerService *docker.DockerClientService
 		registryAuth  func(ctx context.Context, imageRef string) (string, error)
@@ -100,7 +99,6 @@ func NewService(
 	return &Service{dockerService: dockerService, registryAuth: registryAuth}
 }
 
-// GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
 func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*types.ImageAttestationList, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 	defer cancel()
@@ -495,12 +493,6 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 	return attestations, nil
 }
 
-// readAttestationLayerBytes returns the raw in-toto statement
-// bytes, transparently decompressing OCI blobs that are stored compressed. The
-// in-toto media type does not encode the compression algorithm, so the
-// container is detected from the magic header. gzip and zstd are the algorithms
-// supported by the OCI image spec; anything else (including already
-// uncompressed JSON) is returned unchanged.
 func readAttestationLayerBytes(ctx context.Context, layer v1.Layer, digest string, size int64) ([]byte, error) {
 	if size > maxAttestationLayerBytes {
 		return nil, fmt.Errorf("read attestation layer %s: %w", digest, errAttestationLayerTooLarge)

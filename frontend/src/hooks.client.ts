@@ -1,5 +1,6 @@
 import type { ClientInit, HandleClientError } from '@sveltejs/kit/hooks';
 
+import { m } from '#lib/paraglide/messages.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { recordError } from '#lib/utils/telemetry.js';
@@ -25,7 +26,7 @@ export const handleError: HandleClientError = async ({ kind, error }) => {
 		console.error(`API error: ${requestUrl} - ${apiErrorMessage}`);
 
 		return {
-			message: apiErrorMessage || 'Internal Error',
+			message: apiErrorMessage || m.internal_error(),
 			status: responseStatus ?? 500
 		};
 	}

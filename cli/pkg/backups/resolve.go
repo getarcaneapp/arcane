@@ -12,7 +12,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// s3DestinationRef resolves exact IDs, then case-insensitive names and substrings.
 var s3DestinationRef = cmdutil.ResourceRef[types.S3Destination, types.S3Destination]{
 	Singular: "S3 destination",
 	Plural:   "S3 destinations",

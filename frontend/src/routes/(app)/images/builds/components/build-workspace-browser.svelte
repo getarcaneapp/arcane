@@ -83,9 +83,9 @@
 
 	const editorLoading = $derived(editorContentQuery.isPending || editorContentQuery.isFetching);
 	const editorError = $derived.by(() => {
-		const err = editorContentQuery.error as any;
+		const err = editorContentQuery.error;
 		if (!err) return null;
-		return err.message || 'Failed to load file';
+		return err.message || m.failed_to_load_file();
 	});
 
 	const mkdirMutation = createMutation(() => ({
@@ -180,7 +180,7 @@
 			if (operationResult.error !== null) {
 				const e = operationResult.error;
 
-				toast.error(e.message || 'Failed to save file');
+				toast.error(e.message || m.failed_to_save_file());
 			}
 		} finally {
 			editorSaving = false;
@@ -217,7 +217,7 @@
 				<DropdownMenu.Content align="end" class="min-w-45">
 					<DropdownMenu.Item onclick={handleCopyPath}>
 						<CopyIcon class="size-4" />
-						Copy current path
+						{m.copy_current_path()}
 					</DropdownMenu.Item>
 					{#if canBuildImage}
 						<DropdownMenu.Separator />
@@ -306,7 +306,7 @@
 <Dialog.Root bind:open={editorOpen}>
 	<Dialog.Content class="max-w-3xl">
 		<Dialog.Header>
-			<Dialog.Title>{editorFile?.name ?? 'File'}</Dialog.Title>
+			<Dialog.Title>{editorFile?.name ?? m.workspace_upload_file_label()}</Dialog.Title>
 			<Dialog.Description class="break-all">{editorFile?.path}</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-4 py-2">

@@ -16,7 +16,6 @@ ALTER TABLE environments RENAME COLUMN last_agent_transport TO last_edge_transpo
 `
 )
 
-// Migration 99 renames edge agents to agents and retires the poll transport.
 func init() {
 	goose.AddMigrationContext(
 		run(v99Up, v99Up),

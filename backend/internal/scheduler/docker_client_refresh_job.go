@@ -11,8 +11,6 @@ import (
 )
 
 type (
-	// DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
-	// API version after daemon restarts or upgrades.
 	DockerClientRefreshJob struct {
 		dockerClientService *docker.DockerClientService
 		settingsService     *settings.SettingsService
@@ -24,7 +22,6 @@ const (
 	dockerClientRefreshDefaultSchedule = "*/5 * * * *"
 )
 
-// NewDockerClientRefreshJob creates the scheduled Docker client refresh job.
 func NewDockerClientRefreshJob(dockerClientService *docker.DockerClientService, settingsService *settings.SettingsService) *DockerClientRefreshJob {
 	return &DockerClientRefreshJob{
 		dockerClientService: dockerClientService,

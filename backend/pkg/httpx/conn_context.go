@@ -10,9 +10,6 @@ import (
 type (
 	connContextKey struct{}
 
-	// connState tracks per-connection socket tuning. HTTP/2 multiplexes
-	// every stream a client opens onto one TCP connection, so the dead-peer
-	// timeout has to outlive whichever stream happens to finish first.
 	connState struct {
 		conn net.Conn
 
@@ -23,26 +20,10 @@ type (
 	}
 )
 
-// WithConn stores an accepted connection on its base context. Wire it up as
-// http.Server.ConnContext so long-lived handlers can tune socket options for
-// their own connection without affecting every other client.
 func WithConn(ctx context.Context, conn net.Conn) context.Context {
 	return context.WithValue(ctx, connContextKey{}, &connState{conn: conn})
 }
 
-// ClearReadDeadline clears any read deadline left armed on the request's
-// underlying connection. Safe to call from any request handler, including when
-// the request never passed through WithConn; only the first call per
-// connection issues the syscall.
-//
-// It exists because go1.26.6 (the CVE-2026-56853 backport) arms
-// ReadHeaderTimeout on the raw connection before sniffing the h2c preface and
-// hands the connection to the HTTP/2 server without clearing it. The HTTP/2
-// server tracks liveness with timers, never read deadlines, so the stale
-// absolute deadline survives and tears the connection down — with every stream
-// on it — exactly ReadHeaderTimeout after accept. By the time a handler runs
-// the headers are already parsed, so clearing the deadline does not weaken the
-// slowloris protection the timeout is for.
 func ClearReadDeadline(ctx context.Context) {
 	state, _ := ctx.Value(connContextKey{}).(*connState)
 	if state == nil {
@@ -53,24 +34,6 @@ func ClearReadDeadline(ctx context.Context) {
 	})
 }
 
-// AcquireDeadPeerTimeout bounds how long data written to the request's
-// connection may stay unacknowledged before the kernel tears it down, and
-// returns a release function restoring the system default once every caller
-// sharing the connection has released it.
-//
-// Long-lived streams need this because they write on their own schedule into a
-// connection the client may have silently abandoned: left to the defaults the
-// kernel retransmits until tcp_retries2 is exhausted, roughly eleven minutes.
-// TCP keepalive does not cover the case, since probes only fire while a
-// connection is idle and a stream with an unacknowledged write in flight never
-// is.
-//
-// It is deliberately scoped to one connection rather than the listener: the
-// same listener carries agent tunnel gRPC streams, which tolerate up to
-// agent.TunnelStaleTimeout of silence and would be reset by a shared timeout.
-//
-// The release function is always safe to call, including when acquisition
-// failed or the request never passed through WithConn.
 func AcquireDeadPeerTimeout(ctx context.Context, timeout time.Duration) (func(), error) {
 	state, _ := ctx.Value(connContextKey{}).(*connState)
 	if state == nil {
@@ -123,8 +86,6 @@ func setDeadPeerTimeoutOnConn(conn net.Conn, timeout time.Duration) error {
 	return setDeadPeerTimeout(rawConn, timeout)
 }
 
-// tcpConnFrom unwraps transport wrappers (TLS, most notably) to reach
-// the underlying TCP connection. Returns nil when there isn't one.
 func tcpConnFrom(conn net.Conn) *net.TCPConn {
 	for range 4 {
 		switch typed := conn.(type) {

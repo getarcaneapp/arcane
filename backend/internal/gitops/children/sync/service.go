@@ -1,5 +1,3 @@
-// Package sync applies deployment GitOps syncs: it clones the source, stages
-// and promotes project files, and redeploys the linked project or stack.
 package sync
 
 import (
@@ -40,8 +38,6 @@ import (
 )
 
 type (
-	// Service runs deployment syncs. Shared sync limits, error events and job
-	// registration stay with the parent and arrive as callbacks.
 	Service struct {
 		db             *database.DB
 		repoService    *gitrepo.GitRepositoryService
@@ -52,11 +48,9 @@ type (
 		logError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
 		unregisterJob  func(context.Context, string)
 	}
-	// syncRevision is the recovery data a run records so a retry replays the same source revision.
 	syncRevision struct {
 		Commit string `json:"commit"`
 	}
-	// preparedSyncSource is the cloned and validated source a sync applies.
 	preparedSyncSource struct {
 		repoPath         string
 		commitHash       string
@@ -67,22 +61,17 @@ type (
 		// replay marks a retry of a pinned revision, which redeploys even when the files are unchanged.
 		replay bool
 	}
-	// stagedDirectorySync holds the fully prepared directory-sync result before it
-	// is promoted into the live project path.
 	stagedDirectorySync struct {
-		project *projectpkg.Project
-		// gitEnvContent is the repo's project-root .env, routed through the env merge.
+		project       *projectpkg.Project
 		gitEnvContent *string
 		stagePath     string
 		// stageLogical is stagePath relative to the projects directory, the root every staging mutation is confined to.
 		stageLogical    string
 		projectsDir     string
 		composeFileName string
-		// syncFiles are the repo files written raw; syncedFiles are their paths.
-		syncFiles   []projects.SyncFile
-		syncedFiles []string
-		// oldSyncedFiles are the paths the previous sync tracked.
-		oldSyncedFiles []string
+		syncFiles       []projects.SyncFile
+		syncedFiles     []string
+		oldSyncedFiles  []string
 		// backupScope names every live path promotion may create, rewrite or delete.
 		backupScope     projects.ProjectUpdateBackupScope
 		serviceCount    int
@@ -117,9 +106,6 @@ func New(p Params) *Service {
 	}
 }
 
-// Run clones the sync source and applies it to its project or Swarm stack within sourceTimeout; the redeploy
-// keeps ctx's own budget. A retry replays the revision its run pinned, and redeploys it unless the record
-// already confirms that revision.
 func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
 	pinned := ""
 	if run, ok := jobcontext.Run(ctx); ok {
@@ -263,8 +249,6 @@ func (s *Service) syncTarget(
 	return project, syncedFiles, changed, nil
 }
 
-// deployOnce redeploys the synced project, recording the deploy on the run. The deploy runs lifecycle hooks, so a
-// replay skips a deploy the run confirmed and refuses one that started without a recorded result.
 func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor, replay bool) error {
 	target := types.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: types.RunStatusRunning}
 	previous, _ := jobcontext.Run(ctx)
@@ -289,8 +273,6 @@ func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, p
 	return errors.Join(deployErr, jobcontext.Progress(ctx, target))
 }
 
-// prepareSyncSource clones the source at the pinned revision, or the branch head, records that revision on
-// the run, and reads the compose, env and override inputs.
 func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *types.GitOpsSyncResult, actor types.Actor, pinned string) (*preparedSyncSource, error) {
 	repository := sync.Repository
 	if repository == nil {
@@ -381,8 +363,6 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	return source, nil
 }
 
-// syncComposeFile applies a single-file sync, creating the project on the first sync. It reports whether the
-// project files changed.
 func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, source *preparedSyncSource) (*projectpkg.Project, bool, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", sync.ID, "composePath", sync.ComposePath)
 	// Files referenced through COMPOSE_FILE or COMPOSE_ENV_FILES never reach a single-file project.
@@ -432,8 +412,6 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 	return project, true, nil
 }
 
-// redeployIfRunningAfterSync rebuilds and redeploys a running project, or any project when RedeployAfterSync is on. A project
-// left stopped still gets its images pulled when PullImageAfterSync is on, so a re-pointed tag stays available.
 func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor) error {
 	running := s.projectRunning(ctx, project.ID)
 	switch {
@@ -474,8 +452,6 @@ func (s *Service) setPendingRedeploy(ctx context.Context, id string, pending boo
 	return s.db.WithContext(writeCtx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Update("pending_redeploy", pending).Error
 }
 
-// updateSyncStatus stores a run's result on the row. An empty commit keeps the recorded one, and nil
-// syncedFiles keeps the tracked list.
 func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, commitHash string, syncedFiles []string) {
 	updates := map[string]any{
 		"last_sync_at":     time.Now(),
@@ -495,8 +471,6 @@ func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, co
 	}
 }
 
-// failSync records a failed sync on the result, the row and an event, and returns err. A broken project
-// binding also turns auto-sync off so the sync stops retrying.
 func (s *Service) failSync(ctx context.Context, result *types.GitOpsSyncResult, sync *projectpkg.GitOpsSync, actor types.Actor, message string, err error) error {
 	errMsg := err.Error()
 	result.Message = message
@@ -513,8 +487,6 @@ func (s *Service) failSync(ctx context.Context, result *types.GitOpsSyncResult, 
 	return err
 }
 
-// syncProjectDirectory stages and validates the synced tree, then creates or updates the project. It reports
-// the synced paths, whether it created the project, and whether the contents changed.
 func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor types.Actor) (*projectpkg.Project, []string, bool, bool, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -601,8 +573,6 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 	return project, stage.syncedFiles, false, stage.contentsChanged, nil
 }
 
-// seedStageEnvFromCandidateDir copies the env files of a pre-existing directory at the conventional project
-// path into a first-sync stage, so a server-side .env can supply ${VAR} values the repo leaves out.
 func (s *Service) seedStageEnvFromCandidateDir(ctx context.Context, sync *projectpkg.GitOpsSync, projectsDir, stagePath string) error {
 	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
 	info, err := os.Stat(candidatePath)
@@ -630,8 +600,6 @@ func (s *Service) seedStageEnvFromCandidateDir(ctx context.Context, sync *projec
 	return nil
 }
 
-// DirectoryProject resolves the linked project for a directory sync, relinking or recovering it when the
-// stored reference is stale. A sync whose project is gone and cannot be recovered has a broken binding.
 func (s *Service) DirectoryProject(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
 	projectID := kit.FromPtr(sync.ProjectID)
 	if projectID != "" {
@@ -656,8 +624,6 @@ func (s *Service) DirectoryProject(ctx context.Context, sync *projectpkg.GitOpsS
 	return project, err
 }
 
-// recoverProject finds the one project still managed by the sync, or else adopts the one projects-directory
-// entry that matches the sync's name and holds its compose file.
 func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
 	var managed []projectpkg.Project
 	if err := s.db.WithContext(ctx).Where("gitops_managed_by = ?", sync.ID).Find(&managed).Error; err != nil {
@@ -752,12 +718,9 @@ func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSyn
 	return &project, nil
 }
 
-// walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.
-// Returns the list of SyncFile entries and an error if any; it fails if the compose file is missing.
 func (s *Service) walkAndParseSyncDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, repoPath string) ([]projects.SyncFile, error) {
 	slog.InfoContext(ctx, "Starting directory walk", "syncId", sync.ID, "composePath", sync.ComposePath)
 
-	// Walk the directory to get all files
 	maxFiles, maxTotalSize, maxBinarySize := s.limits(ctx, sync)
 
 	walkResult, err := s.repoService.WalkDirectory(ctx, repoPath, sync.ComposePath, maxFiles, maxTotalSize, maxBinarySize)
@@ -776,7 +739,6 @@ func (s *Service) walkAndParseSyncDirectory(ctx context.Context, sync *projectpk
 	composeFileName := filepath.Base(sync.ComposePath)
 	composeFound := false
 
-	// Convert walked files to SyncFile format
 	syncFiles := make([]projects.SyncFile, len(walkResult.Files))
 	for i, f := range walkResult.Files {
 		syncFiles[i] = projects.SyncFile{
@@ -796,8 +758,6 @@ func (s *Service) walkAndParseSyncDirectory(ctx context.Context, sync *projectpk
 	return syncFiles, nil
 }
 
-// applyDirectorySync drops untracked and stale compose files, writes the repo files, then runs the env merge, the
-// order validation saw. It returns the effective .env content before and after the merge.
 func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, stage *stagedDirectorySync) (string, string, error) {
 	if len(stage.oldSyncedFiles) > 0 {
 		if err := projects.CleanupRemovedFiles(ctx, stage.projectsDir, targetPath, stage.oldSyncedFiles, stage.syncedFiles); err != nil {
@@ -809,31 +769,19 @@ func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, sta
 		return "", "", fmt.Errorf("failed to remove stale compose files: %w", err)
 	}
 
-	// Write the repo files (excluding reserved root env files, handled below)
-	// after cleanup so validation sees the final on-disk tree exactly as it
-	// will exist in the managed project.
 	if _, err := projects.WriteSyncedDirectory(ctx, stage.projectsDir, targetPath, stage.syncFiles); err != nil {
 		return "", "", fmt.Errorf("failed to write staged sync files: %w", err)
 	}
 
-	// Route the project-root .env through the same three-file override merge
-	// single-file git sync uses: git is source-of-truth, edits made in Arcane
-	// become an override that wins, and new git-introduced keys still flow in.
 	return s.projectService.ApplyGitSyncEnvToDirectory(ctx, targetPath, stage.projectsDir, stage.gitEnvContent)
 }
 
-// createDirectorySyncProject promotes a validated staged tree into a new
-// managed project directory and links it back to the Git sync record.
 func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor types.Actor) (*projectpkg.Project, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
-	// Non-suffixing create: a GitOps sync must never mint a "-N" duplicate. Any
-	// adoptable existing directory was already resolved by getDirectorySyncProject,
-	// so a collision here means the name is taken by an unrelated/unrecoverable dir;
-	// treat it as a broken binding rather than creating a duplicate.
 	basePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
 	projectPath, folderName, err := projects.CreateExactDir(ctx, projectsDir, basePath, sync.ProjectName, kitfs.DirPerm)
 	if err != nil {
@@ -892,8 +840,6 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 	return project, nil
 }
 
-// updateDirectorySyncProject applies a validated stage in place, so running containers keep their bind-mount
-// inodes; a backup scoped to the touched paths rolls a failed promotion back.
 func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (*projectpkg.Project, error) {
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
@@ -969,8 +915,6 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	return project, nil
 }
 
-// seedStageEnvFromDir copies sourceDir's readable project-root env files into the stage and returns the state
-// it read; like the env merge, it skips a permission-locked file.
 func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath string) (projects.ProjectEnvState, error) {
 	state, err := projects.ReadProjectEnvState(sourceDir)
 	if err != nil {
@@ -994,8 +938,6 @@ func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath 
 	return state, nil
 }
 
-// linkProjectIntoStage symlinks every live path outside scopePaths into the stage, so validation sees the whole
-// project without copying it. The links are never promoted; acfs refuses symlinks, so this uses os.
 func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error {
 	scope := make(map[string]struct{}, len(scopePaths))
 	ancestors := make(map[string]struct{})

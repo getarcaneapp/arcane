@@ -126,11 +126,6 @@ async function mockDepotConfiguredSettings(page: Page) {
 
 const BUILD_REGISTRY_URL = 'registry.example.com';
 
-/**
- * Serves a single enabled registry to the push target pickers. Pass a function
- * for `repositoryNames` to change the configured names between requests, and
- * use the returned counter to wait for a refetch.
- */
 async function mockBuildRegistry(
 	page: Page,
 	repositoryNames: string[] | (() => string[]) = ['team/build']

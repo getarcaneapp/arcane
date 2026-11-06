@@ -137,20 +137,15 @@ const (
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
 	containerIconMetadataTTL = 5 * time.Second
-	// leaseWaitTimeout bounds how long a container operation waits for one already running on the same container.
-	leaseWaitTimeout = 30 * time.Second
-	// rollbackTimeout bounds a redeploy rollback, which runs detached from the request so it completes after cancellation.
-	rollbackTimeout = 2 * timeouts.DefaultDockerAPI
+	leaseWaitTimeout         = 30 * time.Second
+	rollbackTimeout          = 2 * timeouts.DefaultDockerAPI
 	// redeployBackupInfix joins a container's name and a Unix timestamp to name the original kept during a redeploy.
 	redeployBackupInfix = "-arcane-redeploy-"
 
-	// ResourceSampleLimit caps how many requested containers one SampleResources call reads.
 	ResourceSampleLimit = 500
 )
 
 var (
-	// containerProcessesPsArgs lists ps argument sets in preference order: procps first, then
-	// BusyBox, which rejects %cpu/%mem. Windows daemons ignore the arguments.
 	containerProcessesPsArgs = [][]string{
 		{"-eo", "pid,user,%cpu,%mem,etime,cmd"},
 		{"-o", "pid,user,etime,args"},
@@ -252,8 +247,6 @@ func (s *ContainerService) pullRedeployImage(
 	return pullErr
 }
 
-// RecoverInterruptedRedeploys resolves journaled redeploy backups a restart left behind: a backup whose replacement
-// is running is removed, and a backup with no replacement gets its original name back but stays stopped.
 func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) error {
 	entries, err := s.kvService.ListByPrefix(ctx, redeployJournalKeyPrefix)
 	if err != nil {
@@ -337,7 +330,6 @@ func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) erro
 	return firstErr
 }
 
-// clearRedeployJournal drops the journal once its backup is resolved; a leftover entry is retried at startup.
 func (s *ContainerService) clearRedeployJournal(ctx context.Context, originalID string) {
 	if err := s.kvService.Delete(ctx, redeployJournalKeyPrefix+originalID); err != nil {
 		slog.WarnContext(ctx, "Failed to clear redeploy journal", "containerId", originalID, "error", err)
@@ -401,8 +393,6 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 	s.clearRedeployJournal(ctx, containerID)
 }
 
-// renameToRedeployBackup journals the original before renaming it to its backup name, so startup
-// recovery only acts on backups Arcane created.
 func (s *ContainerService) renameToRedeployBackup(ctx context.Context, containerID, containerName, backupName, newName string, user types.Actor) error {
 	journal, err := json.Marshal(RedeployJournal{
 		OriginalID:   containerID,
@@ -450,7 +440,6 @@ func (s *ContainerService) stopContainer(ctx context.Context, containerID string
 	return err
 }
 
-// lockContainer takes the container's operation lease, waiting up to leaseWaitTimeout for an operation already running on it.
 func (s *ContainerService) lockContainer(ctx context.Context, op, containerID string) (func(), error) {
 	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
 	defer cancel()
@@ -550,8 +539,6 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	})
 }
 
-// KillContainer sends a signal to the container's main process (default SIGKILL
-// when signal is empty) without removing the container.
 func (s *ContainerService) KillContainer(ctx context.Context, containerID, signal string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "kill",
@@ -566,7 +553,6 @@ func (s *ContainerService) KillContainer(ctx context.Context, containerID, signa
 	})
 }
 
-// PauseContainer suspends all processes in the container.
 func (s *ContainerService) PauseContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "pause",
@@ -580,7 +566,6 @@ func (s *ContainerService) PauseContainer(ctx context.Context, containerID strin
 	})
 }
 
-// UnpauseContainer resumes a previously paused container.
 func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "unpause",
@@ -594,7 +579,6 @@ func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID str
 	})
 }
 
-// CommitContainer creates an image from a container's current filesystem.
 func (s *ContainerService) CommitContainer(ctx context.Context, containerID string, req types.ContainerCommitRequest, user types.Actor) (*types.ContainerCommitResult, error) {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
@@ -740,8 +724,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return "", err
 	}
 
-	// A container in a known compose project redeploys through project.ProjectService.UpdateProjectServices so compose
-	// edits and include/env-file context are honored; the standalone path below only clones the daemon's config.
 	if projectName, serviceName := docker.ComposeProjectLabel(containerInfo.Config.Labels), docker.ComposeServiceLabel(containerInfo.Config.Labels); projectName != "" && serviceName != "" {
 		proj, projectErr := s.projectService.GetProjectByComposeName(ctx, projectName)
 		// Real DB errors surface so a transient failure doesn't silently recreate from stale cached config.
@@ -849,8 +831,6 @@ func prepareRecreateHostConfigs(ctx context.Context, dockerClient *client.Client
 	}, err
 }
 
-// recreateContainer replaces an existing container with one created from the supplied config, using
-// rename-as-backup so the original can be restored when create or start fails. Shared by redeploy and edit.
 func (s *ContainerService) recreateContainer(
 	ctx context.Context,
 	containerInfo container.InspectResponse,
@@ -1210,8 +1190,6 @@ func retainedVolumeMountPoints(original, updated container.HostConfig, mountPoin
 	})
 }
 
-// mergeEditMounts builds the desired mount set for an edit. A requested mount matching an existing one by type
-// and target keeps its full original spec with the request's source and read-only flag; others are built fresh.
 func mergeEditMounts(existing []mount.Mount, requested []types.ContainerMountCreate) []mount.Mount {
 	priorByKey := make(map[string]mount.Mount, len(existing))
 	for _, prior := range existing {
@@ -1275,8 +1253,6 @@ func endpointIPAMFromCreate(ep types.ContainerEndpointSettingsCreate) (*network.
 	return &network.EndpointIPAMConfig{IPv4Address: ipv4, IPv6Address: ipv6}, nil
 }
 
-// applyEditToContainerConfig returns cfg with the non-nil form-owned sections of an edit applied. Replaced port
-// bindings recompute ExposedPorts as the new keys plus previously exposed but unbound ports (image EXPOSE entries).
 func applyEditToContainerConfig(cfg container.Config, previousBindings network.PortMap, req types.ContainerEdit) (container.Config, error) {
 	if hostname := strings.TrimSpace(kit.FromPtr(req.Hostname)); req.Hostname != nil && hostname != cfg.Hostname {
 		if err := validateContainerHostname(hostname); err != nil {
@@ -1325,8 +1301,6 @@ func applyEditToContainerConfig(cfg container.Config, previousBindings network.P
 	}, nil
 }
 
-// applyEditToHostConfig overwrites the non-nil form-owned HostConfig sections of an edit request onto hc.
-// Everything else (sysctls, ulimits, log drivers, devices, tmpfs, DNS, ...) carries over unchanged.
 func applyEditToHostConfig(hc *container.HostConfig, req types.ContainerEdit) error {
 	if req.HostConfig == nil {
 		return nil
@@ -1359,9 +1333,6 @@ func applyEditToHostConfig(hc *container.HostConfig, req types.ContainerEdit) er
 	return nil
 }
 
-// buildEditNetworkingConfig builds the networking config for an edit recreate. A nil request preserves the existing
-// attachments like redeploy; otherwise it is the full desired endpoint set, keeping settings of endpoints that stay.
-// Containers using host/none/container: network modes never get endpoint edits.
 func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *types.ContainerNetworkingConfigCreate, apiVersion string) (*network.NetworkingConfig, error) {
 	if mode := kit.FromPtr(containerInspect.HostConfig).NetworkMode; mode.IsHost() || mode.IsNone() || mode.IsContainer() {
 		return nil, nil
@@ -1404,8 +1375,6 @@ func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *
 	return &network.NetworkingConfig{EndpointsConfig: endpoints}, nil
 }
 
-// GetContainerEditConfig returns the purpose-built DTO backing the container
-// edit form.
 func (s *ContainerService) GetContainerEditConfig(ctx context.Context, containerID string) (types.ContainerEditConfig, error) {
 	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
@@ -1427,9 +1396,6 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 	), nil
 }
 
-// EditContainer applies a user-supplied config diff onto the container's
-// inspected config and recreates it. Sections not owned by the edit form are
-// preserved from the existing container.
 func (s *ContainerService) EditContainer(ctx context.Context, containerID string, req types.ContainerEdit, user types.Actor) (string, error) {
 	unlock, err := s.lockContainer(ctx, "edit container", containerID)
 	if err != nil {
@@ -1594,7 +1560,6 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	}, nil
 }
 
-// GetContainerProcesses returns Docker's `top` snapshot for a container.
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
 		var result client.ContainerTopResult
@@ -1616,7 +1581,6 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 	}, nil
 }
 
-// GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
 	info, err := s.GetContainerByReference(ctx, ref)
 	if err != nil {
@@ -1642,11 +1606,9 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		return guardErr
 	}
 
-	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if opts.RemoveVolumes {
 		for _, mount := range containerJSON.Container.Mounts {
-			// Only collect named volumes (not bind mounts or tmpfs)
 			if mount.Type == "volume" && mount.Name != "" {
 				volumesToRemove = append(volumesToRemove, mount.Name)
 			}
@@ -1687,7 +1649,6 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
 
-	// Remove named volumes if requested
 	for _, volumeName := range volumesToRemove {
 		if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
 			return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false})
@@ -1770,7 +1731,6 @@ func (s *ContainerService) CreateContainer(
 	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, config.Image)
 	}); inspectErr != nil {
-		// Image not found locally, need to pull it
 		if pullErr := s.pullRedeployImage(ctx, config.Image, "", containerName, "create", credentials, user); pullErr != nil {
 			return nil, pullErr
 		}
@@ -1870,8 +1830,6 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	return s.stats.Stream(ctx, containerID, statsChan)
 }
 
-// SampleResources samples the running containers among the first ResourceSampleLimit ids,
-// refetching samples older than maxAge. Blank, stopped and unknown IDs are omitted.
 func (s *ContainerService) SampleResources(ctx context.Context, ids []string, maxAge time.Duration) (map[string]*types.ContainerResourceSample, error) {
 	requested := make(map[string]struct{}, min(len(ids), ResourceSampleLimit))
 	for _, id := range ids[:min(len(ids), ResourceSampleLimit)] {
@@ -1956,7 +1914,6 @@ func (s *ContainerService) ListContainersPaginated(
 
 	// Resource sorting is limited to the ungrouped list: project-grouped mode keeps the existing group pagination.
 	if types.IsContainerResourceSort(params.Sort) {
-		// Apply search and filters, collect stats for the matching containers, then sort and paginate.
 		filtered := make([]types.ContainerSummary, 0, len(items))
 		for _, item := range items {
 			if config.MatchesSearchAndFilters(item, params) {
@@ -2160,9 +2117,6 @@ func paginateContainerProjectGroups(
 
 	requestedPage := max((params.Start/params.Limit)+1, 1)
 
-	// Pages are contiguous runs of whole groups: a group is never split, so the
-	// group that crosses the limit finishes its page. One walk over group sizes
-	// finds the requested page's group range without materializing other pages.
 	totalPages := 0
 	pageStart, currentCount := 0, 0
 	selStart, selEnd := 0, 0
@@ -2228,7 +2182,6 @@ func flattenContainerProjectGroups(groups []types.ContainerSummaryGroup) []types
 	return flattened
 }
 
-// FilterExcludedContainers removes internal and hidden containers unless their corresponding inclusion flags are enabled.
 func FilterExcludedContainers(containers []container.Summary, includeInternal, includeHidden bool) []container.Summary {
 	if includeInternal && includeHidden {
 		return containers
@@ -2293,9 +2246,6 @@ func (s *ContainerService) BuildSummaries(
 	return items
 }
 
-// ApplySummaryIcons resolves icons for a page of summaries.
-// Icon resolution is deferred until after pagination so the cost is bounded by
-// page size rather than the full container list.
 func (s *ContainerService) ApplySummaryIcons(ctx context.Context, summaries []types.ContainerSummary, metadataByProject map[string]projects.ArcaneComposeMetadata) {
 	if metadataByProject == nil {
 		metadataByProject = map[string]projects.ArcaneComposeMetadata{}
@@ -2492,7 +2442,6 @@ func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary)
 	}
 }
 
-// CreateExec creates an exec instance in the container
 func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2528,7 +2477,6 @@ func (e *ExecSession) Stdin() io.WriteCloser { return e.hijackedResp.Conn }
 
 func (e *ExecSession) Stdout() io.Reader { return e.hijackedResp.Reader }
 
-// Close terminates the exec session and kills the process if still running.
 func (e *ExecSession) Close(ctx context.Context) error {
 	var closeErr error
 	e.closeOnce.Do(func() {
@@ -2565,7 +2513,6 @@ func (e *ExecSession) Close(ctx context.Context) error {
 	return closeErr
 }
 
-// AttachExec attaches to an exec instance and returns an ExecSession for lifecycle management.
 func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID string) (*ExecSession, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2628,8 +2575,6 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{Follow: opts.Follow, TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
 }
 
-// DownloadLogs returns every log line Docker retains for the container as a
-// single plain-text stream plus the attachment filename. Callers must Close it.
 func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string) (io.ReadCloser, string, error) {
 	logs, containerInspect, err := s.openLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,

@@ -16,7 +16,6 @@ var (
 	baselinePostgres string
 )
 
-// Migration 94 creates the schema of a database migrated through Arcane v2.17.1.
 func init() {
 	goose.AddMigrationContext(run(baselineSQLite, baselinePostgres), down94)
 }

@@ -1,5 +1,3 @@
-// Package backup commits saved project files to a Git branch and reports the
-// remote backup state, history and revisions.
 package backup
 
 import (
@@ -34,8 +32,6 @@ import (
 )
 
 type (
-	// Service runs backup syncs. Branch locks, sync limits and error events stay
-	// with the parent and arrive as callbacks.
 	Service struct {
 		db             *database.DB
 		repoService    *gitrepo.GitRepositoryService
@@ -56,7 +52,6 @@ type (
 		BranchLock     func(repositoryID, branch string) *sync.Mutex
 	}
 
-	// backupCreateConfig is the validated backup configuration for a new sync.
 	backupCreateConfig struct {
 		project     *projectpkg.Project
 		directory   string
@@ -64,13 +59,11 @@ type (
 		paths       []string
 	}
 
-	// backupSnapshot is the set of project files a backup run commits.
 	backupSnapshot struct {
 		hashes map[string]string
 		files  []git.CommitFile
 	}
 
-	// backupAnalysis is the decision for one backup run.
 	backupAnalysis struct {
 		state     string
 		changes   []types.GitOpsBackupFileChange
@@ -110,8 +103,6 @@ func New(p Params) *Service {
 	}
 }
 
-// ApplyCreate validates a backup create request and fills the backup fields of
-// the new sync inside the caller's transaction.
 func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOpsSync, submitted map[string]bool, syncRecord *projectpkg.GitOpsSync) error {
 	backupConfig, err := s.prepareBackupCreate(ctx, tx, req)
 	if err != nil {
@@ -129,7 +120,6 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 	return nil
 }
 
-// prepareBackupCreate validates a backup create request against the project and other backups on the branch.
 func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req types.GitOpsSync) (*backupCreateConfig, error) {
 	if strings.TrimSpace(kit.FromPtr(req.ProjectID)) == "" {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("a project is required for a backup sync")})
@@ -183,7 +173,6 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	}, nil
 }
 
-// ApplyModeUpdates validates mode-specific update fields and appends the column updates.
 func (s *Service) ApplyModeUpdates(ctx context.Context, current *projectpkg.GitOpsSync, req types.GitOpsSync, submitted map[string]bool, updates map[string]any) error {
 	if current.Mode != types.GitOpsSyncModeBackup {
 		return nil
@@ -211,7 +200,6 @@ func (s *Service) ApplyModeUpdates(ctx context.Context, current *projectpkg.GitO
 	return nil
 }
 
-// Perform snapshots the project and pushes a commit when it differs; adopt overwrites the remote.
 func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, adopt bool) (*types.GitOpsSyncResult, error) {
 	if localSync.Repository == nil {
 		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureRepository, "Repository not found", errors.New("repository not found"), false)
@@ -280,7 +268,6 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 	)
 }
 
-// commitBackup runs one checkout-analyze-push attempt; retry reports a rejected push worth repeating.
 func (
 	s *Service,
 ) commitBackup(
@@ -464,7 +451,6 @@ func (s *Service) recordBackupSuccess(
 	return nil
 }
 
-// failBackup records the failure on the sync; needsAttention marks it as a conflict the user must resolve.
 func (
 	s *Service,
 ) failBackup(
@@ -497,7 +483,6 @@ func (
 	return fmt.Errorf("%s: %w", message, failure)
 }
 
-// Preview reports what the next backup run would commit or why it needs attention.
 func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.GitOpsSync) (*types.GitOpsBackupPreview, error) {
 	if syncRecord.ProjectID == nil {
 		return nil, common.Classify(common.ErrNotFound, errors.New("backup sync has no project"))
@@ -542,7 +527,6 @@ func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.Git
 	}, nil
 }
 
-// backupComposeFiles resolves the primary compose file and sibling overrides as project-relative paths.
 func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Project) (string, []string, error) {
 	composePath, err := s.projectService.ResolveProjectComposeFile(ctx, project)
 	if err != nil {
@@ -564,7 +548,6 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 	return primary, composeFiles, nil
 }
 
-// buildBackupSnapshot reads the selected project files, retrying when they change mid-read.
 func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshot, error) {
 	_, composeFiles, err := s.backupComposeFiles(ctx, project)
 	if err != nil {
@@ -614,7 +597,6 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 	return nil, fmt.Errorf("project files changed while the backup snapshot was being taken: %w", git.ErrSelectionInvalid)
 }
 
-// analyzeBackup compares the snapshot with the checkout; baseline is the last push and the only proof the directory is ours.
 func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *backupSnapshot, baseline map[string]string, adopt bool) (backupAnalysis, error) {
 	analysis := backupAnalysis{conflicts: []types.GitOpsBackupFileChange{}}
 	entries, err := acfs.Root{Path: repoPath}.List(ctx, "/"+directory)
@@ -668,7 +650,6 @@ func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *ba
 	return analysis, nil
 }
 
-// cloneBackupBranch clones the backup branch for read-only inspection
 func (s *Service) cloneBackupBranch(ctx context.Context, syncRecord *projectpkg.GitOpsSync) (string, func(), error) {
 	authConfig, err := s.repoService.GetAuthConfig(ctx, syncRecord.Repository)
 	if err != nil {
@@ -685,7 +666,6 @@ func (s *Service) cloneBackupBranch(ctx context.Context, syncRecord *projectpkg.
 	return checkout.RepoPath, cleanup, nil
 }
 
-// History lists revisions that touched the backup directory.
 func (s *Service) History(historyCtx context.Context, syncRecord *projectpkg.GitOpsSync, limit int) (*types.GitOpsBackupHistoryResponse, error) {
 	repoPath, cleanup, err := s.cloneBackupBranch(historyCtx, syncRecord)
 	defer cleanup()
@@ -709,7 +689,6 @@ func (s *Service) History(historyCtx context.Context, syncRecord *projectpkg.Git
 	return response, nil
 }
 
-// Revision returns one revision with per-file diffs inside the backup directory.
 func (s *Service) Revision(revisionCtx context.Context, syncRecord *projectpkg.GitOpsSync, commit string) (*types.GitOpsBackupRevision, error) {
 	commit = strings.TrimSpace(commit)
 	repoPath, cleanup, err := s.cloneBackupBranch(revisionCtx, syncRecord)
@@ -757,7 +736,6 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 	return changes
 }
 
-// backupSelectionCovers reports whether the selection includes file directly or via a parent directory.
 func backupSelectionCovers(paths []string, file string) bool {
 	for _, selected := range paths {
 		if selected == file || strings.HasPrefix(file, selected+"/") {
@@ -803,7 +781,6 @@ func backupFailureReason(err error) string {
 	return types.GitOpsBackupFailureRepository
 }
 
-// ensureBackupDestinationFree rejects a destination that overlaps another backup on the same branch.
 func ensureBackupDestinationFree(tx *gorm.DB, excludeSyncID, repositoryID, branch, directory string) error {
 	var others []projectpkg.GitOpsSync
 	q := tx.Select("id", "backup_directory").

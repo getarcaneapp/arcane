@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import type { WithChildren, WithoutChildren } from 'bits-ui';
-	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
+	import type { HTMLAnchorAttributes, HTMLButtonAttributes, MouseEventHandler } from 'svelte/elements';
 
 	import type { IconType } from '#lib/icons/index.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
@@ -116,12 +116,12 @@
 	aria-label={ariaLabel ?? (!children && isIconOnlyButton ? displayLabel : undefined)}
 	bind:this={ref}
 	{@attach shortcut && clickOnShortcut(shortcut)}
-	onclick={async (e: any) => {
-		onclick?.(e);
+	onclick={async (e: MouseEvent & { currentTarget: EventTarget & HTMLElement }) => {
+		(onclick as MouseEventHandler<HTMLElement> | null | undefined)?.(e);
 		if (type === undefined) return;
 		if (onClickPromise) {
 			loading = true;
-			await onClickPromise(e);
+			await onClickPromise(e as MouseEvent & { currentTarget: EventTarget & HTMLButtonElement });
 			loading = false;
 		}
 	}}

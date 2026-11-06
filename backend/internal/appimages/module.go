@@ -6,7 +6,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// RegisterAppImages registers application image routes using Huma.
 func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService) {
 	h := &AppImagesHandler{
 		appImagesService: appImagesService,

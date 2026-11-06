@@ -32,7 +32,6 @@ import (
 )
 
 type (
-	// restartRecord tracks restart timestamps for a single container.
 	autoHealPlan struct {
 		Containers    []container.Summary `json:"containers"`
 		MaxRestarts   int                 `json:"maxRestarts"`
@@ -169,9 +168,6 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	return outcome, err
 }
 
-// selfContainerID resolves and caches the ID (full 64-char or short
-// prefix) of the container Arcane itself runs in. Returns "" when detection
-// fails (e.g. binary running directly on the host), disabling the guard.
 func (j *AutoHealJob) selfContainerID(ctx context.Context) string {
 	j.selfIDOnce.Do(func() {
 		detect := j.getSelfContainerID
@@ -192,10 +188,6 @@ func (j *AutoHealJob) selfContainerID(ctx context.Context) string {
 func (j *AutoHealJob) filterCandidates(containers []container.Summary, excludedContainers map[string]struct{}, selfID string) []container.Summary {
 	candidates := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
-		// Never restart the container Arcane itself runs in: a slow or
-		// mid-startup manager that trips its own healthcheck would otherwise
-		// be restarted by its own auto-heal, in a loop. Prefix match because
-		// hostname-based detection yields the short 12-char ID.
 		if selfID != "" && strings.HasPrefix(strings.ToLower(c.ID), selfID) {
 			continue
 		}
@@ -242,9 +234,6 @@ func (j *AutoHealJob) processCandidate(
 		}, nil
 	}
 
-	// The daemon-side health filter already selected unhealthy containers; the
-	// inspect re-confirms right before restarting so a container that recovered
-	// (or was restarted by someone else) since the list isn't bounced again.
 	inspect, err := j.inspectContainerFn(ctx, dockerClient, containerID)
 	if err != nil {
 		slog.WarnContext(ctx, "auto-heal failed to inspect container", "container", containerName, "error", err)
@@ -319,9 +308,6 @@ func (j *AutoHealJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-// pruneRecordLocked prunes expired timestamps for containerID and drops
-// the entry entirely when nothing recent remains, so restarts does not grow
-// without bound as containers come and go. Callers must hold j.mu.
 func (j *AutoHealJob) pruneRecordLocked(containerID string, cutoff time.Time) *restartRecord {
 	record, exists := j.restarts[containerID]
 	if !exists {
@@ -338,13 +324,6 @@ func (j *AutoHealJob) pruneRecordLocked(containerID string, cutoff time.Time) *r
 	return record
 }
 
-// reserveRestartSlot atomically checks the rate limit and claims a slot.
-// Checking and recording separately let two workers inspecting the same
-// container both pass the check and restart it past the configured limit.
-//
-// The returned release undoes the reservation, so a restart that fails does not
-// consume a slot — matching the previous behaviour of only counting restarts
-// that actually happened.
 func (j *AutoHealJob) reserveRestartSlot(containerID string, maxRestarts int, window time.Duration) (func(), bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()

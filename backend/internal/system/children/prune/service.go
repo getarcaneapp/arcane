@@ -38,7 +38,6 @@ import (
 )
 
 type (
-	// Service runs manual and scheduled prunes, serializing them per environment.
 	Service struct {
 		location           *time.Location
 		dockerService      *dockerInternal.DockerClientService
@@ -198,7 +197,6 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 	}
 	var containers, images, buildCache, volumes, networks types.PruneAllResult
 
-	// 1. Prune Containers first (sequential) as it may free up other resources
 	if req.Containers != nil && req.Containers.Mode != types.PruneContainerModeNone {
 		s.appendSystemPruneActivityMessage(ctx, activityID, "Pruning containers", 15)
 		slog.InfoContext(ctx, "Pruning containers...", "mode", req.Containers.Mode, "until", req.Containers.Until)
@@ -209,7 +207,6 @@ func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest,
 		containers = part
 	}
 
-	// 2. Prune other resources in parallel
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	if req.Images != nil && req.Images.Mode != types.PruneImageModeNone {
@@ -522,7 +519,6 @@ func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworks
 	return types.PruneAllResult{NetworksDeleted: report.Report.NetworksDeleted}, nil
 }
 
-// PruneScheduled freezes exact targets before applying destructive work.
 func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req types.PruneAllRequest) (*types.PruneAllResult, bool, error) {
 	prune := s.beginSystemPrune(ctx, environmentID, req)
 	if prune.started.IsAbsent() {
@@ -1069,7 +1065,6 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 	return reclaimed, nil
 }
 
-// pruneResourceEligible re-checks a planned resource against live state and returns its size from that snapshot.
 func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, resource pruneResource) (size int64, eligible, exists bool, err error) {
 	if resource.Kind == "network" {
 		inspected, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkInspectResult, error) {

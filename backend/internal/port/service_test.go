@@ -235,9 +235,6 @@ func TestPrimaryContainerName_TrimsDockerPrefix(t *testing.T) {
 	assert.Equal(t, "abcdef123456", primaryContainerName(nil, "abcdef1234567890"))
 }
 
-// Test fixtures shared by this package's tests.
-
-// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 

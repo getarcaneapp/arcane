@@ -31,8 +31,7 @@ type (
 		Step           string
 		Message        string
 		SuccessMessage string
-		// Queue waits on the per-environment concurrency limiter; quick actions (start/stop/delete) must not set it.
-		Queue bool
+		Queue          bool
 	}
 )
 
@@ -50,7 +49,6 @@ func IDFromContext(ctx context.Context) string {
 	return strings.TrimSpace(activityID)
 }
 
-// AwaitHandlerActivitySlot blocks until a queued activity holds a slot; cancellation is recorded on completion, not returned.
 func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, activityID, environmentID string) {
 	if strings.TrimSpace(activityID) == "" {
 		return
@@ -64,7 +62,6 @@ func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, acti
 	}
 }
 
-// StartHandlerActivity returns the activity ID and the work context callers MUST use; queued activities must then call AwaitHandlerActivitySlot.
 func StartHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions) (string, context.Context) {
 	activity, err := activityService.StartActivity(ctx, StartRequest{
 		EnvironmentID: opts.EnvironmentID,
@@ -118,7 +115,6 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 	}
 }
 
-// RunHandlerActivity runs action under the activity's cancelable work context and completes the activity.
 func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
 	activityID, workCtx := StartHandlerActivity(ctx, activityService, opts)
 	if opts.Queue {
@@ -141,7 +137,6 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 	return activityID, err
 }
 
-// WriteDoneLine writes the terminal NDJSON frame, since proxies do not always propagate EOF promptly.
 func WriteDoneLine(writer io.Writer) {
 	if writer == nil {
 		return

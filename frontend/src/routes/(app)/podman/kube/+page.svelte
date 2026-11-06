@@ -242,7 +242,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					href="/podman/pods"
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}

@@ -131,7 +131,6 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 	return &client, nil
 }
 
-// resolveAllowedIPs resolves host (or parses an IP literal) and rejects it if any address is blocked.
 func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc) ([]net.IP, error) {
 	literal, _, _ := strings.Cut(host, "%")
 	ips := []net.IP{net.ParseIP(literal)}

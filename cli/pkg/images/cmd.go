@@ -66,7 +66,6 @@ var ImageRef = cmdutil.ResourceRef[types.ImageDetailSummary, types.ImageSummary]
 	},
 }
 
-// Command builds the images command tree.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeResource},
@@ -123,8 +122,6 @@ func newListCmd() *cobra.Command {
 			if opts.search != "" {
 				query.Set("search", opts.search)
 			}
-			// Filter server-side so that pagination and the reported totals apply to
-			// the matching set rather than to whichever page happened to be fetched.
 			if opts.inUseOnly {
 				query.Set("inUse", "true")
 			}

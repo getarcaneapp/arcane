@@ -1,4 +1,3 @@
-// Package gitrepo owns configured Git repositories and their HTTP surface.
 package gitrepo
 
 import (
@@ -36,7 +35,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterGitRepositories(api, m.service)
 }
 
-// RegisterGitRepositories registers all git repository endpoints.
 func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 	h := &GitRepositoryHandler{repoService: repoService}
 

@@ -190,8 +190,6 @@ func startJobScheduler(p startJobSchedulerParams) {
 	})
 }
 
-// reconcileCoordinatorStartup fails backups and activities the previous process left running,
-// except those that unfinished runs and standalone workflows still own.
 func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams) error {
 	records, err := p.Coordinator.Records(ctx)
 	if err != nil {
@@ -264,13 +262,7 @@ func registerJobs(params registerJobsParams) error {
 			return err
 		}
 	}
-	// FilesystemWatcher is intentionally not scheduler-registered; it watches inline
-	// and is only rebound on settings changes below.
-	// Internal self-healing sweep (managers and agents alike); intentionally
-	// absent from job_metadata so it stays out of the Jobs UI.
 
-	// GitOps sync and environment health are no longer single global jobs; each
-	// entity registers its own dynamic job.
 	registerDynamicJobs(dynamicJobsParams{
 		AppCtx:      params.AppCtx,
 		Config:      params.Config,
@@ -304,17 +296,11 @@ func registerJobs(params registerJobsParams) error {
 }
 
 func registerDynamicJobs(params dynamicJobsParams) {
-	// Volume backups run on the environment that owns the Docker volume. This is
-	// registered on managers and agents; environment proxying persists each policy
-	// in the correct Arcane database.
 	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	if !params.Config.AgentEnabled {
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
 	}
 
-	// Environment health: one job per enabled environment (manager only). The Jobs
-	// UI still addresses "environment-health" by ID, so bridge its reschedule and
-	// run-now back to EnvironmentService.
 	if !params.Config.AgentEnabled {
 		params.JobSchedule.OnEnvironmentHealthReschedule = func(ctx context.Context) {
 			params.Environment.RescheduleHealthJobs(ctx)

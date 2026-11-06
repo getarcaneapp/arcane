@@ -14,7 +14,6 @@ import (
 )
 
 type (
-	// Handler serves the swarm secret endpoints.
 	Handler struct {
 		service  *Service
 		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
@@ -60,16 +59,6 @@ func NewHandler(
 	return &Handler{service: service, audit: audit, mapError: mapError}
 }
 
-// ListSecrets lists swarm secrets in the current environment.
-//
-// It delegates to the swarm service and normalizes nil secret slices to empty
-// arrays in the response body.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose secrets should be listed.
-//
-// Returns the current swarm secrets.
-// Returns a mapped HTTP error when secret enumeration fails.
 func (h *Handler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput) (*handlerutil.Page[types.SwarmSecret], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -93,17 +82,6 @@ func (h *Handler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput)
 	}, nil
 }
 
-// GetSecret returns details for a single swarm secret.
-//
-// It delegates to the swarm service and maps missing secrets to
-// `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment and secret to inspect.
-//
-// Returns the secret summary when the secret exists.
-// Returns `404 Not Found` when the secret does not exist or another mapped HTTP
-// error when inspection fails.
 func (h *Handler) GetSecret(ctx context.Context, input *GetSwarmSecretInput) (*handlerutil.Out[types.SwarmSecret], error) {
 	secret, err := h.service.GetSecret(ctx, input.SecretID)
 	if err != nil {
@@ -116,17 +94,6 @@ func (h *Handler) GetSecret(ctx context.Context, input *GetSwarmSecretInput) (*h
 	return &handlerutil.Out[types.SwarmSecret]{Body: types.ApiResponse[types.SwarmSecret]{Success: true, Data: *secret}}, nil
 }
 
-// CreateSecret creates a new swarm secret.
-//
-// It requires admin privileges, delegates the creation request to the swarm
-// service, and records an audit event containing the created secret ID and name.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the secret specification.
-//
-// Returns the created secret summary.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when validation or creation fails.
 func (h *Handler) CreateSecret(ctx context.Context, input *CreateSwarmSecretInput) (*handlerutil.Out[types.SwarmSecret], error) {
 	secret, err := h.service.CreateSecret(ctx, input.Body)
 	if err != nil {
@@ -152,17 +119,6 @@ func (h *Handler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecretInpu
 	return &handlerutil.Out[types.SwarmSecret]{Body: types.ApiResponse[types.SwarmSecret]{Success: true, Data: *updated}}, nil
 }
 
-// DeleteSecret removes a swarm secret.
-//
-// It requires admin privileges, delegates removal to the swarm service, maps
-// missing secrets to `404 Not Found`, and records an audit event on success.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the secret to remove.
-//
-// Returns a confirmation response when the secret is removed.
-// Returns an authorization error for non-admin callers, `404 Not Found` when
-// the secret does not exist, or another mapped HTTP error when removal fails.
 func (h *Handler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecretInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveSecret(ctx, input.SecretID); err != nil {
 		if errdefs.IsNotFound(err) {

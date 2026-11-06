@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setupMockAgentServer creates a WS server that acts as an agent serving the multiplexed data plane with handler.
 func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *AgentTunnel) {
 	agent := &TunnelClient{streamWindowMiB: testStreamWindowMiB, handler: handler}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

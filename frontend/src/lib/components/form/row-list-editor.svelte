@@ -37,7 +37,6 @@
 	<ArcaneButton
 		action="base"
 		tone="outline"
-		size="sm"
 		onclick={() => rows.push(createRow())}
 		{disabled}
 		class="w-fit"

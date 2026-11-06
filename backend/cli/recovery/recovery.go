@@ -198,7 +198,6 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if preserveSafetyBackupErr := preserveSafetyBackup(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
 	}
-	// Keep the restored database pointing at the directory projects were restored into.
 	if value := strings.TrimSpace(request.ProjectsSetting); value != "" {
 		operationErr := db.Model(&settings.SettingVariable{}).
 			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.Assignments(map[string]any{"value": value})}).
@@ -213,9 +212,6 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	return francis.ClearRestoredHosts(ctx, databaseURL)
 }
 
-// finalizeRestoredRun marks the restored run succeeded, filling only
-// the fields the snapshot's database copy did not already carry. Updates use
-// explicit column maps because the restored schema may predate the binary's.
 func finalizeRestoredRun(db *gorm.DB, manifestBackupID string, request types.RecoveryRestoreRequest) error {
 	var run system.SystemBackupRun
 	found := false
@@ -301,8 +297,6 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-// runStages restores each stage in order, replacing the target's
-// contents with the snapshot path.
 func runStages(ctx context.Context, dockerClient *client.Client, request types.RecoveryRestoreRequest, stages []types.RecoveryRestoreStage) error {
 	for _, stage := range stages {
 		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {

@@ -130,7 +130,6 @@ export function activityRunStatusLabel(activity: Activity): string {
 		: activityStatusLabel(activity.status);
 }
 
-// Finished activities report durationMs; running ones measure against now.
 export function activityDurationLabel(activity: Activity | null | undefined): string {
 	const startedAt = parseInstant(activity?.startedAt);
 	const durationMs = activity?.durationMs ?? (startedAt ? startedAt.until(Temporal.Now.instant()).total('milliseconds') : 0);

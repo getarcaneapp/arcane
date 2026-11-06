@@ -1,5 +1,7 @@
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
+import type { Component } from 'svelte';
+import type { SVGAttributes } from 'svelte/elements';
 
 import {
 	ApiKeyIcon,
@@ -28,7 +30,6 @@ import {
 	VariableIcon,
 	ActivityIcon,
 	BackupIcon,
-	BoxIcon,
 	FileTextIcon,
 	DockerBrandIcon,
 	SecurityIcon,
@@ -50,7 +51,7 @@ import type { ShortcutKey } from '#lib/utils/navigation.js';
 export type NavigationItem = {
 	title: string;
 	url: ResolvedPathname;
-	icon: any;
+	icon: Component<SVGAttributes<SVGSVGElement> & { size?: number }>;
 	shortcut?: ShortcutKey[];
 	items?: NavigationItem[];
 	accessSurfaceId?: string;
@@ -192,7 +193,7 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Secrets', url: resolve('/(app)/swarm/secrets'), icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	podmanItems: [
-		{ title: m.podman_pods_title(), url: resolve('/(app)/podman/pods'), icon: BoxIcon, accessSurfaceId: 'route.podman' },
+		{ title: m.podman_pods_title(), url: resolve('/(app)/podman/pods'), icon: ContainersIcon, accessSurfaceId: 'route.podman' },
 		{
 			title: m.podman_quadlets_title(),
 			url: resolve('/(app)/podman/quadlets'),
@@ -386,7 +387,6 @@ function canSeeItem(item: NavigationItem, user: User, accessManifest: Permission
 	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user);
 }
 
-/** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
 export function getNavigationTitleForPath(pathname: string): string | undefined {
 	let title: string | undefined;
 	let bestLength = 0;

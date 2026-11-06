@@ -65,8 +65,6 @@ import (
 )
 
 type (
-	// HandlerDeps contains the services required to register HTTP API handlers.
-	// It contains only dependencies consumed by SetupAPI and the authentication middleware.
 	HandlerDeps struct {
 		fx.In
 
@@ -152,7 +150,6 @@ const (
 
 var featureRoutes []func(huma.API, SetupParams)
 
-// SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Echo.JSONSerializer = jsonx.Serializer{}
 	sse.WriteTimeout = time.Hour
@@ -164,7 +161,6 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 	humaConfig.OpenAPIPath = openAPIPath
 	humaConfig.SchemasPath = schemasPath
-	// Disable default docs path - we'll use Scalar instead
 	humaConfig.DocsPath = ""
 	humaConfig.Servers = []*huma.Server{{URL: p.Config.GetAppURL() + "/api"}}
 	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
@@ -312,8 +308,6 @@ func SpecRoutes() []authz.PermissionRoute {
 	}
 }
 
-// SetupAPIForSpec creates a Huma API instance for OpenAPI spec generation only.
-// No services are required - this is purely for schema generation.
 func SetupAPIForSpec() *authz.OperationRecorder {
 	e := echo.New()
 	return SetupAPI(SetupParams{

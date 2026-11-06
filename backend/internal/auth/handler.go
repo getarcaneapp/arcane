@@ -93,7 +93,6 @@ type (
 		RawBody multipart.Form `contentType:"multipart/form-data"`
 	}
 
-	// securityRequirements holds parsed security requirements from an operation.
 	securityRequirements struct {
 		isRequired bool
 		bearerAuth bool
@@ -126,8 +125,6 @@ type (
 		ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*environment.Environment, error)
 	}
 
-	// PermissionResolver resolves a caller's effective permission set. Implemented
-	// by role.RoleService; kept as an interface so tests can stub it.
 	PermissionResolver interface {
 		ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error)
 		ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
@@ -143,7 +140,6 @@ type (
 	}
 )
 
-// Login authenticates a user and returns tokens.
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 	localAuthEnabled, err := h.authService.IsLocalAuthEnabled(ctx)
 	if err != nil {
@@ -209,7 +205,6 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 	}, nil
 }
 
-// Logout clears the authentication session.
 func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
 	if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
 		if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
@@ -239,9 +234,6 @@ func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOu
 	}, nil
 }
 
-// GetCurrentUser reads the current user from the database. Uses
-// ToUserResponseDto (not the generic struct mapper) so the RBAC fields
-// (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
@@ -284,7 +276,6 @@ func (h *AuthHandler) GetSessionBootstrap(ctx context.Context, _ *struct{}) (*ha
 	}, nil
 }
 
-// RefreshToken obtains a new access token using a refresh token.
 func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
 	refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie)
 	if refreshToken == "" {
@@ -318,7 +309,6 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	}, nil
 }
 
-// ChangePassword changes the current user's password.
 func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*handlerutil.Out[types.MessageResponse], error) {
 	userModel, err := requireUser(ctx)
 	if err != nil {
@@ -353,8 +343,6 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	return handlerutil.MessageOutput("Password changed successfully", ""), nil
 }
 
-// LogoutAllOtherSessions revokes every active session for the current user
-// except the session making this request.
 func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*handlerutil.Out[types.MessageResponse], error) {
 	userModel, err := requireUser(ctx)
 	if err != nil {
@@ -370,7 +358,6 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 	return handlerutil.MessageOutput("All other sessions signed out", ""), nil
 }
 
-// UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
 func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
@@ -467,15 +454,12 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	}, nil
 }
 
-// UploadMyAvatar lets the current user upload a custom profile picture.
-// Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
 func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get file from multipart form
 	files := input.RawBody.File["file"]
 	if len(files) == 0 {
 		return nil, huma.Error400BadRequest("no file uploaded; include a 'file' field in the multipart form")
@@ -506,7 +490,6 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}
 	data := buf.Bytes()
 
-	// Only PNG, JPEG, and WebP avatars are accepted.
 	mimeType := http.DetectContentType(data)
 	if mimeType != "image/png" && mimeType != "image/jpeg" && mimeType != "image/webp" {
 		return nil, huma.Error400BadRequest("unsupported image format: only PNG, JPEG and WebP are accepted")
@@ -519,7 +502,6 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}
 	h.authService.tokens.InvalidateUser(currentUser.ID)
 
-	// Reload user so the response reflects the new AvatarURL
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get user information")
@@ -538,7 +520,6 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}, nil
 }
 
-// DeleteMyAvatar removes the current user's custom profile picture.
 func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
@@ -615,7 +596,6 @@ func imageHasTransparency(img image.Image) bool {
 	return false
 }
 
-// parseSecurityRequirements extracts security requirements from a Huma operation.
 func parseSecurityRequirements(api huma.API, ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
 	if ctx.Operation() == nil {
@@ -649,10 +629,6 @@ func parseSecurityRequirements(api huma.API, ctx operationProvider) securityRequ
 	return reqs
 }
 
-// tryBearerAuth attempts Bearer token authentication. Returns the
-// authenticated user on success, or the underlying error from VerifyToken so
-// the caller can distinguish a missing/invalid token from a token-version
-// mismatch (which requires clearing the stale cookie).
 func tryBearerAuth(ctx huma.Context, authService *AuthService) (*userdomain.User, string, error) {
 	token, fromCookie := extractBearerToken(ctx)
 	if token == "" {
@@ -682,14 +658,6 @@ func createAgentSudoUser() *userdomain.User {
 	}
 }
 
-// applyProxiedIconCatalog copies the requesting user's icon catalog
-// preference, forwarded by the manager, onto the synthetic user this request
-// authenticates as. Without it the synthetic user has no preferences and every
-// proxied icon resolves against the default catalog.
-//
-// Only called on synthetic-user auth paths (agent token, environment access
-// token), where the header is set by the manager after it strips any
-// client-supplied value. Real-user auth paths never read it.
 func applyProxiedIconCatalog(ctx huma.Context, authenticatedUser *userdomain.User) {
 	if authenticatedUser == nil {
 		return
@@ -708,10 +676,6 @@ func createEnvironmentUser(env *environment.Environment) *userdomain.User {
 	}
 }
 
-// NewHumaMiddleware creates middleware that validates credentials and
-// enforces security requirements defined on operations. It also resolves the
-// caller's effective PermissionSet via permResolver and stashes it on the
-// request context for downstream middleware.RequirePermission checks.
 func NewHumaMiddleware(p HumaMiddlewareParams) func(
 	ctx huma.Context,
 	next func(
@@ -767,8 +731,6 @@ func NewHumaMiddleware(p HumaMiddlewareParams) func(
 	}
 }
 
-// tryAgentAuth authenticates an agent-mode request presenting the
-// agent token as an agent token or API key header.
 func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 	if !cfg.AgentEnabled {
 		return ctx, false
@@ -794,9 +756,6 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 	return huma.WithContext(ctx, authCtx), true
 }
 
-// handleApiKeyAuth handles the API-key-present branch. Invalid user
-// keys fail closed; only recognized environment tokens defer to bearer auth
-// when both credentials are present on a bearer-capable operation.
 func handleApiKeyAuth(
 	api huma.API,
 	ctx huma.Context,
@@ -853,9 +812,6 @@ func handleBearerAuth(api huma.API, ctx huma.Context, authService *AuthService, 
 		return huma.WithContext(ctx, newCtx), true
 	}
 	if errors.Is(err, common.ErrTokenVersionMismatch) {
-		// The app version changed (a self-update). The session is still valid — the
-		// refresh path tolerates the version change and rotates the token — so do NOT
-		// clear the auth cookies. Return a recoverable 401 the frontend refreshes from.
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Application has been updated. Refreshing session.")
 		return nil, true
 	}
@@ -869,10 +825,6 @@ func handleBearerAuth(api huma.API, ctx huma.Context, authService *AuthService, 
 	return nil, false
 }
 
-// resolveUserPermissions asks the RoleService for the user's resolved
-// PermissionSet. If RoleService is unavailable or the lookup fails (boot-time
-// edge cases, broken DB) it returns nil and logs a warning — handlers then
-// see deny-all, which is the safe default.
 func resolveUserPermissions(ctx context.Context, permResolver PermissionResolver, authenticatedUser *userdomain.User) *authz.PermissionSet {
 	if permResolver == nil || authenticatedUser == nil {
 		return nil
@@ -885,15 +837,12 @@ func resolveUserPermissions(ctx context.Context, permResolver PermissionResolver
 	return ps
 }
 
-// extractBearerToken extracts the JWT token and reports whether it came from a cookie.
 func extractBearerToken(ctx huma.Context) (string, bool) {
-	// Try Authorization header first
 	authHeader := ctx.Header("Authorization")
 	if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
 		return authHeader[7:], false
 	}
 
-	// Try cookie as fallback
 	if cookieHeader := ctx.Header("Cookie"); cookieHeader != "" {
 		if token, err := cookie.GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}}); err == nil {
 			return token, true
@@ -903,9 +852,6 @@ func extractBearerToken(ctx huma.Context) (string, bool) {
 	return "", false
 }
 
-// setUserInContext adds the authenticated user and the resolved
-// PermissionSet to the context. Callers must supply a non-nil PermissionSet;
-// pass authz.NewPermissionSet() to express deny-all.
 func setUserInContext(ctx context.Context, authenticatedUser *userdomain.User, ps *authz.PermissionSet) context.Context {
 	if ps == nil {
 		ps = authz.NewPermissionSet()
@@ -992,8 +938,6 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	})
 }
 
-// AgentTokenMatches compares a presented token against the configured
-// agent token in constant time to avoid timing side channels.
 func AgentTokenMatches(presented, configured string) bool {
 	if presented == "" || configured == "" {
 		return false
@@ -1010,7 +954,6 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		}
 	}
 
-	// First, check for API key in X-API-Key header
 	if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
 		return m.apiKeyHeaderAuth(ctx, c, next, apiKey)
 	}
@@ -1032,9 +975,6 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	verify := kit.Ternary(hasBearer, m.authService.VerifyToken, m.authService.VerifyBrowserToken)
 	authenticatedUser, sessionID, err := verify(ctx, token)
 	if err != nil {
-		// A version mismatch means the app self-updated; the session is still valid
-		// (the refresh path tolerates the version change and rotates the token), so do
-		// NOT clear the cookies. Return a recoverable 401 the frontend refreshes from.
 		if errors.Is(err, common.ErrTokenVersionMismatch) {
 			return c.JSON(http.StatusUnauthorized, common.APIError{
 				Code:    common.APIErrorCodeUnauthorized,
@@ -1067,8 +1007,6 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	return m.authorizeAndContinue(c, next, ps)
 }
 
-// apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
-// first, then an environment access token presented through the same header.
 func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc, apiKey string) error {
 	authenticatedUser, key, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
 	if err == nil && authenticatedUser != nil {
@@ -1114,9 +1052,6 @@ func (m *AuthMiddleware) authorizeAndContinue(c *echo.Context, next echo.Handler
 	return next(c)
 }
 
-// resolvePermissionsOrDeny returns the user's permission set, or an empty
-// (deny-all) set if the resolver fails. Resolver failures
-// are logged.
 func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, authenticatedUser *userdomain.User) *authz.PermissionSet {
 	if authenticatedUser == nil {
 		return authz.NewPermissionSet()

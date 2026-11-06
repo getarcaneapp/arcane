@@ -6,8 +6,6 @@ import (
 )
 
 type (
-	// GlobalVariable is a manager-level key/value variable materialized into each
-	// environment's .env.global file. Value holds ciphertext when IsSecret is true.
 	GlobalVariable struct {
 		database.BaseModel
 

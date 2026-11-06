@@ -1,5 +1,3 @@
-// Package runtime projects durable run history and scheduler runtime state
-// onto job statuses.
 package runtime
 
 import (
@@ -16,8 +14,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// ApplyStatuses merges durable runs for one environment into jobs. The local
-// environment also gains dynamic children and scheduler worker health.
 func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controller types.JobController, environmentID string, jobs []types.JobStatus) ([]types.JobStatus, error) {
 	jobScheduler, hasScheduler := controller.(types.JobScheduler)
 	jobs, dynamicChildren := appendDynamicJobStatuses(ctx, controller, environmentID, jobs)

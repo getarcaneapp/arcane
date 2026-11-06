@@ -317,7 +317,6 @@ func startHost(
 	return startJob(t, harness, job)
 }
 
-// startJob starts the host and a coordinator that executes job.
 func startJob(t *testing.T, harness *flowtest.Harness, job *flow.Job) *hostFixture {
 	t.Helper()
 	coordinator := harness.Coordinator
@@ -338,7 +337,6 @@ func startJob(t *testing.T, harness *flowtest.Harness, job *flow.Job) *hostFixtu
 	return fixture
 }
 
-// stop simulates a process exit between steps.
 func (f *hostFixture) stop(t *testing.T) {
 	t.Helper()
 	if f.cancel == nil {
@@ -419,7 +417,6 @@ func (f *activitiesFake) Track(ctx context.Context, activityID string) context.C
 	return tracked
 }
 
-// requestCancel cancels an activity the way the activity service does for a user.
 func (f *activitiesFake) requestCancel(activityID string) {
 	f.mu.Lock()
 	cancel := f.tracked[activityID]

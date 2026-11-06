@@ -338,7 +338,6 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							size="sm"
 							icon={RedeployIcon}
 							customLabel={m.build_rebuild()}
 							onclick={applySelectedBuild}

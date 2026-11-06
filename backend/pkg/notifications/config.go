@@ -104,7 +104,6 @@ type (
 
 	GoogleChatConfig struct {
 		Events map[NotificationEventType]bool `json:"events,omitempty"`
-		// WebhookURL is the full incoming webhook URL copied from Google Chat,
 		// e.g. https://chat.googleapis.com/v1/spaces/SPACE/messages?key=KEY&token=TOKEN.
 		WebhookURL string `json:"webhookUrl"`
 	}
@@ -120,30 +119,16 @@ type (
 	}
 
 	GenericConfig struct {
-		CustomHeaders map[string]string              `json:"customHeaders,omitempty"`
-		Events        map[NotificationEventType]bool `json:"events,omitempty"`
-		WebhookURL    string                         `json:"webhookUrl"`
-		Method        string                         `json:"method,omitempty"`
-		ContentType   string                         `json:"contentType,omitempty"`
-		TitleKey      string                         `json:"titleKey,omitempty"`
-		MessageKey    string                         `json:"messageKey,omitempty"`
-		// SuccessBodyContains is an optional substring that must appear in the
-		// response body for the send to be considered successful. Useful for
-		// providers that always return HTTP 200 but embed a status indicator in
-		// the JSON body (e.g. PushPlus returns {"code":200,...} on success and
-		// {"code":900,...} on failure). When empty, only the HTTP status code is
-		// checked (existing behaviour).
-		SuccessBodyContains string `json:"successBodyContains,omitempty"`
-		// PayloadTemplate is an optional Go text/template rendered into the request
-		// body, letting users target endpoints that require a nested or
-		// provider-specific payload shape rather than the flat
-		// {"title":...,"message":...} object. The template receives the title and
-		// message (under the configured TitleKey/MessageKey) plus event variables
-		// (environment, environmentId, event, timestamp), all pre-escaped for JSON
-		// string contexts. When empty, the flat JSON payload is used (existing
-		// behaviour).
-		PayloadTemplate string `json:"payloadTemplate,omitempty"`
-		DisableTLS      bool   `json:"disableTls"`
+		CustomHeaders       map[string]string              `json:"customHeaders,omitempty"`
+		Events              map[NotificationEventType]bool `json:"events,omitempty"`
+		WebhookURL          string                         `json:"webhookUrl"`
+		Method              string                         `json:"method,omitempty"`
+		ContentType         string                         `json:"contentType,omitempty"`
+		TitleKey            string                         `json:"titleKey,omitempty"`
+		MessageKey          string                         `json:"messageKey,omitempty"`
+		SuccessBodyContains string                         `json:"successBodyContains,omitempty"`
+		PayloadTemplate     string                         `json:"payloadTemplate,omitempty"`
+		DisableTLS          bool                           `json:"disableTls"`
 	}
 )
 

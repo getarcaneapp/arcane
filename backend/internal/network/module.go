@@ -12,7 +12,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterNetworks registers network endpoints.
 func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docker.DockerClientService, activitySvc *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
 	h := &NetworkHandler{
 		networkService:  networkSvc,

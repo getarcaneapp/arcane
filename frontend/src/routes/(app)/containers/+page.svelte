@@ -4,7 +4,7 @@
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
-	import { BoxIcon } from '#lib/icons/index.js';
+	import { ContainersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
@@ -118,19 +118,19 @@
 		{
 			title: m.common_total(),
 			value: containerStatusCounts.totalContainers,
-			icon: BoxIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-info'
 		},
 		{
 			title: m.common_running(),
 			value: containerStatusCounts.runningContainers,
-			icon: BoxIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-success'
 		},
 		{
 			title: m.common_stopped(),
 			value: containerStatusCounts.stoppedContainers,
-			icon: BoxIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-destructive'
 		}
 	]);

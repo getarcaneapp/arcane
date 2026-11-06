@@ -64,7 +64,6 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	ts := httptest.NewServer(router)
 	defer ts.Close()
 
-	// Test Success
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "valid-token")
@@ -100,7 +99,6 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 
 	select {
 	case <-statusCallbackCalled:
-		// callback observed
 	case <-time.After(1 * time.Second):
 		require.FailNow(t, "timeout waiting for status callback")
 	}

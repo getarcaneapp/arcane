@@ -26,21 +26,10 @@ type (
 )
 
 const (
-	// containersStatsInterval is the wall-clock period every subscription samples on.
-	containersStatsInterval = 2 * time.Second
-	// containersStatsReadLimit fits a subscription of 500 full container IDs, the most one batch samples.
+	containersStatsInterval  = 2 * time.Second
 	containersStatsReadLimit = 64 << 10
 )
 
-// ContainersStats streams resource samples for a client-chosen set of containers over one WebSocket.
-// The client sends a ResourceSampleSubscription whenever its set changes; the server answers with a
-// ResourceSampleBatch every couple of seconds.
-//
-//	@Summary		Get batched container stats via WebSocket
-//	@Description	Stream resource samples for the subscribed containers over one WebSocket connection
-//	@Tags			WebSocket
-//	@Param			id	path	string	true	"Environment ID"
-//	@Router			/api/environments/{id}/ws/containers/stats [get]
 func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	conn, unregister, ok := h.acceptWS(c, types.WSKindContainerStats, "batch")
 	if !ok {
@@ -69,7 +58,6 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 		return conn.Write(wctx, websocket.MessageText, b)
 	}
 
-	// Nothing to sample until the first subscription arrives.
 	select {
 	case <-ctx.Done():
 		return nil
@@ -118,8 +106,6 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	return nil
 }
 
-// readContainersStatsPump is the single reader for the ContainersStats websocket. It stores each
-// subscription and wakes the sampler; malformed frames are ignored. Do not add other readers.
 func readContainersStatsPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, ids *atomic.Pointer[[]string], subscribed chan<- struct{}) {
 	defer cancel()
 	for {

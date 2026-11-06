@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	import LogControls from '#lib/components/logs/log-controls.svelte';
 	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
@@ -21,8 +23,6 @@
 	let viewer = $state<ReturnType<typeof LogViewer>>();
 	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
-	// Plain guard, not $state: it is only written from the auto-start effect and never rendered.
-	let hasAutoStarted = false;
 
 	function handleStart() {
 		viewer?.startLogStream();
@@ -36,11 +36,8 @@
 		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
-	$effect(() => {
-		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && projectId && viewer) {
-			hasAutoStarted = true;
-			handleStart();
-		}
+	onMount(() => {
+		if (preferences.autoStartLogs && projectId) handleStart();
 	});
 </script>
 

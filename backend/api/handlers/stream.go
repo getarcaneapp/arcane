@@ -33,7 +33,6 @@ import (
 )
 
 type (
-	// StreamHandler multiplexes every live feed onto one connection.
 	StreamHandler struct {
 		events      *event.EventService
 		activity    *activity.ActivityHandler
@@ -70,7 +69,6 @@ var streamChannelConditions = authz.PermissionConditions{
 	},
 }
 
-// RegisterStream registers the multiplexed client stream, reusing each domain's producer for its channel.
 func RegisterStream(
 	api huma.API,
 	activityHandler *activity.ActivityHandler,
@@ -140,7 +138,6 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 	}
 	defer releaseDeadPeerTimeout()
 
-	// Select the producers for the requested channels, dropping any the caller lacks permission for.
 	requested := make(map[string]bool, 6)
 	for name := range strings.SplitSeq(input.Channels, ",") {
 		if trimmed := strings.TrimSpace(strings.ToLower(name)); trimmed != "" {
@@ -263,7 +260,6 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 	}
 }
 
-// forwardStreamChannel adapts a channel's producer, which keeps emitting its native event type, to the shared envelope.
 func forwardStreamChannel[T any](
 	channel string,
 	wrap func(string, T) types.StreamEvent,

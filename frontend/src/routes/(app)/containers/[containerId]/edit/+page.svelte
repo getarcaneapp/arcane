@@ -6,7 +6,6 @@
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import {
 		containerFormSchema,
@@ -15,6 +14,7 @@
 		toEditRequest
 	} from '#lib/components/containers/container-form/container-form-state.js';
 	import ContainerForm from '#lib/components/containers/container-form/container-form.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -72,15 +72,16 @@
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				size="sm"
 				href={environmentHref(`/containers/${data.containerId}`, data.envId)}
 				class="gap-2 bg-transparent"
 				icon={ArrowLeftIcon}
 				customLabel={m.common_back()}
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
-			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
-			<EnvironmentCell value={data.envId} plain />
+			<div class="flex min-w-0 items-center">
+				<EnvironmentDestinationSelect value={data.envId} variant="prefix" readonly />
+				<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
+			</div>
 		</div>
 	</div>
 

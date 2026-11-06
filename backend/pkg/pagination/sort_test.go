@@ -126,9 +126,6 @@ func TestSortFunctionWithoutBindingsReturnsItemsUnchanged(t *testing.T) {
 	require.Equal(t, []string{"b", "a"}, sortItemIDs(sorted))
 }
 
-// A page walk must return every item exactly once even when the source order
-// changes between requests, as Docker's map-iteration order does for volumes
-// and networks — both with no sort param and with a low-cardinality sort key.
 func TestSearchOrderAndPaginateStablePageWalkAcrossReorderedInput(t *testing.T) {
 	source := make([]sortItem, 0, 25)
 	for i := range 25 {

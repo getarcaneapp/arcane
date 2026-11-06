@@ -18,7 +18,7 @@
 		EllipsisIcon,
 		CodeIcon,
 		GlobeIcon,
-		BoxIcon,
+		ContainersIcon,
 		FileTextIcon,
 		RegistryIcon,
 		ExternalLinkIcon,
@@ -472,7 +472,7 @@
 						<ul class="space-y-1.5">
 							{#each services as service (service)}
 								<li class="flex min-w-0 items-center gap-2 text-sm">
-									<BoxIcon class="size-4 shrink-0 text-muted-foreground" />
+									<ContainersIcon class="size-4 shrink-0 text-muted-foreground" />
 									<span class="min-w-0 truncate font-mono">{service}</span>
 								</li>
 							{/each}

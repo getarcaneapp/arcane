@@ -14,7 +14,6 @@ import (
 	"getarcane.dev/cli/v3/pkg/backups"
 )
 
-// Command is the parent command for administrative operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

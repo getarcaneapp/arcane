@@ -146,9 +146,7 @@ func TestBuildImagePullPlanRefreshMerge(t *testing.T) {
 
 	plan := BuildImagePullPlan(project)
 
-	// shortest refresh window wins over longer windows and pull-if-missing
 	assert.Equal(t, ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: time.Hour}, plan["shared:latest"])
-	// always wins over any refresh window
 	assert.Equal(t, ImagePullStep{Mode: ImagePullModeAlways}, plan["other:latest"])
 }
 

@@ -6,18 +6,6 @@ import type { Activity, ActivityType } from '#lib/types/activity.js';
 
 import { activityTypeLabel } from './activity-labels';
 
-/**
- * In-the-moment success/failure toasts for activities the current user
- * started, shown when the Activity Center sheet is closed. Completions are
- * buffered briefly and grouped (by batch, falling back to type+status) so a
- * bulk operation produces one aggregated toast instead of one per item.
- *
- * Quick actions (container start/stop, project down, ...) are excluded: they
- * complete within their HTTP request and the action call sites already show a
- * response toast. Activities whose call site showed such a toast are also
- * suppressed here (see markActivityToastShown) so nothing fires twice.
- */
-
 export const activityCompletionToastsEnabled = new PersistedState<boolean>('arcane-activity-toasts', true);
 
 const DEBOUNCE_MS = 1500;

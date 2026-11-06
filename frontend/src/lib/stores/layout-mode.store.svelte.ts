@@ -13,7 +13,6 @@ const LAYOUT_MODE_STORAGE_KEY = 'arcane-layout-mode';
 
 export const layoutModeStore = new PersistedState<LayoutMode>(LAYOUT_MODE_STORAGE_KEY, 'auto');
 
-/** Read the stored mode, treating anything unexpected in localStorage as `auto`. */
 export function getLayoutMode(): LayoutMode {
 	const value = layoutModeStore.current;
 	return value === 'mobile' || value === 'desktop' ? value : 'auto';

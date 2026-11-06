@@ -48,7 +48,6 @@ var serverOptions = fx.Options(
 	),
 )
 
-// NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if p.Config.AgentEnabled {
 		return &http.Server{Handler: p.Router}, nil

@@ -44,7 +44,6 @@
 			showLabel={false}
 		/>
 
-		<!-- Status indicator for mobile -->
 		{#if hasChanges}
 			<div class="absolute -top-2 -left-2 size-3 animate-pulse rounded-full bg-warning"></div>
 		{/if}

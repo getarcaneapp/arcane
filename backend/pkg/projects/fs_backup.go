@@ -18,19 +18,9 @@ import (
 )
 
 type (
-	// ProjectUpdateBackupScope describes exactly what a project update can mutate,
-	// so the pre-update backup copies only those paths instead of the whole
-	// project directory (which may contain huge container data directories).
 	ProjectUpdateBackupScope struct {
-		// Paths are normalized project-relative paths a file change can create,
-		// overwrite or delete.
-		Paths []string
-		// RenamedDirs holds {src, dest} pairs for a rename/move of an existing
-		// directory. These are rolled back with an inverse rename instead of a
-		// copy, so a huge directory move never triggers a full copy.
-		RenamedDirs [][2]string
-		// TopLevelFiles backs up every top-level regular file in the project
-		// directory. Compose/env persistence only ever writes top-level files.
+		Paths         []string
+		RenamedDirs   [][2]string
 		TopLevelFiles bool
 	}
 
@@ -40,14 +30,11 @@ type (
 		resolvedPath string
 	}
 
-	// ProjectUpdateBackup records what BackupProjectUpdateScope copied so
-	// RestoreProjectUpdateBackup can put the project directory back without
-	// touching anything outside the update's scope.
 	ProjectUpdateBackup struct {
 		envSymlink    *projectUpdateEnvSymlinkBackup
 		BackupDir     string
-		FileEntries   []string    // regular file contents copied into BackupDir
-		DirEntries    []string    // directories copied recursively
+		FileEntries   []string
+		DirEntries    []string
 		AbsentEntries []string    // did not exist at backup time -> removed on restore
 		RenamedDirs   [][2]string // undone via inverse rename on restore
 		Skipped       []string    // unreadable, skipped; preserved on restore
@@ -59,14 +46,6 @@ func (s ProjectUpdateBackupScope) IsEmpty() bool {
 	return !s.TopLevelFiles && len(s.Paths) == 0 && len(s.RenamedDirs) == 0
 }
 
-// BackupProjectUpdateScope copies the parts of projectDir named by scope into
-// backupDir. Unreadable files are skipped (recorded in Skipped) so an
-// unrelated foreign-owned file cannot block a save, matching the tolerant
-// semantics of the old whole-directory backup.
-//
-// The backup/restore engine stays on os.Root rather than acfs: restoring a
-// project .env means recreating its symlink (which may point outside the
-// project directory), and acfs deliberately refuses symlink mutation.
 func BackupProjectUpdateScope(ctx context.Context, projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
@@ -269,9 +248,6 @@ func copyBackupEnvSymlink(projRoot, backupRoot *os.Root, rel string, backup *Pro
 	return nil
 }
 
-// dedupeCoveredBackupEntries drops entries that live under a directory
-// already covered by DirEntries or AbsentEntries (e.g. a file change inside a
-// folder that is also being deleted recursively).
 func dedupeCoveredBackupEntries(backup *ProjectUpdateBackup) {
 	covered := append(append([]string{}, backup.DirEntries...), backup.AbsentEntries...)
 	hasCoveredAncestor := func(rel string) bool {
@@ -287,9 +263,6 @@ func dedupeCoveredBackupEntries(backup *ProjectUpdateBackup) {
 	backup.AbsentEntries = slices.DeleteFunc(backup.AbsentEntries, hasCoveredAncestor)
 }
 
-// RestoreProjectUpdateBackup rolls the scoped parts of projectDir back to the
-// state captured in backup. Files are restored in place (preserving inodes so
-// container bind mounts stay valid) and out-of-scope files are never touched.
 func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *ProjectUpdateBackup) error {
 	projRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
@@ -297,14 +270,10 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 	}
 	defer func() { _ = projRoot.Close() }()
 
-	// 1. Undo directory renames, then 2. remove debris the failed update
-	// created at paths that did not exist.
 	if undoRenamedDirsAndDebrisErr := undoRenamedDirsAndDebris(projRoot, backup); undoRenamedDirsAndDebrisErr != nil {
 		return undoRenamedDirsAndDebrisErr
 	}
 
-	// 3. Mirror backed-up directories back in place, clearing a file the
-	// failed update may have put where the directory was.
 	for _, rel := range backup.DirEntries {
 		if live, lstatErr := projRoot.Lstat(rel); lstatErr == nil && !live.IsDir() {
 			if removeErr := projRoot.Remove(rel); removeErr != nil {
@@ -328,17 +297,12 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 	}
 	defer func() { _ = backupRoot.Close() }()
 
-	// 4. Restore individual files in place.
 	for _, rel := range backup.FileEntries {
 		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, rel); restoreBackupFileErr != nil {
 			return restoreBackupFileErr
 		}
 	}
 
-	// 5. Depth-1 mini-mirror of top-level regular files: prune live top-level
-	// regular files absent from the backup (and not skipped as unreadable),
-	// then copy every top-level backup file back. Top-level directories and
-	// symlinks are never touched.
 	if backup.TopLevelFiles {
 		if restoreTopLevelFilesErr := restoreTopLevelFiles(ctx, backupRoot, projRoot, backup); restoreTopLevelFilesErr != nil {
 			return restoreTopLevelFilesErr
@@ -348,9 +312,6 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 	return nil
 }
 
-// undoRenamedDirsAndDebris reverses directory renames with an inverse
-// rename (no copy involved), then removes debris the failed update created at
-// paths that were absent at backup time.
 func undoRenamedDirsAndDebris(projRoot *os.Root, backup *ProjectUpdateBackup) error {
 	handledAbsent := make(map[string]bool)
 	for _, pair := range backup.RenamedDirs {
@@ -516,10 +477,6 @@ func restoreTopLevelFiles(ctx context.Context, backupRoot, projRoot *os.Root, ba
 	return nil
 }
 
-// BackupProjectDirectory creates a scratch backup directory named by pattern
-// beside projectPath and backs up scope into it. The returned cleanup removes
-// the backup directory and runs even after ctx was cancelled, since acfs
-// refuses work on a cancelled context.
 func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath, pattern string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, func(), error) {
 	projectAbs, rootAbs, err := resolveProjectUnderRoot(projectsDirectory, projectPath)
 	if err != nil {
@@ -548,8 +505,6 @@ func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath,
 	return backup, cleanup, nil
 }
 
-// RestoreProjectDirectoryBackup recreates projectPath if needed and restores
-// the scoped backup into it in place.
 func RestoreProjectDirectoryBackup(ctx context.Context, projectsDirectory, projectPath string, backup *ProjectUpdateBackup) error {
 	projectAbs, rootAbs, err := resolveProjectUnderRoot(projectsDirectory, projectPath)
 	if err != nil {

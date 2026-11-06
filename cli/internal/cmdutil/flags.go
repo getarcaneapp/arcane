@@ -10,20 +10,17 @@ import (
 )
 
 type (
-	// EnumValue implements a string flag restricted to the choices registered by EnumVarP.
 	EnumValue[T ~string] struct {
 		value   *T
 		allowed []string
 	}
 )
 
-// String returns the current flag value.
 func (v *EnumValue[T]) String() string { return string(*v.value) }
 
 // Type keeps enum flags compatible with pflag's GetString accessor.
 func (v *EnumValue[T]) Type() string { return "string" }
 
-// Set matches the allowed choices case-insensitively and rejects others without changing the destination.
 func (v *EnumValue[T]) Set(value string) error {
 	if value == "" {
 		*v.value = ""
@@ -37,7 +34,6 @@ func (v *EnumValue[T]) Set(value string) error {
 	return nil
 }
 
-// EnumVarP registers a validated enum flag with shell completion and appends the choices to usage.
 // The empty value is always allowed as unset; invalid nonempty defaults panic.
 func EnumVarP[T ~string](cmd *cobra.Command, flags *pflag.FlagSet, p *T, name, shorthand string, value T, usage string, allowed ...T) {
 	choices := make([]string, len(allowed))
@@ -55,7 +51,6 @@ func EnumVarP[T ~string](cmd *cobra.Command, flags *pflag.FlagSet, p *T, name, s
 	}
 }
 
-// ExclusiveFlags rejects more than one changed flag set to a non-zero value for its type.
 func ExclusiveFlags(cmd *cobra.Command, names ...string) error {
 	active := make([]string, 0, len(names))
 	for _, name := range names {

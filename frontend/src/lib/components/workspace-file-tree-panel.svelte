@@ -1010,7 +1010,7 @@
 			<div class="p-2">
 				<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
 					<div class="mt-3">
-						<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+						<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={reset} />
 					</div>
 				</Alert.Root>
 			</div>

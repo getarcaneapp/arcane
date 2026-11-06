@@ -59,8 +59,6 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-// setupUserAndRoleServices wires both services together the way bootstrap
-// does, so the legacy-admin-guard tests exercise the real RBAC path.
 func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.RoleService) {
 	t.Helper()
 	db := setupAuthServiceTestDB(t)
@@ -80,7 +78,6 @@ func createTestUser(t *testing.T, svc *userdomain.UserService, id, username stri
 	return created
 }
 
-// grantGlobalAdmin assigns the built-in Admin role globally to the user.
 func grantGlobalAdmin(t *testing.T, roleSvc *role.RoleService, userID string) {
 	t.Helper()
 	require.NoError(t, roleSvc.ReplaceUserAssignments(t.Context(), userID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{

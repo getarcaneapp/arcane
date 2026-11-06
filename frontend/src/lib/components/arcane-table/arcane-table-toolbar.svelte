@@ -275,7 +275,6 @@
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				size="sm"
 				icon={ResetIcon}
 				customLabel={m.common_reset()}
 				onclick={onResetFilters}

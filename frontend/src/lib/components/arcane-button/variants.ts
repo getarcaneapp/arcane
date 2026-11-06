@@ -30,7 +30,7 @@ import {
 	ShieldCheckIcon,
 	ImagesIcon,
 	TestIcon,
-	BoxIcon
+	ContainersIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { tv } from '#lib/utils.js';
@@ -255,7 +255,7 @@ export const actionConfigs = {
 	},
 	archive: {
 		defaultLabel: m.projects_archive(),
-		IconComponent: BoxIcon,
+		IconComponent: ContainersIcon,
 		tone: 'outline-archive',
 		loadingLabel: m.common_processing()
 	},

@@ -1,5 +1,3 @@
-// Package lifecycle runs pre-deploy hook scripts in isolated runner
-// containers and captures their output.
 package lifecycle
 
 import (
@@ -37,7 +35,6 @@ import (
 )
 
 type (
-	// Service runs pre-deploy scripts in throwaway runner containers.
 	Service struct {
 		dockerService *dockerInternal.DockerClientService
 		imageService  *image.ImageService
@@ -45,19 +42,14 @@ type (
 )
 
 const (
-	// lifecycleWorkspaceMount is where the project dir is mounted; scripts run there.
-	lifecycleWorkspaceMount = "/workspace"
-	// lifecycleMaxOutputBytes caps retained stdout/stderr; the full stream is still consumed.
-	lifecycleMaxOutputBytes = 16 * 1024
-	// lifecycleStreamDrainTimeout bounds the post-exit log drain, matching vulnerability scanning.
+	lifecycleWorkspaceMount     = "/workspace"
+	lifecycleMaxOutputBytes     = 16 * 1024
 	lifecycleStreamDrainTimeout = 30 * time.Second
-	// Last-run status values written to GitOpsSync.PreDeployLastRunStatus.
-	LifecycleStatusSuccess = "success"
-	LifecycleStatusFailed  = "failed"
-	LifecycleStatusTimeout = "timeout"
+	LifecycleStatusSuccess      = "success"
+	LifecycleStatusFailed       = "failed"
+	LifecycleStatusTimeout      = "timeout"
 )
 
-// lifecycleEnvKeyRegex enforces POSIX-style env keys in configured Env and script stdout.
 var lifecycleEnvKeyRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func New(dockerService *dockerInternal.DockerClientService, imageService *image.ImageService) *Service {
@@ -67,7 +59,6 @@ func New(dockerService *dockerInternal.DockerClientService, imageService *image.
 	}
 }
 
-// markTruncated returns the captured output with a marker when the cap was hit, matching the GitOps UI.
 func markTruncated(c *capture.Capture) string {
 	out := c.String()
 	if c.Truncated() {
@@ -76,7 +67,6 @@ func markTruncated(c *capture.Capture) string {
 	return out
 }
 
-// drainLifecycleLogs waits a bounded time for the log copy, then force-closes streams that don't EOF on exit.
 func drainLifecycleLogs(ctx context.Context, logsCancel context.CancelFunc, logs io.ReadCloser, logDone <-chan error) {
 	timer := time.NewTimer(lifecycleStreamDrainTimeout)
 	defer timer.Stop()
@@ -107,8 +97,6 @@ func CombineLifecycleOutput(stdout, stderr string) string {
 	}
 }
 
-// ParseKeyValueEnv parses stdout as strict KEY=VALUE lines, skipping blanks and '#' comments.
-// Anything else fails the deploy rather than polluting the env.
 func ParseKeyValueEnv(stdout string) (map[string]string, error) {
 	env := map[string]string{}
 	scanner := bufio.NewScanner(strings.NewReader(stdout))
@@ -137,8 +125,6 @@ func ParseKeyValueEnv(stdout string) (map[string]string, error) {
 	return env, nil
 }
 
-// RunScript runs the script in a runner container and returns its output and exit code.
-// A per-run timeout is returned wrapping context.DeadlineExceeded, distinct from a non-zero exit.
 func (s *Service) RunScript(
 	ctx context.Context,
 	runnerImage string,
@@ -293,7 +279,6 @@ func (s *Service) RunScript(
 	return markTruncated(stdoutBuf), markTruncated(stderrBuf), exitCode, nil
 }
 
-// ValidateScriptPath rejects paths that escape the project directory or refer to symlinks or directories.
 func ValidateScriptPath(ctx context.Context, projectPath, scriptPath string) error {
 	if scriptPath == "" {
 		return errors.New("script path is empty")

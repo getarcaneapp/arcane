@@ -14,10 +14,7 @@ import (
 	"getarcane.dev/cli/v3/pkg/generate"
 )
 
-// captureOutput captures stdout produced by fn and returns it as a string.
-
 func captureOutput(fn func() error) (string, error) {
-	// Save original
 	oldOut := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -25,10 +22,8 @@ func captureOutput(fn func() error) (string, error) {
 	}
 	os.Stdout = w
 
-	// Run function
 	runErr := fn()
 
-	// Restore
 	_ = w.Close()
 	os.Stdout = oldOut
 
@@ -50,15 +45,12 @@ func TestSecretDefaultBase64(t *testing.T) {
 	require.NoError(t, err,
 		"command failed: %v", err)
 
-	// should not include emoji characters used previously
-
 	require.False(t, strings.Contains(out, "📋") || strings.Contains(out, "🐳") || strings.Contains(out, "🔢") || strings.Contains(out, "⚠️"),
 		"output contains emoji/box characters: %q", out)
 
 	require.Contains(t, out, "BASE64",
 		"expected BASE64 header in output, got: %q", out)
 
-	// find the ENCRYPTION_KEY= line and ensure it is valid base64
 	var encVal string
 	for line := range strings.SplitSeq(out, "\n") {
 		if after, ok := strings.CutPrefix(line, "ARCANE_ENCRYPTION_KEY="); ok {
@@ -94,7 +86,6 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 	require.False(t, strings.Contains(out, "📋") || strings.Contains(out, "🐳") || strings.Contains(out, "🔢") || strings.Contains(out, "⚠️"),
 		"output contains emoji/box characters: %q", out)
 
-	// verify presence of expected section headers
 	mustContain := []string{
 		"ENV (.env) - recommended",
 		"Docker Compose (environment block)",
@@ -105,7 +96,6 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 			"expected section %q not found in output:\n%s", s, out)
 	}
 
-	// verify the hex value decodes to 32 bytes
 	var hexEnc string
 	for line := range strings.SplitSeq(out, "\n") {
 		if after, ok := strings.CutPrefix(line, "ARCANE_ENCRYPTION_KEY="); ok {

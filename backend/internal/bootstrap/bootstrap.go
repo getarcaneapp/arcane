@@ -145,8 +145,6 @@ func Bootstrap(ctx context.Context) error {
 		AgentMode:     cfg.AgentEnabled,
 	})
 
-	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
-	// database is open but before Docker clients and services. Exporter errors go to the console-only logger.
 	instanceID, err := settings.EnsureInstanceID(appCtx, db)
 	if err != nil {
 		return err

@@ -43,7 +43,6 @@ import (
 )
 
 type (
-	// Service writes system recovery snapshots and reads their layout and project files.
 	Service struct {
 		engine              *backup.Engine
 		sqlDB               func() (*sql.DB, error)
@@ -90,25 +89,18 @@ type (
 		systemBackupSnapshotLocation
 	}
 
-	// systemBackupSnapshotSession carries the Docker client and resolved
-	// recovery key through one browse or restore operation, so the snapshot steps
-	// below don't each thread them through their signatures.
 	systemBackupSnapshotSession struct {
 		service      *Service
 		dockerClient *client.Client
 		recoveryKey  string
 	}
 
-	// RestorePlan is the full-restore source snapshot and the stages that put it
-	// into the current container layout.
 	RestorePlan struct {
 		SnapshotID       string
 		Stages           []types.RecoveryRestoreStage
 		ProjectsIncluded bool
 	}
 
-	// backupSourceLayout is what one system backup snapshots and where
-	// each source appears inside the snapshot.
 	backupSourceLayout struct {
 		dataDirectory     string
 		projectsDirectory string
@@ -120,15 +112,12 @@ type (
 		excludes          []string
 	}
 
-	// snapshotLayout locates Arcane data and projects inside one snapshot.
 	snapshotLayout struct {
 		dataPath     string // "/" or "/app/data" for version 1, "/data" for version 2
 		projectsPath string // absolute snapshot path; empty when the backup omitted projects
 		databaseName string
 	}
 
-	// projectsRestoreDestination is the current projects directory as a
-	// helper-container target plus its container path for confined cleanup.
 	projectsRestoreDestination struct {
 		directory string
 		dataPath  string // project-relative path of Arcane's data directory when the projects bind contains it on the host
@@ -137,8 +126,6 @@ type (
 )
 
 const (
-	// RecoveryManifestName and RecoveryRequestName live in Arcane's data
-	// directory: the manifest inside every snapshot, the request beside it.
 	RecoveryManifestName           = ".arcane-recovery.json"
 	RecoveryRequestName            = ".arcane-recovery-request.json"
 	snapshotDataPath               = "/data"
@@ -249,8 +236,6 @@ func (session systemBackupSnapshotSession) inspectProjectSnapshot(ctx context.Co
 	}, nil
 }
 
-// inspectProjectManifest opens a snapshot for project browsing;
-// backups that omitted projects are rejected with an actionable error.
 func (session systemBackupSnapshotSession) inspectProjectManifest(ctx context.Context, location systemBackupSnapshotLocation) (systemBackupSnapshot, error) {
 	snapshot, err := session.inspectReadableSnapshot(ctx, location)
 	if err != nil {
@@ -309,8 +294,6 @@ func snapshotRelativePath(filePath, snapshotPath string) (string, bool) {
 	return strings.TrimPrefix(cleanedFile, prefix), true
 }
 
-// projectEntriesFromSnapshot maps a snapshot listing to entries
-// relative to the projects root, dropping protected Arcane data files.
 func projectEntriesFromSnapshot(files []string, layout snapshotLayout, browsePath string, recursive bool) []types.BackupFileEntry {
 	eligible := make([]string, 0, len(files))
 	for _, file := range files {
@@ -330,7 +313,6 @@ func projectEntriesFromSnapshot(files []string, layout snapshotLayout, browsePat
 	return backupbrowser.BuildEntries(eligible, browsePath, recursive)
 }
 
-// Browse returns one page from the backup's logical project tree.
 func (s *Service) Browse(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -362,8 +344,6 @@ func (s *Service) Browse(
 	return nil, pagination.Response{}, fmt.Errorf("failed to browse project files in system recovery snapshot: %w", browseErr)
 }
 
-// openSafetySnapshot resolves the safety run's snapshot in the same
-// repository the restore reads from and indexes the project paths it holds.
 func (session systemBackupSnapshotSession) openSafetySnapshot(
 	ctx context.Context,
 	source systemBackupSnapshot,
@@ -432,8 +412,6 @@ func (session systemBackupSnapshotSession) restoreEntry(
 	return restoreErr
 }
 
-// safetySnapshotContainsPath reports whether the safety snapshot holds
-// a project-relative path; the projects root itself always exists.
 func safetySnapshotContainsPath(safety systemBackupSafetySnapshot, projectRelative string) bool {
 	if projectRelative == "" {
 		return true
@@ -506,8 +484,6 @@ func (session systemBackupSnapshotSession) restoreSelected(
 	return nil
 }
 
-// RestoreFiles restores selected project files into the current projects
-// directory after createSafety snapshots them in the source repository.
 func (s *Service) RestoreFiles(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -562,7 +538,6 @@ func (s *Service) RestoreFiles(
 	return session.restoreSelected(ctx, snapshots, safety, selected, destination)
 }
 
-// PlanRestore opens the first readable snapshot of run and plans its restore stages.
 func (s *Service) PlanRestore(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -585,7 +560,6 @@ func (s *Service) PlanRestore(
 	return RestorePlan{SnapshotID: snapshot.snapshotID, ProjectsIncluded: (snapshot.layout.projectsPath != ""), Stages: stages}, nil
 }
 
-// PlanRollback plans the stages that restore the local safety snapshot if a full restore fails.
 func (s *Service) PlanRollback(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -616,9 +590,6 @@ func (s *Service) PlanRollback(
 	return stages, nil
 }
 
-// normalizeSystemBackupSelection collapses a plain select-all into the
-// projects root, except when projects share the data root and a root restore
-// would replace Arcane's own files.
 func normalizeSystemBackupSelection(selection types.BackupRestoreSelection, snapshot systemBackupSnapshot) ([]types.BackupFileEntry, error) {
 	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" && snapshot.layout.projectsPath != snapshot.layout.dataPath {
 		return backupbrowser.NormalizeSelection(selection, []types.BackupFileEntry{{Path: "", Name: path.Base(snapshot.layout.projectsPath), IsDirectory: true}})
@@ -626,9 +597,6 @@ func normalizeSystemBackupSelection(selection types.BackupRestoreSelection, snap
 	return backupbrowser.NormalizeSelection(selection, snapshot.entries)
 }
 
-// projectsSnapshotPath classifies the projects directory against the
-// data directory and returns its snapshot path; external reports whether it
-// needs its own snapshot source.
 func projectsSnapshotPath(dataDirectory, projectsDirectory string) (projectsPath string, external bool, err error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	projectsDir := path.Clean(filepath.ToSlash(projectsDirectory))
@@ -644,8 +612,6 @@ func projectsSnapshotPath(dataDirectory, projectsDirectory string) (projectsPath
 	}
 }
 
-// currentMounts returns the Arcane container's mounts, or inContainer
-// false in host development where directories are bound directly.
 func currentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
 	_, containerErr := cgroup.CurrentContainerID()
 	if inContainer = containerErr == nil; !inContainer {
@@ -658,9 +624,6 @@ func currentMounts(ctx context.Context, dockerClient *client.Client) (mounts []c
 	return inspect.Mounts, true, nil
 }
 
-// sourceMounts exposes containerPath read-only at target: the
-// container's own mount plus every mount nested beneath it, so the helper
-// sees the same files Arcane does.
 func sourceMounts(mounts []container.MountPoint, inContainer bool, containerPath, target string) ([]mount.Mount, error) {
 	if !inContainer {
 		return []mount.Mount{{Type: mount.TypeBind, Source: containerPath, Target: target, ReadOnly: true}}, nil
@@ -687,10 +650,6 @@ func sourceMounts(mounts []container.MountPoint, inContainer bool, containerPath
 	return result, nil
 }
 
-// nestedDataPath returns the data directory relative to the projects
-// directory when the projects mount contains it on the host: the same bind
-// path prefix or the same named volume and subpath. Mounting one host
-// directory twice is an error.
 func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirectory string) (relative string, nested bool, err error) {
 	// Projects kept at the data root share one mount by design; projectsSnapshotPath owns that layout.
 	if path.Clean(filepath.ToSlash(dataDirectory)) == path.Clean(filepath.ToSlash(projectsDirectory)) {
@@ -721,8 +680,6 @@ func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirect
 	return strings.TrimPrefix(dataSource, projectsSource+"/"), true, nil
 }
 
-// backupSourceLayout resolves the sources of one system backup once so
-// the manifest and the snapshot describe the same tree.
 func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.Client) (backupSourceLayout, error) {
 	databaseFile, err := s.databaseFile()
 	if err != nil {
@@ -788,8 +745,6 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 	}, nil
 }
 
-// projectsDataRelative returns the projects root relative to the data
-// root when projects live inside it.
 func (layout snapshotLayout) projectsDataRelative() (string, bool) {
 	if layout.projectsPath == "" {
 		return "", false
@@ -817,8 +772,6 @@ func (layout snapshotLayout) protected(projectRelative string) bool {
 	})
 }
 
-// projectsCoveredByData reports whether restoring the data root already
-// puts projects where the current projects directory is.
 func (layout snapshotLayout) projectsCoveredByData(dataDirectory, projectsDirectory string) bool {
 	relative, inside := layout.projectsDataRelative()
 	if !inside {
@@ -915,8 +868,6 @@ func recoveryManifestDatabasePath(manifest types.RecoveryManifest) (string, erro
 	return path.Clean(databasePath), nil
 }
 
-// projectsRelativePathFromManifest relates a version-1 manifest's
-// projects directory to its data directory.
 func projectsRelativePathFromManifest(manifest types.RecoveryManifest) (string, error) {
 	configured := strings.TrimSpace(manifest.Environment[settings.EnvName("projectsDirectory", "")])
 	if configured == "" {
@@ -964,10 +915,6 @@ func projectsRelativePathFromManifest(manifest types.RecoveryManifest) (string, 
 	return strings.TrimPrefix(projectsPath, dataPath+"/"), nil
 }
 
-// restoreTarget resolves the writable destination for containerPath
-// from the Arcane container's mounts: its enclosing mount at target plus the
-// mounts nested beneath it, minus any under exclude that a later stage writes
-// through their own mount.
 func restoreTarget(mounts []container.MountPoint, containerPath, target, exclude string) (types.RecoveryRestoreTarget, error) {
 	enclosing, relative := docker.MountForEnclosingPath(mounts, containerPath, target)
 	if enclosing == nil {
@@ -1024,10 +971,6 @@ func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *
 	}, nil
 }
 
-// restoreStages plans the Rustic restores that put a snapshot's data
-// and projects into the current container layout. Projects get their own
-// stage unless the snapshot already holds them at their current place under
-// the data root.
 func restoreStages(
 	mounts []container.MountPoint,
 	dataDirectory, projectsDirectory string,
@@ -1080,7 +1023,6 @@ func restoreStages(
 	}), nil
 }
 
-// Create archives a consistent system snapshot without blocking actor leases during the upload.
 func (s *Service) Create(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -1218,9 +1160,6 @@ func (s *Service) Create(
 	return backup.Snapshot{}, errors.Join(err, cleanupErr)
 }
 
-// snapshotSourceFiles records Arcane's data directory before taking the
-// database snapshot, skipping the projects directory wherever it appears since
-// project folders hold live container data.
 func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]os.FileInfo, error) {
 	projectsInfo, statErr := os.Stat(layout.projectsDirectory)
 	actorDatabase := francis.StorePath(layout.databaseName)
@@ -1268,8 +1207,6 @@ func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[st
 	return files, nil
 }
 
-// stageDatabase writes a consistent copy of the live database with VACUUM INTO,
-// keeping the original ownership and mode so restores preserve them.
 func stageDatabase(ctx context.Context, db *sql.DB, databasePath, stagedDatabase string) error {
 	info, err := os.Stat(databasePath)
 	if err != nil {

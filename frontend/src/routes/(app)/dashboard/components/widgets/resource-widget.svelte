@@ -120,7 +120,6 @@
 			{#if hasPermission(permissions[action], environmentId)}
 				<ArcaneButton
 					{action}
-					size="sm"
 					customLabel={isProject ? PROJECT_LABELS[action]() : undefined}
 					loading={actionStatus === ACTION_STATUS[action]}
 					disabled={disabled || actionStatus !== ''}

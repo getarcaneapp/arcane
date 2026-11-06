@@ -10,7 +10,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Register registers build workspace file browser routes.
 func Register(api huma.API, workspaceService *Service, uploadService *upload.UploadService) {
 	h := &Handler{service: workspaceService, uploadService: uploadService}
 

@@ -7,7 +7,7 @@
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -16,7 +16,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { AlertIcon, BoxIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -161,7 +161,7 @@
 					}
 				]
 			: []),
-		...(quadlet.app ? [{ icon: BoxIcon, label: m.podman_quadlet_app(), value: quadlet.app }] : [])
+		...(quadlet.app ? [{ icon: ContainersIcon, label: m.podman_quadlet_app(), value: quadlet.app }] : [])
 	]);
 </script>
 
@@ -174,11 +174,13 @@
 >
 	{#snippet headerInfo()}
 		<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-			<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={quadlet.name}>
-				{quadlet.name}
-			</h1>
+			<div class="flex min-w-0 items-center">
+				<EnvironmentDestinationSelect value={envId} variant="prefix" readonly />
+				<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={quadlet.name}>
+					{quadlet.name}
+				</h1>
+			</div>
 			<Badge variant={podmanStateVariant(quadlet.status)} minWidth="20">{quadlet.status}</Badge>
-			<EnvironmentCell value={envId} plain />
 			{#if quadlet.template}
 				<Badge variant="gray" size="sm">{m.podman_quadlet_template()}</Badge>
 			{/if}
@@ -283,7 +285,7 @@
 											size="sm"
 											href={environmentHref(`/podman/pods/${encodeURIComponent(container.podName)}`, envId)}
 										>
-											<BoxIcon class="size-3" />
+											<ContainersIcon class="size-3" />
 											{container.podName}
 										</Badge>
 									{/if}
@@ -292,7 +294,6 @@
 										<ArcaneButton
 											action="base"
 											tone="ghost"
-											size="sm"
 											customLabel={m.common_logs()}
 											onclick={() => {
 												selectedContainerId = container.id;

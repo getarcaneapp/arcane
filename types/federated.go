@@ -5,8 +5,6 @@ import (
 )
 
 type (
-	// FederatedCredential is a configured trust rule for one external OIDC
-	// workload identity subject.
 	FederatedCredential struct {
 		CreatedAt       time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
 		Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description" unorm:"nfc" trim:"true"`
@@ -30,8 +28,6 @@ type (
 		Enabled         bool       `json:"enabled" required:"false" doc:"Whether exchanges are allowed"`
 	}
 
-	// TokenExchangeRequest is the RFC 8693 token exchange form payload after
-	// server-side parsing.
 	TokenExchangeRequest struct {
 		GrantType          string
 		SubjectToken       string
@@ -41,7 +37,6 @@ type (
 		RequestedTokenType string
 	}
 
-	// FederatedTokenResponse is the RFC 8693 successful token exchange response.
 	FederatedTokenResponse struct {
 		AccessToken     string `json:"access_token"`      //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
 		TokenType       string `json:"token_type"`        //nolint:tagliatelle // RFC 8693 wire shape is snake_case.

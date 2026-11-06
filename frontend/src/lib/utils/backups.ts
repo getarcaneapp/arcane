@@ -13,6 +13,7 @@ import type {
 	S3Destination
 } from '#lib/types/backup.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
+import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function backupStatusLabel(status: BackupStatus): string {
@@ -149,9 +150,11 @@ export async function runAutomaticBackupDiscovery(destinations: { id: string }[]
 		...destinations.map((item) => volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID))
 	]);
 	let discovered = 0;
-	for (const result of results) {
+	for (const [index, result] of results.entries()) {
 		if (result.status === 'rejected') {
-			console.warn('S3 backup discovery failed', result.reason);
+			toast.error(index < destinations.length ? m.system_backups_discover_failed() : m.volume_backups_discover_failed(), {
+				description: extractApiErrorMessage(result.reason)
+			});
 			continue;
 		}
 		discovered += typeof result.value === 'number' ? result.value : result.value.count;

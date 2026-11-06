@@ -9,37 +9,27 @@ import (
 )
 
 type (
-	// Job runs a workflow as a scheduler job. The coordinator's single flight per
-	// job and environment already prevents overlapping runs.
 	Job struct {
-		// Payload is every instance's input, such as the entity a per-entity job runs for.
-		Payload     any
-		Engine      *Engine
-		Workflow    *Workflow
-		ScheduleFn  func(ctx context.Context) string
-		ShouldRunFn func(ctx context.Context) bool
-		// FallbackFn recovers a run whose instance cannot resume; nil fails the run so
-		// a retry starts a fresh instance under a new attempt.
+		Payload         any
+		Engine          *Engine
+		Workflow        *Workflow
+		ScheduleFn      func(ctx context.Context) string
+		ShouldRunFn     func(ctx context.Context) bool
 		FallbackFn      func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error)
 		ValidateRetryFn func(ctx context.Context, run types.SchedulerRun) error
 		JobName         string
-		// Activity overrides the definition's activity template, such as with the entity's name.
-		Activity activitylib.StartRequest
+		Activity        activitylib.StartRequest
 	}
 )
 
-// Name is the scheduler job name.
 func (j *Job) Name() string { return j.JobName }
 
-// Schedule is the job's current cron expression.
 func (j *Job) Schedule(ctx context.Context) string { return j.ScheduleFn(ctx) }
 
-// ShouldSchedule reports whether the job runs; a nil ShouldRunFn always does.
 func (j *Job) ShouldSchedule(ctx context.Context) bool {
 	return j.ShouldRunFn == nil || j.ShouldRunFn(ctx)
 }
 
-// Run skips when the job's condition no longer holds, then runs the workflow.
 func (j *Job) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	if !j.ShouldSchedule(ctx) {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
@@ -47,7 +37,6 @@ func (j *Job) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	return j.Engine.Run(ctx, j.Workflow, j.Payload, j.Activity, nil)
 }
 
-// Reconcile resumes an interrupted run's instance, falling back to FallbackFn when it cannot be resumed.
 // A job disabled since the run started makes no further changes.
 func (j *Job) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	if !j.ShouldSchedule(ctx) {
@@ -68,7 +57,6 @@ func (j *Job) Reconcile(ctx context.Context, previous types.SchedulerRun) (types
 	return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Workflow instance could not be resumed; retry the run"}, nil
 }
 
-// ValidateRetry rejects a retry that ValidateRetryFn reports unsafe.
 func (j *Job) ValidateRetry(ctx context.Context, run types.SchedulerRun) error {
 	if j.ValidateRetryFn == nil {
 		return nil

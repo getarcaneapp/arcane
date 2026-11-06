@@ -1,7 +1,6 @@
 <script module lang="ts">
 	export type NetworkAttachmentRow = {
 		network: string;
-		// comma-separated aliases as typed by the user
 		aliases: string;
 		ipv4Address: string;
 	};

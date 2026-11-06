@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { networkService } from '#lib/services/network-service.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
@@ -37,7 +38,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		if ('status' in err && err.status === 404) {
 			throw err;
 		}
-		throw error(500, err.message || 'Failed to load network details');
+		throw error(500, err.message || m.failed_to_load_network_details());
 	} else {
 		return operationResult.data;
 	}

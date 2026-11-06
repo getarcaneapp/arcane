@@ -45,7 +45,6 @@ var templateRef = cmdutil.ResourceRef[types.Template, types.Template]{
 	Promote:          func(match types.Template) *types.Template { return &match },
 }
 
-// Command is the parent command for template operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},

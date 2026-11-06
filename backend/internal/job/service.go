@@ -41,14 +41,6 @@ import (
 )
 
 type (
-	// JobService manages configuration for background job schedules.
-	//
-	// Intervals are persisted in the existing settings table as individual keys.
-	// After updates, the settings.SettingsService cache is reloaded and active jobs are
-	// rescheduled through the configured scheduler.
-	//
-	// NOTE: This is intentionally separate from settings.SettingsService to keep the API
-	// surface job-focused and to centralize schedule validation/rescheduling.
 	JobService struct {
 		scheduler    types.JobController
 		lifecycleCtx context.Context
@@ -64,12 +56,8 @@ type (
 		db          *database.DB
 		settings    *settings.SettingsService
 		cfg         *config.Config
-		location    *time.Location // Timezone for cron schedule calculations
+		location    *time.Location
 
-		// environment-health is no longer a single scheduler job — it fans out to one
-		// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
-		// UI (which addresses jobs by ID) back to that service. Set during bootstrap on
-		// the manager only.
 		OnEnvironmentHealthReschedule func(ctx context.Context)
 		RunEnvironmentHealthNow       func(ctx context.Context) error
 		activityMu                    sync.Mutex
@@ -125,7 +113,6 @@ func NewJobService(p JobServiceParams) *JobService {
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) types.JobScheduleConfig {
-	// Use settings.SettingsService cache for fast reads.
 	return types.JobScheduleConfig{
 		EnvironmentHealthInterval:      s.settings.GetStringSetting(ctx, "environmentHealthInterval"),
 		EventCleanupInterval:           s.settings.GetStringSetting(ctx, "eventCleanupInterval"),
@@ -200,7 +187,6 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobSc
 		},
 	}
 
-	// Validate inputs (cron expressions)
 	for _, field := range fields {
 		if !submitted[field.key] || field.update == "" {
 			continue
@@ -350,7 +336,6 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 		return nil, err
 	}
 
-	// Sort jobs by ID to ensure stable UI order
 	slices.SortFunc(statuses, func(left, right types.JobStatus) int {
 		return strings.Compare(left.ID, right.ID)
 	})
@@ -378,7 +363,6 @@ func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.
 	return prerequisites
 }
 
-// ActivityID assigns a summary identity before a visible run is persisted.
 func (s *JobService) ActivityID(run types.SchedulerRun) string {
 	// A remotely delivered run already has a summary on its accepting manager.
 	if run.Trigger == "remote" {
@@ -392,7 +376,6 @@ func (s *JobService) ActivityID(run types.SchedulerRun) string {
 	return uuid.New().String()
 }
 
-// SyncRunActivity projects the latest committed run without changing execution state.
 func (s *JobService) SyncRunActivity(ctx context.Context, run types.SchedulerRun) error {
 	s.activityMu.Lock()
 	defer s.activityMu.Unlock()
@@ -454,9 +437,6 @@ func (s *JobService) ReconcileStartupActivities(ctx context.Context, extraProtec
 	return err
 }
 
-// Submit validates job eligibility and persists acceptance before execution.
-// Managers may accept requests for offline environments. Reusing a run ID
-// deduplicates admission within the same job and environment.
 func (s *JobService) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	request = types.SchedulerRequest{ //exhaustruct:enforce
 		RunID:            request.RunID,
@@ -618,7 +598,6 @@ func classifyOutcome(jobID string, outcome types.SchedulerOutcome, err error) (t
 			case types.RunStatusWaiting, types.RunStatusRetrying, types.RunStatusFailed, types.RunStatusPartial, types.RunStatusCanceled, types.RunStatusSkipped:
 				return outcome.Status
 			case types.RunStatusQueued, types.RunStatusRunning, types.RunStatusSucceeded:
-				// Classify these and unspecified outcomes below.
 			}
 			var networkErr net.Error
 			switch {
@@ -719,11 +698,9 @@ func (s *JobService) reconcileRun(ctx context.Context, run types.SchedulerRun) (
 	}, nil
 }
 
-// RetryRun revalidates local job eligibility before requeuing the existing run.
 // Remote retries follow the delivery protocol and retain confirmed target progress.
 func (s *JobService) RetryRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	if environmentID != "0" {
-		// Queue one explicit retry while retaining the agent's target progress.
 		run, err := s.runs.Get(ctx, environmentID, jobID, runID)
 		if errors.Is(err, runs.ErrRunNotFound) {
 			return s.remote.MutateAgentRun(ctx, environmentID, jobID, runID, "retry")
@@ -753,7 +730,6 @@ func (s *JobService) RetryRun(ctx context.Context, environmentID, jobID, runID s
 	return s.runs.Retry(ctx, environmentID, jobID, runID)
 }
 
-// ListRemoteJobs returns an agent's catalog with manager-side run status.
 func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (*types.JobListResponse, error) {
 	catalog, err := s.remote.Catalog(ctx, environmentID)
 	if err != nil {
@@ -774,7 +750,6 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 	}, nil
 }
 
-// ListRuns merges agent history with requests accepted by this manager.
 func (s *JobService) ListRuns(ctx context.Context, environmentID, jobID string, page, limit int) (types.SchedulerRunList, error) {
 	if environmentID == "0" {
 		return s.runs.List(ctx, environmentID, jobID, page, limit)
@@ -804,7 +779,6 @@ func (s *JobService) ListRuns(ctx context.Context, environmentID, jobID string, 
 	}, nil
 }
 
-// GetRun prefers the manager's durable delivery record, then queries agent-owned history.
 func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	run, err := s.runs.Get(ctx, environmentID, jobID, runID)
 	if environmentID == "0" || !errors.Is(err, runs.ErrRunNotFound) {
@@ -817,7 +791,6 @@ func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID str
 	return runtime.ProjectRunOutcome(run), nil
 }
 
-// CancelRun cancels manager admission or explicitly forwards an agent-owned cancellation.
 func (s *JobService) CancelRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	_, err := s.runs.Get(ctx, environmentID, jobID, runID)
 	if environmentID != "0" && errors.Is(err, runs.ErrRunNotFound) {

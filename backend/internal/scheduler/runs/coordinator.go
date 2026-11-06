@@ -1,4 +1,3 @@
-// Package runs coordinates durable scheduler execution and recovery.
 package runs
 
 import (
@@ -29,7 +28,6 @@ import (
 )
 
 type (
-	// Coordinator persists work before dispatching it to the owning domain.
 	Coordinator struct {
 		lifecycleCtx context.Context
 		observer     types.RunObserver
@@ -72,10 +70,6 @@ type (
 	}
 )
 
-// Submit persists acceptance before waking the dispatcher. Run IDs deduplicate
-// requests within a job and environment. Manual and remote requests stay separate;
-// other triggers coalesce pending work.
-// Cancellation of ctx affects admission only, not an accepted run's lifetime.
 func (q *Coordinator) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	q.mu.Lock()
 	stopping := q.stopping
@@ -156,8 +150,6 @@ func (q *Coordinator) Install(ctx context.Context, jobID, schedule string) error
 	return err
 }
 
-// Start validates persisted state on ctx and starts dispatching on appCtx. Repeated calls
-// are harmless, but a stopped queue cannot be restarted; create a new instance.
 func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -217,8 +209,6 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	return nil
 }
 
-// Stop rejects new submissions, cancels execution, and waits for workers until
-// ctx expires. Unfinished claims remain persisted for startup reconciliation.
 func (q *Coordinator) Stop(ctx context.Context) error {
 	q.mu.Lock()
 	q.stopping = true
@@ -382,8 +372,6 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run types.SchedulerRun
 	}
 }
 
-// Cancel marks an unstarted queued run canceled. Runs already attempted locally
-// or dispatched remotely must be reconciled rather than canceled as pending work.
 func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
@@ -414,8 +402,6 @@ func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID st
 	return run, err
 }
 
-// Retry requeues a failed, partial, or attention-required run without changing its
-// ID or dropping target progress. Unconfirmed remote work cannot be retried here.
 func (q *Coordinator) Retry(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
@@ -474,8 +460,6 @@ func (q *Coordinator) nextRun(runs []types.SchedulerRun) (*types.SchedulerRun, t
 	return nil, nextRetry
 }
 
-// ExecutionContext binds durable progress for work executing a run. An empty
-// instanceID fences writes by run owner; otherwise by the active workflow instance.
 func (q *Coordinator) ExecutionContext(ctx context.Context, run types.SchedulerRun, instanceID string) context.Context {
 	ctx = activity.WithActivityBatchID(ctx, run.ID)
 	return jobcontext.WithExecution(ctx, run, func(target types.TargetOutcome) error {
@@ -489,7 +473,6 @@ func (q *Coordinator) ExecutionContext(ctx context.Context, run types.SchedulerR
 	})
 }
 
-// RecordSteps projects workflow step progress onto a running run, fenced like ExecutionContext.
 func (q *Coordinator) RecordSteps(ctx context.Context, run types.SchedulerRun, instanceID string, steps []types.StepOutcome) error {
 	return q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
 		if !kit.Ternary(instanceID == "", current.Status == types.RunStatusRunning && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
@@ -500,7 +483,6 @@ func (q *Coordinator) RecordSteps(ctx context.Context, run types.SchedulerRun, i
 	})
 }
 
-// ActiveWorkflow reports whether a running run still follows a workflow instance.
 func ActiveWorkflow(run types.SchedulerRun, instanceID string) bool {
 	return run.Status == types.RunStatusRunning && slices.ContainsFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ResourceType == types.SchedulerWorkflowTarget && target.ID == instanceID && !target.Status.Terminal()

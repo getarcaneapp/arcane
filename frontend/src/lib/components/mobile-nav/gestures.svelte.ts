@@ -73,7 +73,6 @@ export class MobileNavGestures {
 
 		if (Math.abs(deltaY) < this.touchMoveThreshold && Math.abs(deltaX) < this.touchMoveThreshold) return;
 
-		// If horizontal movement is dominant, ignore this touch sequence
 		if (Math.abs(deltaX) > Math.abs(deltaY)) {
 			return;
 		}

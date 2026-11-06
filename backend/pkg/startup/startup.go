@@ -28,9 +28,6 @@ var deprecatedImageReplacements = map[string]string{
 	"ghcr.io/getarcaneapp/arcane-headless": "ghcr.io/getarcaneapp/agent",
 }
 
-// ApplyMemoryLimit sets the Go soft memory limit to 90% of the cgroup memory
-// limit so the GC tightens before the container is OOM-killed. Without a cgroup
-// limit it lowers GOGC to 50 instead. GOMEMLIMIT and GOGC win.
 func ApplyMemoryLimit(ctx context.Context) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return

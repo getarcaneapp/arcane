@@ -20,44 +20,24 @@ import (
 )
 
 type (
-	// ResourceRef resolves a resource from a name, ID, or prefix.
 	// D is the detail shape and S is the list summary.
 	ResourceRef[D any, S any] struct {
-		// GetPath builds the GET-by-identifier path; ListPath the list endpoint
-		// that Resolve queries with ?search=<identifier>&limit=-1.
-		GetPath  func(envID, identifier string) string
-		ListPath func(envID string) string
-		// SearchCandidates replaces the standard list search for resources with
-		// specialized matching rules.
+		GetPath          func(envID, identifier string) string
+		ListPath         func(envID string) string
 		SearchCandidates func(context.Context, *client.Client, string) ([]S, error)
-		// SelectCandidate replaces the standard ambiguity handling while keeping
-		// direct lookup and not-found behavior in Resolve.
-		SelectCandidate func([]S, string, bool) (*S, error)
-		// Validate checks a successful direct lookup before Resolve returns it.
-		Validate func(D, string) error
+		SelectCandidate  func([]S, string, bool) (*S, error)
+		Validate         func(D, string) error
+		Matches          func(item S, identifierLower, original string) bool
+		Label            func(S) string
+		Promote          func(S) *D
 
-		// Matches reports whether a listed item matches the identifier.
-		Matches func(item S, identifierLower, original string) bool
-		// Label renders one match as an interactive prompt option.
-		Label func(S) string
-		// Promote converts a selected summary into the detail shape.
-		Promote func(S) *D
-
-		// IDOf enables an ID-prefix scan over the full list. Leave nil for resources without opaque IDs.
-		IDOf func(S) string
-		// IdentifierOf supplies the canonical identifier for commands accepting raw IDs.
+		IDOf         func(S) string
 		IdentifierOf func(D) string
-
-		// Exact identifies exact matches so a unique exact search result wins over substring matches.
-		Exact func(item S, identifierLower, original string) bool
-		// Singular and Plural name the resource in prompts and error messages
-		// ("container", "containers").
-		Singular string
-		Plural   string
-		// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
-		// ("the container ID", "the volume name").
-		IDHint  string
-		ListCmd string
+		Exact        func(item S, identifierLower, original string) bool
+		Singular     string
+		Plural       string
+		IDHint       string
+		ListCmd      string
 
 		EnvironmentScoped bool
 	}
@@ -72,12 +52,9 @@ type (
 )
 
 const (
-	// MaxPromptOptions caps how many search matches the resolver offers
-	// interactively before asking the user to refine the query instead.
 	MaxPromptOptions = 20
 )
 
-// Fetch resolves an identifier and retrieves full detail when resolution returned only a summary.
 func (ref ResourceRef[D, S]) Fetch(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*D, error) {
 	resolved, complete, err := ref.Resolve(ctx, c, identifier, allowPrompt)
 	if err != nil || complete {
@@ -98,7 +75,6 @@ func (ref ResourceRef[D, S]) Fetch(ctx context.Context, c *client.Client, identi
 	return &result.Data, nil
 }
 
-// Resolve finds one resource and pins its environment for subsequent requests.
 func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*D, bool, error) {
 	identifier = strings.TrimSpace(identifier)
 	if identifier == "" {
@@ -335,8 +311,6 @@ func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, pa
 	return result.Data, nil
 }
 
-// LooksLikeIDPrefix reports whether identifier could be a hex ID prefix worth
-// scanning the full list for.
 func LooksLikeIDPrefix(identifierLower string) bool {
 	return len(identifierLower) >= 4 && strings.IndexFunc(identifierLower, func(r rune) bool {
 		return (r < '0' || r > '9') && (r < 'a' || r > 'f')

@@ -1,5 +1,3 @@
-// Package updater owns automatic container and project updates: deciding what
-// is out of date, applying the update, and the HTTP surface that drives it.
 package updater
 
 import (
@@ -15,19 +13,15 @@ import (
 )
 
 type (
-	// Module wires the updater domain and mounts its routes.
 	Module struct {
 		service *UpdaterService
 	}
 )
 
-// New assembles updater routes around the provided service.
 func New(service *UpdaterService) *Module {
 	return &Module{service: service}
 }
 
-// Service exposes the updater service to collaborators that trigger updates
-// outside the HTTP surface, such as the auto-update job and webhooks.
 func (m *Module) Service() *UpdaterService {
 	if m == nil {
 		return nil
@@ -35,13 +29,10 @@ func (m *Module) Service() *UpdaterService {
 	return m.service
 }
 
-// RegisterRoutes mounts the updater endpoints. A nil module still registers, so
-// OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	RegisterUpdater(api, m.Service(), appCtx)
 }
 
-// RegisterUpdater registers updater management routes using Huma.
 func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handlerutil.ActivityAppContext) {
 	h := &UpdaterHandler{
 		updaterService: updaterService,

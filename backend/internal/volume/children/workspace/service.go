@@ -43,7 +43,6 @@ import (
 )
 
 type (
-	// Dependencies are the helper-container, lock, and backup operations the workspace runs through.
 	Dependencies struct {
 		Docker                *dockerInternal.DockerClientService
 		Events                *event.EventService
@@ -58,7 +57,6 @@ type (
 		Settings              *settings.SettingsService
 	}
 
-	// Service browses and edits the files inside a volume through its helper container.
 	Service struct {
 		deps Dependencies
 	}
@@ -75,8 +73,6 @@ type (
 		once      sync.Once
 	}
 
-	// volumeWorkspaceWriteIdentity is the identity workspace file mutations run as,
-	// so files land owned by the user the consuming container runs with. The zero value means root.
 	volumeWorkspaceWriteIdentity struct {
 		execUser string
 		uid      int
@@ -168,7 +164,6 @@ func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
 
-// MaxFileSizeBytes is the largest file the workspace reads or accepts.
 func (s *Service) MaxFileSizeBytes(ctx context.Context) int64 {
 	return workspacepkg.MaxFileSizeBytes(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxFileSizeMb"))
 }

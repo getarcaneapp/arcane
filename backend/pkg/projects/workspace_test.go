@@ -408,9 +408,6 @@ func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T)
 	_, revision, _, err := ReadProjectWorkspace(t.Context(), projectDir, 3, "", "compose.yaml", 0, 0)
 	require.NoError(t, err)
 
-	// The structural revision still matches after an external content edit,
-	// but the uploaded baseline no longer matches the on-disk content: the
-	// stale draft must conflict instead of silently overwriting the newer file.
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("external newer edit\n"), 0o644))
 	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
@@ -420,7 +417,6 @@ func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, "external newer edit\n", string(content))
 
-	// A baseline matching the current on-disk content saves normally.
 	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
 	}, map[int][]byte{

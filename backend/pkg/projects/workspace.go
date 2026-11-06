@@ -71,10 +71,6 @@ func ReadProjectWorkspace(
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
-	// The workspace tree walk and apply engine stay on os.Root rather than
-	// acfs: the revision hash depends on the level-by-level, name-sorted visit
-	// order, and acfs walks in a different order — switching would change every
-	// revision and mass-invalidate open editor drafts with false 409s.
 	root, err := os.OpenRoot(projectAbs)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("open project directory: %w", err)
@@ -107,17 +103,10 @@ func ReadProjectWorkspace(
 	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
 }
 
-// walk visits the tree level by level (every top-level entry, then the next
-// level down) so a large early subtree cannot use the whole entry budget
-// before later top-level siblings are seen (#4452).
 func (w *projectWorkspaceTreeWalker) walk(fsys fs.FS) error {
 	for queue := []string{"."}; len(queue) > 0; queue = queue[1:] {
 		entries, err := fs.ReadDir(fsys, queue[0])
 		if err != nil {
-			// An unreadable subdirectory is skipped so the rest of the tree stays
-			// intact; it was already recorded when visited from its parent. A
-			// failure on the root, or one that is not a permission/disappearance
-			// error, stays fatal so real I/O problems remain observable.
 			if queue[0] != "." && (os.IsPermission(err) || os.IsNotExist(err)) {
 				slog.DebugContext(w.ctx, "Skipping unreadable project workspace subdirectory", "relativePath", queue[0], "error", err)
 				continue
@@ -141,7 +130,6 @@ func (w *projectWorkspaceTreeWalker) walk(fsys fs.FS) error {
 	return nil
 }
 
-// visit records one entry and reports whether the walk should descend into it.
 func (w *projectWorkspaceTreeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
 	// Entries are visited in a fixed level-by-level, name-sorted order, so
 	// cutting off after maxEntries still yields a stable revision as long as
@@ -188,11 +176,6 @@ func (w *projectWorkspaceTreeWalker) visit(rel string, entry fs.DirEntry) (bool,
 	case !info.Mode().IsRegular():
 		kind = "special"
 	}
-	// The revision is structural (path + kind only): running containers write
-	// into their own project directory continuously (logs, certs, app state),
-	// so keying on mtime/size would invalidate every workspace draft for a
-	// live project and make saves 409 forever (#3199). Structural changes —
-	// files appearing, disappearing, or changing kind — still conflict.
 	kit.WriteRecord(w.revisionHash, rel, kind)
 	w.entryCount++
 
@@ -239,11 +222,6 @@ func classifyProjectWorkspaceFile(filePath string, size, maxFileSizeBytes int64)
 	return true, ""
 }
 
-// ApplyProjectWorkspaceChanges applies changes in order without internal
-// rollback: on any error, earlier changes remain on disk. Callers own
-// atomicity — ProjectService.UpdateProjectWorkspace wraps every save in
-// BackupProjectUpdateScope / RestoreProjectUpdateBackup, and project creation
-// removes a new directory or restores the scoped backup of a reused one.
 func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, changes []types.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
 	if opts.MaxFileSizeBytes <= 0 {
 		opts.MaxFileSizeBytes = workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
@@ -287,9 +265,6 @@ func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, chang
 	return nil
 }
 
-// ProtectedProjectPaths is ProtectedProjectFilePaths minus names that are
-// directories in projectPath. Neither Arcane nor compose treats such a
-// directory as project configuration, so it belongs to the workspace.
 func ProtectedProjectPaths(projectPath, composeFileName string) map[string]bool {
 	protected := ProtectedProjectFilePaths(composeFileName)
 	for name := range protected {
@@ -428,13 +403,6 @@ func updateProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel st
 		return fmt.Errorf("symlink files are not supported: %w", ErrProjectWorkspaceSymlinkPath)
 	}
 
-	// The workspace revision is structural only, so an external edit to this
-	// same file would otherwise be silently overwritten. The client uploads
-	// the content its draft was based on; a mismatch with the current on-disk
-	// content is a real per-file conflict. Checked here, in apply order, so an
-	// earlier rename/move in the same manifest has already landed and the
-	// comparison targets the right path. The read is capped just past the
-	// baseline length: a longer on-disk file differs by definition.
 	if baselineSet {
 		current, readProjectWorkspaceFileLimitedErr := readProjectWorkspaceFileLimited(root, rel, int64(len(baseline))+1)
 		if readProjectWorkspaceFileLimitedErr != nil {
@@ -498,8 +466,6 @@ func renameProjectWorkspacePath(root *os.Root, protected map[string]bool, rel, n
 	return nil
 }
 
-// NormalizeProjectParentPath normalizes a move destination folder; a blank
-// one is the project root.
 func NormalizeProjectParentPath(input string) (string, error) {
 	if strings.TrimSpace(input) == "" {
 		return "", nil

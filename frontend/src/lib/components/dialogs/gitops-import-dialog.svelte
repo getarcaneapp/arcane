@@ -33,13 +33,11 @@
 				error = m.git_sync_import_json_invalid_array();
 				return;
 			}
-			// Basic validation of structure
 			if (data.length === 0) {
 				error = m.git_sync_import_json_empty();
 				return;
 			}
 
-			// Optional: validate each item has required fields
 			for (let i = 0; i < data.length; i++) {
 				const item = data[i];
 				if (!item.syncName || !item.gitRepo || !item.branch || !item.dockerComposePath) {

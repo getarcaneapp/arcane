@@ -7,12 +7,6 @@ declare global {
 			message: string;
 			status?: number;
 		}
-		// interface Locals {
-		// 	user?: User | null;
-		// }
-		// interface PageData {}
-		// interface PageState {}
-		// interface Platform {}
 	}
 }
 

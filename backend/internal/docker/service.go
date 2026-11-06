@@ -67,9 +67,7 @@ type (
 
 const (
 	dockerClientNegotiationTimeout = 5 * time.Second
-	// dockerEventStreamHealthyAfter is how long an event stream must survive before
-	// the reconnect backoff is considered recovered and reset.
-	dockerEventStreamHealthyAfter = 30 * time.Second
+	dockerEventStreamHealthyAfter  = 30 * time.Second
 )
 
 func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusConfig bus.Config) *DockerClientService {
@@ -85,8 +83,6 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 	return service
 }
 
-// WithClient returns a copy of the service bound to an already-connected Docker
-// client, skipping host discovery. Used where the caller owns the connection.
 func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
 	return &DockerClientService{
 		db:              s.db,
@@ -108,8 +104,6 @@ func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) 
 	}
 }
 
-// GetClient returns a singleton Docker client instance.
-// It initializes the client on the first call.
 func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
 	s.mu.Lock()
 	cli := s.Client
@@ -231,7 +225,6 @@ func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatib
 	})
 }
 
-// DockerHost returns the configured DOCKER_HOST value.
 func (s *DockerClientService) DockerHost() string {
 	if s.boundHost != "" {
 		return s.boundHost
@@ -239,7 +232,6 @@ func (s *DockerClientService) DockerHost() string {
 	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat)
 }
 
-// Close closes the cached Docker client.
 func (s *DockerClientService) Close() {
 	s.mu.Lock()
 	oldClient := s.Client
@@ -324,9 +316,6 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	}
 }
 
-// ListCoalesced shares one detached Call among concurrent callers; each waiter stops on its own
-// context, nothing is cached, and the shared result must be treated as immutable.
-// Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because Call applies a deadline.
 func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, key string, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	var zero T
 
@@ -349,8 +338,6 @@ func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *s
 	}
 }
 
-// Call runs op against the cached client under the configured Docker API timeout.
-// Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because it applies a deadline.
 func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
@@ -498,8 +485,6 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 	return containers, running, stopped, total, nil
 }
 
-// GetAllImages lists images and containers concurrently and returns the
-// images together with their usage counts, including total image size.
 func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, types.ImageUsageCounts, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
@@ -527,8 +512,6 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	return images, CountImageUsage(images, containers), nil
 }
 
-// CountImageUsage tallies in-use, unused, and total image counts plus the summed
-// image size. An image is in use when a container references its ID.
 func CountImageUsage(images []image.Summary, containers []container.Summary) types.ImageUsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
@@ -582,7 +565,6 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	return networks, total - unused, unused, total, nil
 }
 
-// CountNetworkUsage returns in-use and unused counts for non-default networks, and the total of all networks.
 func CountNetworkUsage(networks []network.Summary, containers []container.Summary) (inuse, unused, total int) {
 	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 	for _, n := range networks {

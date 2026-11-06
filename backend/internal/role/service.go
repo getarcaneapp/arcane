@@ -92,7 +92,6 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	})
 }
 
-// BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once.
 func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	migrator := s.db.WithContext(ctx).Migrator()
 	if !migrator.HasColumn("users", "roles") {
@@ -143,7 +142,6 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	return nil
 }
 
-// legacyRolesContainsAdmin reports whether a legacy users.roles JSON value names "admin".
 func legacyRolesContainsAdmin(raw string) bool {
 	var roles []string
 	if err := json.Unmarshal([]byte(raw), &roles); err != nil {
@@ -157,7 +155,6 @@ func legacyRolesContainsAdmin(raw string) bool {
 	return false
 }
 
-// AssertGlobalAdminExists returns common.ErrNoGlobalAdminRemains when no non-service user is a global admin in tx.
 func (s *RoleService) AssertGlobalAdminExists(ctx context.Context, tx *gorm.DB) error {
 	count, err := s.CountGlobalAdmins(ctx, tx, "")
 	if err != nil {
@@ -243,7 +240,6 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	return role, nil
 }
 
-// lockAssignedUserRows locks the users holding roleID so role writes serialize with user-domain privilege checks.
 func lockAssignedUserRows(tx *gorm.DB, roleID string) ([]string, error) {
 	var ids []string
 	if err := tx.Model(&UserRoleAssignment{}).
@@ -377,7 +373,6 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	return nil
 }
 
-// CountUsersAssignedToRole counts distinct users assigned to roleID in any source or scope.
 func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID string) (int, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).
@@ -401,7 +396,6 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 	return out, nil
 }
 
-// ReplaceUserAssignments replaces the user's assignments for one source and enforces the global-admin guard.
 func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source string, desired []UserRoleAssignment) error {
 	seen := make(map[string]struct{}, len(desired))
 	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
@@ -461,7 +455,6 @@ func assignmentKey(a UserRoleAssignment) string {
 	return a.RoleID + "\x00" + envID
 }
 
-// validateAssignmentsExist returns ErrInvalidRoleAssignment for the first missing role or environment.
 func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
 	roleIDSet := make(map[string]struct{}, len(desired))
 	envIDSet := make(map[string]struct{}, len(desired))
@@ -551,7 +544,6 @@ func (s *RoleService) CountGlobalAdmins(ctx context.Context, tx *gorm.DB, exclud
 	return count, nil
 }
 
-// ResolvePermissions returns the user's effective permissions, cached for permissionCacheTTL.
 func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
 	if userID == "" {
 		return authz.NewPermissionSet(), nil
@@ -572,7 +564,6 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*a
 	return ps, nil
 }
 
-// ResolveUserPermissionsInDB resolves the user's permissions in tx.
 func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB, userID string) (*authz.PermissionSet, error) {
 	// Scan permissions as a raw string; GORM cannot wire StringSlice on anonymous structs.
 	type row struct {
@@ -602,7 +593,6 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 	return ps, nil
 }
 
-// decodePermissionsJSON parses the JSON roles.permissions column.
 func decodePermissionsJSON(raw string) ([]string, error) {
 	if raw == "" || raw == "[]" {
 		return nil, nil
@@ -614,7 +604,6 @@ func decodePermissionsJSON(raw string) ([]string, error) {
 	return out, nil
 }
 
-// ResolveExecutionPermissions revalidates durable work against current users and keys, bypassing caches.
 func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, keyID string) (*authz.PermissionSet, error) {
 	if userID == "" {
 		return nil, errors.New("requesting user unavailable")
@@ -669,7 +658,6 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 	return restricted, nil
 }
 
-// ResolveApiKeyPermissions returns the API key's permissions, cached per key.
 func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error) {
 	if ps, ok, _ := s.apiKeyCache.Get(apiKeyID); ok {
 		return ps, nil
@@ -723,7 +711,6 @@ func (s *RoleService) resolveApiKeyPermissionsInDB(ctx context.Context, db *gorm
 	return permissions, nil
 }
 
-// SetApiKeyPermissions atomically replaces the API key's permission rows.
 func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string, grants []ApiKeyPermission) error {
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return s.SetApiKeyPermissionsInDB(ctx, tx, apiKeyID, grants)
@@ -735,7 +722,6 @@ func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string,
 	return nil
 }
 
-// SetApiKeyPermissionsInDB replaces the API key's permission rows in tx.
 func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB, apiKeyID string, grants []ApiKeyPermission) error {
 	for i := range grants {
 		grants[i].ApiKeyID = apiKeyID
@@ -852,7 +838,6 @@ func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
 	})
 }
 
-// ReconcileEnvOidcMappings replaces source='env' OIDC mappings with rawSpec at boot.
 // Empty rawSpec leaves rows alone; manual rows are never touched.
 func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec string) error {
 	rawSpec = strings.TrimSpace(rawSpec)
@@ -912,7 +897,6 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	})
 }
 
-// InvalidateUser drops the cached permissions for one user.
 func (s *RoleService) InvalidateUser(userID string) {
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()
@@ -927,7 +911,6 @@ func (s *RoleService) Stop() {
 	s.apiKeyCache.StopJanitor()
 }
 
-// InvalidateApiKey drops the cached permissions for one API key.
 func (s *RoleService) InvalidateApiKey(apiKeyID string) {
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()
@@ -946,8 +929,6 @@ func validatePermissions(perms []string) error {
 	return nil
 }
 
-// ValidatePermissionsAgainstCaller rejects unknown permissions, then any the caller lacks globally.
-// Env-scoped grants are insufficient because roles can later be assigned globally.
 func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionSet, desired []string) error {
 	if err := validatePermissions(desired); err != nil {
 		return err
@@ -955,7 +936,6 @@ func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionS
 	return validatePermissionSetAgainstCaller(caller, desired, "")
 }
 
-// ValidateRoleAssignmentAgainstCaller rejects a role whose permissions the caller lacks at that scope.
 func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, caller *authz.PermissionSet, roleID string, environmentID *string) error {
 	role, err := s.GetRole(ctx, roleID)
 	if err != nil {
@@ -991,8 +971,6 @@ func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []s
 	return nil
 }
 
-// BuildPermissionsManifest maps the authz-owned permission catalog into
-// the public API manifest shape used by the frontend role editor.
 func BuildPermissionsManifest() types.PermissionsManifest {
 	catalog := authz.PermissionCatalog()
 	resources := make([]types.PermissionResource, len(catalog))

@@ -1,6 +1,3 @@
-// Package sync manages the project env files a git sync writes (the git
-// source, the Arcane override and the merged effective .env) and persists
-// submitted project file updates.
 package sync
 
 import (
@@ -21,7 +18,6 @@ import (
 )
 
 type (
-	// GitSyncEnvUpdate is the resolved three-file env change for one git sync.
 	GitSyncEnvUpdate struct {
 		gitEnvContent *string
 		// EffectiveContent is the merged .env content, or nil when none is kept.
@@ -102,8 +98,6 @@ func ResolveStoredEffectiveEnvContent(state projects.ProjectEnvState) (string, e
 	return state.DirectContent, nil
 }
 
-// effectiveEnvContentForUpdate returns the env content a project update keeps
-// when the caller supplied none.
 func effectiveEnvContentForUpdate(projectPath string, envContent *string) (*string, error) {
 	if envContent != nil {
 		return envContent, nil
@@ -117,7 +111,6 @@ func effectiveEnvContentForUpdate(projectPath string, envContent *string) (*stri
 	return update.EffectiveContent, nil
 }
 
-// ensureEffectiveEnvFile rebuilds .env from the managed env sources.
 func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
@@ -146,10 +139,6 @@ func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory 
 	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 }
 
-// PersistUpdatedProjectFiles validates and writes submitted compose, override,
-// and env content. An override-only save validates the on-disk base merged with
-// the requested override, so a base only valid with its override still passes
-// and a delete that would break the base fails before touching disk.
 func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, projectsDirectory string, composeContent, envContent, overrideContent *string) error {
 	if composeContent == nil && overrideContent == nil {
 		if envContent != nil {
@@ -206,7 +195,6 @@ func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, p
 	return nil
 }
 
-// PrepareGitSyncEnvUpdate resolves the env merge for incoming git env content.
 func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSyncEnvUpdate, error) {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
@@ -258,7 +246,6 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 	}, nil
 }
 
-// PersistGitSyncEnvFiles writes a prepared env merge.
 func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory string, update GitSyncEnvUpdate) error {
 	if update.gitEnvContent == nil {
 		if update.State.HasGitSource {
@@ -294,8 +281,6 @@ func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory 
 	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName, update.State.OverrideUnreadable, update.overrideContent)
 }
 
-// ApplyGitSyncEnv applies the managed three-file environment merge and returns
-// the effective content before and after the update.
 func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	update, err := PrepareGitSyncEnvUpdate(projectPath, gitEnvContent)
 	if err != nil {
@@ -307,8 +292,6 @@ func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string,
 	return update.State.DirectContent, kit.FromPtr(update.EffectiveContent), nil
 }
 
-// LoadComposeMetadata returns a discovered project's service count and effective project name.
-// Results are cached by dirPath until a compose, include or env file changes.
 func LoadComposeMetadata(
 	ctx context.Context,
 	cache types.ComposeCache[types.ComposeIdentity],

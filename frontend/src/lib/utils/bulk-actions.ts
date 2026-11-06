@@ -12,18 +12,9 @@ import { parseEnvironmentRowKey, parseRowKey } from '#lib/utils/environments.js'
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-/**
- * Shared helpers for table bulk operations (start/stop/remove/prune/…). These
- * consolidate the iterate-tally-toast-refresh-clear loop that was copy-pasted
- * across every `*-table.svelte`.
- */
-
 export interface BulkOperationMessages {
-	/** Toast shown when every item succeeded. Receives the number that succeeded. */
 	success: (count: number) => string;
-	/** Toast shown when some items succeeded and some failed. */
 	partial: (success: number, total: number, failed: number) => string;
-	/** Toast shown when every item failed. */
 	failure: () => string;
 }
 
@@ -34,18 +25,14 @@ export interface BulkOperationResult {
 }
 
 interface RunBulkOperationOptions<T> {
-	/** The ids or table row keys to operate on. A no-op when empty. */
 	ids: string[];
 	/** Runs the operation for a single id or row key. May throw — failures are tallied. */
 	run: (key: string) => Promise<T>;
 	messages: BulkOperationMessages;
-	/** Toggle a loading flag around the whole run. */
 	setLoading?: (loading: boolean) => void;
 	/** Called once after the run (and toast), regardless of outcome — e.g. to refresh data. */
 	onComplete?: (result: BulkOperationResult) => void | Promise<unknown>;
-	/** Clears the table selection after completion. Always called when there were ids. */
 	clearSelection?: () => void;
-	/** Optional per-item failure side effect, such as an item-specific toast. */
 	onItemFailure?: (id: string, error: Error) => void;
 	/** Run operations one at a time instead of concurrently. Defaults to concurrent. */
 	sequential?: boolean;
@@ -55,11 +42,6 @@ interface RunBulkOperationOptions<T> {
 	onItemSuccess?: (id: string, value: T) => void;
 }
 
-/**
- * Runs `run` for each id, tallies successes/failures, emits a single summary
- * toast (success / partial / failure), then refreshes and clears the selection.
- * The success toast links to the first resulting activity when one is present.
- */
 async function runBulkOperation<T>({
 	ids,
 	run,
@@ -98,12 +80,6 @@ async function runBulkOperation<T>({
 
 	setLoading?.(true);
 	try {
-		// Multi-item runs share a batch id per environment so the Activity Center renders one
-		// batch row. Each request is STARTED inside the synchronous batch scope
-		// (awaited outside it), so concurrent unrelated actions never inherit it.
-		// streamCacheBuster instead of bare crypto.randomUUID: the latter is
-		// secure-context-only (throws on plain-HTTP deployments), and the fallback
-		// format matches the backend batch-id pattern ^[A-Za-z0-9_-]{1,64}$.
 		const counts = new Map<string | undefined, number>();
 		for (const key of ids) {
 			const { environmentId } = parseRowKey(key);
@@ -171,7 +147,6 @@ export type BulkConfirmAndRunOptions<T> = Omit<RunBulkOperationOptions<T>, 'run'
 		message: string;
 		confirmLabel: string;
 		destructive?: boolean;
-		/** Optional confirm-dialog checkboxes (e.g. force / remove volumes). */
 		checkboxes?: BulkConfirmCheckbox[];
 	};
 
@@ -185,10 +160,6 @@ function rowRunner<T>(options: BulkConfirmRun<T>, checkboxStates: Record<string,
 	return (key) => options.run(parseRowKey(key).id, checkboxStates);
 }
 
-/**
- * Opens a confirm dialog (with optional checkboxes) and, on confirm, runs the
- * bulk operation via {@link runBulkOperation}. A no-op when `ids` is empty.
- */
 export function bulkConfirmAndRun<T>(options: BulkConfirmAndRunOptions<T>): void {
 	const {
 		ids,

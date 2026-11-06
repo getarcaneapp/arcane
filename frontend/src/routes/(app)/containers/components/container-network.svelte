@@ -178,7 +178,6 @@
 									<ArcaneButton
 										action="base"
 										tone="outline"
-										size="sm"
 										customLabel={m.common_disconnect()}
 										loading={disconnectPending[networkName]}
 										disabled={disconnectPending[networkName]}
@@ -271,7 +270,6 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							size="sm"
 							customLabel={m.common_connect()}
 							loading={connectPending}
 							disabled={connectPending || !connectNetwork}

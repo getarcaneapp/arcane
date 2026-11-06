@@ -646,9 +646,6 @@ test('administers scoped identities and enforces their browser access immediatel
 			).toEqual([]);
 		}
 
-		// An Admin role granted only on the local environment must reach every
-		// environment-scoped page without the global settings, templates,
-		// variables, or S3 destination requests those pages used to make.
 		environmentAdminUser = await createEnvironmentAdminViaApi(
 			page,
 			environmentAdminUsername,

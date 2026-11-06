@@ -1,4 +1,3 @@
-// Package details derives project runtime state from Compose and containers.
 package details
 
 import (
@@ -75,7 +74,6 @@ func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) 
 	return cmp.Or(docker.ComposeProjectLabel(runtimeContainers[0].Labels), fallback)
 }
 
-// ComposeServices includes services that have no container yet.
 func (s *Service) ComposeServices(
 	ctx context.Context,
 	composeProject *composetypes.Project,
@@ -345,7 +343,6 @@ func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []type
 	return resolved
 }
 
-// ConfiguredRuntimeServiceUpdateInfo binds runtime checks to the current Compose source, since labels may predate an edit.
 func ConfiguredRuntimeServiceUpdateInfo(services []composetypes.ServiceConfig, runtime []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) map[string]*types.ImageUpdateInfo {
 	configs := make(map[string]composetypes.ServiceConfig, len(services))
 	for _, service := range services {
@@ -400,7 +397,6 @@ func ExcludeHiddenRuntimeServices(details []types.Project) ([][]types.ProjectRun
 	return visibleByIndex, hiddenServicesByProjectID, hiddenRefsByProjectID
 }
 
-// ResolveDetailsOverride hides the override file when a COMPOSE_FILE selection omits it.
 func ResolveDetailsOverride(projectPath, overrideContent string, composeSelection []string) (fileName, content string) {
 	overridePath := projects.DetectComposeOverrideFile(projectPath)
 	if len(composeSelection) > 0 {

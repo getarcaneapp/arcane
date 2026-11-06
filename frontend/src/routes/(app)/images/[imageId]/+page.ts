@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { imageDetailQuery } from '#lib/query/images.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { ImageDetailSummary } from '#lib/types/image.js';
@@ -28,7 +29,7 @@ export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDeta
 		if ('status' in err && err.status === 404) {
 			throw err;
 		}
-		throw error(500, err.message || 'Failed to load image details');
+		throw error(500, err.message || m.failed_to_load_image_details());
 	}
 
 	const [image] = operationResult.data;

@@ -43,7 +43,6 @@ const (
 	systemRecoverySnapshotLabel = "arcane-system-recovery"
 )
 
-// resolveBackupStorageMountFromMounts mirrors the Arcane container's /backups mount at target, or returns nil.
 func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
@@ -56,7 +55,6 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 	return mirroredMount
 }
 
-// localRusticRepositoryInitialized checks a /backups mount for a Rustic config; other setups count as initialized.
 func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
@@ -66,7 +64,6 @@ func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerCl
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// backupMountWarningFromArcaneMounts warns unless Arcane mounts /backups; a /restores mount also suppresses it for compatibility.
 func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
 	restoresMounted := slices.ContainsFunc(mounts, func(m container.MountPoint) bool { return m.Destination == "/restores" })
 	if docker.MountForDestination(mounts, "/backups", "/backups") != nil || restoresMounted {
@@ -83,7 +80,6 @@ func (s *Service) backupMountWarning(ctx context.Context) string {
 	return backupMountWarningFromArcaneMounts(inspect.Mounts)
 }
 
-// StorageMount mirrors Arcane's /backups mount or falls back to the named backup volume.
 func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
@@ -234,7 +230,6 @@ func backupArchiveFilename(backupID string) (string, error) {
 	return name + ".tar.gz", nil
 }
 
-// volumeBackupPassword returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
 func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
 	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
 	key, err := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
@@ -290,7 +285,7 @@ func (s *Service) remoteRusticRepository(ctx context.Context, destinationID, ins
 	}
 	configuration, err := s.deps.S3Destinations.Configuration(ctx, destinationID)
 	if err != nil {
-		return backup.Repository{}, errors.New("the selected S3 backup destination is not configured")
+		return backup.Repository{}, fmt.Errorf("the selected S3 backup destination is not configured: %w", err)
 	}
 	return backup.Repository{
 		ID:          "volumes:s3:" + destinationID + ":" + instanceID,
@@ -298,7 +293,6 @@ func (s *Service) remoteRusticRepository(ctx context.Context, destinationID, ins
 	}, nil
 }
 
-// acquireVolumeRun takes the volume's run lease, failing with AlreadyRunning while another backup operation holds it.
 func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*runs.Lease, error) {
 	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, volumeName)
 	if err != nil {
@@ -310,7 +304,6 @@ func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*run
 	return lease, nil
 }
 
-// backupDestination names the destination that holds a backup's local and remote copies.
 func backupDestination(local, remote bool) types.VolumeBackupDestination {
 	switch {
 	case local && remote:
@@ -322,7 +315,6 @@ func backupDestination(local, remote bool) types.VolumeBackupDestination {
 	}
 }
 
-// logBackupEvent records a volume backup event; a nil user logs as the system user.
 func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *types.Actor, metadata database.JSON) {
 	actor := cmp.Or(user, &types.SystemUser)
 	if err := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{

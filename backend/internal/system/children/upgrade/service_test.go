@@ -41,9 +41,6 @@ func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientServi
 	}())
 }
 
-// TestUpgradeJobAgentFailureStatus verifies that a reachable-but-failed agent (e.g.
-// a poll-mode environment whose tunnel round-trip timed out) is reported as a real
-// failure rather than mislabeled "offline — skipped".
 func TestUpgradeJobAgentFailureStatus(t *testing.T) {
 	// Mirrors the real wrapping: executeRemoteRequest -> TransportError ->
 	// "tunnel request failed" -> context.DeadlineExceeded.
@@ -335,7 +332,6 @@ func TestUpsertPendingResult(t *testing.T) {
 	}
 	{
 
-		// A seeded environment resolves to its existing row without appending.
 		idx := upsertPendingResult(job, "abc", "palladium")
 		require.Equal(t, 1, idx,
 			"existing env index = %d, want 1", idx)
@@ -412,9 +408,6 @@ func TestUpgradeJobFailedJobMarksUnfinishedResultsFailed(t *testing.T) {
 	require.Equal(t, "already failed", got.Results[3].Error)
 }
 
-// An up-to-date manager never restarts: its upgrader pulls, finds the image already
-// running and skips the recreate. The pending_restart job must then be finalized in
-// place, because no next boot is coming to do it.
 func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -447,7 +440,6 @@ func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
-	// Nothing is left waiting on a restart that will never happen.
 	require.Equal(t, UpgradeJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Nil(t, got.Error)
@@ -498,9 +490,6 @@ func TestUpgradeJobStageChangesPersist(t *testing.T) {
 	require.NotSame(t, started, job.Results[0].StageStartedAt)
 }
 
-// The up-to-date short-circuit must only fire when the version check is conclusive:
-// an agent that could not resolve a newest version or digest keeps the full
-// trigger-and-confirm flow rather than being reported as already current.
 func TestAgentAlreadyOnTarget(t *testing.T) {
 	tests := []struct {
 		name string
@@ -560,9 +549,6 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 	}
 }
 
-// With the manager-last ordering, a resumed pending_restart job means the agents
-// phase already ran before the restart: resume must finalize the manager's own row
-// and complete the job, NOT re-run the agents phase.
 func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -613,12 +599,10 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
-	// Job is finalized in-process (no re-run, not left running/pending).
 	require.Equal(t, UpgradeJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 3)
 
-	// Manager row transitioned updating -> updated (version changed across the restart).
 	require.Equal(t, "0", got.Results[0].EnvironmentID)
 	require.Equal(t, UpgradeResultStatusUpdated, got.Results[0].Status)
 	require.NotEmpty(t, got.Results[0].ToVersion)

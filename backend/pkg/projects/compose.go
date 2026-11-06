@@ -61,7 +61,6 @@ type (
 )
 
 const (
-	// stderrLogLinePrefix lets the pkg/ws log parser classify stderr lines like container logs.
 	stderrLogLinePrefix = "[STDERR] "
 )
 
@@ -119,7 +118,6 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
 }
 
-// declinePrompt declines destructive plans like volume recreation and logs the question so the user can opt in.
 func declinePrompt(ctx context.Context, logWriter io.Writer) compose.Prompt {
 	return func(message string, defaultValue bool) (bool, error) {
 		slog.WarnContext(ctx, "compose prompt declined by default", "message", message)

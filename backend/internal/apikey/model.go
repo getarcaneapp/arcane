@@ -26,10 +26,7 @@ type (
 )
 
 const (
-	// ApiKeyKindScoped keys carry their own permission grant rows.
-	ApiKeyKindScoped = "scoped"
-	// ApiKeyKindPersonal keys have no grants; they inherit the owner's role
-	// permissions at authentication time.
+	ApiKeyKindScoped   = "scoped"
 	ApiKeyKindPersonal = "personal"
 )
 

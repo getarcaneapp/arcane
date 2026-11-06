@@ -1,5 +1,3 @@
-// Package listing projects stored projects and live Compose containers into
-// paginated list rows, status counts and untracked-project update rows.
 package listing
 
 import (
@@ -30,15 +28,12 @@ import (
 )
 
 type (
-	// Service projects stored projects and live Compose containers into list
-	// rows, status counts and update-only rows for untracked Compose projects.
 	Service struct {
 		containers    func(ctx context.Context) ([]container.Summary, error)
 		imageService  *image.ImageService
 		summarizeRuns func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo
 	}
 
-	// Snapshot is the compose container listing shared by every row of one list request, grouped by project.
 	Snapshot struct {
 		ContainerIndex
 		Err                 error
@@ -71,7 +66,6 @@ func New(
 	}
 }
 
-// Snapshot lists compose containers once for every row of a list request.
 func (s *Service) Snapshot(ctx context.Context) Snapshot {
 	containers, err := s.containers(ctx)
 	if err != nil {
@@ -87,7 +81,6 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 	}
 }
 
-// ProjectContainers matches names first, then an unambiguous working directory.
 func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []container.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
 	if c := index.byProject[normName]; len(c) > 0 {
@@ -108,7 +101,6 @@ func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []container
 	return matched.containers
 }
 
-// RuntimeServiceFromContainer derives service state from a labeled container.
 func RuntimeServiceFromContainer(catalog string, c container.Summary, meta projects.ArcaneComposeMetadata, currentContainerID string, currentContainerErr error) types.ProjectRuntimeService {
 	resolvedIcon := iconcatalog.Resolve(catalog, cmp.Or(projects.FindArcaneIconSet(c.Labels), meta.ServiceIconSets[docker.ComposeServiceLabel(c.Labels)], meta.ProjectIcon))
 	return types.ProjectRuntimeService{
@@ -142,7 +134,6 @@ func RuntimeServiceFromContainer(catalog string, c container.Summary, meta proje
 	}
 }
 
-// ServiceCounts returns the total and running service counts.
 func ServiceCounts(services []types.ProjectRuntimeService) (total, running int) {
 	total = len(services)
 	for _, service := range services {
@@ -154,7 +145,6 @@ func ServiceCounts(services []types.ProjectRuntimeService) (total, running int) 
 	return total, running
 }
 
-// ProjectStatus derives a project status from its runtime services.
 func ProjectStatus(services []types.ProjectRuntimeService) string {
 	if len(services) == 0 {
 		return types.ProjectStatusUnknown
@@ -182,8 +172,6 @@ func ProjectStatus(services []types.ProjectRuntimeService) string {
 	return kit.Ternary(stoppedCount > 0, types.ProjectStatusStopped, types.ProjectStatusUnknown)
 }
 
-// StatusCounts totals archived, running and stopped projects from live
-// containers, falling back to stored status when Docker is unavailable.
 func StatusCounts(records []types.ProjectRecord, snapshot Snapshot) types.ProjectStatusCounts {
 	var archived, running, stopped int
 	for _, p := range records {
@@ -245,7 +233,6 @@ func (s *Service) ReconcileStatuses(ctx context.Context, records []types.Project
 	return changed, nil
 }
 
-// RelativePath returns projectPath relative to projectsDir, or "" outside it.
 func RelativePath(projectsDir, projectPath string) string {
 	if strings.TrimSpace(projectsDir) == "" || !projects.IsSafeSubdirectory(projectsDir, projectPath) || filepath.Clean(projectPath) == filepath.Clean(projectsDir) {
 		return ""
@@ -254,8 +241,6 @@ func RelativePath(projectsDir, projectPath string) string {
 	return kit.Ternary(err == nil, filepath.ToSlash(relativePath), "")
 }
 
-// row builds the fields list filters, search and sort read from database
-// columns and the container snapshot; compose metadata is left for ApplyPresentation.
 func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, tags []types.ProjectTag) types.Project {
 	var services []types.ProjectRuntimeService
 	for _, c := range snapshot.ProjectContainers(p) {
@@ -285,8 +270,6 @@ func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, 
 	}
 }
 
-// Rows builds list rows and reports service counts inferred from live
-// containers for projects whose stored count is still zero.
 func Rows(projectsDir, catalog string, records []types.ProjectRecord, snapshot Snapshot, tagsByProject map[string][]types.ProjectTag) ([]types.Project, map[string]int) {
 	rows := make([]types.Project, len(records))
 	inferredCounts := make(map[string]int)
@@ -299,8 +282,6 @@ func Rows(projectsDir, catalog string, records []types.ProjectRecord, snapshot S
 	return rows, inferredCounts
 }
 
-// ApplyPresentation returns details with the fields filtering and sorting never
-// read: project and service icons, custom URLs, and the env access probe.
 // records, details and metas must align by index.
 func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records []types.ProjectRecord, details []types.Project, metas []projects.ArcaneComposeMetadata) []types.Project {
 	out := make([]types.Project, 0, len(details))
@@ -368,7 +349,6 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 	return out
 }
 
-// KnownComposeProjectNames collects every name a tracked project uses.
 func KnownComposeProjectNames(records []types.ProjectRecord) map[string]struct{} {
 	known := make(map[string]struct{}, len(records)*2)
 	for _, p := range records {
@@ -382,7 +362,6 @@ func KnownComposeProjectNames(records []types.ProjectRecord) map[string]struct{}
 	return known
 }
 
-// CountDiscoveredUpdates counts untracked compose projects with a pending update.
 func (s *Service) CountDiscoveredUpdates(ctx context.Context, allContainers []container.Summary, known map[string]struct{}, catalog string) int {
 	composeContainers := make([]container.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
@@ -397,7 +376,6 @@ func (s *Service) CountDiscoveredUpdates(ctx context.Context, allContainers []co
 	return len(s.DiscoveredUpdateRows(ctx, composeContainers, known, catalog))
 }
 
-// DiscoveredUpdateRows builds rows for untracked running compose projects that have a pending image update.
 func (s *Service) DiscoveredUpdateRows(
 	ctx context.Context,
 	composeContainers []container.Summary,
@@ -439,7 +417,6 @@ func (s *Service) DiscoveredUpdateRows(
 	}()
 	rows := make([]types.Project, 0, len(containersByProject))
 	for projectName, projectContainers := range containersByProject {
-		// One runtime service per distinct service name and image.
 		runtimeServices := make([]types.ProjectRuntimeService, 0, len(projectContainers))
 		seenServices := make(map[string]struct{}, len(projectContainers))
 		for _, c := range projectContainers {
@@ -619,8 +596,6 @@ func PaginationConfig() pagination.Config[types.Project] {
 	}
 }
 
-// Page searches, orders and paginates rows by their derived fields and returns
-// the page indexes of tracked rows still needing enrichment.
 func Page(items []types.Project, params pagination.QueryParams, tracked func(id string) bool) (pagination.FilterResult[types.Project], []int) {
 	result := PaginationConfig().SearchOrderAndPaginate(items, pagination.QueryParams{
 		SearchQuery: params.SearchQuery,

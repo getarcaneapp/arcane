@@ -11,12 +11,10 @@ import (
 )
 
 type (
-	// Handler serves registry repository and tag browsing.
 	Handler struct {
 		service *Service
 	}
 
-	// ListRegistryRepositoriesInput is the input for listing the repositories of a registry.
 	ListRegistryRepositoriesInput struct {
 		ID     string `path:"id" doc:"Registry ID"`
 		Search string `query:"search" doc:"Search query"`
@@ -26,7 +24,6 @@ type (
 		Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 	}
 
-	// ListRegistryTagsInput is the input for listing the tags of a registry repository.
 	ListRegistryTagsInput struct {
 		ID         string `path:"id" doc:"Registry ID"`
 		Repository string `query:"repository" required:"true" minLength:"1" doc:"Repository name"`
@@ -37,7 +34,6 @@ type (
 		Limit      int    `query:"limit" default:"20" doc:"Items per page"`
 	}
 
-	// DeleteRegistryTagInput is the input for deleting a tag from a registry repository.
 	DeleteRegistryTagInput struct {
 		ID         string `path:"id" doc:"Registry ID"`
 		Repository string `query:"repository" required:"true" minLength:"1" doc:"Repository name"`
@@ -49,7 +45,6 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-// ListRepositories returns a paginated list of repositories stored in a registry.
 func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepositoriesInput) (*handlerutil.Page[types.ContainerRegistryRepository], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
@@ -68,7 +63,6 @@ func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepos
 	}, nil
 }
 
-// ListTags returns a paginated list of tags of a registry repository.
 func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*handlerutil.Page[types.ContainerRegistryRepositoryTag], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
@@ -87,7 +81,6 @@ func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*
 	}, nil
 }
 
-// DeleteTag deletes the manifest a repository tag points to.
 func (h *Handler) DeleteTag(ctx context.Context, input *DeleteRegistryTagInput) (*handlerutil.Out[types.ContainerRegistryDeleteTagResponse], error) {
 	digest, err := h.service.DeleteRepositoryTag(ctx, input.ID, input.Repository, input.Tag)
 	if err != nil {

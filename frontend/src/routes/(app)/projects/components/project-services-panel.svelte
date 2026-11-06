@@ -11,7 +11,16 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { PlayIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
+	import {
+		PlayIcon,
+		StopIcon,
+		RefreshIcon,
+		TrashIcon,
+		InspectIcon,
+		LayersIcon,
+		ContainersIcon,
+		HealthIcon
+	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
@@ -163,7 +172,7 @@
 					<IconImage
 						src={getThemedIconUrl(item, mode.current)}
 						alt={item.name}
-						fallback={BoxIcon}
+						fallback={ContainersIcon}
 						class="size-4"
 						containerClass="size-5 bg-transparent ring-0"
 					/>

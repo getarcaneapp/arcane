@@ -48,8 +48,6 @@ import (
 )
 
 type (
-	// SwarmService provides Docker Swarm cluster operations and coordinates its
-	// services, nodes, stacks, configs, and secrets features.
 	SwarmService struct {
 		dockerService      *docker.DockerClientService
 		kvService          *kv.KVService
@@ -139,7 +137,6 @@ func NewSwarmService(p SwarmServiceParams) *SwarmService {
 	return s
 }
 
-// DeployStack deploys a swarm stack; GitOps sync uses it as the domain API.
 func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
@@ -198,7 +195,6 @@ func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, cluste
 	return mo.None[string](), nil
 }
 
-// StreamServiceLogs streams swarm service logs for the WebSocket log endpoint.
 func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, opts types.LogStreamOptions) error {
 	return s.services.StreamServiceLogs(ctx, serviceID, logsChan, opts)
 }
@@ -618,7 +614,6 @@ func (s *SwarmService) persistSwarmEnabledState(ctx context.Context, enabled boo
 	}
 }
 
-// ObserveMetrics reports nodes, services, and task counts when the local engine is a swarm manager; the ping keeps non-swarm hosts cheap.
 func (s *SwarmService) ObserveMetrics(meter metric.Meter) error {
 	swarmNodes, nodesErr := meter.Int64ObservableGauge("arcane.docker.swarm.nodes",
 		metric.WithDescription("Swarm nodes by role and state, reported by swarm managers"), metric.WithUnit("{node}"))

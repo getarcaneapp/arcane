@@ -1,4 +1,3 @@
-// Package oidcmappings manages OIDC claim-to-role mappings.
 package oidcmappings
 
 import (
@@ -15,7 +14,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for OIDC role mapping operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "oidc",

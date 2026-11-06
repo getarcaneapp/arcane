@@ -18,7 +18,6 @@
 	const healthcheck = $derived<ContainerHealthcheck | undefined>(container?.config?.healthcheck);
 	const health = $derived(container?.state?.health);
 
-	// Docker sends duration values in nanoseconds. Convert to a compact human string.
 	function formatDurationNs(ns: number | undefined | null): string {
 		if (!ns || ns <= 0) return m.common_unknown();
 		const ms = Temporal.Duration.from({ nanoseconds: Math.trunc(ns) }).total('milliseconds');

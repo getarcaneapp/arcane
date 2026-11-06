@@ -5,7 +5,7 @@
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -119,11 +119,13 @@
 	>
 		{#snippet headerInfo()}
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-				<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={pod.name}>
-					{pod.name}
-				</h1>
+				<div class="flex min-w-0 items-center">
+					<EnvironmentDestinationSelect value={envId} variant="prefix" readonly />
+					<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={pod.name}>
+						{pod.name}
+					</h1>
+				</div>
 				<Badge variant={podmanStateVariant(pod.state)} minWidth="20">{pod.state}</Badge>
-				<EnvironmentCell value={envId} plain />
 			</div>
 		{/snippet}
 

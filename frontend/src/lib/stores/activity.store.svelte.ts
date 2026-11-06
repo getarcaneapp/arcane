@@ -27,6 +27,7 @@ import type {
 	ActivityEnvironmentFailure,
 	ActivityGroup
 } from '#lib/types/ui/activity.js';
+import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { instantEpochMilliseconds, parseInstant } from '#lib/utils/formatting.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -144,7 +145,7 @@ type ActivityStoreState = {
 	details: Record<string, ActivityDetail>;
 	expandedActivityIds: Record<string, boolean>;
 	detailLoadingIds: Record<string, boolean>;
-	detailErrorIds: Record<string, boolean>;
+	detailErrors: Record<string, string>;
 	cancellingIds: Record<string, boolean>;
 	expandedBatchIds: Record<string, boolean>;
 	searchTerm: string;
@@ -160,7 +161,7 @@ function initialStateInternal(): ActivityStoreState {
 		details: {},
 		expandedActivityIds: {},
 		detailLoadingIds: {},
-		detailErrorIds: {},
+		detailErrors: {},
 		cancellingIds: {},
 		expandedBatchIds: {},
 		searchTerm: '',
@@ -493,7 +494,7 @@ function createActivityStore() {
 					state = { ...state, details: { ...state.details, [activityId]: normalized } };
 					mergeActivityInternal(normalized.activity);
 					if (normalized.activity.batchId) setBatchExpandedInternal(normalized.activity.batchId, true);
-					state = { ...state, detailErrorIds: omitKeyInternal(state.detailErrorIds, activityId) };
+					state = { ...state, detailErrors: omitKeyInternal(state.detailErrors, activityId) };
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -501,8 +502,7 @@ function createActivityStore() {
 				if (signal.aborted) {
 					return;
 				}
-				console.warn('Failed to load activity detail:', error);
-				state = { ...state, detailErrorIds: { ...state.detailErrorIds, [activityId]: true } };
+				state = { ...state, detailErrors: { ...state.detailErrors, [activityId]: extractApiErrorMessage(error) } };
 			} else {
 				return operationResult.data;
 			}
@@ -683,8 +683,8 @@ function createActivityStore() {
 		isDetailLoading(activityId: string): boolean {
 			return !!state.detailLoadingIds[activityId];
 		},
-		isDetailError(activityId: string): boolean {
-			return !!state.detailErrorIds[activityId];
+		detailError(activityId: string): string | undefined {
+			return state.detailErrors[activityId];
 		},
 		isCancelling(activityId: string): boolean {
 			return !!state.cancellingIds[activityId];
@@ -763,7 +763,7 @@ function createActivityStore() {
 				details: {},
 				expandedActivityIds: {},
 				detailLoadingIds: {},
-				detailErrorIds: {}
+				detailErrors: {}
 			};
 			await core.refresh();
 
@@ -808,7 +808,7 @@ function createActivityStore() {
 		retryLoadDetail: (activityId: string) => {
 			state = {
 				...state,
-				detailErrorIds: omitKeyInternal(state.detailErrorIds, activityId),
+				detailErrors: omitKeyInternal(state.detailErrors, activityId),
 				details: omitKeyInternal(state.details, activityId)
 			};
 			void loadDetailInternal(activityId);

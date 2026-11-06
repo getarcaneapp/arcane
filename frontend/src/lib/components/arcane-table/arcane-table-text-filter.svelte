@@ -45,7 +45,6 @@
 				{...props}
 				action="base"
 				tone="ghost"
-				size="sm"
 				icon={FilterIcon}
 				customLabel={title}
 				class={cn(
@@ -77,7 +76,6 @@
 				<ArcaneButton
 					action="base"
 					tone="ghost"
-					size="sm"
 					customLabel={m.common_clear_filters()}
 					onclick={() => column?.setFilterValue(undefined)}
 					class="h-8 justify-center"

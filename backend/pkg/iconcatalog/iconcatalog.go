@@ -1,4 +1,3 @@
-// Package iconcatalog resolves Arcane icon metadata into catalog URLs.
 package iconcatalog
 
 import (
@@ -54,8 +53,6 @@ func Resolve(catalog string, set IconSet) ResolvedIconSet {
 	}
 }
 
-// Normalize maps a raw catalog preference onto one of the known catalog
-// constants, falling back to the default for unknown values.
 func Normalize(catalog string) string {
 	switch strings.ToLower(strings.TrimSpace(catalog)) {
 	case CatalogDashboardIcons:

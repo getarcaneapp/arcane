@@ -1,5 +1,3 @@
-// Package remote owns manager-side delivery, history and review of job runs
-// executed on remote agents.
 package remote
 
 import (
@@ -23,8 +21,6 @@ import (
 )
 
 type (
-	// Service talks to agents through the environment proxy and persists delivery
-	// state in the shared run coordinator.
 	Service struct {
 		runs         *runs.Coordinator
 		store        *kv.KVService
@@ -40,7 +36,6 @@ func New(coordinator *runs.Coordinator, store *kv.KVService, environments *envir
 	}
 }
 
-// Deliver drives one manager-owned run through the remote delivery protocol.
 func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	env, err := s.environments.GetEnvironmentByID(ctx, run.EnvironmentID)
 	if err != nil {
@@ -178,7 +173,6 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 	return s.Confirm(ctx, run, remoteRun, runPath)
 }
 
-// Confirm records the agent-reported state of a delivered run.
 func (s *Service) Confirm(ctx context.Context, run, remoteRun types.SchedulerRun, runPath string) (types.SchedulerOutcome, error) {
 	outcome := types.SchedulerOutcome{
 		Status:     remoteRun.Status,
@@ -283,7 +277,6 @@ func (s *Service) acknowledgeRemote(ctx context.Context, run types.SchedulerRun,
 	return outcome, nil
 }
 
-// Catalog retains the last observed agent catalog while its environment is offline.
 func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.JobListResponse, error) {
 	if _, err := s.environments.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
@@ -338,8 +331,6 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 	}, nil
 }
 
-// RetryRun queues one explicit retry of an authorized manager-owned run while
-// retaining the agent's target progress.
 func (s *Service) RetryRun(ctx context.Context, run types.SchedulerRun) (types.SchedulerRun, error) {
 	err := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
 		if current.Status != types.RunStatusFailed && current.Status != types.RunStatusPartial && current.Status != types.RunStatusNeedsAttention {
@@ -386,7 +377,6 @@ func (s *Service) RetryRun(ctx context.Context, run types.SchedulerRun) (types.S
 	return run, err
 }
 
-// Runs merges agent history with requests accepted by this manager.
 func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]types.SchedulerRun, error) {
 	if _, err := s.environments.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
@@ -448,7 +438,6 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 	return slices.Collect(maps.Values(merged)), nil
 }
 
-// AgentRun queries agent-owned history for a run the manager never accepted.
 func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	var run types.SchedulerRun
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
@@ -488,7 +477,6 @@ func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID stri
 	}, nil
 }
 
-// MutateAgentRun forwards an explicit operator action to an agent-owned run.
 func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runID, action string) (types.SchedulerRun, error) {
 	targetEnvironment, err := s.environments.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {

@@ -40,6 +40,20 @@
 	</div>
 {/if}
 
+{#if activityStore.streamError && activityStore.environmentFailures.length === 0}
+	<div class="mx-3 mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs">
+		<AlertIcon class="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+		<p class="min-w-0 flex-1 text-muted-foreground">{m.activity_stream_unavailable()}</p>
+		<button
+			type="button"
+			onclick={() => activityStore.retryStream()}
+			class="shrink-0 cursor-pointer font-medium text-primary-text hover:underline"
+		>
+			{m.common_retry()}
+		</button>
+	</div>
+{/if}
+
 {#if activityStore.loading && activityStore.activities.length === 0}
 	<div class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center">
 		<ActivityIcon class="size-6 animate-pulse text-muted-foreground" aria-hidden="true" />

@@ -18,7 +18,6 @@ import (
 )
 
 type (
-	// UpdaterHandler provides Huma-based updater management endpoints.
 	UpdaterHandler struct {
 		updaterService *UpdaterService
 		appCtx         context.Context
@@ -47,7 +46,6 @@ type (
 	}
 )
 
-// RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*types.UpdaterResult], error) {
 	out, err := h.updaterService.ApplyPending(activitylib.ActivityRuntimeContext(ctx, h.appCtx), types.UpdaterOptions{
 		Type:                     kit.FromPtr(input.Body).Type,
@@ -69,7 +67,6 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 	}, nil
 }
 
-// GetUpdaterStatus returns the current status of the updater.
 func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpdaterStatus], error) {
 	return &handlerutil.Out[types.UpdaterStatus]{
 		Body: types.ApiResponse[types.UpdaterStatus]{
@@ -79,7 +76,6 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *types.Envi
 	}, nil
 }
 
-// GetUpdaterHistory returns the history of update operations.
 func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*handlerutil.Out[[]types.AutoUpdateRecord], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.updaterService.AggregateHistory(ctx, cmp.Or(max(input.Limit, 0), 50))
@@ -135,7 +131,6 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 	}, nil
 }
 
-// CheckProjectUpdates checks Compose policies through the updater service.
 func (h *UpdaterHandler) CheckProjectUpdates(ctx context.Context, input *types.UpdaterCheckProjectInput) (*handlerutil.Out[*types.ProjectUpdateInfo], error) {
 	result, err := h.updaterService.CheckProjectUpdates(ctx, input.ProjectID)
 	if err != nil {

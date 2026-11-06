@@ -1,4 +1,3 @@
-// Package logger configures shared CLI logging.
 package logger
 
 import (
@@ -11,7 +10,6 @@ import (
 	"getarcane.dev/cli/v3/internal/output"
 )
 
-// Setup configures the global logger level and format, defaulting invalid levels to info.
 func Setup(w io.Writer, level string, jsonFormat bool) {
 	lvl, err := charmLog.ParseLevel(level)
 	if err != nil {

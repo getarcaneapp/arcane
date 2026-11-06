@@ -72,16 +72,6 @@ func NewHandler(swarmService *SwarmService, eventService *event.EventService) *S
 	return &SwarmHandler{swarmService: swarmService, eventService: eventService}
 }
 
-// ListTasks lists swarm tasks across the current environment.
-//
-// It applies the requested search, sort, and pagination fields and guarantees
-// an empty task slice when no tasks are returned.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input supplies optional filtering and pagination values.
-//
-// Returns a paginated task listing for the environment.
-// Returns a mapped HTTP error when task enumeration fails.
 func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -99,16 +89,6 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// GetSwarmStatus returns the current swarm cluster metadata for an environment.
-//
-// It delegates to the swarm service to inspect the local swarm state and maps
-// service-layer failures to the API's HTTP error model.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose swarm metadata should be returned.
-//
-// Returns the current swarm information when swarm mode is available.
-// Returns a mapped HTTP error when swarm inspection fails.
 func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmRuntimeStatus], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.swarmService.AggregateStatus(ctx)
@@ -131,16 +111,6 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.Environm
 	}, nil
 }
 
-// GetSwarmInfo returns the current swarm cluster metadata for an environment.
-//
-// It delegates to the swarm service to inspect the local swarm state and maps
-// service-layer failures to the API's HTTP error model.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose swarm metadata should be returned.
-//
-// Returns the current swarm information when swarm mode is available.
-// Returns a mapped HTTP error when swarm inspection fails.
 func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmInfo], error) {
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
@@ -150,17 +120,6 @@ func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *types.Environmen
 	return &handlerutil.Out[types.SwarmInfo]{Body: types.ApiResponse[types.SwarmInfo]{Success: true, Data: *info}}, nil
 }
 
-// InitSwarm initializes swarm mode on the target engine.
-//
-// It requires admin privileges, delegates the initialization request to the
-// swarm service, and records an audit event that includes the created node ID.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the swarm initialization request body.
-//
-// Returns the initialized swarm node ID and any other initialization details.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when initialization fails.
 func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*handlerutil.Out[types.SwarmInitResponse], error) {
 	resp, err := h.swarmService.InitSwarm(ctx, input.Body)
 	if err != nil {
@@ -172,17 +131,6 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*h
 	return &handlerutil.Out[types.SwarmInitResponse]{Body: types.ApiResponse[types.SwarmInitResponse]{Success: true, Data: *resp}}, nil
 }
 
-// JoinSwarm joins the target engine to an existing swarm cluster.
-//
-// It requires admin privileges, forwards the join request to the swarm service,
-// and records the remote manager addresses in the audit metadata.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the join request body.
-//
-// Returns a confirmation response when the engine joins successfully.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the join operation fails.
 func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.JoinSwarm(ctx, input.Body); err != nil {
 		detail := nodes.RedactSwarmJoinToken(err.Error(), input.Body.JoinToken)
@@ -199,17 +147,6 @@ func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*h
 	return handlerutil.MessageOutput("Joined swarm successfully", ""), nil
 }
 
-// LeaveSwarm removes the target engine from its current swarm cluster.
-//
-// It requires admin privileges, forwards the leave request to the swarm
-// service, and records whether forced removal was requested.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the leave request body.
-//
-// Returns a confirmation response when the engine leaves successfully.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the leave operation fails.
 func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.LeaveSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to leave swarm")
@@ -220,17 +157,6 @@ func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (
 	return handlerutil.MessageOutput("Left swarm successfully", ""), nil
 }
 
-// UnlockSwarm unlocks a swarm manager using the supplied unlock key.
-//
-// It requires admin privileges, delegates the unlock request to the swarm
-// service, and emits an audit event after success.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the unlock request body.
-//
-// Returns a confirmation response when the manager is unlocked.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the unlock operation fails.
 func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.UnlockSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to unlock swarm")
@@ -241,16 +167,6 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 	return handlerutil.MessageOutput("Swarm unlocked successfully", ""), nil
 }
 
-// GetUnlockKey returns the current swarm manager unlock key.
-//
-// It delegates to the swarm service and exposes the unlock key in the standard
-// API response envelope.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose unlock key should be returned.
-//
-// Returns the current manager unlock key.
-// Returns a mapped HTTP error when the unlock key cannot be retrieved.
 func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmUnlockKeyResponse], error) {
 	resp, err := h.swarmService.GetSwarmUnlockKey(ctx)
 	if err != nil {
@@ -260,16 +176,6 @@ func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *types.Environmen
 	return &handlerutil.Out[types.SwarmUnlockKeyResponse]{Body: types.ApiResponse[types.SwarmUnlockKeyResponse]{Success: true, Data: *resp}}, nil
 }
 
-// GetJoinTokens returns the current swarm worker and manager join tokens.
-//
-// It delegates to the swarm service and wraps the returned tokens in the
-// standard API response shape.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment whose join tokens should be returned.
-//
-// Returns the current worker and manager join tokens.
-// Returns a mapped HTTP error when token lookup fails.
 func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmJoinTokensResponse], error) {
 	resp, err := h.swarmService.GetSwarmJoinTokens(ctx)
 	if err != nil {
@@ -279,17 +185,6 @@ func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *types.Environme
 	return &handlerutil.Out[types.SwarmJoinTokensResponse]{Body: types.ApiResponse[types.SwarmJoinTokensResponse]{Success: true, Data: *resp}}, nil
 }
 
-// RotateJoinTokens rotates the swarm worker and or manager join tokens.
-//
-// It requires admin privileges, delegates the rotation request to the swarm
-// service, and records which token classes were rotated.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the requested token-rotation flags.
-//
-// Returns a confirmation response when rotation succeeds.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when token rotation fails.
 func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *SwarmJoinTokensActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.RotateSwarmJoinTokens(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to rotate swarm join tokens")
@@ -311,17 +206,6 @@ func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *SwarmJoinTok
 	return handlerutil.MessageOutput("Swarm join tokens rotated successfully", ""), nil
 }
 
-// UpdateSwarmSpec updates the swarm cluster specification.
-//
-// It requires admin privileges, forwards the request to the swarm service, and
-// records an audit event after the spec change succeeds.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and contains the replacement swarm spec.
-//
-// Returns a confirmation response when the spec update succeeds.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the spec update fails.
 func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.UpdateSwarmSpec(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm spec")
@@ -332,19 +216,6 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 	return handlerutil.MessageOutput("Swarm spec updated successfully", ""), nil
 }
 
-// auditSwarmMutation writes an informational event for a completed swarm mutation.
-//
-// It enriches the event with the current user when available, normalizes blank
-// environment IDs to the local environment, and logs a warning instead of
-// failing the request when event creation is unsuccessful.
-//
-// ctx carries request-scoped cancellation and user context.
-// environmentID identifies the environment associated with the mutation.
-// action names the performed swarm action.
-// resourceType classifies the mutated resource for the audit trail.
-// resourceID identifies the mutated resource when one exists.
-// resourceName provides a human-readable resource name when one exists.
-// metadata supplies additional structured audit fields to attach to the event.
 func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any) {
 	var userID *string
 	var username *string
@@ -390,16 +261,6 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	}
 }
 
-// mapSwarmServiceError converts swarm-service errors into Huma HTTP errors.
-//
-// It recognizes Arcane's swarm sentinel errors, common Docker error classes,
-// and a small set of validation-like substrings before falling back to an
-// internal-server-error response.
-//
-// err is the original service-layer error to translate.
-// fallback is the generic message returned when no specific mapping applies.
-//
-// Returns an HTTP-shaped error suitable for returning from a Huma handler.
 func mapSwarmServiceError(err error, fallback string) error {
 	if err == nil {
 		return nil

@@ -1,13 +1,8 @@
 package types
 
 type (
-	// TimeFormat controls how absolute times are displayed for a user.
 	TimeFormat string
 
-	// UserPreferences holds the per-user display/UI preferences. Every field is a
-	// pointer so that "unset" (nil) is distinguishable from an explicit value and
-	// falls back to the frontend default. It doubles as the GORM serializer target
-	// on the user model and as the wire DTO.
 	UserPreferences struct {
 		ThemeMode                  *string `json:"themeMode,omitempty" enum:"light,dark,system" doc:"Light/dark mode preference"`
 		ApplicationTheme           *string `json:"applicationTheme,omitempty" pattern:"^[a-z0-9-]{1,48}$" doc:"Theme preset or custom theme ID"`
@@ -99,16 +94,12 @@ type (
 		SyntaxOperator           string `json:"syntax-operator" required:"true"`
 	}
 
-	// RoleAssignmentSummary is a compact form of a user's role assignment used
-	// inside the User payload (so the frontend can render the assignments table
-	// without a separate request).
 	RoleAssignmentSummary struct {
 		RoleID        string  `json:"roleId" doc:"Role ID granted by this assignment"`
 		EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
 		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
 	}
 
-	// User represents a user in API responses.
 	User struct {
 		FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 		DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
@@ -131,7 +122,6 @@ type (
 		RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
 	}
 
-	// Actor identifies a user performing domain work without exposing persistence data.
 	Actor struct {
 		Preferences UserPreferences `json:"preferences"`
 		DisplayName *string         `json:"displayName,omitempty"`
@@ -139,10 +129,8 @@ type (
 		Username    string          `json:"username"`
 	}
 
-	// ActorProvider supplies an actor from an authenticated user model.
 	ActorProvider interface{ Actor() *Actor }
 
-	// CurrentUserContextKey holds the authenticated user or actor in a request context.
 	CurrentUserContextKey struct{}
 )
 
@@ -152,5 +140,4 @@ const (
 	TimeFormat24Hour TimeFormat = "24h"
 )
 
-// SystemUser identifies work initiated by Arcane itself.
 var SystemUser = Actor{Username: "System"}

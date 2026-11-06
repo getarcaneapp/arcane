@@ -26,8 +26,6 @@ func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
 }
 
 func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
-	// Agent mode: skip CORS entirely. The agent only receives server-to-server
-	// requests through the agent tunnel from the manager — never from browsers.
 	if m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }

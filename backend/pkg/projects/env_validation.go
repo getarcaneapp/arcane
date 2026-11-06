@@ -15,9 +15,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// BuildValidationEnvironment resolves the env a compose file is validated
-// against. It matches the project-visible env sources without inheriting the
-// Arcane process environment, which may contain unrelated secrets.
 func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectPath string, effectiveEnvContent *string) (EnvMap, error) {
 	fullEnvMap := make(EnvMap)
 	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
@@ -56,11 +53,6 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 	return fullEnvMap, nil
 }
 
-// ParseValidationEnvFile parses one env file against contextEnv. A missing file
-// is not an error.
-//
-// Stays on os.*: env files may be symlinks resolving outside any confinement
-// root (a supported setup), which acfs cannot follow.
 func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -81,8 +73,6 @@ func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	return ParseValidationEnvContent(string(content), contextEnv)
 }
 
-// ParseValidationEnvContent parses env content, resolving interpolations
-// against contextEnv rather than the process environment.
 func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	lookupFn := func(key string) (string, bool) {
 		value, ok := contextEnv[key]
@@ -97,7 +87,6 @@ func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error
 	return envMap, nil
 }
 
-// ParseEnvContent parses environment variables from .env file content
 func ParseEnvContent(content string) []types.EnvVariable {
 	if content == "" {
 		return []types.EnvVariable{}
@@ -109,12 +98,10 @@ func ParseEnvContent(content string) []types.EnvVariable {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		// Split on first '='
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
@@ -126,7 +113,6 @@ func ParseEnvContent(content string) []types.EnvVariable {
 			value = strings.TrimSpace(parts[1])
 		}
 
-		// Strip surrounding quotes and handle escapes
 		if len(value) >= 2 {
 			if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
 				value = value[1 : len(value)-1]

@@ -12,7 +12,7 @@
 <DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={setPullPolicy}>
 	<DropdownMenu.RadioItem value="missing">
 		<div class="flex flex-col gap-0.5">
-			<span class="font-medium">Missing</span>
+			<span class="font-medium">{m.missing()}</span>
 			<span class="text-xs text-muted-foreground">{m.deploy_pull_policy_missing()}</span>
 		</div>
 	</DropdownMenu.RadioItem>

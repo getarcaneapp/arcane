@@ -206,7 +206,6 @@ func TestBuildDiscordURL_URLEncoding(t *testing.T) {
 	gotURL, err := BuildDiscordURL(config)
 	require.NoError(t, err)
 
-	// Verify URL encoding for special characters
 	assert.Contains(t, gotURL, "username=Bot+with+spaces")
 	assert.Contains(t, gotURL, "avatar=https%3A%2F%2F")
 }

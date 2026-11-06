@@ -38,8 +38,6 @@ import (
 )
 
 type (
-	// WebSocketHandler consolidates all WebSocket and streaming endpoints.
-	// REST endpoints are handled by Huma handlers.
 	WebSocketHandler struct {
 		// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
 		ctx                context.Context
@@ -147,7 +145,6 @@ func NewWebSocketHandler(
 	middleware.RegisterEchoRoutes(group, slices.Concat(handler.proxiedRoutes(), handler.diagnosticsRoutes()), authMiddleware.WithAdminNotRequired().Add())
 }
 
-// acceptWS upgrades the request to a WebSocket, registers it with the metrics tracker, and starts its lifetime span.
 // The returned unregister func must be called exactly once when the connection ends.
 func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*websocket.Conn, func(), bool) {
 	req := c.Request()

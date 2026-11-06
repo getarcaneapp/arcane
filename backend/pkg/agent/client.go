@@ -26,32 +26,23 @@ import (
 )
 
 const (
-	// maxReconnectInterval caps the exponential reconnect backoff so a long-dead
-	// manager is still retried at a sane cadence.
-	maxReconnectInterval = 60 * time.Second
-	// healthyTunnelSessionDuration is how long a tunnel session must survive
-	// before the reconnect backoff is treated as recovered.
+	maxReconnectInterval         = 60 * time.Second
 	healthyTunnelSessionDuration = 60 * time.Second
 
-	// DefaultHeartbeatInterval is how often the client sends heartbeats
 	DefaultHeartbeatInterval = 30 * time.Second
-	// DefaultWriteTimeout is the timeout for write operations
-	DefaultWriteTimeout = 10 * time.Second
+	DefaultWriteTimeout      = 10 * time.Second
 	// DefaultGRPCRegistrationTimeout bounds how long the agent waits for the
 	// manager to acknowledge tunnel registration on any transport.
 	DefaultGRPCRegistrationTimeout = 10 * time.Second
 	// DefaultWebSocketPreferenceTTL keeps websocket as the preferred transport
 	// for a short period after a successful auto-mode fallback.
 	DefaultWebSocketPreferenceTTL = 2 * time.Minute
-	// maxWebSocketPreferenceTTL caps the backoff of the websocket preference window
-	// while gRPC keeps failing, so a broken gRPC path is retried but never disabled.
-	maxWebSocketPreferenceTTL = 30 * time.Minute
+	maxWebSocketPreferenceTTL     = 30 * time.Minute
 )
 
 var (
 	// errTunnelRegistrationTimeout marks a manager that accepted the connection but never answered registration.
-	errTunnelRegistrationTimeout = errors.New("timed out waiting for tunnel registration response")
-	// errEstablishedTunnelSessionEnded marks an accepted session the manager later dropped.
+	errTunnelRegistrationTimeout     = errors.New("timed out waiting for tunnel registration response")
 	errEstablishedTunnelSessionEnded = errors.New("established agent tunnel session ended")
 )
 
@@ -111,7 +102,6 @@ func (c *TunnelClient) run(ctx context.Context) {
 		slog.WarnContext(ctx, "ARCANE_MANAGER_API_URL has a path prefix that gRPC cannot route; gRPC agent tunnel transport is unavailable", "pathPrefix", parsed.Path)
 		c.managerGRPCAddr = ""
 	}
-	// Log only the endpoints this agent will dial.
 	attrs := []any{"securityMode", c.cfg.MTLS.Mode}
 	transports := c.managedTunnelTransports()
 	if transports.grpc {
@@ -278,8 +268,6 @@ func (c *TunnelClient) awaitRegistration(ctx context.Context, conn TunnelConnect
 	}
 }
 
-// serveTunnelSession registers on an established tunnel connection and serves its multiplexed session,
-// for every transport.
 func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnection, managerAddr string) error {
 	box := &connBox{conn: conn}
 	c.conn.Store(box)
@@ -338,8 +326,6 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, conn.muxConn(connCtx), streamWindowMiB))
 }
 
-// agentAuthCredentials returns the canonical header/metadata credential
-// set every agent transport presents, so the three transports cannot drift.
 func agentAuthCredentials(token string) map[string]string {
 	return map[string]string{
 		HeaderAgentToken:    token,

@@ -28,15 +28,8 @@ import (
 const (
 	cgroupCacheTTL = 30 * time.Second
 
-	// systemStatsSamplerDefaultInterval matches the stats endpoint's default
-	// subscriber interval; the shared sampler never ticks faster than the
-	// fastest active subscriber.
 	systemStatsSamplerDefaultInterval = 2 * time.Second
 )
-
-// ============================================================================
-// System WebSocket Endpoints
-// ============================================================================
 
 func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interval time.Duration) bool {
 	h.systemStatsSampler.lifecycleMu.Lock()
@@ -131,9 +124,6 @@ func (h *WebSocketHandler) releaseSystemStatsSampler(interval time.Duration) {
 	}
 }
 
-// refreshSystemStatsSamplerIntervalLocked recomputes the sampler's
-// effective interval — the smallest one any subscriber requested — and must
-// be called with lifecycleMu held.
 func (h *WebSocketHandler) refreshSystemStatsSamplerIntervalLocked() {
 	effective := time.Duration(0)
 	for interval := range h.systemStatsSampler.intervals {
@@ -190,7 +180,6 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 	}
 }
 
-// collectSystemStats gathers all system statistics.
 func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
@@ -243,8 +232,6 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 	}
 }
 
-// applyCgroupLimits uses guest resources without applying Docker's
-// per-container limits to host statistics.
 func (h *WebSocketHandler) applyCgroupLimits(ctx context.Context, cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
 		if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
@@ -273,13 +260,6 @@ func (h *WebSocketHandler) applyCgroupLimits(ctx context.Context, cpuCount int, 
 	return cpuCount, memUsed, memTotal
 }
 
-// applyCPUAffinityLimit caps the CPU count at the scheduler affinity
-// mask size. In an unprivileged LXC guest the cgroup cpu quota is usually
-// unset at the guest root (the limit lives host-side), so the affinity mask is
-// the only signal of the cores actually assigned — including gap bindings like
-// CPU1+CPU7 — while /proc/cpuinfo shows the whole host (#3161). runtime.NumCPU
-// reads that mask at process start. Not applied inside Docker, matching
-// applyCgroupLimits's host-totals convention there.
 func applyCPUAffinityLimit(cpuCount int) int {
 	if n := runtime.NumCPU(); n > 0 && (cpuCount == 0 || n < cpuCount) {
 		return n
@@ -294,13 +274,6 @@ func readHostCPUUsage(interval time.Duration) (float64, bool) {
 	return 0, false
 }
 
-// SystemStats streams system stats over WebSocket.
-//
-//	@Summary		Get system stats via WebSocket
-//	@Description	Stream system resource statistics over WebSocket connection
-//	@Tags			WebSocket
-//	@Param			id	path	string	true	"Environment ID"
-//	@Router			/api/environments/{id}/ws/system/stats [get]
 func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	userID, _ := c.Get("userID").(string)
 	clientKey := cmp.Or(userID, c.RealIP())

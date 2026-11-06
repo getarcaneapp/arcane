@@ -132,8 +132,6 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	})
 }
 
-// TestProxiedEnvironmentRoutesAreAgentRoutable fails when a route the manager forwards to remote environments is
-// missing from the agent command allowlist, so agent environments cannot silently lose an endpoint.
 func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	type proxiedRoute struct {
 		method string

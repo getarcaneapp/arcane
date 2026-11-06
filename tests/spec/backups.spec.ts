@@ -1188,7 +1188,6 @@ test.describe('S3 storage', () => {
 				expect(destination.bucket).toBe(S3_BUCKET);
 				expect(destination.secretConfigured).toBe(true);
 
-				// Uploads, downloads, and deletes a probe object in the bucket.
 				const test = await page.request.post(`/api/backups/s3/${destination.id}?action=test`);
 				expect(test.status(), await test.text()).toBe(200);
 			} finally {

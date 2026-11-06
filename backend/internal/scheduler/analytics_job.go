@@ -40,12 +40,10 @@ const (
 	defaultHeartbeatEndpoint         = "https://checkin.getarcane.app/heartbeat"
 	devHeartbeatEndpoint             = "http://localhost:8080/heartbeat"
 	analyticsHeartbeatNextAttemptKey = "analytics.heartbeat.next_attempt_at"
-	// analyticsHeartbeatLastAttemptKey is the window older releases kept; it is carried forward once.
 	analyticsHeartbeatLastAttemptKey = "analytics.heartbeat.last_attempt_at"
 	analyticsHeartbeatDedupeWindow   = 24 * time.Hour
-	// analyticsHeartbeatRetryDelay spaces retries of a failed send, which the hourly check then picks up.
-	analyticsHeartbeatRetryDelay    = time.Hour
-	analyticsHeartbeatCheckSchedule = "0 * * * *"
+	analyticsHeartbeatRetryDelay     = time.Hour
+	analyticsHeartbeatCheckSchedule  = "0 * * * *"
 )
 
 func NewAnalyticsJob(
@@ -186,8 +184,6 @@ func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-// claimHeartbeat reports whether a heartbeat is due and, if so, schedules the next one a day out. Claiming before
-// sending keeps restarts from sending twice; a failed send moves the next attempt up to the retry delay.
 func (j *AnalyticsJob) claimHeartbeat(ctx context.Context) (bool, error) {
 	j.runMu.Lock()
 	defer j.runMu.Unlock()

@@ -3,9 +3,6 @@ package authz
 import "slices"
 
 type (
-	// AccessSurface describes one frontend-visible surface whose reachability is
-	// derived from backend-owned permission metadata. This is decision metadata for
-	// UX gating; backend middleware and service checks remain authoritative.
 	AccessSurface struct {
 		ID            string
 		Kind          string
@@ -135,8 +132,6 @@ var (
 	accessSurfacesByID = buildAccessSurfaceIndex(accessSurfaces)
 )
 
-// AccessSurfaces returns a defensive copy of every backend-owned access
-// surface in stable evaluation order.
 func AccessSurfaces() []AccessSurface {
 	out := make([]AccessSurface, len(accessSurfaces))
 	for i, surface := range accessSurfaces {
@@ -147,9 +142,6 @@ func AccessSurfaces() []AccessSurface {
 	return out
 }
 
-// CanAccessSurface evaluates backend-owned UI reachability metadata for the
-// caller. It is for advisory UX only; middleware and handlers still enforce
-// permissions on actual API requests.
 func CanAccessSurface(ps *PermissionSet, surfaceID, envID string) bool {
 	if ps == nil {
 		return false

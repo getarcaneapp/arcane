@@ -17,7 +17,6 @@ import (
 )
 
 type (
-	// StackDeployOptions controls how a swarm stack is deployed.
 	StackDeployOptions struct {
 		RegistryAuthForImage func(context.Context, string) (string, error)
 		PathMapper           *projects.PathMapper
@@ -32,22 +31,6 @@ type (
 	}
 )
 
-// DeployStack deploys a Compose-defined stack to Docker Swarm using the Engine API.
-//
-// It validates the stack name, loads the Compose project with environment
-// interpolation, ensures required swarm-scoped networks, configs, and secrets
-// exist, creates or updates services to match the desired state, optionally
-// prunes services no longer declared by the stack, and removes stale managed
-// configs and secrets after reconciliation.
-//
-// ctx controls cancellation for Compose loading and Docker API calls.
-// dockerClient must target a swarm manager capable of creating and updating stack resources.
-// opts provides the stack name, compose content, optional env content, registry-auth behavior, pruning, and image-resolution mode.
-//
-// Returns nil when the stack has been reconciled successfully.
-// Returns an error if the stack name is empty, the compose or env content is
-// invalid, a referenced resource cannot be inspected or created, or any Docker
-// API call required to reconcile the stack fails.
 func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
 	if err := validateStackName(stackName); err != nil {

@@ -59,8 +59,6 @@ type (
 		removed   []string
 	}
 
-	// backupTestEnv is one wired-up backup fixture: a bare remote, a git
-	// repository row, a project directory and the sync service under test.
 	backupTestEnv struct {
 		service     *GitOpsSyncService
 		db          *database.DB
@@ -72,8 +70,6 @@ type (
 		repoURL     string
 	}
 
-	// gitOpsBackupTestScheduler runs a submitted job body inline so the
-	// save-debounce path reaches PerformSync the way the real scheduler does.
 	gitOpsBackupTestScheduler struct {
 		jobs      map[string]types.SchedulerJob
 		submitted []types.SchedulerRequest
@@ -207,8 +203,6 @@ func (s *gitOpsSyncTestScheduler) HasJob(_ string) bool {
 	return false
 }
 
-// setupGitOpsSyncRemoteTestService wires a sync service with a real
-// scheduler registry over a bare remote "repo-1" whose main branch holds files.
 func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*GitOpsSyncService, *database.DB, string, *gitOpsSyncTestScheduler) {
 	t.Helper()
 	installBackupTestTransport()
@@ -255,9 +249,6 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	return service, db, projectsDir, testScheduler
 }
 
-// TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision is the
-// single-file-sync analogue of the directory refuse: a name collision on create is a
-// broken binding, not a "-N" duplicate.
 func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir, _ := setupGitOpsSyncRemoteTestService(t, map[string]string{"docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
@@ -559,9 +550,6 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 	assert.Zero(t, count)
 }
 
-// TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched proves a
-// corrupt/env-mismatched sync is still deletable via the API: the request env ("0")
-// does not match the row's env ("5"), yet the delete must succeed and stop the job.
 func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testing.T) {
 	ctx := t.Context()
 	scheduler := &gitOpsSyncTestScheduler{}
@@ -584,8 +572,6 @@ func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testi
 	assert.Contains(t, scheduler.removed, entityjobs.GitOpsSyncJobPrefix+syncRecord.ID)
 }
 
-// TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag verifies the managed
-// flag is cleared keyed on the sync id even when the sync's ProjectID is nil.
 func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	ctx := t.Context()
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
@@ -615,8 +601,6 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	assert.Nil(t, got.GitOpsManagedBy)
 }
 
-// TestGitOpsSyncWorkflow_UnregistersMissingSync verifies a scheduled run whose row no longer exists
-// (e.g. deleted out-of-band via raw SQL) unregisters its own job instead of firing forever.
 func TestGitOpsSyncWorkflow_UnregistersMissingSync(t *testing.T) {
 	ctx := t.Context()
 	scheduler := &gitOpsSyncTestScheduler{}
@@ -633,9 +617,6 @@ func TestGitOpsSyncWorkflow_UnregistersMissingSync(t *testing.T) {
 	assert.Contains(t, scheduler.removed, entityjobs.GitOpsSyncJobPrefix+"ghost-sync")
 }
 
-// TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans verifies the
-// startup sweep removes leaked gitops scratch dirs (hidden and legacy name-embedded
-// forms) while leaving real project directories untouched.
 func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *testing.T) {
 	ctx := t.Context()
 	svc, _, projectsDir := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
@@ -663,8 +644,6 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 	assert.NoError(t, err, "real project dir must be kept")
 }
 
-// TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll verifies the
-// startup sweep purges leaked git clone scratch dirs from the git work dir.
 func TestGitOpsSyncService_CleanupLeakedCloneDirsOnStartup_RemovesAll(t *testing.T) {
 	ctx := t.Context()
 	svc, _, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, nil)
@@ -868,9 +847,6 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	})
 }
 
-// setupLifecycleValidationService builds a GitOpsSyncService with lifecycle
-// hooks enabled in settings so the validator's gate doesn't short-circuit
-// the rule checks under test.
 func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.Context) {
 	t.Helper()
 	ctx := t.Context()
@@ -1018,7 +994,6 @@ func TestValidateLifecycleConfig_AllowsClearingScriptWithoutImage(t *testing.T) 
 	existing := &projectpkg.GitOpsSync{}
 	existing.PreDeployScriptPath = new("scripts/old.sh")
 	existing.PreDeployRunnerImage = new("alpine:latest")
-	// User clears the script (empty string in update); image clear is implied not required.
 	require.NoError(t, svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		scriptPath: new(""),
 	}))
@@ -1094,7 +1069,6 @@ func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSe
 	existing := &projectpkg.GitOpsSync{SyncDirectory: true}
 	existing.PreDeployScriptPath = new("scripts/deploy.sh")
 	existing.PreDeployRunnerImage = new("alpine:latest")
-	// Admin toggles syncDirectory off without clearing the script — should be rejected.
 	err := svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		syncDirectory: new(false),
 	})
@@ -1120,8 +1094,6 @@ func (s *gitOpsSyncTestScheduler) Submit(_ context.Context, request types.Schedu
 	return types.SchedulerRun{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: types.RunStatusQueued}, nil
 }
 
-// installBackupTestTransport serves bare repositories on disk over the
-// "http" scheme so backups push without a network or the git binary.
 func installBackupTestTransport() {
 	installBackupTestTransportOnce.Do(func() {
 		client.InstallProtocol("http", server.NewClient(server.NewFilesystemLoader(osfs.New("/"))))
@@ -1276,7 +1248,6 @@ func (e *backupTestEnv) reload(t *testing.T, id string) *projectpkg.GitOpsSync {
 	return &syncRecord
 }
 
-// checkoutRemote clones the backup branch so the pushed tree can be inspected.
 func (e *backupTestEnv) checkoutRemote(t *testing.T) string {
 	t.Helper()
 	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"}, 0)
@@ -1293,7 +1264,6 @@ func (e *backupTestEnv) remoteHead(t *testing.T) string {
 	return head
 }
 
-// pushRemoteCommit commits directly to the branch as another writer.
 func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string, files map[string]string) {
 	t.Helper()
 	auth := git.AuthConfig{AuthType: "none"}

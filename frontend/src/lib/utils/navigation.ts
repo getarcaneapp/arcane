@@ -11,8 +11,6 @@ import {
 } from '#lib/config/navigation-config.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 
-// --- Mobile nav state ---
-
 const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
 
 export const [getMobileNavigation, setMobileNavigation] = createContext<{
@@ -32,8 +30,6 @@ export function getEffectiveLandingPage(): ResolvedPathname {
 
 	return getLandingPageNavItems().find((item) => item.url === candidate)?.url ?? DEFAULT_LANDING_PAGE;
 }
-
-// --- Keyboard shortcuts ---
 
 export type ShortcutKey = 'mod' | 'shift' | 'alt' | 'ctrl' | 'meta' | (string & {});
 
@@ -119,8 +115,6 @@ function getExpectedCode(key: string): string | null {
 	return null;
 }
 
-// --- URL helpers ---
-
 export function toPortHref(hostPort: string, baseServerUrl?: string): string {
 	try {
 		const base = baseServerUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
@@ -147,8 +141,6 @@ export function toSafeHref(raw: string, scheme: string = 'https'): string {
 	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return trimmed;
 	return `${scheme}://${trimmed}`;
 }
-
-// --- Git URL helpers ---
 
 type GitRoute = 'commit' | 'tree' | 'blob' | 'edit';
 

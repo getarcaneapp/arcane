@@ -61,15 +61,11 @@ func NewPlaywrightService(p PlaywrightServiceParams) *PlaywrightService {
 func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) ([]*types.ApiKeyCreatedDto, error) {
 	slog.InfoContext(ctx, "Playwright: Creating test API keys", "count", count)
 
-	// Get the arcane user to associate the API keys with
 	localUser, err := ps.userService.GetUserByUsername(ctx, "arcane")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get arcane user: %w", err)
 	}
 
-	// Grant every recognized permission globally so the test key behaves like
-	// the legacy "admin-everywhere" credential the e2e suite expects. There is
-	// no request context here, so grant validation runs against a sudo set.
 	allPerms := authz.AllPermissions()
 	grants := make([]types.ApiKeyPermissionGrant, len(allPerms))
 	for i, p := range allPerms {
@@ -100,7 +96,6 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 	slog.InfoContext(ctx, "Playwright: Deleting all test API keys")
 
-	// Get all API keys with test prefix
 	params := pagination.QueryParams{
 		Search: "test-api-key",
 		Start:  0,
@@ -122,7 +117,6 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 	return nil
 }
 
-// CreateTestGitOpsProject seeds the suite prerequisite through the real GitOps services.
 func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()

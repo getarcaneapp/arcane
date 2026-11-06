@@ -399,10 +399,6 @@ test.describe('Management', () => {
 
 			const dialog = page.getByRole('dialog', { name: 'Remove image', exact: true });
 			await expect(dialog).toBeVisible();
-			// The post-remove refresh goes through queryClient.fetchQuery, which joins an
-			// already in-flight background refetch instead of issuing a new request, so
-			// asserting on fresh network calls here races under parallel load. The bulk
-			// removal tests below cover the refresh path with stubbed list/count endpoints.
 			await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
 			await expect.poll(() => removeRequestCount).toBe(1);
 
@@ -662,7 +658,6 @@ test.describe('Update checks', () => {
 			const checkAllResponse = await checkAllResponsePromise;
 			expect(checkAllResponse.ok()).toBeTruthy();
 
-			// Eventually a success or completion toast should appear
 			await expect(
 				page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 			).toBeVisible({ timeout: 60000 });
@@ -677,10 +672,8 @@ test.describe('Update checks', () => {
 
 			await navigateToImages(page);
 
-			// Wait for images table
 			await expect(page.getByRole('table')).toBeVisible();
 
-			// Find the first row's update status area (the Updates column)
 			const firstRow = page
 				.getByRole('row')
 				.filter({ has: page.getByTestId('image-update-trigger') })
@@ -787,7 +780,6 @@ test.describe('Update checks', () => {
 
 			const json = await readApiData<Record<string, ImageUpdateInfo>>(res, 'Check image updates');
 
-			// Each requested image should have a result
 			for (const ref of imageRefs) {
 				expect(json[ref]).toBeDefined();
 			}
@@ -807,10 +799,8 @@ test.describe('Update checks', () => {
 
 			const json = await readApiData<Record<string, ImageUpdateInfo>>(res, 'Check image updates');
 
-			// The Public ECR image should succeed.
 			expect(json[TEST_IMAGE_REFS.nginx]).toBeDefined();
 
-			// Invalid image should have an error
 			const invalidResult = json['invalid-registry.example.com/nonexistent:latest'];
 			expect(invalidResult.error).toBeTruthy();
 		});

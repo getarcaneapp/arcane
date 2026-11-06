@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
 import { volumeService } from '#lib/services/volume-service.js';
@@ -57,7 +58,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 
 		console.error('Failed to load volume:', err);
 		if ('status' in err && err.status === 404) throw err;
-		throw error(500, err.message || 'Failed to load volume details');
+		throw error(500, err.message || m.failed_to_load_volume_details());
 	} else {
 		return operationResult.data;
 	}

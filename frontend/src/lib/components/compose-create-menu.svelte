@@ -1,12 +1,3 @@
-<!--
-	compose-create-menu — the split-button + dropdown "create" menu shared by the
-	new-project and new-swarm-stack compose pages. The primary button submits the
-	form; the dropdown exposes template / docker-run / git-repo actions plus a
-	"create template" item.
-
-	Every label and action is passed in so this component owns no message keys and
-	no business logic — it purely renders the shared chrome.
--->
 <script lang="ts">
 	import { mergeProps } from 'bits-ui';
 
@@ -21,16 +12,12 @@
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	interface Props {
-		// Tooltip shows when the tooltipOpen prop is truthy-undefined (bits-ui
-		// convention: `undefined` = auto/hover, `false` = force-closed).
 		tooltipOpen: boolean | undefined;
 		tooltipTitle: string;
 		tooltipDescription: string;
 		tooltipExample: string;
-		// Show the tooltip body only when the name is still empty.
 		tooltipVisible: boolean;
 
-		// Primary create button.
 		showCreateButton?: boolean;
 		createDisabled: boolean;
 		createLoading: boolean;
@@ -39,9 +26,7 @@
 		createShortcut?: ShortcutKey[];
 		onCreate: () => void;
 
-		// Dropdown items.
 		itemsDisabled: boolean;
-		// Hide the template item when the user cannot list and read templates.
 		showUseTemplate?: boolean;
 		useTemplateLabel: string;
 		onUseTemplate: () => void;
@@ -50,14 +35,10 @@
 		fromGitLabel: string;
 		onFromGit: () => void | Promise<void>;
 
-		// Create-template item.
 		createTemplateLabel: string;
 		createTemplateDisabled: boolean;
 		createTemplateLoading: boolean;
 		onCreateTemplate: () => void;
-		// When set, the create-template item is gated behind this RBAC permission
-		// (with a leading separator), matching the new-project page. When omitted,
-		// the item renders unconditionally (new-swarm-stack page).
 		createTemplatePermission?: string;
 	}
 

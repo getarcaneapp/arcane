@@ -94,7 +94,6 @@
 							<ArcaneButton
 								action="base"
 								tone="outline"
-								size="sm"
 								onclick={() => window.open(registry.url, '_blank', 'noopener,noreferrer')}
 							>
 								<ExternalLinkIcon class="size-4" />
@@ -102,7 +101,6 @@
 
 							<ArcaneButton
 								action="remove"
-								size="sm"
 								onclick={() => onRemoveRegistry(registry.id)}
 								loading={isLoading.removing[registry.id]}
 							/>

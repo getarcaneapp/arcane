@@ -9,7 +9,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-// RegisterRoutes registers image patching routes.
 func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil.ActivityAppContext) {
 	h := &ImagePatchHandler{
 		imagePatchService: imagePatchService,

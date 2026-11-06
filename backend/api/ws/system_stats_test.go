@@ -45,7 +45,6 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 			want:      2 * time.Second,
 		},
 		{
-			// Mirrors releasing the fast subscriber from the case above.
 			name:      "remaining subscriber's pace after a release",
 			intervals: map[time.Duration]int{5 * time.Second: 1},
 			want:      5 * time.Second,
@@ -62,11 +61,6 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 	}
 }
 
-// TestSystemStatsSamplerRearmsOnFasterSubscriber verifies that a faster
-// subscriber joining a running sampler re-arms the ticker immediately
-// instead of waiting out the slower tick already in flight (which left
-// the fast subscriber rereading a stale snapshot for up to the old
-// interval).
 func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	collections := make(chan struct{}, 16)
 	h := &WebSocketHandler{
@@ -86,7 +80,6 @@ func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	require.True(t, h.acquireSystemStatsSampler(ctx, slow))
 	defer h.releaseSystemStatsSampler(slow)
 
-	// Drain the ready-gate collection; the ticker is now armed for an hour.
 	select {
 	case <-collections:
 	case <-time.After(5 * time.Second):

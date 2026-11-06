@@ -93,15 +93,10 @@ func writeFile(t *testing.T, rootDir, relativePath string, content []byte) {
 	require.NoError(t, os.WriteFile(targetPath, content, 0o644))
 }
 
-// TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision verifies a
-// directory sync refuses to create a "-N" sibling when its target name is already taken
-// by a non-adoptable directory; instead it errors as a broken binding.
 func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir := setupSyncTestService(t)
 
-	// Occupy the target name with a dir that is NOT an adoptable GitOps project
-	// (it has no matching compose file).
 	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "Dozzle", "unrelated.txt"), []byte("x"), 0o644))
 
@@ -305,12 +300,6 @@ services:
 	assert.Contains(t, string(featureBytes), "worker:")
 }
 
-// TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey
-// verifies directory sync routes the project-root .env through the same
-// three-file override merge single-file git sync uses: an edit made in Arcane
-// (recorded as project.env) survives the sync, while a new key introduced by
-// git still flows into the effective .env. This is the core regression test
-// for https://github.com/getarcaneapp/arcane/issues/2476.
 func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir := setupSyncTestService(t)
@@ -397,13 +386,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	assert.Equal(t, projects.EnvMap{"FOO": "useredit"}, overrideEnv)
 }
 
-// TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstSyncAfterUpgrade
-// verifies the first directory sync after upgrading from a pre-override-merge
-// Arcane version: sync.SyncedFiles still lists ".env" from the old raw-write
-// path, and the project has only a direct .env (no .env.git/project.env yet).
-// CleanupRemovedFiles must not delete the live-copied stage .env before the
-// merge step reads it, or a local-only key would be silently dropped instead
-// of migrated into project.env.
 func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstSyncAfterUpgrade(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir := setupSyncTestService(t)
@@ -470,11 +452,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 	assert.Equal(t, projects.EnvMap{"LOCAL_ONLY": "1"}, overrideEnv)
 }
 
-// TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles verifies
-// that a repo committing files at the reserved bookkeeping paths (.env.git,
-// project.env) cannot clobber Arcane's own override-merge bookkeeping: those paths
-// are dropped from the raw sync write, never tracked in syncedFiles, and the actual
-// .env.git/project.env on disk are still produced solely by the merge.
 func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles(t *testing.T) {
 	ctx := t.Context()
 	svc, db, _ := setupSyncTestService(t)
@@ -724,11 +701,6 @@ func TestGitOpsSyncService_CreateDirectorySyncProject_RollsBackProjectOnUpdateFa
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
-// TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUpdateFailure
-// forces the project metadata update to fail after the synced files were written
-// to the live project, and verifies the scoped rollback restores exactly what the
-// sync touched (in place, keeping inodes) while unrelated files are never copied,
-// rewritten or pruned.
 func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUpdateFailure(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir := setupSyncTestService(t)
@@ -739,7 +711,6 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 	writeFile(t, projectPath, "keep.txt", []byte("keep me\n"))
 	writeFile(t, projectPath, ".env", []byte("A=1\n"))
 	writeFile(t, projectPath, "data/blob.bin", []byte("bind-mount data\n"))
-	// A directory sits where git now ships a file.
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic.yml"), 0o755))
 
 	// Pre-linked, so the only projects-table update during the sync is the
@@ -783,9 +754,6 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 	blobBefore, err := os.Stat(filepath.Join(projectPath, "data", "blob.bin"))
 	require.NoError(t, err)
 
-	// Fail after promotion wrote the live files. While the failure fires, the
-	// scoped backup still exists: record the live compose content and what the
-	// backup captured.
 	var composeAtFailure string
 	var backupContents []string
 	callbackName := "test:fail_project_gitops_directory_update"
@@ -826,7 +794,6 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 	assert.Contains(t, composeAtFailure, "nginx:1.27-alpine")
 	assert.ElementsMatch(t, []string{".", ".env", "config", "config/dynamic.yml", "docker-compose.yaml", "old.txt"}, backupContents)
 
-	// Changed paths are back exactly as they were, in place.
 	composeAfter, err := os.Stat(filepath.Join(projectPath, "docker-compose.yaml"))
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(composeBefore, composeAfter))
@@ -848,7 +815,6 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 	_, statErr := os.Lstat(filepath.Join(projectPath, projects.GitSourceEnvFileName))
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 
-	// Unrelated files were left alone.
 	keepAfter, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(keepBefore, keepAfter))
@@ -858,7 +824,6 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 	assert.True(t, os.SameFile(blobBefore, blobAfter))
 	assert.Equal(t, blobBefore.ModTime(), blobAfter.ModTime())
 
-	// Both scratch directories were removed.
 	entries, err := os.ReadDir(projectsDir)
 	require.NoError(t, err)
 	for _, entry := range entries {
@@ -948,11 +913,6 @@ func TestGitOpsSyncService_GetDirectorySyncProject_RecoversUniqueDirectoryCandid
 	assert.Equal(t, 1, storedProject.ServiceCount)
 }
 
-// TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData verifies
-// that re-syncing an existing GitOps project tolerates a foreign-owned unreadable file
-// inside the project directory (e.g. data a container wrote through a relative bind
-// mount, owned by another UID with restrictive perms). The file is outside the sync's
-// scope, so staging, backup and promotion must never read, copy or prune it.
 func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are not enforced on Windows")
@@ -1018,13 +978,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
 
-	// The unreadable foreign file survived promotion untouched (preserved, not pruned).
 	require.NoError(t, os.Chmod(secretPath, 0o644))
 	secretBytes, err := os.ReadFile(secretPath)
 	require.NoError(t, err)
 	assert.Equal(t, "supersecret", string(secretBytes))
 
-	// The managed compose file was still updated by the sync.
 	composeBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "docker-compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")

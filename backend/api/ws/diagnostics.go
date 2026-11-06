@@ -22,17 +22,13 @@ import (
 )
 
 const (
-	// diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
 	diagnosticsStreamInterval = 2 * time.Second
 	// actorDiagnosticsStreamInterval is slower because each push queries every environment.
 	actorDiagnosticsStreamInterval = 10 * time.Second
-	// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
-	// stats stream. Without them a silently dead peer wedges the writer forever,
-	// which also strands the writer's deferred cleanup (log subscription, conn).
-	diagnosticsReadLimit  = 512
-	diagnosticsWriteWait  = 10 * time.Second
-	diagnosticsPingWait   = 10 * time.Second
-	diagnosticsPingPeriod = 54 * time.Second
+	diagnosticsReadLimit           = 512
+	diagnosticsWriteWait           = 10 * time.Second
+	diagnosticsPingWait            = 10 * time.Second
+	diagnosticsPingPeriod          = 54 * time.Second
 )
 
 var (
@@ -54,8 +50,6 @@ var (
 	}
 )
 
-// buildDiagnostics assembles a snapshot: runtime/memory/GC from the
-// DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
 func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
 	d := types.Diagnostics{Timestamp: time.Now().UTC()}
 	if diag != nil {
@@ -93,8 +87,6 @@ func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
 	}
 }
 
-// DiagnosticsStream pushes a snapshot on connect and every diagnosticsStreamInterval,
-// and answers refresh, dump, leak-scan, and profile commands from the client.
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
@@ -133,16 +125,12 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	})
 }
 
-// ActorDiagnosticsStream pushes actor diagnostics for every environment on
-// connect and then every actorDiagnosticsStreamInterval.
 func (h *WebSocketHandler) ActorDiagnosticsStream(c *echo.Context) error {
 	return h.streamSnapshots(c, actorDiagnosticsStreamInterval, func(ctx context.Context) any {
 		return h.diagnosticsService.CollectAllActors(ctx)
 	}, nil)
 }
 
-// streamSnapshots writes build's result on connect and every interval until
-// the client disconnects. A non-nil handle answers client commands concurrently.
 func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, types.DiagnosticsCommand) any) error {
 	conn, unregister, accepted := h.acceptWS(c, types.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
@@ -219,7 +207,6 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 	}
 }
 
-// ServerLogsStream replays the recent backend log backlog then streams new entries live.
 func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	conn, unregister, accepted := h.acceptWS(c, types.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
@@ -232,8 +219,6 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 		}
 	}()
 
-	// Subscribe before replaying the backlog so no entry is missed in the gap; at
-	// worst the newest backlog entry is delivered twice, which is harmless.
 	ch, cancel := defaultLogBroadcaster.Subscribe()
 	defer cancel()
 
@@ -275,17 +260,12 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	}
 }
 
-// pingDiagnosticsConn reports whether the peer answered a ping in time.
-// The pong is serviced by the diagnosticsReadLoop reader, so a peer
-// that stops answering fails here within diagnosticsPingWait.
 func pingDiagnosticsConn(ctx context.Context, conn *websocket.Conn) bool {
 	pctx, cancel := context.WithTimeout(ctx, diagnosticsPingWait)
 	defer cancel()
 	return conn.Ping(pctx) == nil
 }
 
-// diagnosticsReadLoop passes incoming frames to onMessage, or drains them when
-// it is nil; the returned channel closes when the peer disconnects.
 func diagnosticsReadLoop(ctx context.Context, conn *websocket.Conn, onMessage func([]byte)) <-chan struct{} {
 	conn.SetReadLimit(diagnosticsReadLimit)
 
@@ -305,7 +285,6 @@ func diagnosticsReadLoop(ctx context.Context, conn *websocket.Conn, onMessage fu
 	return done
 }
 
-// LogBroadcaster returns the backend-wide log broadcaster used by diagnostics.
 func LogBroadcaster() *logs.Broadcaster {
 	return defaultLogBroadcaster
 }

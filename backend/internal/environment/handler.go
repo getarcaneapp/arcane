@@ -43,7 +43,6 @@ import (
 )
 
 type (
-	// EnvironmentHandler handles environment management endpoints.
 	EnvironmentHandler struct {
 		environmentService *EnvironmentService
 		settingsService    *settings.SettingsService
@@ -159,7 +158,6 @@ const (
 	agentMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour
 )
 
-// NewHandler builds the environment HTTP handler and its stream producer.
 func NewHandler(p HandlerParams) *EnvironmentHandler {
 	return &EnvironmentHandler{
 		environmentService: p.EnvironmentService,
@@ -175,7 +173,6 @@ func NewHandler(p HandlerParams) *EnvironmentHandler {
 	}
 }
 
-// ListEnvironments returns a paginated list of environments.
 func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[types.Environment], error) {
 	ps, ok := middleware.PermissionsFromContext(ctx)
 	if !ok {
@@ -371,7 +368,6 @@ func (h *EnvironmentHandler) runRemoteChangePoller(ctx context.Context, environm
 	}
 }
 
-// CreateEnvironment creates a new environment.
 func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -406,7 +402,6 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	}, nil
 }
 
-// GetEnvironment returns an environment by ID.
 func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
@@ -445,7 +440,6 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	}, nil
 }
 
-// UpdateEnvironment updates an environment.
 func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *UpdateEnvironmentInput) (*handlerutil.Out[types.Environment], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -496,7 +490,6 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}, nil
 }
 
-// currentUserRefs returns the request user's ID and username, or nils without a user.
 func currentUserRefs(ctx context.Context) (userID, username *string) {
 	if user, _ := handlerutil.CurrentUserFromContext(ctx); user != nil {
 		return new(user.ID), new(user.Username)
@@ -504,7 +497,6 @@ func currentUserRefs(ctx context.Context) (userID, username *string) {
 	return nil, nil
 }
 
-// DeleteEnvironment deletes an environment.
 func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.ID == LocalEnvironmentID {
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
@@ -519,7 +511,6 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 	return handlerutil.MessageOutput("Environment deleted successfully", ""), nil
 }
 
-// TestConnection tests connectivity to an environment.
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*handlerutil.Out[types.EnvironmentTest], error) {
 	status, err := h.environmentService.TestConnection(ctx, input.ID)
 	if errors.Is(err, ErrEnvironmentNotFound) {
@@ -558,7 +549,6 @@ func (h *EnvironmentHandler) RestartTunnel(ctx context.Context, input *RestartTu
 	}, nil
 }
 
-// SyncEnvironment syncs manager-owned resources to an environment.
 func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -590,7 +580,6 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context,
 	}
 }
 
-// PairEnvironment handles agent pairing callback with API key.
 func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnvironmentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.XAPIKey == "" {
 		return nil, huma.Error400BadRequest("X-API-Key header is required")
@@ -731,7 +720,6 @@ func (h *EnvironmentHandler) DeleteEnrollmentToken(ctx context.Context, input *D
 	return handlerutil.MessageOutput("Enrollment token revoked", ""), nil
 }
 
-// GetEnvironmentVersion returns the version of the local or a remote environment.
 func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*handlerutil.Out[types.VersionInfo], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.environmentService.AggregateVersions(ctx)
@@ -769,7 +757,6 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	}, nil
 }
 
-// DownloadAgentMTLSCA downloads the Arcane-managed agent mTLS CA certificate.
 func (h *EnvironmentHandler) DownloadAgentMTLSCA(ctx context.Context, _ *DownloadAgentMTLSCAInput) (*huma.StreamResponse, error) {
 	caPath, err := h.mtls.CAPath()
 	if err != nil {
@@ -875,8 +862,6 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 	return env, snippets.MTLS.Files, nil
 }
 
-// mtlsDownloadResponse streams an mTLS asset and audits the download; the audit
-// must never include certificate or key material.
 func (h *EnvironmentHandler) mtlsDownloadResponse(env *Environment, contentType, fileName string, content []byte, title, description string, metadata database.JSON) *huma.StreamResponse {
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
@@ -913,8 +898,6 @@ func (h *EnvironmentHandler) mtlsDownloadResponse(env *Environment, contentType,
 	}
 }
 
-// isSensitiveMTLSAssetName reports whether a generated asset holds secret material
-// (the agent private key), which must never be returned inline.
 func isSensitiveMTLSAssetName(fileName string) bool {
 	name := strings.ToLower(strings.TrimSpace(fileName))
 	return strings.HasSuffix(name, ".key") || strings.HasSuffix(name, "-key.pem") || strings.HasSuffix(name, "_key.pem")

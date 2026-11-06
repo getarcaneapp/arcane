@@ -9,7 +9,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { BoxIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
@@ -281,7 +281,7 @@
 		{
 			title: m.projects_archived_count(),
 			value: archivedCompose,
-			icon: BoxIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-muted-foreground'
 		}
 	]);

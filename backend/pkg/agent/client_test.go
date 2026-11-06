@@ -965,7 +965,6 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 		})
 		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 		close(registered)
-		// Go silent: keep reading so the socket stays open.
 		for {
 			if _, _, readErr := conn.Read(r.Context()); readErr != nil {
 				return

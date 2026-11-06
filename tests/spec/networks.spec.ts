@@ -94,7 +94,6 @@ test.describe('Networks Page', () => {
 	test('Stat cards show correct counts', async ({ page }) => {
 		await navigateToNetworks(page);
 
-		// Fetch counts directly in the test to ensure we have fresh data
 		const counts = await fetchNetworksCountsWithRetry(page);
 
 		await expect(page.getByText(`${counts.total} Total Networks`)).toBeVisible();

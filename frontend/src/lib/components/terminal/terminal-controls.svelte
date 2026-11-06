@@ -82,7 +82,7 @@
 				}
 			}}
 		/>
-		<ArcaneButton action="base" size="sm" tone="outline" onclick={handleCustomShellSubmit} class="h-8" customLabel={m.apply()} />
+		<ArcaneButton action="base" tone="outline" onclick={handleCustomShellSubmit} class="h-8" customLabel={m.apply()} />
 	{/if}
 
 	<ArcaneButton

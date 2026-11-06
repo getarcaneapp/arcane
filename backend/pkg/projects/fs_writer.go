@@ -23,19 +23,14 @@ import (
 )
 
 type (
-	// SyncFile represents a file to be written during directory sync
 	SyncFile struct {
-		RelativePath string // Path relative to the project directory
+		RelativePath string
 		Content      []byte
-		// Executable preserves the source's +x bit so lifecycle hooks and other
-		// repo-committed scripts arrive runnable in the project workspace.
-		Executable bool
+		Executable   bool
 	}
 )
 
 const (
-	// DefaultComposeFileName is the compose filename Arcane writes when a project
-	// has no existing compose file.
 	DefaultComposeFileName = "compose.yaml"
 	// DefaultComposeOverrideFileName is the override filename Arcane writes when a
 	// project gains an override but has none on disk. It is deliberately
@@ -48,11 +43,6 @@ const (
 )
 
 var (
-	// ComposeFileCandidates lists supported base compose filenames in Arcane's
-	// detection order. This order is intentionally explicit rather than sourced
-	// from compose-go's cli.DefaultFileNames: compose-go prefers docker-compose.yml
-	// over docker-compose.yaml, and adopting that order would silently switch the
-	// base file for existing projects that ship both.
 	ComposeFileCandidates = []string{
 		DefaultComposeFileName,
 		"compose.yml",
@@ -62,21 +52,14 @@ var (
 		"podman-compose.yml",
 	}
 
-	// ComposeOverrideFileCandidates lists supported compose override filenames in
-	// detection order, sourced from compose-go.
 	ComposeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
 )
 
-// detectExistingComposeFile finds an existing compose file in the directory
 func detectExistingComposeFile(ctx context.Context, projectsRoot, dir string) string {
 	composePath, err := DetectComposeFile(ctx, projectsRoot, dir)
 	return kit.Ternary(err == nil, composePath, "")
 }
 
-// WriteComposeFile writes a compose file to the specified directory.
-// It detects existing compose file names (docker-compose.yml, compose.yaml, etc.)
-// and uses the existing name if found, otherwise defaults to compose.yaml
-// projectsRoot is the allowed root directory to prevent path traversal attacks
 func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string) error {
 	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(dirPath); err != nil {
 		return fmt.Errorf("refusing to write compose file: path outside projects root: %w", err)
@@ -163,13 +146,6 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	return nil
 }
 
-// writeEnvThroughSymlink writes content through a project .env that is
-// a symbolic link and reports whether it did.
-//
-// The link target is allowed to live outside the projects root by design, so
-// the write goes to the resolved absolute path rather than through the
-// root-confined API; tightening that is the same class of regression as the
-// includes handling in #3556. The resolved target is always a regular file.
 func writeEnvThroughSymlink(envPath, content string) (bool, error) {
 	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTarget(envPath)
 	if err != nil {
@@ -244,7 +220,6 @@ func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeConten
 	return WriteProjectFile(ctx, projectsRoot, dirPath, ".env", *envContent)
 }
 
-// WriteTemplateFile writes a template file (like .compose.template or .env.template)
 func WriteTemplateFile(filePath, content string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
@@ -258,7 +233,6 @@ func WriteTemplateFile(filePath, content string) error {
 	return nil
 }
 
-// WriteFileWithPerm is a generic file writer with custom permissions
 func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
@@ -272,7 +246,6 @@ func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	return nil
 }
 
-// RollbackRenamedProjectDirectory restores a project directory rename when possible.
 func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath string) (pathsMissing bool, err error) {
 	oldPath = filepath.Clean(oldPath)
 	newPath = filepath.Clean(newPath)
@@ -330,9 +303,6 @@ func relocateRenameConflictDirectory(ctx context.Context, localPath string) (str
 	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", localPath)
 }
 
-// WriteSyncedDirectory writes multiple files to a project directory.
-// It validates all paths are within the project directory and creates
-// subdirectories as needed. Returns the list of written file paths.
 func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string, files []SyncFile) ([]string, error) {
 	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(projectPath); err != nil {
 		return nil, fmt.Errorf("project path is outside projects root: %w", err)
@@ -366,8 +336,6 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 			return nil, fmt.Errorf("failed to inspect target path for %s: %w", file.RelativePath, statErr)
 		}
 
-		// Write the file. Honor the source's executable bit so scripts arrive
-		// runnable for lifecycle hooks and similar consumers.
 		perm := kit.Ternary(file.Executable, 0o755, kitfs.FilePerm)
 		if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); writeErr != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, writeErr)
@@ -379,48 +347,37 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 	return writtenPaths, nil
 }
 
-// CleanupRemovedFiles deletes files that were in the old sync but are not in the new sync.
-// It only removes files that were previously synced (tracked in oldFiles).
-// Empty directories are removed after file deletion.
-// This is a best-effort operation - errors are logged but don't cause failure.
 func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, oldFiles, newFiles []string) error {
 	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(projectPath); err != nil {
 		return fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
-	// Build set of new files for quick lookup
 	newFileSet := make(map[string]bool, len(newFiles))
 	for _, f := range newFiles {
 		newFileSet[f] = true
 	}
 
-	// Track directories that may need cleanup
 	dirsToCheck := make(map[string]bool)
 
-	// Delete files that are in old but not in new
 	for _, oldFile := range oldFiles {
 		if newFileSet[oldFile] {
-			continue // File still exists in new sync
+			continue
 		}
 
 		logicalPath, err := acfs.Root{Path: projectPath}.LogicalPath(filepath.Join(projectPath, oldFile))
 		if err != nil {
-			continue // Skip files that would be outside project
+			continue
 		}
 
-		// Delete the file (best effort)
 		if removeErr := (acfs.Root{Path: projectPath}).Remove(ctx, logicalPath); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-			// Log but continue - this is best effort
 			slog.WarnContext(ctx, "Failed to remove old synced file", "file", oldFile, "error", removeErr)
 		}
 
-		// Track parent directory for potential cleanup
 		if parentLogical := path.Dir(logicalPath); parentLogical != "/" {
 			dirsToCheck[parentLogical] = true
 		}
 	}
 
-	// Clean up empty directories (best effort, deepest first)
 	for dir := range dirsToCheck {
 		cleanupEmptyDirs(ctx, projectPath, dir)
 	}
@@ -428,10 +385,6 @@ func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, 
 	return nil
 }
 
-// cleanupEmptyDirs removes empty directories starting from the given logical
-// path up to (but not including) the project directory. It stops at the first
-// error of any kind: a non-empty directory, an already-removed one, or
-// anything else.
 func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 	for current := startLogical; current != "/"; current = path.Dir(current) {
 		if err := (acfs.Root{Path: projectPath}).Remove(ctx, current); err != nil {
@@ -440,11 +393,6 @@ func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 	}
 }
 
-// findComposeOverrideCandidates returns every supported override
-// candidate name for which exists reports true, in compose-go preference order.
-// It is the single primitive behind both filesystem discovery
-// (DetectComposeOverrideFile) and non-filesystem discovery
-// (ResolveComposeOverride), so the two can never drift in preference order.
 func findComposeOverrideCandidates(exists func(name string) bool) []string {
 	found := make([]string, 0, 1)
 	for _, name := range ComposeOverrideFileCandidates {
@@ -466,10 +414,6 @@ func warnOnMultipleComposeOverrides(found []string) {
 	}
 }
 
-// DetectComposeOverrideFile returns the path to the highest-preference compose
-// override file present in dir, following compose-go's preference order, or ""
-// when none exists. When multiple override files are present it returns the
-// highest-preference match and logs a warning, mirroring compose-go behavior.
 func DetectComposeOverrideFile(dir string) string {
 	// Stays on os.*: override files may be symlinks resolving outside any
 	// confinement root (same class as #3556 includes), which acfs cannot follow.
@@ -484,9 +428,6 @@ func DetectComposeOverrideFile(dir string) string {
 	return filepath.Join(dir, found[0])
 }
 
-// ReadComposeOverrideContent returns the content of the highest-preference
-// compose override file present in dir, or "" when none exists or it cannot be
-// read. It is a best-effort read intended for change detection.
 func ReadComposeOverrideContent(dir string) string {
 	overridePath := DetectComposeOverrideFile(dir)
 	if overridePath == "" {
@@ -496,13 +437,6 @@ func ReadComposeOverrideContent(dir string) string {
 	return kit.Ternary(err != nil, "", string(content))
 }
 
-// ResolveComposeOverride finds the highest-preference compose override file among
-// the supported candidates using the exists probe, then loads it via read. It
-// centralizes override discovery so non-filesystem sources (e.g. a Git working
-// tree accessed through a validated client) reuse the same preference order.
-// When multiple candidates exist it warns and uses the highest-preference match,
-// mirroring DetectComposeOverrideFile. found is false (with empty name/content)
-// when no candidate exists.
 func ResolveComposeOverride(exists func(name string) bool, read func(name string) (string, error)) (fileName, content string, found bool, err error) {
 	matches := findComposeOverrideCandidates(exists)
 	if len(matches) == 0 {
@@ -517,11 +451,6 @@ func ResolveComposeOverride(exists func(name string) bool, read func(name string
 	return name, c, true, nil
 }
 
-// WriteComposeOverrideFile writes content as the override file named fileName in
-// dir when content is non-nil, and removes every other override candidate so a
-// renamed or deleted override never leaves a stale copy behind. When content is
-// nil, all supported override files are removed. projectsRoot bounds writes to
-// prevent path traversal.
 func WriteComposeOverrideFile(ctx context.Context, projectsRoot, dir string, content *string, fileName string) error {
 	keep := ""
 	if content != nil {
@@ -548,8 +477,6 @@ func WriteComposeOverrideFile(ctx context.Context, projectsRoot, dir string, con
 	return nil
 }
 
-// ExistingOrDefaultOverrideName returns the override file name already present
-// in dir, falling back to DefaultComposeOverrideFileName.
 func ExistingOrDefaultOverrideName(dir string) string {
 	if overridePath := DetectComposeOverrideFile(dir); overridePath != "" {
 		return filepath.Base(overridePath)
@@ -557,9 +484,6 @@ func ExistingOrDefaultOverrideName(dir string) string {
 	return DefaultComposeOverrideFileName
 }
 
-// ResolveEffectiveOverrideForValidation resolves the override content compose
-// validation should see: the on-disk override when the caller supplied none,
-// nothing when the caller explicitly blanked it, otherwise the caller's content.
 func ResolveEffectiveOverrideForValidation(dir string, overrideContent *string) (*string, string) {
 	switch {
 	case overrideContent == nil:
@@ -576,8 +500,6 @@ func ResolveEffectiveOverrideForValidation(dir string, overrideContent *string) 
 	}
 }
 
-// ApplyOverrideFileChange writes, clears, or leaves the override file alone
-// depending on whether overrideContent is nil, blank, or set.
 func ApplyOverrideFileChange(ctx context.Context, projectsRoot, dir string, overrideContent *string) error {
 	if overrideContent == nil {
 		return nil

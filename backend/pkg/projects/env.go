@@ -32,22 +32,16 @@ type (
 	ProjectEnvMode string
 
 	ProjectEnvState struct {
-		Mode             ProjectEnvMode
-		EditableFileName string
-		EditableContent  string
-		EffectiveContent string
-		DirectContent    string
-		GitContent       string
-		OverrideContent  string
-		HasEffective     bool
-		HasGitSource     bool
-		HasOverride      bool
-		// The *Unreadable fields report a file that exists on disk but could not be
-		// read because of a permission error (e.g. a chmod 000 or foreign-owned
-		// file reachable through a bind mount). Such a file is treated as absent
-		// for merge purposes, and callers persisting env state must not attempt to
-		// write or remove it — its contents are unknown, so writing could either
-		// fail (bricking the caller) or silently clobber operator intent.
+		Mode                ProjectEnvMode
+		EditableFileName    string
+		EditableContent     string
+		EffectiveContent    string
+		DirectContent       string
+		GitContent          string
+		OverrideContent     string
+		HasEffective        bool
+		HasGitSource        bool
+		HasOverride         bool
 		EffectiveUnreadable bool
 		GitSourceUnreadable bool
 		OverrideUnreadable  bool
@@ -68,23 +62,13 @@ type (
 		exists       bool
 	}
 
-	// ComposeEnvOptions holds the deployment-relevant Docker Compose pre-defined
-	// environment variables parsed from a project's merged environment.
 	ComposeEnvOptions struct {
-		// ConfigFiles is the resolved, absolute COMPOSE_FILE selection in order (the
-		// first entry is the base file). Nil when COMPOSE_FILE is unset.
-		ConfigFiles []string
-		// Profiles is the COMPOSE_PROFILES selection.
-		Profiles []string
-		// ProjectName is COMPOSE_PROJECT_NAME (not normalized).
-		ProjectName string
-		// EnvFiles is the resolved, absolute COMPOSE_ENV_FILES selection in order.
-		EnvFiles []string
-		// RemoveOrphans is COMPOSE_REMOVE_ORPHANS.
+		ConfigFiles   []string
+		Profiles      []string
+		ProjectName   string
+		EnvFiles      []string
 		RemoveOrphans bool
-		// IgnoreOrphans is COMPOSE_IGNORE_ORPHANS.
 		IgnoreOrphans bool
-		// ParallelLimit is COMPOSE_PARALLEL_LIMIT; 0 means unset.
 		ParallelLimit int
 	}
 )
@@ -109,13 +93,6 @@ const (
 var (
 	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
-	// processEnvAllowlist is the only part of Arcane's own process environment
-	// that flows into compose interpolation of managed projects: timezone and
-	// locale, whose container values are safe to share. Everything else is
-	// excluded so Arcane's variables never leak into ${VAR} references or
-	// pass-through environment entries — its PORT collides with project port
-	// mappings, secrets would be readable from any compose file, and vars like
-	// HOME or PUID carry container-internal values that are wrong for projects.
 	processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 
 	envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
@@ -139,12 +116,6 @@ func allowedProcessEnv() EnvMap {
 	return envMap
 }
 
-// LoadEnvironment loads and merges environment variables from all sources:
-// 1. Allowlisted process environment (TZ)
-// 2. Global .env.global file (from projects directory)
-// 3. Project-specific .env file (from workdir)
-// The rest of the Arcane process environment is intentionally excluded so its
-// own variables never leak into compose interpolation of managed projects.
 func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars EnvMap, err error) {
 	envMap = allowedProcessEnv()
 	injectionVars = make(EnvMap)
@@ -347,12 +318,6 @@ func ParseNoInjectDirectives(content string) map[string]bool {
 	return keys
 }
 
-// ParseProjectEnvFile parses a project .env file with variable expansion using the provided
-// context map (e.g. process env). Returns nil without error when the file does not exist.
-// Only the specified file is read — global env files are intentionally not loaded here.
-//
-// Stays on os.*: env files may be symlinks resolving outside any confinement
-// root (a supported setup), which acfs cannot follow.
 func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() {
@@ -361,10 +326,6 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	return parseProjectEnvFileExisting(path, contextEnv)
 }
 
-// ParseProjectEnvContent parses project .env content from a string using
-// compose-go's dotenv parser with variable expansion. Lookups resolve from
-// contextEnv (previously loaded vars) only; the Arcane process environment is
-// intentionally never consulted so its variables don't leak into project env.
 func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	lookupFn := func(key string) (string, bool) {
 		val, ok := contextEnv[key]
@@ -379,8 +340,6 @@ func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	return envMap, nil
 }
 
-// WithTransientValidationEnvFile temporarily writes a project .env file while
-// running compose validation, then restores the original file state.
 func WithTransientValidationEnvFile(ctx context.Context, projectPath string, effectiveEnvContent *string, run func() error) (err error) {
 	// Read through os rather than the root-confined API: a project .env is
 	// allowed to be a symlink whose target lives outside the project directory,
@@ -437,12 +396,6 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 	return run()
 }
 
-// BuildEffectiveEnvContent merges git and override env sources into the effective
-// .env content written to disk. Keys present in both layers are rewritten in place
-// on the Git line, preserving ordering and inline comments; override-only keys are
-// appended after the Git content. When the in-place rewrite cannot be verified to
-// parse identically to plain concatenation (e.g. multiline values), the override
-// is appended verbatim instead so duplicate keys resolve to the override value.
 func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -480,8 +433,6 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	return concatenated, nil
 }
 
-// EnvContentChanged reports whether two env contents differ semantically,
-// ignoring ordering and comments. Unparseable content is compared verbatim.
 func EnvContentChanged(oldContent, newContent string) bool {
 	oldEnv, oldErr := ParseProjectEnvContent(oldContent, nil)
 	newEnv, newErr := ParseProjectEnvContent(newContent, nil)
@@ -491,11 +442,6 @@ func EnvContentChanged(oldContent, newContent string) bool {
 	return !maps.Equal(oldEnv, newEnv)
 }
 
-// mergeEnvOverridesInPlace rewrites the value of every gitContent line
-// whose key has an override — keeping line order and trailing inline comments —
-// then appends the override lines whose keys were not rewritten. ok is false when
-// no git line matched an override and the caller should fall back to plain
-// concatenation.
 func mergeEnvOverridesInPlace(gitContent, overrideContent string, overrideEnv EnvMap) (merged string, ok bool) {
 	rewritten := make(map[string]struct{})
 	gitLines := strings.Split(gitContent, "\n")
@@ -551,9 +497,6 @@ func mergeEnvOverridesInPlace(gitContent, overrideContent string, overrideEnv En
 	}
 }
 
-// splitEnvValueComment splits a raw single-line env value into the value
-// part and a trailing inline comment. A comment starts at an unquoted '#' that is
-// at the start of the value or preceded by whitespace.
 func splitEnvValueComment(raw string) (value, comment string) {
 	var quote byte
 	for i := 0; i < len(raw); i++ {
@@ -574,9 +517,6 @@ func splitEnvValueComment(raw string) (value, comment string) {
 	return raw, ""
 }
 
-// BuildAdditiveOverrideEnvContent derives override content from a pre-git local
-// .env file. Like other generated env helpers, the result is normalized and does
-// not preserve comments or original key ordering.
 func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -601,9 +541,6 @@ func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, e
 	return formatEnvMap(override), nil
 }
 
-// BuildOverrideEnvContent derives the editable override file from git-backed and
-// effective env content. Content that already contains only real overrides is
-// returned verbatim; derived or cleaned output uses Arcane's canonical format.
 func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -640,8 +577,6 @@ func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error
 	return formatEnvMap(override), nil
 }
 
-// CheckProjectEnvAccess reports a configuration error when the runtime user
-// lacks permission to open dir's .env or traverse its path.
 func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *types.ProjectConfigurationError {
 	envPath := filepath.Join(dir, EffectiveEnvFileName)
 	file, err := os.Open(envPath)
@@ -736,12 +671,6 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 	return state, nil
 }
 
-// WriteManagedEnvFile writes (or, for project.env, removes) one of the three
-// env-merge bookkeeping files — fileName must be EffectiveEnvFileName,
-// GitSourceEnvFileName, or OverrideEnvFileName. If the existing path is
-// unreadable (permission-locked or a directory), the write is skipped and a
-// warning logged instead: its contents can't be verified, and such a path is
-// typically unwritable too, so attempting the write would abort the whole caller.
 func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
 	if unreadable {
 		slog.WarnContext(ctx, "skipping unreadable project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
@@ -766,15 +695,6 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 	}
 }
 
-// readOptionalProjectFile reads fileName from projectPath. A missing
-// file is reported via exists=false with no error. A permission error or a
-// directory at the path is reported via unreadable=true with no error: its
-// contents cannot be verified, so callers must treat it as absent for merge
-// purposes and must not attempt to overwrite or remove it. Any other I/O
-// error is still returned as a hard failure.
-// A project env file may itself be a symlink whose target lives outside the
-// project directory, so the read goes through os rather than the root-confined
-// API — the same deliberate exception the .env write path makes (#3556).
 func readOptionalProjectFile(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
 	raw, readErr := os.ReadFile(filepath.Join(projectPath, fileName))
 	if readErr == nil {
@@ -789,9 +709,6 @@ func readOptionalProjectFile(projectPath, fileName string) (content string, exis
 	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
 }
 
-// formatEnvMap serializes env maps into Arcane's canonical generated
-// format. This is intentionally lossy: comments are omitted and keys are sorted
-// alphabetically to keep persisted merge output stable.
 func formatEnvMap(envMap EnvMap) string {
 	if len(envMap) == 0 {
 		return ""
@@ -832,10 +749,6 @@ func formatEnvValue(value string) string {
 	return `"` + escaped + `"`
 }
 
-// ParseComposeEnvOptions extracts the deployment-relevant COMPOSE_* variables
-// from an already-merged environment map. Malformed path selections return a
-// classified common.ErrComposeFileEnvInvalid; malformed scalars are ignored
-// with a debug log, matching `docker compose`'s tolerance.
 func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, error) {
 	opts := ComposeEnvOptions{
 		ProjectName: strings.TrimSpace(env[consts.ComposeProjectName]),
@@ -873,13 +786,6 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 	return opts, nil
 }
 
-// ComposeFileEnvSelection resolves the COMPOSE_FILE selection for dir with the
-// same layering EnvLoader.LoadEnvironment uses at deployment: .env.global from
-// projectsDir first, the project .env on top, then any COMPOSE_ENV_FILES
-// entries. Returns nil when the merged environment does not set COMPOSE_FILE.
-// COMPOSE_DISABLE_ENV_FILE (declared in .env.global) skips the project .env, as
-// `docker compose` does; a global COMPOSE_FILE still applies. An empty
-// projectsDir skips the global layer.
 func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]string, error) {
 	envMap := make(EnvMap)
 	if strings.TrimSpace(projectsDir) != "" {
@@ -917,9 +823,6 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	return resolveComposeFileSelection(dir, envMap)
 }
 
-// ComposeFileEntriesFromEnv returns the raw COMPOSE_FILE entries declared in env
-// (split on COMPOSE_PATH_SEPARATOR, ":" by default), or nil when unset. Entries
-// are not resolved, validated, or stat'd.
 func ComposeFileEntriesFromEnv(env EnvMap) []string {
 	raw, ok := env[consts.ComposeFilePath]
 	if !ok || strings.TrimSpace(raw) == "" {
@@ -934,9 +837,6 @@ func ComposeFileEntriesFromEnv(env EnvMap) []string {
 	return kit.TrimNonEmpty(strings.Split(raw, separator))
 }
 
-// ComposeEnvFileEntriesFromEnv returns the raw COMPOSE_ENV_FILES entries
-// declared in env (comma-separated), or nil when unset. Entries are not
-// resolved, validated, or stat'd.
 func ComposeEnvFileEntriesFromEnv(env EnvMap) []string {
 	raw := strings.TrimSpace(env[composeEnvFilesKey])
 	if raw == "" {
@@ -945,10 +845,6 @@ func ComposeEnvFileEntriesFromEnv(env EnvMap) []string {
 	return kit.TrimNonEmpty(strings.Split(raw, ","))
 }
 
-// resolveComposeFileSelection parses COMPOSE_FILE from env into an
-// ordered list of absolute compose-file paths, or nil when COMPOSE_FILE is
-// unset. Every entry must be a relative path to an existing file within
-// workdir; the first entry (the base file) must sit directly in workdir.
 func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
 	entries := ComposeFileEntriesFromEnv(env)
 	if len(entries) == 0 {
@@ -992,11 +888,6 @@ func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
 	return files, nil
 }
 
-// mergeComposeEnvFiles merges each COMPOSE_ENV_FILES entry (in order,
-// later wins) on top of envMap; bad entries are warned and skipped. Unlike
-// `docker compose`, the entries are additive on top of the project .env rather
-// than a replacement: .env is Arcane's managed effective env file and the place
-// COMPOSE_ENV_FILES itself is declared, so replacing it would be self-defeating.
 func mergeComposeEnvFiles(ctx context.Context, workdir string, envMap EnvMap, parse func(path string, contextEnv EnvMap) (EnvMap, error), onMerged func(values EnvMap)) {
 	for _, entry := range ComposeEnvFileEntriesFromEnv(envMap) {
 		resolved, err := ResolvePathWithinDir(workdir, entry)

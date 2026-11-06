@@ -83,7 +83,6 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 	}, nil
 }
 
-// GetEventStats returns global event counts grouped by severity.
 func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[types.EventSeverityCounts], error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {

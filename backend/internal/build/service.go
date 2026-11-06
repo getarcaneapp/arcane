@@ -561,8 +561,6 @@ func (s *BuildService) completeBuildRecord(
 	})
 }
 
-// PruneHistory deletes finished and failed builds completed before the
-// retention window. Running builds are never pruned.
 func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
 		return 0, nil

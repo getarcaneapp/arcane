@@ -10,9 +10,6 @@ import (
 )
 
 type (
-	// SecureCookieContextKey is the context key under which router middleware
-	// records its trusted secure-cookie decision (a bool derived from TLS or
-	// trusted proxy headers).
 	SecureCookieContextKey struct{}
 )
 
@@ -39,15 +36,11 @@ func tokenCookieChunkName(base string, index int) string {
 	return fmt.Sprintf("%s.%d", base, index)
 }
 
-// SecureCookieFromContext returns the secure-cookie decision that router
-// middleware derived from TLS or trusted proxy headers.
 func SecureCookieFromContext(ctx context.Context) bool {
 	secure, _ := ctx.Value(SecureCookieContextKey{}).(bool)
 	return secure
 }
 
-// SecureCookieFromRequest returns true when the request was made over TLS or
-// router middleware marked it as forwarded from HTTPS by a trusted proxy.
 func SecureCookieFromRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
@@ -101,13 +94,6 @@ func readTokenCookie(r *http.Request, base string) (string, error) {
 	return value.String(), nil
 }
 
-// BuildTokenCookieStringFor builds Set-Cookie header strings matching the
-// current request security context. Compact browser tokens use one cookie;
-// legacy oversized tokens are chunked for upgrade compatibility. Unused chunk
-// slots are cleared so stale legacy chunks cannot corrupt reassembly.
-// Callers must pass the trusted secure flag from SecureCookieFromContext /
-// SecureCookieFromRequest so the cookie name (__Host-token vs. token)
-// round-trips correctly behind HTTPS reverse proxies.
 func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) []string {
 	base := kit.Ternary(secure, TokenCookieName, InsecureTokenCookieName)
 
@@ -128,10 +114,6 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 	return headers
 }
 
-// BuildClearTokenCookieStringsFor builds Set-Cookie header strings to clear
-// token cookies matching the current request security context. Secure contexts
-// also clear the HTTP fallback cookie so stale sessions from older releases are
-// flushed instead of being re-presented forever.
 func BuildClearTokenCookieStringsFor(secure bool) []string {
 	var headers []string
 	for i := range tokenCookieMaxChunks {
@@ -156,12 +138,10 @@ func buildCookieString(name, path, value string, maxAge int, secure bool, sameSi
 	return cookie.String()
 }
 
-// BuildOidcStateCookieString builds a Set-Cookie header string for the OIDC state cookie.
 func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) string {
 	return buildCookieString(OidcStateCookieName, "/", value, max(maxAgeInSeconds, 0), secure, http.SameSiteLaxMode)
 }
 
-// BuildClearOidcStateCookieString builds a Set-Cookie header string to clear the OIDC state cookie.
 func BuildClearOidcStateCookieString(secure bool) string {
 	return buildCookieString(OidcStateCookieName, "/", "", -1, secure, http.SameSiteLaxMode)
 }

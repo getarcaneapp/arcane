@@ -68,9 +68,6 @@ async function globalSetup() {
 		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
 		: path.resolve(__dirname, 'compose.yaml');
 
-	// This directory is bind-mounted into Arcane at /app/data/projects. Create it
-	// before `docker compose up` so Docker does not create it as root, and make it
-	// writable for the hardened non-root runtime user (65532).
 	const projectsDir = path.resolve(__dirname, 'projects');
 
 	try {
@@ -101,7 +98,6 @@ async function globalSetup() {
 		throw error;
 	}
 
-	// 2. Wait for the server to be ready
 	const baseURL = process.env.BASE_URL || 'http://localhost:3000';
 	console.log(`Waiting for server at ${baseURL}...`);
 

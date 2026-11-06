@@ -64,8 +64,6 @@ type (
 		key  *apikey.ApiKey
 	}
 
-	// testPermissionResolver returns distinguishable sets so tests can tell which
-	// resolution path the middleware took: user roles vs per-key grants.
 	testPermissionResolver struct{}
 )
 
@@ -209,9 +207,6 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	require.Contains(t, rec.Body.String(), "u-loopback")
 }
 
-// A valid API key presented to a BearerAuth-only operation must be rejected:
-// the bridge only attempts API-key auth when the operation declares ApiKeyAuth.
-// This is the gate that makes personal-key create/delete session-only.
 func TestNewHumaMiddleware_RejectsApiKeyOnBearerOnlyOperation(t *testing.T) {
 	router := echo.New()
 	apiGroup := router.Group("/api")
@@ -402,10 +397,6 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	})
 }
 
-// After a self-update the app version changes and old access tokens fail the version
-// check. That must be RECOVERABLE (the refresh path rotates the token), so the
-// middleware returns a refreshable 401 and must NOT clear the auth cookies — otherwise
-// the user is logged out on every update.
 func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	db := setupAuthMiddlewareTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)

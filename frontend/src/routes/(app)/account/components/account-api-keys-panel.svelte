@@ -94,7 +94,6 @@
 			<ArcaneButton
 				action="create"
 				tone="outline"
-				size="sm"
 				customLabel={m.account_new_key()}
 				icon={AddIcon}
 				class="shrink-0"
@@ -115,18 +114,11 @@
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					size="sm"
 					customLabel={m.common_copy()}
 					icon={CopyIcon}
 					onclick={() => copyKeyToClipboard(createdKey!.key)}
 				/>
-				<ArcaneButton
-					action="cancel"
-					tone="ghost"
-					size="sm"
-					customLabel={m.common_ive_saved_it()}
-					onclick={() => (createdKey = null)}
-				/>
+				<ArcaneButton action="cancel" tone="ghost" customLabel={m.common_ive_saved_it()} onclick={() => (createdKey = null)} />
 			</div>
 		</div>
 	{/if}
@@ -153,7 +145,7 @@
 							<ArcaneButton
 								action="remove"
 								tone="ghost"
-								size="sm"
+								size="icon"
 								icon={TrashIcon}
 								customLabel={m.common_delete()}
 								showLabel={false}

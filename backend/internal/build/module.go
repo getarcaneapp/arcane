@@ -7,7 +7,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 )
 
-// RegisterBuildWorkspaces registers the build workspace file browser routes.
 func RegisterBuildWorkspaces(api huma.API, buildService *BuildService, uploadService *upload.UploadService) {
 	var workspaceService *workspace.Service
 	if buildService != nil {

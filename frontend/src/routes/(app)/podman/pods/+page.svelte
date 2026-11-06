@@ -5,7 +5,7 @@
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import CreatePodSheet from '#lib/components/sheets/create-pod-sheet.svelte';
-	import { BoxIcon } from '#lib/icons/index.js';
+	import { ContainersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanPodListQuery } from '#lib/query/podman.js';
@@ -132,7 +132,7 @@
 		{
 			title: m.podman_pods_total(),
 			value: resourcesReady ? (pods.pagination?.totalItems ?? pods.data.length) : 0,
-			icon: BoxIcon,
+			icon: ContainersIcon,
 			iconColor: 'text-info'
 		}
 	]);

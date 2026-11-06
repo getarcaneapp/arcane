@@ -1,4 +1,3 @@
-// Package entityjobs registers one dynamic scheduler job per database row, such as a GitOps sync or a backup policy.
 package entityjobs
 
 import (
@@ -10,7 +9,6 @@ import (
 )
 
 type (
-	// Registry owns one job per entity ID and admits one run per entity at a time.
 	Registry struct {
 		lifecycleCtx   context.Context
 		scheduler      types.DynamicScheduler
@@ -29,12 +27,9 @@ type (
 )
 
 const (
-	// GitOpsSyncJobPrefix is shared by the GitOps registry and environment cleanup.
 	GitOpsSyncJobPrefix = "gitops-sync:"
 )
 
-// New creates a registry whose job names are jobPrefix+entityID and whose
-// admission keys are scoped to admissionScope.
 func New(cfg Config) *Registry {
 	return &Registry{
 		lifecycleCtx:   cfg.Lifecycle,
@@ -49,10 +44,8 @@ func (r *Registry) Scheduler() types.DynamicScheduler { return r.scheduler }
 
 func (r *Registry) Context() context.Context { return r.lifecycleCtx }
 
-// JobName returns the scheduler job name for entityID.
 func (r *Registry) JobName(entityID string) string { return r.jobPrefix + entityID }
 
-// Register adds (or replaces) the dynamic job for entityID.
 func (r *Registry) Register(ctx context.Context, entityID string, schedule func(context.Context) string,
 	run func(context.Context) (types.SchedulerOutcome, error), reconcile ...func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error),
 ) {
@@ -63,14 +56,12 @@ func (r *Registry) Register(ctx context.Context, entityID string, schedule func(
 	r.Add(ctx, job)
 }
 
-// Add adds (or replaces) a prebuilt job, such as a flow.Job named with JobName.
 func (r *Registry) Add(_ context.Context, job types.SchedulerJob) {
 	if err := r.scheduler.AddJob(r.lifecycleCtx, job); err != nil {
 		slog.ErrorContext(r.lifecycleCtx, "failed to register scheduled job", "job", job.Name(), "error", err)
 	}
 }
 
-// Unregister removes the dynamic job for entityID.
 func (r *Registry) Unregister(_ context.Context, entityID string) {
 	r.scheduler.RemoveJob(r.lifecycleCtx, r.JobName(entityID))
 }

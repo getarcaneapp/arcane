@@ -16,7 +16,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for user operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "users",

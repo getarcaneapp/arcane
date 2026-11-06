@@ -75,7 +75,6 @@ func (h *WebhookHandler) TriggerWebhook(ctx context.Context, input *TriggerWebho
 	}
 }
 
-// ListWebhooks returns all webhooks for an environment (tokens are masked).
 func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.webhookService.AggregateWebhookSummaries(ctx)
@@ -97,7 +96,6 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.Environm
 	}, nil
 }
 
-// CreateWebhook returns the raw token, shown only once.
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*handlerutil.Out[types.WebhookCreated], error) {
 	currentUser, _ := handlerutil.CurrentUserFromContext(ctx)
 
@@ -148,7 +146,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	_ = wh // updated record available if needed in future
+	_ = wh
 	return &handlerutil.Out[any]{
 		Body: types.ApiResponse[any]{Success: true},
 	}, nil

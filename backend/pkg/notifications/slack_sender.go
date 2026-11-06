@@ -8,13 +8,11 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/slack"
 )
 
-// BuildSlackURL converts SlackConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildSlackURL(config SlackConfig) (string, error) {
 	if config.Token == "" {
 		return "", errors.New("slack token is required")
 	}
 
-	// Parse the token to get the token object
 	token, err := slack.ParseToken(config.Token)
 	if err != nil {
 		return "", fmt.Errorf("invalid Slack token format (expected format: xoxb-... or xoxp-...): %w", err)
@@ -34,7 +32,6 @@ func BuildSlackURL(config SlackConfig) (string, error) {
 	return url.String(), nil
 }
 
-// SendSlack sends a message via Shoutrrr Slack using proper service configuration
 func SendSlack(ctx context.Context, config SlackConfig, message string) error {
 	if config.Token == "" {
 		return errors.New("slack token is empty")

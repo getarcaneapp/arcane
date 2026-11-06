@@ -21,7 +21,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// Command is the parent command for authentication operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
@@ -131,7 +130,6 @@ func newLogoutCmd() *cobra.Command {
 				return fmt.Errorf("logout failed: %w", err)
 			}
 
-			// Clear token from config after successful API logout.
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)

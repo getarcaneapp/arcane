@@ -153,7 +153,6 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 	// nil means no restriction; a non-nil slice limits results, so an empty one matches nothing.
 	switch {
 	case accessibleEnvIDs == nil:
-		// no restriction
 	case len(accessibleEnvIDs) == 0:
 		q = q.Where("1 = 0")
 	default:
@@ -184,7 +183,6 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 	return out, paginationResp, nil
 }
 
-// ApplyRuntimeState overlays in-memory tunnel state onto an agent environment without mutating persisted state.
 func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 	if env.ID == LocalEnvironmentID {
 		return env

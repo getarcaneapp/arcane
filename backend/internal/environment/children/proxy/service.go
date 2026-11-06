@@ -1,5 +1,3 @@
-// Package proxy owns the transport to remote environment agents: request
-// building, agent tunnel routing, JSON decoding and configuration pushes.
 package proxy
 
 import (
@@ -47,7 +45,6 @@ type (
 		SyncGate        *concurrency.SyncGate
 	}
 
-	// Target is a validated remote environment endpoint; build it with NewTarget.
 	Target struct {
 		accessToken *string
 		id          string
@@ -146,7 +143,6 @@ func (s *Service) ListEnabledRemoteEnvironmentIDs(ctx context.Context) ([]string
 	return ids, nil
 }
 
-// Context bounds a proxied request by the configured proxy timeout.
 func (s *Service) Context(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest))
 }
@@ -210,7 +206,6 @@ func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*ht
 	return resp, nil
 }
 
-// JSON sends one request and decodes a successful JSON response into out.
 func (s *Service) JSON(
 	ctx context.Context,
 	target *Target,
@@ -357,10 +352,6 @@ func (s *Service) SyncRepositoriesToEnvironment(ctx context.Context, envID strin
 	)
 }
 
-// fanOutSyncToEnvironment pushes every row of Model held by this
-// manager to one remote environment. toSyncItem maps a row to its wire form and
-// reports whether to keep it. Mapping errors abort before sending the snapshot.
-// wrap builds the request envelope the target endpoint expects.
 func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 	ctx context.Context,
 	target *Target,

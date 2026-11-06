@@ -84,8 +84,6 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			// Filter server-side so that pagination and the reported totals apply to
-			// the matching set rather than to whichever page happened to be fetched.
 			query := url.Values{}
 			if opts.inUseOnlyFlag {
 				query.Set("inUse", "true")

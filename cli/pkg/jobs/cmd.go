@@ -34,7 +34,6 @@ var jobRef = cmdutil.ResourceRef[types.JobStatus, types.JobStatus]{
 	Promote:      func(item types.JobStatus) *types.JobStatus { return &item },
 }
 
-// Command is the parent command for background jobs and their schedules.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "jobs",

@@ -1,4 +1,3 @@
-// Package notification owns notification settings, dispatch, and HTTP routes.
 package notification
 
 import (
@@ -38,7 +37,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterNotifications(api, m.service, m.config)
 }
 
-// RegisterNotifications registers notification endpoints.
 func RegisterNotifications(api huma.API, notificationSvc *NotificationService, cfg *config.Config) {
 	h := &NotificationHandler{
 		notificationService: notificationSvc,

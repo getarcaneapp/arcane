@@ -12,7 +12,6 @@ import (
 )
 
 type (
-	// Handler serves the swarm stack endpoints.
 	Handler struct {
 		service  *Service
 		audit    func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any)
@@ -88,16 +87,6 @@ func NewHandler(
 	return &Handler{service: service, audit: audit, mapError: mapError}
 }
 
-// ListStacks lists swarm stacks for the current environment.
-//
-// It applies search, sort, and pagination values supplied by the caller and
-// returns an empty stack slice instead of nil when no stacks are present.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input supplies optional filtering and pagination values.
-//
-// Returns a paginated list of stack summaries.
-// Returns a mapped HTTP error when stack enumeration fails.
 func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*handlerutil.Page[types.SwarmStackSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -115,18 +104,6 @@ func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (
 	return &handlerutil.Page[types.SwarmStackSummary]{Body: types.Paginated[types.SwarmStackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// DeployStack deploys or updates a swarm stack.
-//
-// It requires admin privileges, submits the stack deployment request to the
-// swarm service, and records an audit event keyed by the stack name after the
-// deployment succeeds.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the target environment and provides the stack deployment request body.
-//
-// Returns the deployment response reported by the swarm service.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when rendering, validation, or deployment fails.
 func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*handlerutil.Out[types.SwarmStackDeployResponse], error) {
 	resp, err := h.service.DeployStack(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
@@ -138,17 +115,6 @@ func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput)
 	return &handlerutil.Out[types.SwarmStackDeployResponse]{Body: types.ApiResponse[types.SwarmStackDeployResponse]{Success: true, Data: *resp}}, nil
 }
 
-// GetStack returns detailed information for a specific swarm stack.
-//
-// It looks up the stack by name through the swarm service and maps missing
-// stacks to `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment and stack name to inspect.
-//
-// Returns the stack inspection payload when the stack exists.
-// Returns `404 Not Found` when the stack does not exist or another mapped HTTP
-// error when inspection fails.
 func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*handlerutil.Out[types.SwarmStackInspect], error) {
 	stack, err := h.service.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
@@ -161,17 +127,6 @@ func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*han
 	return &handlerutil.Out[types.SwarmStackInspect]{Body: types.ApiResponse[types.SwarmStackInspect]{Success: true, Data: *stack}}, nil
 }
 
-// GetStackSource returns the stored source content for a swarm stack.
-//
-// It requires admin privileges because stack source content can include
-// sensitive configuration, and it maps missing stack sources to `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the environment and stack whose saved source should be loaded.
-//
-// Returns the stored compose and environment source for the stack.
-// Returns an authorization error for non-admin callers, `404 Not Found` when
-// no saved source exists, or another mapped HTTP error when loading fails.
 func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*handlerutil.Out[types.SwarmStackSource], error) {
 	source, err := h.service.GetStackSource(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
@@ -184,12 +139,6 @@ func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSource
 	return &handlerutil.Out[types.SwarmStackSource]{Body: types.ApiResponse[types.SwarmStackSource]{Success: true, Data: *source}}, nil
 }
 
-// UpdateStackSource persists the saved compose and env source for a swarm
-// stack and redeploys the stack so the edit takes effect on running services.
-//
-// It requires admin privileges because stack source content can include
-// sensitive configuration. The stack name comes from the route, and the body
-// contains the replacement source files to save.
 func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*handlerutil.Out[types.SwarmStackSource], error) {
 	submitted, err := input.SubmittedFields()
 	if err != nil {
@@ -209,18 +158,6 @@ func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStack
 	return &handlerutil.Out[types.SwarmStackSource]{Body: types.ApiResponse[types.SwarmStackSource]{Success: true, Data: *source}}, nil
 }
 
-// DeleteStack removes a swarm stack and its managed resources.
-//
-// It requires admin privileges, delegates the removal to the swarm service,
-// maps missing stacks to `404 Not Found`, and records an audit event after
-// deletion completes.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the environment and stack name to remove.
-//
-// Returns a confirmation response when the stack is removed.
-// Returns an authorization error for non-admin callers, `404 Not Found` when
-// the stack does not exist, or another mapped HTTP error when removal fails.
 func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveStack(ctx, input.EnvironmentID, input.Name); err != nil {
 		if errdefs.IsNotFound(err) {
@@ -234,17 +171,6 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput)
 	return handlerutil.MessageOutput("Swarm stack removed successfully", ""), nil
 }
 
-// ListStackServices lists services belonging to a swarm stack.
-//
-// It applies search, sort, and pagination options, ensures the response uses an
-// empty slice instead of nil, and maps missing stacks to `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the stack and provides optional filtering and pagination fields.
-//
-// Returns a paginated list of service summaries for the stack.
-// Returns `404 Not Found` when the stack does not exist or another mapped HTTP
-// error when the lookup fails.
 func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListStackServicesPaginated(ctx, input.Name, params)
@@ -258,17 +184,6 @@ func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackSe
 	return &handlerutil.Page[types.SwarmServiceSummary]{Body: types.Paginated[types.SwarmServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// ListStackTasks lists tasks belonging to a swarm stack.
-//
-// It applies search, sort, and pagination options, ensures the response uses an
-// empty slice instead of nil, and maps missing stacks to `404 Not Found`.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input identifies the stack and provides optional filtering and pagination fields.
-//
-// Returns a paginated list of task summaries for the stack.
-// Returns `404 Not Found` when the stack does not exist or another mapped HTTP
-// error when the lookup fails.
 func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListStackTasksPaginated(ctx, input.Name, params)
@@ -282,16 +197,6 @@ func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasks
 	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
-// RenderStackConfig renders and validates a swarm stack configuration without deploying it.
-//
-// It delegates to the swarm service to parse the provided compose and
-// environment content and returns the normalized render result.
-//
-// ctx carries request-scoped cancellation and auth context.
-// input provides the stack render request body.
-//
-// Returns the rendered compose content together with discovered resource names.
-// Returns a mapped HTTP error when parsing, interpolation, or rendering fails.
 func (h *Handler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*handlerutil.Out[types.SwarmStackRenderConfigResponse], error) {
 	resp, err := h.service.RenderStackConfig(ctx, input.EnvironmentID, input.Body)
 	if err != nil {

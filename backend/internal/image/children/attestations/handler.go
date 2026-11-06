@@ -17,7 +17,6 @@ import (
 )
 
 type (
-	// Handler serves image attestation endpoints.
 	Handler struct {
 		service *Service
 	}
@@ -39,7 +38,6 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-// GetImageAttestations returns in-toto attestation statements attached to an image.
 func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[types.ImageAttestationList], error) {
 	imageName := strings.TrimSpace(input.ImageName)
 	if imageName == "" {

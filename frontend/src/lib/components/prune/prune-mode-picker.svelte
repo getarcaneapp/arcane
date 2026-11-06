@@ -14,7 +14,6 @@
 
 	type DurationUnit = 'minutes' | 'hours' | 'days';
 
-	// Segmented prune-mode choice with an optional "older than" duration; the host row supplies the label.
 	interface Props {
 		modeOptions: PruneModeOption[];
 		value?: string;

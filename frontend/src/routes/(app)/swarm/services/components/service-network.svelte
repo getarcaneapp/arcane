@@ -36,7 +36,6 @@
 		return 'gray';
 	}
 
-	// Build a map of network ID → VIP address
 	const vipMap = $derived.by(() => {
 		const map: Record<string, string> = {};
 		for (const vip of virtualIPs) {

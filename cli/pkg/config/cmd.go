@@ -24,7 +24,6 @@ import (
 	"getarcane.dev/cli/v3/internal/types"
 )
 
-// Command is the command for managing API configuration
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
@@ -270,7 +269,6 @@ func newConfigTestCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create request: %w", err)
 			}
-			// Prefer JWT bearer if present, else API key.
 			if cfg.JWTToken != "" {
 				req.Header.Set("Authorization", "Bearer "+cfg.JWTToken)
 			} else {
@@ -429,14 +427,12 @@ func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string
 		return nil
 	case "api-key", "apikey", "api_key":
 		cfg.APIKey = value
-		// If switching to API key auth, clear any existing JWT token.
 		cfg.JWTToken = ""
 		cfg.RefreshToken = ""
 		_, _ = fmt.Fprintf(w, "Set api_key = %s\n", maskAPIKey(value))
 		return nil
 	case "jwt-token", "jwt", "jwt_token":
 		cfg.JWTToken = value
-		// If switching to JWT auth, clear any existing API key.
 		cfg.APIKey = ""
 		cfg.RefreshToken = ""
 		_, _ = fmt.Fprintf(w, "Set jwt_token = %s\n", maskAPIKey(value))

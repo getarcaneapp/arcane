@@ -1,7 +1,5 @@
 <script lang="ts">
-	import type { Component } from 'svelte';
-
-	import { ImagesIcon } from '#lib/icons/index.js';
+	import { ImagesIcon, type IconType } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 
 	let {
@@ -13,7 +11,7 @@
 	}: {
 		src?: string | null;
 		alt?: string;
-		fallback?: Component<any>;
+		fallback?: IconType;
 		class?: string;
 		containerClass?: string;
 	} = $props();

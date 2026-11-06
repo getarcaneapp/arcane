@@ -19,7 +19,7 @@ import BaseAPIService, { APIError, SessionCancelledError, currentSessionSignal }
 const LEGACY_REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_LOCK_NAME = 'arcane-token-refresh';
-const REFRESH_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
+const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const REFRESH_JITTER_MS = 5000;
 const REFRESH_RACE_GRACE_MS = 3000;
 const REFRESH_RACE_POLL_MS = 150;
@@ -320,24 +320,13 @@ class AuthService extends BaseAPIService {
 		return request;
 	}
 
-	/**
-	 * Get auto-login configuration from the backend.
-	 * @returns The auto-login config, or null if the request fails
-	 */
 	async getAutoLoginConfig(): Promise<AutoLoginConfig | null> {
 		const result = await tryCatch(this.handleResponse<AutoLoginConfig>(this.api.get('/auth/autologin')));
-		// Silently fail - auto-login is optional.
 		return result.data;
 	}
 
-	/**
-	 * Attempt auto-login using server-configured credentials.
-	 * The server handles the credentials - they are never exposed to the frontend.
-	 * @returns The user if login succeeded, null otherwise
-	 */
 	async attemptAutoLogin(): Promise<User | null> {
 		const result = await tryCatch(this.handleResponse<AuthenticationResponse>(this.api.post('/auth/autologin')));
-		// Silently fail - fall back to normal login flow.
 		if (result.error !== null || result.data.status === 'mfa_required') return null;
 		return this.completeAuthentication(result.data);
 	}

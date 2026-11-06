@@ -1,5 +1,3 @@
-// Package auth owns authentication, token issuance and verification, login
-// session policy, and the authentication HTTP surface.
 package auth
 
 import (
@@ -60,7 +58,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterAuth(api, m.user, m.service, m.settings, m.beginMFAAuthentication)
 }
 
-// RegisterAuth registers authentication routes using Huma.
 func RegisterAuth(
 	api huma.API,
 	userService *user.UserService,

@@ -1,4 +1,3 @@
-// Package settings owns persisted application settings and their HTTP surface.
 package settings
 
 import (
@@ -14,7 +13,6 @@ import (
 )
 
 type (
-	// Module joins the settings service with its route dependencies.
 	Module struct {
 		service         *SettingsService
 		search          *SettingsSearchService
@@ -32,7 +30,6 @@ type (
 	}
 )
 
-// New builds the settings domain around its initialized service.
 func New(p ModuleParams) *Module {
 	return &Module{
 		service:         p.Service,
@@ -43,7 +40,6 @@ func New(p ModuleParams) *Module {
 	}
 }
 
-// Service exposes settings operations to collaborating domains.
 func (m *Module) Service() *SettingsService {
 	if m == nil {
 		return nil
@@ -51,7 +47,6 @@ func (m *Module) Service() *SettingsService {
 	return m.service
 }
 
-// RegisterRoutes mounts settings endpoints for runtime and schema discovery.
 func (m *Module) RegisterRoutes(api huma.API) {
 	if m == nil {
 		RegisterSettings(api, &SettingsHandler{})
@@ -66,9 +61,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	})
 }
 
-// RegisterSettings registers settings management routes using Huma.
 func RegisterSettings(api huma.API, h *SettingsHandler) {
-	// Environment-scoped settings endpoints
 	huma.Register(api, huma.Operation{
 		OperationID: "get-public-settings",
 		Method:      http.MethodGet,
@@ -99,7 +92,6 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermEnvironmentSettingsUpdate, h.UpdateEnvironmentSettings)
 
-	// Top-level settings endpoints (not environment-scoped)
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-settings",
 		Method:      http.MethodGet,

@@ -81,8 +81,6 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 	}, nil
 }
 
-// ExtractBearerToken returns the trimmed token from an "Authorization: Bearer <token>" value,
-// or "" when the scheme (case-insensitive) is not Bearer.
 func ExtractBearerToken(headerValue string) string {
 	headerValue = strings.TrimSpace(headerValue)
 	if headerValue == "" {
@@ -94,7 +92,6 @@ func ExtractBearerToken(headerValue string) string {
 	return strings.TrimSpace(headerValue[len(bearerScheme):])
 }
 
-// RedactedTokenFingerprint returns a short, non-reversible token identifier for debug logs.
 func RedactedTokenFingerprint(token string) string {
 	token = strings.TrimSpace(token)
 	if len(token) <= 10 {
@@ -113,7 +110,6 @@ func (r *RemoteResponse) RequireSuccess() error {
 	return &StatusError{StatusCode: r.StatusCode, Body: r.Body}
 }
 
-// Unavailable reports connection failures that permit using locally stored data.
 // Invalid requests and failures reading an established response are not outages.
 func (e *TransportError) Unavailable() bool {
 	if e == nil || errors.Is(e.Err, context.Canceled) {
