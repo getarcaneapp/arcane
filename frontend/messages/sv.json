@@ -4436,12 +4436,12 @@
   "code_font": "Teckensnitt",
   "code_font_description": "Teckensnitt för kodredigeraren, kodblock och terminalen. Terminalen uppdateras när den öppnas på nytt.",
   "custom_font": "Anpassat typsnitt",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Namn på installerat teckensnitt",
+  "font_name_invalid": "Använd upp till 128 bokstäver, siffror, mellanslag, kommatecken, citattecken, bindestreck eller understreck.",
+  "browse_installed_fonts": "Bläddra bland installerade teckensnitt",
+  "installed_fonts": "Installerade teckensnitt",
+  "installed_fonts_unavailable": "Det gick inte att läsa in de installerade teckensnitten",
+  "font_preview_sample": "Den snabba bruna räven hoppar över den lata hunden 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
