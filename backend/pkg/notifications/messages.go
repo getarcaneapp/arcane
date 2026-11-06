@@ -97,7 +97,7 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 			return message.String()
 		}
 
-		current, latest := notificationUpdateVersions(updateInfo)
+		current, latest := UpdateVersions(updateInfo)
 		if !writeNtfyTransition(&message, current, latest, "") {
 			fmt.Fprintln(&message, "⚠️ Update available")
 		}
@@ -115,7 +115,7 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Image"), imageRef)
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Status"), updateStatus)
 	if updateInfo != nil {
-		current, latest := notificationUpdateVersions(updateInfo)
+		current, latest := UpdateVersions(updateInfo)
 		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Update Type"), updateInfo.UpdateType)
 		if current != "" {
 			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current"), formatNotificationCode(format, current))
@@ -178,7 +178,7 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 
 			fmt.Fprintf(&message, "\n📦 **%s**\n", imageRef)
 
-			current, latest := notificationUpdateVersions(update)
+			current, latest := UpdateVersions(update)
 			if !writeNtfyTransition(&message, current, latest, "   ") {
 				fmt.Fprintln(&message, "   ⚠️ Update available")
 			}
@@ -202,7 +202,7 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
 		releaseURL := kit.Ternary(includeReleaseLinks, update.ReleaseURL, "")
-		current, latest := notificationUpdateVersions(update)
+		current, latest := UpdateVersions(update)
 		switch format {
 		case MessageFormatPlain:
 			fmt.Fprintf(&message, "%s\n", imageRef)
@@ -412,7 +412,7 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 	return message.String()
 }
 
-func notificationUpdateVersions(update *types.ImageUpdateResponse) (string, string) {
+func UpdateVersions(update *types.ImageUpdateResponse) (string, string) {
 	info := kit.FromPtr(update)
 	if (info.UpdateType == "tag" && (info.LatestVersion != "" || info.CurrentVersion != "")) || (info.LatestVersion != "" && info.LatestVersion != info.CurrentVersion) {
 		return info.CurrentVersion, info.LatestVersion

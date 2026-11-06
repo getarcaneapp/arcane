@@ -158,9 +158,14 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*t
 		RenderEmail: func() (string, string, error) {
 			rows := []emailRow{{Label: "Environment", Value: environmentName}}
 			for _, imageRef := range slices.Sorted(maps.Keys(updates)) {
+				current, latest := notifications.UpdateVersions(updates[imageRef])
 				rows = append(rows, emailRow{
 					Label: imageRef,
-					Value: updates[imageRef].UpdateType,
+					Value: kit.Ternary(
+						current == "" && latest == "",
+						updates[imageRef].UpdateType,
+						fmt.Sprintf("%s: %s → %s", updates[imageRef].UpdateType, cmp.Or(current, "-"), cmp.Or(latest, "-")),
+					),
 				})
 				if includeReleaseLinks && updates[imageRef].ReleaseURL != "" {
 					rows = append(rows, emailRow{
