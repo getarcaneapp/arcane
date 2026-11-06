@@ -25,6 +25,8 @@ type (
 		LatestVersion    *string    `json:"latestVersion,omitempty" gorm:"column:latest_version"`
 		CurrentDigest    *string    `json:"currentDigest,omitempty" gorm:"column:current_digest"`
 		LatestDigest     *string    `json:"latestDigest,omitempty" gorm:"column:latest_digest"`
+		CurrentCreated   *time.Time `json:"currentCreated,omitempty" gorm:"column:current_created"`
+		LatestCreated    *time.Time `json:"latestCreated,omitempty" gorm:"column:latest_created"`
 		LastError        *string    `json:"lastError,omitempty" gorm:"column:last_error"`
 		AuthMethod       *string    `json:"authMethod,omitempty" gorm:"column:auth_method"`
 		AuthUsername     *string    `json:"authUsername,omitempty" gorm:"column:auth_username"`
@@ -81,6 +83,8 @@ func (i *ImageUpdateRecord) UpdateInfo() *types.ImageUpdateInfo {
 		LatestVersion:  mo.PointerToOption(i.LatestVersion).OrEmpty(),
 		CurrentDigest:  mo.PointerToOption(i.CurrentDigest).OrEmpty(),
 		LatestDigest:   mo.PointerToOption(i.LatestDigest).OrEmpty(),
+		CurrentCreated: i.CurrentCreated,
+		LatestCreated:  i.LatestCreated,
 		CheckTime:      i.CheckTime,
 		ResponseTimeMs: i.ResponseTimeMs,
 		Error:          mo.PointerToOption(i.LastError).OrEmpty(),

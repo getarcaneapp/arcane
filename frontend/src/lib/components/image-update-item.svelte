@@ -29,7 +29,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
+	import { formatDateTimeShort, formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
 
 	interface Props {
 		updateInfo?: ImageUpdateResponse;
@@ -186,7 +186,7 @@
 		if (hasError) return m.image_update_check_failed_title();
 		if (effectiveUpdateInfo.updateType === 'not_pulled') return m.image_update_not_pulled_title();
 		if (!effectiveUpdateInfo.hasUpdate) return m.image_update_up_to_date_title();
-		if (effectiveUpdateInfo.updateType === 'digest') return m.image_update_digest_title();
+		if (effectiveUpdateInfo.updateType === 'digest' && !versionChanged) return m.image_update_digest_title();
 		return m.image_update_version_title();
 	});
 
@@ -204,11 +204,10 @@
 		if (effectiveUpdateInfo?.latestVersion && effectiveUpdateInfo.latestVersion.trim() !== '') {
 			return effectiveUpdateInfo.latestVersion;
 		}
-		if ((effectiveUpdateInfo?.updateType === 'digest' || effectiveUpdateInfo?.updateType === 'not_pulled') && latestDigest) {
-			return currentVersion;
-		}
 		return null;
 	});
+
+	const versionChanged = $derived(!!latestVersion && latestVersion !== currentVersion);
 
 	function checkImageUpdate() {
 		if (!canCheckUpdate || updateCheckMutation.isPending) return;
@@ -231,17 +230,24 @@
 	}
 </script>
 
-{#snippet diffRow(Icon: Component, label: string, version: string, digest: string, accentClass: string)}
+{#snippet diffRow(Icon: Component, label: string, version: string, digest: string, created: string, accentClass: string)}
 	<div class={['rounded-lg px-2.5 py-2', accentClass && 'bg-sidebar-accent']}>
 		<div class="flex items-center justify-between gap-2">
 			<div class="flex items-center gap-2 text-xs font-medium">
 				<Icon class="size-4 shrink-0" />
 				<span>{label}</span>
 			</div>
-			<span class={['rounded-md px-1.5 py-0.5 font-mono text-xs font-medium', accentClass || 'bg-foreground/8']}>
-				{version}
-			</span>
+			{#if version}
+				<span class={['rounded-md px-1.5 py-0.5 font-mono text-xs font-medium', accentClass || 'bg-foreground/8']}>
+					{version}
+				</span>
+			{/if}
 		</div>
+		{#if created && formatDateTimeShort(created)}
+			<div class={['mt-1 pl-6 text-2xs', accentClass ? 'text-sidebar-foreground' : 'text-muted-foreground']}>
+				{m.built_on({ date: formatDateTimeShort(created) })}
+			</div>
+		{/if}
 		{#if digest}
 			<div class="mt-1 flex items-start gap-1.5 pl-6">
 				<span
@@ -350,7 +356,7 @@
 		description={m.image_update_up_to_date_desc()}
 	/>
 	<div class="p-2">
-		{@render diffRow(BoxIcon, m.common_running(), currentVersion, currentDigest, '')}
+		{@render diffRow(BoxIcon, m.common_running(), currentVersion, currentDigest, effectiveUpdateInfo?.currentCreated ?? '', '')}
 		{@render metaLine()}
 	</div>
 	{@render footer()}
@@ -364,10 +370,18 @@
 			m.common_current(),
 			currentVersion,
 			effectiveUpdateInfo?.updateType === 'not_pulled' ? '' : currentDigest,
+			effectiveUpdateInfo?.currentCreated ?? '',
 			''
 		)}
-		{#if latestVersion}
-			{@render diffRow(ArrowRightIcon, m.image_update_latest_label(), latestVersion, latestDigest, accentClass)}
+		{#if latestVersion || latestDigest}
+			{@render diffRow(
+				ArrowRightIcon,
+				m.image_update_latest_label(),
+				latestVersion ?? '',
+				latestDigest,
+				effectiveUpdateInfo?.latestCreated ?? '',
+				accentClass
+			)}
 		{/if}
 		{@render metaLine()}
 	</div>
@@ -468,8 +482,10 @@
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
 					{@render updateState(
 						CircleArrowUpIcon,
-						m.image_update_digest_title(),
-						m.image_update_digest_desc(),
+						versionChanged ? m.image_update_version_title() : m.image_update_digest_title(),
+						versionChanged && latestVersion
+							? m.image_update_tag_description_new({ version: latestVersion })
+							: m.image_update_digest_desc(),
 						'text-info',
 						'bg-info/15 text-info'
 					)}

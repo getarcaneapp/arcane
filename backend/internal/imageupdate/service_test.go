@@ -15,6 +15,12 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
+	"github.com/google/go-containerregistry/pkg/name"
+	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
+	ggcrv1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -947,10 +953,158 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	assert.Equal(t, remoteDigest, result.LatestDigest)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+	assert.Empty(t, result.LatestVersion, "a failed config fetch keeps a digest-only result")
+	assert.Nil(t, result.LatestCreated)
 
 	var saved ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
 	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+}
+
+func newImageUpdateConfigServer(t *testing.T, localDigest string, localLabels map[string]string, localCreated string) *httptest.Server {
+	t.Helper()
+	registryHandler := ggcrregistry.New()
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, map[string]any{
+				"Id":          "sha256:local-image-id",
+				"RepoTags":    []string{r.Host + "/team/app:latest"},
+				"RepoDigests": []string{r.Host + "/team/app@" + localDigest},
+				"Created":     localCreated,
+				"Config":      map[string]any{"Labels": localLabels},
+			}))
+		default:
+			registryHandler.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestImageUpdateService_CheckImageUpdate_DigestUpdateResolvesRemoteVersion(t *testing.T) {
+	localCreated := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	remoteCreated := time.Date(2026, 10, 2, 9, 30, 0, 0, time.UTC)
+	tests := []struct {
+		localLabels        map[string]string
+		wantLatestCreated  *time.Time
+		remoteCreated      time.Time
+		name               string
+		wantCurrentVersion string
+		wantLatestVersion  string
+		remoteConfig       ggcrv1.Config
+	}{
+		{
+			name:               "version labels",
+			localLabels:        map[string]string{registry.OCIImageVersionLabel: "2.3.6"},
+			remoteConfig:       ggcrv1.Config{Labels: map[string]string{registry.OCIImageVersionLabel: "2.3.7"}},
+			remoteCreated:      remoteCreated,
+			wantCurrentVersion: "2.3.6",
+			wantLatestVersion:  "2.3.7",
+			wantLatestCreated:  &remoteCreated,
+		},
+		{
+			name:               "missing labels",
+			wantCurrentVersion: "latest",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupImageUpdateTestDB(t)
+			localDigest := digest.FromString("local-" + tt.name).String()
+			server := newImageUpdateConfigServer(t, localDigest, tt.localLabels, localCreated.Format(time.RFC3339Nano))
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			imageRef := serverURL.Host + "/team/app:latest"
+
+			img, err := random.Image(64, 1)
+			require.NoError(t, err)
+			img, err = mutate.ConfigFile(img, &ggcrv1.ConfigFile{
+				Architecture: "amd64",
+				OS:           "linux",
+				Created:      ggcrv1.Time{Time: tt.remoteCreated},
+				Config:       tt.remoteConfig,
+			})
+			require.NoError(t, err)
+			ref, err := name.ParseReference(imageRef)
+			require.NoError(t, err)
+			require.NoError(t, remote.Write(ref, img, remote.WithTransport(server.Client().Transport)))
+			remoteDigest, err := img.Digest()
+			require.NoError(t, err)
+
+			registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+				DB: db,
+				DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+					return &fakeRegistryDaemonClient{
+						distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+							return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+						},
+					}, nil
+				},
+				KVService:       kv.NewKVService(db),
+				SettingsService: newImageUpdateDefaultSettingsService(t),
+				HTTPClient:      server.Client(),
+			})
+			svc := NewImageUpdateService(ImageUpdateServiceParams{
+				DB:                  db,
+				ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
+				SettingsService:     newImageUpdateDefaultSettingsService(t),
+				RegistryService:     registryService,
+				DockerService:       newImageUpdateTestDockerService(t, server),
+				EventService:        event.NewEventService(db, &config.Config{}, nil),
+				NotificationService: newTestNotificationService(t, db),
+			})
+
+			result, err := svc.CheckImageUpdate(t.Context(), imageRef)
+			require.NoError(t, err)
+			assert.True(t, result.HasUpdate)
+			assert.Equal(t, UpdateTypeDigest, result.UpdateType)
+			assert.Equal(t, remoteDigest.String(), result.LatestDigest)
+			assert.Equal(t, tt.wantCurrentVersion, result.CurrentVersion)
+			assert.Equal(t, tt.wantLatestVersion, result.LatestVersion)
+			assert.Equal(t, tt.wantLatestCreated, result.LatestCreated)
+			assert.Equal(t, &localCreated, result.CurrentCreated)
+
+			var saved ImageUpdateRecord
+			require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
+			assert.Equal(t, tt.wantLatestVersion, kit.FromPtr(saved.LatestVersion))
+			assert.Equal(t, kit.FromPtr(tt.wantLatestCreated).Unix(), kit.FromPtr(saved.LatestCreated).Unix())
+		})
+	}
+}
+
+func TestBuildImageUpdateRecord_CarriesLatestOnlyForSameDigest(t *testing.T) {
+	carriedCreated := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	carried := &ImageUpdateRecord{
+		LatestVersion: new("2.3.7"),
+		LatestDigest:  new("sha256:carried"),
+		LatestCreated: &carriedCreated,
+	}
+	tests := []struct {
+		wantLatestVersion *string
+		wantLatestCreated *time.Time
+		name              string
+		latestDigest      string
+	}{
+		{name: "same digest", latestDigest: "sha256:carried", wantLatestVersion: new("2.3.7"), wantLatestCreated: &carriedCreated},
+		{name: "failed check without digest", wantLatestVersion: new("2.3.7"), wantLatestCreated: &carriedCreated},
+		{name: "changed digest", latestDigest: "sha256:moved"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := buildImageUpdateRecord("sha256:image", "team/app", "latest", &types.ImageUpdateResponse{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: tt.latestDigest,
+				Error:        "registry unavailable",
+			}, false, nil, carried)
+			assert.Equal(t, tt.wantLatestVersion, record.LatestVersion)
+			assert.Equal(t, tt.wantLatestCreated, record.LatestCreated)
+		})
+	}
 }
 
 func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {

@@ -608,6 +608,22 @@ func TestMigration105_GlobalVariableInjectIntoContainers_BackfillsExistingAndDow
 	assert.Zero(t, columnCount)
 }
 
+func TestMigration106_AddsImageUpdateCreated(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-image-update-created.db")
+	createdColumns := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('image_updates') WHERE name IN ('current_created', 'latest_created')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 106))
+	assert.Equal(t, 2, createdColumns())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 105))
+	assert.Zero(t, createdColumns())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

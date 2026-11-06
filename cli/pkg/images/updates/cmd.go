@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -208,7 +209,13 @@ func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 		}
 		if update.HasUpdate {
 			updatesAvailable++
-			rows = append(rows, []string{imageRef, "Yes", update.CurrentVersion, update.LatestVersion, update.UpdateType})
+			rows = append(rows, []string{
+				imageRef,
+				"Yes",
+				update.CurrentVersion,
+				cmp.Or(update.LatestVersion, update.LatestDigest[:min(len(update.LatestDigest), 19)]),
+				update.UpdateType,
+			})
 			continue
 		}
 		rows = append(rows, []string{imageRef, "No", update.CurrentVersion, "", ""})
@@ -230,7 +237,7 @@ func printUpdateStatus(data types.ImageUpdateResponse, imageRef string) error {
 	if data.HasUpdate {
 		output.KeyValue("Update Type", data.UpdateType)
 		output.KeyValue("Current Version", data.CurrentVersion)
-		output.KeyValue("Latest Version", data.LatestVersion)
+		output.KeyValue("Latest Version", cmp.Or(data.LatestVersion, data.LatestDigest[:min(len(data.LatestDigest), 19)]))
 	}
 	output.KeyValue("Check Time", data.CheckTime.String())
 	output.KeyValue("Response Time", fmt.Sprintf("%dms", data.ResponseTimeMs))

@@ -80,12 +80,17 @@ type (
 
 	rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
 
+	ImageConfigOptions struct {
+		Platform    v1.Platform
+		Credentials []types.ContainerRegistryCredential
+	}
+
 	ContainerRegistryService struct {
 		db                     *database.DB
 		dockerClient           registryDaemonGetter
 		cache                  *hot.HotCache[string, string]
 		digestFailures         *hot.HotCache[string, error]
-		labelCache             *hot.HotCache[string, map[string]string]
+		configCache            *hot.HotCache[string, *v1.ConfigFile]
 		ecrRefreshGroup        singleflight.Group
 		distributionHTTPClient *http.Client
 		kvService              *kv.KVService
@@ -168,8 +173,8 @@ func NewContainerRegistryService(p ContainerRegistryServiceParams) *ContainerReg
 			WithTTL(registryDigestFailureTTL).
 			WithJanitor().
 			Build(),
-		// No static loader: ImageLabels uses GetWithLoaders so failed resolutions retry on the next request.
-		labelCache: hot.NewHotCache[string, map[string]string](hot.LRU, 64).
+		// No static loader: ImageConfig uses GetWithLoaders so failed resolutions retry on the next request.
+		configCache: hot.NewHotCache[string, *v1.ConfigFile](hot.LRU, 64).
 			WithTTL(versionLabelCacheTTL).
 			Build(),
 		distributionHTTPClient: distributionHTTPClient,
@@ -1295,12 +1300,18 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef string) (map[string]string, error) {
+func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef string, opts ImageConfigOptions) (*v1.ConfigFile, error) {
 	if strings.TrimSpace(imageRef) == "" {
 		return nil, errors.New("empty image reference")
 	}
 
-	labels, found, err := s.labelCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]map[string]string, error) {
+	platform := v1.Platform{
+		OS:           cmp.Or(opts.Platform.OS, "linux"),
+		Architecture: cmp.Or(opts.Platform.Architecture, runtime.GOARCH),
+		Variant:      opts.Platform.Variant,
+	}
+	cacheKey := strings.TrimSpace(imageRef) + "|" + platform.String()
+	cfg, found, err := s.configCache.GetWithLoaders(cacheKey, func(_ []string) (map[string]*v1.ConfigFile, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
@@ -1308,11 +1319,11 @@ func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef str
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
-		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image labels fetch for "+strings.TrimSpace(imageRef), nil,
+		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image config fetch for "+strings.TrimSpace(imageRef), opts.Credentials,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
 				return remote.Image(parsedRef,
 					remote.WithContext(ctx),
-					remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}),
+					remote.WithPlatform(platform),
 					remote.WithTransport(s.distributionHTTPClient.Transport),
 					remote.WithAuth(func() authn.Authenticator {
 						if credential == nil {
@@ -1327,18 +1338,18 @@ func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef str
 		}
 		cfg, configErr := img.ConfigFile()
 		if configErr != nil {
-			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
+			return nil, fmt.Errorf("image config fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
 		}
 		if cfg == nil {
-			return nil, fmt.Errorf("image labels fetch failed for %s: missing config", strings.TrimSpace(imageRef))
+			return nil, fmt.Errorf("image config fetch failed for %s: missing config", strings.TrimSpace(imageRef))
 		}
-		return map[string]map[string]string{strings.TrimSpace(imageRef): cfg.Config.Labels}, nil
+		return map[string]*v1.ConfigFile{cacheKey: cfg}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, errors.New("registry image label cache loader returned no labels")
+		return nil, errors.New("registry image config cache loader returned no config")
 	}
-	return labels, nil
+	return cfg, nil
 }

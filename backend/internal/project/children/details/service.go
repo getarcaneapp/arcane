@@ -311,6 +311,12 @@ func MergeProjectContainerUpdateInfo(base map[string]*types.ImageUpdateInfo, ser
 				"",
 				info.LatestDigest,
 			),
+			CurrentCreated: info.CurrentCreated,
+			LatestCreated: kit.Ternary(
+				previous.LatestVersion != info.LatestVersion || previous.LatestDigest != info.LatestDigest || previous.UpdateType != info.UpdateType,
+				nil,
+				info.LatestCreated,
+			),
 			Error:          cmp.Or(info.Error, previous.Error),
 			AuthMethod:     info.AuthMethod,
 			AuthUsername:   info.AuthUsername,

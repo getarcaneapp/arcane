@@ -1646,7 +1646,7 @@ func pushLabeledImage(t *testing.T, imageRef string, imageLabels map[string]stri
 	return img
 }
 
-func TestContainerRegistryService_ImageLabels(t *testing.T) {
+func TestContainerRegistryService_ImageConfig(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 	img := pushLabeledImage(t, imageRef, map[string]string{
@@ -1655,46 +1655,46 @@ func TestContainerRegistryService_ImageLabels(t *testing.T) {
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
 
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.66", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.66", cfg.Config.Labels[OCIImageVersionLabel])
 
 	// Digest references resolve too — the version service prefers them.
 	imgDigest, err := img.Digest()
 	require.NoError(t, err)
-	labels, err = svc.ImageLabels(t.Context(), host+"/getarcaneapp/arcane@"+imgDigest.String())
+	cfg, err = svc.ImageConfig(t.Context(), host+"/getarcaneapp/arcane@"+imgDigest.String(), ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.66", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.66", cfg.Config.Labels[OCIImageVersionLabel])
 }
 
-func TestContainerRegistryService_ImageLabelsWithoutVersionLabel(t *testing.T) {
+func TestContainerRegistryService_ImageConfigWithoutVersionLabel(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 	pushLabeledImage(t, imageRef, nil)
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.NotContains(t, labels, OCIImageVersionLabel)
+	assert.NotContains(t, cfg.Config.Labels, OCIImageVersionLabel)
 }
 
-func TestContainerRegistryService_ImageLabelsErrorNotCached(t *testing.T) {
+func TestContainerRegistryService_ImageConfigErrorNotCached(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), nil)
 
 	// The image does not exist yet: the lookup must fail...
-	_, err := svc.ImageLabels(t.Context(), imageRef)
+	_, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.Error(t, err)
 
 	// ...and the failure must not be cached: after the push the same ref resolves.
 	pushLabeledImage(t, imageRef, map[string]string{
 		OCIImageVersionLabel: "v2.8.0-next.67",
 	})
-	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	cfg, err := svc.ImageConfig(t.Context(), imageRef, ImageConfigOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "v2.8.0-next.67", labels[OCIImageVersionLabel])
+	assert.Equal(t, "v2.8.0-next.67", cfg.Config.Labels[OCIImageVersionLabel])
 }
 
 func TestClassifyDigestError(t *testing.T) {
