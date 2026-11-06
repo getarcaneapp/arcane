@@ -236,10 +236,12 @@ type (
 		Status     string `json:"status"`
 	}
 
-	// UnmanagedBackupSweep ages out safety backups and backups whose volume or schedule no longer exists.
+	// UnmanagedBackupSweep ages out safety backups and backups whose volume or schedule no longer exists. Within, when
+	// set, limits the result to those backups so a recheck keeps the batch it already locked.
 	UnmanagedBackupSweep struct {
 		Now                   time.Time
 		SystemVolumePolicyIDs []string
+		Within                []string
 		Retention             time.Duration
 	}
 )

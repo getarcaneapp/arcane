@@ -666,8 +666,13 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 			unlock()
 		}
 	}
-	// Recheck under the locks: a restore that finished first may have brought the volume back.
-	if expired, err = s.expiredUnmanagedBackupIDs(ctx, sweep); err != nil {
+	// Recheck the locked batch: a restore that finished first may have brought the volume back.
+	if expired, err = s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
+		Now:                   sweep.Now,
+		SystemVolumePolicyIDs: sweep.SystemVolumePolicyIDs,
+		Within:                expired,
+		Retention:             sweep.Retention,
+	}); err != nil {
 		return errors.Join(deleteErr, err)
 	}
 	if entries, err = s.deps.Store.Runs(ctx, expired); err != nil {

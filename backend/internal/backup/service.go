@@ -990,12 +990,13 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 				return fmt.Errorf("mark orphaned backups: %w", err)
 			}
 		}
-		return tx.Table(table).
+		query := tx.Table(table).
 			Where("status <> ?", "running").
-			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff)).
-			Order("RANDOM()").
-			Limit(unmanagedSweepBatch).
-			Pluck("id", &expired).Error
+			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff))
+		if len(sweep.Within) > 0 {
+			query = query.Where("id IN ?", sweep.Within)
+		}
+		return query.Order("RANDOM()").Limit(unmanagedSweepBatch).Pluck("id", &expired).Error
 	})
 	return expired, err
 }
