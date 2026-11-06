@@ -4436,12 +4436,12 @@
   "code_font": "Czcionka kodu",
   "code_font_description": "Czcionka dla edytora kodu, bloków kodu i terminala. Terminal aktualizuje się po ponownym otwarciu.",
   "custom_font": "Czcionka niestandardowa",
-  "custom_font_placeholder": "Installed font name",
-  "font_name_invalid": "Use up to 128 letters, numbers, spaces, commas, quotes, hyphens, or underscores.",
-  "browse_installed_fonts": "Browse installed fonts",
-  "installed_fonts": "Installed fonts",
-  "installed_fonts_unavailable": "Could not read installed fonts",
-  "font_preview_sample": "The quick brown fox jumps over the lazy dog 0123456789",
+  "custom_font_placeholder": "Nazwa zainstalowanej czcionki",
+  "font_name_invalid": "Można użyć maksymalnie 128 liter, cyfr, spacji, przecinków, cudzysłowów, łączników lub znaków podkreślenia.",
+  "browse_installed_fonts": "Przeglądaj zainstalowane czcionki",
+  "installed_fonts": "Zainstalowane czcionki",
+  "installed_fonts_unavailable": "Nie udało się odczytać zainstalowanych czcionek",
+  "font_preview_sample": "Szybki brązowy lis przeskakuje leniwego psa 0123456789",
   "montserrat": "Montserrat",
   "geist_mono": "Geist Mono"
 }
