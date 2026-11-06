@@ -24,9 +24,6 @@ import (
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/image-spec/specs-go/v1"
-	copacommon "github.com/project-copacetic/copacetic/pkg/common"
-	"github.com/project-copacetic/copacetic/pkg/patch"
-	copatypes "github.com/project-copacetic/copacetic/pkg/types"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -46,9 +43,11 @@ import (
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/vuln"
+	"getarcane.dev/copacetic"
 	"getarcane.dev/types/v3"
 )
 
@@ -178,7 +177,7 @@ func (s *Service) startPatch(
 	}
 	imageRef := cmp.Or(existing.OriginalRef, imageInspect.RepoTags[0])
 	// Never pulled or pushed: BuildKit cannot fetch the image to patch it.
-	if len(imageInspect.RepoDigests) == 0 {
+	if len(imageInspect.RepoDigests) == 0 || imageref.IsLocalImage(imageInspect.InspectResponse) {
 		return nil, nil, common.ErrImageLocalOnly
 	}
 
@@ -366,7 +365,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		DefaultStep: "Patching image",
 	})
 	removeMirror := logging.AddLogrusMirror(patchOut)
-	patchErr := patch.Patch(ctx, &copatypes.Options{
+	patchErr := copacetic.Patch(ctx, &copacetic.Options{
 		Image:  copaImageRef,
 		Report: reportPath,
 		// The final tag was already resolved into the record; pass it verbatim
@@ -386,7 +385,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 	durationMs := time.Since(startTime).Milliseconds()
 
 	if patchErr != nil {
-		if errors.Is(patchErr, copatypes.ErrNoUpdatesFound) {
+		if errors.Is(patchErr, copacetic.ErrNoUpdatesFound) {
 			patchErr = errors.New("no OS package updates available for this image")
 		}
 		if strings.Contains(patchErr.Error(), `exporter "docker" could not be found`) {
@@ -491,7 +490,7 @@ func resolvePatchedRef(imageRef, patchedTag, suffix string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
-	localName, tag, err := copacommon.ResolvePatchedImageName(named, patchedTag, suffix)
+	localName, tag, err := copacetic.ResolvePatchedImageName(named, patchedTag, suffix)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve patched image name: %w", err)
 	}
@@ -733,14 +732,14 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	}
 
 	// Best-effort: mark images without a registry source so the UI can explain
-	// why they cannot be patched.
-	repoDigestsByID := map[string][]string{}
-	if images, listImagesErr := s.dockerService.ListImages(ctx); listImagesErr == nil {
-		for i := range images {
-			repoDigestsByID[images[i].ID] = images[i].RepoDigests
-		}
-	} else {
-		slog.WarnContext(ctx, "failed to list images for patch targets", "error", listImagesErr)
+	// why they cannot be patched. An image that can no longer be inspected is
+	// left unmarked.
+	localOnlyByID := make(map[string]bool, len(scans))
+	for i := range scans {
+		inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, scans[i].ID)
+		})
+		localOnlyByID[scans[i].ID] = inspectErr == nil && imageref.IsLocalImage(inspect.InspectResponse)
 	}
 
 	imageIDs := make([]string, 0, len(scans))
@@ -761,10 +760,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 			FixableCount: kit.FromPtr(scan.FixableCount),
 			TotalCount:   scan.TotalCount,
 			ScanTime:     scan.ScanTime,
-			LocalOnly: func() bool {
-				digests, ok := repoDigestsByID[scan.ID]
-				return ok && !slices.ContainsFunc(digests, func(digest string) bool { return digest != "<none>@<none>" })
-			}(),
+			LocalOnly:    localOnlyByID[scan.ID],
 			LastPatch: func() *types.PatchRecord {
 				lastPatch, ok := lastPatchByImageID[scan.ID]
 				if !ok {

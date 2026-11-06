@@ -540,35 +540,80 @@ func TestImageUpdateService_CheckImages_OtherDottedRegistryStillChecked(t *testi
 	assert.Positive(t, registryCalls.Load())
 }
 
-func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
-				return
-			}
-			return
-		}
+func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T) {
+	// The containerd image store gives every image a repo digest, pulled or not.
+	const repoDigest = "local-only@sha256:58fce97e65265c70d915f320949981079c7de4ef5c55f5f19642246401fb1d37"
 
-		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
-			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+	tests := []struct {
+		inspect image.InspectResponse
+		name    string
+		want    bool
+	}{
+		{
+			name: "classic store image without repo digests",
+			inspect: image.InspectResponse{
 				ID:       "sha256:local-only-image",
 				RepoTags: []string{"local-only:latest"},
-			})) {
-				return
-			}
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(server.Close)
+			},
+			want: true,
+		},
+		{
+			name: "containerd store image built on this daemon",
+			inspect: image.InspectResponse{
+				ID:          "sha256:local-only-image",
+				RepoTags:    []string{"local-only:latest"},
+				RepoDigests: []string{repoDigest},
+				Identity:    &image.Identity{Build: []image.BuildIdentity{{Ref: "build-ref"}}},
+			},
+			want: true,
+		},
+		{
+			name: "containerd store image loaded from an archive",
+			inspect: image.InspectResponse{
+				ID:          "sha256:local-only-image",
+				RepoTags:    []string{"local-only:latest"},
+				RepoDigests: []string{repoDigest},
+				Descriptor: &v1.Descriptor{
+					Annotations: map[string]string{"io.containerd.image.name": "docker.io/library/local-only:latest"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "containerd store image pulled from a registry",
+			inspect: image.InspectResponse{
+				ID:          "sha256:local-only-image",
+				RepoTags:    []string{"local-only:latest"},
+				RepoDigests: []string{repoDigest},
+				Identity:    &image.Identity{Pull: []image.PullIdentity{{Repository: "docker.io/library/local-only"}}},
+			},
+		},
+	}
 
-	svc := &ImageUpdateService{dockerService: newImageUpdateTestDockerService(t, server)}
-	snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
-	require.NoError(t, err)
-	assert.True(t, snapshot.IsLocalBuild)
-	assert.Equal(t, "sha256:local-only-image", snapshot.PrimaryDigest)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/containers/json") {
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+					return
+				}
+
+				if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(t, json.MarshalWrite(w, tt.inspect))
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			t.Cleanup(server.Close)
+
+			svc := &ImageUpdateService{dockerService: newImageUpdateTestDockerService(t, server)}
+			snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, snapshot.IsLocalBuild)
+		})
+	}
 }
 
 // registryPing answers the /v2/ version check every registry client sends before its first request.

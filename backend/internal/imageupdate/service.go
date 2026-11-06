@@ -671,7 +671,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		PrimaryDigest:     slices.Concat(repositoryDigests, allDigests, []string{inspectResponse.ID})[0],
 		AllDigests:        kit.Ternary(len(allDigests) > 0, allDigests, []string{inspectResponse.ID}),
 		RepositoryDigests: repositoryDigests,
-		IsLocalBuild:      len(allDigests) == 0 || isLocalBuildImageRef(imageRef, composeBuildRefs),
+		IsLocalBuild:      imageref.IsLocalImage(inspectResponse.InspectResponse) || isLocalBuildImageRef(imageRef, composeBuildRefs),
 		Version:           strings.TrimSpace(kit.FromPtr(inspectResponse.Config).Labels[registry.OCIImageVersionLabel]),
 		Created:           created,
 		Platform: v1.Platform{
