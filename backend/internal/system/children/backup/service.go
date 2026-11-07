@@ -720,7 +720,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request typ
 		return err
 	}
 	if run.Status != types.SystemBackupStatusSucceeded {
-		return errors.New("only successful system backups can be restored")
+		return common.ErrSystemBackupNotRestorable
 	}
 	key, err := s.recoveryKey(ctx, request.RecoveryKey)
 	if err != nil {
@@ -975,17 +975,17 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request types.Upl
 		return nil, err
 	}
 	if run.Status != types.SystemBackupStatusSucceeded || run.LocalSnapshotID == "" {
-		return nil, errors.New("only successful local system backups can be uploaded")
+		return nil, common.ErrSystemBackupNotUploadable
 	}
 	if run.RemoteSnapshotID != "" {
-		return nil, errors.New("system backup has already been uploaded")
+		return nil, common.ErrSystemBackupAlreadyUploaded
 	}
 	key, err := s.recoveryKey(ctx, request.RecoveryKey)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(request.S3DestinationID) == "" {
-		return nil, errors.New("select an S3 destination for the upload")
+		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the upload"))
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -1038,7 +1038,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return err
 	}
 	if run.Status != types.SystemBackupStatusSucceeded {
-		return errors.New("only successful system backups can be restored")
+		return common.ErrSystemBackupNotRestorable
 	}
 	key, err := s.recoveryKey(ctx, recoveryKey)
 	if err != nil {
