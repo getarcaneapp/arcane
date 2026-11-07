@@ -5,11 +5,13 @@ export const ROW_ACTIONS_TRIGGER_NAME = /^(Open menu|Actions for .+)$/;
 export async function openRowActionsMenu(page: Page, row: Locator) {
 	const targetRow = row.first();
 	await expect(targetRow).toBeVisible();
-	await targetRow.hover();
 
 	const trigger = targetRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).first();
 	await expect(trigger).toBeVisible();
-	await trigger.click();
+	await expect(async () => {
+		await targetRow.hover();
+		await trigger.click({ timeout: 1_000 });
+	}).toPass();
 
 	const menu = page.getByRole('menu').filter({ visible: true }).last();
 	await expect(menu).toBeVisible();

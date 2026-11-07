@@ -95,7 +95,6 @@ export type UserPreferences = {
 	backdrop?: string;
 	backdropDim?: number;
 	animationsEnabled?: boolean;
-	sidebarHoverExpansion?: boolean;
 	keyboardShortcutsEnabled?: boolean;
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;

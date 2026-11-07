@@ -35,7 +35,6 @@
 	const oledModeEnabled = $derived(preferences.oledMode ?? false);
 	const glassEffectsEnabled = $derived(preferences.glassEffectsEnabled ?? true);
 	const animationsEnabled = $derived(preferences.animationsEnabled ?? true);
-	const sidebarHoverExpansionEnabled = $derived(preferences.sidebarHoverExpansion ?? true);
 	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
 	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
 	const projectEditorLayoutValue = $derived<ProjectEditorLayout>(preferences.defaultProjectEditorLayout ?? 'auto');
@@ -250,20 +249,6 @@
 						aria-describedby={describedBy}
 					/>
 				</div>
-			{/snippet}
-		</SettingsRow>
-		<SettingsRow
-			label={m.navigation_sidebar_hover_expansion_label()}
-			description={m.navigation_sidebar_hover_expansion_description()}
-			layout="switch"
-		>
-			{#snippet children({ describedBy })}
-				<Switch
-					id="account-sidebar-hover-expansion"
-					checked={sidebarHoverExpansionEnabled}
-					onCheckedChange={(checked) => void saveUserPreferences({ sidebarHoverExpansion: checked })}
-					aria-describedby={describedBy}
-				/>
 			{/snippet}
 		</SettingsRow>
 		<SettingsRow

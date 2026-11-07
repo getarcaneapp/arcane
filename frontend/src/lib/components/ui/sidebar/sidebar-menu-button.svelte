@@ -34,8 +34,6 @@
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 
-	import { useSidebar } from './context.svelte.js';
-
 	let {
 		ref = $bindable(null),
 		class: className,
@@ -56,24 +54,11 @@
 		child?: Snippet<[{ props: Record<string, unknown> }]>;
 	} = $props();
 
-	const sidebar = useSidebar();
-
 	const buttonProps = $derived({
 		class: cn(
 			sidebarMenuButtonVariants({ variant, size }),
 			// Always ensure icons are visible and centered in collapsed mode
 			'group-data-[collapsible=icon]:!justify-center',
-			sidebar.hoverExpansionEnabled && [
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:!pr-3 group-data-[collapsible=icon]:group-data-[hovered=true]:!pl-2.5',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:!w-full group-data-[collapsible=icon]:group-data-[hovered=true]:!justify-start',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:[&>a]:!w-full group-data-[collapsible=icon]:group-data-[hovered=true]:[&>a]:!justify-start',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:[&>button]:!w-full group-data-[collapsible=icon]:group-data-[hovered=true]:[&>button]:!justify-start',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:[&>span]:!block',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:[&>div.grid]:!grid',
-				'group-data-[collapsible=icon]:group-data-[hovered=true]:[&>svg.ml-auto]:!block',
-				size === 'lg' &&
-					'group-data-[collapsible=icon]:group-data-[hovered=true]:!h-12 group-data-[collapsible=icon]:group-data-[hovered=true]:!p-2'
-			],
 			className
 		),
 		'data-slot': 'sidebar-menu-button',

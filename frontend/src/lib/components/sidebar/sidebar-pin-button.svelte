@@ -28,10 +28,6 @@
 		if (!sidebar.isTablet) {
 			// Always toggle the pinning preference
 			sidebar.toggle();
-			// Clear hover state when explicitly pinning/unpinning
-			if (sidebar.isHovered) {
-				sidebar.setHovered(false);
-			}
 		}
 	}}
 >

@@ -38,7 +38,6 @@
 		data-collapsible={sidebar.state === 'collapsed' ? collapsible : ''}
 		data-variant={variant}
 		data-side={side}
-		data-hovered={sidebar.hoverExpansionEnabled && sidebar.isHovered ? 'true' : 'false'}
 		data-slot="sidebar"
 	>
 		<!-- This is what handles the sidebar gap on desktop -->
@@ -67,19 +66,8 @@
 				variant === 'inset' && 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]',
 				variant === 'sidebar' &&
 					'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
-				// Conditionally apply hover expansion if enabled
-				sidebar.hoverExpansionEnabled && ['group-data-[collapsible=icon]:group-data-[hovered=true]:w-(--sidebar-width)'],
 				className
 			)}
-			onmouseenter={() => {
-				// Only track hover state if needed (expansion enabled or for dropdown management)
-				if (sidebar.state === 'collapsed') {
-					sidebar.setHovered(true);
-				}
-			}}
-			onmouseleave={() => {
-				sidebar.setHovered(false, 150);
-			}}
 			{...restProps}
 		>
 			<div

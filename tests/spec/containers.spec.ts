@@ -1368,10 +1368,8 @@ test.describe('Resource sorting', () => {
 	}
 
 	async function setPageSize(page: Page, size: string) {
-		// The rows-per-page control is a bits-ui Select trigger, which renders as a plain
-		// button rather than a combobox.
-		await page.locator('[data-slot="select-trigger"]').filter({ visible: true }).first().click();
-		await page.getByRole('option', { name: size, exact: true }).click();
+		await page.getByRole('button', { name: 'View', exact: true }).click();
+		await page.getByRole('menuitemradio', { name: size, exact: true }).click();
 	}
 
 	test('memory sort orders globally by bytes and renders matching samples', async ({ page }) => {

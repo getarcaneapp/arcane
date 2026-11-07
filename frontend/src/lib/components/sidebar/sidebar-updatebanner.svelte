@@ -65,7 +65,7 @@
 						</button>
 					{/snippet}
 				</Tooltip.Trigger>
-				<Tooltip.Content side="right" align="center" hidden={sidebar.state !== 'collapsed' || sidebar.isHovered}>
+				<Tooltip.Content side="right" align="center" hidden={sidebar.state !== 'collapsed'}>
 					{tooltipText}
 				</Tooltip.Content>
 			</Tooltip.Root>

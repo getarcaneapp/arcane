@@ -17,7 +17,7 @@
 	data-sidebar="menu-sub"
 	class={cn(
 		'my-0.5 mr-0 ml-4.5 flex min-w-0 translate-x-px flex-col gap-0.5 border-l border-sidebar-border pr-0 pl-2.5',
-		'group-data-[collapsible=icon]:hidden group-data-[collapsible=icon]:group-data-[hovered=true]:flex',
+		'group-data-[collapsible=icon]:hidden',
 		className
 	)}
 	{...restProps}

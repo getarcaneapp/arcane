@@ -127,10 +127,7 @@
 	}}
 >
 	{#if type !== undefined && loading}
-		<div
-			class="absolute inset-0 flex items-center justify-center rounded-inherit bg-background/55 backdrop-blur-sm"
-			aria-hidden="true"
-		>
+		<div class="absolute inset-0 flex items-center justify-center rounded-inherit bg-background/80" aria-hidden="true">
 			<Spinner class="size-4" />
 		</div>
 		<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>

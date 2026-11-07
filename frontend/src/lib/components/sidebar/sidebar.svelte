@@ -55,7 +55,7 @@
 	let showVersionDialog = $state(false);
 	const effectiveUser = $derived(storeUser.current ?? user);
 
-	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
+	const isCollapsed = $derived(sidebar.state === 'collapsed');
 	const overviewItems = $derived(filterByPermissions(navigationItems.overviewItems, effectiveUser ?? null, permissionsManifest));
 	const deployItems = $derived(filterByPermissions(navigationItems.deployItems, effectiveUser ?? null, permissionsManifest));
 	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, permissionsManifest));

@@ -29,10 +29,9 @@ async function navigateToProjects(page: Page) {
 }
 
 async function clickProjectsPageUpdateAction(page: Page) {
-	await page.getByRole('button', { name: 'More actions', exact: true }).click();
-	const updateProjectsItem = page.getByRole('menuitem', { name: 'Update Projects', exact: true });
-	await expect(updateProjectsItem).toBeVisible();
-	await updateProjectsItem.click();
+	const updateProjectsButton = page.getByRole('button', { name: 'Update Projects', exact: true });
+	await expect(updateProjectsButton).toBeVisible();
+	await updateProjectsButton.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {

@@ -14,7 +14,7 @@
 		base: 'bg-background flex w-full max-w-full items-center gap-2 rounded-md border py-1.5 pr-1.5 pl-3',
 		variants: {
 			variant: {
-				default: 'backdrop-blur-sm bg-card/90',
+				default: 'bg-card/90',
 				secondary: 'border-border bg-accent',
 				destructive: 'border-destructive bg-destructive',
 				primary: 'border-primary bg-primary text-primary-foreground'
