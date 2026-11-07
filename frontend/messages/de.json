@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Desktop-Seitenleiste",
   "navigation_default_landing_page_label": "Standard-Startseite",
   "navigation_default_landing_page_description": "Seite, die nach der Anmeldung geöffnet werden soll.",
-  "navigation_sidebar_hover_expansion_label": "Hover-Erweiterung aktivieren",
-  "navigation_sidebar_hover_expansion_description": "Wenn aktiviert, wird die eingeklappte Seitenleiste beim Darüberfahren vorübergehend erweitert, um vollständige Labels anzuzeigen. Wenn deaktiviert, werden stattdessen Tooltips angezeigt – für eine aufgeräumte Navigation mit fester Breite.",
   "navigation_keyboard_shortcuts_label": "Tastenkürzel",
   "navigation_keyboard_shortcuts_description": "Tastenkürzel für schnelle Navigation aktivieren (z. B. Mod+1 für Dashboard). Wenn deaktiviert, werden Shortcut-Hinweise auch in Tooltips ausgeblendet.",
   "server_default": "Serverstandard",
