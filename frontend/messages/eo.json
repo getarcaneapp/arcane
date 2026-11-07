@@ -4489,5 +4489,12 @@
   "files": "Dosieroj",
   "log_raw_output": "Kruda eligo",
   "log_raw_output_tooltip": "Montras la originalan linian tekston anstataŭ prilaboritajn strukturitajn protokolojn.",
-  "log_stderr_line": "Norma erara eligo"
+  "log_stderr_line": "Norma erara eligo",
+  "also_remove_deployed_swarm_stack": "Ankaŭ forigu la deplojitan armetostakon.",
+  "bring_down_stack": "Mallevu la stakon",
+  "bring_down_stack_confirm_message": "Forigi la servojn, retojn, agordojn kaj sekretojn de ĉi tiu stako? Ĝiaj konservitaj compose-dosieroj estas konservataj, por ke ĝi povu esti denove deplojita.",
+  "stack_brought_down": "Stako \"{name}\" falis",
+  "failed_to_bring_down_stack": "Malsukcesis malŝargi stakon \"{name}\"",
+  "stack_brought_up": "Ŝtako \"{name}\" aperis",
+  "failed_to_bring_up_stack": "Malsukcesis alŝuti stakon \"{name}\""
 }
