@@ -61,6 +61,11 @@ type (
 		CountLocal        func(ctx context.Context) (int64, error)
 	}
 
+	ExpiredBackupDeletion struct {
+		Expired       func(ctx context.Context, within []string) ([]string, error)
+		IncludeRemote bool
+	}
+
 	// Dependencies are the persistence, runtime, and helper-container operations volume backups use.
 	Dependencies struct {
 		Store            Store
@@ -634,18 +639,21 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 		owners = append(owners, policy.ID)
 	}
 	now := time.Now()
-	return s.DeleteExpiredBackups(ctx, true, func(ctx context.Context, within []string) ([]string, error) {
-		return s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
-			Now:                   now,
-			SystemVolumePolicyIDs: owners,
-			Within:                within,
-			Retention:             time.Duration(days) * 24 * time.Hour,
-		})
+	return s.DeleteExpiredBackups(ctx, ExpiredBackupDeletion{
+		IncludeRemote: true,
+		Expired: func(ctx context.Context, within []string) ([]string, error) {
+			return s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
+				Now:                   now,
+				SystemVolumePolicyIDs: owners,
+				Within:                within,
+				Retention:             time.Duration(days) * 24 * time.Hour,
+			})
+		},
 	})
 }
 
-func (s *Service) DeleteExpiredBackups(ctx context.Context, includeRemote bool, expired func(ctx context.Context, within []string) ([]string, error)) error {
-	ids, err := expired(ctx, nil)
+func (s *Service) DeleteExpiredBackups(ctx context.Context, deletion ExpiredBackupDeletion) error {
+	ids, err := deletion.Expired(ctx, nil)
 	if err != nil || len(ids) == 0 {
 		return err
 	}
@@ -686,7 +694,7 @@ func (s *Service) DeleteExpiredBackups(ctx context.Context, includeRemote bool, 
 			unlock()
 		}
 	}
-	if ids, err = expired(ctx, ids); err != nil {
+	if ids, err = deletion.Expired(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
 	if entries, err = s.backupsByID(ctx, ids); err != nil {
@@ -706,7 +714,7 @@ func (s *Service) DeleteExpiredBackups(ctx context.Context, includeRemote bool, 
 		rusticEntries = append(rusticEntries, entry)
 	}
 	if len(rusticEntries) > 0 {
-		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, includeRemote))
+		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, deletion.IncludeRemote))
 	}
 	if deleteErr == nil {
 		slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))

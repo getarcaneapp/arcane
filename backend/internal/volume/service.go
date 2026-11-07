@@ -218,26 +218,29 @@ func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention type
 		return nil
 	}
 	keep := backup.RunRetention{Succeeded: retention.Keep + 1, Failed: retention.Keep}
-	return s.backup.DeleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, within []string) ([]string, error) {
-		var expired []string
-		for _, seriesID := range retention.SeriesIDs {
-			ids, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", seriesID, keep)
-			if err != nil {
-				return nil, err
+	return s.backup.DeleteExpiredBackups(ctx, volumebackup.ExpiredBackupDeletion{
+		IncludeRemote: retention.IncludeRemote,
+		Expired: func(ctx context.Context, within []string) ([]string, error) {
+			var expired []string
+			for _, seriesID := range retention.SeriesIDs {
+				ids, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", seriesID, keep)
+				if err != nil {
+					return nil, err
+				}
+				expired = append(expired, ids...)
 			}
-			expired = append(expired, ids...)
-		}
-		if within != nil {
-			locked := make(map[string]struct{}, len(within))
-			for _, id := range within {
-				locked[id] = struct{}{}
+			if within != nil {
+				locked := make(map[string]struct{}, len(within))
+				for _, id := range within {
+					locked[id] = struct{}{}
+				}
+				expired = slices.DeleteFunc(expired, func(id string) bool {
+					_, ok := locked[id]
+					return !ok
+				})
 			}
-			expired = slices.DeleteFunc(expired, func(id string) bool {
-				_, ok := locked[id]
-				return !ok
-			})
-		}
-		return expired, nil
+			return expired, nil
+		},
 	})
 }
 

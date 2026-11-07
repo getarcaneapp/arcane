@@ -267,8 +267,11 @@ func TestDeleteExpiredBackupsLeavesBusyVolumesForTheNextRun(t *testing.T) {
 	unlock := locks.Lock("app-data")
 	defer unlock()
 
-	require.NoError(t, service.DeleteExpiredBackups(t.Context(), true, func(ctx context.Context, _ []string) ([]string, error) {
-		return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, backup.RunRetention{Succeeded: 1, Failed: 1})
+	require.NoError(t, service.DeleteExpiredBackups(t.Context(), ExpiredBackupDeletion{
+		IncludeRemote: true,
+		Expired: func(ctx context.Context, _ []string) ([]string, error) {
+			return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, backup.RunRetention{Succeeded: 1, Failed: 1})
+		},
 	}))
 
 	var remaining int64
