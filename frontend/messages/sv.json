@@ -237,7 +237,6 @@
   "common_select_all": "Markera alla",
   "common_select_row": "Markera rad",
   "common_showing_of_total": "Visar {shown} av {total}",
-  "table_pagination_bottom": "Sidnumrering längst ner på sidan",
   "table_expand_row": "Visa hela raden",
   "table_collapse_row": "Dölj raden",
   "table_group_items": "{count} artikel(er)",
@@ -4490,5 +4489,14 @@
   "dusk": "Skymning",
   "ribbon": "Band",
   "silver": "Silver",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Förhindra att lagringsutrymmet för säkerhetskopior växer oändligt genom att ta bort säkerhetskopior som inte längre hanteras av något schema.",
+  "unmanaged_backup_retention_days": "Lagringstid för icke-hanterade säkerhetskopior (dagar)",
+  "unmanaged_backup_retention_days_description": "Ta bort säkerhetskopior av borttagna volymer eller raderade scheman så många dagar efter att de upphört att hanteras, samt säkerhetskopior som tagits före återställningar när de blivit så gamla.",
+  "unmanaged_backup_retention_days_help": "Rensningen körs två gånger om dagen och tar även bort S3-kopiorna. Ange 0 för att behålla dessa säkerhetskopior på obestämd tid.",
+  "unmanaged_backup_retention_summary": "Säkerhetskopior av borttagna volymer eller raderade scheman, samt säkerhetskopior av säkerhetskopior, raderas efter {days} dagar på denna server.",
+  "unmanaged_backup_retention_disabled_summary": "Säkerhetskopior av borttagna volymer eller raderade scheman, samt säkerhetskopior av säkerhetsskäl, sparas på obestämd tid på denna server.",
+  "table_pagination": "Paginering av tabeller",
+  "table_range_of_total": "{start}–{end} av {total}",
+  "table_range": "{start}–{end}"
 }
