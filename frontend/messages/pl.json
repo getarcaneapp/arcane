@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Przeglądaj",
   "volumes_nav_backups": "Kopie zapasowe",
   "volumes_workspace_files": "Obszar roboczy „Volume”",
-  "volumes_workspace_files_empty": "W tym woluminie nie ma żadnych plików obszaru roboczego",
   "volumes_workspace_upload_description": "Prześlij jeden lub więcej plików do obszaru roboczego woluminu.",
   "volumes_workspace_root_destination": "Pierwiastek z objętości",
   "volumes_workspace_root_path": "Utwórz w katalogu głównym woluminu.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Miejsce pracy",
-  "workspace_files": "Pliki obszaru roboczego",
-  "workspace_files_empty": "Brak plików obszaru roboczego",
   "workspace_new_file": "Nowy plik",
   "workspace_create_file_title": "Utwórz plik",
   "workspace_create_folder_title": "Utwórz folder",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "Domyślny układ edytora projektu",
   "project_editor_layout_description": "Układ wyświetlany po otwarciu konfiguracji projektu.",
-  "project_editor_layout_auto_description": "Widok obszaru roboczego dla projektów zawierających dodatkowe pliki; w pozostałych przypadkach widok klasyczny.",
   "project_editor_layout_classic_description": "Edytory kodu i środowiska obok siebie.",
   "project_editor_layout_tree_description": "Drzewo plików obszaru roboczego z edytorami w kartach.",
   "automatic": "Automatyczny",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Tekst i czcionki",
   "layout_and_navigation": "Układ strony i nawigacja",
   "language_and_region": "Język i region",
-  "editor": "Redaktor"
+  "editor": "Redaktor",
+  "files": "Pliki"
 }
