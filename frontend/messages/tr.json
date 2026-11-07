@@ -4489,5 +4489,12 @@
   "files": "Dosyalar",
   "log_raw_output": "İşlenmemiş çıktı",
   "log_raw_output_tooltip": "Ayrıştırılmış yapılandırılmış günlükler yerine orijinal satır metnini gösterir.",
-  "log_stderr_line": "Standart hata çıktısı"
+  "log_stderr_line": "Standart hata çıktısı",
+  "also_remove_deployed_swarm_stack": "Ayrıca, devreye alınmış swarm yığınını da kaldırın",
+  "bring_down_stack": "Yığını Boşalt",
+  "bring_down_stack_confirm_message": "Bu yığının hizmetlerini, ağlarını, yapılandırmalarını ve gizli bilgilerini silmek mi? Kaydedilmiş compose dosyaları, yığının yeniden dağıtılabilmesi için korunur.",
+  "stack_brought_down": "\"{name}\" yığını devre dışı bırakıldı",
+  "failed_to_bring_down_stack": "\"{name} \" yığınını indirilemedi",
+  "stack_brought_up": "\"{name}\" yığını getirildi",
+  "failed_to_bring_up_stack": "\"{name} \" yığını başlatılamadı"
 }
