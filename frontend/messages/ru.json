@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Боковая панель рабочего стола",
   "navigation_default_landing_page_label": "Страница по умолчанию",
   "navigation_default_landing_page_description": "Страница, которая откроется после входа.",
-  "navigation_sidebar_hover_expansion_label": "Включить Hover расширение",
-  "navigation_sidebar_hover_expansion_description": "Если включено, наведение курсора на свернутую боковую панель временно расширит её для показа полной метки. Если отключено, подсказки будут отображаться вместо того, чтобы ориентироваться на более чистую систему фиксированной ширины.",
   "navigation_keyboard_shortcuts_label": "Горячие клавиши",
   "navigation_keyboard_shortcuts_description": "Включить горячие клавиши для быстрой навигации (например, Mod+1 для панели управления). Если отключено, подсказки также будут скрыты из подсказок.",
   "server_default": "Сервер по умолчанию",
