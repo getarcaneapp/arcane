@@ -237,7 +237,6 @@
   "common_select_all": "Seleccionar todo",
   "common_select_row": "Seleccionar fila",
   "common_showing_of_total": "Mostrando {shown} de {total}",
-  "table_pagination_bottom": "Paginación inferior de la tabla",
   "table_expand_row": "Expandir fila",
   "table_collapse_row": "Contraer fila",
   "table_group_items": "{count} elemento(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "Anochecer",
   "ribbon": "Cinta",
   "silver": "Plata",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Evita que el espacio de almacenamiento de las copias de seguridad crezca sin límite eliminando aquellas copias de seguridad que ya no se gestionan mediante ninguna programación.",
+  "unmanaged_backup_retention_days": "Retención de copias de seguridad no gestionadas (días)",
+  "unmanaged_backup_retention_days_description": "Eliminar las copias de seguridad de los volúmenes eliminados o de las programaciones suprimidas una vez transcurridos tantos días desde que dejaron de gestionarse, así como las copias de seguridad de seguridad realizadas antes de las restauraciones, una vez que hayan alcanzado esta antigüedad.",
+  "unmanaged_backup_retention_days_help": "La limpieza se ejecuta dos veces al día y también elimina las copias de S3. Establece el valor en 0 para conservar estas copias de seguridad de forma indefinida.",
+  "unmanaged_backup_retention_summary": "Las copias de seguridad de los volúmenes eliminados o de las programaciones borradas, así como las copias de seguridad de seguridad, se eliminan tras {days} días en este servidor.",
+  "unmanaged_backup_retention_disabled_summary": "Las copias de seguridad de los volúmenes eliminados o de las programaciones borradas, así como las copias de seguridad de seguridad, se conservan indefinidamente en este servidor.",
+  "table_pagination": "Paginación de tablas",
+  "table_range_of_total": "{start}–{end} de {total}",
+  "table_range": "{start}–{end}"
 }
