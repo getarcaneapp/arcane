@@ -4437,8 +4437,6 @@
   "installed_fonts": "已安装的字体",
   "installed_fonts_unavailable": "无法读取已安装的字体",
   "font_preview_sample": "那只敏捷的棕色狐狸跳过那只懒惰的狗 0123456789",
-  "montserrat": "蒙特塞拉特",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "无法加载文件",
   "failed_to_save_file": "无法保存文件",
   "copy_current_path": "复制当前路径",
