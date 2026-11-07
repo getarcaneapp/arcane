@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "데스크톱 사이드바",
   "navigation_default_landing_page_label": "기본 랜딩 페이지",
   "navigation_default_landing_page_description": "로그인 후 열릴 페이지입니다.",
-  "navigation_sidebar_hover_expansion_label": "마우스 호버 시 확장 활성화",
-  "navigation_sidebar_hover_expansion_description": "활성화 시, 축소된 사이드바 위에 마우스를 올리면 전체 메뉴 이름이 보이도록 일시적으로 확장됩니다. 비활성화하면 고정된 너비를 유지하며 툴팁으로만 메뉴 이름이 표시됩니다.",
   "navigation_keyboard_shortcuts_label": "키보드 단축키",
   "navigation_keyboard_shortcuts_description": "빠른 메뉴 이동을 위한 키보드 단축키를 활성화합니다 (예: 대시보드 이동 시 Mod+1). 비활성화 시 툴팁의 단축키 안내도 함께 숨겨집니다.",
   "server_default": "서버 기본값",
