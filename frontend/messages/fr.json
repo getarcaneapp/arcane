@@ -237,7 +237,6 @@
   "common_select_all": "Tout sélectionner",
   "common_select_row": "Sélectionner la ligne",
   "common_showing_of_total": "Affichage de {shown} sur {total}",
-  "table_pagination_bottom": "Pagination du tableau inférieur",
   "table_expand_row": "Développer la ligne",
   "table_collapse_row": "Réduire la ligne",
   "table_group_items": "{count} article(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "Crépuscule",
   "ribbon": "Ruban",
   "silver": "Argent",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Évitez que l'espace de stockage dédié aux sauvegardes ne grossisse indéfiniment en supprimant les sauvegardes qui ne sont plus gérées par aucune planification.",
+  "unmanaged_backup_retention_days": "Durée de conservation des sauvegardes non gérées (en jours)",
+  "unmanaged_backup_retention_days_description": "Supprimer les sauvegardes des volumes supprimés ou des planifications supprimées tant jours après qu'ils ont cessé d'être gérés, ainsi que les sauvegardes de sécurité effectuées avant les restaurations dès qu'elles ont atteint cet âge.",
+  "unmanaged_backup_retention_days_help": "La procédure de nettoyage s'exécute deux fois par jour et supprime également les copies S3. Définissez la valeur 0 pour conserver ces sauvegardes indéfiniment.",
+  "unmanaged_backup_retention_summary": "Les sauvegardes des volumes supprimés ou des planifications supprimées, ainsi que les sauvegardes de sécurité, sont supprimées au bout de {days} jours sur ce serveur.",
+  "unmanaged_backup_retention_disabled_summary": "Les sauvegardes des volumes supprimés ou des planifications supprimées, ainsi que les sauvegardes de sécurité, sont conservées indéfiniment sur ce serveur.",
+  "table_pagination": "Pagination des tableaux",
+  "table_range_of_total": "{start}–{end} de {total}",
+  "table_range": "{start}–{end}"
 }
