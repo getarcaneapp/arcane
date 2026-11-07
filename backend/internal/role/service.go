@@ -13,12 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -33,8 +33,8 @@ import (
 type (
 	RoleService struct {
 		db             *database.DB
-		userCache      *hot.HotCache[string, *authz.PermissionSet]
-		apiKeyCache    *hot.HotCache[string, *authz.PermissionSet]
+		userCache      *cache.Cache[string, *authz.PermissionSet]
+		apiKeyCache    *cache.Cache[string, *authz.PermissionSet]
 		cacheFillMu    sync.Mutex
 		userCacheGen   atomic.Uint64
 		apiKeyCacheGen atomic.Uint64
@@ -50,14 +50,16 @@ const (
 func NewRoleService(db *database.DB) *RoleService {
 	return &RoleService{
 		db: db,
-		userCache: hot.NewHotCache[string, *authz.PermissionSet](hot.LRU, 2048).
-			WithTTL(permissionCacheTTL).
-			WithJanitor().
-			Build(),
-		apiKeyCache: hot.NewHotCache[string, *authz.PermissionSet](hot.LRU, 2048).
-			WithTTL(permissionCacheTTL).
-			WithJanitor().
-			Build(),
+		userCache: &cache.Cache[string, *authz.PermissionSet]{
+			Capacity:        2048,
+			TTL:             permissionCacheTTL,
+			JanitorInterval: permissionCacheTTL,
+		},
+		apiKeyCache: &cache.Cache[string, *authz.PermissionSet]{
+			Capacity:        2048,
+			TTL:             permissionCacheTTL,
+			JanitorInterval: permissionCacheTTL,
+		},
 	}
 }
 
@@ -558,7 +560,10 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*a
 	}
 	s.cacheFillMu.Lock()
 	if s.userCacheGen.Load() == gen {
-		s.userCache.Set(userID, ps)
+		s.userCache.Set(cache.Entry[string, *authz.PermissionSet]{
+			Key:   userID,
+			Value: ps,
+		})
 	}
 	s.cacheFillMu.Unlock()
 	return ps, nil
@@ -669,7 +674,10 @@ func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID str
 	}
 	s.cacheFillMu.Lock()
 	if s.apiKeyCacheGen.Load() == gen {
-		s.apiKeyCache.Set(apiKeyID, permissions)
+		s.apiKeyCache.Set(cache.Entry[string, *authz.PermissionSet]{
+			Key:   apiKeyID,
+			Value: permissions,
+		})
 	}
 	s.cacheFillMu.Unlock()
 	return permissions, nil
@@ -907,8 +915,8 @@ func (s *RoleService) InvalidateUser(userID string) {
 }
 
 func (s *RoleService) Stop() {
-	s.userCache.StopJanitor()
-	s.apiKeyCache.StopJanitor()
+	s.userCache.Close()
+	s.apiKeyCache.Close()
 }
 
 func (s *RoleService) InvalidateApiKey(apiKeyID string) {

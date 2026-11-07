@@ -14,13 +14,13 @@ import (
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -66,7 +66,7 @@ type (
 		containerService      *container.ContainerService
 		settingsService       *settings.SettingsService
 		activityService       *activity.ActivityService
-		dockerHostMemoryCache *hot.HotCache[struct{}, dockerHostMemoryInfo]
+		dockerHostMemoryCache *cache.Cache[struct{}, dockerHostMemoryInfo]
 
 		prune   *prune.Service
 		upgrade *upgrade.Service
@@ -133,9 +133,10 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		containerService: p.ContainerService,
 		settingsService:  p.SettingsService,
 		activityService:  p.ActivityService,
-		dockerHostMemoryCache: hot.NewHotCache[struct{}, dockerHostMemoryInfo](hot.LRU, 1).
-			WithTTL(dockerHostMemoryCacheTTL).
-			Build(),
+		dockerHostMemoryCache: &cache.Cache[struct{}, dockerHostMemoryInfo]{
+			Capacity: 1,
+			TTL:      dockerHostMemoryCacheTTL,
+		},
 		prune: prune.NewService(prune.ServiceParams{
 			Location:           p.Config.GetLocation(),
 			DockerService:      p.DockerService,
@@ -408,13 +409,13 @@ func (s *SystemService) GetDockerHostMemory(ctx context.Context) (uint64, uint64
 		return 0, 0, false
 	}
 
-	info, found, err := s.dockerHostMemoryCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]dockerHostMemoryInfo, error) {
+	info, found, err := s.dockerHostMemoryCache.GetOrLoad(struct{}{}, func(struct{}) (dockerHostMemoryInfo, bool, error) {
 		metadata, err := s.loadDockerHostMemory(ctx)
 		if err != nil {
 			slog.DebugContext(ctx, "Docker host memory accounting unavailable", "error", err)
 		}
 		// Cache failures too, without retaining expired metadata.
-		return map[struct{}]dockerHostMemoryInfo{{}: metadata}, nil
+		return metadata, true, nil
 	})
 	if err != nil || !found || info.total == 0 || ctx.Err() != nil {
 		return 0, 0, false

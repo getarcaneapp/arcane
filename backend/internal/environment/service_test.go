@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/apikey"
@@ -1069,7 +1070,11 @@ func TestEnvironmentService_getCachedEnvironmentIDForToken_ExpiresAndCleansRever
 	})
 	svc.agentTokens.mu.Lock()
 	svc.agentTokens.byEnvID["env-expired"] = "expired-token"
-	svc.agentTokens.byToken.SetWithTTL("expired-token", "env-expired", time.Nanosecond)
+	svc.agentTokens.byToken.Set(cache.Entry[string, string]{
+		Key:   "expired-token",
+		Value: "env-expired",
+		TTL:   time.Nanosecond,
+	})
 	time.Sleep(time.Millisecond)
 	svc.agentTokens.mu.Unlock()
 

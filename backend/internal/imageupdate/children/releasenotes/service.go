@@ -22,9 +22,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
-	"github.com/samber/hot"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -41,9 +41,9 @@ type (
 		settings      *settings.SettingsService
 		remoteConfig  func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error)
 		httpClient    *http.Client
-		releases      *hot.HotCache[string, []githubRelease]
-		taggedRelease *hot.HotCache[string, githubRelease]
-		upstreamRepos *hot.HotCache[string, []string]
+		releases      *cache.Cache[string, []githubRelease]
+		taggedRelease *cache.Cache[string, githubRelease]
+		upstreamRepos *cache.Cache[string, []string]
 		githubAPIBase string
 	}
 
@@ -114,9 +114,18 @@ func NewService(
 			MaxIdleConnsPerHost: 32,
 		}),
 		githubAPIBase: githubAPIBase,
-		releases:      hot.NewHotCache[string, []githubRelease](hot.LRU, 256).WithTTL(time.Hour).Build(),
-		taggedRelease: hot.NewHotCache[string, githubRelease](hot.LRU, 256).WithTTL(time.Hour).Build(),
-		upstreamRepos: hot.NewHotCache[string, []string](hot.LRU, 256).WithTTL(time.Hour).Build(),
+		releases: &cache.Cache[string, []githubRelease]{
+			Capacity: 256,
+			TTL:      time.Hour,
+		},
+		taggedRelease: &cache.Cache[string, githubRelease]{
+			Capacity: 256,
+			TTL:      time.Hour,
+		},
+		upstreamRepos: &cache.Cache[string, []string]{
+			Capacity: 256,
+			TTL:      time.Hour,
+		},
 	}
 }
 
@@ -256,18 +265,18 @@ func (s *Service) repoRelease(ctx context.Context, repo, version, imageName stri
 	}
 
 	key := repo + "@" + version
-	release, _, err := s.taggedRelease.GetWithLoaders(key, func(_ []string) (map[string]githubRelease, error) {
+	release, _, err := s.taggedRelease.GetOrLoad(key, func(string) (githubRelease, bool, error) {
 		for _, tag := range slices.Compact([]string{version, "v" + strings.TrimPrefix(version, "v"), releaseTagPrefix + version}) {
 			var tagged githubRelease
 			status, fetchErr := s.githubGet(ctx, "/repos/"+repo+"/releases/tags/"+url.PathEscape(tag), nil, &tagged)
 			if fetchErr != nil {
-				return nil, fetchErr
+				return githubRelease{}, false, fetchErr
 			}
 			if status == http.StatusOK && !tagged.Draft {
-				return map[string]githubRelease{key: tagged}, nil
+				return tagged, true, nil
 			}
 		}
-		return map[string]githubRelease{key: {}}, nil
+		return githubRelease{}, true, nil
 	})
 	return release, err
 }
@@ -275,7 +284,7 @@ func (s *Service) repoRelease(ctx context.Context, repo, version, imageName stri
 func (s *Service) searchUpstreamRepos(ctx context.Context, imagePath string) ([]string, error) {
 	imageName := path.Base(imagePath)
 	owners := []string{imageName, path.Base(path.Dir(imagePath))}
-	repos, _, err := s.upstreamRepos.GetWithLoaders(strings.ToLower(imagePath), func(keys []string) (map[string][]string, error) {
+	repos, _, err := s.upstreamRepos.GetOrLoad(strings.ToLower(imagePath), func(string) ([]string, bool, error) {
 		var result githubRepoSearch
 		if _, fetchErr := s.githubGet(ctx, "/search/repositories", url.Values{
 			"q":        {imageName + " in:name"},
@@ -283,7 +292,7 @@ func (s *Service) searchUpstreamRepos(ctx context.Context, imagePath string) ([]
 			"order":    {"desc"},
 			"per_page": {"10"},
 		}, &result); fetchErr != nil {
-			return nil, fetchErr
+			return nil, false, fetchErr
 		}
 
 		var found []string
@@ -295,22 +304,20 @@ func (s *Service) searchUpstreamRepos(ctx context.Context, imagePath string) ([]
 				found = append(found, item.FullName)
 			}
 		}
-		return map[string][]string{keys[0]: found}, nil
+		return found, true, nil
 	})
 	return repos, err
 }
 
 func (s *Service) githubReleases(ctx context.Context, repo string) ([]githubRelease, error) {
-	releases, _, err := s.releases.GetWithLoaders(repo, func(_ []string) (map[string][]githubRelease, error) {
+	releases, _, err := s.releases.GetOrLoad(repo, func(string) ([]githubRelease, bool, error) {
 		var fetched []githubRelease
 		if _, fetchErr := s.githubGet(ctx, "/repos/"+repo+"/releases", url.Values{"per_page": {strconv.Itoa(releasesPerPage)}}, &fetched); fetchErr != nil {
-			return nil, fetchErr
+			return nil, false, fetchErr
 		}
-		return map[string][]githubRelease{
-			repo: slices.DeleteFunc(fetched, func(release githubRelease) bool {
-				return release.Draft
-			}),
-		}, nil
+		return slices.DeleteFunc(fetched, func(release githubRelease) bool {
+			return release.Draft
+		}), true, nil
 	})
 	return releases, err
 }

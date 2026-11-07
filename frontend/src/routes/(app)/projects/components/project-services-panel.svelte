@@ -9,7 +9,6 @@
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		PlayIcon,
@@ -157,16 +156,15 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-	<div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+	<div class="flex h-10 shrink-0 items-center gap-2 px-2">
 		<LayersIcon class="size-4 text-muted-foreground" />
 		<span class="text-sm font-medium">{m.services()}</span>
-		<Badge variant="gray" size="sm">{servicesWithIds.length}</Badge>
 	</div>
-	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1.5">
+	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
 		{#each servicesWithIds as item (item.id)}
 			{@const status = actionStatus[item.id]}
 			{@const running = item.status?.toLowerCase() === 'running'}
-			<div class="group rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60">
+			<div class="group rounded-lg px-2 py-1.5 transition-colors hover:bg-foreground/4 has-data-[state=open]:bg-foreground/7">
 				<div class="flex items-center gap-2">
 					<span class={cn('size-2 shrink-0 rounded-full', statusDotClass(item.status))} title={item.status}></span>
 					<IconImage
@@ -193,17 +191,6 @@
 					{/if}
 					{#if item.health}
 						<HealthIcon class={cn('size-3.5 shrink-0', healthClass(item.health))} />
-					{/if}
-					{#if serviceImageRef(item)}
-						{@const imageRef = serviceImageRef(item)}
-						{@const parsed = parseImageRef(imageRef)}
-						<ImageUpdateItem
-							updateInfo={updateInfoByRef[imageRef]}
-							{imageRef}
-							repo={parsed.repo}
-							tag={parsed.tag}
-							{environmentId}
-						/>
 					{/if}
 					{#if item.containerId}
 						{@const containerId = item.containerId}
@@ -261,13 +248,26 @@
 						</RowActionsMenu>
 					{/if}
 				</div>
-				{#if item.serviceConfig?.ports?.length}
-					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} />
-					</div>
-				{:else if item.ports?.length}
-					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} />
+				{#if serviceImageRef(item) || item.serviceConfig?.ports?.length || item.ports?.length}
+					<div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-11">
+						{#if serviceImageRef(item)}
+							{@const imageRef = serviceImageRef(item)}
+							{@const parsed = parseImageRef(imageRef)}
+							<div class="flex shrink-0">
+								<ImageUpdateItem
+									updateInfo={updateInfoByRef[imageRef]}
+									{imageRef}
+									repo={parsed.repo}
+									tag={parsed.tag}
+									{environmentId}
+								/>
+							</div>
+						{/if}
+						{#if item.serviceConfig?.ports?.length}
+							<div class="min-w-0"><PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} /></div>
+						{:else if item.ports?.length}
+							<div class="min-w-0"><PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} /></div>
+						{/if}
 					</div>
 				{/if}
 			</div>

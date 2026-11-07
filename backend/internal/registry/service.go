@@ -28,7 +28,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -38,6 +37,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/normalization"
 	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
@@ -88,9 +88,9 @@ type (
 	ContainerRegistryService struct {
 		db                     *database.DB
 		dockerClient           registryDaemonGetter
-		cache                  *hot.HotCache[string, string]
-		digestFailures         *hot.HotCache[string, error]
-		configCache            *hot.HotCache[string, *v1.ConfigFile]
+		cache                  *cache.Cache[string, string]
+		digestFailures         *cache.Cache[string, error]
+		configCache            *cache.Cache[string, *v1.ConfigFile]
 		ecrRefreshGroup        singleflight.Group
 		distributionHTTPClient *http.Client
 		kvService              *kv.KVService
@@ -143,40 +143,32 @@ func NewContainerRegistryService(p ContainerRegistryServiceParams) *ContainerReg
 	service = &ContainerRegistryService{
 		db:           p.DB,
 		dockerClient: p.DockerClient,
-		cache: hot.NewHotCache[string, string](hot.LRU, 4096).
-			WithTTL(registryCacheTTL).
-			WithRevalidation(registryCacheTTL, func(imageRefs []string) (map[string]string, error) {
-				digests := make(map[string]string, len(imageRefs))
-				var firstErr error
-				for _, imageRef := range imageRefs {
-					// Per-ref timeout so one slow registry cannot starve the rest of the batch.
-					ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
-					result, err := service.InspectImageDigest(ctx, imageRef, nil)
-					cancel()
-					if err != nil {
-						slog.DebugContext(ctx, "registry revalidation failed for image", "imageRef", imageRef, "error", err)
-						firstErr = cmp.Or(firstErr, err)
-						continue
-					}
-					digests[imageRef] = result.Digest
+		cache: &cache.Cache[string, string]{
+			Revalidate: func(imageRef string) (string, bool, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
+				defer cancel()
+				result, err := service.InspectImageDigest(ctx, imageRef, nil)
+				if err != nil {
+					slog.DebugContext(ctx, "registry revalidation failed for image", "imageRef", imageRef, "error", err)
+					return "", false, err
 				}
-				// hot discards the whole map on error, so only a fully failed batch reports one (KeepOnError keeps the old digests).
-				if len(digests) > 0 {
-					return digests, nil
-				}
-				return nil, firstErr
-			}).
-			WithRevalidationErrorPolicy(hot.KeepOnError).
-			WithJanitor().
-			Build(),
-		digestFailures: hot.NewHotCache[string, error](hot.LRU, 1024).
-			WithTTL(registryDigestFailureTTL).
-			WithJanitor().
-			Build(),
-		// No static loader: ImageConfig uses GetWithLoaders so failed resolutions retry on the next request.
-		configCache: hot.NewHotCache[string, *v1.ConfigFile](hot.LRU, 64).
-			WithTTL(versionLabelCacheTTL).
-			Build(),
+				return result.Digest, true, nil
+			},
+			Capacity:        4096,
+			TTL:             registryCacheTTL,
+			JanitorInterval: registryCacheTTL,
+			RevalidateAfter: registryCacheTTL,
+		},
+		digestFailures: &cache.Cache[string, error]{
+			Capacity:        1024,
+			TTL:             registryDigestFailureTTL,
+			JanitorInterval: registryDigestFailureTTL,
+		},
+		// No static loader: ImageConfig uses GetOrLoad so failed resolutions retry on the next request.
+		configCache: &cache.Cache[string, *v1.ConfigFile]{
+			Capacity: 64,
+			TTL:      versionLabelCacheTTL,
+		},
 		distributionHTTPClient: distributionHTTPClient,
 		kvService:              p.KVService,
 		settingsService:        p.SettingsService,
@@ -748,19 +740,22 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 		return "", cachedErr
 	}
 
-	digestValue, found, err := s.cache.GetWithLoaders(parts.NormalizedRef, func(_ []string) (map[string]string, error) {
+	digestValue, found, err := s.cache.GetOrLoad(parts.NormalizedRef, func(normalizedRef string) (string, bool, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
-		result, loadErr := s.InspectImageDigest(loadCtx, parts.NormalizedRef, nil)
+		result, loadErr := s.InspectImageDigest(loadCtx, normalizedRef, nil)
 		if loadErr != nil {
-			return nil, loadErr
+			return "", false, loadErr
 		}
-		return map[string]string{parts.NormalizedRef: result.Digest}, nil
+		return result.Digest, true, nil
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			s.digestFailures.Set(parts.NormalizedRef, err)
+			s.digestFailures.Set(cache.Entry[string, error]{
+				Key:   parts.NormalizedRef,
+				Value: err,
+			})
 		}
 		return "", err
 	}
@@ -1303,13 +1298,13 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 		Variant:      opts.Platform.Variant,
 	}
 	cacheKey := strings.TrimSpace(imageRef) + "|" + platform.String()
-	cfg, found, err := s.configCache.GetWithLoaders(cacheKey, func(_ []string) (map[string]*v1.ConfigFile, error) {
+	cfg, found, err := s.configCache.GetOrLoad(cacheKey, func(string) (*v1.ConfigFile, bool, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
 		parsedRef, parseErr := name.ParseReference(strings.TrimSpace(imageRef))
 		if parseErr != nil {
-			return nil, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
+			return nil, false, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
 		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image config fetch for "+strings.TrimSpace(imageRef), opts.Credentials,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
@@ -1326,16 +1321,16 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 				)
 			})
 		if fetchErr != nil {
-			return nil, fetchErr
+			return nil, false, fetchErr
 		}
 		cfg, configErr := img.ConfigFile()
 		if configErr != nil {
-			return nil, fmt.Errorf("image config fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
+			return nil, false, fmt.Errorf("image config fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
 		}
 		if cfg == nil {
-			return nil, fmt.Errorf("image config fetch failed for %s: missing config", strings.TrimSpace(imageRef))
+			return nil, false, fmt.Errorf("image config fetch failed for %s: missing config", strings.TrimSpace(imageRef))
 		}
-		return map[string]*v1.ConfigFile{cacheKey: cfg}, nil
+		return cfg, true, nil
 	})
 	if err != nil {
 		return nil, err

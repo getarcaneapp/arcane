@@ -13,8 +13,9 @@ import (
 	"github.com/jwx-go/jwkfetch/v4"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v4/jwk"
-	"github.com/samber/hot"
 	"golang.org/x/sync/singleflight"
+
+	"kit.getarcane.app/cache"
 )
 
 type (
@@ -26,7 +27,7 @@ type (
 	KeySetManager struct {
 		ctx      context.Context
 		group    singleflight.Group
-		caches   *hot.HotCache[*http.Client, *managedCache]
+		caches   *cache.Cache[*http.Client, *managedCache]
 		active   sync.WaitGroup
 		mu       sync.Mutex
 		shutdown atomic.Bool
@@ -49,8 +50,10 @@ func NewKeySetManager(ctx context.Context) *KeySetManager { //nolint:contextchec
 		ctx = context.Background() //nolint:forbidigo // Fallback supports construction without an application lifecycle context.
 	}
 	return &KeySetManager{
-		ctx:    ctx,
-		caches: hot.NewHotCache[*http.Client, *managedCache](hot.LRU, maxHTTPClientPolicies).Build(),
+		ctx: ctx,
+		caches: &cache.Cache[*http.Client, *managedCache]{
+			Capacity: maxHTTPClientPolicies,
+		},
 	}
 }
 
@@ -170,7 +173,7 @@ func (m *KeySetManager) createManagedCacheLocked(client *http.Client) (*managedC
 	if m.caches.Len() >= maxHTTPClientPolicies {
 		return nil, errors.New("oidc: too many HTTP client policies")
 	}
-	cache, err := jwkfetch.NewCache(m.ctx, httprc.NewClient(),
+	jwks, err := jwkfetch.NewCache(m.ctx, httprc.NewClient(),
 		jwkfetch.WithHTTPClient(jwkfetch.WrapHTTPClientDefaults(client)),
 		jwkfetch.WithMaxBodySize(maxJWKSBodySize),
 		jwkfetch.WithParseOptions(
@@ -181,8 +184,11 @@ func (m *KeySetManager) createManagedCacheLocked(client *http.Client) (*managedC
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JWKS cache: %w", err)
 	}
-	managed := &managedCache{cache: cache, keySets: make(map[string]*keySet)}
-	m.caches.Set(client, managed)
+	managed := &managedCache{cache: jwks, keySets: make(map[string]*keySet)}
+	m.caches.Set(cache.Entry[*http.Client, *managedCache]{
+		Key:   client,
+		Value: managed,
+	})
 	return managed, nil
 }
 

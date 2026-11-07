@@ -1535,7 +1535,7 @@ test.describe('Project Detail Page', () => {
 
 			await page.goto(`/projects/${projectId}?tab=services&env=0`);
 			await page.waitForLoadState('load');
-			await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Logs', exact: true })).toBeVisible();
 			await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
 
 			const startButton = page

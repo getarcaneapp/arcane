@@ -17,10 +17,10 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/samber/hot"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"
@@ -91,8 +91,12 @@ const (
 )
 
 var (
-	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
-	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
+	globalEnvFileCache = &cache.Cache[string, envFileCacheEntry]{
+		Capacity: 4096,
+	}
+	projectEnvFileCache = &cache.Cache[string, envFileCacheEntry]{
+		Capacity: 4096,
+	}
 	processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 
 	envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
@@ -219,7 +223,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-func loadCachedEnvFile(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+func loadCachedEnvFile(_ context.Context, envCache *cache.Cache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
 	if cached, ok := envCache.Peek(key); ok {
 		if validEnvFileCacheEntry(cached) {
 			return cached, nil
@@ -227,36 +231,36 @@ func loadCachedEnvFile(_ context.Context, envCache *hot.HotCache[string, envFile
 		envCache.Delete(key)
 	}
 
-	entry, found, err := envCache.GetWithLoaders(key, func(_ []string) (map[string]envFileCacheEntry, error) {
+	entry, found, err := envCache.GetOrLoad(key, func(string) (envFileCacheEntry, bool, error) {
 		// Stays on os.*: env files may be symlinks resolving outside any
 		// confinement root (a supported setup), which acfs cannot follow.
 		info, err := os.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return map[string]envFileCacheEntry{key: {path: path}}, nil
+				return envFileCacheEntry{path: path}, true, nil
 			}
-			return nil, err
+			return envFileCacheEntry{}, false, err
 		}
 		if info.IsDir() {
-			return nil, fmt.Errorf("path is a directory: %s", path)
+			return envFileCacheEntry{}, false, fmt.Errorf("path is a directory: %s", path)
 		}
 
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("parse env file: read file: %w", err)
+			return envFileCacheEntry{}, false, fmt.Errorf("parse env file: read file: %w", err)
 		}
 		parsed, err := ParseProjectEnvContent(string(content), contextEnv)
 		if err != nil {
-			return nil, fmt.Errorf("parse env file: %w", err)
+			return envFileCacheEntry{}, false, fmt.Errorf("parse env file: %w", err)
 		}
-		return map[string]envFileCacheEntry{key: {
+		return envFileCacheEntry{
 			path:         path,
 			mtime:        info.ModTime(),
 			size:         info.Size(),
 			exists:       true,
 			values:       parsed,
 			noInjectKeys: ParseNoInjectDirectives(string(content)),
-		}}, nil
+		}, true, nil
 	})
 	if err != nil {
 		return envFileCacheEntry{}, err

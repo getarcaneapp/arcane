@@ -17,13 +17,13 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/streams/stats"
 
@@ -38,8 +38,8 @@ type (
 		flight        singleflight.Group
 		getClient     func(context.Context) (*client.Client, error)
 		dockerHost    func() string
-		cache         *hot.HotCache[string, cachedStats]
-		inspectCache  *hot.HotCache[string, container.InspectResponse]
+		cache         *cache.Cache[string, cachedStats]
+		inspectCache  *cache.Cache[string, container.InspectResponse]
 		history       stats.Store
 		sampleTimeout time.Duration
 		batchTimeout  time.Duration
@@ -90,15 +90,17 @@ func New(p Params) *Service {
 	return &Service{
 		getClient:  p.GetClient,
 		dockerHost: p.DockerHost,
-		cache: hot.NewHotCache[string, cachedStats](hot.LRU, ContainerResourceSampleCacheSize).
-			WithTTL(p.CacheTTL).
-			WithJanitor().
-			Build(),
+		cache: &cache.Cache[string, cachedStats]{
+			Capacity:        ContainerResourceSampleCacheSize,
+			TTL:             p.CacheTTL,
+			JanitorInterval: p.CacheTTL,
+		},
 		// Restart count and start time only change on restart, so metrics reuse inspects for a minute.
-		inspectCache: hot.NewHotCache[string, container.InspectResponse](hot.LRU, ContainerResourceSampleCacheSize).
-			WithTTL(time.Minute).
-			WithJanitor().
-			Build(),
+		inspectCache: &cache.Cache[string, container.InspectResponse]{
+			Capacity:        ContainerResourceSampleCacheSize,
+			TTL:             time.Minute,
+			JanitorInterval: time.Minute,
+		},
 		sampleTimeout: kit.Ternary(p.SampleTimeout > 0, p.SampleTimeout, ContainerResourceCollectTimeout),
 		batchTimeout:  kit.Ternary(p.BatchTimeout > 0, p.BatchTimeout, timeouts.DefaultDockerAPI),
 	}
@@ -147,7 +149,10 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 			}),
 		}
 		if historySent && statsData.PreCPUStats.SystemUsage != 0 {
-			s.cache.Set(s.dockerHost()+"\x00"+containerID, cachedStats{stats: statsData, fetchedAt: time.Now()})
+			s.cache.Set(cache.Entry[string, cachedStats]{
+				Key:   s.dockerHost() + "\x00" + containerID,
+				Value: cachedStats{stats: statsData, fetchedAt: time.Now()},
+			})
 		}
 		historySent = true
 
@@ -253,7 +258,10 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 			statsData.PreCPUStats = previous.stats.CPUStats
 			statsData.PreRead = previous.stats.Read
 		}
-		s.cache.Set(key, cachedStats{stats: statsData, fetchedAt: time.Now()})
+		s.cache.Set(cache.Entry[string, cachedStats]{
+			Key:   key,
+			Value: cachedStats{stats: statsData, fetchedAt: time.Now()},
+		})
 		return statsData, nil
 	})
 
@@ -339,7 +347,10 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 					if inspectErr != nil {
 						return nil
 					}
-					s.inspectCache.Set(id, inspect.Container)
+					s.inspectCache.Set(cache.Entry[string, container.InspectResponse]{
+						Key:   id,
+						Value: inspect.Container,
+					})
 					return &inspect.Container
 				}(),
 			}, nil

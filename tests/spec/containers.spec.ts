@@ -152,15 +152,22 @@ test.describe('Management', () => {
 			await page.waitForLoadState('load');
 			await page.getByRole('tab', { name: 'Logs' }).click();
 
-			const parsedModeToggle = page.locator('#parsed-log-mode-toggle:visible');
-			await expect(parsedModeToggle).toHaveAttribute('aria-checked', 'false');
+			const displayMenuButton = page.getByRole('button', { name: 'Display', exact: true });
+			const rawOutputToggle = page.getByRole('menuitemcheckbox', { name: /Raw output/ });
+
+			await displayMenuButton.click();
+			await expect(rawOutputToggle).toHaveAttribute('aria-checked', 'true');
+			await page.keyboard.press('Escape');
+			await expect(rawOutputToggle).toBeHidden();
 
 			await page.getByRole('button', { name: 'Start', exact: true }).first().click();
 
 			await expect(
 				page.getByText('structured container log marker', { exact: true }).filter({ visible: true })
 			).toBeVisible();
-			await expect(parsedModeToggle).toHaveAttribute('aria-checked', 'true');
+			await displayMenuButton.click();
+			await expect(rawOutputToggle).toHaveAttribute('aria-checked', 'false');
+			await page.keyboard.press('Escape');
 			await expect
 				.poll(() => page.evaluate(() => localStorage.getItem('arcane_log_json_parsing_v3')))
 				.toBe('false');

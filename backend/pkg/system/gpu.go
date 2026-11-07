@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samber/hot"
 	"golang.org/x/sync/singleflight"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/types/v3"
 )
@@ -27,7 +27,7 @@ type (
 	GPUMonitor struct {
 		statsGroup singleflight.Group
 
-		detectionCache *hot.HotCache[struct{}, gpuDetection]
+		detectionCache *cache.Cache[struct{}, gpuDetection]
 
 		// statsCache holds the last vendor-tool result (success or failure) for
 		// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
@@ -69,9 +69,10 @@ func NewGPUMonitor(enabled bool, configuredType string) *GPUMonitor {
 	return &GPUMonitor{
 		enabled:        enabled,
 		configuredType: configuredType,
-		detectionCache: hot.NewHotCache[struct{}, gpuDetection](hot.LRU, 1).
-			WithTTL(gpuDetectionTTL).
-			Build(),
+		detectionCache: &cache.Cache[struct{}, gpuDetection]{
+			Capacity: 1,
+			TTL:      gpuDetectionTTL,
+		},
 	}
 }
 
@@ -141,7 +142,10 @@ func (m *GPUMonitor) statsForType(ctx context.Context, gpuType string) ([]types.
 }
 
 func (m *GPUMonitor) markDetected(gpuType, toolPath string) bool {
-	m.detectionCache.Set(struct{}{}, gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath})
+	m.detectionCache.Set(cache.Entry[struct{}, gpuDetection]{
+		Key:   struct{}{},
+		Value: gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath},
+	})
 	m.detectionDone = true
 	announce := m.announcedType != gpuType
 	m.announcedType = gpuType

@@ -1995,11 +1995,12 @@
 		<div class="flex h-full min-h-0 flex-col">
 			{@render configurationErrorNotice()}
 			{#if canViewProjectLogs}
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+				<div class="flex min-h-0 flex-1 flex-col">
 					<ResizableSplit
 						class="h-full min-h-0 flex-1"
-						variant="flush"
-						firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+						variant="gap"
+						handleSize={12}
+						firstClass="flex min-h-0 flex-col"
 						secondClass="flex min-h-0 flex-col"
 						minSize={200}
 						maxSize={480}
@@ -2029,7 +2030,7 @@
 					</ResizableSplit>
 				</div>
 			{:else}
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+				<div class="flex min-h-0 flex-1 flex-col">
 					<ProjectServicesPanel
 						services={project.runtimeServices}
 						{projectId}

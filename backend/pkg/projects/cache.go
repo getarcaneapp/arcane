@@ -9,14 +9,15 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/samber/hot"
+
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/types/v3"
 )
 
 type (
 	composeCache[T any] struct {
-		entries *hot.HotCache[string, composeCacheEntry[T]]
+		entries *cache.Cache[string, composeCacheEntry[T]]
 		clone   func(T) T
 	}
 
@@ -34,7 +35,12 @@ type (
 
 // clone, when supplied, isolates stored values from mutations by callers.
 func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T] {
-	return &composeCache[T]{entries: hot.NewHotCache[string, composeCacheEntry[T]](hot.LRU, capacity).Build(), clone: clone}
+	return &composeCache[T]{
+		entries: &cache.Cache[string, composeCacheEntry[T]]{
+			Capacity: capacity,
+		},
+		clone: clone,
+	}
 }
 
 func CloneComposeProject(project *composetypes.Project) *composetypes.Project {
@@ -100,7 +106,10 @@ func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirec
 	if c.clone != nil {
 		value = c.clone(value)
 	}
-	c.entries.Set(projectID, composeCacheEntry[T]{fingerprint: fingerprint, stamps: stamps, value: value})
+	c.entries.Set(cache.Entry[string, composeCacheEntry[T]]{
+		Key:   projectID,
+		Value: composeCacheEntry[T]{fingerprint: fingerprint, stamps: stamps, value: value},
+	})
 	return nil
 }
 
@@ -133,7 +142,7 @@ func validComposeCacheEntry(stamps map[string]composeCacheStamp) bool {
 }
 
 func LoadCachedComposeProject(ctx context.Context,
-	cache types.ComposeCache[*composetypes.Project],
+	projectCache types.ComposeCache[*composetypes.Project],
 	projectID,
 	projectPath,
 	composePath,
@@ -144,8 +153,8 @@ func LoadCachedComposeProject(ctx context.Context,
 	error,
 ) {
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composePath, projectName, projectsDirectory, autoInject, pathMapper)
-	if cache != nil {
-		if cached, ok := cache.Get(projectID, fingerprint); ok {
+	if projectCache != nil {
+		if cached, ok := projectCache.Get(projectID, fingerprint); ok {
 			return cached, nil
 		}
 	}
@@ -162,7 +171,7 @@ func LoadCachedComposeProject(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if cache == nil {
+	if projectCache == nil {
 		return model, nil
 	}
 	composeFiles, envFiles, ok := ComposeCacheDependencies(ctx, model, dependencies, composePath, projectsDirectory, autoInject)
@@ -170,7 +179,7 @@ func LoadCachedComposeProject(ctx context.Context,
 		// Metadata discovery failure disables caching; the executable model is valid.
 		return model, nil
 	}
-	if setErr := cache.Set(projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, loadedAt, model); setErr != nil {
+	if setErr := projectCache.Set(projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, loadedAt, model); setErr != nil {
 		return nil, setErr
 	}
 	return model, nil

@@ -20,7 +20,6 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
-	github.com/samber/hot v0.13.1
 	github.com/sigstore/sigstore v1.11.2
 	github.com/sigstore/sigstore-go v1.4.0
 	github.com/spf13/cobra v1.10.2
@@ -29,7 +28,7 @@ require (
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
-	kit.getarcane.app v0.6.0
+	kit.getarcane.app v0.7.0
 	kit.getarcane.app/builds v0.5.0
 	kit.getarcane.app/docker v0.3.0
 )
@@ -120,6 +119,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.3 // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
+	github.com/samber/hot v0.13.1 // indirect
 	github.com/samber/mo v1.17.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect

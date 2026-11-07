@@ -52,7 +52,7 @@
 <DashboardPanel title={widget.title || m.containers_logs_title()} actions={containerLink}>
 	<WidgetStatus {target} data={containerQuery.data} error={containerQuery.error} resource={m.container()}>
 		{#snippet children(container)}
-			<div class="h-full min-h-48 overflow-hidden rounded-lg border border-border/70 bg-card/10">
+			<div class="h-full min-h-48 overflow-hidden rounded-xl bg-table-head">
 				<LogViewer
 					bind:this={viewer}
 					bind:autoScroll

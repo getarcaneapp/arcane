@@ -20,12 +20,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
@@ -64,9 +64,9 @@ type (
 		activityService     *activity.ActivityService
 		engine              *flow.Engine
 		checkWorkflow       *flow.Workflow
-		credentials         *hot.HotCache[string, []types.ContainerRegistryCredential]
+		credentials         *cache.Cache[string, []types.ContainerRegistryCredential]
 		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
-		requestCredentials *hot.HotCache[string, []types.ContainerRegistryCredential]
+		requestCredentials *cache.Cache[string, []types.ContainerRegistryCredential]
 		notifyMu           sync.Mutex
 	}
 
@@ -165,10 +165,15 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
 		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageConfig),
 		activityService:     p.ActivityService,
-		credentials:         hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 8).WithTTL(time.Minute).Build(),
+		credentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
+			Capacity: 8,
+			TTL:      time.Minute,
+		},
 		// They outlive the longest check: its slot wait plus its workflow timeout.
-		requestCredentials: hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 64).
-			WithTTL(timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan).Build(),
+		requestCredentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
+			Capacity: 64,
+			TTL:      timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan,
+		},
 	}
 }
 
@@ -1181,10 +1186,10 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
 		return supplied
 	}
-	credentials, _, err := s.credentials.GetWithLoaders(t.ActivityID(), func([]string) (map[string][]types.ContainerRegistryCredential, error) {
+	credentials, _, err := s.credentials.GetOrLoad(t.ActivityID(), func(string) ([]types.ContainerRegistryCredential, bool, error) {
 		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
 		if loadErr != nil {
-			return nil, loadErr
+			return nil, false, loadErr
 		}
 		loaded := make([]types.ContainerRegistryCredential, 0, len(registries))
 		for _, reg := range registries {
@@ -1208,7 +1213,7 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 				Enabled:  reg.Enabled,
 			})
 		}
-		return map[string][]types.ContainerRegistryCredential{t.ActivityID(): loaded}, nil
+		return loaded, true, nil
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
@@ -1291,7 +1296,10 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 		CredentialsKey:          kit.Ternary(len(credentials) > 0, uuid.NewV7().String(), ""),
 	}
 	if input.CredentialsKey != "" {
-		s.requestCredentials.Set(input.CredentialsKey, credentials)
+		s.requestCredentials.Set(cache.Entry[string, []types.ContainerRegistryCredential]{
+			Key:   input.CredentialsKey,
+			Value: credentials,
+		})
 	}
 	var output imageCheckOutput
 	outcome, err := s.engine.Run(ctx, s.checkWorkflow, input, activitylib.StartRequest{}, &output)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
@@ -56,6 +57,31 @@ POSTGRES_PORT=5432
 # API_KEY=your_api_key_here
 # SECRET_KEY=your_secret_key_here
 # DEBUG=false
+`
+	retiredEnvFileComposeTemplate = `services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_service
+    env_file:
+      - .env
+    ports:
+      - "${NGINX_HOST_PORT:-8080}:80"
+    volumes:
+      - nginx_data:/usr/share/nginx/html
+    restart: unless-stopped
+
+volumes:
+  nginx_data:
+    driver: local
+`
+	retiredEnvFileEnvTemplate = `# Project variables
+# These values are interpolated into compose.yaml and passed to services via env_file.
+# Example syntax in compose.yaml:
+#   ports:
+#     - "${NGINX_HOST_PORT:-8080}:80"
+
+# Host port that serves the nginx container
+NGINX_HOST_PORT=8080
 `
 )
 
@@ -144,12 +170,31 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	}
 
 	defaults := []struct {
-		path, name, content, retired string
+		path, name, content string
+		retired             []string
 	}{
-		{"/.compose.template", "compose", getDefaultComposeTemplate(), retiredDefaultComposeTemplate},
-		{"/.swarm-stack.template", "swarm stack", DefaultSwarmStackTemplate(), ""},
-		{"/.swarm-stack.env.template", "swarm stack env", DefaultSwarmStackEnvTemplate(), ""},
-		{"/.env.template", "env", getDefaultEnvTemplate(), retiredDefaultEnvTemplate},
+		{
+			path:    "/.compose.template",
+			name:    "compose",
+			content: getDefaultComposeTemplate(),
+			retired: []string{retiredDefaultComposeTemplate, retiredEnvFileComposeTemplate},
+		},
+		{
+			path:    "/.swarm-stack.template",
+			name:    "swarm stack",
+			content: DefaultSwarmStackTemplate(),
+		},
+		{
+			path:    "/.swarm-stack.env.template",
+			name:    "swarm stack env",
+			content: DefaultSwarmStackEnvTemplate(),
+		},
+		{
+			path:    "/.env.template",
+			name:    "env",
+			content: getDefaultEnvTemplate(),
+			retired: []string{retiredDefaultEnvTemplate, retiredEnvFileEnvTemplate},
+		},
 	}
 	for _, tmpl := range defaults {
 		exists, existsErr := acfs.Root{Path: templatesDir}.Exists(ctx, tmpl.path)
@@ -157,14 +202,14 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 			return fmt.Errorf("write default %s template: %w", tmpl.name, existsErr)
 		}
 		if exists {
-			if tmpl.retired == "" {
+			if len(tmpl.retired) == 0 {
 				continue
 			}
 			current, readFileErr := acfs.Root{Path: templatesDir}.ReadFile(ctx, tmpl.path)
 			if readFileErr != nil {
 				return fmt.Errorf("read default %s template: %w", tmpl.name, readFileErr)
 			}
-			if string(current) != tmpl.retired {
+			if !slices.Contains(tmpl.retired, string(current)) {
 				continue
 			}
 		}

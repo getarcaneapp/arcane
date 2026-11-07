@@ -2,13 +2,11 @@
 	import { toast } from 'svelte-sonner';
 
 	import LogControls from '#lib/components/logs/log-controls.svelte';
-	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	// Dozzle reference: the compact CPU/memory monitors in the logs header were informed
 	// by amir20/dozzle's ContainerLog.vue and MultiContainerStat.vue.
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
-	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '#lib/icons/index.js';
+	import { CpuIcon, MemoryStickIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/container.js';
@@ -146,87 +144,65 @@
 	});
 </script>
 
-<Card.Root class="flex h-full min-h-0 flex-col">
-	<Card.Header icon={FileTextIcon}>
-		<div class="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-			<div class="flex flex-col gap-1.5">
-				<div class="flex items-start justify-between gap-3 lg:block">
-					<LogPanelTitle title={m.containers_logs_title()} live={isStreaming} />
-					<LogControls
-						bind:searchTerm={logSearchTerm}
-						bind:autoScroll
-						{preferences}
-						mobileLayout="full"
-						showDesktop={false}
-						{isStreaming}
-						disabled={!containerId}
-						onStart={handleStart}
-						onStop={handleStop}
-						onRefresh={handleRefresh}
-						onDownload={handleDownload}
-					/>
-				</div>
-				<Card.Description>{m.containers_logs_description()}</Card.Description>
-			</div>
-			<LogControls
-				bind:searchTerm={logSearchTerm}
-				bind:autoScroll
-				{preferences}
-				mobileLayout="none"
-				{isStreaming}
-				disabled={!containerId}
-				onStart={handleStart}
-				onStop={handleStop}
-				onRefresh={handleRefresh}
-				onDownload={handleDownload}
-			/>
-		</div>
-	</Card.Header>
-	<div class="flex min-h-0 flex-1 flex-col">
-		<div class="shrink-0 border-b px-4 pb-4" data-testid="container-log-stats">
-			<div class="grid gap-3 md:grid-cols-2">
-				<ContainerLogStatMonitor
-					icon={CpuIcon}
-					label={m.cpu_usage()}
-					value={cpuValue}
-					detail={cpuDetail}
-					history={cpuHistory}
-					tone="cpu"
-					loading={isRunning && !hasInitialStatsLoaded}
-					disabled={!isRunning}
-					testId="container-log-cpu-monitor"
-				/>
-				<ContainerLogStatMonitor
-					icon={MemoryStickIcon}
-					label={m.memory_usage()}
-					value={memoryValue}
-					detail={memoryDetail}
-					history={memoryHistory}
-					tone="memory"
-					loading={isRunning && !hasInitialStatsLoaded}
-					disabled={!isRunning}
-					testId="container-log-memory-monitor"
-				/>
-			</div>
-		</div>
-		<div class="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/10 p-0">
-			<LogViewer
-				searchTerm={logSearchTerm}
-				bind:this={viewer}
-				bind:autoScroll
-				type="container"
-				{containerId}
-				{environmentId}
-				bind:showParsedJson={preferences.showParsedJson}
-				showStreamLabels={preferences.showStreamLabels}
-				tailLines={preferences.tailLines}
-				maxLines={500}
-				showTimestamps={preferences.showTimestamps}
-				groupAdjacentLines={true}
-				height="100%"
-				onStart={handleStreamStart}
-				onStop={handleStreamStop}
-			/>
-		</div>
+<div class="flex h-full min-h-0 flex-col gap-3">
+	<div class="grid shrink-0 gap-3 md:grid-cols-2" data-testid="container-log-stats">
+		<ContainerLogStatMonitor
+			icon={CpuIcon}
+			label={m.cpu_usage()}
+			value={cpuValue}
+			detail={cpuDetail}
+			history={cpuHistory}
+			tone="cpu"
+			loading={isRunning && !hasInitialStatsLoaded}
+			disabled={!isRunning}
+			testId="container-log-cpu-monitor"
+		/>
+		<ContainerLogStatMonitor
+			icon={MemoryStickIcon}
+			label={m.memory_usage()}
+			value={memoryValue}
+			detail={memoryDetail}
+			history={memoryHistory}
+			tone="memory"
+			loading={isRunning && !hasInitialStatsLoaded}
+			disabled={!isRunning}
+			testId="container-log-memory-monitor"
+		/>
 	</div>
-</Card.Root>
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-table-head">
+		<div class="flex h-11 shrink-0 items-center gap-2 pr-1.5 pl-3">
+			<h2 class="text-sm font-medium">{m.common_logs()}</h2>
+			<div class="ml-auto min-w-0">
+				<LogControls
+					bind:searchTerm={logSearchTerm}
+					bind:autoScroll
+					{preferences}
+					{isStreaming}
+					disabled={!containerId}
+					onStart={handleStart}
+					onStop={handleStop}
+					onRefresh={handleRefresh}
+					onDownload={handleDownload}
+				/>
+			</div>
+		</div>
+		<LogViewer
+			class="min-h-0 flex-1"
+			searchTerm={logSearchTerm}
+			bind:this={viewer}
+			bind:autoScroll
+			type="container"
+			{containerId}
+			{environmentId}
+			bind:showParsedJson={preferences.showParsedJson}
+			showStreamLabels={preferences.showStreamLabels}
+			tailLines={preferences.tailLines}
+			maxLines={500}
+			showTimestamps={preferences.showTimestamps}
+			groupAdjacentLines={true}
+			height="100%"
+			onStart={handleStreamStart}
+			onStop={handleStreamStop}
+		/>
+	</div>
+</div>

@@ -2,11 +2,8 @@
 	import { onMount } from 'svelte';
 
 	import LogControls from '#lib/components/logs/log-controls.svelte';
-	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
-	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {
@@ -41,32 +38,15 @@
 	});
 </script>
 
-<Card.Root class="flex h-full min-h-0 flex-col">
-	<Card.Header icon={TerminalIcon}>
-		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-			<div class="flex flex-col gap-1.5">
-				<div class="flex items-start justify-between gap-3 lg:block">
-					<LogPanelTitle title={m.compose_logs_title()} live={isStreaming} />
-					<LogControls
-						bind:searchTerm={logSearchTerm}
-						bind:autoScroll
-						{preferences}
-						mobileLayout="full"
-						showDesktop={false}
-						{isStreaming}
-						disabled={!projectId}
-						onStart={handleStart}
-						onStop={handleStop}
-						onRefresh={handleRefresh}
-					/>
-				</div>
-				<Card.Description>{m.project_logs_realtime_desc()}</Card.Description>
-			</div>
+<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-table-head">
+	<div class="flex h-11 shrink-0 items-center gap-2 pr-1.5 pl-3">
+		<h2 class="text-sm font-medium">{m.common_logs()}</h2>
+		<div class="ml-auto min-w-0">
 			<LogControls
 				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
 				{preferences}
-				mobileLayout="none"
+				serviceLabels
 				{isStreaming}
 				disabled={!projectId}
 				onStart={handleStart}
@@ -74,24 +54,22 @@
 				onRefresh={handleRefresh}
 			/>
 		</div>
-	</Card.Header>
-	<div class="flex min-h-0 flex-1 flex-col">
-		<LogViewer
-			class="min-h-0 flex-1"
-			searchTerm={logSearchTerm}
-			bind:this={viewer}
-			bind:autoScroll
-			{projectId}
-			{environmentId}
-			tailLines={preferences.tailLines}
-			bind:showParsedJson={preferences.showParsedJson}
-			showStreamLabels={preferences.showStreamLabels}
-			type="project"
-			maxLines={500}
-			showTimestamps={preferences.showTimestamps}
-			height="100%"
-			onStart={() => (isStreaming = true)}
-			onStop={() => (isStreaming = false)}
-		/>
 	</div>
-</Card.Root>
+	<LogViewer
+		class="min-h-0 flex-1"
+		searchTerm={logSearchTerm}
+		bind:this={viewer}
+		bind:autoScroll
+		{projectId}
+		{environmentId}
+		tailLines={preferences.tailLines}
+		bind:showParsedJson={preferences.showParsedJson}
+		showStreamLabels={preferences.showStreamLabels}
+		type="project"
+		maxLines={500}
+		showTimestamps={preferences.showTimestamps}
+		height="100%"
+		onStart={() => (isStreaming = true)}
+		onStop={() => (isStreaming = false)}
+	/>
+</div>

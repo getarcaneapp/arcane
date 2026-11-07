@@ -18,7 +18,13 @@
 	import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
 	import LogRow from './log-row.svelte';
-	import { buildLogDisplayEntries, getStructuredLog, type LogViewerDisplayEntry, type LogViewerEntry } from './log-viewer.utils';
+	import {
+		buildLogDisplayEntries,
+		getStructuredLog,
+		tintLogLevel,
+		type LogViewerDisplayEntry,
+		type LogViewerEntry
+	} from './log-viewer.utils';
 
 	interface Props {
 		class?: string;
@@ -343,7 +349,7 @@
 			timestamp: logData.timestamp || nowInstantString(),
 			level: logData.level as LogViewerEntry['level'],
 			message: logData.message,
-			html: ansiToHtml(logData.message),
+			html: tintLogLevel(ansiToHtml(logData.message)),
 			service: logData.service,
 			containerId: logData.containerId ?? (type === 'container' ? (containerId ?? undefined) : undefined)
 		};
@@ -444,10 +450,9 @@
 	}
 </script>
 
-{#snippet logRow(displayLog: LogViewerDisplayEntry, index: number)}
+{#snippet logRow(displayLog: LogViewerDisplayEntry, _index: number)}
 	<LogRow
 		{displayLog}
-		{index}
 		mobile={isMobile.current}
 		{type}
 		{showTimestamps}
@@ -458,15 +463,9 @@
 	/>
 {/snippet}
 
-<div
-	class={cn(
-		'dark rounded-t-none rounded-b-xl border bg-black text-white',
-		fillParent && 'flex h-full min-h-0 flex-col',
-		className
-	)}
->
+<div class={cn('text-foreground', fillParent && 'flex h-full min-h-0 flex-col', className)}>
 	{#if error && displayLogs.length > 0}
-		<div class="border-b border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+		<div class="bg-destructive/10 px-3 py-2 text-xs text-destructive">
 			{error}
 		</div>
 	{/if}
@@ -474,7 +473,7 @@
 	<div
 		bind:this={logContainer}
 		class={cn(
-			'overflow-y-auto rounded-t-none rounded-b-xl border bg-black font-mono text-xs text-white sm:text-sm',
+			'overflow-y-auto pb-1.5 font-code text-xs text-foreground',
 			fillParent ? 'min-h-0 flex-1' : 'h-(--log-height) min-h-(--log-min-height)'
 		)}
 		style={fillParent ? undefined : `--log-height: ${height}; --log-min-height: ${minHeight}`}

@@ -17,11 +17,11 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -42,7 +42,7 @@ type (
 		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		environmentService *environment.EnvironmentService
 		tunnels            *agent.TunnelRegistry
-		identityCache      *hot.HotCache[string, SwarmNodeIdentity]
+		identityCache      *cache.Cache[string, SwarmNodeIdentity]
 		enrollments        singleflight.Group
 	}
 
@@ -99,10 +99,11 @@ func NewService(p ServiceParams) *Service {
 		localJoinTokens:    p.LocalJoinTokens,
 		environmentService: p.EnvironmentService,
 		tunnels:            p.Tunnels,
-		identityCache: hot.NewHotCache[string, SwarmNodeIdentity](hot.LRU, 512).
-			WithTTL(swarmNodeIdentityCacheTTL).
-			WithJanitor().
-			Build(),
+		identityCache: &cache.Cache[string, SwarmNodeIdentity]{
+			Capacity:        512,
+			TTL:             swarmNodeIdentityCacheTTL,
+			JanitorInterval: swarmNodeIdentityCacheTTL,
+		},
 	}
 }
 
@@ -493,7 +494,10 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 			slog.DebugContext(ctx, "failed to probe swarm node identity", "environmentId", env.ID, "error", err.Error())
 		} else {
 			identity, found = *fetched, true
-			s.identityCache.Set(env.ID, identity)
+			s.identityCache.Set(cache.Entry[string, SwarmNodeIdentity]{
+				Key:   env.ID,
+				Value: identity,
+			})
 		}
 	}
 	return swarmNodeAgentRuntime{

@@ -69,14 +69,14 @@ var (
 
 func (s *VersionService) commitNotes(ctx context.Context, base, head string) string {
 	key := base + "..." + head
-	notes, found, err := s.commitNotesCache.GetWithLoaders(key, func(_ []string) (map[string]string, error) {
+	notes, found, err := s.commitNotesCache.GetOrLoad(key, func(string) (string, bool, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 		defer cancel()
 		comparison, fetchErr := s.fetchCommitComparison(loadCtx, key)
 		if fetchErr != nil {
-			return nil, fetchErr
+			return "", false, fetchErr
 		}
-		return map[string]string{key: formatCommitNotes(comparison, (repoURL + "/compare/" + base + "..." + head))}, nil
+		return formatCommitNotes(comparison, (repoURL + "/compare/" + base + "..." + head)), true, nil
 	})
 	if err != nil || !found {
 		slog.WarnContext(ctx, "Failed to build commit release notes", "range", key, "error", err)
