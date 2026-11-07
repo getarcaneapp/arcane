@@ -4489,5 +4489,12 @@
   "files": "Tệp tin",
   "log_raw_output": "Kết quả thô",
   "log_raw_output_tooltip": "Hiển thị văn bản dòng gốc thay vì các bản ghi có cấu trúc đã được phân tích.",
-  "log_stderr_line": "Kết quả hiển thị sai số chuẩn"
+  "log_stderr_line": "Kết quả hiển thị sai số chuẩn",
+  "also_remove_deployed_swarm_stack": "Cũng hãy gỡ bỏ ngăn xếp Swarm đã được triển khai",
+  "bring_down_stack": "Giảm kích thước ngăn xếp",
+  "bring_down_stack_confirm_message": "Xóa các dịch vụ, mạng, cấu hình và thông tin bí mật của ngăn xếp này? Các tệp compose đã lưu sẽ được giữ lại để có thể triển khai lại.",
+  "stack_brought_down": "Stack \"{name}\" đã bị gỡ xuống",
+  "failed_to_bring_down_stack": "Không thể giải nén ngăn xếp \"{name}\"",
+  "stack_brought_up": "Stack \"{name}\" đã được đưa ra",
+  "failed_to_bring_up_stack": "Không thể khởi tạo ngăn xếp \"{name}\""
 }
