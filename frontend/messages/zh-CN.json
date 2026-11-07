@@ -237,7 +237,6 @@
   "common_select_all": "全选",
   "common_select_row": "选择行",
   "common_showing_of_total": "显示 {shown} 共 {total}",
-  "table_pagination_bottom": "底部表格分页",
   "table_expand_row": "展开行",
   "table_collapse_row": "折叠行",
   "table_group_items": "{count} 项目(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "黄昏",
   "ribbon": "Ribbon",
   "silver": "银",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "通过删除已无计划管理的备份，防止备份存储空间无限增长。",
+  "unmanaged_backup_retention_days": "未管理的备份保留期限（天）",
+  "unmanaged_backup_retention_days_description": "在卷或计划停止受管后，经过这多少天，删除其备份；而在还原操作之前创建的安全备份，一旦达到这个时长，也应予以删除。",
+  "unmanaged_backup_retention_days_help": "清理任务每天运行两次，同时也会删除 S3 副本。将该值设为 0 可无限期保留这些备份。",
+  "unmanaged_backup_retention_summary": "已移除的卷或已删除的计划，以及安全备份，将在该服务器上保留 {days} 天后被删除。",
+  "unmanaged_backup_retention_disabled_summary": "已移除的卷或已删除的计划的备份，以及安全备份，将无限期保存在此服务器上。",
+  "table_pagination": "表格分页",
+  "table_range_of_total": "{start}–{end} 来自 {total}",
+  "table_range": "{start}–{end}"
 }
