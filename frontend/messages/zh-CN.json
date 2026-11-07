@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "浏览器",
   "volumes_nav_backups": "备份",
   "volumes_workspace_files": "数据卷工作区",
-  "volumes_workspace_files_empty": "该卷中没有工作区文件",
   "volumes_workspace_upload_description": "将一个或多个文件上传到卷工作区。",
   "volumes_workspace_root_destination": "数据卷根目录",
   "volumes_workspace_root_path": "在卷根目录下创建。",
@@ -2963,8 +2962,6 @@
   "common_image_id": "镜像 ID",
   "common_entrypoint": "入口点",
   "workspace": "工作区",
-  "workspace_files": "工作区文件",
-  "workspace_files_empty": "没有工作区文件",
   "workspace_new_file": "新建文件",
   "workspace_create_file_title": "创建文件",
   "workspace_create_folder_title": "创建文件夹",
@@ -3006,7 +3003,6 @@
   "project_view_description": "切换工作区模式",
   "project_editor_layout": "默认项目编辑器布局",
   "project_editor_layout_description": "打开项目配置时显示的布局。",
-  "project_editor_layout_auto_description": "对于包含额外文件的项目，采用工作区视图；否则采用经典视图。",
   "project_editor_layout_classic_description": "Compose 和环境编辑器并排显示。",
   "project_editor_layout_tree_description": "带有标签式编辑器的作品区文件树。",
   "automatic": "自动",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "文本与字体",
   "layout_and_navigation": "版式与导航",
   "language_and_region": "语言与地区",
-  "editor": "编辑"
+  "editor": "编辑",
+  "files": "文件"
 }
