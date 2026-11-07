@@ -598,21 +598,19 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 
 // deleteArchiveBackup expects the caller to hold the volume's run lease.
 func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBackup, user *types.Actor) error {
-	// Delete the row first: a failed file removal then only leaves an orphan file.
-	if deleteErr := s.deps.Store.Delete(ctx, entry.ID); deleteErr != nil {
-		return deleteErr
-	}
-	containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backupId", entry.ID, "error", err.Error())
-	} else {
-		defer cleanup()
-		filename, filenameErr := backupArchiveFilename(entry.ID)
-		if filenameErr != nil {
-			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backupId", entry.ID, "error", filenameErr.Error())
-		} else if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
-			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backupId", entry.ID, "error", err.Error())
+	// Remove the file before the row so a failed removal stays visible and can be retried.
+	if filename, filenameErr := backupArchiveFilename(entry.ID); filenameErr == nil {
+		containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
+		if err != nil {
+			return fmt.Errorf("failed to create container for backup file cleanup: %w", err)
 		}
+		defer cleanup()
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
+			return fmt.Errorf("failed to delete backup file: %w", err)
+		}
+	}
+	if err := s.deps.Store.Delete(ctx, entry.ID); err != nil {
+		return err
 	}
 	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": entry.ID})
 	return nil
