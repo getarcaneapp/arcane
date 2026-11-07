@@ -142,7 +142,7 @@
 		<div class="relative z-(--arcane-z-content) my-2 mr-2 h-screen-inset-1 min-w-0 flex-1">
 			<!-- The glass lives on its own layer so it never becomes the containing block for fixed page content. -->
 			<div aria-hidden="true" class="shell-glass pointer-events-none absolute inset-0 rounded-2xl"></div>
-			<main class="relative h-full overflow-y-auto rounded-2xl">
+			<main data-slot="shell-main" class="relative h-full overflow-y-auto rounded-2xl">
 				<section class="h-full p-3 sm:p-5">
 					{@render page()}
 				</section>

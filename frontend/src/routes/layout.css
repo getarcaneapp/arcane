@@ -93,8 +93,8 @@
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 45%, transparent);
 
 	--shell-background: color-mix(in oklch, var(--background) 93%, var(--foreground));
-	--shell-glass: color-mix(in oklch, var(--background) 82%, transparent);
-	--shell-glass-blur: blur(24px) saturate(1.5);
+	--shell-glass: color-mix(in oklch, color-mix(in oklch, var(--background) 90%, var(--foreground)) 70%, transparent);
+	--shell-glass-blur: blur(64px) saturate(1.3) brightness(1.08);
 	--shell-glass-shadow: 0 0 0 1px oklch(0 0 0 / 0.06), 0 2px 16px -4px oklch(0 0 0 / 0.12);
 
 	--arcane-z-content: 0;
@@ -191,7 +191,7 @@
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
 
 	--shell-background: color-mix(in oklch, var(--background) 88%, var(--foreground));
-	--shell-glass-shadow: 0 0 0 1px oklch(1 0 0 / 0.08), 0 2px 16px -4px oklch(0 0 0 / 0.5);
+	--shell-glass-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 1px oklch(1 0 0 / 0.08), 0 2px 16px -4px oklch(0 0 0 / 0.5);
 }
 
 .dark.oled:not([data-app-theme]) {
@@ -215,8 +215,8 @@
 
 /* Over a backdrop photo the shell glass thins out and blurs harder. */
 html[data-backdrop] {
-	--shell-glass: color-mix(in oklch, var(--background) 70%, transparent);
-	--shell-glass-blur: blur(48px) saturate(1.5);
+	--shell-glass: color-mix(in oklch, color-mix(in oklch, var(--background) 90%, var(--foreground)) 58%, transparent);
+	--shell-glass-blur: blur(64px) saturate(1.3) brightness(1.08);
 }
 
 html.no-blur[data-backdrop] {
@@ -236,6 +236,45 @@ html.no-blur {
 
 [data-slot='sidebar-inner'].shell-glass {
 	--sidebar-accent: color-mix(in oklch, var(--sidebar-foreground) 9%, transparent);
+}
+
+[data-overflow-right] tbody [data-slot='table-cell'][data-pinned] {
+	background-color: var(--table-sticky);
+	background-image: linear-gradient(var(--pinned-tint, transparent), var(--pinned-tint, transparent));
+	box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--color-border) 40%, transparent);
+	-webkit-backdrop-filter: blur(12px);
+	backdrop-filter: blur(12px);
+}
+
+[data-overflow-right] tbody [data-slot='table-cell'][data-pinned]::before {
+	content: '';
+	position: absolute;
+	inset-block: 0;
+	right: 100%;
+	width: 1.5rem;
+	pointer-events: none;
+	background: linear-gradient(to right, transparent, var(--table-sticky));
+}
+
+tbody tr:hover > [data-pinned] {
+	--pinned-tint: var(--color-row-hover);
+}
+
+tbody tr[data-expanded] > [data-pinned] {
+	--pinned-tint: var(--color-row-expanded);
+}
+
+tbody tr[data-state='selected'] > [data-pinned] {
+	--pinned-tint: var(--color-row-selected);
+}
+
+tbody tr[data-state='selected']:hover > [data-pinned] {
+	--pinned-tint: var(--color-row-selected-hover);
+}
+
+[data-slot='shell-main'] [data-slot='card'] {
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
 }
 
 html.no-blur *,
