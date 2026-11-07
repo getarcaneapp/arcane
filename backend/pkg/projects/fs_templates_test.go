@@ -140,3 +140,20 @@ func TestEnsureDefaultTemplates_UpgradesOnlyUneditedRetiredDefaults(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, getDefaultEnvTemplate(), string(env))
 }
+
+func TestEnsureDefaultTemplates_UpgradesEnvFileDefaults(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".compose.template"), []byte(retiredEnvFileComposeTemplate), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.template"), []byte(retiredEnvFileEnvTemplate), 0o600))
+
+	require.NoError(t, EnsureDefaultTemplates(t.Context(), dir))
+
+	compose, err := os.ReadFile(filepath.Join(dir, ".compose.template"))
+	require.NoError(t, err)
+	assert.Equal(t, getDefaultComposeTemplate(), string(compose))
+	env, err := os.ReadFile(filepath.Join(dir, ".env.template"))
+	require.NoError(t, err)
+	assert.Equal(t, getDefaultEnvTemplate(), string(env))
+}

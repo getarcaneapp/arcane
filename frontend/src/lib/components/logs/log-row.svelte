@@ -57,14 +57,16 @@
 
 {#snippet message(entry: LogViewerEntry)}
 	{@const structured = showParsedJson ? getStructuredLog(entry) : null}
-	<div class="min-w-0 flex-1 break-words whitespace-pre-wrap">
-		{#if structured?.isStructured && isStructuredLogData(structured.parsed)}
+	{#if structured?.isStructured && isStructuredLogData(structured.parsed)}
+		<div class="min-w-0 flex-1">
 			<StructuredLogEntry data={structured.parsed} rawJson={entry.message} />
-		{:else}
+		</div>
+	{:else}
+		<div class="min-w-0 flex-1 break-words whitespace-pre-wrap">
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 			{@html entry.html}
-		{/if}
-	</div>
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet stderrMarker()}
