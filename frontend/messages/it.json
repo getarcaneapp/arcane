@@ -237,7 +237,6 @@
   "common_select_all": "Seleziona tutti",
   "common_select_row": "Seleziona riga",
   "common_showing_of_total": "Vengono visualizzati {shown} di {total}",
-  "table_pagination_bottom": "Impaginazione della tabella in fondo alla pagina",
   "table_expand_row": "Espandi riga",
   "table_collapse_row": "Comprimi riga",
   "table_group_items": "{count} articolo/i",
@@ -4490,5 +4489,14 @@
   "dusk": "Tramonto",
   "ribbon": "Nastro",
   "silver": "Argento",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Evita che lo spazio di archiviazione dei backup cresca senza limiti eliminando i backup che non sono più gestiti da alcuna pianificazione.",
+  "unmanaged_backup_retention_days": "Periodo di conservazione dei backup non gestiti (giorni)",
+  "unmanaged_backup_retention_days_description": "Eliminare i backup dei volumi rimossi o delle pianificazioni cancellate dopo un certo numero di giorni dal momento in cui smettono di essere gestiti, nonché i backup di sicurezza effettuati prima dei ripristini una volta raggiunta una certa anzianità.",
+  "unmanaged_backup_retention_days_help": "La procedura di pulizia viene eseguita due volte al giorno e rimuove anche le copie su S3. Impostare il valore 0 per conservare questi backup a tempo indeterminato.",
+  "unmanaged_backup_retention_summary": "I backup dei volumi rimossi o delle pianificazioni eliminate, nonché i backup di sicurezza, vengono eliminati dopo {days} giorni su questo server.",
+  "unmanaged_backup_retention_disabled_summary": "I backup dei volumi rimossi o delle pianificazioni eliminate, nonché i backup di sicurezza, vengono conservati a tempo indeterminato su questo server.",
+  "table_pagination": "Impaginazione delle tabelle",
+  "table_range_of_total": "{start}–{end} di {total}",
+  "table_range": "{start}–{end}"
 }
