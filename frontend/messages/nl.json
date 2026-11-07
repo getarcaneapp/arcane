@@ -4489,5 +4489,12 @@
   "files": "Bestanden",
   "log_raw_output": "Onbewerkte uitvoer",
   "log_raw_output_tooltip": "Geeft de oorspronkelijke tekst van de regel weer in plaats van geparseerde, gestructureerde logbestanden.",
-  "log_stderr_line": "Weergave van de standaardfout"
+  "log_stderr_line": "Weergave van de standaardfout",
+  "also_remove_deployed_swarm_stack": "Verwijder ook de geïmplementeerde swarm-stack",
+  "bring_down_stack": "Stapel verlagen",
+  "bring_down_stack_confirm_message": "De services, netwerken, configuraties en geheimen van deze stack verwijderen? De opgeslagen Compose-bestanden blijven behouden, zodat de stack opnieuw kan worden geïmplementeerd.",
+  "stack_brought_down": "De stack \"{name}\" is uitgeschakeld",
+  "failed_to_bring_down_stack": "Het is niet gelukt om de stack \"{name} \" af te breken.",
+  "stack_brought_up": "De stack \"{name}\" is opgeroepen",
+  "failed_to_bring_up_stack": "Het is niet gelukt om de stack \"{name} \" op te starten."
 }
