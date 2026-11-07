@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Desktop Sidebar",
   "navigation_default_landing_page_label": "Προεπιλεγμένη σελίδα προορισμού",
   "navigation_default_landing_page_description": "Η σελίδα που θα ανοίξει μετά τη σύνδεση.",
-  "navigation_sidebar_hover_expansion_label": "Enable Hover Expansion",
-  "navigation_sidebar_hover_expansion_description": "When enabled, hovering over the collapsed sidebar will temporarily expand it to show full labels. When disabled, tooltips will appear instead for a cleaner, fixed-width navigation.",
   "navigation_keyboard_shortcuts_label": "Συντομεύσεις Πληκτρολογίου",
   "navigation_keyboard_shortcuts_description": "Ενεργοποίηση συντομεύσεων πληκτρολογίου για γρήγορη πλοήγηση (π.χ. Mod+1 για Dashboard). Όταν είναι απενεργοποιημένη, οι υποδείξεις συντόμευσης θα είναι επίσης κρυμμένες από τις συμβουλές.",
   "server_default": "Server Default",
