@@ -4437,8 +4437,6 @@
   "installed_fonts": "Fontes instaladas",
   "installed_fonts_unavailable": "Não foi possível ler os tipos de letra instalados",
   "font_preview_sample": "A raposa castanha e rápida salta por cima do cão preguiçoso 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Não foi possível carregar o ficheiro",
   "failed_to_save_file": "Não foi possível guardar o ficheiro",
   "copy_current_path": "Copiar o caminho atual",
