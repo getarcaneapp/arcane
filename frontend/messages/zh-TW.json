@@ -237,7 +237,6 @@
   "common_select_all": "全選",
   "common_select_row": "選中列",
   "common_showing_of_total": "顯示 {shown} 共 {total}",
-  "table_pagination_bottom": "頁碼分頁（位於表格底部）",
   "table_expand_row": "展開行",
   "table_collapse_row": "收起行",
   "table_group_items": "{count} 項目(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "黃昏",
   "ribbon": "緞帶",
   "silver": "銀",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "透過移除已無排程管理的備份，避免備份儲存空間無限增長。",
+  "unmanaged_backup_retention_days": "未受管理的備份保留期限（天）",
+  "unmanaged_backup_retention_days_description": "在已移除的卷或已刪除的排程停止受管理後，經過這多少天，便刪除其備份；而還原操作前所建立的安全備份，一旦達到這般久遠，亦將予以刪除。",
+  "unmanaged_backup_retention_days_help": "清理作業每天執行兩次，並會一併刪除 S3 副本。若要永久保留這些備份，請將數值設為 0。",
+  "unmanaged_backup_retention_summary": "已移除的卷宗或已刪除的排程，以及安全備份，將於此伺服器上經過 {days} 天後被刪除。",
+  "unmanaged_backup_retention_disabled_summary": "已移除的卷宗或已刪除的排程，以及安全備份，將永久保留於此伺服器上。",
+  "table_pagination": "表格分頁",
+  "table_range_of_total": "{start}–{end} 來自 {total}",
+  "table_range": "{start}–{end}"
 }
