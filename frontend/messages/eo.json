@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Flankobreto de la labortablo",
   "navigation_default_landing_page_label": "Aŭtomata alvenpaĝo",
   "navigation_default_landing_page_description": "Paĝo por malfermi post ensaluto.",
-  "navigation_sidebar_hover_expansion_label": "Aktivigu supermetan etendon",
-  "navigation_sidebar_hover_expansion_description": "Kiam ĝi estas aktivigita, supermetado de la kolapsita flanka panelo per la musindikilo provizore etendos ĝin por montri la plenajn etikedojn. Kiam ĝi estas malaktivigita, anstataŭe aperos ilinoticoj por pli pura navigado kun fiksa larĝo.",
   "navigation_keyboard_shortcuts_label": "Klaviaraj Ŝparvojoj",
   "navigation_keyboard_shortcuts_description": "Aktivigu klavarkombinojn por rapida navigado (ekz. Mod+1 por la Panelo). Kiam ili estas malaktivigitaj, ankaŭ la indikaĵoj pri klavarkombinoj estos kaŝitaj en la helpotekstoj.",
   "server_default": "Server Default",
