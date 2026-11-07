@@ -768,11 +768,11 @@
 	>
 		{#snippet trailing()}
 			{@render rowBadge?.(row)}
-			{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
+			{#if row.locked || row.isSymlink || onDelete}
 				<div
 					class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
 				>
-					{#each workspaceRowActions(row) as action (action.id)}
+					{#each workspaceRowActions(row).filter((action) => action.id === 'delete') as action (action.id)}
 						<Tooltip.Root>
 							<Tooltip.Trigger>
 								<button
