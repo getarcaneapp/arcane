@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "ブラウザー",
   "volumes_nav_backups": "バックアップ",
   "volumes_workspace_files": "ボリュームワークスペース",
-  "volumes_workspace_files_empty": "このボリュームにはワークスペースファイルがありません",
   "volumes_workspace_upload_description": "ボリュームワークスペースに1つ以上のファイルをアップロードします。",
   "volumes_workspace_root_destination": "体積の平方根",
   "volumes_workspace_root_path": "ボリュームのルートディレクトリに作成します。",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "ワークスペース",
-  "workspace_files": "ワークスペースのファイル",
-  "workspace_files_empty": "ワークスペースファイルはありません",
   "workspace_new_file": "新しいファイル",
   "workspace_create_file_title": "ファイルを作成する",
   "workspace_create_folder_title": "フォルダを作成する",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "プロジェクトエディタのデフォルトのレイアウト",
   "project_editor_layout_description": "プロジェクトの設定を開いたときに表示されるレイアウト。",
-  "project_editor_layout_auto_description": "追加ファイルがあるプロジェクトではワークスペースビューが表示され、それ以外の場合は従来通りの表示になります。",
   "project_editor_layout_classic_description": "Composeと環境エディタを並べて表示します。",
   "project_editor_layout_tree_description": "タブ付きエディタを備えたワークスペースのファイルツリー。",
   "automatic": "自動",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "テキストとフォント",
   "layout_and_navigation": "レイアウトとナビゲーション",
   "language_and_region": "言語と地域",
-  "editor": "編集者"
+  "editor": "編集者",
+  "files": "ファイル"
 }
