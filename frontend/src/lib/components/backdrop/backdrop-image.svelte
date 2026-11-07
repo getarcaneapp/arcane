@@ -25,12 +25,13 @@
 			alt=""
 			decoding="async"
 			class={cn(
-				'size-full object-cover opacity-0 transition-opacity duration-500 dark:brightness-(--backdrop-brightness)',
+				'size-full scale-110 object-cover opacity-0 blur-3xl transition-opacity duration-500 dark:brightness-(--backdrop-brightness)',
 				loadedSrc === src && 'opacity-100'
 			)}
 			style:--backdrop-brightness={1 - dim / 100}
 			onload={() => (loadedSrc = src)}
 			onerror={() => (failedSrc = src)}
 		/>
+		<div class="backdrop-grain absolute inset-0"></div>
 	{/if}
 </div>

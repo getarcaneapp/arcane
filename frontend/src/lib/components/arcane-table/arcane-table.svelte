@@ -869,12 +869,7 @@
 				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={gridScrollEl}
 				data-table-scroll="grid"
-				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto',
-					overflow.below && 'scroll-fade-b',
-					overflow.left && 'scroll-fade-l',
-					overflow.right && 'scroll-fade-r'
-				)}
+				class="isolate h-full min-h-0 flex-1 overflow-auto"
 			>
 				<ArcaneTableGridView
 					scrollElement={gridScrollEl}
@@ -904,12 +899,7 @@
 				bind:this={desktopScrollEl}
 				data-table-scroll="desktop"
 				data-overflow-right={overflow.right || undefined}
-				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto',
-					overflow.below && 'scroll-fade-b',
-					overflow.left && 'scroll-fade-l',
-					overflow.right && 'scroll-fade-r'
-				)}
+				class="isolate h-full min-h-0 flex-1 overflow-auto"
 			>
 				<ArcaneTableDesktopView
 					{rowIndex}

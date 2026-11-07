@@ -355,7 +355,7 @@
 {/snippet}
 
 {#snippet emptyState()}
-	<Table.Row>
+	<Table.Row variant="static">
 		<Table.Cell colspan={columnsCount} class="h-48">
 			{@render empty()}
 		</Table.Cell>

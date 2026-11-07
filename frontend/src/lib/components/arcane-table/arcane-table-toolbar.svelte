@@ -223,8 +223,8 @@
 	{/if}
 {/snippet}
 
-<div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
-	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
+<div class={cn('flex flex-wrap items-center gap-2 px-4 py-3 md:flex-nowrap', className)}>
+	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-wrap">
 		<InputGroup.Root class="min-w-0 flex-1 md:w-64 md:flex-none">
 			<InputGroup.Addon>
 				<SearchIcon aria-hidden="true" />

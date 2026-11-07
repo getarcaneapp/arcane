@@ -22,7 +22,7 @@
 		'group/row cursor-pointer border-b border-border/40 *:transition-colors *:duration-150',
 		'in-[tbody]:hover:*:bg-row-hover data-expanded:*:bg-row-expanded data-[state=selected]:*:bg-row-selected data-[state=selected]:in-[tbody]:hover:*:bg-row-selected-hover',
 		variant === 'detail' && '*:bg-row-expanded in-[tbody]:hover:*:bg-row-expanded',
-		variant === 'static' && 'in-[tbody]:hover:*:bg-transparent',
+		variant === 'static' && 'cursor-default in-[tbody]:hover:*:bg-transparent',
 		className
 	)}
 	{...restProps}

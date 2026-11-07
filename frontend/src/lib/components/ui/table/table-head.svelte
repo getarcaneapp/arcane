@@ -23,7 +23,7 @@
 	data-slot="table-head"
 	data-pinned={pinned || undefined}
 	class={cn(
-		'h-10 bg-table-head px-4 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground',
+		'sticky top-0 z-[calc(var(--arcane-z-sticky)+1)] h-10 bg-table-head px-4 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground',
 		'first:rounded-l-xl first:pl-6 last:rounded-r-xl last:pr-6 [&:has(+[data-pinned]:last-child)]:rounded-r-xl [&:has([role=checkbox])]:pr-0',
 		variant === 'checkbox' && 'w-0 pr-4!',
 		variant === 'expander' && 'w-8 px-2',
