@@ -4437,8 +4437,6 @@
   "installed_fonts": "Yüklü yazı tipleri",
   "installed_fonts_unavailable": "Yüklü yazı tipleri okunamadı",
   "font_preview_sample": "Hızlı kahverengi tilki, tembel köpeğin üzerinden atlar 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Dosya yüklenemedi",
   "failed_to_save_file": "Dosya kaydedilemedi",
   "copy_current_path": "Geçerli yolu kopyala",
