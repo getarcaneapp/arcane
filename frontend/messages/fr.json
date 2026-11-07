@@ -4437,8 +4437,6 @@
   "installed_fonts": "Polices installées",
   "installed_fonts_unavailable": "Impossible de lire les polices installées",
   "font_preview_sample": "Le renard brun et vif saute par-dessus le chien paresseux 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Échec du chargement du fichier",
   "failed_to_save_file": "Échec de l'enregistrement du fichier",
   "copy_current_path": "Copier le chemin d'accès actuel",
