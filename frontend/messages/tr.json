@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Tarayıcı",
   "volumes_nav_backups": "Yedeklemeler",
   "volumes_workspace_files": "Birim Çalışma Alanı",
-  "volumes_workspace_files_empty": "Bu birimde çalışma alanı dosyası yok",
   "volumes_workspace_upload_description": "Bir veya daha fazla dosyayı birim çalışma alanına yükleyin.",
   "volumes_workspace_root_destination": "Birim kökü",
   "volumes_workspace_root_path": "Birim kök dizininde oluşturun.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Görsel Kimliği",
   "common_entrypoint": "Giriş Noktası",
   "workspace": "Çalışma Alanı",
-  "workspace_files": "Çalışma Alanı Dosyaları",
-  "workspace_files_empty": "Çalışma alanı dosyası yok",
   "workspace_new_file": "Yeni Dosya",
   "workspace_create_file_title": "Dosya Oluştur",
   "workspace_create_folder_title": "Klasör Oluştur",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Çalışma alanı kipini etkinleştir/devre dışı bırak",
   "project_editor_layout": "Varsayılan proje düzenleyicisi düzeni",
   "project_editor_layout_description": "Bir projenin yapılandırmasını açtığınızda görüntülenen düzen.",
-  "project_editor_layout_auto_description": "Ekstra dosyalar içeren projeler için çalışma alanı görünümü; aksi takdirde klasik görünüm.",
   "project_editor_layout_classic_description": "Compose ve ortam düzenleyicileri yan yana.",
   "project_editor_layout_tree_description": "Sekmeli düzenleyicilere sahip çalışma alanı dosya ağacı.",
   "automatic": "Otomatik",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Metin ve Yazı Tipleri",
   "layout_and_navigation": "Sayfa Düzeni ve Gezinme",
   "language_and_region": "Dil ve Bölge",
-  "editor": "Editör"
+  "editor": "Editör",
+  "files": "Dosyalar"
 }
