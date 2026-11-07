@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Desktop Sidebar",
   "navigation_default_landing_page_label": "Standaard startpagina",
   "navigation_default_landing_page_description": "Pagina die wordt geopend nadat u zich hebt aangemeld.",
-  "navigation_sidebar_hover_expansion_label": "Hover Uitbreiding inschakelen",
-  "navigation_sidebar_hover_expansion_description": "Wanneer ingeschakeld, zal het zweven over de ingeklapte zijbalk tijdelijk uitbreiden naar volledige labels. Indien uitgeschakeld, verschijnen tooltips voor een schonere en vaste breedte navigatie.",
   "navigation_keyboard_shortcuts_label": "Toetsenbord snelkoppelingen",
   "navigation_keyboard_shortcuts_description": "Sneltoetsen voor snelle navigatie inschakelen (bijv. Mod+1 voor Dashboard). Indien uitgeschakeld, zullen snelkoppelingen ook verborgen worden voor werktips.",
   "server_default": "Standaard server",
