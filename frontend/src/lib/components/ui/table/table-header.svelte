@@ -11,6 +11,14 @@
 	}: WithElementRef<HTMLAttributes<HTMLTableSectionElement>> = $props();
 </script>
 
-<thead bind:this={ref} data-slot="table-header" class={cn('[&_tr]:cursor-default [&_tr]:border-b-0', className)} {...restProps}>
+<thead
+	bind:this={ref}
+	data-slot="table-header"
+	class={cn(
+		'sticky top-0 z-[calc(var(--arcane-z-sticky)+1)] backdrop-blur-xl [&_tr]:cursor-default [&_tr]:border-b-0',
+		className
+	)}
+	{...restProps}
+>
 	{@render children?.()}
 </thead>

@@ -747,10 +747,8 @@
 		table.setGlobalFilter('');
 	}
 
-	const shellClass = $derived(
-		unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card/30'
-	);
-	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0 bg-table-head');
+	const shellClass = $derived(unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col gap-2');
+	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0');
 </script>
 
 {#snippet PaginationSnippet()}
@@ -803,6 +801,7 @@
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
+					class={unstyled ? undefined : 'px-0'}
 					{table}
 					{selectedIds}
 					{selectionDisabled}

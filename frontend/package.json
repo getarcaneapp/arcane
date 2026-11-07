@@ -61,7 +61,6 @@
 		"ansi-to-html": "^0.7.2",
 		"bits-ui": "^2.20.3",
 		"clsx": "^2.1.1",
-		"embla-carousel-svelte": "^8.6.0",
 		"formsnap": "^2.1.0",
 		"ky": "^2.2.0",
 		"marked": "^18.1.3",

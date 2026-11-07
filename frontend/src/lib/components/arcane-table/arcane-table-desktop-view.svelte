@@ -135,7 +135,7 @@
 			let grew = false;
 			for (const cell of tableNode.querySelectorAll<HTMLTableCellElement>('thead th[data-column-id]')) {
 				const id = cell.dataset['columnId'] ?? '';
-				const width = Math.ceil(cell.getBoundingClientRect().width);
+				const width = Math.floor(cell.getBoundingClientRect().width);
 				if (width > (next[id] ?? 0)) {
 					next[id] = width;
 					grew = true;

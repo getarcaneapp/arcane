@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { mode } from 'mode-watcher';
 
-	import type { CarouselAPI } from '#lib/components/ui/carousel/context.js';
-	import * as Carousel from '#lib/components/ui/carousel/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { AddIcon } from '#lib/icons/index.js';
@@ -118,13 +116,6 @@
 	const isDarkMode = $derived(mode.current === 'dark');
 	const customAccent = $derived(accentColor.trim() === '' || accentColor.trim() === 'theme' ? null : accentColor);
 
-	function setCarouselApi(api: CarouselAPI | undefined) {
-		api?.scrollTo(
-			themeOptions.findIndex((theme) => theme.id === selectedTheme),
-			true
-		);
-	}
-
 	function handleThemeChange(value: string) {
 		if (disabled) {
 			return;
@@ -138,78 +129,66 @@
 </script>
 
 <RadioGroup.Root value={selectedTheme} onValueChange={handleThemeChange} aria-describedby={ariaDescribedby}>
-	<Carousel.Root
-		class="flex w-full items-center"
-		opts={{ align: 'start', dragFree: true, containScroll: 'trimSnaps' }}
-		setApi={setCarouselApi}
-	>
-		<Carousel.Previous class="static me-2 hidden shrink-0 translate-y-0 md:inline-flex" />
-		<Carousel.Content>
-			{#each themeOptions as theme (theme.id)}
-				{@const preview = isDarkMode ? theme.dark : theme.light}
-				{@const definition = findApplicationTheme(theme.id)}
-				<Carousel.Item class="basis-32">
-					<div class="group relative h-full">
-						<RadioGroup.Item id={`application-theme-${theme.id}`} value={theme.id} class="sr-only" {disabled} />
-						<Label for={`application-theme-${theme.id}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
-							<div
-								class={cn(
-									'flex w-full flex-col gap-1.5 rounded-lg border p-1.5 transition-colors',
-									selectedTheme === theme.id ? 'border-primary ring-1 ring-primary' : 'hover:border-muted-foreground/40',
-									disabled && 'opacity-60'
-								)}
-							>
-								<div
-									class="flex h-11 gap-1 rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-1.5"
-									style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
-								>
-									<div class="w-1.5 rounded-xs bg-(--preview-sidebar)"></div>
-									<div class="flex min-w-0 flex-1 flex-col gap-1">
-										<div class="h-0.75 w-1/2 rounded-full bg-(--preview-fg) opacity-70"></div>
-										<div class="flex flex-1 gap-0.75">
-											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
-											<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
-										</div>
-									</div>
-								</div>
-								<div class="flex items-center gap-1.5 px-0.5 text-xs font-medium">
-									<span
-										class="size-1.5 shrink-0 rounded-full bg-(--preview-accent)"
-										style={`--preview-accent: ${customAccent ?? preview.primary}`}
-									></span>
-									<span class="truncate">{themeLabel(theme)}</span>
+	<div class="flex flex-wrap gap-2">
+		{#each themeOptions as theme (theme.id)}
+			{@const preview = isDarkMode ? theme.dark : theme.light}
+			{@const definition = findApplicationTheme(theme.id)}
+			<div class="group relative w-30">
+				<RadioGroup.Item id={`application-theme-${theme.id}`} value={theme.id} class="sr-only" {disabled} />
+				<Label for={`application-theme-${theme.id}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
+					<div
+						class={cn(
+							'flex w-full flex-col gap-1.5 rounded-lg border p-1.5 transition-colors',
+							selectedTheme === theme.id ? 'border-primary ring-1 ring-primary' : 'hover:border-muted-foreground/40',
+							disabled && 'opacity-60'
+						)}
+					>
+						<div
+							class="flex h-11 gap-1 rounded-md border border-(color:--preview-border) bg-(--preview-bg) p-1.5"
+							style={`--preview-bg: ${preview.background}; --preview-border: ${preview.border}; --preview-sidebar: ${preview.sidebar}; --preview-fg: ${preview.foreground}; --preview-card: ${preview.card};`}
+						>
+							<div class="w-1.5 rounded-xs bg-(--preview-sidebar)"></div>
+							<div class="flex min-w-0 flex-1 flex-col gap-1">
+								<div class="h-0.75 w-1/2 rounded-full bg-(--preview-fg) opacity-70"></div>
+								<div class="flex flex-1 gap-0.75">
+									<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
+									<div class="flex-1 rounded-xs bg-(--preview-card)"></div>
 								</div>
 							</div>
-						</Label>
-						{#if definition}
-							<div
-								class="absolute top-1 right-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
-							>
-								<ApplicationThemeCardMenu
-									theme={definition}
-									label={themeLabel(theme)}
-									description={themeDescription(theme)}
-									custom={customThemes.some((item) => item.id === theme.id)}
-								/>
-							</div>
-						{/if}
+						</div>
+						<div class="flex items-center gap-1.5 px-0.5 text-xs font-medium">
+							<span
+								class="size-1.5 shrink-0 rounded-full bg-(--preview-accent)"
+								style={`--preview-accent: ${customAccent ?? preview.primary}`}
+							></span>
+							<span class="truncate">{themeLabel(theme)}</span>
+						</div>
 					</div>
-				</Carousel.Item>
-			{/each}
-			<Carousel.Item class="basis-32">
-				<button
-					type="button"
-					class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-					{disabled}
-					onclick={() => (importOpen = true)}
-				>
-					<AddIcon class="size-4" />
-					{m.import_theme()}
-				</button>
-			</Carousel.Item>
-		</Carousel.Content>
-		<Carousel.Next class="static ms-2 hidden shrink-0 translate-y-0 md:inline-flex" />
-	</Carousel.Root>
+				</Label>
+				{#if definition}
+					<div
+						class="absolute top-1 right-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+					>
+						<ApplicationThemeCardMenu
+							theme={definition}
+							label={themeLabel(theme)}
+							description={themeDescription(theme)}
+							custom={customThemes.some((item) => item.id === theme.id)}
+						/>
+					</div>
+				{/if}
+			</div>
+		{/each}
+		<button
+			type="button"
+			class="flex min-h-18 w-30 flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+			{disabled}
+			onclick={() => (importOpen = true)}
+		>
+			<AddIcon class="size-4" />
+			{m.import_theme()}
+		</button>
+	</div>
 	<p class="text-xs text-muted-foreground">{selectedDescription}</p>
 </RadioGroup.Root>
 

@@ -216,8 +216,8 @@
 
 /* Over a backdrop photo the shell glass thins out and blurs harder. */
 html[data-backdrop] {
-	--shell-glass: color-mix(in oklch, color-mix(in oklch, var(--background) 90%, var(--foreground)) 58%, transparent);
-	--shell-glass-blur: blur(64px) saturate(1.3) brightness(1.08);
+	--shell-glass: color-mix(in oklch, var(--background) 72%, transparent);
+	--shell-glass-blur: blur(64px) saturate(1.3) brightness(0.8);
 }
 
 html.no-blur[data-backdrop] {
@@ -226,7 +226,7 @@ html.no-blur[data-backdrop] {
 
 /* Sticky table chrome is frosted so rows scrolling beneath it stay legible. */
 :root {
-	--table-head: color-mix(in oklab, var(--foreground) 3%, var(--background));
+	--table-head: color-mix(in oklab, var(--foreground) 6%, transparent);
 	--table-sticky: color-mix(in oklab, var(--background) 75%, transparent);
 }
 

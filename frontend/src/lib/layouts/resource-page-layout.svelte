@@ -43,7 +43,7 @@
 	}: Props = $props();
 </script>
 
-<div class={cn('space-y-5 pt-3 md:space-y-7 md:pt-5', className)}>
+<div class={cn('space-y-5 md:space-y-7', className)}>
 	<header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
 		<div class="min-w-0 flex-1">
 			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>

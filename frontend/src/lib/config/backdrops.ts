@@ -33,12 +33,6 @@ export const backdropPresets: BackdropPreset[] = [
 		label: m.ember,
 		photographer: 'Milad Fakurian',
 		photographerUrl: 'https://unsplash.com/@fakurian'
-	},
-	{
-		id: 'silver',
-		label: m.silver,
-		photographer: 'Milad Fakurian',
-		photographerUrl: 'https://unsplash.com/@fakurian'
 	}
 ];
 
