@@ -116,7 +116,7 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 			return nil, nil, false
 		}
 		user, _, err := verify(ctx, token)
-		if err != nil || user == nil {
+		if err != nil || user == nil || deps.Auth.Service().RequirePasswordChanged(user, "") != nil {
 			return nil, nil, false
 		}
 		return resolveUser(ctx, user.Actor()), user.Actor(), true

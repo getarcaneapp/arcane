@@ -208,26 +208,31 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			await environmentStore.initialize(environmentStore.available);
 		}
 
-		featureStore.connect(queryClient);
-		clientStream.connect(queryClient);
-		const settingsRequest = dataOrNull(
-			queryClient.query({
-				...rootQuery,
-				queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
-				queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
-			})
-		);
+		const passwordChangePending = user.requiresPasswordChange && !settingsStore.autoLoginEnabled.current;
+		if (!passwordChangePending) {
+			featureStore.connect(queryClient);
+			clientStream.connect(queryClient);
+		}
+		const settingsRequest = passwordChangePending
+			? Promise.resolve(null)
+			: dataOrNull(
+					queryClient.query({
+						...rootQuery,
+						queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+						queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
+					})
+				);
 		const featuresRequest = Promise.race([
 			Promise.all(
 				environmentStore.available
-					.filter((env) => env.enabled)
+					.filter((env) => env.enabled && !passwordChangePending)
 					.map((env) =>
 						isEnvironmentOnline(env) ? featureStore.load(env.id, rootQuery.staleTime === 0) : featureStore.markUnavailable(env.id)
 					)
 			),
 			afterDiscoveryTimeout()
 		]);
-		const swarmEnvironments = readableEnvironments('swarm:read');
+		const swarmEnvironments = passwordChangePending ? [] : readableEnvironments('swarm:read');
 		const swarmStatusRequest =
 			swarmEnvironments.length > 0
 				? dataOrNull(
@@ -243,7 +248,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 						})
 					)
 				: Promise.resolve(null);
-		const podmanEnvironments = readableEnvironments('podman:read');
+		const podmanEnvironments = passwordChangePending ? [] : readableEnvironments('podman:read');
 		const podmanStatusRequest = (
 			podmanEnvironments.length > 0
 				? dataOrNull(

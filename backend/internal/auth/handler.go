@@ -753,7 +753,8 @@ func NewHumaMiddleware(p HumaMiddlewareParams) func(
 		if !reqs.isRequired {
 			// Public routes (e.g. logout) still learn who the caller is when a
 			// valid bearer token is present, but never fail the request.
-			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, p.AuthService); err == nil && authenticatedUser != nil {
+			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, p.AuthService); err == nil && authenticatedUser != nil &&
+				p.AuthService.RequirePasswordChanged(authenticatedUser, kit.FromPtr(ctx.Operation()).OperationID) == nil {
 				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), p.PermResolver, authenticatedUser))
 				ctx = huma.WithContext(ctx, context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID))
 			}
@@ -862,6 +863,10 @@ func handleApiKeyAuth(
 func handleBearerAuth(api huma.API, ctx huma.Context, authService *AuthService, permResolver PermissionResolver) (huma.Context, bool) {
 	authenticatedUser, sessionID, err := tryBearerAuth(ctx, authService)
 	if err == nil && authenticatedUser != nil {
+		if gateErr := authService.RequirePasswordChanged(authenticatedUser, kit.FromPtr(ctx.Operation()).OperationID); gateErr != nil {
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, gateErr.Error())
+			return nil, true
+		}
 		ps := resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser)
 		newCtx := setUserInContext(ctx.Context(), authenticatedUser, ps)
 		newCtx = context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID)
@@ -1052,6 +1057,13 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		return c.JSON(http.StatusUnauthorized, common.APIError{
 			Code:    common.APIErrorCodeUnauthorized,
 			Message: "Invalid or expired token",
+		})
+	}
+
+	if gateErr := m.authService.RequirePasswordChanged(authenticatedUser, ""); gateErr != nil {
+		return c.JSON(http.StatusForbidden, common.APIError{
+			Code:    common.APIErrorCodePasswordChangeRequired,
+			Message: gateErr.Error(),
 		})
 	}
 

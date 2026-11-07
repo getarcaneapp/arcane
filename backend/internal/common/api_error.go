@@ -38,17 +38,18 @@ type (
 )
 
 const (
-	APIErrorCodeBadRequest          APIErrorCode = "BAD_REQUEST"
-	APIErrorCodeUnauthorized        APIErrorCode = "UNAUTHORIZED"
-	APIErrorCodeForbidden           APIErrorCode = "FORBIDDEN"
-	APIErrorCodeFeatureDisabled     APIErrorCode = "feature_disabled"
-	APIErrorCodeNotFound            APIErrorCode = "NOT_FOUND"
-	APIErrorCodeConflict            APIErrorCode = "CONFLICT"
-	APIErrorCodeInternalServerError APIErrorCode = "INTERNAL_SERVER_ERROR"
-	APIErrorCodeDockerAPIError      APIErrorCode = "DOCKER_API_ERROR"
-	APIErrorCodeValidationError     APIErrorCode = "VALIDATION_ERROR"
-	APIErrorCodeTimeout             APIErrorCode = "TIMEOUT"
-	APIErrorCodeTooManyRequests     APIErrorCode = "TOO_MANY_REQUESTS"
+	APIErrorCodeBadRequest             APIErrorCode = "BAD_REQUEST"
+	APIErrorCodeUnauthorized           APIErrorCode = "UNAUTHORIZED"
+	APIErrorCodeForbidden              APIErrorCode = "FORBIDDEN"
+	APIErrorCodeFeatureDisabled        APIErrorCode = "feature_disabled"
+	APIErrorCodeNotFound               APIErrorCode = "NOT_FOUND"
+	APIErrorCodeConflict               APIErrorCode = "CONFLICT"
+	APIErrorCodeInternalServerError    APIErrorCode = "INTERNAL_SERVER_ERROR"
+	APIErrorCodeDockerAPIError         APIErrorCode = "DOCKER_API_ERROR"
+	APIErrorCodeValidationError        APIErrorCode = "VALIDATION_ERROR"
+	APIErrorCodeTimeout                APIErrorCode = "TIMEOUT"
+	APIErrorCodeTooManyRequests        APIErrorCode = "TOO_MANY_REQUESTS"
+	APIErrorCodePasswordChangeRequired APIErrorCode = "PASSWORD_CHANGE_REQUIRED"
 )
 
 func (e *APIError) Error() string {

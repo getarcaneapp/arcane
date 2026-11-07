@@ -101,11 +101,12 @@
 			<Error message={m.error_occurred()} showButton={true} />
 		{:else}
 			<Tooltip.Provider>
-				{@render children()}
 				{#if showPasswordChangeDialog}
 					{#await import('#lib/components/dialogs/first-login-password-dialog.svelte') then { default: FirstLoginPasswordDialog }}
 						<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
 					{/await}
+				{:else}
+					{@render children()}
 				{/if}
 				{#if dev}
 					<SvelteQueryDevtools />

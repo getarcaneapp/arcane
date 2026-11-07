@@ -4416,7 +4416,7 @@
   "interface_font": "Interface font",
   "interface_font_description": "Font for interface text. Chinese, Japanese, and Korean glyphs use installed system fonts.",
   "monospace_font": "Monospace font",
-  "monospace_font_description": "Font for headings, IDs, and other monospace text",
+  "monospace_font_description": "Font for IDs and other monospace text",
   "code_font": "Code font",
   "code_font_description": "Font for the code editor, code blocks, and terminal. The terminal updates when reopened.",
   "custom_font": "Custom font",

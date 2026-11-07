@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/normalization"
 
+	"getarcane.dev/arcane/v3/buildables"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -100,6 +102,10 @@ var (
 	ErrLocalAuthDisabled  = errors.New("local authentication is disabled")
 	ErrOidcAuthDisabled   = errors.New("OIDC authentication is disabled")
 	ErrMFARequired        = errors.New("multi-factor authentication is required")
+
+	ErrPasswordChangeRequired = common.Classify(common.ErrForbidden, errors.New("password change required"))
+
+	passwordChangeAllowedOperations = []string{"get-current-user", "get-session-bootstrap", "change-password", "logout"}
 )
 
 func (p *TokenPair) CookieHeaders(secure bool) []string {
@@ -139,6 +145,10 @@ func NewAuthService(p AuthServiceParams) *AuthService {
 }
 
 func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps *authz.PermissionSet) (*types.SessionBootstrap, error) {
+	userModel, getUserErr := s.userService.GetUser(ctx, userID)
+	if getUserErr != nil {
+		return nil, fmt.Errorf("failed to get user: %w", getUserErr)
+	}
 	var (
 		currentUser  types.User
 		versionInfo  *types.VersionInfo
@@ -146,10 +156,7 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 	)
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
-		userModel, err := s.userService.GetUser(groupCtx, userID)
-		if err != nil {
-			return fmt.Errorf("failed to get user: %w", err)
-		}
+		var err error
 		currentUser, err = s.userService.ToUserResponseDto(groupCtx, *userModel)
 		if err != nil {
 			return fmt.Errorf("failed to map user: %w", err)
@@ -163,6 +170,9 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 		return nil
 	})
 	group.Go(func() error {
+		if s.RequirePasswordChanged(userModel, "") != nil {
+			return nil
+		}
 		var err error
 		environments, err = s.environmentLister.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
 		if err != nil {
@@ -812,6 +822,13 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 	})
 
 	return dbUser, userSession.ID, nil
+}
+
+func (s *AuthService) RequirePasswordChanged(localUser *user.User, operationID string) error {
+	if !localUser.RequiresPasswordChange || buildables.HasBuildFeature("autologin") || slices.Contains(passwordChangeAllowedOperations, operationID) {
+		return nil
+	}
+	return ErrPasswordChangeRequired
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, req ChangePasswordRequest) error {

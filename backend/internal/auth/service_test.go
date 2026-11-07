@@ -21,6 +21,7 @@ import (
 
 	"kit.getarcane.app/docker/streams/bus"
 
+	"getarcane.dev/arcane/v3/buildables"
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -715,9 +716,10 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	passwordHash, err := userSvc.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	localUser := &user.User{
-		ID:           "u-keep",
-		Username:     "keep-user",
-		PasswordHash: passwordHash,
+		ID:                     "u-keep",
+		Username:               "keep-user",
+		PasswordHash:           passwordHash,
+		RequiresPasswordChange: true,
 	}
 	_, err = userSvc.CreateUser(t.Context(), localUser)
 	require.NoError(t, err)
@@ -738,6 +740,40 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, current.RevokedAt, "current session should remain active")
 	require.NotNil(t, other.RevokedAt, "other sessions should be revoked")
+
+	reloaded, err := userSvc.GetUserByID(t.Context(), localUser.ID)
+	require.NoError(t, err)
+	require.False(t, reloaded.RequiresPasswordChange)
+	require.NoError(t, s.RequirePasswordChanged(reloaded, "create-user"))
+}
+
+func TestRequirePasswordChanged(t *testing.T) {
+	s := newTestAuthService()
+	tests := []struct {
+		wantErr     error
+		user        *user.User
+		name        string
+		operationID string
+	}{
+		{name: "flagged user reads own identity", user: &user.User{RequiresPasswordChange: true}, operationID: "get-current-user"},
+		{name: "flagged user loads bootstrap", user: &user.User{RequiresPasswordChange: true}, operationID: "get-session-bootstrap"},
+		{name: "flagged user changes password", user: &user.User{RequiresPasswordChange: true}, operationID: "change-password"},
+		{name: "flagged user logs out", user: &user.User{RequiresPasswordChange: true}, operationID: "logout"},
+		{name: "flagged user creates user", user: &user.User{RequiresPasswordChange: true}, operationID: "create-user", wantErr: common.ErrForbidden},
+		{name: "flagged user on echo route", user: &user.User{RequiresPasswordChange: true}, wantErr: common.ErrForbidden},
+		{name: "unflagged user creates user", user: &user.User{}, operationID: "create-user"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.RequirePasswordChanged(tt.user, tt.operationID)
+			if tt.wantErr == nil || buildables.HasBuildFeature("autologin") {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, tt.wantErr)
+			require.ErrorIs(t, err, ErrPasswordChangeRequired)
+		})
+	}
 }
 
 func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
