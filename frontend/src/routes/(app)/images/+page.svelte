@@ -270,7 +270,7 @@
 		if (canPruneImage) {
 			buttons.push({
 				id: 'prune',
-				action: 'remove',
+				action: 'prune',
 				group: 'danger',
 				destructive: true,
 				label: m.images_prune_unused(),
@@ -432,7 +432,7 @@
 				<div class="flex justify-end gap-3 pt-6">
 					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isPruning} />
 					<ArcaneButton
-						action="remove"
+						action="prune"
 						onclick={handlePruneImages}
 						disabled={isPruning}
 						loading={isPruning}
