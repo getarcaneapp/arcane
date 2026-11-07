@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "browser",
   "volumes_nav_backups": "Back-ups",
   "volumes_workspace_files": "Werkruimte voor volumes",
-  "volumes_workspace_files_empty": "Er zijn geen werkruimtebestanden op dit volume",
   "volumes_workspace_upload_description": "Upload één of meer bestanden naar de werkruimte van het volume.",
   "volumes_workspace_root_destination": "Volumewortel",
   "volumes_workspace_root_path": "Maak het aan in de hoofdmap van het volume.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Afbeelding ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Werkruimte",
-  "workspace_files": "Bestanden in de werkruimte",
-  "workspace_files_empty": "Geen werkruimtebestanden",
   "workspace_new_file": "Nieuw bestand",
   "workspace_create_file_title": "Bestand aanmaken",
   "workspace_create_folder_title": "Map aanmaken",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Schakel tussen klassieke zijkant en boomweergave",
   "project_editor_layout": "Standaardindeling van de projecteditor",
   "project_editor_layout_description": "De weergave die te zien is wanneer je de configuratie van een project opent.",
-  "project_editor_layout_auto_description": "Werkruimteweergave voor projecten met extra bestanden; anders de klassieke weergave.",
   "project_editor_layout_classic_description": "Compose- en omgevingseditors naast elkaar.",
   "project_editor_layout_tree_description": "Bestandsboomstructuur van de werkruimte met editors met tabbladen.",
   "automatic": "Automatisch",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Tekst en lettertypen",
   "layout_and_navigation": "Indeling en navigatie",
   "language_and_region": "Taal en regio",
-  "editor": "Redacteur"
+  "editor": "Redacteur",
+  "files": "Bestanden"
 }
