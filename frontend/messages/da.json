@@ -4437,8 +4437,6 @@
   "installed_fonts": "Installerede skrifttyper",
   "installed_fonts_unavailable": "Det var ikke muligt at læse de installerede skrifttyper",
   "font_preview_sample": "Den hurtige brune ræv springer over den dovne hund 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Det lykkedes ikke at indlæse filen",
   "failed_to_save_file": "Det lykkedes ikke at gemme filen",
   "copy_current_path": "Kopier den aktuelle sti",
