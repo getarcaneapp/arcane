@@ -4437,8 +4437,6 @@
   "installed_fonts": "Установленные шрифты",
   "installed_fonts_unavailable": "Не удалось прочитать установленные шрифты",
   "font_preview_sample": "Быстрая коричневая лиса перепрыгивает через ленивую собаку 0123456789",
-  "montserrat": "Монтсеррат",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Не удалось загрузить файл",
   "failed_to_save_file": "Не удалось сохранить файл",
   "copy_current_path": "Скопировать текущий путь",
