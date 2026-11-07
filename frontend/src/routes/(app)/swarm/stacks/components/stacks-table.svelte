@@ -24,6 +24,8 @@
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import { bringDownStack, bringUpStack } from '../stack-actions.js';
+
 	let {
 		stacks,
 		scope,
@@ -74,40 +76,13 @@
 		});
 	}
 
-	async function handleUp(stack: StackRow) {
-		isLoading = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.upStack(stack.name, stack.environmentId)),
-			message: m.failed_to_bring_up_stack({ name: stack.name }),
-			setLoadingState: (v) => (isLoading = v),
-			onSuccess: async () => {
-				toast.success(m.stack_brought_up({ name: stack.name }));
-				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
-			}
-		});
-	}
-
-	function handleDown(stack: StackRow) {
-		openConfirmDialog({
-			title: m.bring_down_stack(),
-			message: m.bring_down_stack_confirm_message(),
-			confirm: {
-				label: m.common_down(),
-				destructive: true,
-				action: async () => {
-					isLoading = true;
-					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.downStack(stack.name, stack.environmentId)),
-						message: m.failed_to_bring_down_stack({ name: stack.name }),
-						setLoadingState: (v) => (isLoading = v),
-						onSuccess: async () => {
-							toast.success(m.stack_brought_down({ name: stack.name }));
-							await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
-						}
-					});
-				}
-			}
-		});
+	function stackActionOptions(stack: StackRow) {
+		return {
+			name: stack.name,
+			environmentId: stack.environmentId,
+			setLoading: (loading: boolean) => (isLoading = loading),
+			onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') })
+		};
 	}
 
 	const columns = [
@@ -191,12 +166,12 @@
 		</DropdownMenu.Item>
 		<IfPermitted perm="swarm-stacks:update" envId={item.environmentId}>
 			{#if item.services > 0}
-				<DropdownMenu.Item onclick={() => handleDown(item)} disabled={isLoading}>
+				<DropdownMenu.Item onclick={() => bringDownStack(stackActionOptions(item))} disabled={isLoading}>
 					<StopIcon class="size-4" />
 					{m.common_down()}
 				</DropdownMenu.Item>
 			{:else if item.hasSource}
-				<DropdownMenu.Item onclick={() => handleUp(item)} disabled={isLoading}>
+				<DropdownMenu.Item onclick={() => bringUpStack(stackActionOptions(item))} disabled={isLoading}>
 					<PlayIcon class="size-4" />
 					{m.common_up()}
 				</DropdownMenu.Item>

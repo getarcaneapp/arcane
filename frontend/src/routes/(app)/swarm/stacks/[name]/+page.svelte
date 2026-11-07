@@ -28,6 +28,7 @@
 
 	import SwarmServicesTable from '../../services/components/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/components/tasks-table.svelte';
+	import { bringDownStack, bringUpStack } from '../stack-actions.js';
 
 	let { data } = $props();
 
@@ -214,42 +215,6 @@
 		});
 	}
 
-	async function handleUp() {
-		isLoading.up = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.upStack(stackName, envId)),
-			message: m.failed_to_bring_up_stack({ name: stackName }),
-			setLoadingState: (v) => (isLoading.up = v),
-			onSuccess: async () => {
-				toast.success(m.stack_brought_up({ name: stackName }));
-				await refresh();
-			}
-		});
-	}
-
-	function handleDown() {
-		openConfirmDialog({
-			title: m.bring_down_stack(),
-			message: m.bring_down_stack_confirm_message(),
-			confirm: {
-				label: m.common_down(),
-				destructive: true,
-				action: async () => {
-					isLoading.down = true;
-					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.downStack(stackName, envId)),
-						message: m.failed_to_bring_down_stack({ name: stackName }),
-						setLoadingState: (v) => (isLoading.down = v),
-						onSuccess: async () => {
-							toast.success(m.stack_brought_down({ name: stackName }));
-							await refresh();
-						}
-					});
-				}
-			}
-		});
-	}
-
 	const actionButtons: ActionButton[] = $derived([
 		...(hasPermission('swarm-stacks:update', envId)
 			? [
@@ -274,7 +239,13 @@
 						action: 'start' as const,
 						label: m.common_up(),
 						icon: PlayIcon,
-						onclick: handleUp,
+						onclick: () =>
+							bringUpStack({
+								name: stackName,
+								environmentId: envId,
+								setLoading: (loading) => (isLoading.up = loading),
+								onSuccess: refresh
+							}),
 						loading: isLoading.up,
 						disabled: isMutating
 					}
@@ -287,7 +258,13 @@
 						action: 'stop' as const,
 						label: m.common_down(),
 						icon: StopIcon,
-						onclick: handleDown,
+						onclick: () =>
+							bringDownStack({
+								name: stackName,
+								environmentId: envId,
+								setLoading: (loading) => (isLoading.down = loading),
+								onSuccess: refresh
+							}),
 						loading: isLoading.down,
 						disabled: isMutating
 					}

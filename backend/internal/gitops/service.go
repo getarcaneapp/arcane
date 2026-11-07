@@ -820,29 +820,28 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, opts SyncDelete) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, opts SyncDelete) (deleteErr error) {
 	// Even a row that can no longer be loaded must stop firing; an in-flight run re-reads it and skips.
 	s.jobs.Unregister(ctx, id)
 	s.backups.cancel(id)
 
 	// The row is loaded only for the audit event, so a corrupt or environment-mismatched row is still deletable.
 	syncRecord, loadErr := s.getSyncByID(ctx, environmentID, id, false)
+	defer func() {
+		if deleteErr != nil && loadErr == nil && syncRecord.AutoSync {
+			s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+		}
+	}()
 
 	if opts.RemoveStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
 		admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
 		lease, leaseErr := s.jobs.Acquire(admitCtx, id)
 		cancelAdmit()
 		if leaseErr != nil {
-			if syncRecord.AutoSync {
-				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
-			}
 			return fmt.Errorf("failed to wait for active GitOps sync: %w", leaseErr)
 		}
 		defer lease.Release(ctx)
 		if stackErr := s.swarmService.RemoveStack(ctx, syncRecord.EnvironmentID, syncRecord.ProjectName); stackErr != nil && !errdefs.IsNotFound(stackErr) {
-			if syncRecord.AutoSync {
-				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
-			}
 			return fmt.Errorf("failed to remove swarm stack %s: %w", syncRecord.ProjectName, stackErr)
 		}
 	}
@@ -860,9 +859,6 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		}
 		return nil
 	}); err != nil {
-		if loadErr == nil && syncRecord.AutoSync {
-			s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
-		}
 		return err
 	}
 

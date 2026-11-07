@@ -1883,7 +1883,7 @@ func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOp
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t, &gitOpsSyncTestScheduler{}, gate)
 
 	var mu sync.Mutex
-	removed := []string{}
+	var removed []string
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		path := strings.TrimPrefix(r.URL.Path, "/v1.41")
