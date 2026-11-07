@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Desktop Sidebar",
   "navigation_default_landing_page_label": "Alapértelmezett nyitóoldal",
   "navigation_default_landing_page_description": "A bejelentkezés után megnyíló oldal.",
-  "navigation_sidebar_hover_expansion_label": "Enable Hover Expansion",
-  "navigation_sidebar_hover_expansion_description": "When enabled, hovering over the collapsed sidebar will temporarily expand it to show full labels. When disabled, tooltips will appear instead for a cleaner, fixed-width navigation.",
   "navigation_keyboard_shortcuts_label": "Keyboard Shortcuts",
   "navigation_keyboard_shortcuts_description": "Enable keyboard shortcuts for quick navigation (e.g., Mod+1 for Dashboard). When disabled, shortcut hints will also be hidden from tooltips.",
   "server_default": "Server Default",
