@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "桌面版側邊欄",
   "navigation_default_landing_page_label": "預設首頁",
   "navigation_default_landing_page_description": "登入後將開啟的頁面。",
-  "navigation_sidebar_hover_expansion_label": "啟用懸停時展開",
-  "navigation_sidebar_hover_expansion_description": "啟用時，在已折疊的側邊欄上懸停會暫時展開以顯示完整標籤。 停用時，則會顯示提示標籤，以呈現清楚、固定寬度的導覽。",
   "navigation_keyboard_shortcuts_label": "鍵盤快捷鍵",
   "navigation_keyboard_shortcuts_description": "啟用鍵盤快捷鍵來快速導覽（例如：Mod+1 前往資訊主頁）。停用時，快捷鍵提示也會隱藏。",
   "server_default": "伺服器預設",
