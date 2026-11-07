@@ -4437,8 +4437,6 @@
   "installed_fonts": "インストール済みのフォント",
   "installed_fonts_unavailable": "インストール済みのフォントを読み込めませんでした",
   "font_preview_sample": "「素早い茶色のキツネが、のろまな犬を飛び越える」0123456789",
-  "montserrat": "モンセラート",
-  "geist_mono": "ガイスト・モノ",
   "failed_to_load_file": "ファイルの読み込みに失敗しました",
   "failed_to_save_file": "ファイルの保存に失敗しました",
   "copy_current_path": "現在のパスをコピーする",
