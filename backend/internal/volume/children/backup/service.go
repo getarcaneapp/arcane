@@ -399,7 +399,6 @@ func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup,
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return ctx.Err()
 	}
-	// A backup already recorded as succeeded before retention stays succeeded when only its cleanup was cancelled.
 	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
 		err = ctx.Err()
 	}
@@ -454,17 +453,11 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
 		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
-		// Record the success before trimming: it then counts toward "Backups to keep", and cancelling a slow prune
-		// cannot fail the backup that replaces the ones already forgotten.
 		entry.Status, entry.Error = types.VolumeBackupStatusSucceeded, ""
 		if saveErr := s.deps.Store.Save(context.WithoutCancel(ctx), entry); saveErr != nil {
 			return fmt.Errorf("failed to save volume backup result: %w", saveErr)
 		}
-		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, backup.RunRetention{
-			Succeeded: plan.Policy.RetentionCount,
-			Failed:    plan.Policy.RetentionCount,
-		})
-		// A resumed backup can finish after newer ones and rank as expired; it must never trim itself.
+		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
 		expired = slices.DeleteFunc(expired, func(id string) bool { return id == entry.ID })
 		if retentionErr == nil && len(expired) > 0 {
 			var expiredEntries []*types.VolumeBackup

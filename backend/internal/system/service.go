@@ -583,7 +583,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			return result, response, nil
 		},
 		ExpiredRunIDs: func(ctx context.Context, policyID string, keep int) ([]string, error) {
-			return backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, backup.RunRetention{Succeeded: keep, Failed: keep})
+			return backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, keep)
 		},
 		ExpiredUnmanagedRunIDs: func(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
 			var orphanedIDs []string

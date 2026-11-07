@@ -77,13 +77,9 @@ func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 		"failed-snap-old", "app-data", 0, time.Now().Add(-3*time.Hour), policyID, types.VolumeBackupStatusFailed, "snapshot-3",
 	).Error)
 
-	expired, err := backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, backup.RunRetention{Succeeded: 1, Failed: 1})
+	expired, err := backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, 1)
 	require.NoError(t, err)
 	require.Equal(t, []string{"failed-snap-old"}, expired)
-
-	expired, err = backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, backup.RunRetention{Succeeded: 0, Failed: 2})
-	require.NoError(t, err)
-	require.Equal(t, []string{"succeeded-run"}, expired, "each status keeps its own limit")
 }
 
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
@@ -270,7 +266,7 @@ func TestDeleteExpiredBackupsLeavesBusyVolumesForTheNextRun(t *testing.T) {
 	require.NoError(t, service.DeleteExpiredBackups(t.Context(), ExpiredBackupDeletion{
 		IncludeRemote: true,
 		Expired: func(ctx context.Context, _ []string) ([]string, error) {
-			return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, backup.RunRetention{Succeeded: 1, Failed: 1})
+			return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, 1)
 		},
 	}))
 
