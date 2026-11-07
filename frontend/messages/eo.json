@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Foliumilo",
   "volumes_nav_backups": "Sekurkopioj",
   "volumes_workspace_files": "Volumena Laborspaco",
-  "volumes_workspace_files_empty": "En ĉi tiu volumo ne estas laborspacaj dosieroj.",
   "volumes_workspace_upload_description": "Alŝutu unu aŭ plurajn dosierojn al la volumena laborejo.",
   "volumes_workspace_root_destination": "Voluma radiko",
   "volumes_workspace_root_path": "Kreu ĉe la volumradiko.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Bildidentigilo",
   "common_entrypoint": "Enirpunkto",
   "workspace": "Laborareo",
-  "workspace_files": "Dosieroj de laborspaco",
-  "workspace_files_empty": "Neniuj laborspacaj dosieroj",
   "workspace_new_file": "Nova dosiero",
   "workspace_create_file_title": "Krei dosieron",
   "workspace_create_folder_title": "Krei dosierujon",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Ŝanĝu inter la klasika flank-al-flanka aranĝo kaj la arbovido.",
   "project_editor_layout": "Normala aranĝo de la projekta redaktilo",
   "project_editor_layout_description": "Agordo montrata kiam vi malfermas la konfiguron de projekto.",
-  "project_editor_layout_auto_description": "Laborspaca vido por projektoj kun kromaj dosieroj, alie klasika.",
   "project_editor_layout_classic_description": "Redaktiloj de komponaĵo kaj medio apud unu la alian.",
   "project_editor_layout_tree_description": "Dosierarbo de laborspaco kun langetaj redaktiloj.",
   "automatic": "Aŭtomata",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Teksto kaj Tiparoj",
   "layout_and_navigation": "Aranĝo kaj Navigado",
   "language_and_region": "Lingvo kaj Regiono",
-  "editor": "Redaktoro"
+  "editor": "Redaktoro",
+  "files": "Dosieroj"
 }
