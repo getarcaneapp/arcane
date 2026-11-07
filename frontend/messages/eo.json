@@ -237,7 +237,6 @@
   "common_select_all": "Elekti ĉion",
   "common_select_row": "Elekti vicon",
   "common_showing_of_total": "Montrante {shown} de {total}",
-  "table_pagination_bottom": "Paĝigo de la malsupra tabelo",
   "table_expand_row": "Etendi vicon",
   "table_collapse_row": "Kolapsu vicon",
   "table_group_items": "{count} aĵo(j)",
@@ -4490,5 +4489,14 @@
   "dusk": "Krepusko",
   "ribbon": "Rubando",
   "silver": "Arĝento",
-  "ember": "Brulkarbo"
+  "ember": "Brulkarbo",
+  "backup_cleanup_description": "Malhelpu, ke la stokado de sekurkopioj senlime kresku, forigante sekurkopiojn, kiujn neniu horaro plu administras.",
+  "unmanaged_backup_retention_days": "Neadministrita reteno de sekurkopioj (tagoj)",
+  "unmanaged_backup_retention_days_description": "Forigu sekurkopiojn de forigitaj volumoj aŭ forigitaj horaroj post tiom da tagoj ekde kiam ili ĉesis esti administrataj, kaj sekurkopiojn faritajn antaŭ restarigoj, kiam ili estas tiel malnovaj.",
+  "unmanaged_backup_retention_days_help": "La purigado funkcias dufoje tage kaj ankaŭ forigas la S3-kopiojn. Agordu al 0 por konservi ĉi tiujn sekurkopiojn senfine.",
+  "unmanaged_backup_retention_summary": "Sekurkopioj de forigitaj volumoj aŭ forigitaj horaroj, kaj sekurkopioj, estas forigitaj post {days} tagoj sur ĉi tiu servilo.",
+  "unmanaged_backup_retention_disabled_summary": "Sekurkopioj de forigitaj volumoj aŭ forigitaj horaroj, kaj sekurkopioj, estas konservataj senfine sur ĉi tiu servilo.",
+  "table_pagination": "Tabelpagado",
+  "table_range_of_total": "{start}–{end} de {total}",
+  "table_range": "{start}–{end}"
 }
