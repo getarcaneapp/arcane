@@ -765,7 +765,7 @@
 			</div>
 		</div>
 	{:else}
-		<div class="flex min-w-0 items-center gap-2">
+		<div class="flex w-full min-w-0 items-center gap-2">
 			<IconImage
 				src={iconUrl}
 				alt=""
@@ -773,7 +773,7 @@
 				class="size-6 {iconTextClass[iconVariant]}"
 				containerClass="size-8 shrink-0 {iconBgClass[iconVariant]}"
 			/>
-			<div class="flex min-w-0 flex-col">
+			<div class="flex min-w-0 flex-1 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
 					<ResourceName name={displayName} {href} class="font-medium" />
 					{@render NameBadges(item)}
