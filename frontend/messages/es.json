@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Barra lateral del escritorio",
   "navigation_default_landing_page_label": "Página de inicio predeterminada",
   "navigation_default_landing_page_description": "Página que se abre al iniciar sesión.",
-  "navigation_sidebar_hover_expansion_label": "Habilitar expansión de Hover",
-  "navigation_sidebar_hover_expansion_description": "Cuando está habilitado, pasar el cursor sobre la barra lateral colapsada lo expandirá temporalmente para mostrar etiquetas completas. Cuando está desactivado, las herramientas aparecerán en su lugar para una navegación de ancho fijo y limpia.",
   "navigation_keyboard_shortcuts_label": "Atajos de teclado",
   "navigation_keyboard_shortcuts_description": "Activar atajos de teclado para la navegación rápida (por ejemplo, Mod+1 para el panel). Cuando está deshabilitado, las sugerencias de acceso directo también se ocultarán de las descripciones.",
   "server_default": "Servidor por defecto",
