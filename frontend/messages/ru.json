@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Браузер",
   "volumes_nav_backups": "Резервные копии",
   "volumes_workspace_files": "Том рабочей области",
-  "volumes_workspace_files_empty": "На этом томе нет файлов рабочей области",
   "volumes_workspace_upload_description": "Загрузите один или несколько файлов в том рабочей области.",
   "volumes_workspace_root_destination": "Корень тома",
   "volumes_workspace_root_path": "Создать в корне тома.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "ID образа",
   "common_entrypoint": "Точка входа",
   "workspace": "Рабочая область",
-  "workspace_files": "Файлы рабочей области",
-  "workspace_files_empty": "Файлы рабочей области отсутствуют",
   "workspace_new_file": "Новый файл",
   "workspace_create_file_title": "Создать файл",
   "workspace_create_folder_title": "Создать папку",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Переключение режима рабочей области",
   "project_editor_layout": "Стандартная схема расположения элементов в редакторе проекта",
   "project_editor_layout_description": "Макет, отображаемый при открытии настроек проекта.",
-  "project_editor_layout_auto_description": "Режим просмотра рабочей области для проектов с дополнительными файлами; в остальных случаях — классический режим.",
   "project_editor_layout_classic_description": "Редакторы файла compose и файла окружения, расположенные рядом.",
   "project_editor_layout_tree_description": "Дерево файлов рабочей области с редакторами во вкладках.",
   "automatic": "Автоматический",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Текст и шрифты",
   "layout_and_navigation": "Верстка и навигация",
   "language_and_region": "Язык и регион",
-  "editor": "Редактор"
+  "editor": "Редактор",
+  "files": "Файлы"
 }
