@@ -9,7 +9,6 @@
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		PlayIcon,
@@ -160,7 +159,6 @@
 	<div class="flex h-10 shrink-0 items-center gap-2 px-2">
 		<LayersIcon class="size-4 text-muted-foreground" />
 		<span class="text-sm font-medium">{m.services()}</span>
-		<Badge variant="gray" size="sm">{servicesWithIds.length}</Badge>
 	</div>
 	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
 		{#each servicesWithIds as item (item.id)}
@@ -251,22 +249,24 @@
 					{/if}
 				</div>
 				{#if serviceImageRef(item) || item.serviceConfig?.ports?.length || item.ports?.length}
-					<div class="mt-1 flex min-w-0 items-center gap-2 pl-11">
+					<div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-11">
 						{#if serviceImageRef(item)}
 							{@const imageRef = serviceImageRef(item)}
 							{@const parsed = parseImageRef(imageRef)}
-							<ImageUpdateItem
-								updateInfo={updateInfoByRef[imageRef]}
-								{imageRef}
-								repo={parsed.repo}
-								tag={parsed.tag}
-								{environmentId}
-							/>
+							<div class="flex shrink-0">
+								<ImageUpdateItem
+									updateInfo={updateInfoByRef[imageRef]}
+									{imageRef}
+									repo={parsed.repo}
+									tag={parsed.tag}
+									{environmentId}
+								/>
+							</div>
 						{/if}
 						{#if item.serviceConfig?.ports?.length}
-							<PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} />
+							<div class="min-w-0"><PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} /></div>
 						{:else if item.ports?.length}
-							<PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} />
+							<div class="min-w-0"><PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} /></div>
 						{/if}
 					</div>
 				{/if}
