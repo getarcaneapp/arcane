@@ -5,9 +5,11 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
-	import type { FormTabProps } from './tab-props';
+	import type { StorageTabProps } from './tab-props';
 
-	let { formInputs = $bindable(), mixed }: FormTabProps = $props();
+	let { formInputs = $bindable(), settings, mixed }: StorageTabProps = $props();
+
+	const supportsUnmanagedBackupRetention = $derived(settings.values.unmanagedBackupRetentionDays !== undefined);
 </script>
 
 <div class="space-y-8">
@@ -183,4 +185,29 @@
 			{/snippet}
 		</SettingsRow>
 	</SettingsSection>
+
+	{#if supportsUnmanagedBackupRetention}
+		<SettingsSection title={m.backups()} description={m.backup_cleanup_description()}>
+			<SettingsRow
+				for="unmanaged-backup-retention-days"
+				label={m.unmanaged_backup_retention_days()}
+				description={m.unmanaged_backup_retention_days_description()}
+				helpText={m.unmanaged_backup_retention_days_help()}
+				error={formInputs.unmanagedBackupRetentionDays.error}
+				mixed={mixed('unmanagedBackupRetentionDays')}
+			>
+				{#snippet children({ describedBy, errorId })}
+					<Input
+						id="unmanaged-backup-retention-days"
+						type="number"
+						bind:value={formInputs.unmanagedBackupRetentionDays.value}
+						aria-invalid={!!formInputs.unmanagedBackupRetentionDays.error}
+						placeholder={mixed('unmanagedBackupRetentionDays') ? m.mixed() : undefined}
+						aria-describedby={describedBy}
+						aria-errormessage={errorId}
+					/>
+				{/snippet}
+			</SettingsRow>
+		</SettingsSection>
+	{/if}
 </div>

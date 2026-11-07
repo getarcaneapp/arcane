@@ -18,6 +18,7 @@ export const environmentSettingsSchema = z.object({
 	gitSyncMaxFiles: z.coerce.number().int().nonnegative(),
 	gitSyncMaxTotalSizeMb: z.coerce.number().int().nonnegative(),
 	gitSyncMaxBinarySizeMb: z.coerce.number().int().nonnegative(),
+	unmanagedBackupRetentionDays: z.coerce.number().int().min(0).max(3650),
 	baseServerUrl: z.string(),
 	scheduledPruneEnabled: z.boolean(),
 	pruneContainerMode: z.enum(['none', 'stopped', 'olderThan']),

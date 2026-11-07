@@ -2,6 +2,7 @@ package backup
 
 import (
 	"testing"
+	"time"
 
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/mount"
@@ -11,6 +12,7 @@ import (
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/types/v3"
 )
 
 func TestMarkSnapshotDirectories(t *testing.T) {
@@ -141,4 +143,46 @@ func TestSnapshotCommand(t *testing.T) {
 	require.ErrorContains(t, err, "single source")
 	_, err = snapshotCommand("x", CreateSnapshotInput{})
 	require.ErrorContains(t, err, "at least one snapshot source")
+}
+
+func TestExpiredUnmanagedRunIDs(t *testing.T) {
+	db, err := database.Initialize(t.Context(), "file:backup-unmanaged-expiry?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	now := time.Now()
+	day := 24 * time.Hour
+	insert := func(id, trigger, status string, createdAt time.Time, orphanedAt *time.Time) {
+		require.NoError(t, db.Exec(
+			"INSERT INTO volume_backups (id, volume_name, size, created_at, trigger, status, orphaned_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			id, "app-data", 0, createdAt, trigger, status, orphanedAt,
+		).Error)
+	}
+	insert("safety-old", types.VolumeBackupTriggerSafety, types.VolumeBackupStatusSucceeded, now.Add(-8*day), nil)
+	insert("safety-new", types.VolumeBackupTriggerSafety, types.VolumeBackupStatusSucceeded, now.Add(-day), nil)
+	insert("safety-running", types.VolumeBackupTriggerSafety, types.VolumeBackupStatusRunning, now.Add(-30*day), nil)
+	insert("orphan-new", types.VolumeBackupTriggerScheduled, types.VolumeBackupStatusSucceeded, now.Add(-30*day), nil)
+	insert("orphan-stale", types.VolumeBackupTriggerScheduled, types.VolumeBackupStatusFailed, now.Add(-20*day), new(now.Add(-8*day)))
+	insert("managed-again", types.VolumeBackupTriggerManual, types.VolumeBackupStatusSucceeded, now.Add(-10*day), new(now.Add(-8*day)))
+	sweep := types.UnmanagedBackupSweep{Now: now, Retention: 7 * day}
+	orphanedAt := func(id string) *time.Time {
+		var row struct{ OrphanedAt *time.Time }
+		require.NoError(t, db.Table("volume_backups").Select("orphaned_at").Where("id = ?", id).Scan(&row).Error)
+		return row.OrphanedAt
+	}
+
+	expired, err := ExpiredUnmanagedRunIDs(t.Context(), db, "volume_backups", []string{"orphan-new", "orphan-stale"}, sweep)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"orphan-stale", "safety-old"}, expired)
+	require.NotNil(t, orphanedAt("orphan-new"), "a newly orphaned backup starts its grace period instead of expiring by age")
+	require.Nil(t, orphanedAt("managed-again"), "a backup managed again ends its grace period")
+
+	recheck := types.UnmanagedBackupSweep{Now: now, Within: []string{"orphan-stale", "safety-new"}, Retention: 7 * day}
+	expired, err = ExpiredUnmanagedRunIDs(t.Context(), db, "volume_backups", []string{"orphan-new", "orphan-stale"}, recheck)
+	require.NoError(t, err)
+	require.Equal(t, []string{"orphan-stale"}, expired, "a recheck only reports backups from the batch it locked")
+
+	expired, err = ExpiredUnmanagedRunIDs(t.Context(), db, "volume_backups", nil, sweep)
+	require.NoError(t, err)
+	require.Equal(t, []string{"safety-old"}, expired)
+	require.Nil(t, orphanedAt("orphan-stale"))
 }

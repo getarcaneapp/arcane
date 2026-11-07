@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -142,6 +143,7 @@ const (
 	RunKeyPrefix                   = "run:"
 	VolumeRoot                     = "arcane-volume-backups"
 	rusticRepositoryMissingMessage = "No repository config file found"
+	unmanagedSweepBatch            = 500
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 )
@@ -951,4 +953,47 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 		expired = append(expired, ids...)
 	}
 	return expired, nil
+}
+
+// ExpiredUnmanagedRunIDs updates orphan marks and returns a random batch of expired runs, so runs that keep failing to
+// delete cannot hold back the rest.
+func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, orphanedIDs []string, sweep types.UnmanagedBackupSweep) ([]string, error) {
+	cutoff := sweep.Now.Add(-sweep.Retention)
+	var expired []string
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var stamped []string
+		if err := tx.Table(table).Where("orphaned_at IS NOT NULL").Pluck("id", &stamped).Error; err != nil {
+			return fmt.Errorf("load backup orphan marks: %w", err)
+		}
+		orphaned := make(map[string]struct{}, len(orphanedIDs))
+		for _, id := range orphanedIDs {
+			orphaned[id] = struct{}{}
+		}
+		var managed []string
+		for _, id := range stamped {
+			if _, ok := orphaned[id]; ok {
+				delete(orphaned, id)
+				continue
+			}
+			managed = append(managed, id)
+		}
+		for batch := range slices.Chunk(managed, unmanagedSweepBatch) {
+			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", nil).Error; err != nil {
+				return fmt.Errorf("clear backup orphan marks: %w", err)
+			}
+		}
+		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), unmanagedSweepBatch) {
+			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", sweep.Now).Error; err != nil {
+				return fmt.Errorf("mark orphaned backups: %w", err)
+			}
+		}
+		query := tx.Table(table).
+			Where("status <> ?", "running").
+			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff))
+		if len(sweep.Within) > 0 {
+			query = query.Where("id IN ?", sweep.Within)
+		}
+		return query.Order("RANDOM()").Limit(unmanagedSweepBatch).Pluck("id", &expired).Error
+	})
+	return expired, err
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/mldsa"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -693,6 +694,18 @@ func (s *SettingsService) GetBoolSetting(ctx context.Context, key string) bool {
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string) int {
 	return s.settingValue(ctx, key, strconv.Atoi)
+}
+
+func (s *SettingsService) SystemVolumeBackupPolicies() (*types.SystemVolumeBackupPolicyCollection, error) {
+	var collection types.SystemVolumeBackupPolicyCollection
+	if raw := strings.TrimSpace(s.GetSettingsConfig().SystemVolumeBackupConfig.Value); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &collection); err != nil {
+			return nil, fmt.Errorf("decode system-managed volume backup policies: %w", err)
+		}
+	}
+	return &types.SystemVolumeBackupPolicyCollection{
+		Policies: kit.Ternary(collection.Policies == nil, []types.SystemVolumeBackupPolicy{}, collection.Policies),
+	}, nil
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key string) string {

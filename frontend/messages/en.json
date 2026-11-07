@@ -4490,5 +4490,11 @@
   "dusk": "Dusk",
   "ribbon": "Ribbon",
   "silver": "Silver",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Keep backup storage from growing without limit by removing backups no schedule manages anymore.",
+  "unmanaged_backup_retention_days": "Unmanaged backup retention (days)",
+  "unmanaged_backup_retention_days_description": "Delete backups of removed volumes or deleted schedules this many days after they stop being managed, and safety backups taken before restores once they are this old.",
+  "unmanaged_backup_retention_days_help": "Cleanup runs twice a day and also removes the S3 copies. Set 0 to keep these backups indefinitely.",
+  "unmanaged_backup_retention_summary": "Backups of removed volumes or deleted schedules, and safety backups, are deleted after {days} days on this server.",
+  "unmanaged_backup_retention_disabled_summary": "Backups of removed volumes or deleted schedules, and safety backups, are kept indefinitely on this server."
 }

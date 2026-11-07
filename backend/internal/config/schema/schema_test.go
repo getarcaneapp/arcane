@@ -190,6 +190,7 @@ var (
 		"trivyServerEnabled",
 		"trivyServerToken",
 		"trivyServerUrl",
+		"unmanagedBackupRetentionDays",
 		"updateCheckEnabled",
 		"updateCheckRegistry",
 		"upgradeLogRetentionDays",

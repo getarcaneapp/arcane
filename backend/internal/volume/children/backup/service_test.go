@@ -214,3 +214,27 @@ func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
 	require.Equal(t, int64(2048), snapshot.Summary.TotalBytesProcessed)
 	require.False(t, snapshot.Time.IsZero())
 }
+
+func TestOrphanedVolumeBackupIDs(t *testing.T) {
+	systemSeries := func(owner string) string {
+		return types.SystemVolumePolicyPrefix + owner + ":" + kit.SHA256Hex("app-data")[:16]
+	}
+	scheduled := types.VolumeBackupTriggerScheduled
+	manual := types.VolumeBackupTriggerManual
+	candidates := []unmanagedCandidate{
+		{ID: "manual", VolumeName: "app-data", Trigger: manual},
+		{ID: "volume-policy", VolumeName: "app-data", PolicyID: "policy-1", Trigger: scheduled},
+		{ID: "deleted-volume-policy", VolumeName: "app-data", PolicyID: "policy-deleted", Trigger: scheduled},
+		{ID: "manual-deleted-volume-policy", VolumeName: "app-data", PolicyID: "policy-deleted", Trigger: manual},
+		{ID: "system-policy", VolumeName: "app-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+		{ID: "system-manual", VolumeName: "app-data", PolicyID: systemSeries("manual"), Trigger: manual},
+		{ID: "deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: scheduled},
+		{ID: "manual-deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: manual},
+		{ID: "removed-volume", VolumeName: "old-data", Trigger: manual},
+		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+	}
+
+	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})
+
+	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
+}

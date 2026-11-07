@@ -16,10 +16,11 @@
 		'maxImageUploadSize',
 		'gitSyncMaxFiles',
 		'gitSyncMaxTotalSizeMb',
-		'gitSyncMaxBinarySizeMb'
+		'gitSyncMaxBinarySizeMb',
+		'unmanagedBackupRetentionDays'
 	]}
 >
-	{#snippet content({ formInputs, mixed })}
-		<StorageTab {formInputs} {mixed} />
+	{#snippet content({ formInputs, mixed, settings })}
+		<StorageTab {formInputs} {mixed} {settings} />
 	{/snippet}
 </EnvironmentSettingsPage>

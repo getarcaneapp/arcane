@@ -184,6 +184,33 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
 }
 
+func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
+	db, err := database.Initialize(t.Context(), "file:system-backup-unmanaged?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	require.NoError(t, db.Create(&SystemBackupPolicy{BaseModel: database.BaseModel{ID: "nightly"}, Schedule: "0 2 * * *"}).Error)
+	now := time.Now()
+	old := now.Add(-30 * 24 * time.Hour)
+	for _, run := range []SystemBackupRun{
+		{BaseModel: database.BaseModel{ID: "scheduled"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerScheduled, PolicyID: "nightly"},
+		{BaseModel: database.BaseModel{ID: "deleted-policy"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerScheduled, PolicyID: "weekly"},
+		{BaseModel: database.BaseModel{ID: "manual"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerManual},
+		{BaseModel: database.BaseModel{ID: "manual-deleted-policy"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerManual, PolicyID: "weekly"},
+		{BaseModel: database.BaseModel{ID: "safety"}, CreatedAt: old, Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerSafety},
+	} {
+		require.NoError(t, db.Create(&run).Error)
+	}
+	store := (&SystemService{db: db}).backupStore(nil)
+
+	expired, err := store.ExpiredUnmanagedRunIDs(t.Context(), types.UnmanagedBackupSweep{Now: now, Retention: 7 * 24 * time.Hour})
+	require.NoError(t, err)
+	require.Equal(t, []string{"safety"}, expired, "a deleted schedule's runs get the full grace period")
+
+	expired, err = store.ExpiredUnmanagedRunIDs(t.Context(), types.UnmanagedBackupSweep{Now: now.Add(8 * 24 * time.Hour), Retention: 7 * 24 * time.Hour})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"deleted-policy", "safety"}, expired)
+}
+
 func newSystemBackupAdmissionGateForTest(t testing.TB) *runs.Admission {
 	t.Helper()
 	runtime := francistest.New(t)

@@ -71,6 +71,7 @@ type (
 		Run                       func(ctx context.Context, id string) (*types.SystemBackupRun, error)
 		ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error)
 		ExpiredRunIDs             func(ctx context.Context, policyID string, keep int) ([]string, error)
+		ExpiredUnmanagedRunIDs    func(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error)
 		RunsByID                  func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error)
 		LatestPolicyRun           func(ctx context.Context, policyID string) (*types.SystemBackupRun, error)
 		RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
@@ -892,6 +893,10 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBack
 }
 
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	return errors.Join(s.pruneUnmanagedRuns(ctx), s.pruneDeletedLocalRuns(ctx))
+}
+
+func (s *Service) pruneDeletedLocalRuns(ctx context.Context) error {
 	localBackups, err := s.store.CountLocalRuns(ctx)
 	if err != nil || localBackups == 0 {
 		return err
@@ -1549,6 +1554,39 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 		return err
 	}
 	return s.deleteRuns(ctx, expiredRuns, "", includeRemote)
+}
+
+// pruneUnmanagedRuns keeps runs while no recovery key can forget their snapshots.
+func (s *Service) pruneUnmanagedRuns(ctx context.Context) error {
+	days := s.settingsService.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
+	if days <= 0 {
+		return nil
+	}
+	if configured, err := s.recoveryKeys.Configured(ctx); err != nil || !configured {
+		return err
+	}
+	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, types.UnmanagedBackupSweep{
+		Now:       time.Now(),
+		Retention: time.Duration(days) * 24 * time.Hour,
+	})
+	if err != nil || len(expired) == 0 {
+		return err
+	}
+	lease, err := s.acquireRun(ctx)
+	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
+		slog.InfoContext(ctx, "Skipping unmanaged system backup cleanup while a system backup runs")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer lease.Release(ctx)
+	expiredRuns, err := s.store.RunsByID(ctx, expired)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "Pruning unmanaged system backups", "expired", len(expiredRuns))
+	return s.deleteRuns(ctx, expiredRuns, "", true)
 }
 
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
