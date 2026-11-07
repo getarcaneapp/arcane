@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Browser",
   "volumes_nav_backups": "Backups",
   "volumes_workspace_files": "Volumen-arbejdsområde",
-  "volumes_workspace_files_empty": "Der er ingen arbejdsfiler på dette drev",
   "volumes_workspace_upload_description": "Upload en eller flere filer til volumenets arbejdsområde.",
   "volumes_workspace_root_destination": "Volumenrod",
   "volumes_workspace_root_path": "Opret i volumenrodmappen.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Arbejdsområde",
-  "workspace_files": "Arbejdsområde-filer",
-  "workspace_files_empty": "Ingen filer i arbejdsområdet",
   "workspace_new_file": "Ny fil",
   "workspace_create_file_title": "Opret fil",
   "workspace_create_folder_title": "Opret mappe",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "Standardlayout for projekteditoren",
   "project_editor_layout_description": "Det layout, der vises, når du åbner et projekts konfiguration.",
-  "project_editor_layout_auto_description": "Arbejdsområdevisning for projekter med ekstra filer, ellers klassisk visning.",
   "project_editor_layout_classic_description": "Compose- og miljøredigeringsprogrammer side om side.",
   "project_editor_layout_tree_description": "Arbejdsområdets filstruktur med redigeringsvinduer med faner.",
   "automatic": "Automatisk",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Tekst og skrifttyper",
   "layout_and_navigation": "Layout og navigation",
   "language_and_region": "Sprog og region",
-  "editor": "Redaktør"
+  "editor": "Redaktør",
+  "files": "Filer"
 }
