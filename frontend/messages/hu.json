@@ -237,7 +237,6 @@
   "common_select_all": "Összes kijelölése",
   "common_select_row": "Sor kiválasztása",
   "common_showing_of_total": "{shown} megjelenítése a {total}",
-  "table_pagination_bottom": "Az alsó táblázat lapozása",
   "table_expand_row": "Sor kibontása",
   "table_collapse_row": "Sor összecsukása",
   "table_group_items": "{count} tétel(ek)",
@@ -4490,5 +4489,14 @@
   "dusk": "Alkonyat",
   "ribbon": "Szalag",
   "silver": "Ezüst",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Akadályozza meg, hogy a biztonsági mentések tárolási igénye korlátlanul növekedjen, azáltal, hogy eltávolítja azokat a biztonsági mentéseket, amelyekre már nincs érvényes ütemezés.",
+  "unmanaged_backup_retention_days": "A biztonsági másolatok automatikus megőrzési ideje (napokban)",
+  "unmanaged_backup_retention_days_description": "A kezelésük megszűnésétől számított ennyi nap elteltével törölje az eltávolított kötetekről vagy a törölt ütemezésekről készült biztonsági másolatokat, valamint a visszaállítások előtt készített biztonsági másolatokat, ha azok már ennyire régiek.",
+  "unmanaged_backup_retention_days_help": "A tisztítási művelet naponta kétszer fut, és az S3-másolatokat is eltávolítja. Ha ezeket a biztonsági másolatokat véglegesen meg szeretné őrizni, állítsa be a 0-s értéket.",
+  "unmanaged_backup_retention_summary": "Az eltávolított kötetekről vagy törölt ütemezésekről készült biztonsági másolatok, valamint a biztonsági mentések {days} nap elteltével törlődnek erről a szerverről.",
+  "unmanaged_backup_retention_disabled_summary": "Az eltávolított kötetekről vagy a törölt ütemezésekről készült biztonsági másolatok, valamint a biztonsági mentések határozatlan ideig megmaradnak ezen a szerveren.",
+  "table_pagination": "Táblázat oldalszámozása",
+  "table_range_of_total": "{start}–{end} a {total}",
+  "table_range": "{start}–{end}"
 }
