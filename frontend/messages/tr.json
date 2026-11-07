@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Masaüstü Kenar Çubuğu",
   "navigation_default_landing_page_label": "Varsayılan Açılış Sayfası",
   "navigation_default_landing_page_description": "Giriş yaptıktan sonra açılacak sayfa.",
-  "navigation_sidebar_hover_expansion_label": "Fareyle Üzerine Gelindiğinde Genişletme Özelliğini Etkinleştirme",
-  "navigation_sidebar_hover_expansion_description": "Bu özellik etkinleştirildiğinde, daraltılmış kenar çubuğunun üzerine fareyi getirdiğinizde kenar çubuğu geçici olarak genişleyerek etiketlerin tamamını gösterir. Devre dışı bırakıldığında ise, daha sade ve sabit genişlikte bir gezinme deneyimi için bunun yerine araç ipuçları görüntülenir.",
   "navigation_keyboard_shortcuts_label": "Klavye Kısayolları",
   "navigation_keyboard_shortcuts_description": "Hızlı gezinme için klavye kısayollarını etkinleştirin (örneğin Kontrol Paneli için Mod+1). Bu özellik devre dışı bırakıldığında, kısayol ipuçları da araç ipuçlarından gizlenecektir.",
   "server_default": "Sunucu Varsayılan Ayarı",
