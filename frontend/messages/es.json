@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Navegador",
   "volumes_nav_backups": "Copias de seguridad",
   "volumes_workspace_files": "Espacio de trabajo del volumen",
-  "volumes_workspace_files_empty": "No hay archivos de espacio de trabajo en este volumen",
   "volumes_workspace_upload_description": "Suba uno o más archivos al espacio de trabajo del volumen.",
   "volumes_workspace_root_destination": "Raíz del volumen",
   "volumes_workspace_root_path": "Crear en la raíz del volumen.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "ID de imagen",
   "common_entrypoint": "Punto de entrada",
   "workspace": "Espacio de trabajo",
-  "workspace_files": "Archivos del espacio de trabajo",
-  "workspace_files_empty": "No hay archivos del espacio de trabajo",
   "workspace_new_file": "Nuevo archivo",
   "workspace_create_file_title": "Crear archivo",
   "workspace_create_folder_title": "Crear carpeta",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Alternar modo de espacio de trabajo",
   "project_editor_layout": "Diseño predeterminado del editor de proyecto",
   "project_editor_layout_description": "Diseño que se muestra al abrir la configuración de un proyecto.",
-  "project_editor_layout_auto_description": "Vista del espacio de trabajo para proyectos con archivos adicionales; clásica en los demás casos.",
   "project_editor_layout_classic_description": "Editores de Compose y entorno uno al lado del otro.",
   "project_editor_layout_tree_description": "Árbol de archivos del espacio de trabajo con editores en pestañas.",
   "automatic": "Automático",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Texto y fuentes",
   "layout_and_navigation": "Diseño y navegación",
   "language_and_region": "Idioma y región",
-  "editor": "Editor"
+  "editor": "Editor",
+  "files": "Archivos"
 }
