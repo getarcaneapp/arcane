@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Sidebar máy tính",
   "navigation_default_landing_page_label": "Trang đích mặc định",
   "navigation_default_landing_page_description": "Trang sẽ hiển thị sau khi đăng nhập.",
-  "navigation_sidebar_hover_expansion_label": "Bật mở rộng khi di chuột",
-  "navigation_sidebar_hover_expansion_description": "Khi bật, việc di chuột qua Sidebar đang thu gọn sẽ tạm thời mở rộng để hiển thị nhãn đầy đủ. Khi tắt, các Tooltips sẽ xuất hiện thay thế.",
   "navigation_keyboard_shortcuts_label": "Phím tắt",
   "navigation_keyboard_shortcuts_description": "Bật phím tắt bàn phím để điều hướng nhanh (ví dụ: Mod+1 cho Bảng điều khiển). Khi tắt, các gợi ý phím tắt cũng sẽ bị ẩn khỏi hộp thoại gợi ý.",
   "server_default": "Mặc định của Server",
