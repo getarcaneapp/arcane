@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -276,36 +275,39 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 		return nil, err
 	}
 
-	effective := make(map[string]types.EnvVariable)
-	for _, scoped := range []bool{false, true} {
-		for _, variable := range variables {
-			if variable.AllEnvironments == scoped {
-				continue
-			}
-			if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
-				continue
-			}
-			value := variable.Value
-			if variable.IsSecret {
-				decrypted, decryptErr := crypto.Decrypt(value)
-				if decryptErr != nil {
-					slog.WarnContext(ctx, "Failed to decrypt global variable for sync; skipping",
-						"variableId", variable.ID, "key", variable.Key, "error", decryptErr)
-					continue
-				}
-				value = decrypted
-			}
-			effective[variable.Key] = types.EnvVariable{
-				Key:      variable.Key,
-				Value:    value,
-				NoInject: !variable.InjectIntoContainers,
-			}
+	result := make([]types.EnvVariable, 0, len(variables))
+	positions := make(map[string]int, len(variables))
+	scopedKeys := make(map[string]bool)
+	for _, variable := range variables {
+		scoped := !variable.AllEnvironments
+		if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
+			continue
 		}
-	}
-
-	result := make([]types.EnvVariable, 0, len(effective))
-	for _, key := range slices.Sorted(maps.Keys(effective)) {
-		result = append(result, effective[key])
+		if !scoped && scopedKeys[variable.Key] {
+			continue
+		}
+		value := variable.Value
+		if variable.IsSecret {
+			decrypted, decryptErr := crypto.Decrypt(value)
+			if decryptErr != nil {
+				slog.WarnContext(ctx, "Failed to decrypt global variable for sync; skipping",
+					"variableId", variable.ID, "key", variable.Key, "error", decryptErr)
+				continue
+			}
+			value = decrypted
+		}
+		entry := types.EnvVariable{
+			Key:      variable.Key,
+			Value:    value,
+			NoInject: !variable.InjectIntoContainers,
+		}
+		if index, ok := positions[variable.Key]; ok {
+			result[index] = entry
+		} else {
+			positions[variable.Key] = len(result)
+			result = append(result, entry)
+		}
+		scopedKeys[variable.Key] = scopedKeys[variable.Key] || scoped
 	}
 	return result, nil
 }
@@ -678,7 +680,7 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 
 func (s *VariableService) loadVariables(ctx context.Context) ([]GlobalVariable, error) {
 	var variables []GlobalVariable
-	if err := s.db.WithContext(ctx).Preload("Environments").Order("key").Find(&variables).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Environments").Order("created_at, key").Find(&variables).Error; err != nil {
 		return nil, fmt.Errorf("failed to load global variables: %w", err)
 	}
 	return variables, nil
