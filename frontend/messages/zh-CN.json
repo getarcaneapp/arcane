@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "桌面侧边栏",
   "navigation_default_landing_page_label": "默认首页",
   "navigation_default_landing_page_description": "登录后将打开的页面。",
-  "navigation_sidebar_hover_expansion_label": "启用悬停扩展",
-  "navigation_sidebar_hover_expansion_description": "启用时，鼠标悬停在折叠的侧边栏上会暂时将其展开，以显示完整标签；禁用时则改为显示工具提示，导航保持简洁的固定宽度。",
   "navigation_keyboard_shortcuts_label": "键盘快捷键",
   "navigation_keyboard_shortcuts_description": "启用键盘快捷键以便快速导航（例如 Mod+1 打开仪表盘）。禁用时，工具提示中也会隐藏快捷键提示。",
   "server_default": "服务器默认",
