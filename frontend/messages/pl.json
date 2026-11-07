@@ -4489,5 +4489,12 @@
   "files": "Pliki",
   "log_raw_output": "Dane wyjściowe w postaci surowej",
   "log_raw_output_tooltip": "Wyświetla oryginalny tekst wiersza zamiast przeanalizowanych, ustrukturyzowanych wpisów dziennika.",
-  "log_stderr_line": "Wyświetlanie błędu standardowego"
+  "log_stderr_line": "Wyświetlanie błędu standardowego",
+  "also_remove_deployed_swarm_stack": "Należy również usunąć wdrożony stos Swarm",
+  "bring_down_stack": "Zmniejsz stos",
+  "bring_down_stack_confirm_message": "Czy chcesz usunąć usługi, sieci, konfiguracje i sekrety z tego stosu? Zapisane pliki compose zostaną zachowane, dzięki czemu będzie można go ponownie wdrożyć.",
+  "stack_brought_down": "Został wyłączony stos „{name}”",
+  "failed_to_bring_down_stack": "Nie udało się zwolnić stosu „{name}”",
+  "stack_brought_up": "Wyświetlono stos „{name}”",
+  "failed_to_bring_up_stack": "Nie udało się uruchomią stosu „{name}”"
 }
