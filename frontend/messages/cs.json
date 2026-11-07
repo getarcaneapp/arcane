@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Prohlížeč",
   "volumes_nav_backups": "Zálohy",
   "volumes_workspace_files": "Pracovní prostor svazku",
-  "volumes_workspace_files_empty": "V tomto svazku nejsou žádné soubory pracovního prostoru",
   "volumes_workspace_upload_description": "Nahrajte jeden nebo více souborů do pracovního prostoru svazku.",
   "volumes_workspace_root_destination": "Kořen svazku",
   "volumes_workspace_root_path": "Vytvořit v kořenovém adresáři svazku.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "ID obrazu",
   "common_entrypoint": "Vstupní bod",
   "workspace": "Pracovní prostor",
-  "workspace_files": "Soubory v pracovním prostoru",
-  "workspace_files_empty": "Žádné soubory v pracovním prostoru",
   "workspace_new_file": "Nový soubor",
   "workspace_create_file_title": "Vytvořit soubor",
   "workspace_create_folder_title": "Vytvořit složku",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Přepnout režim pracovního prostoru",
   "project_editor_layout": "Výchozí rozložení editoru projektu",
   "project_editor_layout_description": "Rozložení, které se zobrazí při otevření konfigurace projektu.",
-  "project_editor_layout_auto_description": "Zobrazení pracovního prostoru pro projekty s dalšími soubory, v ostatních případech klasické zobrazení.",
   "project_editor_layout_classic_description": "Editory kompozic a prostředí vedle sebe.",
   "project_editor_layout_tree_description": "Strom souborů v pracovním prostoru s editory v záložkách.",
   "automatic": "Automatický",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Text a písma",
   "layout_and_navigation": "Rozvržení a navigace",
   "language_and_region": "Jazyk a region",
-  "editor": "Redaktor"
+  "editor": "Redaktor",
+  "files": "Soubory"
 }
