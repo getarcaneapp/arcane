@@ -233,6 +233,7 @@ export function pinViewAction(
 				limit: 10
 			});
 		}),
-		placement: 'overflow'
+		placement: 'secondary',
+		iconOnly: true
 	};
 }
