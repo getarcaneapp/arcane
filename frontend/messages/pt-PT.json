@@ -4489,5 +4489,12 @@
   "files": "Ficheiros",
   "log_raw_output": "Saída em bruto",
   "log_raw_output_tooltip": "Mostra o texto original da linha, em vez dos registos estruturados e analisados.",
-  "log_stderr_line": "Saída do erro-padrão"
+  "log_stderr_line": "Saída do erro-padrão",
+  "also_remove_deployed_swarm_stack": "Remova também a pilha do Swarm que foi implementada",
+  "bring_down_stack": "Desmontar a pilha",
+  "bring_down_stack_confirm_message": "Deseja remover os serviços, redes, configurações e segredos desta pilha? Os ficheiros «compose» guardados serão mantidos para que possa ser implementada novamente.",
+  "stack_brought_down": "A pilha «{name}» foi derrubada",
+  "failed_to_bring_down_stack": "Não foi possível carregar a pilha «{name}»",
+  "stack_brought_up": "A pilha «{name}» foi apresentada",
+  "failed_to_bring_up_stack": "Não foi possível iniciar a pilha «{name}»"
 }
