@@ -27,7 +27,6 @@ import (
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
-	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 
@@ -818,20 +817,22 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (client.ImagePullOptions, error) {
 	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
 
-	for _, cred := range externalCreds {
-		if !cred.Enabled || cred.Username == "" || cred.Token == "" {
-			continue
+	usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
+		return !cred.Enabled || cred.Username == "" || cred.Token == ""
+	})
+	matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
+	if err != nil {
+		return client.ImagePullOptions{}, fmt.Errorf("failed to match external credentials: %w", err)
+	}
+	if len(matchingCreds) > 0 {
+		cred := matchingCreds[0]
+		authStr, encodeErr := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
+		if encodeErr != nil {
+			return client.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", encodeErr)
 		}
 
-		if kitregistry.Normalize(cred.URL) == kitregistry.Normalize(registryHost) {
-			authStr, err := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
-			if err != nil {
-				return client.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", err)
-			}
-
-			slog.DebugContext(ctx, "Using external credentials for image pull", "registry", registryHost, "username", cred.Username)
-			return client.ImagePullOptions{RegistryAuth: authStr}, nil
-		}
+		slog.DebugContext(ctx, "Using external credentials for image pull", "registry", registryHost, "username", cred.Username)
+		return client.ImagePullOptions{RegistryAuth: authStr}, nil
 	}
 
 	authStr, err := s.registryService.GetRegistryAuthForImage(ctx, imageRef)

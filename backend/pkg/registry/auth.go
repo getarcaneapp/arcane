@@ -1,7 +1,9 @@
 package registry
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	ref "github.com/distribution/reference"
@@ -51,6 +53,30 @@ func SplitRegistryURL(url string) (host, namespace string) {
 		namespace = strings.TrimPrefix(namespace[2:], "/")
 	}
 	return host, namespace
+}
+
+// MatchingForImage returns the items whose registry URL serves imageRef, most specific namespace first.
+// A namespaced registry URL such as host/team only serves images below that namespace.
+func MatchingForImage[T any](imageRef string, items []T, registryURL func(T) string) ([]T, error) {
+	named, err := ref.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return nil, err
+	}
+	imageHost, _ := SplitRegistryURL(ref.Domain(named))
+	repository := ref.Path(named)
+	if imageHost == "" {
+		return nil, nil
+	}
+	matches := slices.DeleteFunc(slices.Clone(items), func(item T) bool {
+		host, namespace := SplitRegistryURL(registryURL(item))
+		return host != imageHost || (namespace != "" && repository != namespace && !strings.HasPrefix(repository, namespace+"/"))
+	})
+	slices.SortStableFunc(matches, func(a, b T) int {
+		_, namespaceA := SplitRegistryURL(registryURL(a))
+		_, namespaceB := SplitRegistryURL(registryURL(b))
+		return cmp.Compare(len(namespaceB), len(namespaceA))
+	})
+	return matches, nil
 }
 
 func NormalizeRegistryURL(url string) string {

@@ -148,7 +148,7 @@
 			<Label for="backupOnSaveSwitch" class="mb-0">{m.back_up_on_save()}</Label>
 			<p class="text-xs text-muted-foreground">{m.back_up_on_save_description()}</p>
 		</div>
-		<Switch id="backupOnSaveSwitch" bind:checked={inputs.backupOnSave.value} disabled={!inputs.autoSync.value} />
+		<Switch id="backupOnSaveSwitch" bind:checked={inputs.backupOnSave.value} />
 	</div>
 
 	<div class="py-3">
