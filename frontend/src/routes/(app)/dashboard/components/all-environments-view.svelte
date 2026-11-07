@@ -148,11 +148,18 @@
 	};
 	const ATTENTION_WIDGETS: BuiltinDashboardWidgetType[] = ['attention', 'attentionCount', 'environments'];
 	const API_KEY_EXPIRY_WINDOW_HOURS = 14 * 24;
+	const PRUNE_SETTING_GROUPS: (keyof Settings)[][] = [
+		['pruneContainerMode', 'pruneContainerUntil'],
+		['pruneImageMode', 'pruneImageUntil'],
+		['pruneNetworkMode', 'pruneNetworkUntil'],
+		['pruneVolumeMode'],
+		['pruneBuildCacheMode', 'pruneBuildCacheUntil']
+	];
 
 	let isRefreshing = $state(false);
 	let isPruneDialogOpen = $state(false);
 	let pruneTargetId = $state<string | null>(null);
-	let pruneDefaults = $state<Settings | null>(null);
+	let pruneDefaults = $state<Partial<Settings> | null>(null);
 	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
 	const liveStats = new DashboardLiveStats();
@@ -677,23 +684,26 @@
 			requestedId === 'all' && prunableEnvironments.length === 1 && onlyEnvironment
 				? onlyEnvironment.environment.id
 				: requestedId;
-		pruneTargetId = environmentId;
-		if (environmentId === 'all') {
-			pruneDefaults = null;
-			isPruneDialogOpen = true;
-			return;
-		}
-		if (!prunableEnvironments.some((item) => item.environment.id === environmentId)) {
+		const targetIds = prunableEnvironments
+			.map((item) => item.environment.id)
+			.filter((id) => environmentId === 'all' || id === environmentId);
+		if (targetIds.length === 0) {
 			return;
 		}
 
+		pruneTargetId = environmentId;
 		pruneDefaultsLoadingId = environmentId;
 		try {
-			const operationResult = await tryCatch((async () => settingsService.getSettingsForEnvironment(environmentId))());
+			const operationResult = await tryCatch(Promise.all(targetIds.map((id) => settingsService.getSettingsForEnvironment(id))));
 			if (operationResult.error !== null) {
 				pruneDefaults = null;
 			} else {
-				pruneDefaults = operationResult.data.values;
+				const [first, ...rest] = operationResult.data.map((settings) => settings.values);
+				pruneDefaults = Object.fromEntries(
+					PRUNE_SETTING_GROUPS.filter((group) =>
+						group.every((key) => rest.every((values) => values[key] === first?.[key]))
+					).flatMap((group) => group.map((key) => [key, first?.[key]]))
+				) as Partial<Settings>;
 			}
 		} finally {
 			pruneDefaultsLoadingId = null;

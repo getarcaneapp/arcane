@@ -17,6 +17,7 @@
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentSettingsQuery } from '#lib/query/environments.js';
 	import { imageListQuery, imageUsageCountsQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -25,6 +26,7 @@
 	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import {
 		acrossEnvironmentsNote,
@@ -196,6 +198,24 @@
 		await checkUpdatesMutation.mutateAsync();
 	}
 
+	async function openPruneDialog() {
+		const result = await tryCatch(
+			Promise.all(
+				actionEnvironments('images:prune').map((env) =>
+					queryClient.fetchQuery(environmentSettingsQuery(env.id, hasPermission('environment-settings:read', env.id)))
+				)
+			)
+		);
+		const [first, ...rest] = (result.data ?? []).map((settings) => settings.values);
+		const agreed = rest.every(
+			(values) => values.pruneImageMode === first?.pruneImageMode && values.pruneImageUntil === first?.pruneImageUntil
+		);
+		const mode = agreed ? first?.pruneImageMode : undefined;
+		imagePruneMode = !mode || mode === 'none' ? 'dangling' : mode;
+		imagePruneUntil = (agreed && first?.pruneImageUntil) || '';
+		isConfirmPruneDialogOpen = true;
+	}
+
 	async function handlePruneImages() {
 		await pruneImagesMutation.mutateAsync(pageState.scope);
 	}
@@ -275,7 +295,7 @@
 				destructive: true,
 				label: m.images_prune_unused(),
 				loadingLabel: m.common_action_pruning(),
-				onclick: () => (isConfirmPruneDialogOpen = true),
+				onclick: openPruneDialog,
 				loading: isPruning,
 				disabled: !resourcesReady || isPruning
 			});
@@ -411,8 +431,9 @@
 						{acrossEnvironmentsNote(actionEnvironments('images:prune'))}
 					</Dialog.Description>
 				</Dialog.Header>
-				<SettingsSection class="py-4">
+				<SettingsSection variant="plain" class="py-4">
 					<SettingsRow
+						class="p-0"
 						label={m.images()}
 						description={m.prune_images_dialog_description()}
 						layout="wide"
