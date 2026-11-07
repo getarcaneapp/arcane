@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Sidofält på datorer",
   "navigation_default_landing_page_label": "Standardstartsida",
   "navigation_default_landing_page_description": "Sidan som öppnas efter inloggning.",
-  "navigation_sidebar_hover_expansion_label": "Expandera när pekaren hålls över sidofältet",
-  "navigation_sidebar_hover_expansion_description": "När detta är aktiverat expanderas det hopfällda sidofältet tillfälligt när du håller pekaren över det, så att hela etiketterna visas. När det är inaktiverat visas verktygstips i stället, vilket ger en renare navigering med fast bredd.",
   "navigation_keyboard_shortcuts_label": "Genvägar för tangentbord",
   "navigation_keyboard_shortcuts_description": "Aktivera kortkommandon för snabbnavigering (t.ex., Mod+1 för kontrollpanel). När den är inaktiverad kommer även kortkommandon att döljas från verktygstips.",
   "server_default": "Serverns standardvärde",
