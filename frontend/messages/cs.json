@@ -237,7 +237,6 @@
   "common_select_all": "Vybrat vše",
   "common_select_row": "Vybrat řádek",
   "common_showing_of_total": "Zobrazuje se {shown} z {total}",
-  "table_pagination_bottom": "Stránkování v dolní části tabulky",
   "table_expand_row": "Rozbalit řádek",
   "table_collapse_row": "Sbalit řádek",
   "table_group_items": "{count} položka(y)",
@@ -4490,5 +4489,14 @@
   "dusk": "Soumrak",
   "ribbon": "Páska",
   "silver": "Stříbro",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Zabraňte neomezenému růstu úložného prostoru pro zálohy tím, že odstraníte zálohy, které již žádný plán nespravuje.",
+  "unmanaged_backup_retention_days": "Nespravovaná doba uchovávání záloh (dny)",
+  "unmanaged_backup_retention_days_description": "Zálohy odstraněných svazků nebo smazaných plánů smažte po uplynutí tohoto počtu dnů od ukončení jejich správy a bezpečnostní zálohy pořízené před obnovením smažte, jakmile dosáhnou tohoto stáří.",
+  "unmanaged_backup_retention_days_help": "Úklid se spouští dvakrát denně a odstraňuje také kopie z úložiště S3. Nastavte hodnotu 0, chcete-li tyto zálohy uchovávat neomezeně dlouho.",
+  "unmanaged_backup_retention_summary": "Zálohy odstraněných svazků nebo smazaných plánů a bezpečnostní zálohy se na tomto serveru mažou po {days} dnech.",
+  "unmanaged_backup_retention_disabled_summary": "Zálohy odstraněných svazků nebo smazaných plánů a bezpečnostní zálohy se na tomto serveru uchovávají na dobu neurčitou.",
+  "table_pagination": "Stránkování tabulky",
+  "table_range_of_total": "{start}–{end} z {total}",
+  "table_range": "{start}–{end}"
 }
