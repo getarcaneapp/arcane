@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Barra lateral no computador",
   "navigation_default_landing_page_label": "Página inicial predefinida",
   "navigation_default_landing_page_description": "Página a abrir depois de iniciar sessão.",
-  "navigation_sidebar_hover_expansion_label": "Ativar expansão ao passar o cursor",
-  "navigation_sidebar_hover_expansion_description": "Quando ativado, passar o cursor sobre a barra lateral recolhida expande-a temporariamente para mostrar as legendas completas. Quando desativado, aparecem dicas de contexto em alternativa, mantendo uma navegação mais limpa e de largura fixa.",
   "navigation_keyboard_shortcuts_label": "Atalhos de teclado",
   "navigation_keyboard_shortcuts_description": "Ative atalhos de teclado para navegação rápida (por exemplo, Mod+1 para o Painel). Quando desativados, as indicações dos atalhos também ficam ocultas nas dicas de contexto.",
   "server_default": "Predefinição do servidor",
