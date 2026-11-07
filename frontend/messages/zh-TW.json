@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "瀏覽器",
   "volumes_nav_backups": "備份",
   "volumes_workspace_files": "體積工作區",
-  "volumes_workspace_files_empty": "此卷中沒有工作區檔案",
   "volumes_workspace_upload_description": "將一個或多個檔案上傳至卷工作區。",
   "volumes_workspace_root_destination": "體積根",
   "volumes_workspace_root_path": "在卷根目錄下建立。",
@@ -2963,8 +2962,6 @@
   "common_image_id": "映像檔 ID",
   "common_entrypoint": "進入點",
   "workspace": "工作區",
-  "workspace_files": "工作區檔案",
-  "workspace_files_empty": "沒有工作區檔案",
   "workspace_new_file": "新檔案",
   "workspace_create_file_title": "建立檔案",
   "workspace_create_folder_title": "建立資料夾",
@@ -3006,7 +3003,6 @@
   "project_view_description": "在經典兩邊佈局和樹狀顯示間切換",
   "project_editor_layout": "預設專案編輯器佈局",
   "project_editor_layout_description": "開啟專案設定時顯示的佈局。",
-  "project_editor_layout_auto_description": "若專案包含額外檔案，則採用工作區檢視；否則則為經典檢視。",
   "project_editor_layout_classic_description": "Compose 與環境編輯器並排顯示。",
   "project_editor_layout_tree_description": "帶有分頁式編輯器的工作區檔案樹。",
   "automatic": "自動",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "文字與字型",
   "layout_and_navigation": "版面配置與導覽",
   "language_and_region": "語言與地區",
-  "editor": "編輯"
+  "editor": "編輯",
+  "files": "檔案"
 }
