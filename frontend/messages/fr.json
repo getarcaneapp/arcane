@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Panneau latéral du bureau",
   "navigation_default_landing_page_label": "Page d'accueil par défaut",
   "navigation_default_landing_page_description": "Page à afficher après la connexion.",
-  "navigation_sidebar_hover_expansion_label": "Activer l'expansion du Hover",
-  "navigation_sidebar_hover_expansion_description": "Lorsque cette option est activée, le survol de la barre latérale réduite l'expansion temporairement pour afficher les libellés complets. Lorsque cette option est désactivée, les infobulles apparaîtront à la place pour une navigation à largeur fixe et plus propre.",
   "navigation_keyboard_shortcuts_label": "Raccourcis clavier",
   "navigation_keyboard_shortcuts_description": "Activer les raccourcis clavier pour une navigation rapide (par exemple, Mod+1 pour le tableau de bord). Lorsque désactivé, les astuces de raccourcis seront également masquées dans les infobulles.",
   "server_default": "Serveur par défaut",
