@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Browser",
   "volumes_nav_backups": "Sicherungen",
   "volumes_workspace_files": "Volumes-Arbeitsbereich",
-  "volumes_workspace_files_empty": "In diesem Volume befinden sich keine Dateien im Arbeitsverzeichnis",
   "volumes_workspace_upload_description": "Laden Sie eine oder mehrere Dateien in das Arbeitsverzeichnis des Volumes hoch.",
   "volumes_workspace_root_destination": "Stammverzeichnis",
   "volumes_workspace_root_path": "Erstellen Sie die Datei im Stammverzeichnis des Volumes.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image-ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Arbeitsbereich",
-  "workspace_files": "Arbeitsbereichsdateien",
-  "workspace_files_empty": "Keine Arbeitsbereichsdateien",
   "workspace_new_file": "Neue Datei",
   "workspace_create_file_title": "Datei erstellen",
   "workspace_create_folder_title": "Ordner erstellen",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Zwischen klassischem Nebeneinander-Layout und Baumansicht wechseln",
   "project_editor_layout": "Standardlayout des Projekteditors",
   "project_editor_layout_description": "So sieht die Ansicht aus, wenn Sie die Konfiguration eines Projekts öffnen.",
-  "project_editor_layout_auto_description": "Arbeitsbereichsansicht für Projekte mit zusätzlichen Dateien, ansonsten klassische Ansicht.",
   "project_editor_layout_classic_description": "Compose- und Umgebungseditoren nebeneinander.",
   "project_editor_layout_tree_description": "Arbeitsbereich-Dateibaum mit Editoren in Registerkarten.",
   "automatic": "Automatisch",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Text und Schriftarten",
   "layout_and_navigation": "Layout & Navigation",
   "language_and_region": "Sprache & Region",
-  "editor": "Redakteur"
+  "editor": "Redakteur",
+  "files": "Dateien"
 }
