@@ -4489,5 +4489,12 @@
   "files": "Файли",
   "log_raw_output": "Необроблені дані",
   "log_raw_output_tooltip": "Відображає вихідний текст рядка замість проаналізованих структурованих записів журналу.",
-  "log_stderr_line": "Виведення стандартної похибки"
+  "log_stderr_line": "Виведення стандартної похибки",
+  "also_remove_deployed_swarm_stack": "Також видаліть розгорнутий стек Swarm",
+  "bring_down_stack": "Згорнути стек",
+  "bring_down_stack_confirm_message": "Видалити сервіси, мережі, конфігурації та секрети цього стека? Збережені файли compose залишаються, щоб його можна було розгорнути знову.",
+  "stack_brought_down": "Стек «{name}» було знято",
+  "failed_to_bring_down_stack": "Не вдалося розгорнути стек «{name}»",
+  "stack_brought_up": "З'явився стек «{name}»",
+  "failed_to_bring_up_stack": "Не вдалося запустити стек «{name}»"
 }
