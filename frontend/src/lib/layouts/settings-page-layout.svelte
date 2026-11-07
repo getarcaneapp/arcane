@@ -47,7 +47,7 @@
 	<div>
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="min-w-0 flex-1">
-				<h1 class="font-heading text-2xl sm:text-3xl">{title}</h1>
+				<h1 class="text-2xl font-bold sm:text-3xl">{title}</h1>
 				{#if description}
 					<p class="mt-1 hidden text-sm text-muted-foreground sm:block">
 						{#if typeof description === 'function'}{@render description()}{:else}{description}{/if}
