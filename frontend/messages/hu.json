@@ -4489,5 +4489,12 @@
   "files": "Fájlok",
   "log_raw_output": "Nyers kimenet",
   "log_raw_output_tooltip": "Az elemzett, strukturált naplóbejegyzések helyett az eredeti szöveget jeleníti meg.",
-  "log_stderr_line": "A standard hiba kimenete"
+  "log_stderr_line": "A standard hiba kimenete",
+  "also_remove_deployed_swarm_stack": "Távolítsa el a telepített Swarm-stacket is",
+  "bring_down_stack": "A verem lebontása",
+  "bring_down_stack_confirm_message": "Törölje ebből a stackből a szolgáltatásokat, hálózatokat, konfigurációkat és titkos adatokat? A mentett Compose-fájlok megmaradnak, így a stack újra telepíthető.",
+  "stack_brought_down": "A „{name}” stacket leállították",
+  "failed_to_bring_down_stack": "Nem sikerült lezárni a „{name} ” veremet.",
+  "stack_brought_up": "Megjelent a „{name}” című cikk",
+  "failed_to_bring_up_stack": "Nem sikerült betölteni a „{name} ” veremet."
 }
