@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Webbläsare",
   "volumes_nav_backups": "Säkerhetskopior",
   "volumes_workspace_files": "Volymarbetsyta",
-  "volumes_workspace_files_empty": "Det finns inga arbetsfiler på den här volymen",
   "volumes_workspace_upload_description": "Ladda upp en eller flera filer till volymens arbetsyta.",
   "volumes_workspace_root_destination": "Volymrot",
   "volumes_workspace_root_path": "Skapa i volymens rotkatalog.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Avbildnings-id",
   "common_entrypoint": "Startpunkt",
   "workspace": "Arbetsyta",
-  "workspace_files": "Arbetsytans filer",
-  "workspace_files_empty": "Inga arbetsytfiler",
   "workspace_new_file": "Ny fil",
   "workspace_create_file_title": "Skapa fil",
   "workspace_create_folder_title": "Skapa mapp",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "Standardlayout för projektredigeraren",
   "project_editor_layout_description": "Den layout som visas när du öppnar ett projekts inställningar.",
-  "project_editor_layout_auto_description": "Arbetsytans vy för projekt med extra filer; i övrigt klassisk vy.",
   "project_editor_layout_classic_description": "Redigeringsprogram för komposition och miljö sida vid sida.",
   "project_editor_layout_tree_description": "Arbetsytans filstruktur med redigerare i flikar.",
   "automatic": "Automatisk",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Text och typsnitt",
   "layout_and_navigation": "Uppbyggnad och navigering",
   "language_and_region": "Språk och region",
-  "editor": "Redaktör"
+  "editor": "Redaktör",
+  "files": "Filer"
 }
