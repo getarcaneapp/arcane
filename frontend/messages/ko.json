@@ -4437,8 +4437,6 @@
   "installed_fonts": "설치된 글꼴",
   "installed_fonts_unavailable": "설치된 글꼴을 읽을 수 없습니다",
   "font_preview_sample": "빠른 갈색 여우가 게으른 개 위로 뛰어넘는다 0123456789",
-  "montserrat": "몬세라트",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "파일 불러오기에 실패했습니다.",
   "failed_to_save_file": "파일 저장에 실패했습니다.",
   "copy_current_path": "현재 경로 복사",
