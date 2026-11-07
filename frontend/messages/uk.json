@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Оглядач",
   "volumes_nav_backups": "Резервні копії",
   "volumes_workspace_files": "Об'єм робочої області",
-  "volumes_workspace_files_empty": "У цьому томі немає файлів робочого простору",
   "volumes_workspace_upload_description": "Завантажте один або кілька файлів у робочу область тома.",
   "volumes_workspace_root_destination": "Корінь об’єму",
   "volumes_workspace_root_path": "Створити в кореневому каталозі тома.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Робоча область",
-  "workspace_files": "Файли робочого простору",
-  "workspace_files_empty": "Файлів робочої області немає",
   "workspace_new_file": "Новий файл",
   "workspace_create_file_title": "Створити файл",
   "workspace_create_folder_title": "Створити папку",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "Стандартне розташування елементів у редакторі проєкту",
   "project_editor_layout_description": "Макет, що відображається при відкритті налаштувань проєкту.",
-  "project_editor_layout_auto_description": "Вигляд робочої області для проектів із додатковими файлами; в інших випадках — класичний вигляд.",
   "project_editor_layout_classic_description": "Редактори «Compose» та «Environment» поруч.",
   "project_editor_layout_tree_description": "Дерево файлів робочої області з редакторами у вигляді вкладок.",
   "automatic": "Автоматичний",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Текст і шрифти",
   "layout_and_navigation": "Макет та навігація",
   "language_and_region": "Мова та регіон",
-  "editor": "Редактор"
+  "editor": "Редактор",
+  "files": "Файли"
 }
