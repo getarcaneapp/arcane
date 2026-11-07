@@ -4437,8 +4437,6 @@
   "installed_fonts": "Встановлені шрифти",
   "installed_fonts_unavailable": "Не вдалося прочитати встановлені шрифти",
   "font_preview_sample": "Швидка руда лисиця перестрибує через лінивого пса 0123456789",
-  "montserrat": "Монтсеррат",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "Не вдалося завантажити файл",
   "failed_to_save_file": "Не вдалося зберегти файл",
   "copy_current_path": "Скопіювати поточний шлях",
