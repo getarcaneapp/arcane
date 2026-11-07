@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Navegador",
   "volumes_nav_backups": "Backups",
   "volumes_workspace_files": "Área de Trabalho de Volume",
-  "volumes_workspace_files_empty": "Não há arquivos da área de trabalho neste volume",
   "volumes_workspace_upload_description": "Carregue um ou mais arquivos na área de trabalho do volume.",
   "volumes_workspace_root_destination": "Raiz do volume",
   "volumes_workspace_root_path": "Crie na raiz do volume.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "ID da imagem",
   "common_entrypoint": "Ponto de entrada",
   "workspace": "Área de trabalho",
-  "workspace_files": "Arquivos da área de trabalho",
-  "workspace_files_empty": "Não há arquivos do espaço de trabalho",
   "workspace_new_file": "Novo arquivo",
   "workspace_create_file_title": "Criar arquivo",
   "workspace_create_folder_title": "Criar pasta",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "Layout padrão do editor de projetos",
   "project_editor_layout_description": "Layout exibido ao abrir a configuração de um projeto.",
-  "project_editor_layout_auto_description": "Visualização da área de trabalho para projetos com arquivos adicionais; caso contrário, a visualização clássica.",
   "project_editor_layout_classic_description": "Editores de composição e de ambiente lado a lado.",
   "project_editor_layout_tree_description": "Árvore de arquivos da área de trabalho com editores em abas.",
   "automatic": "Automático",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Texto e fontes",
   "layout_and_navigation": "Layout e Navegação",
   "language_and_region": "Idioma e região",
-  "editor": "Editor"
+  "editor": "Editor",
+  "files": "Arquivos"
 }
