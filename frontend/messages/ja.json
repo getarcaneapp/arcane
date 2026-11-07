@@ -237,7 +237,6 @@
   "common_select_all": "Select all",
   "common_select_row": "Select row",
   "common_showing_of_total": "{shown} 件を表示中 {total}",
-  "table_pagination_bottom": "下部テーブルのページネーション",
   "table_expand_row": "行を展開する",
   "table_collapse_row": "行を折りたたむ",
   "table_group_items": "{count} 商品（複数可）",
@@ -4490,5 +4489,14 @@
   "dusk": "夕暮れ",
   "ribbon": "リボン",
   "silver": "シルバー",
-  "ember": "エンバー"
+  "ember": "エンバー",
+  "backup_cleanup_description": "スケジュールで管理されなくなったバックアップを削除することで、バックアップストレージが無制限に増え続けるのを防ぎましょう。",
+  "unmanaged_backup_retention_days": "管理対象外のバックアップの保存期間（日）",
+  "unmanaged_backup_retention_days_description": "管理対象外となってからこの日数が経過した時点で、削除されたボリュームや削除されたスケジュールのバックアップを削除し、復元前に作成された安全バックアップについても、この日数が経過した時点で削除する。",
+  "unmanaged_backup_retention_days_help": "クリーンアップは1日2回実行され、S3上のコピーも削除されます。これらのバックアップを無期限に保持するには、0を設定してください。",
+  "unmanaged_backup_retention_summary": "このサーバーでは、削除されたボリュームやスケジュール、および安全のためのバックアップは、 {days} 日後に削除されます。",
+  "unmanaged_backup_retention_disabled_summary": "削除されたボリュームやスケジュール、および安全のためのバックアップは、このサーバーに無期限に保存されます。",
+  "table_pagination": "表のページネーション",
+  "table_range_of_total": "{start}–{end} の {total}",
+  "table_range": "{start}–{end}"
 }
