@@ -4489,5 +4489,12 @@
   "files": "ファイル",
   "log_raw_output": "生の出力",
   "log_raw_output_tooltip": "解析済みの構造化ログではなく、元の行テキストを表示します。",
-  "log_stderr_line": "標準誤差の出力"
+  "log_stderr_line": "標準誤差の出力",
+  "also_remove_deployed_swarm_stack": "また、デプロイ済みのSwarmスタックも削除してください",
+  "bring_down_stack": "スタックを解除する",
+  "bring_down_stack_confirm_message": "このスタックのサービス、ネットワーク、設定、シークレットを削除しますか？保存されている Compose ファイルは保持されるため、再度デプロイすることができます。",
+  "stack_brought_down": "「{name}」スタックがダウンした",
+  "failed_to_bring_down_stack": "スタック「{name} 」の展開に失敗しました",
+  "stack_brought_up": "「{name}」というスタックが取り上げられた",
+  "failed_to_bring_up_stack": "スタック「{name} 」の起動に失敗しました"
 }
