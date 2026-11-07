@@ -4489,5 +4489,12 @@
   "files": "Dateien",
   "log_raw_output": "Rohausgabe",
   "log_raw_output_tooltip": "Zeigt den ursprünglichen Zeilentext anstelle der analysierten, strukturierten Protokolle an.",
-  "log_stderr_line": "Standardfehlerausgabe"
+  "log_stderr_line": "Standardfehlerausgabe",
+  "also_remove_deployed_swarm_stack": "Entfernen Sie außerdem den bereitgestellten Swarm-Stack.",
+  "bring_down_stack": "Stapel abbauen",
+  "bring_down_stack_confirm_message": "Sollen die Dienste, Netzwerke, Konfigurationen und Geheimnisse dieses Stacks entfernt werden? Die gespeicherten Compose-Dateien bleiben erhalten, sodass der Stack erneut bereitgestellt werden kann.",
+  "stack_brought_down": "Der Stack „{name}“ wurde abgeschaltet",
+  "failed_to_bring_down_stack": "Der Aufruf von „{name} “ ist fehlgeschlagen.",
+  "stack_brought_up": "Der Stack „{name}“ wurde aufgerufen",
+  "failed_to_bring_up_stack": "Das Laden des Stacks „{name} “ ist fehlgeschlagen."
 }
