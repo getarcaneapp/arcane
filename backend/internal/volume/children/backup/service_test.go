@@ -244,7 +244,7 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
 }
 
-func TestApplySeriesRetentionLeavesBusyVolumesForTheNextRun(t *testing.T) {
+func TestDeleteExpiredBackupsLeavesBusyVolumesForTheNextRun(t *testing.T) {
 	gormDB := newVolumeBackupTestDB(t, "volume-backup-series-retention-busy")
 	db := &database.DB{DB: gormDB}
 	seriesID := types.SystemVolumePolicyPrefix + "nightly:" + kit.SHA256Hex("app-data")[:16]
@@ -267,7 +267,9 @@ func TestApplySeriesRetentionLeavesBusyVolumesForTheNextRun(t *testing.T) {
 	unlock := locks.Lock("app-data")
 	defer unlock()
 
-	require.NoError(t, service.ApplySeriesRetention(t.Context(), types.BackupSeriesRetention{SeriesIDs: []string{seriesID}, Keep: 1, IncludeRemote: true}))
+	require.NoError(t, service.DeleteExpiredBackups(t.Context(), true, func(ctx context.Context, _ []string) ([]string, error) {
+		return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, backup.RunRetention{Succeeded: 1, Failed: 1})
+	}))
 
 	var remaining int64
 	require.NoError(t, gormDB.Table("volume_backups").Where("policy_id = ?", seriesID).Count(&remaining).Error)

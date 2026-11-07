@@ -214,7 +214,31 @@ func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
 }
 
 func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention types.BackupSeriesRetention) error {
-	return s.backup.ApplySeriesRetention(ctx, retention)
+	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
+		return nil
+	}
+	keep := backup.RunRetention{Succeeded: retention.Keep + 1, Failed: retention.Keep}
+	return s.backup.DeleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, within []string) ([]string, error) {
+		var expired []string
+		for _, seriesID := range retention.SeriesIDs {
+			ids, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", seriesID, keep)
+			if err != nil {
+				return nil, err
+			}
+			expired = append(expired, ids...)
+		}
+		if within != nil {
+			locked := make(map[string]struct{}, len(within))
+			for _, id := range within {
+				locked[id] = struct{}{}
+			}
+			expired = slices.DeleteFunc(expired, func(id string) bool {
+				_, ok := locked[id]
+				return !ok
+			})
+		}
+		return expired, nil
+	})
 }
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
