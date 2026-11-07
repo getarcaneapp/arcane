@@ -4489,5 +4489,12 @@
   "files": "文件",
   "log_raw_output": "原始输出",
   "log_raw_output_tooltip": "显示原始行文本，而非经过解析的结构化日志。",
-  "log_stderr_line": "标准误差输出"
+  "log_stderr_line": "标准误差输出",
+  "also_remove_deployed_swarm_stack": "同时删除已部署的 Swarm 堆栈",
+  "bring_down_stack": "清空栈",
+  "bring_down_stack_confirm_message": "是否要删除该堆栈的服务、网络、配置和密钥？其保存的 Compose 文件将被保留，以便日后再次部署。",
+  "stack_brought_down": "“{name}”栈已关闭",
+  "failed_to_bring_down_stack": "无法卸载堆栈“{name}”",
+  "stack_brought_up": "调用了堆栈“{name}”",
+  "failed_to_bring_up_stack": "无法加载栈“{name}”"
 }
