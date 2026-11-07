@@ -37,7 +37,9 @@
 	const animationsEnabled = $derived(preferences.animationsEnabled ?? true);
 	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
 	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
-	const projectEditorLayoutValue = $derived<ProjectEditorLayout>(preferences.defaultProjectEditorLayout ?? 'auto');
+	const projectEditorLayoutValue = $derived<ProjectEditorLayout>(
+		preferences.defaultProjectEditorLayout === 'classic' ? 'classic' : 'tree'
+	);
 	const isDarkMode = $derived(mode.current === 'dark');
 	const isDefaultApplicationTheme = $derived(applicationThemeValue === 'default');
 
@@ -51,7 +53,6 @@
 	]);
 	const editorTabWidthOptions = $derived([2, 4, 8].map((count) => ({ value: String(count), label: m.spaces_count({ count }) })));
 	const projectEditorLayoutOptions = $derived([
-		{ value: 'auto', label: m.automatic(), description: m.project_editor_layout_auto_description() },
 		{ value: 'classic', label: m.classic(), description: m.project_editor_layout_classic_description() },
 		{ value: 'tree', label: m.tree(), description: m.project_editor_layout_tree_description() }
 	]);

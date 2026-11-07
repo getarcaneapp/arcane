@@ -17,7 +17,7 @@
 		allowCollapse?: boolean;
 		collapseThreshold?: number;
 		handleSize?: number;
-		variant?: 'default' | 'flush';
+		variant?: 'default' | 'flush' | 'gap';
 		stackBelow?: number;
 		class?: string;
 		firstClass?: string;
@@ -232,7 +232,13 @@
 
 <div
 	{@attach measureContainer}
-	class={['flex min-h-0 min-w-0', isStacked && (variant === 'flush' ? 'flex-col' : 'flex-col gap-4'), className]}
+	class={[
+		'flex min-h-0 min-w-0',
+		isStacked && variant === 'flush' && 'flex-col',
+		isStacked && variant === 'gap' && 'flex-col gap-3',
+		isStacked && variant === 'default' && 'flex-col gap-4',
+		className
+	]}
 >
 	<div
 		{@attach fitFirstPane}
@@ -261,6 +267,8 @@
 			{#if variant === 'flush'}
 				<div class="w-px bg-border transition-colors group-hover:bg-primary/50"></div>
 				<div class="absolute inset-y-0 -right-1 -left-1"></div>
+			{:else if variant === 'gap'}
+				<div class="my-2 w-0.5 rounded-full transition-colors group-hover:bg-primary/50"></div>
 			{:else}
 				<div class="my-2 w-0.5 rounded-full bg-border transition-colors group-hover:bg-primary/50"></div>
 			{/if}

@@ -57,8 +57,8 @@
 
 <div
 	class={cn(
-		'group flex min-h-8 w-full items-center gap-1.5 rounded-md pr-2 pl-(--indent) text-xs-plus hover:bg-accent',
-		selected && 'bg-accent'
+		'group flex min-h-8 w-full items-center gap-1.5 rounded-lg pr-2 pl-(--indent) text-xs-plus transition-colors',
+		selected ? 'bg-foreground/7' : 'hover:bg-foreground/4'
 	)}
 	style={`--indent: ${0.5 + depth * 1}rem`}
 	data-path={path}

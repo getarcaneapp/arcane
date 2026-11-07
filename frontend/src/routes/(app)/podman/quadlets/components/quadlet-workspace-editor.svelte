@@ -75,7 +75,7 @@
 	let treeWidth = $state<number | null>(null);
 </script>
 
-<div class={cn('flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card', className)}>
+<div class={cn('flex min-h-0 flex-1 flex-col', className)}>
 	<ResizableSplit
 		class="min-h-0 flex-1"
 		{...composeTreeSplitProps}
@@ -99,37 +99,34 @@
 		{/snippet}
 
 		{#snippet second()}
-			<div class="flex h-full min-h-0 flex-1 flex-col">
-				<EditorTabStrip {tabs} activeKey={activeTab} onSelect={workspace.openTab} onClose={workspace.closeTab} />
-				<div class="flex min-h-0 flex-1 flex-col">
-					{#key activeTab}
-						{#if activeTab === 'main'}
-							<CodePanel
-								variant="plain"
-								open={true}
-								title={mainFileName}
-								language="systemd"
-								validationMode="none"
-								bind:value={content}
-								readOnly={!editable}
-								fileId={`${fileId}:main`}
-							/>
-						{:else if activeTab.startsWith('file:')}
-							{@const relativePath = activeTab.slice(5)}
-							<CodePanel
-								variant="plain"
-								open={true}
-								title={relativePath}
-								language={workspaceFileLanguage(relativePath)}
-								validationMode="none"
-								bind:value={workspace.contents[relativePath]}
-								readOnly={!editable}
-								fileId={`${fileId}:file:${relativePath}`}
-							/>
-						{/if}
-					{/key}
-				</div>
-			</div>
+			<EditorTabStrip {tabs} activeKey={activeTab} onSelect={workspace.openTab} onClose={workspace.closeTab}>
+				{#key activeTab}
+					{#if activeTab === 'main'}
+						<CodePanel
+							variant="plain"
+							open={true}
+							title={mainFileName}
+							language="systemd"
+							validationMode="none"
+							bind:value={content}
+							readOnly={!editable}
+							fileId={`${fileId}:main`}
+						/>
+					{:else if activeTab.startsWith('file:')}
+						{@const relativePath = activeTab.slice(5)}
+						<CodePanel
+							variant="plain"
+							open={true}
+							title={relativePath}
+							language={workspaceFileLanguage(relativePath)}
+							validationMode="none"
+							bind:value={workspace.contents[relativePath]}
+							readOnly={!editable}
+							fileId={`${fileId}:file:${relativePath}`}
+						/>
+					{/if}
+				{/key}
+			</EditorTabStrip>
 		{/snippet}
 	</ResizableSplit>
 </div>

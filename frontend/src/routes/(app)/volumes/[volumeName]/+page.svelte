@@ -961,7 +961,6 @@
 		entries={visibleWorkspaceFiles}
 		selectedFile={selectedWorkspaceFile}
 		disabled={isLoading.save}
-		emptyMessage={m.volumes_workspace_files_empty()}
 		uploadDescription={m.volumes_workspace_upload_description()}
 		rootDestinationLabel={m.volumes_workspace_root_destination()}
 		rootPathMessage={m.volumes_workspace_root_path()}
@@ -1055,7 +1054,7 @@
 					<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<div class="flex h-screen-inset-15 min-h-128 flex-col overflow-hidden rounded-lg border border-border bg-card">
+			<div class="flex h-screen-inset-15 min-h-128 flex-col">
 				{#key `arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
 					<ResizableSplit
 						class="h-full min-h-0 flex-1"
@@ -1069,26 +1068,21 @@
 						{/snippet}
 
 						{#snippet second()}
-							<div class="flex h-full min-h-0 flex-1 flex-col">
-								{#if workspaceTabs.length > 0}
-									<EditorTabStrip
-										tabs={workspaceTabs}
-										activeKey={activeWorkspaceTab}
-										onSelect={openWorkspaceFile}
-										onClose={closeWorkspaceTab}
-									/>
+							<EditorTabStrip
+								tabs={workspaceTabs}
+								activeKey={activeWorkspaceTab}
+								onSelect={openWorkspaceFile}
+								onClose={closeWorkspaceTab}
+							>
+								{#if !activeWorkspaceTab}
+									<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
+										{m.volumes_workspace_select_file()}
+									</div>
+								{:else}
+									{@const relativePath = activeWorkspaceTab.slice(5)}
+									{@render volumeWorkspaceFileEditor(volume, relativePath)}
 								{/if}
-								<div class="flex min-h-0 flex-1 flex-col">
-									{#if !activeWorkspaceTab}
-										<div class="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
-											{m.volumes_workspace_select_file()}
-										</div>
-									{:else}
-										{@const relativePath = activeWorkspaceTab.slice(5)}
-										{@render volumeWorkspaceFileEditor(volume, relativePath)}
-									{/if}
-								</div>
-							</div>
+							</EditorTabStrip>
 						{/snippet}
 					</ResizableSplit>
 				{/key}

@@ -469,11 +469,12 @@
 							</div>
 						</div>
 					{/if}
-					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<div class="flex min-h-0 flex-1 flex-col">
 						<ResizableSplit
 							class="min-h-0 flex-1"
-							variant="flush"
-							firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+							variant="gap"
+							handleSize={12}
+							firstClass="flex min-h-0 flex-col"
 							secondClass="flex min-h-0 flex-col"
 							bind:size={stackTreeWidth}
 							minSize={200}
@@ -504,95 +505,91 @@
 							{/snippet}
 
 							{#snippet second()}
-								<div class="flex h-full min-h-0 flex-1 flex-col">
-									<EditorTabStrip
-										tabs={stackTabs}
-										activeKey={activeStackTab}
-										onSelect={stackWorkspace.openTab}
-										onClose={stackWorkspace.closeTab}
-									>
-										{#snippet actions()}
-											<ComposeFileEditorPanel
-												outlineOpen={treeOutlineOpen}
-												outlineLabel={m.compose_editor_toggle_outline()}
-												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
-												showDiff={false}
-												commandPaletteLabel={m.compose_editor_command_palette()}
-												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
+								<EditorTabStrip
+									tabs={stackTabs}
+									activeKey={activeStackTab}
+									onSelect={stackWorkspace.openTab}
+									onClose={stackWorkspace.closeTab}
+								>
+									{#snippet actions()}
+										<ComposeFileEditorPanel
+											outlineOpen={treeOutlineOpen}
+											outlineLabel={m.compose_editor_toggle_outline()}
+											onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+											showDiff={false}
+											commandPaletteLabel={m.compose_editor_command_palette()}
+											onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
+										/>
+									{/snippet}
+									{#key activeStackTab}
+										{#if activeStackTab === 'compose'}
+											<CodePanel
+												variant="plain"
+												bind:open={composeOpen}
+												title="compose.yaml"
+												language="yaml"
+												bind:value={inputs.composeContent.value}
+												error={inputs.composeContent.error ?? undefined}
+												fileId={isEditMode ? `swarm:stacks:${initialName}:compose` : 'swarm:stacks:new:compose'}
+												editorContext={stackEditorContext}
+												bind:outlineOpen={treeOutlineOpen}
+												bind:commandPaletteOpen={treeCommandPaletteOpen}
 											/>
-										{/snippet}
-									</EditorTabStrip>
-									<div class="flex min-h-0 flex-1 flex-col">
-										{#key activeStackTab}
-											{#if activeStackTab === 'compose'}
-												<CodePanel
-													variant="plain"
-													bind:open={composeOpen}
-													title="compose.yaml"
-													language="yaml"
-													bind:value={inputs.composeContent.value}
-													error={inputs.composeContent.error ?? undefined}
-													fileId={isEditMode ? `swarm:stacks:${initialName}:compose` : 'swarm:stacks:new:compose'}
-													editorContext={stackEditorContext}
-													bind:outlineOpen={treeOutlineOpen}
-													bind:commandPaletteOpen={treeCommandPaletteOpen}
-												/>
-											{:else if activeStackTab === 'override'}
-												<div class="flex min-h-0 flex-1 flex-col">
-													<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
-														<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
-														<button
-															type="button"
-															class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
-															onclick={removeOverride}
-														>
-															<TrashIcon class="size-3.5 shrink-0" />
-															<span>{m.compose_override_remove()}</span>
-														</button>
-													</div>
-													<CodePanel
-														variant="plain"
-														open={true}
-														title="compose.override.yaml"
-														language="yaml"
-														bind:value={overrideContent}
-														fileId={isEditMode ? `swarm:stacks:${initialName}:override` : 'swarm:stacks:new:override'}
-														editorContext={stackEditorContext}
-														bind:outlineOpen={treeOutlineOpen}
-														bind:commandPaletteOpen={treeCommandPaletteOpen}
-													/>
+										{:else if activeStackTab === 'override'}
+											<div class="flex min-h-0 flex-1 flex-col">
+												<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
+													<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
+													<button
+														type="button"
+														class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
+														onclick={removeOverride}
+													>
+														<TrashIcon class="size-3.5 shrink-0" />
+														<span>{m.compose_override_remove()}</span>
+													</button>
 												</div>
-											{:else if activeStackTab === 'env'}
-												<CodePanel
-													variant="plain"
-													bind:open={envOpen}
-													title=".env"
-													language="env"
-													bind:value={inputs.envContent.value}
-													error={inputs.envContent.error ?? undefined}
-													fileId={isEditMode ? `swarm:stacks:${initialName}:env` : 'swarm:stacks:new:env'}
-													editorContext={stackEditorContext}
-													bind:outlineOpen={treeOutlineOpen}
-													bind:commandPaletteOpen={treeCommandPaletteOpen}
-												/>
-											{:else if activeStackTab.startsWith('file:')}
-												{@const relativePath = activeStackTab.slice(5)}
 												<CodePanel
 													variant="plain"
 													open={true}
-													title={relativePath}
-													language={workspaceFileLanguage(relativePath)}
-													validationMode="none"
-													bind:value={stackWorkspace.contents[relativePath]}
-													fileId={`swarm:stacks:${isEditMode ? initialName : 'new'}:file:${relativePath}`}
+													title="compose.override.yaml"
+													language="yaml"
+													bind:value={overrideContent}
+													fileId={isEditMode ? `swarm:stacks:${initialName}:override` : 'swarm:stacks:new:override'}
 													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
 													bind:commandPaletteOpen={treeCommandPaletteOpen}
 												/>
-											{/if}
-										{/key}
-									</div>
-								</div>
+											</div>
+										{:else if activeStackTab === 'env'}
+											<CodePanel
+												variant="plain"
+												bind:open={envOpen}
+												title=".env"
+												language="env"
+												bind:value={inputs.envContent.value}
+												error={inputs.envContent.error ?? undefined}
+												fileId={isEditMode ? `swarm:stacks:${initialName}:env` : 'swarm:stacks:new:env'}
+												editorContext={stackEditorContext}
+												bind:outlineOpen={treeOutlineOpen}
+												bind:commandPaletteOpen={treeCommandPaletteOpen}
+											/>
+										{:else if activeStackTab.startsWith('file:')}
+											{@const relativePath = activeStackTab.slice(5)}
+											<CodePanel
+												variant="plain"
+												open={true}
+												title={relativePath}
+												language={workspaceFileLanguage(relativePath)}
+												validationMode="none"
+												bind:value={stackWorkspace.contents[relativePath]}
+												fileId={`swarm:stacks:${isEditMode ? initialName : 'new'}:file:${relativePath}`}
+												editorContext={stackEditorContext}
+												bind:outlineOpen={treeOutlineOpen}
+												bind:commandPaletteOpen={treeCommandPaletteOpen}
+											/>
+										{/if}
+									{/key}
+								</EditorTabStrip>
 							{/snippet}
 						</ResizableSplit>
 					</div>

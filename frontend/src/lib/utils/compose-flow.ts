@@ -40,8 +40,9 @@ export const templateBtnClass = arcaneButtonVariants({
 });
 
 export const composeTreeSplitProps = {
-	variant: 'flush',
-	firstClass: 'bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0',
+	variant: 'gap',
+	handleSize: 12,
+	firstClass: 'flex min-h-0 flex-col',
 	secondClass: 'flex min-h-0 flex-col',
 	minSize: 200,
 	maxSize: 480,

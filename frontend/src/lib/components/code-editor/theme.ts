@@ -62,13 +62,13 @@ export function createArcaneTheme(dark: boolean): Extension {
 		createTheme({
 			theme: dark ? 'dark' : 'light',
 			settings: {
-				background: 'var(--background)',
+				background: 'var(--code-editor-background, var(--background))',
 				foreground: 'var(--foreground)',
 				caret: 'var(--primary)',
 				selection: accentWithAlpha(0.35),
 				selectionMatch: accentWithAlpha(0.15),
 				lineHighlight: accentWithAlpha(0.05),
-				gutterBackground: 'var(--background)',
+				gutterBackground: 'var(--code-editor-gutter-background, var(--code-editor-background, var(--background)))',
 				gutterForeground: 'var(--muted-foreground)',
 				gutterActiveForeground: 'var(--foreground)',
 				gutterBorder: 'transparent',

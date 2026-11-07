@@ -473,7 +473,7 @@
 				{/if}
 
 				{#if layoutMode === 'tree'}
-					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<div class="flex min-h-0 flex-1 flex-col">
 						<ResizableSplit
 							class="min-h-0 flex-1"
 							{...composeTreeSplitProps}
@@ -501,30 +501,26 @@
 							{/snippet}
 
 							{#snippet second()}
-								<div class="flex h-full min-h-0 flex-1 flex-col">
-									<EditorTabStrip
-										tabs={projectTabs}
-										activeKey={activeProjectTab}
-										onSelect={workspaceDraft.openTab}
-										onClose={workspaceDraft.closeTab}
-									>
-										{#snippet actions()}
-											<ComposeFileEditorPanel
-												outlineOpen={treeOutlineOpen}
-												outlineLabel={m.compose_editor_toggle_outline()}
-												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
-												diffOpen={treeDiffOpen}
-												diffLabel={m.compose_editor_toggle_diff()}
-												onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
-												commandPaletteLabel={m.compose_editor_command_palette()}
-												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
-											/>
-										{/snippet}
-									</EditorTabStrip>
-									<div class="flex min-h-0 flex-1 flex-col">
-										{@render newProjectWorkspaceEditor()}
-									</div>
-								</div>
+								<EditorTabStrip
+									tabs={projectTabs}
+									activeKey={activeProjectTab}
+									onSelect={workspaceDraft.openTab}
+									onClose={workspaceDraft.closeTab}
+								>
+									{#snippet actions()}
+										<ComposeFileEditorPanel
+											outlineOpen={treeOutlineOpen}
+											outlineLabel={m.compose_editor_toggle_outline()}
+											onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+											diffOpen={treeDiffOpen}
+											diffLabel={m.compose_editor_toggle_diff()}
+											onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+											commandPaletteLabel={m.compose_editor_command_palette()}
+											onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
+										/>
+									{/snippet}
+									{@render newProjectWorkspaceEditor()}
+								</EditorTabStrip>
 							{/snippet}
 						</ResizableSplit>
 					</div>

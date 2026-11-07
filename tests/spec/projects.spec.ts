@@ -1085,7 +1085,7 @@ test.describe('GitOps Managed Project', () => {
 			name: 'Toggle workspace mode',
 			exact: true
 		});
-		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Files', { exact: true });
 		// Projects with extra files default to tree view; start from classic.
 		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 		if (await workspaceFilesLabel.isVisible()) {
@@ -1282,7 +1282,7 @@ test.describe('Project Detail Page', () => {
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 
-		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Files', { exact: true });
 		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 		const isTreeView = await workspaceFilesLabel.isVisible();
 
@@ -1345,7 +1345,7 @@ test.describe('Project Detail Page', () => {
 			await page.waitForLoadState('load');
 			await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
 		};
-		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Files', { exact: true });
 
 		try {
 			await setDefaultLayout('tree');
@@ -1390,7 +1390,7 @@ test.describe('Project Detail Page', () => {
 		});
 		await expect(layoutSwitch).toBeVisible();
 
-		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+		const workspaceFilesLabel = page.getByText('Files', { exact: true });
 
 		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 		if (!(await workspaceFilesLabel.isVisible())) {

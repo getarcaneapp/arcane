@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Browser",
   "volumes_nav_backups": "Backups",
   "volumes_workspace_files": "Volume Workspace",
-  "volumes_workspace_files_empty": "No workspace files in this volume",
   "volumes_workspace_upload_description": "Upload one or more files to the volume workspace.",
   "volumes_workspace_root_destination": "Volume root",
   "volumes_workspace_root_path": "Create at the volume root.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Workspace",
-  "workspace_files": "Workspace Files",
-  "workspace_files_empty": "No workspace files",
   "workspace_new_file": "New File",
   "workspace_create_file_title": "Create File",
   "workspace_create_folder_title": "Create Folder",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Toggle workspace mode",
   "project_editor_layout": "Default project editor layout",
   "project_editor_layout_description": "Layout shown when you open a project's configuration.",
-  "project_editor_layout_auto_description": "Workspace view for projects with extra files, classic otherwise.",
   "project_editor_layout_classic_description": "Compose and environment editors side by side.",
   "project_editor_layout_tree_description": "Workspace file tree with tabbed editors.",
   "automatic": "Automatic",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Text & Fonts",
   "layout_and_navigation": "Layout & Navigation",
   "language_and_region": "Language & Region",
-  "editor": "Editor"
+  "editor": "Editor",
+  "files": "Files"
 }
