@@ -237,7 +237,6 @@
   "common_select_all": "Chọn tất cả",
   "common_select_row": "Chọn dòng",
   "common_showing_of_total": "Hiển thị {shown} trong số {total}",
-  "table_pagination_bottom": "Phân trang ở cuối bảng",
   "table_expand_row": "Mở rộng hàng",
   "table_collapse_row": "Thu gọn hàng",
   "table_group_items": "{count} mặt hàng(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "Hoàng hôn",
   "ribbon": "Dải ruy băng",
   "silver": "Bạc",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Hãy ngăn không cho dung lượng lưu trữ bản sao lưu tăng lên vô hạn bằng cách xóa các bản sao lưu không còn được quản lý bởi bất kỳ lịch trình nào.",
+  "unmanaged_backup_retention_days": "Thời gian lưu giữ bản sao lưu không được quản lý (ngày)",
+  "unmanaged_backup_retention_days_description": "Xóa các bản sao lưu của các khối lượng đã bị xóa hoặc các lịch trình đã bị xóa sau khi chúng ngừng được quản lý được số ngày này, và xóa các bản sao lưu dự phòng được tạo trước khi khôi phục khi chúng đã tồn tại được số ngày này.",
+  "unmanaged_backup_retention_days_help": "Quá trình dọn dẹp được thực hiện hai lần mỗi ngày và cũng xóa các bản sao trên S3. Đặt giá trị là 0 để lưu giữ các bản sao lưu này vô thời hạn.",
+  "unmanaged_backup_retention_summary": "Các bản sao lưu của các khối lượng đã bị xóa hoặc các lịch trình đã bị xóa, cũng như các bản sao lưu dự phòng, sẽ bị xóa sau {days} ngày trên máy chủ này.",
+  "unmanaged_backup_retention_disabled_summary": "Các bản sao lưu của các khối dữ liệu đã bị xóa hoặc các lịch trình đã bị xóa, cũng như các bản sao lưu dự phòng, sẽ được lưu trữ vô thời hạn trên máy chủ này.",
+  "table_pagination": "Phân trang bảng",
+  "table_range_of_total": "{start}–{end} của {total}",
+  "table_range": "{start}–{end}"
 }
