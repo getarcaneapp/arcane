@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "탐색기",
   "volumes_nav_backups": "백업",
   "volumes_workspace_files": "볼륨 작업 공간",
-  "volumes_workspace_files_empty": "이 볼륨에는 작업 공간 파일이 없습니다.",
   "volumes_workspace_upload_description": "볼륨 작업 공간에 하나 이상의 파일을 업로드합니다.",
   "volumes_workspace_root_destination": "부피의 제곱근",
   "volumes_workspace_root_path": "볼륨 루트에 생성합니다.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "이미지 ID",
   "common_entrypoint": "진입점 (Entrypoint)",
   "workspace": "작업 공간",
-  "workspace_files": "작업 공간 파일",
-  "workspace_files_empty": "작업 공간 파일이 없습니다",
   "workspace_new_file": "새 파일",
   "workspace_create_file_title": "파일 생성",
   "workspace_create_folder_title": "폴더 만들기",
@@ -3006,7 +3003,6 @@
   "project_view_description": "기본 클래식 보기와 트리 구조 보기 간에 전환합니다.",
   "project_editor_layout": "기본 프로젝트 편집기 레이아웃",
   "project_editor_layout_description": "프로젝트 구성을 열면 표시되는 레이아웃입니다.",
-  "project_editor_layout_auto_description": "추가 파일이 있는 프로젝트의 경우 작업 공간 보기가 표시되며, 그 외에는 기존 방식이 적용됩니다.",
   "project_editor_layout_classic_description": "Compose 및 환경 편집기를 나란히 배치합니다.",
   "project_editor_layout_tree_description": "탭 형식의 편집기가 포함된 작업 공간 파일 트리.",
   "automatic": "자동",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "텍스트 및 글꼴",
   "layout_and_navigation": "레이아웃 및 탐색",
   "language_and_region": "언어 및 지역",
-  "editor": "편집자"
+  "editor": "편집자",
+  "files": "파일"
 }
