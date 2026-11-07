@@ -237,7 +237,6 @@
   "common_select_all": "Tümünü seç",
   "common_select_row": "Satırı seç",
   "common_showing_of_total": "{shown} gösteriliyor  toplam {total}",
-  "table_pagination_bottom": "Tablonun alt kısmındaki sayfalandırma",
   "table_expand_row": "Satırı genişlet",
   "table_collapse_row": "Satırı daralt",
   "table_group_items": "{count} ürün(ler)",
@@ -4490,5 +4489,14 @@
   "dusk": "Alacakaranlık",
   "ribbon": "Şerit",
   "silver": "Gümüş",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Artık hiçbir zamanlama tarafından yönetilmeyen yedeklemeleri silerek, yedekleme depolama alanının sınırsız bir şekilde büyümesini önleyin.",
+  "unmanaged_backup_retention_days": "Yönetilmeyen yedekleme saklama süresi (gün)",
+  "unmanaged_backup_retention_days_description": "Yönetimden çıkarıldıktan veya silindikten bu kadar gün sonra, kaldırılan birimlerin yedeklerini veya silinen zamanlamaları silin; geri yükleme işlemlerinden önce alınan güvenlik yedekleri ise bu kadar eski olduklarında silin.",
+  "unmanaged_backup_retention_days_help": "Temizleme işlemi günde iki kez gerçekleştirilir ve S3 kopyalarını da siler. Bu yedeklemeleri süresiz olarak saklamak için 0 değerini ayarlayın.",
+  "unmanaged_backup_retention_summary": "Bu sunucuda, kaldırılan birimlerin veya silinen zamanlamaların yedekleri ile güvenlik yedekleri, {days} gün sonra silinir.",
+  "unmanaged_backup_retention_disabled_summary": "Kaldırılan birimlerin veya silinen zamanlamaların yedekleri ile güvenlik yedekleri, bu sunucuda süresiz olarak saklanır.",
+  "table_pagination": "Tablo sayfalandırması",
+  "table_range_of_total": "{start}–{end} adresinden {total}",
+  "table_range": "{start}–{end}"
 }
