@@ -157,16 +157,16 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-	<div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+	<div class="flex h-10 shrink-0 items-center gap-2 px-2">
 		<LayersIcon class="size-4 text-muted-foreground" />
 		<span class="text-sm font-medium">{m.services()}</span>
 		<Badge variant="gray" size="sm">{servicesWithIds.length}</Badge>
 	</div>
-	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1.5">
+	<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
 		{#each servicesWithIds as item (item.id)}
 			{@const status = actionStatus[item.id]}
 			{@const running = item.status?.toLowerCase() === 'running'}
-			<div class="group rounded-md px-2 py-1.5 transition-colors hover:bg-muted/60">
+			<div class="group rounded-lg px-2 py-1.5 transition-colors hover:bg-foreground/4 has-data-[state=open]:bg-foreground/7">
 				<div class="flex items-center gap-2">
 					<span class={cn('size-2 shrink-0 rounded-full', statusDotClass(item.status))} title={item.status}></span>
 					<IconImage

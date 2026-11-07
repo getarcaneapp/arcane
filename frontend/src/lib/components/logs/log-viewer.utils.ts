@@ -317,3 +317,111 @@ function tryParseStructuredLog(message: string): StructuredLogResult {
 
 	return { isJson: false, isStructured: false };
 }
+
+type LogLevelTone = 'info' | 'warn' | 'error';
+
+const LOG_LEVEL_TONE_CLASSES: Record<LogLevelTone, string> = {
+	info: 'text-info',
+	warn: 'text-warning',
+	error: 'text-destructive'
+};
+
+const BRACKETED_LOG_LEVELS: [string, LogLevelTone][] = (
+	[
+		['[INF]', 'info'],
+		['[INFO]', 'info'],
+		['[WRN]', 'warn'],
+		['[WARN]', 'warn'],
+		['[WARNING]', 'warn'],
+		['[ERR]', 'error'],
+		['[ERROR]', 'error'],
+		['[FATAL]', 'error']
+	] as [string, LogLevelTone][]
+).flatMap(([token, tone]) => [
+	[token, tone],
+	[token.toLowerCase(), tone]
+]);
+
+const WORD_LOG_LEVELS: [string, LogLevelTone][] = [
+	['INFO', 'info'],
+	['WARN', 'warn'],
+	['WARNING', 'warn'],
+	['ERROR', 'error'],
+	['FATAL', 'error']
+];
+
+const LOG_LEVEL_VALUES: Record<string, LogLevelTone> = {
+	info: 'info',
+	warn: 'warn',
+	warning: 'warn',
+	err: 'error',
+	error: 'error',
+	fatal: 'error',
+	panic: 'error',
+	crit: 'error',
+	critical: 'error'
+};
+
+interface LogLevelMatch {
+	start: number;
+	end: number;
+	tone: LogLevelTone;
+}
+
+function isWordChar(char: string | undefined): boolean {
+	if (!char) return false;
+	return char.toLowerCase() !== char.toUpperCase() || (char >= '0' && char <= '9') || char === '_';
+}
+
+function isInsideTag(html: string, index: number): boolean {
+	return html.lastIndexOf('<', index) > html.lastIndexOf('>', index);
+}
+
+function findLogToken(html: string, token: string, wholeWord: boolean): number {
+	let index = html.indexOf(token);
+	while (index !== -1) {
+		const bounded = !wholeWord || (!isWordChar(html[index - 1]) && !isWordChar(html[index + token.length]));
+		if (bounded && !isInsideTag(html, index)) return index;
+		index = html.indexOf(token, index + token.length);
+	}
+	return -1;
+}
+
+function findLevelAssignment(html: string): LogLevelMatch | null {
+	const key = 'level=';
+	const index = findLogToken(html, key, false);
+	if (index === -1 || isWordChar(html[index - 1])) return null;
+
+	const quote = '&quot;';
+	const start = index + key.length + (html.startsWith(quote, index + key.length) ? quote.length : 0);
+	let end = start;
+	while (isWordChar(html[end])) end++;
+
+	const tone = LOG_LEVEL_VALUES[html.slice(start, end).toLowerCase()];
+	return tone ? { start, end, tone } : null;
+}
+
+function findLogLevel(html: string): LogLevelMatch | null {
+	const candidates: LogLevelMatch[] = [];
+	for (const [token, tone] of BRACKETED_LOG_LEVELS) {
+		const start = findLogToken(html, token, false);
+		if (start !== -1) candidates.push({ start, end: start + token.length, tone });
+	}
+	for (const [token, tone] of WORD_LOG_LEVELS) {
+		const start = findLogToken(html, token, true);
+		if (start !== -1) candidates.push({ start, end: start + token.length, tone });
+	}
+	const assignment = findLevelAssignment(html);
+	if (assignment) candidates.push(assignment);
+
+	return candidates.reduce<LogLevelMatch | null>(
+		(earliest, match) => (!earliest || match.start < earliest.start ? match : earliest),
+		null
+	);
+}
+
+export function tintLogLevel(html: string): string {
+	const match = findLogLevel(html);
+	if (!match) return html;
+	return `${html.slice(0, match.start)}<span class="${LOG_LEVEL_TONE_CLASSES[match.tone]}">${html.slice(match.start, match.end)}</span>${html.slice(match.end)}`;
+}

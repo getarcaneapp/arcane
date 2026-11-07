@@ -2,11 +2,8 @@
 	import { untrack } from 'svelte';
 
 	import LogControls from '#lib/components/logs/log-controls.svelte';
-	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
-	import { FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 
@@ -53,12 +50,10 @@
 	});
 </script>
 
-<Card.Root>
-	<Card.Header icon={FileTextIcon}>
-		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-			<div class="flex flex-col gap-1.5">
-				<LogPanelTitle title={m.swarm_service_logs_title()} live={isStreaming} />
-			</div>
+<div class="flex flex-col overflow-hidden rounded-xl bg-table-head">
+	<div class="flex h-11 shrink-0 items-center gap-2 pr-1.5 pl-3">
+		<h2 class="text-sm font-medium">{m.common_logs()}</h2>
+		<div class="ml-auto min-w-0">
 			<LogControls
 				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
@@ -70,25 +65,21 @@
 				onRefresh={handleRefresh}
 			/>
 		</div>
-	</Card.Header>
-	<div>
-		<div class="rounded-lg border border-border/70 bg-card/10 p-0">
-			<LogViewer
-				searchTerm={logSearchTerm}
-				bind:this={viewer}
-				bind:autoScroll
-				type="service"
-				{environmentId}
-				{serviceId}
-				bind:showParsedJson={preferences.showParsedJson}
-				showStreamLabels={preferences.showStreamLabels}
-				tailLines={preferences.tailLines}
-				maxLines={500}
-				showTimestamps={preferences.showTimestamps}
-				height="calc(100vh - 320px)"
-				onStart={handleStreamStart}
-				onStop={handleStreamStop}
-			/>
-		</div>
 	</div>
-</Card.Root>
+	<LogViewer
+		searchTerm={logSearchTerm}
+		bind:this={viewer}
+		bind:autoScroll
+		type="service"
+		{environmentId}
+		{serviceId}
+		bind:showParsedJson={preferences.showParsedJson}
+		showStreamLabels={preferences.showStreamLabels}
+		tailLines={preferences.tailLines}
+		maxLines={500}
+		showTimestamps={preferences.showTimestamps}
+		height="calc(100vh - 320px)"
+		onStart={handleStreamStart}
+		onStop={handleStreamStop}
+	/>
+</div>
