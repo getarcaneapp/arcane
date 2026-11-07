@@ -12,7 +12,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
+	import { LayersIcon, InspectIcon, TrashIcon, StopIcon, PlayIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
@@ -23,6 +23,8 @@
 	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	import { bringDownStack, bringUpStack } from '../stack-actions.js';
 
 	let {
 		stacks,
@@ -72,6 +74,15 @@
 				}
 			}
 		});
+	}
+
+	function stackActionOptions(stack: StackRow) {
+		return {
+			name: stack.name,
+			environmentId: stack.environmentId,
+			setLoading: (loading: boolean) => (isLoading = loading),
+			onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') })
+		};
 	}
 
 	const columns = [
@@ -153,6 +164,19 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
+		<IfPermitted perm="swarm-stacks:update" envId={item.environmentId}>
+			{#if item.services > 0}
+				<DropdownMenu.Item onclick={() => bringDownStack(stackActionOptions(item))} disabled={isLoading}>
+					<StopIcon class="size-4" />
+					{m.common_down()}
+				</DropdownMenu.Item>
+			{:else if item.hasSource}
+				<DropdownMenu.Item onclick={() => bringUpStack(stackActionOptions(item))} disabled={isLoading}>
+					<PlayIcon class="size-4" />
+					{m.common_up()}
+				</DropdownMenu.Item>
+			{/if}
+		</IfPermitted>
 		<IfPermitted perm="swarm-stacks:delete" envId={item.environmentId}>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>

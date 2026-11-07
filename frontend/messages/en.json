@@ -4489,5 +4489,12 @@
   "files": "Files",
   "log_raw_output": "Raw output",
   "log_raw_output_tooltip": "Shows the original line text instead of parsed structured logs.",
-  "log_stderr_line": "Standard error output"
+  "log_stderr_line": "Standard error output",
+  "also_remove_deployed_swarm_stack": "Also remove the deployed swarm stack",
+  "bring_down_stack": "Bring Down Stack",
+  "bring_down_stack_confirm_message": "Remove this stack's services, networks, configs and secrets? Its saved compose files are kept so it can be deployed again.",
+  "stack_brought_down": "Stack \"{name}\" brought down",
+  "failed_to_bring_down_stack": "Failed to bring down stack \"{name}\"",
+  "stack_brought_up": "Stack \"{name}\" brought up",
+  "failed_to_bring_up_stack": "Failed to bring up stack \"{name}\""
 }

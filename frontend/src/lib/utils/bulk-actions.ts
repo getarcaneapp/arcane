@@ -5,6 +5,7 @@ import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { runWithActivityBatchId } from '#lib/services/api-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import type { Activity } from '#lib/types/activity.js';
+import type { ConfirmDialogOptions } from '#lib/types/ui/confirmdialog.js';
 import type { Result } from '#lib/types/ui/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -212,9 +213,10 @@ export interface ConfirmAndRunOptions<T> {
 	confirmLabel: string;
 	destructive?: boolean;
 	setLoading?: (loading: boolean) => void;
-	run: () => Promise<T>;
+	run: (checkboxStates: Record<string, boolean>) => Promise<T>;
 	failureMessage: string;
 	onSuccess?: (result: T) => void | Promise<void>;
+	checkboxes?: ConfirmDialogOptions['checkboxes'];
 }
 
 export function confirmAndRun<T>({
@@ -225,20 +227,22 @@ export function confirmAndRun<T>({
 	setLoading,
 	run,
 	failureMessage,
-	onSuccess
+	onSuccess,
+	checkboxes
 }: ConfirmAndRunOptions<T>): void {
 	openConfirmDialog({
 		title,
 		message,
+		checkboxes,
 		confirm: {
 			label: confirmLabel,
 			destructive,
-			action: async () => {
+			action: async (checkboxStates) => {
 				// Flip loading before awaiting `run`, not after: these back row
 				// spinners, and the request is the part worth showing progress for.
 				setLoading?.(true);
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(run()),
+					result: await tryCatch(run(checkboxStates)),
 					message: failureMessage,
 					setLoadingState: setLoading ?? (() => {}),
 					onSuccess

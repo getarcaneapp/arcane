@@ -62,6 +62,15 @@ var (
 		},
 	}
 
+	GitOpsRemoveStackConditions = PermissionConditions{
+		{
+			In:         ConditionInQuery,
+			Field:      "removeStack",
+			Value:      "true",
+			Permission: PermSwarmStacksDelete,
+		},
+	}
+
 	UploadKindConditions = PermissionConditions{
 		{
 			In:         ConditionInPath,

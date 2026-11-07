@@ -15,7 +15,7 @@
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { ContainersIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon, StopIcon, PlayIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -28,6 +28,7 @@
 
 	import SwarmServicesTable from '../../services/components/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/components/tasks-table.svelte';
+	import { bringDownStack, bringUpStack } from '../stack-actions.js';
 
 	let { data } = $props();
 
@@ -93,7 +94,8 @@
 		}
 	}
 	type StackTab = 'services' | 'tasks' | 'source';
-	const isLoading = $state({ refresh: false, remove: false });
+	const isLoading = $state({ refresh: false, remove: false, down: false, up: false });
+	const isMutating = $derived(isLoading.remove || isLoading.down || isLoading.up);
 
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
@@ -226,7 +228,45 @@
 							goto(
 								resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)
 							),
-						disabled: isLoading.remove
+						disabled: isMutating
+					}
+				]
+			: []),
+		...(!hasLiveStack && hasPermission('swarm-stacks:update', envId)
+			? [
+					{
+						id: 'up',
+						action: 'start' as const,
+						label: m.common_up(),
+						icon: PlayIcon,
+						onclick: () =>
+							bringUpStack({
+								name: stackName,
+								environmentId: envId,
+								setLoading: (loading) => (isLoading.up = loading),
+								onSuccess: refresh
+							}),
+						loading: isLoading.up,
+						disabled: isMutating
+					}
+				]
+			: []),
+		...(hasLiveStack && hasPermission('swarm-stacks:update', envId)
+			? [
+					{
+						id: 'down',
+						action: 'stop' as const,
+						label: m.common_down(),
+						icon: StopIcon,
+						onclick: () =>
+							bringDownStack({
+								name: stackName,
+								environmentId: envId,
+								setLoading: (loading) => (isLoading.down = loading),
+								onSuccess: refresh
+							}),
+						loading: isLoading.down,
+						disabled: isMutating
 					}
 				]
 			: []),
@@ -241,7 +281,7 @@
 						icon: TrashIcon,
 						onclick: handleDelete,
 						loading: isLoading.remove,
-						disabled: isLoading.remove
+						disabled: isMutating
 					}
 				]
 			: []),

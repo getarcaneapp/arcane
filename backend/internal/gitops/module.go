@@ -108,7 +108,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 			Summary:     "Delete a GitOps sync",
 			Description: "Delete a GitOps sync configuration by ID",
 			Tags:        []string{"GitOps Syncs"},
-			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: slices.Concat(authz.GitOpsSyncModeConditions, authz.GitOpsRemoveStackConditions)},
 		},
 		authz.PermGitOpsDelete,
 		h.DeleteSync,
