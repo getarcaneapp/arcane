@@ -377,7 +377,7 @@
 	</div>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col bg-background">
+<div class="flex h-full min-h-0 flex-col">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex items-center gap-4">

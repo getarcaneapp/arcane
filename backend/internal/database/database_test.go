@@ -624,7 +624,25 @@ func TestMigration106_AddsImageUpdateCreated(t *testing.T) {
 	assert.Zero(t, createdColumns())
 }
 
-func TestMigration107_AddsBackupOrphanedAtAndKeepsExistingBackups(t *testing.T) {
+func TestMigration107_AddsUserBackdrops(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-user-backdrops.db")
+	schemaObjects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'user_backdrops') +
+			(SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'backdrop_hash')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 107))
+	assert.Equal(t, 2, schemaObjects())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 106))
+	assert.Zero(t, schemaObjects())
+}
+
+func TestMigration108_AddsBackupOrphanedAtAndKeepsExistingBackups(t *testing.T) {
 	ctx := t.Context()
 	orphanedColumns := func(rawDB *stdsql.DB) int {
 		var count int
@@ -648,18 +666,18 @@ func TestMigration107_AddsBackupOrphanedAtAndKeepsExistingBackups(t *testing.T) 
 	}
 
 	fresh, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-backup-orphaned-fresh.db")
-	require.NoError(t, migrateDatabase(ctx, fresh, dbProviderSQLite, MigrationOptions{}, 107))
+	require.NoError(t, migrateDatabase(ctx, fresh, dbProviderSQLite, MigrationOptions{}, 108))
 	assert.Equal(t, 2, orphanedColumns(fresh))
 	assert.Empty(t, retentionSettings(fresh), "fresh installs use the setting's default")
 
 	existing, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-backup-orphaned-existing.db")
-	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{}, 106))
+	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{}, 107))
 	_, err := existing.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('instanceId', 'instance-1')`)
 	require.NoError(t, err)
-	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{}, 107))
+	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{}, 108))
 	assert.Equal(t, []string{"0"}, retentionSettings(existing), "existing installs keep their backups until an admin opts in")
 
-	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 106))
+	require.NoError(t, migrateDatabase(ctx, existing, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 107))
 	assert.Zero(t, orphanedColumns(existing))
 	assert.Empty(t, retentionSettings(existing))
 }

@@ -101,7 +101,7 @@
 {/snippet}
 
 <Sidebar.Group>
-	<Sidebar.GroupLabel class="group-data-[collapsible=icon]:-mt-7">{label}</Sidebar.GroupLabel>
+	<Sidebar.GroupLabel>{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu>
 		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}

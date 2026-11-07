@@ -22,14 +22,13 @@
 	bind:this={ref}
 	data-slot="table-head"
 	class={cn(
-		'sticky top-0 z-[calc(var(--arcane-z-sticky)+1)] h-10 bg-background/95 px-4 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground',
-		'after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border/70',
+		'sticky top-0 z-[calc(var(--arcane-z-sticky)+1)] h-10 bg-table-head px-4 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground backdrop-blur-xl',
 		'first:pl-6 last:pr-6 [&:has([role=checkbox])]:pr-0',
 		variant === 'checkbox' && 'w-0 pr-4!',
 		variant === 'expander' && 'w-8 px-2',
 		variant === 'flush' && 'p-0',
 		indent && 'pl-10',
-		pinned && 'sticky right-0 z-(--arcane-z-page-floating) bg-background p-0 whitespace-nowrap',
+		pinned && 'sticky right-0 z-(--arcane-z-page-floating) p-0 whitespace-nowrap',
 		className
 	)}
 	{...restProps}

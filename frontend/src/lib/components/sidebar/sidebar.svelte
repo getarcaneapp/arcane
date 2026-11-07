@@ -77,34 +77,9 @@
 
 <Sidebar.Root {collapsible} {variant} {...restProps}>
 	<Sidebar.Header collapsed={isCollapsed}>
-		{#if isCollapsed}
-			<div class="flex justify-center">
-				<SidebarPinButton />
-			</div>
-		{/if}
-		<div class="relative">
-			<SidebarLogo {isCollapsed} />
-			{#if !isCollapsed}
-				<div class="absolute top-0 right-0 -mt-1 -mr-1">
-					<SidebarPinButton />
-				</div>
-			{/if}
-		</div>
-		{#if isCollapsed}
-			<div class="flex justify-center px-1 pt-1">
-				<ActivityCenterTrigger collapsed compact />
-			</div>
-		{:else}
-			<div class="pt-1">
-				<Sidebar.Menu>
-					<Sidebar.MenuItem>
-						<ActivityCenterTrigger compact />
-					</Sidebar.MenuItem>
-				</Sidebar.Menu>
-			</div>
-		{/if}
+		<SidebarLogo {isCollapsed} />
 	</Sidebar.Header>
-	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
+	<Sidebar.Content>
 		{#if overviewItems.length > 0}
 			<SidebarItemGroup label={m.sidebar_overview()} items={overviewItems} />
 		{/if}
@@ -124,23 +99,37 @@
 			<SidebarItemGroup label={m.sidebar_administration()} items={adminItems} />
 		{/if}
 	</Sidebar.Content>
-	<Sidebar.Footer>
+	<Sidebar.Footer collapsed={isCollapsed}>
 		<SidebarUpdatebanner {isCollapsed} {versionInformation} debug={false} />
-		{#if effectiveUser}
-			<div class={isCollapsed ? 'px-0 pb-2' : 'px-3 pb-2'}>
-				<SidebarUser {isCollapsed} user={effectiveUser} {autoLoginEnabled} />
+		{#if isCollapsed}
+			<div class="flex flex-col items-center gap-1">
+				<ActivityCenterTrigger collapsed compact />
+				{#if effectiveUser}
+					<SidebarUser {isCollapsed} user={effectiveUser} {autoLoginEnabled} />
+				{/if}
+				<SidebarPinButton class="size-9.5" />
+			</div>
+		{:else}
+			<div class="flex items-center gap-1">
+				<button
+					type="button"
+					onclick={() => (showVersionDialog = true)}
+					class="min-w-0 flex-1 cursor-pointer truncate pl-2.5 text-left text-xs font-medium text-muted-foreground tabular-nums transition-colors hover:text-foreground"
+				>
+					{m.sidebar_version({
+						version: versionInformation?.displayVersion ?? versionInformation?.currentVersion ?? m.common_unknown()
+					})}
+				</button>
+				<ActivityCenterTrigger collapsed compact class="mx-0" />
+			</div>
+			<div class="flex items-center gap-1">
+				{#if effectiveUser}
+					<div class="min-w-0 flex-1">
+						<SidebarUser {isCollapsed} user={effectiveUser} {autoLoginEnabled} />
+					</div>
+				{/if}
+				<SidebarPinButton class="ml-auto size-9.5 shrink-0" />
 			</div>
 		{/if}
-		<div class={`flex items-center justify-center ${isCollapsed ? 'px-1' : 'px-4'}`}>
-			<button
-				type="button"
-				onclick={() => (showVersionDialog = true)}
-				class="cursor-pointer text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-			>
-				{m.sidebar_version({
-					version: versionInformation?.displayVersion ?? versionInformation?.currentVersion ?? m.common_unknown()
-				})}
-			</button>
-		</div>
 	</Sidebar.Footer>
 </Sidebar.Root>

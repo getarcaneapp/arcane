@@ -454,13 +454,7 @@
 	{/if}
 {/snippet}
 
-<div
-	class={cn(
-		'h-full w-full',
-		unstyled &&
-			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
-	)}
->
+<div class={cn('h-full w-full', unstyled && '[&_td]:bg-transparent!')}>
 	<Table.Root
 		bind:ref={tableElement}
 		class={cn(columnWidths && 'table-fixed', lockedTableWidth && 'min-w-(--table-width)')}

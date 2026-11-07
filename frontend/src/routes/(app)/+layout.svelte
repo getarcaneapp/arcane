@@ -5,6 +5,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import ActivityCenter from '#lib/components/activity/activity-center.svelte';
+	import BackdropImage from '#lib/components/backdrop/backdrop-image.svelte';
 	import MobileNav from '#lib/components/mobile-nav/mobile-nav.svelte';
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import AppSidebar from '#lib/components/sidebar/sidebar.svelte';
@@ -18,7 +19,6 @@
 	import { upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	import { versionStore } from '#lib/stores/version.store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 
@@ -120,21 +120,34 @@
 
 <svelte:window onkeydown={handleNavigationShortcut} />
 
-<Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
-	{#if !isMobile.current}
-		<AppSidebar {versionInformation} {user} {swarmEnabled} {podmanStatuses} {permissionsManifest} />
-	{/if}
+{#snippet page()}
+	{#key user?.id}
+		{@render children()}
+	{/key}
+{/snippet}
 
-	<main class={cn('relative z-(--arcane-z-content)', isMobile.current ? 'flex-1' : 'h-dvh flex-1')}>
-		<section class={isMobile.current ? 'px-3 pt-5 pb-(--mobile-floating-nav-offset,6rem)' : 'h-full p-3 sm:p-5'}>
-			{#key user?.id}
-				{@render children()}
-			{/key}
-		</section>
-	</main>
-
+<Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : 'isolate'}>
 	{#if isMobile.current}
+		<main class="relative z-(--arcane-z-content) flex-1">
+			<section class="px-3 pt-5 pb-(--mobile-floating-nav-offset,6rem)">
+				{@render page()}
+			</section>
+		</main>
+
 		<MobileNav {user} {versionInformation} {swarmEnabled} {podmanStatuses} {permissionsManifest} />
+	{:else}
+		<BackdropImage />
+		<AppSidebar {versionInformation} {user} {swarmEnabled} {podmanStatuses} {permissionsManifest} />
+
+		<div class="relative z-(--arcane-z-content) my-2 mr-2 h-screen-inset-1 min-w-0 flex-1">
+			<!-- The glass lives on its own layer so it never becomes the containing block for fixed page content. -->
+			<div aria-hidden="true" class="shell-glass pointer-events-none absolute inset-0 rounded-2xl"></div>
+			<main class="relative h-full overflow-y-auto rounded-2xl">
+				<section class="h-full p-3 sm:p-5">
+					{@render page()}
+				</section>
+			</main>
+		</div>
 	{/if}
 </Sidebar.Provider>
 

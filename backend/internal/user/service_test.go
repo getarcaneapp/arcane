@@ -1,6 +1,7 @@
 package user_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -32,6 +33,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(
 		&settings.SettingVariable{},
 		&userdomain.User{},
+		&userdomain.UserBackdrop{},
 		&session.UserSession{},
 		&role.Role{},
 		&role.UserRoleAssignment{},
@@ -807,4 +809,56 @@ func TestUserDisplayNameNormalization(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.CreateUser(ctx, &userdomain.User{ID: "empty", Username: " \t "})
 	require.ErrorIs(t, err, userdomain.ErrUsernameRequired)
+}
+
+func TestBackdropUploadReplaceAndDelete(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+	createTestUser(t, userSvc, "u-backdrop", "backdrop")
+
+	backdropURL := func() string {
+		u, err := userSvc.GetUser(ctx, "u-backdrop")
+		require.NoError(t, err)
+		dto, err := userSvc.ToUserResponseDto(ctx, *u)
+		require.NoError(t, err)
+		return kit.FromPtr(dto.BackdropURL)
+	}
+	require.Empty(t, backdropURL())
+
+	png := append([]byte("\x89PNG\r\n\x1a\n"), "first"...)
+	require.NoError(t, userSvc.UploadBackdrop(ctx, "u-backdrop", bytes.NewReader(png)))
+	data, mimeType, err := userSvc.GetBackdrop(ctx, "u-backdrop")
+	require.NoError(t, err)
+	require.Equal(t, png, data)
+	require.Equal(t, "image/png", mimeType)
+	firstURL := backdropURL()
+	require.True(t, strings.HasPrefix(firstURL, "/api/auth/me/backdrop?v="))
+
+	jpeg := append([]byte("\xff\xd8\xff"), "second"...)
+	require.NoError(t, userSvc.UploadBackdrop(ctx, "u-backdrop", bytes.NewReader(jpeg)))
+	_, mimeType, err = userSvc.GetBackdrop(ctx, "u-backdrop")
+	require.NoError(t, err)
+	require.Equal(t, "image/jpeg", mimeType)
+	require.NotEqual(t, firstURL, backdropURL(), "a new upload changes the cache-busting URL")
+
+	require.NoError(t, userSvc.DeleteBackdrop(ctx, "u-backdrop"))
+	_, _, err = userSvc.GetBackdrop(ctx, "u-backdrop")
+	require.ErrorIs(t, err, common.ErrNotFound)
+	require.Empty(t, backdropURL())
+}
+
+func TestBackdropUploadRejectsInvalidImages(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+	createTestUser(t, userSvc, "u-invalid", "invalid")
+
+	err := userSvc.UploadBackdrop(ctx, "u-invalid", strings.NewReader("<svg></svg>"))
+	require.ErrorIs(t, err, userdomain.ErrBackdropUnsupported)
+
+	oversized := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, userdomain.BackdropMaxBytes)...)
+	err = userSvc.UploadBackdrop(ctx, "u-invalid", bytes.NewReader(oversized))
+	require.ErrorIs(t, err, userdomain.ErrBackdropTooLarge)
+
+	_, _, err = userSvc.GetBackdrop(ctx, "u-invalid")
+	require.ErrorIs(t, err, common.ErrNotFound)
 }

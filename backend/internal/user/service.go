@@ -3,12 +3,16 @@ package user
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -49,12 +53,16 @@ type (
 	}
 )
 
+const BackdropMaxBytes = 10 << 20
+
 var (
 	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
 	ErrUsernameRequired      = errors.New("username is required")
 	ErrUsernameTaken         = errors.New("username already in use")
 	ErrEmailTaken            = common.Classify(common.ErrConflict, errors.New("email already in use"))
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
+	ErrBackdropTooLarge      = common.Classify(common.ErrValidation, fmt.Errorf("background image must be %d MB or smaller", BackdropMaxBytes>>20))
+	ErrBackdropUnsupported   = common.Classify(common.ErrValidation, errors.New("unsupported image format: only PNG, JPEG and WebP are accepted"))
 )
 
 func DefaultArgon2Params() *Argon2Params {
@@ -703,6 +711,10 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)
 		dto.AvatarURL = &avatarURL
 	}
+	if u.BackdropHash != nil {
+		// The content hash makes the URL change on every upload, so it can be cached as immutable.
+		dto.BackdropURL = new("/api/auth/me/backdrop?v=" + *u.BackdropHash)
+	}
 	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
 		dto.RoleAssignments = make([]types.RoleAssignmentSummary, len(rows))
 		for i, r := range rows {
@@ -809,4 +821,55 @@ func (s *UserService) GetAvatar(ctx context.Context, userID string) ([]byte, str
 		return nil, "", kit.Ternary(errors.Is(loadAvatarErr, gorm.ErrRecordNotFound), nil, loadAvatarErr)
 	}
 	return avatar.Data, avatar.MimeType, nil
+}
+
+// UploadBackdrop stores the user's background image, replacing any previous upload.
+func (s *UserService) UploadBackdrop(ctx context.Context, userID string, r io.Reader) error {
+	// Read one byte past the limit so oversized files are rejected without buffering them fully.
+	data, readErr := io.ReadAll(io.LimitReader(r, BackdropMaxBytes+1))
+	if readErr != nil {
+		return fmt.Errorf("failed to read background image: %w", readErr)
+	}
+	if len(data) > BackdropMaxBytes {
+		return ErrBackdropTooLarge
+	}
+	mimeType := http.DetectContentType(data)
+	if !slices.Contains([]string{"image/png", "image/jpeg", "image/webp"}, mimeType) {
+		return ErrBackdropUnsupported
+	}
+	sum := sha256.Sum256(data)
+
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&UserBackdrop{UserID: userID, Data: data, MimeType: mimeType}).Error; err != nil {
+			return fmt.Errorf("failed to save background image: %w", err)
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userID).Update("backdrop_hash", hex.EncodeToString(sum[:8])).Error; err != nil {
+			return fmt.Errorf("failed to update user background image hash: %w", err)
+		}
+		return nil
+	})
+}
+
+func (s *UserService) DeleteBackdrop(ctx context.Context, userID string) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&UserBackdrop{}).Error; err != nil {
+			return fmt.Errorf("failed to delete background image: %w", err)
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userID).Update("backdrop_hash", nil).Error; err != nil {
+			return fmt.Errorf("failed to clear user background image hash: %w", err)
+		}
+		return nil
+	})
+}
+
+// GetBackdrop returns the user's uploaded background image, or common.ErrNotFound when none is uploaded.
+func (s *UserService) GetBackdrop(ctx context.Context, userID string) ([]byte, string, error) {
+	var backdrop UserBackdrop
+	if err := s.db.DB.WithContext(ctx).Where("user_id = ?", userID).First(&backdrop).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", common.Classify(common.ErrNotFound, errors.New("no background image uploaded"))
+		}
+		return nil, "", fmt.Errorf("failed to load background image: %w", err)
+	}
+	return backdrop.Data, backdrop.MimeType, nil
 }

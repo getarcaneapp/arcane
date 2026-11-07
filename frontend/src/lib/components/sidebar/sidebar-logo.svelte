@@ -21,16 +21,13 @@
 </script>
 
 <div
-	class={cn(
-		'flex border-b border-border/30 transition-all duration-300',
-		isCollapsed ? 'h-16 items-center justify-center px-2' : 'h-14 items-center justify-center px-4'
-	)}
+	class={cn('flex h-11 shrink-0 items-center transition-all duration-300', isCollapsed ? 'justify-center' : 'justify-start pl-2')}
 >
 	<div class={cn('relative flex shrink-0 items-center justify-center', isCollapsed ? '' : 'flex-col')}>
 		<img
 			src={logoUrl}
 			alt={m.layout_title()}
-			class={cn('drop-shadow-sm transition-all duration-300', isCollapsed ? markClass : 'h-9 w-auto max-w-40')}
+			class={cn('drop-shadow-sm transition-all duration-300', isCollapsed ? markClass : 'h-7 w-auto max-w-40')}
 			width={isCollapsed ? markSize : 160}
 			height={isCollapsed ? markSize : 72}
 		/>

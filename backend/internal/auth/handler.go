@@ -93,6 +93,17 @@ type (
 		RawBody multipart.Form `contentType:"multipart/form-data"`
 	}
 
+	UploadMyBackdropInput struct {
+		RawBody multipart.Form `contentType:"multipart/form-data"`
+	}
+
+	GetMyBackdropOutput struct {
+		ContentType         string `header:"Content-Type"`
+		CacheControl        string `header:"Cache-Control"`
+		XContentTypeOptions string `header:"X-Content-Type-Options"`
+		Body                []byte
+	}
+
 	securityRequirements struct {
 		isRequired bool
 		bearerAuth bool
@@ -500,24 +511,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		slog.ErrorContext(ctx, "Failed to save avatar", "userId", currentUser.ID, "error", uploadAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to save avatar")
 	}
-	h.authService.tokens.InvalidateUser(currentUser.ID)
-
-	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get user information")
-	}
-
-	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to map user")
-	}
-
-	return &handlerutil.Out[types.User]{
-		Body: types.ApiResponse[types.User]{
-			Success: true,
-			Data:    out,
-		},
-	}, nil
+	return h.refreshedUserOut(ctx, currentUser.ID)
 }
 
 func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
@@ -530,9 +524,71 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 		slog.ErrorContext(ctx, "Failed to delete avatar", "userId", currentUser.ID, "error", deleteAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to delete avatar")
 	}
-	h.authService.tokens.InvalidateUser(currentUser.ID)
+	return h.refreshedUserOut(ctx, currentUser.ID)
+}
 
-	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
+func (h *AuthHandler) UploadMyBackdrop(ctx context.Context, input *UploadMyBackdropInput) (*handlerutil.Out[types.User], error) {
+	currentUser, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("no file uploaded; include a 'file' field in the multipart form")
+	}
+	f, err := files[0].Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read uploaded file: " + err.Error())
+	}
+	defer func() { _ = f.Close() }()
+
+	if uploadErr := h.userService.UploadBackdrop(ctx, currentUser.ID, f); uploadErr != nil {
+		if errors.Is(uploadErr, common.ErrValidation) {
+			return nil, handlerutil.APIError(uploadErr)
+		}
+		slog.ErrorContext(ctx, "Failed to save background image", "userId", currentUser.ID, "error", uploadErr)
+		return nil, huma.Error500InternalServerError("failed to save background image")
+	}
+	return h.refreshedUserOut(ctx, currentUser.ID)
+}
+
+func (h *AuthHandler) DeleteMyBackdrop(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
+	currentUser, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if deleteErr := h.userService.DeleteBackdrop(ctx, currentUser.ID); deleteErr != nil {
+		slog.ErrorContext(ctx, "Failed to delete background image", "userId", currentUser.ID, "error", deleteErr)
+		return nil, huma.Error500InternalServerError("failed to delete background image")
+	}
+	return h.refreshedUserOut(ctx, currentUser.ID)
+}
+
+func (h *AuthHandler) GetMyBackdrop(ctx context.Context, input *struct{}) (*GetMyBackdropOutput, error) {
+	currentUser, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	data, mimeType, err := h.userService.GetBackdrop(ctx, currentUser.ID)
+	if err != nil {
+		return nil, handlerutil.APIError(err)
+	}
+	return &GetMyBackdropOutput{
+		ContentType:         mimeType,
+		CacheControl:        "private, max-age=31536000, immutable",
+		XContentTypeOptions: "nosniff",
+		Body:                data,
+	}, nil
+}
+
+// refreshedUserOut drops the user from the token cache and returns the reloaded user.
+func (h *AuthHandler) refreshedUserOut(ctx context.Context, userID string) (*handlerutil.Out[types.User], error) {
+	h.authService.tokens.InvalidateUser(userID)
+
+	updatedUser, err := h.userService.GetUser(ctx, userID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}

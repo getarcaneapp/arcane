@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
-	import { ArrowsUpDownIcon, LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
+	import { LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { User } from '#lib/types/user.js';
@@ -39,9 +39,9 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<Sidebar.MenuButton size="lg" {...props}>
+						<Sidebar.MenuButton {...props}>
 							{#key user?.updatedAt}
-								<Avatar.Root>
+								<Avatar.Root class="size-5.5">
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
@@ -59,11 +59,7 @@
 								</Avatar.Root>
 							{/key}
 							{#if !isCollapsed}
-								<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
-									<span class="truncate font-medium">{displayLabel}</span>
-									<span class="truncate text-xs">{user.email}</span>
-								</div>
-								<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
+								<span class="truncate">{displayLabel}</span>
 							{/if}
 						</Sidebar.MenuButton>
 					{/snippet}

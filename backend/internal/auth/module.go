@@ -192,4 +192,49 @@ func RegisterAuth(
 		Tags:        []string{"Auth"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.DeleteMyAvatar)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-my-backdrop",
+		Method:      http.MethodGet,
+		Path:        "/auth/me/backdrop",
+		Summary:     "Get own background image",
+		Description: "Get the current user's uploaded background image.",
+		Tags:        []string{"Auth"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, h.GetMyBackdrop)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-my-backdrop",
+		Method:      http.MethodPost,
+		Path:        "/auth/me/backdrop",
+		Summary:     "Upload own background image",
+		Description: "Upload a background image (PNG, JPEG or WebP, up to 10 MB) shown behind the app. Replaces any existing upload.",
+		Tags:        []string{"Auth"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		// Headroom over the image limit for the multipart envelope.
+		MaxBodyBytes: user.BackdropMaxBytes + 1<<20,
+		RequestBody: &huma.RequestBody{
+			Required: true,
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"file": {Type: "string", Format: "binary"},
+						},
+					},
+				},
+			},
+		},
+	}, h.UploadMyBackdrop)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-my-backdrop",
+		Method:      http.MethodDelete,
+		Path:        "/auth/me/backdrop",
+		Summary:     "Delete own background image",
+		Description: "Remove the current user's uploaded background image.",
+		Tags:        []string{"Auth"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, h.DeleteMyBackdrop)
 }
