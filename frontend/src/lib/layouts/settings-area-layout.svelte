@@ -64,7 +64,7 @@
 			<div
 				class={cn(
 					'sticky top-4 z-(--arcane-z-sticky) mx-4 mb-6 rounded-lg border shadow-lg desktop-layout:hidden',
-					'bg-background/95 backdrop-blur-md'
+					'bg-background/95'
 				)}
 			>
 				<div class="px-4 py-3">

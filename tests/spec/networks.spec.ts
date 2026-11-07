@@ -96,8 +96,14 @@ test.describe('Networks Page', () => {
 
 		const counts = await fetchNetworksCountsWithRetry(page);
 
-		await expect(page.getByText(`${counts.total} Total Networks`)).toBeVisible();
-		await expect(page.getByText(`${counts.unused} Unused Networks`)).toBeVisible();
+		await expect(
+			page.getByText(`${counts.total} ${counts.total === 1 ? 'Total Network' : 'Total Networks'}`)
+		).toBeVisible();
+		await expect(
+			page.getByText(
+				`${counts.unused} ${counts.unused === 1 ? 'Unused Network' : 'Unused Networks'}`
+			)
+		).toBeVisible();
 	});
 
 	test('creates and removes a network through the UI', async ({ page }) => {

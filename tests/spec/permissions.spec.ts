@@ -759,9 +759,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			};
 			environmentAdminPage.on('request', recordOptionalRequest);
 			await environmentAdminPage.goto('/projects/new?templateId=missing-template');
-			await expect(
-				environmentAdminPage.getByText('Workspace Files', { exact: true })
-			).toBeVisible();
+			await expect(environmentAdminPage.getByText('Files', { exact: true })).toBeVisible();
 			await expect(
 				environmentAdminPage.getByText(
 					/cannot be loaded because you lack permission to read templates/

@@ -61,6 +61,11 @@ type (
 		CountLocal        func(ctx context.Context) (int64, error)
 	}
 
+	ExpiredBackupDeletion struct {
+		Expired       func(ctx context.Context, within []string) ([]string, error)
+		IncludeRemote bool
+	}
+
 	// Dependencies are the persistence, runtime, and helper-container operations volume backups use.
 	Dependencies struct {
 		Store            Store
@@ -123,6 +128,13 @@ type (
 	remoteRepositoryKey struct {
 		destinationID string
 		instanceID    string
+	}
+
+	unmanagedCandidate struct {
+		ID         string
+		VolumeName string
+		PolicyID   string
+		Trigger    string
 	}
 )
 
@@ -387,7 +399,7 @@ func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup,
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return ctx.Err()
 	}
-	if err == nil {
+	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
 		err = ctx.Err()
 	}
 	if err != nil {
@@ -439,8 +451,14 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 		}
 	}
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
-	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 {
+	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
+		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
+		entry.Status, entry.Error = types.VolumeBackupStatusSucceeded, ""
+		if saveErr := s.deps.Store.Save(context.WithoutCancel(ctx), entry); saveErr != nil {
+			return fmt.Errorf("failed to save volume backup result: %w", saveErr)
+		}
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
+		expired = slices.DeleteFunc(expired, func(id string) bool { return id == entry.ID })
 		if retentionErr == nil && len(expired) > 0 {
 			var expiredEntries []*types.VolumeBackup
 			if expiredEntries, retentionErr = s.deps.Store.Runs(ctx, expired); retentionErr == nil {
@@ -453,6 +471,9 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	}
 	metadata := database.JSON{"action": "backup_create", "backup_id": entry.ID, "size": entry.Size, "destination": entry.Destination}
 	s.logBackupEvent(ctx, event.EventTypeVolumeBackupCreate, volumeName, &user, metadata)
+	if entry.Status == types.VolumeBackupStatusSucceeded {
+		return nil
+	}
 	return ctx.Err()
 }
 
@@ -586,24 +607,181 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	if entry.Format != types.VolumeBackupFormatArchive {
 		return s.deleteRusticBackups(ctx, []*types.VolumeBackup{entry}, user, true)
 	}
-	// Delete the row first: a failed file removal then only leaves an orphan file.
-	if deleteErr := s.deps.Store.Delete(ctx, backupID); deleteErr != nil {
-		return deleteErr
-	}
-	containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to create container for backup file cleanup", "backupId", backupID, "error", err.Error())
-	} else {
+	return s.deleteArchiveBackup(ctx, entry, user)
+}
+
+// deleteArchiveBackup expects the caller to hold the volume's run lease.
+func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBackup, user *types.Actor) error {
+	// Remove the file before the row so a failed removal stays visible and can be retried.
+	if filename, filenameErr := backupArchiveFilename(entry.ID); filenameErr == nil {
+		containerID, cleanup, err := s.createBackupTempContainer(ctx, "/volume", false)
+		if err != nil {
+			return fmt.Errorf("failed to create container for backup file cleanup: %w", err)
+		}
 		defer cleanup()
-		filename, filenameErr := backupArchiveFilename(backupID)
-		if filenameErr != nil {
-			slog.WarnContext(ctx, "failed to sanitize backup id for file cleanup", "backupId", backupID, "error", filenameErr.Error())
-		} else if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
-			slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backupId", backupID, "error", err.Error())
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
+			return fmt.Errorf("failed to delete backup file: %w", err)
 		}
 	}
-	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": backupID})
+	if err := s.deps.Store.Delete(ctx, entry.ID); err != nil {
+		return err
+	}
+	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": entry.ID})
 	return nil
+}
+
+func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
+	days := s.deps.Settings.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
+	if days <= 0 {
+		return nil
+	}
+	systemPolicies, err := s.deps.Settings.SystemVolumeBackupPolicies()
+	if err != nil {
+		return err
+	}
+	owners := []string{types.SystemVolumeManualSeriesOwner}
+	for _, policy := range systemPolicies.Policies {
+		owners = append(owners, policy.ID)
+	}
+	now := time.Now()
+	return s.DeleteExpiredBackups(ctx, ExpiredBackupDeletion{
+		IncludeRemote: true,
+		Expired: func(ctx context.Context, within []string) ([]string, error) {
+			return s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
+				Now:                   now,
+				SystemVolumePolicyIDs: owners,
+				Within:                within,
+				Retention:             time.Duration(days) * 24 * time.Hour,
+			})
+		},
+	})
+}
+
+func (s *Service) DeleteExpiredBackups(ctx context.Context, deletion ExpiredBackupDeletion) error {
+	ids, err := deletion.Expired(ctx, nil)
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+	entries, err := s.backupsByID(ctx, ids)
+	if err != nil {
+		return err
+	}
+	backupVolumes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		backupVolumes = append(backupVolumes, entry.VolumeName)
+	}
+	// Hold every volume's locks for the whole batch so Rustic prunes each repository once.
+	held := make(map[string]func())
+	defer func() {
+		for _, release := range held {
+			release()
+		}
+	}()
+	var deleteErr error
+	for _, volumeName := range kit.Unique(backupVolumes) {
+		unlock, locked := s.deps.Locks.TryLock(volumeName)
+		if !locked {
+			slog.InfoContext(ctx, "Skipping backup deletion for a busy volume until the next run", "volume", volumeName)
+			continue
+		}
+		lease, leaseErr := s.acquireVolumeRun(ctx, volumeName)
+		if leaseErr != nil {
+			unlock()
+			if errors.Is(leaseErr, s.deps.AlreadyRunning) {
+				slog.InfoContext(ctx, "Skipping backup deletion for a busy volume until the next run", "volume", volumeName)
+				continue
+			}
+			deleteErr = errors.Join(deleteErr, leaseErr)
+			continue
+		}
+		held[volumeName] = func() {
+			lease.Release(ctx)
+			unlock()
+		}
+	}
+	if ids, err = deletion.Expired(ctx, ids); err != nil {
+		return errors.Join(deleteErr, err)
+	}
+	if entries, err = s.backupsByID(ctx, ids); err != nil {
+		return errors.Join(deleteErr, err)
+	}
+	var rusticEntries []*types.VolumeBackup
+	deleted := 0
+	for _, entry := range entries {
+		if _, ok := held[entry.VolumeName]; !ok {
+			continue
+		}
+		deleted++
+		if entry.Format == types.VolumeBackupFormatArchive {
+			deleteErr = errors.Join(deleteErr, s.deleteArchiveBackup(ctx, entry, nil))
+			continue
+		}
+		rusticEntries = append(rusticEntries, entry)
+	}
+	if len(rusticEntries) > 0 {
+		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, deletion.IncludeRemote))
+	}
+	if deleteErr == nil {
+		slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
+	}
+	return deleteErr
+}
+
+func (s *Service) backupsByID(ctx context.Context, ids []string) ([]*types.VolumeBackup, error) {
+	entries := make([]*types.VolumeBackup, 0, len(ids))
+	for batch := range slices.Chunk(ids, backup.DeletionBatchSize) {
+		batchEntries, err := s.deps.Store.Runs(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, batchEntries...)
+	}
+	return entries, nil
+}
+
+func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
+		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
+	}
+	// A failing volume driver drops its volumes from the list; they must not look deleted.
+	if len(listed.Warnings) > 0 {
+		return nil, fmt.Errorf("docker volume list is incomplete: %s", strings.Join(listed.Warnings, "; "))
+	}
+	volumeNames := make([]string, 0, len(listed.Items))
+	for _, item := range listed.Items {
+		volumeNames = append(volumeNames, item.Name)
+	}
+	policyIDs, err := s.policies.IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []unmanagedCandidate
+	if loadErr := s.deps.DB.WithContext(ctx).Table("volume_backups").
+		Select("id", "volume_name", "COALESCE(policy_id, '') AS policy_id", "trigger").
+		Where("status <> ? AND trigger <> ? AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerSafety).
+		Find(&candidates).Error; loadErr != nil {
+		return nil, fmt.Errorf("failed to load volume backups: %w", loadErr)
+	}
+	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
+}
+
+// Manual backups outlive their schedule, so only their volume decides.
+func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
+	var orphaned []string
+	for _, candidate := range candidates {
+		managed := candidate.PolicyID == "" || candidate.Trigger == types.VolumeBackupTriggerManual || slices.Contains(policyIDs, candidate.PolicyID)
+		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok && candidate.Trigger != types.VolumeBackupTriggerManual {
+			owner, _, _ := strings.Cut(series, ":")
+			managed = slices.Contains(systemPolicyIDs, owner)
+		}
+		if !managed || !slices.Contains(volumeNames, candidate.VolumeName) {
+			orphaned = append(orphaned, candidate.ID)
+		}
+	}
+	return orphaned
 }
 
 // deleteRusticBackups forgets snapshots grouped by repository so each repository is pruned once.
@@ -681,8 +859,12 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	return deleteErr
 }
 
-// PruneLocalRepository frees deleted local backups' data, creating no Rustic helper when there are none.
+// PruneLocalRepository ages out unmanaged backups, then frees deleted local backups' data.
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	return errors.Join(s.pruneUnmanagedBackups(ctx), s.pruneDeletedLocalBackups(ctx))
+}
+
+func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 	localBackups, err := s.deps.Store.CountLocal(ctx)
 	if err != nil || localBackups == 0 {
 		return err

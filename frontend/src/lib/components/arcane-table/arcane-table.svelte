@@ -747,14 +747,21 @@
 		table.setGlobalFilter('');
 	}
 
-	const shellClass = $derived(
-		unstyled ? 'flex h-full min-h-0 flex-col' : 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border'
-	);
-	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'border-border/50 w-full shrink-0 border-b');
+	const shellClass = $derived(unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col gap-2');
+	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0');
 </script>
 
 {#snippet PaginationSnippet()}
-	<ArcaneTablePagination {items} {currentPage} {totalPages} {totalItems} {pageSize} {canPrev} {canNext} {setPage} {setPageSize} />
+	<ArcaneTablePagination
+		shown={items.data.length}
+		{currentPage}
+		{totalPages}
+		{totalItems}
+		{pageSize}
+		{canPrev}
+		{canNext}
+		{setPage}
+	/>
 {/snippet}
 
 {#snippet EmptySnippet()}
@@ -794,6 +801,7 @@
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
+					class={unstyled ? undefined : 'px-0'}
 					{table}
 					{selectedIds}
 					{selectionDisabled}
@@ -810,6 +818,9 @@
 					onViewModeChange={isMobile.current ? undefined : setViewMode}
 					{isFiltered}
 					onResetFilters={resetFilters}
+					pagination={withoutPagination || emptyFirstPage ? undefined : PaginationSnippet}
+					pageSize={withoutPagination ? undefined : pageSize}
+					onPageSizeChange={withoutPagination ? undefined : setPageSize}
 				/>
 			</div>
 		{/if}
@@ -858,12 +869,7 @@
 				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={gridScrollEl}
 				data-table-scroll="grid"
-				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
-					overflow.below && 'scroll-fade-b',
-					overflow.left && 'scroll-fade-l',
-					overflow.right && 'scroll-fade-r'
-				)}
+				class="isolate h-full min-h-0 flex-1 overflow-auto"
 			>
 				<ArcaneTableGridView
 					scrollElement={gridScrollEl}
@@ -892,12 +898,8 @@
 				{@attach trackOverflow((value) => (overflow = value))}
 				bind:this={desktopScrollEl}
 				data-table-scroll="desktop"
-				class={cn(
-					'isolate h-full min-h-0 flex-1 overflow-auto bg-background',
-					overflow.below && 'scroll-fade-b',
-					overflow.left && 'scroll-fade-l',
-					overflow.right && 'scroll-fade-r'
-				)}
+				data-overflow-right={overflow.right || undefined}
+				class="isolate h-full min-h-0 flex-1 overflow-auto"
 			>
 				<ArcaneTableDesktopView
 					{rowIndex}
@@ -930,7 +932,7 @@
 				bind:this={mobileScrollEl}
 				data-table-scroll="mobile"
 				class={cn(
-					'isolate block bg-background/80',
+					'isolate block',
 					!mobilePageScroll && 'min-h-0 flex-1 overflow-auto',
 					overflow.below && 'scroll-fade-b',
 					overflow.left && 'scroll-fade-l',
@@ -947,10 +949,10 @@
 			</div>
 		{/if}
 
-		{#if !withoutPagination && !emptyFirstPage}
-			<nav aria-label={m.table_pagination_bottom()} class="shrink-0 border-t border-border/50 px-4 py-3">
+		{#if withoutSearch && !withoutPagination && !emptyFirstPage}
+			<div class="flex shrink-0 justify-end px-4 py-3">
 				{@render PaginationSnippet()}
-			</nav>
+			</div>
 		{/if}
 	</div>
 {/if}

@@ -49,8 +49,6 @@
 	const options = $derived([
 		{ label: m.default_font(), value: '' },
 		{ label: m.system_ui(), value: 'system-ui, sans-serif' },
-		{ label: m.montserrat(), value: "'Montserrat Variable'" },
-		{ label: m.geist_mono(), value: "'Geist Mono Variable'" },
 		{ label: m.custom(), value: CUSTOM_VALUE }
 	]);
 	const isPreset = $derived(options.some((option) => option.value !== CUSTOM_VALUE && option.value === storedFont));

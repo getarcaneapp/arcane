@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -142,6 +143,7 @@ const (
 	RunKeyPrefix                   = "run:"
 	VolumeRoot                     = "arcane-volume-backups"
 	rusticRepositoryMissingMessage = "No repository config file found"
+	DeletionBatchSize              = 500
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 )
@@ -507,24 +509,28 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	for _, snapshot := range snapshots {
 		existing[strings.ToLower(snapshot.ID)] = snapshot.ID
 	}
-	command := []string{"forget", "--prune"}
+	var listed []string
 	for _, id := range requested {
 		if listedID, found := existing[id]; found {
-			if len(command) == 2 {
-				command = append(command, "--")
-			}
-			command = append(command, listedID)
+			listed = append(listed, listedID)
 		}
 	}
-	if len(command) == 2 && len(requested) > 0 {
+	if len(listed) == 0 && len(requested) > 0 {
 		slog.DebugContext(ctx, "No requested snapshots found in repository; skipping forget", "repositoryId", repository.ID, "requested", requested)
 		return nil
 	}
-	if len(command) == 2 {
-		command = []string{"prune"}
+	if len(listed) == 0 {
+		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
+		return err
 	}
-	_, err = e.runContainer(ctx, dockerClient, repository, password, command)
-	return err
+	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
+	for i, batch := range batches {
+		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
+		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, currentPassword, newPassword string) error {
@@ -951,4 +957,47 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 		expired = append(expired, ids...)
 	}
 	return expired, nil
+}
+
+// ExpiredUnmanagedRunIDs updates orphan marks and returns a random batch of expired runs, so runs that keep failing to
+// delete cannot hold back the rest.
+func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, orphanedIDs []string, sweep types.UnmanagedBackupSweep) ([]string, error) {
+	cutoff := sweep.Now.Add(-sweep.Retention)
+	var expired []string
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var stamped []string
+		if err := tx.Table(table).Where("orphaned_at IS NOT NULL").Pluck("id", &stamped).Error; err != nil {
+			return fmt.Errorf("load backup orphan marks: %w", err)
+		}
+		orphaned := make(map[string]struct{}, len(orphanedIDs))
+		for _, id := range orphanedIDs {
+			orphaned[id] = struct{}{}
+		}
+		var managed []string
+		for _, id := range stamped {
+			if _, ok := orphaned[id]; ok {
+				delete(orphaned, id)
+				continue
+			}
+			managed = append(managed, id)
+		}
+		for batch := range slices.Chunk(managed, DeletionBatchSize) {
+			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", nil).Error; err != nil {
+				return fmt.Errorf("clear backup orphan marks: %w", err)
+			}
+		}
+		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), DeletionBatchSize) {
+			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", sweep.Now).Error; err != nil {
+				return fmt.Errorf("mark orphaned backups: %w", err)
+			}
+		}
+		query := tx.Table(table).
+			Where("status <> ?", "running").
+			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff))
+		if len(sweep.Within) > 0 {
+			query = query.Where("id IN ?", sweep.Within)
+		}
+		return query.Order("RANDOM()").Limit(DeletionBatchSize).Pluck("id", &expired).Error
+	})
+	return expired, err
 }

@@ -366,7 +366,7 @@
 				{#if canUpdateNode(item)}
 					<button
 						type="button"
-						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-lg bg-info/10 pr-1 opacity-0 backdrop-blur-2xs transition-opacity group-hover:opacity-100"
+						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-lg bg-info/10 pr-1 opacity-0 transition-opacity group-hover:opacity-100"
 						onclick={() => removeLabel(item, key)}
 						title={m.common_remove()}
 					>

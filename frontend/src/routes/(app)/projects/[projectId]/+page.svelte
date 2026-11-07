@@ -742,8 +742,6 @@
 		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
 		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
 		const layoutPreference = projectEditorLayoutPreference();
-		// Auto mode needs the lazily loaded workspace to pick a layout before the editors mount.
-		if (layoutPreference === 'auto' && !(projectWorkspaceQuery.isSuccess || projectWorkspaceQuery.isError)) return;
 
 		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
@@ -774,9 +772,7 @@
 		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
 
 		// Stored layout only counts when saved under the account default still in effect (legacy prefs count as auto).
-		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
-		const hasWorkspaceEntries = projectWorkspaceEntries.length > 0;
-		const defaultMode = resolveProjectEditorLayout(hasIncludes || hasWorkspaceEntries ? 'tree' : 'classic');
+		const defaultMode = resolveProjectEditorLayout('tree');
 		const storedLayoutValid = hadStoredPrefs && (cur.layoutPreference ?? 'auto') === layoutPreference;
 		layoutMode = storedLayoutValid ? (cur.layoutMode ?? defaultMode) : defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
@@ -1743,7 +1739,7 @@
 
 				<div class="min-h-0 flex-1">
 					{#if layoutMode === 'tree'}
-						<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+						<div class="flex h-full min-h-0 flex-col">
 							<ResizableSplit
 								class="h-full min-h-0 flex-1"
 								{...composeTreeSplitProps}
@@ -1774,26 +1770,22 @@
 								{/snippet}
 
 								{#snippet second()}
-									<div class="flex h-full min-h-0 flex-1 flex-col">
-										<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
-										<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
-											{#snippet actions()}
-												<ComposeFileEditorPanel
-													outlineOpen={treeOutlineOpen}
-													outlineLabel={m.compose_editor_toggle_outline()}
-													onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
-													diffOpen={treeDiffOpen}
-													diffLabel={m.compose_editor_toggle_diff()}
-													onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
-													commandPaletteLabel={m.compose_editor_command_palette()}
-													onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
-												/>
-											{/snippet}
-										</EditorTabStrip>
-										<div class="flex min-h-0 flex-1 flex-col">
-											{@render activeWorkspaceEditor()}
-										</div>
-									</div>
+									<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
+									<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
+										{#snippet actions()}
+											<ComposeFileEditorPanel
+												outlineOpen={treeOutlineOpen}
+												outlineLabel={m.compose_editor_toggle_outline()}
+												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+												diffOpen={treeDiffOpen}
+												diffLabel={m.compose_editor_toggle_diff()}
+												onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+												commandPaletteLabel={m.compose_editor_command_palette()}
+												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
+											/>
+										{/snippet}
+										{@render activeWorkspaceEditor()}
+									</EditorTabStrip>
 								{/snippet}
 							</ResizableSplit>
 						</div>

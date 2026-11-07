@@ -374,12 +374,13 @@
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
 					{#if sourceState === 'available' && source}
 						{@const stackSource = source}
-						<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+						<div class="flex min-h-0 flex-1 flex-col">
 							{#key `arcane.swarm.split:${stackName}:source`}
 								<ResizableSplit
 									class="min-h-0 flex-1"
-									variant="flush"
-									firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+									variant="gap"
+									handleSize={12}
+									firstClass="flex min-h-0 flex-col"
 									secondClass="flex min-h-0 flex-col"
 									bind:size={sourceTreeWidth}
 									minSize={200}
@@ -400,13 +401,12 @@
 									{/snippet}
 
 									{#snippet second()}
-										<div class="flex h-full min-h-0 flex-1 flex-col">
-											<EditorTabStrip
-												tabs={sourceTabs}
-												activeKey={activeSourceTab}
-												onSelect={openSourceTab}
-												onClose={closeSourceTab}
-											/>
+										<EditorTabStrip
+											tabs={sourceTabs}
+											activeKey={activeSourceTab}
+											onSelect={openSourceTab}
+											onClose={closeSourceTab}
+										>
 											<div class="relative min-h-0 flex-1">
 												{#if activeSourceTab === 'compose' || stackSource.envContent?.trim()}
 													<CodeBlock.Root variant="ghost" class="absolute inset-0">
@@ -422,7 +422,7 @@
 													</div>
 												{/if}
 											</div>
-										</div>
+										</EditorTabStrip>
 									{/snippet}
 								</ResizableSplit>
 							{/key}

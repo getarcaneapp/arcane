@@ -165,20 +165,8 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-func (s *Service) loadSystemVolumeBackupPolicies() (*types.SystemVolumeBackupPolicyCollection, error) {
-	var collection types.SystemVolumeBackupPolicyCollection
-	if raw := strings.TrimSpace(s.settings.GetSettingsConfig().SystemVolumeBackupConfig.Value); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &collection); err != nil {
-			return nil, fmt.Errorf("decode system-managed volume backup policies: %w", err)
-		}
-	}
-	return &types.SystemVolumeBackupPolicyCollection{
-		Policies: kit.Ternary(collection.Policies == nil, []types.SystemVolumeBackupPolicy{}, collection.Policies),
-	}, nil
-}
-
 func (s *Service) systemVolumeBackupPolicy(policyID string) (*types.SystemVolumeBackupPolicy, error) {
-	collection, err := s.loadSystemVolumeBackupPolicies()
+	collection, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +178,7 @@ func (s *Service) systemVolumeBackupPolicy(policyID string) (*types.SystemVolume
 }
 
 func (s *Service) GetConfig(ctx context.Context) (*types.SystemVolumeBackupPolicyCollection, error) {
-	collection, err := s.loadSystemVolumeBackupPolicies()
+	collection, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +258,7 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 }
 
 func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystemVolumeBackupPolicy) (*types.SystemVolumeBackupPolicyCollection, error) {
-	existing, err := s.loadSystemVolumeBackupPolicies()
+	existing, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +315,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemVolumeBackupOp
 	if err != nil {
 		return nil, err
 	}
-	collection, err := s.loadSystemVolumeBackupPolicies()
+	collection, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -469,11 +457,14 @@ func (s *Service) executeSystemVolumeBackups(
 		S3DestinationID: input.Policy.S3DestinationID,
 	}
 	previous, _ := jobcontext.Run(ctx)
+	var backedUp []string
 	for _, candidate := range input.Candidates {
+		seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, types.SystemVolumeManualSeriesOwner, input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
 		done := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 			return target.ID == candidate.Name && (target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped)
 		})
 		if done >= 0 && previous.Outcome.Targets[done].Status == types.RunStatusSucceeded {
+			backedUp = append(backedUp, seriesID)
 			succeeded++
 			continue
 		}
@@ -494,7 +485,6 @@ func (s *Service) executeSystemVolumeBackups(
 			continue
 		}
 		if backupErr == nil {
-			seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, "manual", input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
 			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, types.SystemUser, trigger, seriesID, policy)
 		}
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
@@ -516,7 +506,15 @@ func (s *Service) executeSystemVolumeBackups(
 		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: candidate.Name, Status: types.RunStatusSucceeded}); progressErr != nil {
 			return nil, progressErr
 		}
+		backedUp = append(backedUp, seriesID)
 		succeeded++
+	}
+	if retentionErr := s.volumes.ApplySeriesRetention(ctx, types.BackupSeriesRetention{
+		SeriesIDs:     backedUp,
+		Keep:          input.Policy.RetentionCount,
+		IncludeRemote: input.Policy.S3Enabled,
+	}); retentionErr != nil {
+		slog.ErrorContext(ctx, "System-managed volume backup retention failed", "policyId", input.Policy.ID, "error", retentionErr)
 	}
 	return nil, nil
 }
@@ -537,7 +535,7 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
 	}()
 	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		collection, loadErr := s.loadSystemVolumeBackupPolicies()
+		collection, loadErr := s.settings.SystemVolumeBackupPolicies()
 		if loadErr != nil {
 			return false, loadErr
 		}
@@ -783,7 +781,7 @@ func (s *Service) Start(ctx context.Context, user types.Actor, request types.Run
 
 // RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
-	policies, err := s.loadSystemVolumeBackupPolicies()
+	policies, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load system-managed volume backup policies", "error", err)
 		return 0

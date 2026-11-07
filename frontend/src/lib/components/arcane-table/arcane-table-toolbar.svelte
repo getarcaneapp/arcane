@@ -43,7 +43,10 @@
 		viewMode = 'list',
 		onViewModeChange,
 		isFiltered = false,
-		onResetFilters
+		onResetFilters,
+		pagination,
+		pageSize,
+		onPageSizeChange
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds?: string[];
@@ -62,6 +65,9 @@
 		onViewModeChange?: (mode: TableViewMode) => void;
 		isFiltered?: boolean;
 		onResetFilters?: () => void;
+		pagination?: Snippet;
+		pageSize?: number;
+		onPageSizeChange?: (limit: number) => void;
 	} = $props();
 
 	function toButtonAction(action: BulkAction['action']) {
@@ -217,8 +223,8 @@
 	{/if}
 {/snippet}
 
-<div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
-	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
+<div class={cn('flex flex-wrap items-center gap-2 px-4 py-3 md:flex-nowrap', className)}>
+	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-wrap">
 		<InputGroup.Root class="min-w-0 flex-1 md:w-64 md:flex-none">
 			<InputGroup.Addon>
 				<SearchIcon aria-hidden="true" />
@@ -292,6 +298,12 @@
 			</div>
 		{/if}
 
+		{#if pagination}
+			<div class="order-5 flex w-full items-center justify-end md:order-none md:w-auto md:shrink-0">
+				{@render pagination()}
+			</div>
+		{/if}
+
 		{#if onViewModeChange}
 			<ButtonGroup.Root class="hidden shrink-0 md:flex">
 				{@render viewModeButton('list', LayoutListIcon, m.table_view_list())}
@@ -301,16 +313,24 @@
 
 		<div class="order-3 hidden shrink-0 md:order-none md:block">
 			{#if viewMode === 'grid'}
-				<DataTableViewOptions {table} {customViewOptions} showSorting />
+				<DataTableViewOptions {table} {pageSize} {onPageSizeChange} {customViewOptions} showSorting />
 			{:else}
-				<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
+				<DataTableViewOptions {table} {pageSize} {onPageSizeChange} {customViewOptions} {wrapText} {onToggleWrapText} />
 			{/if}
 		</div>
 		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}
-				<DataTableViewOptions {table} fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} showSorting />
+				<DataTableViewOptions
+					{table}
+					{pageSize}
+					{onPageSizeChange}
+					fields={mobileFields}
+					onToggleField={onToggleMobileField}
+					{customViewOptions}
+					showSorting
+				/>
 			{:else}
-				<DataTableViewOptions {table} {customViewOptions} showSorting />
+				<DataTableViewOptions {table} {pageSize} {onPageSizeChange} {customViewOptions} showSorting />
 			{/if}
 		</div>
 	</div>

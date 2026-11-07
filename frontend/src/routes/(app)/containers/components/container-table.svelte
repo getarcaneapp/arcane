@@ -426,13 +426,6 @@
 			cell: PortsCell
 		},
 		{
-			accessorKey: 'image',
-			title: m.common_image(),
-			sortable: !groupByProject,
-			card: 'hidden',
-			cell: ImageCell
-		},
-		{
 			accessorKey: 'created',
 			title: m.common_created(),
 			sortable: !groupByProject,
@@ -772,7 +765,7 @@
 			</div>
 		</div>
 	{:else}
-		<div class="flex min-w-0 items-center gap-2">
+		<div class="flex w-full min-w-0 items-center gap-2">
 			<IconImage
 				src={iconUrl}
 				alt=""
@@ -780,15 +773,25 @@
 				class="size-6 {iconTextClass[iconVariant]}"
 				containerClass="size-8 shrink-0 {iconBgClass[iconVariant]}"
 			/>
-			<ResourceName name={displayName} {href} class="font-medium" />
-			{@render NameBadges(item)}
-			{#if projectLabel}
-				<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
-					<span class="block min-w-0 truncate">
-						{projectLabel}
-					</span>
-				</Badge>
-			{/if}
+			<div class="flex min-w-0 flex-1 flex-col">
+				<div class="flex min-w-0 items-center gap-2">
+					<ResourceName name={displayName} {href} class="font-medium" />
+					{@render NameBadges(item)}
+					{#if projectLabel}
+						<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
+							<span class="block min-w-0 truncate">
+								{projectLabel}
+							</span>
+						</Badge>
+					{/if}
+				</div>
+				<a
+					class="block w-0 min-w-full truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+					title={item.image}
+					href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.imageId })}
+					>{item.image}</a
+				>
+			</div>
 		</div>
 	{/if}
 {/snippet}
@@ -887,10 +890,6 @@
 
 {#snippet UpdatesCell({ item }: { item: ContainerRow })}
 	{@render ContainerUpdateItem(item)}
-{/snippet}
-
-{#snippet ImageCell({ item }: { item: ContainerSummary })}
-	<span class="font-mono text-xs-plus leading-5 whitespace-nowrap">{item.image}</span>
 {/snippet}
 
 {#snippet CreatedCell({ item }: { item: ContainerSummary })}

@@ -232,7 +232,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			});
 
 			const projectEditorLayout =
-				original.preferences?.defaultProjectEditorLayout === 'tree' ? 'classic' : 'tree';
+				original.preferences?.defaultProjectEditorLayout === 'classic' ? 'tree' : 'classic';
 			const projectEditorLayoutResponse = await waitForProfileUpdate(accountPage, async () => {
 				await accountPage.locator('#account-project-editor-layout').click();
 				await accountPage

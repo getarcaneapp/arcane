@@ -2,6 +2,7 @@ import { jobStatusLabel } from '#lib/components/job-card/job-status.js';
 import type { IconType } from '#lib/icons/index.js';
 import {
 	ActivityIcon,
+	BroomIcon,
 	DownloadIcon,
 	EditIcon,
 	HammerIcon,
@@ -57,7 +58,7 @@ const typeDisplay = new Map(
 		container_unpause: { label: m.activity_type_container_unpause, icon: PlayIcon },
 		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: SearchIcon },
 		auto_update: { label: m.auto_update, icon: RefreshIcon },
-		system_prune: { label: m.activity_type_system_prune, icon: TrashIcon },
+		system_prune: { label: m.activity_type_system_prune, icon: BroomIcon },
 		resource_action: { label: m.activity_type_resource_action, icon: ActivityIcon }
 	} satisfies Record<ActivityType, { label: () => string; icon: IconType }>)
 );

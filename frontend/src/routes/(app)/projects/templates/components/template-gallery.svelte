@@ -93,11 +93,6 @@
 		requestOptions = { ...requestOptions, pagination: { page, limit: pageSize } };
 	}
 
-	function setPageSize(limit: number) {
-		if (prefs) prefs.current = { ...prefs.current, l: limit };
-		requestOptions = { ...requestOptions, pagination: { page: 1, limit } };
-	}
-
 	async function handleDeleteTemplate(template: Template) {
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.resource_template() }),
@@ -184,17 +179,18 @@
 			{/each}
 		</div>
 
-		<ArcaneTablePagination
-			items={templates}
-			{currentPage}
-			{totalPages}
-			{totalItems}
-			{pageSize}
-			canPrev={currentPage > 1}
-			canNext={currentPage < totalPages}
-			{setPage}
-			{setPageSize}
-		/>
+		<div class="flex justify-end">
+			<ArcaneTablePagination
+				shown={templates.data.length}
+				{currentPage}
+				{totalPages}
+				{totalItems}
+				{pageSize}
+				canPrev={currentPage > 1}
+				canNext={currentPage < totalPages}
+				{setPage}
+			/>
+		</div>
 	{:else if hasActiveQuery}
 		<EmptyState icon={SearchIcon} title={m.common_no_results_found()} description={m.common_no_results_hint()} />
 	{:else}

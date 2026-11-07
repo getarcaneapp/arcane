@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -213,4 +214,63 @@ func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
 	require.Equal(t, "app-data", snapshot.Label)
 	require.Equal(t, int64(2048), snapshot.Summary.TotalBytesProcessed)
 	require.False(t, snapshot.Time.IsZero())
+}
+
+func TestOrphanedVolumeBackupIDs(t *testing.T) {
+	systemSeries := func(owner string) string {
+		return types.SystemVolumePolicyPrefix + owner + ":" + kit.SHA256Hex("app-data")[:16]
+	}
+	scheduled := types.VolumeBackupTriggerScheduled
+	manual := types.VolumeBackupTriggerManual
+	candidates := []unmanagedCandidate{
+		{ID: "manual", VolumeName: "app-data", Trigger: manual},
+		{ID: "volume-policy", VolumeName: "app-data", PolicyID: "policy-1", Trigger: scheduled},
+		{ID: "deleted-volume-policy", VolumeName: "app-data", PolicyID: "policy-deleted", Trigger: scheduled},
+		{ID: "manual-deleted-volume-policy", VolumeName: "app-data", PolicyID: "policy-deleted", Trigger: manual},
+		{ID: "system-policy", VolumeName: "app-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+		{ID: "system-manual", VolumeName: "app-data", PolicyID: systemSeries("manual"), Trigger: manual},
+		{ID: "deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: scheduled},
+		{ID: "manual-deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: manual},
+		{ID: "removed-volume", VolumeName: "old-data", Trigger: manual},
+		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+	}
+
+	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})
+
+	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
+}
+
+func TestDeleteExpiredBackupsLeavesBusyVolumesForTheNextRun(t *testing.T) {
+	gormDB := newVolumeBackupTestDB(t, "volume-backup-series-retention-busy")
+	db := &database.DB{DB: gormDB}
+	seriesID := types.SystemVolumePolicyPrefix + "nightly:" + kit.SHA256Hex("app-data")[:16]
+	for i, id := range []string{"oldest", "older", "newest"} {
+		require.NoError(t, gormDB.Exec(
+			"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, format, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			id, "app-data", 0, time.Now().Add(time.Duration(i-3)*time.Hour), seriesID, types.VolumeBackupStatusSucceeded,
+			types.VolumeBackupFormatRustic, "snapshot-"+id,
+		).Error)
+	}
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{
+		DB:    db,
+		Locks: locks,
+		Store: Store{Runs: func(ctx context.Context, ids []string) ([]*types.VolumeBackup, error) {
+			var entries []*types.VolumeBackup
+			return entries, gormDB.WithContext(ctx).Table("volume_backups").Where("id IN ?", ids).Find(&entries).Error
+		}},
+	})
+	unlock := locks.Lock("app-data")
+	defer unlock()
+
+	require.NoError(t, service.DeleteExpiredBackups(t.Context(), ExpiredBackupDeletion{
+		IncludeRemote: true,
+		Expired: func(ctx context.Context, _ []string) ([]string, error) {
+			return backup.ExpiredRunIDs(ctx, db, "volume_backups", seriesID, 1)
+		},
+	}))
+
+	var remaining int64
+	require.NoError(t, gormDB.Table("volume_backups").Where("policy_id = ?", seriesID).Count(&remaining).Error)
+	require.EqualValues(t, 3, remaining)
 }

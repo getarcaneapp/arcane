@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
-	import { ArrowsUpDownIcon, LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
+	import { LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { User } from '#lib/types/user.js';
@@ -35,13 +35,13 @@
 
 <Sidebar.Menu>
 	<Sidebar.MenuItem>
-		{#key sidebar.state === 'collapsed' && !sidebar.isHovered}
+		{#key sidebar.state === 'collapsed'}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<Sidebar.MenuButton size="lg" {...props}>
+						<Sidebar.MenuButton {...props}>
 							{#key user?.updatedAt}
-								<Avatar.Root>
+								<Avatar.Root class="size-5.5">
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
@@ -59,85 +59,68 @@
 								</Avatar.Root>
 							{/key}
 							{#if !isCollapsed}
-								<div class="grid flex-1 pl-0 text-left text-sm leading-tight">
-									<span class="truncate font-medium">{displayLabel}</span>
-									<span class="truncate text-xs">{user.email}</span>
-								</div>
-								<ArrowsUpDownIcon class="ml-auto size-4 shrink-0 text-muted-foreground" />
+								<span class="truncate">{displayLabel}</span>
 							{/if}
 						</Sidebar.MenuButton>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content class="min-w-60" side="right" align="end" sideOffset={12}>
-					<div
-						role="group"
-						tabindex="-1"
-						onmouseenter={() => {
-							if (sidebar.state === 'collapsed') {
-								sidebar.setHovered(true);
-							}
-						}}
-						onmouseleave={() => {
-							sidebar.setHovered(false, 150);
+					<div class="flex items-center gap-2.5 px-2 py-2">
+						{#key user?.updatedAt}
+							<Avatar.Root>
+								{#if user?.avatarUrl}
+									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+								{:else if settingsStore.current?.enableGravatar}
+									{#await getGravatarUrl(user?.email ?? undefined)}
+										<!-- Loading gravatar, show fallback -->
+									{:then url}
+										<Avatar.Image src={url} alt={displayLabel} />
+									{:catch}
+										<!-- Gravatar failed, show fallback -->
+									{/await}
+								{/if}
+								<Avatar.Fallback>
+									{displayLabel.charAt(0).toUpperCase()}
+								</Avatar.Fallback>
+							</Avatar.Root>
+						{/key}
+						<div class="grid min-w-0 flex-1 leading-tight">
+							<span class="truncate text-sm font-medium">{displayLabel}</span>
+							<span class="truncate text-xs text-muted-foreground">{user.email}</span>
+						</div>
+					</div>
+
+					<DropdownMenu.Separator class="my-1" />
+
+					<DropdownMenu.Item
+						onSelect={() => {
+							goto(resolve('/(app)/account'));
 						}}
 					>
-						<div class="flex items-center gap-2.5 px-2 py-2">
-							{#key user?.updatedAt}
-								<Avatar.Root>
-									{#if user?.avatarUrl}
-										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
-									{:else if settingsStore.current?.enableGravatar}
-										{#await getGravatarUrl(user?.email ?? undefined)}
-											<!-- Loading gravatar, show fallback -->
-										{:then url}
-											<Avatar.Image src={url} alt={displayLabel} />
-										{:catch}
-											<!-- Gravatar failed, show fallback -->
-										{/await}
-									{/if}
-									<Avatar.Fallback>
-										{displayLabel.charAt(0).toUpperCase()}
-									</Avatar.Fallback>
-								</Avatar.Root>
-							{/key}
-							<div class="grid min-w-0 flex-1 leading-tight">
-								<span class="truncate text-sm font-medium">{displayLabel}</span>
-								<span class="truncate text-xs text-muted-foreground">{user.email}</span>
-							</div>
-						</div>
+						<UserIcon class="size-4 shrink-0 text-muted-foreground" />
+						<span>{m.common_account()}</span>
+					</DropdownMenu.Item>
 
-						<DropdownMenu.Separator class="my-1" />
+					<DropdownMenu.Item
+						onSelect={() => {
+							goto(resolve('/(app)/account?tab=preferences'));
+						}}
+					>
+						<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />
+						<span>{m.account_preferences()}</span>
+					</DropdownMenu.Item>
 
-						<DropdownMenu.Item
-							onSelect={() => {
-								goto(resolve('/(app)/account'));
-							}}
-						>
-							<UserIcon class="size-4 shrink-0 text-muted-foreground" />
-							<span>{m.common_account()}</span>
-						</DropdownMenu.Item>
-
-						<DropdownMenu.Item
-							onSelect={() => {
-								goto(resolve('/(app)/account?tab=preferences'));
-							}}
-						>
-							<SettingsIcon class="size-4 shrink-0 text-muted-foreground" />
-							<span>{m.account_preferences()}</span>
-						</DropdownMenu.Item>
-
-						{#if !autoLoginEnabled}
-							<form action="/logout" method="POST" class="w-full">
-								<button
-									type="submit"
-									class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
-								>
-									<LogoutIcon class="size-4 shrink-0" />
-									<span>{m.common_log_out()}</span>
-								</button>
-							</form>
-						{/if}
-					</div>
+					{#if !autoLoginEnabled}
+						<form action="/logout" method="POST" class="w-full">
+							<button
+								type="submit"
+								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+							>
+								<LogoutIcon class="size-4 shrink-0" />
+								<span>{m.common_log_out()}</span>
+							</button>
+						</form>
+					{/if}
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		{/key}

@@ -105,7 +105,7 @@
 	}
 
 	let {
-		title = m.workspace_files(),
+		title = m.files(),
 		leadingRows = [],
 		rootMenuItems = [],
 		entries,
@@ -129,7 +129,7 @@
 		multipleUploads = false,
 		allowUploadOverwrite = false,
 		validateName,
-		emptyMessage = m.workspace_files_empty(),
+		emptyMessage,
 		uploadDescription = m.workspace_upload_description(),
 		rootDestinationLabel = m.workspace_root_destination(),
 		rootPathMessage = m.workspace_root_path(),
@@ -645,8 +645,8 @@
 </script>
 
 {#snippet workspaceToolbar()}
-	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
-		<span class="text-2xs font-semibold tracking-wider text-muted-foreground uppercase">{title}</span>
+	<div class="flex h-10 shrink-0 items-center px-2">
+		<span class="text-xs font-medium text-muted-foreground">{title}</span>
 		{#if hasHeaderActions}
 			<div class="ml-auto flex items-center gap-0.5">
 				{#if canCreateFile}
@@ -768,16 +768,18 @@
 	>
 		{#snippet trailing()}
 			{@render rowBadge?.(row)}
-			{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
-				<div class="flex shrink-0 items-center gap-0.5">
-					{#each workspaceRowActions(row) as action (action.id)}
+			{#if row.locked || row.isSymlink || onDelete}
+				<div
+					class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+				>
+					{#each workspaceRowActions(row).filter((action) => action.id === 'delete') as action (action.id)}
 						<Tooltip.Root>
 							<Tooltip.Trigger>
 								<button
 									type="button"
 									class={action.destructive
-										? 'inline-flex size-6 items-center justify-center rounded-xl text-destructive hover:bg-destructive/10'
-										: 'inline-flex size-6 items-center justify-center rounded-xl text-foreground hover:bg-foreground/10'}
+										? 'inline-flex size-6 items-center justify-center rounded-md text-destructive hover:bg-destructive/10'
+										: 'inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/10 hover:text-foreground'}
 									aria-label={action.label}
 									disabled={action.disabled}
 									onclick={action.onclick}
@@ -788,10 +790,10 @@
 							<Tooltip.Content>{action.tooltip}</Tooltip.Content>
 						</Tooltip.Root>
 					{/each}
-					{#if row.locked || row.isSymlink}
-						<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
-					{/if}
 				</div>
+				{#if row.locked || row.isSymlink}
+					<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+				{/if}
 			{/if}
 		{/snippet}
 	</FileTreeRow>
@@ -812,8 +814,8 @@
 	<button
 		type="button"
 		class={cn(
-			'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs-plus hover:bg-accent',
-			selectedFile === leadingRow.key && 'bg-accent'
+			'flex min-h-8 w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs-plus transition-colors',
+			selectedFile === leadingRow.key ? 'bg-foreground/7' : 'hover:bg-foreground/4'
 		)}
 		onclick={() => onSelect?.(leadingRow.key)}
 	>
@@ -831,13 +833,13 @@
 {/snippet}
 
 {#snippet workspaceTreeBody()}
-	<div class="min-w-max p-2">
+	<div class="min-w-max pb-2">
 		<TreeView.Root class="min-w-max whitespace-nowrap">
 			{@render workspaceLeadingRows()}
 
-			{#if rows.length === 0}
+			{#if rows.length === 0 && emptyMessage}
 				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
-			{:else}
+			{:else if rows.length > 0}
 				<VirtualRows virtualizer={rowVirtualizer} {rows} row={workspaceRow} />
 			{/if}
 		</TreeView.Root>
@@ -1001,7 +1003,7 @@
 <div class="flex min-h-0 flex-1 flex-col">
 	{@render workspaceToolbar()}
 	{#if readOnlyMessage}
-		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
+		<div class="px-2 pb-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
 	{/if}
 	<svelte:boundary>
 		{@render workspaceTree()}

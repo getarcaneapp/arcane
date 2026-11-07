@@ -516,7 +516,7 @@ test.describe('Volumes shift-select', () => {
 
 		await rowCheckbox(page, 2).click();
 		await page
-			.getByRole('navigation', { name: 'Bottom table pagination' })
+			.getByRole('navigation', { name: 'Table pagination' })
 			.getByRole('button', { name: 'Go to next page' })
 			.click();
 		await expect(page.getByRole('link', { name: mockVolume(21).name, exact: true })).toBeVisible();
@@ -526,8 +526,8 @@ test.describe('Volumes shift-select', () => {
 		await expect(removeSelectedButton(page, 2)).toBeVisible();
 
 		await page
-			.getByRole('navigation', { name: 'Bottom table pagination' })
-			.getByRole('button', { name: 'Go to first page' })
+			.getByRole('navigation', { name: 'Table pagination' })
+			.getByRole('button', { name: 'Go to previous page' })
 			.click();
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toBeVisible();
 		await rowCheckbox(page, 4).click();

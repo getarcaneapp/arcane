@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
-import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 import { type Activity } from '../../frontend/src/lib/types/activity';
 
 test.describe('Workspace restore', () => {
@@ -274,8 +274,8 @@ test.describe('Workspace restore', () => {
 		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 		await expect(page.getByText(BACKUP_ID, { exact: true }).first()).toBeVisible();
 		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
-		await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
-		await page.getByRole('menuitem', { name: 'Restore files' }).click();
+		const menu = await openRowActionsMenu(page, backupRow);
+		await menu.getByRole('menuitem', { name: 'Restore files' }).click();
 		await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
 	}
 
@@ -456,8 +456,8 @@ test.describe('Workspace restore', () => {
 	async function openSystemRestoreDialog(page: Page) {
 		await expect(page.getByText(SYSTEM_BACKUP_ID, { exact: false }).first()).toBeVisible();
 		const backupRow = page.getByRole('row').filter({ hasText: SYSTEM_BACKUP_ID }).first();
-		await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
-		await page.getByRole('menuitem', { name: 'Restore files' }).click();
+		const menu = await openRowActionsMenu(page, backupRow);
+		await menu.getByRole('menuitem', { name: 'Restore files' }).click();
 		await expect(page.getByRole('dialog', { name: 'Restore files' })).toBeVisible();
 	}
 
@@ -623,8 +623,8 @@ test.describe('Workspace restore', () => {
 			await setCodeMirrorValue(editor, 'local draft');
 			await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 			const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
-			await backupRow.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
-			await page.getByRole('menuitem', { name: 'Restore', exact: true }).click();
+			const menu = await openRowActionsMenu(page, backupRow);
+			await menu.getByRole('menuitem', { name: 'Restore', exact: true }).click();
 
 			const confirmDialog = page.getByRole('dialog', { name: 'Restore Volume' });
 			await expect(confirmDialog).toContainText(
@@ -1651,8 +1651,8 @@ test.describe('System and volume restore', () => {
 
 				await page.keyboard.press('Escape');
 				const row = page.getByRole('row').filter({ hasText: volumeName });
-				await row.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }).click();
-				await page.getByRole('menuitem', { name: 'Open volume backups' }).click();
+				const menu = await openRowActionsMenu(page, row);
+				await menu.getByRole('menuitem', { name: 'Open volume backups' }).click();
 				await expect(page).toHaveURL(
 					new RegExp(`/volumes/${encodeURIComponent(volumeName)}\\?tab=backups`)
 				);

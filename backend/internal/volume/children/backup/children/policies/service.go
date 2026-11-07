@@ -95,6 +95,14 @@ func (s *Service) policies(ctx context.Context, volumeName string) ([]VolumeBack
 	return policies, nil
 }
 
+func (s *Service) IDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := s.deps.DB.WithContext(ctx).Model(&VolumeBackupPolicy{}).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to load volume backup policy IDs: %w", err)
+	}
+	return ids, nil
+}
+
 func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*VolumeBackupPolicy, error) {
 	if strings.TrimSpace(policyID) == "" {
 		return nil, nil

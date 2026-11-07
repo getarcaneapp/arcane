@@ -92,8 +92,9 @@ export type UserPreferences = {
 	iconCatalog?: IconCatalog;
 	oledMode?: boolean;
 	glassEffectsEnabled?: boolean;
+	backdrop?: string;
+	backdropDim?: number;
 	animationsEnabled?: boolean;
-	sidebarHoverExpansion?: boolean;
 	keyboardShortcutsEnabled?: boolean;
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
@@ -121,6 +122,7 @@ export type User = {
 	displayName?: string | null;
 	email?: string | null;
 	avatarUrl?: string;
+	backdropUrl?: string;
 	roleAssignments: RoleAssignmentSummary[];
 	permissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin: boolean;

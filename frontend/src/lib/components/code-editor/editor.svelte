@@ -22,6 +22,7 @@
 	import { EditorState, type Extension } from '@codemirror/state';
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { mode } from 'mode-watcher';
+	import { onMount } from 'svelte';
 	import CodeMirror from 'svelte-codemirror-editor';
 	import { toast } from 'svelte-sonner';
 
@@ -37,6 +38,7 @@
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { createMergeHostAttachment, type MergeAttachmentParams } from './merge-editor.svelte.js';
+	import { getEditorStatusHost, hasEditorStatusHost } from './status-context';
 	import { createArcaneTheme } from './theme';
 
 	const languageSupport = new Map(
@@ -113,6 +115,8 @@
 		'aria-describedby'?: string;
 	} = $props();
 	void hasErrors;
+
+	const statusHost = hasEditorStatusHost() ? getEditorStatusHost() : null;
 
 	let activeOutlineItems = $state<OutlineItem[]>([]);
 	let activeView = $state<EditorView | null>(null);
@@ -822,6 +826,19 @@
 		});
 		return count;
 	}
+
+	onMount(() => {
+		if (!statusHost) return;
+		const readStatus = () => ({
+			...diagnosticSummary,
+			diagnostics: countCurrentDiagnostics(),
+			validating: !validationReady
+		});
+		statusHost.current = readStatus;
+		return () => {
+			if (statusHost.current === readStatus) statusHost.current = null;
+		};
+	});
 </script>
 
 <div class="arcane-code-editor {autoHeight ? 'auto-height' : 'full-height'}">
@@ -894,7 +911,7 @@
 		</ContextMenu.Content>
 	</ContextMenu.Root>
 
-	{#if statusBar}
+	{#if statusBar && !statusHost}
 		<div class="editor-status">
 			<span>{diagnosticSummary.errors} {m.editor_errors()}</span>
 			<span>{diagnosticSummary.warnings} {m.editor_warnings()}</span>
@@ -981,7 +998,7 @@
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
-		background: color-mix(in oklab, var(--background) 96%, black 4%);
+		background: var(--code-editor-background, color-mix(in oklab, var(--background) 96%, black 4%));
 	}
 	.merge-pane-header {
 		display: grid;

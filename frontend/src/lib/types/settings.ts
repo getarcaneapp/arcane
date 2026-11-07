@@ -51,6 +51,7 @@ export type Settings = {
 	gitSyncMaxFiles: number;
 	gitSyncMaxTotalSizeMb: number;
 	gitSyncMaxBinarySizeMb: number;
+	unmanagedBackupRetentionDays: number;
 	projectWorkspaceMaxFileSizeMb?: number;
 	volumeWorkspaceMaxFileSizeMb?: number;
 	baseServerUrl: string;

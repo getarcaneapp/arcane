@@ -70,7 +70,6 @@
 	}
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
-	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const shortcutsEnabled = $derived(userStore.current?.preferences?.keyboardShortcutsEnabled ?? true);
 </script>
 
@@ -101,11 +100,11 @@
 {/snippet}
 
 <Sidebar.Group>
-	<Sidebar.GroupLabel class="group-data-[collapsible=icon]:-mt-7">{label}</Sidebar.GroupLabel>
+	<Sidebar.GroupLabel>{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu>
 		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}
-				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
+				{#if collapsed}
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
@@ -128,11 +127,7 @@
 				{:else}
 					{#snippet collapsibleSubMenu()}
 						<Collapsible.Content>
-							<Sidebar.MenuSub
-								class={sidebar.state === 'collapsed' && (!sidebar.isHovered || !sidebar.hoverExpansionEnabled)
-									? 'hidden'
-									: undefined}
-							>
+							<Sidebar.MenuSub>
 								{#each item.items ?? [] as subItem (subItem.url)}
 									<Sidebar.MenuSubItem>
 										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
@@ -147,8 +142,8 @@
 					{/snippet}
 					<SidebarCollapsibleItem
 						{item}
-						showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
-						{includeTitleInTooltip}
+						showTooltip={shortcutsEnabled && !!item.shortcut?.length}
+						includeTitleInTooltip={false}
 						getIsOpen={(itemUrl: string, isActive: boolean) => getIsOpen(itemUrl, isActive)}
 						onOpenChange={(open) => {
 							openStates[item.url] = open;
@@ -158,7 +153,7 @@
 				{/if}
 			{:else}
 				{#snippet simpleItemTooltipContent()}
-					<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />
+					<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={collapsed} />
 				{/snippet}
 				{@render menuEntry(
 					item,

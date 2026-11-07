@@ -51,17 +51,17 @@
 				className
 			)}
 		>
-			<span
+			<!-- The circle is painted on the icon itself so Safari snaps glyph and background together. -->
+			<ActivityIcon
 				class={cn(
-					'grid place-items-center rounded-md transition-colors',
-					collapsed ? 'size-8' : 'size-6',
+					'shrink-0 rounded-md transition-colors',
+					collapsed ? 'size-8 p-1.75' : 'size-6 p-1.25',
 					isActive
 						? 'bg-primary/15 text-primary'
 						: 'bg-sidebar-accent text-sidebar-foreground/60 group-hover:text-sidebar-foreground'
 				)}
-			>
-				<ActivityIcon class={cn(collapsed ? 'size-4.5' : 'size-3.5')} aria-hidden="true" />
-			</span>
+				aria-hidden="true"
+			/>
 			{#if !collapsed}
 				<span class="ml-2 min-w-0 flex-1 truncate text-left text-sm">{m.activity_center_title()}</span>
 				{#if isActive}

@@ -235,6 +235,20 @@ type (
 		ActivityID string `json:"activityId"`
 		Status     string `json:"status"`
 	}
+
+	BackupSeriesRetention struct {
+		SeriesIDs     []string
+		Keep          int
+		IncludeRemote bool
+	}
+
+	// UnmanagedBackupSweep's Within, when set, limits a recheck to the batch it already locked.
+	UnmanagedBackupSweep struct {
+		Now                   time.Time
+		SystemVolumePolicyIDs []string
+		Within                []string
+		Retention             time.Duration
+	}
 )
 
 const (
@@ -252,6 +266,7 @@ const (
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
+	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"

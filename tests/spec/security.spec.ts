@@ -351,7 +351,7 @@ test.describe('Security Page', () => {
 
 		refreshed = tableRequest((params) => params.get('start') === '20');
 		await panel
-			.getByRole('navigation', { name: 'Bottom table pagination' })
+			.getByRole('navigation', { name: 'Table pagination' })
 			.getByRole('button', { name: 'Go to next page', exact: true })
 			.click();
 		await refreshed;

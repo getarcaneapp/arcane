@@ -585,6 +585,17 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		ExpiredRunIDs: func(ctx context.Context, policyID string, keep int) ([]string, error) {
 			return backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, keep)
 		},
+		ExpiredUnmanagedRunIDs: func(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
+			var orphanedIDs []string
+			if err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).
+				Where("status <> ? AND trigger NOT IN ? AND COALESCE(policy_id, '') <> ''", SystemBackupStatusRunning,
+					[]SystemBackupTrigger{SystemBackupTriggerSafety, SystemBackupTriggerManual}).
+				Where("policy_id NOT IN (?)", s.db.Model(&SystemBackupPolicy{}).Select("id")).
+				Pluck("id", &orphanedIDs).Error; err != nil {
+				return nil, fmt.Errorf("failed to load orphaned system backups: %w", err)
+			}
+			return backup.ExpiredUnmanagedRunIDs(ctx, s.db, "system_backup_runs", orphanedIDs, sweep)
+		},
 		RunsByID: func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error) {
 			var records []SystemBackupRun
 			if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&records).Error; err != nil {

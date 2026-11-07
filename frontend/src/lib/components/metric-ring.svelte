@@ -58,6 +58,6 @@
 		{/if}
 	</svg>
 	{#if children}
-		<span class="relative">{@render children()}</span>
+		<span class="relative flex items-center leading-none">{@render children()}</span>
 	{/if}
 </span>

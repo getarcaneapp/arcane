@@ -11,7 +11,6 @@ type (
 		OledMode                   *bool   `json:"oledMode,omitempty" doc:"Use true-black backgrounds in dark mode"`
 		GlassEffectsEnabled        *bool   `json:"glassEffectsEnabled,omitempty" doc:"Apply blur and glass effects to UI surfaces"`
 		AnimationsEnabled          *bool   `json:"animationsEnabled,omitempty" doc:"Enable decorative interface animations"`
-		SidebarHoverExpansion      *bool   `json:"sidebarHoverExpansion,omitempty" doc:"Expand the desktop sidebar on hover"`
 		KeyboardShortcutsEnabled   *bool   `json:"keyboardShortcutsEnabled,omitempty" doc:"Enable keyboard shortcuts and shortcut hints"`
 		MobileNavigationShowLabels *bool   `json:"mobileNavigationShowLabels,omitempty" doc:"Show text labels in mobile navigation"`
 		DefaultLandingPage         *string `json:"defaultLandingPage,omitempty" doc:"Route opened after signing in"`
@@ -26,6 +25,8 @@ type (
 		InterfaceFont         *string                  `json:"interfaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for interface text; empty uses the default"`
 		MonospaceFont         *string                  `json:"monospaceFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for monospace text; empty uses the default"`
 		CodeFont              *string                  `json:"codeFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for code blocks; empty uses the default"`
+		Backdrop              *string                  `json:"backdrop,omitempty" pattern:"^[a-z0-9-]{1,32}$" doc:"Background image: a preset ID, 'custom' (uploaded image), or 'none'"`
+		BackdropDim           *int                     `json:"backdropDim,omitempty" minimum:"0" maximum:"80" doc:"Percent the background image is darkened in dark mode"`
 	}
 
 	CustomTheme struct {
@@ -105,6 +106,7 @@ type (
 		DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
 		Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
 		AvatarURL              *string                 `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
+		BackdropURL            *string                 `json:"backdropUrl,omitempty" readOnly:"true" doc:"URL to the user's uploaded background image; omitted when none is uploaded"`
 		OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
 		Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
 		LastLogin              *string                 `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`

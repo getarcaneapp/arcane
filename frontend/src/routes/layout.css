@@ -1,12 +1,70 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn-svelte/tailwind.css';
-@import '@fontsource-variable/montserrat';
-@import '@fontsource-variable/geist-mono';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant desktop-layout (&:where([data-layout='desktop'], [data-layout='desktop'] *));
 @custom-variant mobile-layout (&:where([data-layout='mobile'], [data-layout='mobile'] *));
+
+@font-face {
+	font-family: 'Ledger';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/Ledger-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+		U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Ledger';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/Ledger-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+		U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Mona Sans';
+	font-style: normal;
+	font-weight: 200 900;
+	font-display: swap;
+	src: url('/fonts/MonaSans.woff2') format('woff2');
+}
+
+@font-face {
+	font-family: 'Mona Sans';
+	font-style: italic;
+	font-weight: 200 900;
+	font-display: swap;
+	src: url('/fonts/MonaSans-Italic.woff2') format('woff2');
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-style: normal;
+	font-weight: 400 500;
+	font-display: swap;
+	src: url('/fonts/JetBrainsMono-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+		U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-style: normal;
+	font-weight: 400 500;
+	font-display: swap;
+	src: url('/fonts/JetBrainsMono-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+		U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
 	color-scheme: light;
@@ -91,6 +149,11 @@
 	--shadow-glass-lg:
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 65%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 45%, transparent);
+
+	--shell-background: color-mix(in oklch, var(--background) 93%, var(--foreground));
+	--shell-glass: color-mix(in oklch, color-mix(in oklch, var(--background) 90%, var(--foreground)) 70%, transparent);
+	--shell-glass-blur: blur(64px) saturate(1.3) brightness(1.08);
+	--shell-glass-shadow: 0 0 0 1px oklch(0 0 0 / 0.06), 0 2px 16px -4px oklch(0 0 0 / 0.12);
 
 	--arcane-z-content: 0;
 	--arcane-z-raised: 10;
@@ -184,10 +247,15 @@
 	--shadow-glass-lg:
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
+
+	--shell-background: var(--background);
+	--shell-glass: var(--background);
+	--shell-glass-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 1px oklch(1 0 0 / 0.08), 0 2px 16px -4px oklch(0 0 0 / 0.5);
 }
 
 .dark.oled:not([data-app-theme]) {
 	--background: oklch(0 0 0);
+	--shell-background: oklch(0 0 0);
 	--card: oklch(0 0 0 / 0.5);
 	--popover: oklch(0.04 0.002 285);
 	--secondary: oklch(0.1 0.004 286 / 0.55);
@@ -202,6 +270,49 @@
 	--bg-surface: oklch(0.02 0.001 285);
 	--glass-base: oklch(0.02 0.001 285);
 	--glass-shadow-color: oklch(0 0 0 / 0.6);
+}
+
+/* Over a backdrop photo the shell glass thins out and blurs harder. */
+html[data-backdrop] {
+	--shell-glass: color-mix(in oklch, var(--background) 72%, transparent);
+	--shell-glass-blur: none;
+}
+
+html.dark[data-backdrop] {
+	--shell-glass: rgb(17 17 17 / 0.7);
+	--shell-glass-blur: none;
+	--shell-glass-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 24px 48px -12px #000;
+	--table-head: #1b1b1b;
+}
+
+html.dark[data-backdrop] [data-slot='sidebar-inner'].shell-glass {
+	--shell-glass: rgb(22 22 22 / 0.7);
+	--shell-glass-blur: none;
+}
+
+html.no-blur[data-backdrop] {
+	--shell-glass: color-mix(in oklch, var(--background) 92%, transparent);
+}
+
+/* Sticky table chrome is frosted so rows scrolling beneath it stay legible. */
+:root {
+	--table-head: color-mix(in oklab, var(--foreground) 5%, var(--background));
+	--table-sticky: color-mix(in oklab, var(--background) 75%, transparent);
+}
+
+html.no-blur {
+	--table-head: color-mix(in oklab, var(--foreground) 5%, var(--background));
+	--table-sticky: var(--background);
+}
+
+[data-slot='sidebar-inner'].shell-glass {
+	box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+	--sidebar-accent: color-mix(in oklch, var(--sidebar-foreground) 9%, transparent);
+}
+
+.backdrop-grain {
+	opacity: 0.06;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 html.no-blur *,
@@ -264,10 +375,12 @@ html.reduce-effects *::after {
 	--radius-4xl: var(--radius-xl);
 
 	--color-background: var(--background);
-	--color-row-hover: color-mix(in oklab, var(--primary) 6%, var(--background));
-	--color-row-selected: color-mix(in oklab, var(--primary) 12%, var(--background));
-	--color-row-selected-hover: color-mix(in oklab, var(--primary) 15%, var(--background));
-	--color-row-expanded: color-mix(in oklab, var(--muted) 30%, var(--background));
+	--color-row-hover: color-mix(in oklab, var(--primary) 8%, transparent);
+	--color-row-selected: color-mix(in oklab, var(--primary) 14%, transparent);
+	--color-row-selected-hover: color-mix(in oklab, var(--primary) 18%, transparent);
+	--color-row-expanded: color-mix(in oklab, var(--foreground) 4%, transparent);
+	--color-table-head: var(--table-head);
+	--color-table-sticky: var(--table-sticky);
 	--color-foreground: var(--foreground);
 	--color-muted: var(--muted);
 	--color-muted-foreground: var(--muted-foreground);
@@ -322,6 +435,7 @@ html.reduce-effects *::after {
 	--text-3xs: 0.625rem;
 	--text-4xs: 0.5rem;
 	--text-xs-plus: 0.8125rem;
+	--text-sm-plus: 0.9375rem;
 	--text-form-control: 16px;
 	--spacing-touch-target: 44px;
 	--spacing-stat-ring: 38px;
@@ -358,6 +472,7 @@ html.reduce-effects *::after {
 	--grid-template-columns-split-6-5: minmax(0, 1.2fr) minmax(0, 1fr);
 
 	--height-screen-70: 70vh;
+	--height-screen-inset-1: calc(100dvh - 1rem);
 	--height-screen-inset-12: calc(100vh - 12rem);
 	--height-screen-inset-15: calc(100vh - 15rem);
 	--min-height-screen-60: 60vh;
@@ -402,11 +517,11 @@ html.reduce-effects *::after {
 }
 
 @theme static {
-	--font-sans: var(--font-sans-user, 'Montserrat Variable'), 'Montserrat Variable', var(--font-cjk), sans-serif;
-	--font-heading: var(--font-mono-user, 'Geist Mono Variable'), 'Geist Mono Variable', var(--font-cjk), monospace;
-	--font-mono: var(--font-mono-user, 'Geist Mono Variable'), 'Geist Mono Variable', var(--font-cjk), monospace;
+	--font-sans: var(--font-sans-user, 'Mona Sans'), 'Mona Sans', var(--font-cjk), sans-serif;
+	--font-heading: var(--font-mono-user, 'Ledger'), 'Ledger', var(--font-cjk), serif;
+	--font-mono: var(--font-mono-user, 'JetBrains Mono'), 'JetBrains Mono', var(--font-cjk), monospace;
 	--font-code:
-		var(--font-code-user, 'Mona Sans Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New',
+		var(--font-code-user, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New',
 		var(--font-cjk), monospace;
 }
 
@@ -584,6 +699,13 @@ html.reduce-effects *::after {
 
 	.bubble-shadow {
 		box-shadow: var(--shadow-glass-sm);
+	}
+
+	.shell-glass {
+		background-color: var(--shell-glass);
+		box-shadow: var(--shell-glass-shadow);
+		-webkit-backdrop-filter: var(--shell-glass-blur);
+		backdrop-filter: var(--shell-glass-blur);
 	}
 
 	.bubble-shadow-lg {

@@ -16,7 +16,7 @@
 	bind:this={ref}
 	data-slot="sidebar-header"
 	data-sidebar="header"
-	class={cn('flex flex-col gap-2 p-2', collapsed && 'gap-0 p-1 pb-2', className)}
+	class={cn('flex flex-col gap-2 px-3 pt-4', collapsed && 'px-2', className)}
 	{...restProps}
 >
 	{@render children?.()}

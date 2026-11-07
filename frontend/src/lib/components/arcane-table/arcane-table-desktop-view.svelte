@@ -110,6 +110,41 @@
 			.join('|') + `:${hasExpand}:${wrapText}`
 	);
 	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
+	let settledWidths = $state<{ key: string; widths: Record<string, number> }>({ key: '', widths: {} });
+	let layoutWidth = $state(0);
+	const settleKey = $derived(`${columnKey}:${layoutWidth}`);
+	const minWidths = $derived(settledWidths.key === settleKey && flatRows.length > 0 ? settledWidths.widths : {});
+
+	$effect(() => {
+		const container = scrollElement;
+		if (!container) return;
+		const observer = new ResizeObserver(() => {
+			layoutWidth = Math.round(container.clientWidth);
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	});
+
+	$effect(() => {
+		const tableNode = tableElement;
+		const key = settleKey;
+		if (!tableNode || columnWidths || flatRows.length === 0) return;
+		const frame = requestAnimationFrame(() => {
+			const previous = settledWidths.key === key ? settledWidths.widths : {};
+			const next = { ...previous };
+			let grew = false;
+			for (const cell of tableNode.querySelectorAll<HTMLTableCellElement>('thead th[data-column-id]')) {
+				const id = cell.dataset['columnId'] ?? '';
+				const width = Math.floor(cell.getBoundingClientRect().width);
+				if (width > (next[id] ?? 0)) {
+					next[id] = width;
+					grew = true;
+				}
+			}
+			if (grew || settledWidths.key !== key) settledWidths = { key, widths: next };
+		});
+		return () => cancelAnimationFrame(frame);
+	});
 	const lockedTableWidth = $derived(columnWidths?.reduce((total, width) => total + width, 0));
 	const ariaSort = { asc: 'ascending', desc: 'descending' } as const;
 	const cellPropsByColumn = $derived(
@@ -320,7 +355,7 @@
 {/snippet}
 
 {#snippet emptyState()}
-	<Table.Row>
+	<Table.Row variant="static">
 		<Table.Cell colspan={columnsCount} class="h-48">
 			{@render empty()}
 		</Table.Cell>
@@ -360,12 +395,20 @@
 						aria-sort={sorted ? ariaSort[sorted] : undefined}
 						pinned={header.column.id === 'actions'}
 						variant={header.column.id === 'select' ? 'checkbox' : 'default'}
-						style={colWidth ? `--col-width: ${colWidth}` : undefined}
+						data-column-id={meta?.width === 'max' || header.column.id === 'select' || header.column.id === 'actions'
+							? undefined
+							: header.column.id}
+						style={colWidth
+							? `--col-width: ${colWidth}`
+							: minWidths[header.column.id]
+								? `--col-min: ${minWidths[header.column.id]}px`
+								: undefined}
 						class={cn(
 							meta?.width === 'min' && 'w-0',
 							meta?.width === 'max' && 'w-full',
 							header.column.id === 'actions' && 'w-0',
-							colWidth && 'w-(--col-width)'
+							colWidth && 'w-(--col-width)',
+							!colWidth && minWidths[header.column.id] && 'min-w-(--col-min)'
 						)}
 					>
 						{#if !header.isPlaceholder}
@@ -454,13 +497,7 @@
 	{/if}
 {/snippet}
 
-<div
-	class={cn(
-		'h-full w-full',
-		unstyled &&
-			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
-	)}
->
+<div class={cn('h-full w-full', unstyled && '[&_td]:bg-transparent!')}>
 	<Table.Root
 		bind:ref={tableElement}
 		class={cn(columnWidths && 'table-fixed', lockedTableWidth && 'min-w-(--table-width)')}
