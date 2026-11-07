@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -10,7 +9,6 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system"
-	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/types/v3"
 )
 
@@ -18,7 +16,6 @@ type (
 	// Internal job: no job_metadata entry, invisible in the Jobs UI.
 	BackupRepositoryPruneJob struct {
 		systemService   *system.SystemService
-		volumeService   *volume.VolumeService
 		settingsService *settings.SettingsService
 	}
 )
@@ -27,10 +24,9 @@ const (
 	BackupRepositoryPruneJobName = "backup-repository-prune"
 )
 
-func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeService *volume.VolumeService, settingsService *settings.SettingsService) *BackupRepositoryPruneJob {
+func NewBackupRepositoryPruneJob(systemService *system.SystemService, settingsService *settings.SettingsService) *BackupRepositoryPruneJob {
 	return &BackupRepositoryPruneJob{
 		systemService:   systemService,
-		volumeService:   volumeService,
 		settingsService: settingsService,
 	}
 }
@@ -46,24 +42,13 @@ func (j *BackupRepositoryPruneJob) Schedule(ctx context.Context) string {
 }
 
 func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	var pruneErr error
-	if days := j.settingsService.GetIntSetting(ctx, "unmanagedBackupRetentionDays"); days > 0 {
-		if err := j.systemService.PruneUnmanagedBackups(ctx, types.UnmanagedBackupSweep{
-			Now:       time.Now(),
-			Retention: time.Duration(days) * 24 * time.Hour,
-		}); err != nil {
-			pruneErr = fmt.Errorf("prune unmanaged backups: %w", err)
-		}
-	}
-	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
-		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune system backup repository: %w", err))
-	}
-	if err := j.volumeService.PruneLocalBackupRepository(ctx); err != nil {
-		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune volume backup repository: %w", err))
-	}
-	if pruneErr != nil {
-		slog.ErrorContext(ctx, "Failed to prune local backup repositories", "jobName", BackupRepositoryPruneJobName, "error", pruneErr)
-		return types.SchedulerOutcome{}, pruneErr
+	days := j.settingsService.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
+	if err := j.systemService.PruneLocalBackupRepository(ctx, types.UnmanagedBackupSweep{
+		Now:       time.Now(),
+		Retention: time.Duration(days) * 24 * time.Hour,
+	}); err != nil {
+		slog.ErrorContext(ctx, "Failed to prune local backup repositories", "jobName", BackupRepositoryPruneJobName, "error", err)
+		return types.SchedulerOutcome{}, fmt.Errorf("prune backup repositories: %w", err)
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }

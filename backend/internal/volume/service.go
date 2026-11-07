@@ -209,13 +209,8 @@ func (s *VolumeService) ReconcileInterruptedBackups(ctx context.Context, protect
 }
 
 // PruneLocalBackupRepository frees the space of deleted local volume backups.
-func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
-	return s.backup.PruneLocalRepository(ctx)
-}
-
-// PruneUnmanagedBackups ages out safety backups and backups whose volume or schedule is gone.
-func (s *VolumeService) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	return s.backup.PruneUnmanagedBackups(ctx, sweep)
+func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	return s.backup.PruneLocalRepository(ctx, sweep)
 }
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.

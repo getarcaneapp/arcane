@@ -596,7 +596,7 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	return s.deleteArchiveBackup(ctx, entry, user)
 }
 
-// deleteArchiveBackup removes a legacy archive backup; the caller holds the volume's run lease.
+// deleteArchiveBackup expects the caller to hold the volume's run lease.
 func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBackup, user *types.Actor) error {
 	// Delete the row first: a failed file removal then only leaves an orphan file.
 	if deleteErr := s.deps.Store.Delete(ctx, entry.ID); deleteErr != nil {
@@ -618,9 +618,7 @@ func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBa
 	return nil
 }
 
-// PruneUnmanagedBackups deletes safety backups and backups whose volume or schedule is gone once they pass the
-// sweep's retention window. Backups discovered from other instances are never treated as orphaned.
-func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+func (s *Service) pruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
 	expired, err := s.expiredUnmanagedBackupIDs(ctx, sweep)
 	if err != nil || len(expired) == 0 {
 		return err
@@ -633,11 +631,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	for _, entry := range entries {
 		backupVolumes = append(backupVolumes, entry.VolumeName)
 	}
-	// Hold each volume's workspace lock (restores) and run lease (backups, uploads, deletes) for the whole batch so
-	// Rustic forgets every expired snapshot in a single prune per repository. Keep it that way: every prune reads all
-	// remaining snapshots' trees and the index, and repacks partly used packs, so one prune per volume multiplies S3
-	// requests and egress. The cost is that a backup of an affected volume starting mid-sweep is skipped and a restore
-	// waits until the sweep ends.
+	// Hold every volume's locks for the whole batch so Rustic prunes each repository once.
 	held := make(map[string]func())
 	defer func() {
 		for _, release := range held {
@@ -666,7 +660,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 			unlock()
 		}
 	}
-	// Recheck the locked batch: a restore that finished first may have brought the volume back.
+	// A restore that finished first may have brought a volume back.
 	if expired, err = s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
 		Now:                   sweep.Now,
 		SystemVolumePolicyIDs: sweep.SystemVolumePolicyIDs,
@@ -696,8 +690,6 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	return deleteErr
 }
 
-// expiredUnmanagedBackupIDs classifies volume backups against the live volumes and schedules and returns those past
-// the retention window.
 func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
 	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
 		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
@@ -727,8 +719,7 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
 }
 
-// orphanedVolumeBackupIDs returns backups whose volume no longer exists or whose schedule was deleted. Manual backups
-// started from a schedule outlive it, so only their volume decides.
+// Manual backups outlive their schedule, so only their volume decides.
 func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
 	var orphaned []string
 	for _, candidate := range candidates {
@@ -819,8 +810,16 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	return deleteErr
 }
 
-// PruneLocalRepository frees deleted local backups' data, creating no Rustic helper when there are none.
-func (s *Service) PruneLocalRepository(ctx context.Context) error {
+// PruneLocalRepository ages out unmanaged backups when the sweep sets a retention, then frees deleted local backups' data.
+func (s *Service) PruneLocalRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	var unmanagedErr error
+	if sweep.Retention > 0 {
+		unmanagedErr = s.pruneUnmanagedBackups(ctx, sweep)
+	}
+	return errors.Join(unmanagedErr, s.pruneDeletedLocalBackups(ctx))
+}
+
+func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 	localBackups, err := s.deps.Store.CountLocal(ctx)
 	if err != nil || localBackups == 0 {
 		return err

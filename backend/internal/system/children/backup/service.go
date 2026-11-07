@@ -892,7 +892,17 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBack
 	return deleteErr
 }
 
-func (s *Service) PruneLocalRepository(ctx context.Context) error {
+// PruneLocalRepository ages out unmanaged backups when the sweep sets a retention, then frees deleted local backups' data.
+func (s *Service) PruneLocalRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+	volumeErr := s.volumes.PruneLocalRepository(ctx, sweep)
+	var unmanagedErr error
+	if sweep.Retention > 0 {
+		unmanagedErr = s.pruneUnmanagedRuns(ctx, sweep)
+	}
+	return errors.Join(volumeErr, unmanagedErr, s.pruneDeletedLocalRuns(ctx))
+}
+
+func (s *Service) pruneDeletedLocalRuns(ctx context.Context) error {
 	localBackups, err := s.store.CountLocalRuns(ctx)
 	if err != nil || localBackups == 0 {
 		return err
@@ -1552,33 +1562,30 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 	return s.deleteRuns(ctx, expiredRuns, "", includeRemote)
 }
 
-// PruneUnmanagedBackups ages out volume backups no schedule manages, then system safety backups and runs of deleted
-// schedules. A busy system backup defers its own cleanup to the next sweep, and system runs are kept while no
-// recovery key is stored to forget their snapshots with.
-func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	volumeErr := s.volumes.PruneUnmanagedBackups(ctx, sweep)
+// pruneUnmanagedRuns keeps runs while no recovery key can forget their snapshots.
+func (s *Service) pruneUnmanagedRuns(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
 	if configured, err := s.recoveryKeys.Configured(ctx); err != nil || !configured {
-		return errors.Join(volumeErr, err)
+		return err
 	}
 	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, sweep)
 	if err != nil || len(expired) == 0 {
-		return errors.Join(volumeErr, err)
+		return err
 	}
 	lease, err := s.acquireRun(ctx)
 	if errors.Is(err, ErrSystemBackupAlreadyRunning) {
 		slog.InfoContext(ctx, "Skipping unmanaged system backup cleanup while a system backup runs")
-		return volumeErr
+		return nil
 	}
 	if err != nil {
-		return errors.Join(volumeErr, err)
+		return err
 	}
 	defer lease.Release(ctx)
 	expiredRuns, err := s.store.RunsByID(ctx, expired)
 	if err != nil {
-		return errors.Join(volumeErr, err)
+		return err
 	}
 	slog.InfoContext(ctx, "Pruning unmanaged system backups", "expired", len(expiredRuns))
-	return errors.Join(volumeErr, s.deleteRuns(ctx, expiredRuns, "", true))
+	return s.deleteRuns(ctx, expiredRuns, "", true)
 }
 
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {

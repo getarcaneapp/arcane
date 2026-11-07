@@ -100,7 +100,6 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
-	// Users without environment settings access get a snapshot without this value; show nothing rather than guess.
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));

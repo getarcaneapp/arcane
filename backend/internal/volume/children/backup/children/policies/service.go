@@ -95,7 +95,6 @@ func (s *Service) policies(ctx context.Context, volumeName string) ([]VolumeBack
 	return policies, nil
 }
 
-// IDs lists every per-volume backup policy, enabled or not.
 func (s *Service) IDs(ctx context.Context) ([]string, error) {
 	var ids []string
 	if err := s.deps.DB.WithContext(ctx).Model(&VolumeBackupPolicy{}).Pluck("id", &ids).Error; err != nil {

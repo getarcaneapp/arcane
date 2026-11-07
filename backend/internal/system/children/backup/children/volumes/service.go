@@ -84,8 +84,7 @@ const (
 	// systemVolumePlanTarget records a scheduled run's frozen selection.
 	systemVolumePlanTarget      = "system-volume-plan"
 	defaultSystemVolumeSchedule = "0 2 * * *"
-	// manualSeriesOwner owns the backup series of runs started without a saved policy.
-	manualSeriesOwner = "manual"
+	manualSeriesOwner           = "manual"
 )
 
 func NewService(deps Dependencies) *Service {
@@ -783,9 +782,8 @@ func (s *Service) Start(ctx context.Context, user types.Actor, request types.Run
 	return &types.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
-// RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
-// PruneUnmanagedBackups ages out volume backups, treating series of deleted system-managed policies as orphaned.
-func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+// PruneLocalRepository treats volume backup series of deleted system-managed policies as orphaned.
+func (s *Service) PruneLocalRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
 	collection, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		return err
@@ -794,13 +792,14 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context, sweep types.Unmanag
 	for _, policy := range collection.Policies {
 		owners = append(owners, policy.ID)
 	}
-	return s.volumes.PruneUnmanagedBackups(ctx, types.UnmanagedBackupSweep{
+	return s.volumes.PruneLocalBackupRepository(ctx, types.UnmanagedBackupSweep{
 		Now:                   sweep.Now,
 		SystemVolumePolicyIDs: owners,
 		Retention:             sweep.Retention,
 	})
 }
 
+// RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
 	policies, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
