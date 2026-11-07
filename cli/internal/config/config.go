@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/samber/hot"
 	"go.yaml.in/yaml/v4"
 
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/fs/atomic"
 
 	"getarcane.dev/cli/v3/internal/output"
@@ -41,10 +41,10 @@ var (
 
 	customConfigPath string
 
-	configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
-			WithCopyOnRead((*types.Config).Clone).
-			WithCopyOnWrite((*types.Config).Clone).
-			Build()
+	configCache = &cache.Cache[string, *types.Config]{
+		Clone:    (*types.Config).Clone,
+		Capacity: 4,
+	}
 )
 
 func DefaultConfig() *types.Config {
@@ -128,7 +128,10 @@ func Load() (*types.Config, error) {
 		normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig)
 	}
 
-	configCache.Set(path, normalized)
+	configCache.Set(cache.Entry[string, *types.Config]{
+		Key:   path,
+		Value: normalized,
+	})
 
 	return normalized, nil
 }

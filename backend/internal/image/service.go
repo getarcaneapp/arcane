@@ -20,11 +20,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	kitregistry "kit.getarcane.app/registry"
@@ -69,7 +69,7 @@ type (
 		settingsService *settings.SettingsService
 		patch           *patch.Service
 		patchWorkflow   *flow.Workflow
-		projectIDCache  *hot.HotCache[struct{}, map[string]string]
+		projectIDCache  *cache.Cache[struct{}, map[string]string]
 	}
 
 	imageRefUpdateLookup struct {
@@ -136,9 +136,10 @@ func NewImageService(p ImageServiceParams) *ImageService {
 			RegistryService:      p.RegistryService,
 			VulnerabilityService: p.VulnerabilityService,
 		}),
-		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
-			WithTTL(projectIDCacheTTL).
-			Build(),
+		projectIDCache: &cache.Cache[struct{}, map[string]string]{
+			Capacity: 1,
+			TTL:      projectIDCacheTTL,
+		},
 	}
 }
 
@@ -1187,20 +1188,20 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 	}
 
 	stale, _ := s.projectIDCache.Peek(struct{}{})
-	byName, _, err := s.projectIDCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]map[string]string, error) {
+	byName, _, err := s.projectIDCache.GetOrLoad(struct{}{}, func(struct{}) (map[string]string, bool, error) {
 		var projects []struct {
 			ID   string
 			Name string
 		}
 		if err := s.db.WithContext(ctx).Table("projects").Select("id", "name").Find(&projects).Error; err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		loaded := make(map[string]string, len(projects))
 		for _, project := range projects {
 			loaded[project.Name] = project.ID
 		}
-		return map[struct{}]map[string]string{{}: loaded}, nil
+		return loaded, true, nil
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "failed to load project ID map", "error", err)

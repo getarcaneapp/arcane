@@ -5,14 +5,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/samber/hot"
-
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 )
 
 type (
 	agentTokenCache struct {
-		byToken *hot.HotCache[string, string]
+		byToken *cache.Cache[string, string]
 		byEnvID map[string]string
 		mu      sync.RWMutex
 	}
@@ -70,7 +69,10 @@ func (c *agentTokenCache) sync(envID, token string) {
 	}
 	if resolvedToken := strings.TrimSpace(token); resolvedToken != "" {
 		c.byEnvID[envID] = resolvedToken
-		c.byToken.Set(resolvedToken, envID)
+		c.byToken.Set(cache.Entry[string, string]{
+			Key:   resolvedToken,
+			Value: envID,
+		})
 	}
 }
 

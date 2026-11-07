@@ -21,12 +21,12 @@ import (
 	"uuid"
 
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/normalization"
@@ -71,8 +71,8 @@ type (
 		settingsService  *settings.SettingsService
 		agentTokens      *agentTokenCache
 		remoteEnvs       *remoteEnvSnapshotCache
-		environmentCache *hot.HotCache[environmentCacheKey, Environment]
-		accessTokens     *hot.HotCache[string, string]
+		environmentCache *cache.Cache[environmentCacheKey, Environment]
+		accessTokens     *cache.Cache[string, string]
 		accessTokenIndex *accessTokenIndex
 		jobs             *entityjobs.Registry
 		config           *config.Config
@@ -244,17 +244,26 @@ func NewEnvironmentService(p EnvironmentServiceParams) *EnvironmentService {
 		eventService:    p.EventService,
 		settingsService: p.SettingsService,
 		agentTokens: &agentTokenCache{
-			byToken: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(agentTokenCacheTTL).WithJanitor().Build(),
+			byToken: &cache.Cache[string, string]{
+				Capacity:        1024,
+				TTL:             agentTokenCacheTTL,
+				JanitorInterval: agentTokenCacheTTL,
+			},
 			byEnvID: make(map[string]string),
 		},
 		remoteEnvs: &remoteEnvSnapshotCache{envs: make(map[string]Environment)},
 		// Caches records by ID, including misses, for hot paths that read only CRUD-managed fields.
-		environmentCache: hot.NewHotCache[environmentCacheKey, Environment](hot.LRU, 256).
-			WithTTL(environmentCacheTTL).
-			WithMissingSharedCache().
-			WithJanitor().
-			Build(),
-		accessTokens: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(environmentCacheTTL).WithJanitor().Build(),
+		environmentCache: &cache.Cache[environmentCacheKey, Environment]{
+			Capacity:        256,
+			TTL:             environmentCacheTTL,
+			JanitorInterval: environmentCacheTTL,
+			CacheMisses:     true,
+		},
+		accessTokens: &cache.Cache[string, string]{
+			Capacity:        1024,
+			TTL:             environmentCacheTTL,
+			JanitorInterval: environmentCacheTTL,
+		},
 		accessTokenIndex: &accessTokenIndex{
 			byEnvID:  make(map[string]string),
 			byHashed: make(map[string]int),
@@ -732,7 +741,10 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
 	}
 
-	s.accessTokens.Set(token, env.ID)
+	s.accessTokens.Set(cache.Entry[string, string]{
+		Key:   token,
+		Value: env.ID,
+	})
 	return &env, nil
 }
 
@@ -878,19 +890,15 @@ func (s *EnvironmentService) AggregateVersions(ctx context.Context) (types.ApiRe
 
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
 	key := environmentCacheKey{gen: s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Load(), id: id}
-	envRecord, found, err := s.environmentCache.GetWithLoaders(key, func(keys []environmentCacheKey) (map[environmentCacheKey]Environment, error) {
-		found := make(map[environmentCacheKey]Environment, len(keys))
-		for _, k := range keys {
-			loaded, loadErr := s.GetEnvironmentByID(ctx, k.id)
-			if errors.Is(loadErr, ErrEnvironmentNotFound) {
-				continue
-			}
-			if loadErr != nil {
-				return nil, loadErr
-			}
-			found[k] = *loaded
+	envRecord, found, err := s.environmentCache.GetOrLoad(key, func(k environmentCacheKey) (Environment, bool, error) {
+		loaded, loadErr := s.GetEnvironmentByID(ctx, k.id)
+		if errors.Is(loadErr, ErrEnvironmentNotFound) {
+			return Environment{}, false, nil
 		}
-		return found, nil
+		if loadErr != nil {
+			return Environment{}, false, loadErr
+		}
+		return *loaded, true, nil
 	})
 	if err != nil {
 		return nil, err

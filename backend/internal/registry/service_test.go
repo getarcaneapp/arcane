@@ -903,7 +903,7 @@ func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *tes
 			},
 		}, nil
 	})
-	t.Cleanup(svc.cache.StopJanitor)
+	t.Cleanup(svc.cache.Close)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

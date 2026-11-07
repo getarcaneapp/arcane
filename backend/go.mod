@@ -56,7 +56,6 @@ require (
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/samber/hot v0.13.1
 	github.com/samber/mo v1.17.0
 	github.com/samber/slog-echo/v2 v2.2.0
 	github.com/shirou/gopsutil/v4 v4.26.10
@@ -91,7 +90,7 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
-	kit.getarcane.app v0.6.0
+	kit.getarcane.app v0.7.0
 	kit.getarcane.app/acfs v0.7.0
 	kit.getarcane.app/builds v0.5.0
 	kit.getarcane.app/docker v0.3.0
@@ -248,6 +247,7 @@ require (
 	github.com/quic-go/webtransport-go v0.13.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
+	github.com/samber/hot v0.13.1 // indirect
 	github.com/samber/lo v1.53.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect

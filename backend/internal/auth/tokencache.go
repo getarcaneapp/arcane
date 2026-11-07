@@ -6,14 +6,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samber/hot"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/user"
 )
 
 type (
 	TokenCache struct {
-		entries *hot.HotCache[string, verifiedTokenEntry]
+		entries *cache.Cache[string, verifiedTokenEntry]
 		gen     atomic.Uint64
 		fillMu  sync.Mutex
 	}
@@ -28,10 +28,11 @@ type (
 
 func NewTokenCache() *TokenCache {
 	return &TokenCache{
-		entries: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
-			WithTTL(60 * time.Second).
-			WithJanitor().
-			Build(),
+		entries: &cache.Cache[string, verifiedTokenEntry]{
+			Capacity:        4096,
+			TTL:             60 * time.Second,
+			JanitorInterval: 60 * time.Second,
+		},
 	}
 }
 
@@ -52,7 +53,10 @@ func (c *TokenCache) store(gen uint64, tokenHash string, entry verifiedTokenEntr
 	c.fillMu.Lock()
 	defer c.fillMu.Unlock()
 	if c.gen.Load() == gen {
-		c.entries.Set(tokenHash, entry)
+		c.entries.Set(cache.Entry[string, verifiedTokenEntry]{
+			Key:   tokenHash,
+			Value: entry,
+		})
 	}
 }
 
@@ -74,9 +78,9 @@ func (c *TokenCache) invalidate(matches func(verifiedTokenEntry) bool) {
 		}
 		return true
 	})
-	c.entries.DeleteMany(keys)
+	c.entries.Delete(keys...)
 }
 
 func (c *TokenCache) Stop() {
-	c.entries.StopJanitor()
+	c.entries.Close()
 }

@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app/cache"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -355,14 +357,17 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	require.NoError(t, db.WithContext(t.Context()).Create(&localTemplates).Error)
 
 	service := NewTemplateService(t.Context(), db, http.DefaultClient, minimalSettingsServiceForTest(t))
-	service.remoteCache.Set(service.remoteGeneration.Load(), []ComposeTemplate{
-		{
-			ID: "remote-one", CreatedAt: now, UpdatedAt: &now,
-			Name:        "Remote One",
-			Description: "Remote template",
-			Content:     "services: {}",
-			IsRemote:    true,
-			RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
+	service.remoteCache.Set(cache.Entry[uint64, []ComposeTemplate]{
+		Key: service.remoteGeneration.Load(),
+		Value: []ComposeTemplate{
+			{
+				ID: "remote-one", CreatedAt: now, UpdatedAt: &now,
+				Name:        "Remote One",
+				Description: "Remote template",
+				Content:     "services: {}",
+				IsRemote:    true,
+				RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
+			},
 		},
 	})
 

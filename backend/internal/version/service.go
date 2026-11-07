@@ -14,11 +14,11 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/sys/cgroup"
@@ -57,14 +57,14 @@ type (
 
 	VersionService struct {
 		httpClient               *http.Client
-		cache                    *hot.HotCache[struct{}, latestRelease]
-		commitNotesCache         *hot.HotCache[string, string]
+		cache                    *cache.Cache[struct{}, latestRelease]
+		commitNotesCache         *cache.Cache[string, string]
 		containerRegistryService *registry.ContainerRegistryService
 		dockerService            *docker.DockerClientService
 		imageUpdateService       *imageupdate.ImageUpdateService
 		settingsService          *settings.SettingsService
 		streamHub                *agg.Hub[types.VersionStreamEvent]
-		currentImage             *hot.HotCache[struct{}, currentImageInfo]
+		currentImage             *cache.Cache[struct{}, currentImageInfo]
 		version                  string
 		revision                 string
 	}
@@ -92,8 +92,33 @@ func NewVersionService(p VersionServiceParams) *VersionService {
 	if p.HTTPClient == nil {
 		p.HTTPClient = http.DefaultClient
 	}
-	service := &VersionService{
-		httpClient:               p.HTTPClient,
+	var service *VersionService
+	service = &VersionService{
+		httpClient: p.HTTPClient,
+		cache: &cache.Cache[struct{}, latestRelease]{
+			Load: func(struct{}) (latestRelease, bool, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
+				defer cancel()
+				release, err := service.fetchLatestRelease(ctx)
+				if err != nil {
+					slog.WarnContext(ctx, "Failed to fetch latest Arcane release; skipping update checks until the cache expires", "error", err)
+					return latestRelease{}, true, nil
+				}
+				return release, true, nil
+			},
+			Revalidate: func(struct{}) (latestRelease, bool, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
+				defer cancel()
+				release, err := service.fetchLatestRelease(ctx)
+				if err != nil {
+					return latestRelease{}, false, err
+				}
+				return release, true, nil
+			},
+			Capacity:        1,
+			TTL:             versionTTL,
+			RevalidateAfter: 24 * time.Hour,
+		},
 		version:                  p.AppVersion,
 		revision:                 p.Revision,
 		containerRegistryService: p.ContainerRegistryService,
@@ -101,33 +126,14 @@ func NewVersionService(p VersionServiceParams) *VersionService {
 		imageUpdateService:       p.ImageUpdateService,
 		settingsService:          p.SettingsService,
 		streamHub:                &agg.Hub[types.VersionStreamEvent]{},
-		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
-		commitNotesCache: hot.NewHotCache[string, string](hot.LRU, 16).
-			WithTTL(commitNotesTTL).
-			Build(),
+		currentImage: &cache.Cache[struct{}, currentImageInfo]{
+			Capacity: 1,
+		},
+		commitNotesCache: &cache.Cache[string, string]{
+			Capacity: 16,
+			TTL:      commitNotesTTL,
+		},
 	}
-	loader := func(cacheFailure bool) func(_ []struct{}) (map[struct{}]latestRelease, error) {
-		return func(_ []struct{}) (map[struct{}]latestRelease, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
-			defer cancel()
-			release, err := service.fetchLatestRelease(ctx)
-			switch {
-			case err != nil && cacheFailure:
-				slog.WarnContext(ctx, "Failed to fetch latest Arcane release; skipping update checks until the cache expires", "error", err)
-				return map[struct{}]latestRelease{{}: {}}, nil
-			case err != nil:
-				return nil, err
-			default:
-				return map[struct{}]latestRelease{{}: release}, nil
-			}
-		}
-	}
-	service.cache = hot.NewHotCache[struct{}, latestRelease](hot.LRU, 1).
-		WithTTL(versionTTL).
-		WithLoaders(loader(true)).
-		WithRevalidation(24*time.Hour, loader(false)).
-		WithRevalidationErrorPolicy(hot.KeepOnError).
-		Build()
 	return service
 }
 
@@ -449,9 +455,16 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 			return
 		}
 		if detected.Digest != "" {
-			s.currentImage.Set(struct{}{}, detected)
+			s.currentImage.Set(cache.Entry[struct{}, currentImageInfo]{
+				Key:   struct{}{},
+				Value: detected,
+			})
 		} else {
-			s.currentImage.SetWithTTL(struct{}{}, detected, time.Minute)
+			s.currentImage.Set(cache.Entry[struct{}, currentImageInfo]{
+				Key:   struct{}{},
+				Value: detected,
+				TTL:   time.Minute,
+			})
 		}
 	}()
 

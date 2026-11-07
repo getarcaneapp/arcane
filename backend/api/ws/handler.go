@@ -11,12 +11,12 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
-	"github.com/samber/hot"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/sys/cgroup"
@@ -55,7 +55,7 @@ type (
 		cgroupCache        *cgroup.Cache
 		gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
 
-		diskUsagePathCache   *hot.HotCache[struct{}, string]
+		diskUsagePathCache   *cache.Cache[struct{}, string]
 		projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error
 		containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error
 		systemStatsCollector func(ctx context.Context) types.SystemStats
@@ -112,9 +112,10 @@ func NewWebSocketHandler(
 		logStreams:         make(map[string]*wsLogStream),
 		containersStatsHub: &agg.Hub[containersStatsResult]{},
 		cgroupCache:        cgroup.NewCache(cgroup.CacheConfig{TTL: cgroupCacheTTL}),
-		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
-			WithTTL(5 * time.Minute).
-			Build(),
+		diskUsagePathCache: &cache.Cache[struct{}, string]{
+			Capacity: 1,
+			TTL:      5 * time.Minute,
+		},
 		cpuUsageReader: readHostCPUUsage,
 		checkWSOrigin:  httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}

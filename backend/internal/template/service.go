@@ -21,7 +21,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -32,6 +31,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/mapping"
@@ -68,7 +68,7 @@ type (
 		lookupIP        httpx.LookupIPFunc
 		settingsService *settings.SettingsService
 
-		remoteCache       *hot.HotCache[uint64, []ComposeTemplate]
+		remoteCache       *cache.Cache[uint64, []ComposeTemplate]
 		registryFetchMeta map[string]*registryFetchMeta
 		registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
@@ -97,33 +97,29 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		httpClient = http.DefaultClient
 	}
 
-	service := &TemplateService{
-		db:                db,
-		httpClient:        httpClient,
-		settingsService:   settingsService,
+	revalidationCtx := context.WithoutCancel(ctx)
+	var service *TemplateService
+	service = &TemplateService{
+		db:              db,
+		httpClient:      httpClient,
+		settingsService: settingsService,
+		remoteCache: &cache.Cache[uint64, []ComposeTemplate]{
+			Load: func(generation uint64) ([]ComposeTemplate, bool, error) {
+				loadCtx, cancel := context.WithTimeout(revalidationCtx, 2*time.Minute)
+				defer cancel()
+				templates, err := service.loadRemoteTemplates(loadCtx, generation)
+				if err != nil {
+					return nil, false, err
+				}
+				return templates, true, nil
+			},
+			Capacity:        1,
+			TTL:             remoteCacheDuration,
+			RevalidateAfter: 24 * time.Hour,
+		},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 		registryErrors:    make(map[string]string),
 	}
-	revalidationCtx := context.WithoutCancel(ctx)
-	loader := func(generations []uint64) (map[uint64][]ComposeTemplate, error) {
-		loadCtx, cancel := context.WithTimeout(revalidationCtx, 2*time.Minute)
-		defer cancel()
-		catalogs := make(map[uint64][]ComposeTemplate, len(generations))
-		for _, generation := range generations {
-			templates, err := service.loadRemoteTemplates(loadCtx, generation)
-			if err != nil {
-				return nil, err
-			}
-			catalogs[generation] = templates
-		}
-		return catalogs, nil
-	}
-	service.remoteCache = hot.NewHotCache[uint64, []ComposeTemplate](hot.LRU, 1).
-		WithTTL(remoteCacheDuration).
-		WithLoaders(loader).
-		WithRevalidation(24*time.Hour, loader).
-		WithRevalidationErrorPolicy(hot.KeepOnError).
-		Build()
 
 	if err := projects.EnsureDefaultTemplates(ctx, service.settingsService.GetStringSetting(ctx, "templatesDirectory")); err != nil {
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
@@ -144,7 +140,10 @@ func (s *TemplateService) remoteTemplates(ctx context.Context, refresh bool) ([]
 			templates, err = s.loadRemoteTemplates(ctx, generation)
 			s.registryMu.Lock()
 			if generation == s.remoteGeneration.Load() && err == nil {
-				s.remoteCache.Set(generation, templates)
+				s.remoteCache.Set(cache.Entry[uint64, []ComposeTemplate]{
+					Key:   generation,
+					Value: templates,
+				})
 			}
 			s.registryMu.Unlock()
 		} else {

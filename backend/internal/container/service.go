@@ -24,11 +24,11 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -68,7 +68,7 @@ type (
 		projectService  *project.ProjectService
 		kvService       *kv.KVService
 		podmanService   *podman.Service
-		iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
+		iconMetaCache   *cache.Cache[string, projects.ArcaneComposeMetadata]
 		stats           *stats.Service
 		// opLock serializes mutating operations on the same container.
 		opLock concurrency.KeyedMutex
@@ -163,10 +163,11 @@ func NewContainerService(p ContainerServiceParams) *ContainerService {
 		projectService:  p.ProjectService,
 		kvService:       p.KVService,
 		podmanService:   p.PodmanService,
-		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
-			WithTTL(containerIconMetadataTTL).
-			WithJanitor().
-			Build(),
+		iconMetaCache: &cache.Cache[string, projects.ArcaneComposeMetadata]{
+			Capacity:        1024,
+			TTL:             containerIconMetadataTTL,
+			JanitorInterval: containerIconMetadataTTL,
+		},
 		stats: stats.New(stats.Params{
 			GetClient:  p.DockerService.GetClient,
 			DockerHost: p.DockerService.DockerHost,
@@ -2276,7 +2277,10 @@ func (s *ContainerService) resolveContainerIcon(ctx context.Context, localLabels
 			}
 			return s.projectService.ProjectMetadata(ctx, *proj, nil)
 		}()
-		s.iconMetaCache.Set(projectName, meta)
+		s.iconMetaCache.Set(cache.Entry[string, projects.ArcaneComposeMetadata]{
+			Key:   projectName,
+			Value: meta,
+		})
 	}
 	metadataByProject[projectName] = meta
 

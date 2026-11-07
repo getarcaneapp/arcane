@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/samber/hot"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -38,8 +38,8 @@ type (
 		userService       *user.UserService
 		roleService       *role.RoleService
 		argon2Params      *user.Argon2Params
-		validatedKeyCache *hot.HotCache[string, ApiKey]
-		rejectedKeyCache  *hot.HotCache[string, struct{}]
+		validatedKeyCache *cache.Cache[string, ApiKey]
+		rejectedKeyCache  *cache.Cache[string, struct{}]
 		lastUsedWrites    map[string]time.Time
 		cacheKeyPepper    []byte
 		cacheGen          atomic.Uint64
@@ -88,14 +88,16 @@ func NewApiKeyService(db *database.DB, userService *user.UserService, roleServic
 		userService:    userService,
 		roleService:    roleService,
 		argon2Params:   user.DefaultArgon2Params(),
-		validatedKeyCache: hot.NewHotCache[string, ApiKey](hot.LRU, 4096).
-			WithTTL(15 * time.Second).
-			WithJanitor().
-			Build(),
-		rejectedKeyCache: hot.NewHotCache[string, struct{}](hot.LRU, 4096).
-			WithTTL(30 * time.Second).
-			WithJanitor().
-			Build(),
+		validatedKeyCache: &cache.Cache[string, ApiKey]{
+			Capacity:        4096,
+			TTL:             15 * time.Second,
+			JanitorInterval: 15 * time.Second,
+		},
+		rejectedKeyCache: &cache.Cache[string, struct{}]{
+			Capacity:        4096,
+			TTL:             30 * time.Second,
+			JanitorInterval: 30 * time.Second,
+		},
 		lastUsedWrites: make(map[string]time.Time),
 	}
 }
@@ -278,7 +280,7 @@ func (s *ApiKeyService) invalidateValidatedKeys(ids ...string) {
 		}
 		return true
 	})
-	s.validatedKeyCache.DeleteMany(cacheKeys)
+	s.validatedKeyCache.Delete(cacheKeys...)
 	s.cacheFillMu.Unlock()
 
 	s.lastUsedMu.Lock()
@@ -918,8 +920,8 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 }
 
 func (s *ApiKeyService) Stop() {
-	s.validatedKeyCache.StopJanitor()
-	s.rejectedKeyCache.StopJanitor()
+	s.validatedKeyCache.Close()
+	s.rejectedKeyCache.Close()
 }
 
 func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*user.User, error) {
@@ -998,7 +1000,10 @@ func (s *ApiKeyService) ValidateRawApiKey(ctx context.Context, rawKey string) (*
 		}
 	}
 
-	s.rejectedKeyCache.Set(cacheKey, struct{}{})
+	s.rejectedKeyCache.Set(cache.Entry[string, struct{}]{
+		Key:   cacheKey,
+		Value: struct{}{},
+	})
 	return nil, ErrApiKeyInvalid
 }
 
@@ -1006,6 +1011,9 @@ func (s *ApiKeyService) storeValidatedKey(gen uint64, cacheKey string, apiKey Ap
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()
 	if s.cacheGen.Load() == gen {
-		s.validatedKeyCache.Set(cacheKey, apiKey)
+		s.validatedKeyCache.Set(cache.Entry[string, ApiKey]{
+			Key:   cacheKey,
+			Value: apiKey,
+		})
 	}
 }

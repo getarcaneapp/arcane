@@ -17,13 +17,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/samber/hot"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/logging"
@@ -37,7 +37,7 @@ type (
 		resolve       func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error)
 		lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
 		transport     http.RoundTripper
-		names         *hot.HotCache[string, []string]
+		names         *cache.Cache[string, []string]
 	}
 
 	target struct {
@@ -65,7 +65,10 @@ func NewService(
 		resolve:       resolve,
 		lookupContext: lookupContext,
 		transport:     roundTripper,
-		names:         hot.NewHotCache[string, []string](hot.LRU, 256).WithTTL(browseListCacheTTL).Build(),
+		names: &cache.Cache[string, []string]{
+			Capacity: 256,
+			TTL:      browseListCacheTTL,
+		},
 	}
 }
 
@@ -77,7 +80,10 @@ func (s *Service) cachedNames(key string, list func() ([]string, error)) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	s.names.Set(key, slices.Clone(names))
+	s.names.Set(cache.Entry[string, []string]{
+		Key:   key,
+		Value: slices.Clone(names),
+	})
 	return names, nil
 }
 

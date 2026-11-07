@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/samber/hot"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -42,7 +42,7 @@ type (
 		config             *config.Config
 		httpClient         *http.Client
 		insecureHttpClient *http.Client
-		providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
+		providerCache      *cache.Cache[oidcProviderKey, *oidc.Provider]
 		keySetManager      *arcaneoidc.KeySetManager
 	}
 
@@ -98,7 +98,10 @@ func NewOidcService(p OidcServiceParams) *OidcService {
 			Jar:           p.HTTPClient.Jar,
 		},
 		keySetManager: p.KeySetManager,
-		providerCache: hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).WithTTL(time.Hour).Build(),
+		providerCache: &cache.Cache[oidcProviderKey, *oidc.Provider]{
+			Capacity: 4,
+			TTL:      time.Hour,
+		},
 	}
 }
 
@@ -234,17 +237,13 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {
 	key := oidcProviderKey{issuer: cfg.IssuerURL, skipTLS: cfg.SkipTlsVerify}
-	provider, found, err := s.providerCache.GetWithLoaders(key, func(keys []oidcProviderKey) (map[oidcProviderKey]*oidc.Provider, error) {
-		providers := make(map[oidcProviderKey]*oidc.Provider, len(keys))
-		for _, providerKey := range keys {
-			discovered, discoverErr := s.discoverProvider(ctx, providerKey)
-			if discoverErr != nil {
-				slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", providerKey.issuer, "skipTls", providerKey.skipTLS, "error", discoverErr)
-				return nil, fmt.Errorf("failed to discover provider at %s: %w", providerKey.issuer, discoverErr)
-			}
-			providers[providerKey] = discovered
+	provider, found, err := s.providerCache.GetOrLoad(key, func(providerKey oidcProviderKey) (*oidc.Provider, bool, error) {
+		discovered, discoverErr := s.discoverProvider(ctx, providerKey)
+		if discoverErr != nil {
+			slog.ErrorContext(ctx, "getOrDiscoverProvider: discovery failed", "issuer", providerKey.issuer, "skipTls", providerKey.skipTLS, "error", discoverErr)
+			return nil, false, fmt.Errorf("failed to discover provider at %s: %w", providerKey.issuer, discoverErr)
 		}
-		return providers, nil
+		return discovered, true, nil
 	})
 	if err != nil {
 		return nil, err
