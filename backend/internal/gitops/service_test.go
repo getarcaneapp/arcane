@@ -1641,14 +1641,14 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 	assert.Equal(t, types.GitOpsBackupStateBackedUp, stored.BackupState())
 }
 
-func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) {
+func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenBothTriggersAreOff(t *testing.T) {
 	env := setupGitOpsBackupTestService(t)
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
 	head := env.remoteHead(t)
 
 	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, SyncUpdate{
-		Request:   types.GitOpsSync{AutoSync: false},
-		Submitted: map[string]bool{"autoSync": true},
+		Request:   types.GitOpsSync{AutoSync: false, BackupOnSave: false},
+		Submitted: map[string]bool{"autoSync": true, "backupOnSave": true},
 		Actor:     types.SystemUser,
 	})
 	require.NoError(t, err)

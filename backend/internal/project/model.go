@@ -133,7 +133,7 @@ func (s GitOpsSync) BackupState() string {
 		return types.GitOpsBackupStateNeedsAttention
 	case status == "failed":
 		return types.GitOpsBackupStateFailed
-	case !s.AutoSync:
+	case !s.AutoSync && !s.BackupOnSave:
 		return types.GitOpsBackupStatePaused
 	case s.BackupPending:
 		return types.GitOpsBackupStatePending

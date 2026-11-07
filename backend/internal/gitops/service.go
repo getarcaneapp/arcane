@@ -1195,12 +1195,29 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges() {
 				slog.ErrorContext(runCtx, "Failed to mark git backup pending", "syncId", syncRecord.ID, "error", err)
 				continue
 			}
-			if !syncRecord.AutoSync || !syncRecord.BackupOnSave {
+			if !syncRecord.BackupOnSave {
 				continue
 			}
 			syncID := syncRecord.ID
+			environmentID := syncRecord.EnvironmentID
 			s.backups.schedule(syncID, func() {
-				s.kickSync(runCtx, syncID, "save")
+				// Triggers may have changed during the debounce window.
+				current, err := s.getBackupSync(runCtx, environmentID, syncID)
+				if err != nil {
+					slog.ErrorContext(runCtx, "Failed to reload git backup for save", "syncId", syncID, "error", err)
+					return
+				}
+				if !current.BackupOnSave {
+					return
+				}
+				// Without Auto Sync there is no scheduled job to kick, so push directly.
+				if current.AutoSync {
+					s.kickSync(runCtx, syncID, "save")
+					return
+				}
+				if _, syncErr := s.PerformSync(runCtx, SyncRequest{EnvironmentID: environmentID, SyncID: syncID, Actor: types.SystemUser}); syncErr != nil {
+					slog.ErrorContext(runCtx, "Failed to back up project on save", "syncId", syncID, "error", syncErr)
+				}
 			})
 		}
 	})

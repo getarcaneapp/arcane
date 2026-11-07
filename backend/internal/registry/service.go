@@ -455,30 +455,14 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 }
 
 func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
-	named, err := reference.ParseNormalizedNamed(imageRef)
-	if err != nil {
-		return "", err
-	}
-	registryHost, repository := reference.Domain(named), reference.Path(named)
-	if kitregistry.Normalize(registryHost) == "" {
-		return "", nil
-	}
-
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	candidates := slices.DeleteFunc(registries, func(reg ContainerRegistry) bool {
-		_, namespace := arcaneregistry.SplitRegistryURL(reg.URL)
-		return kitregistry.Normalize(reg.URL) != kitregistry.Normalize(registryHost) ||
-			(namespace != "" && repository != namespace && !strings.HasPrefix(repository, namespace+"/"))
-	})
-	slices.SortStableFunc(candidates, func(a, b ContainerRegistry) int {
-		_, namespaceA := arcaneregistry.SplitRegistryURL(a.URL)
-		_, namespaceB := arcaneregistry.SplitRegistryURL(b.URL)
-		return cmp.Compare(len(namespaceB), len(namespaceA))
-	})
+	candidates, err := arcaneregistry.MatchingForImage(imageRef, registries, func(reg ContainerRegistry) string { return reg.URL })
+	if err != nil {
+		return "", err
+	}
 
 	for i := range candidates {
 		credential, credErr := s.credentialForRegistry(ctx, &candidates[i])
@@ -796,7 +780,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		if clientErr != nil {
 			return nil, clientErr
 		}
-		return withDigest(registryOperationWithCredentials(ctx, s, parts.RegistryHost, "distribution inspect of "+parts.NormalizedRef, externalCreds,
+		return withDigest(registryOperationWithCredentials(ctx, s, parts.RegistryHost, parts.NormalizedRef, "distribution inspect of "+parts.NormalizedRef, externalCreds,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (string, error) {
 				authHeader, encodeErr := func() (string, error) {
 					if credential == nil {
@@ -850,7 +834,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 				"error", daemonErr.Error())
 		}
 
-		fallbackResult, fallbackErr := withDigest(registryOperationWithCredentials(ctx, s, parts.RegistryHost,
+		fallbackResult, fallbackErr := withDigest(registryOperationWithCredentials(ctx, s, parts.RegistryHost, parts.NormalizedRef,
 			"registry manifest inspect of "+parts.RegistryHost+"/"+parts.Repository+":"+parts.Tag, externalCreds,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (string, error) {
 				return registry.FetchDigest(ctx, registry.Request{
@@ -933,7 +917,7 @@ func classifyDigestError(err error) error {
 func registryOperationWithCredentials[T any](
 	ctx context.Context,
 	s *ContainerRegistryService,
-	registryHost, operation string,
+	registryHost, imageRef, operation string,
 	externalCreds []types.ContainerRegistryCredential,
 	fetch func(context.Context, *resolvedRegistryCredential) (T, error),
 ) (T, *types.ContainerRegistryDigestResult, error) {
@@ -944,23 +928,30 @@ func registryOperationWithCredentials[T any](
 		return s.GetEnabledRegistries(ctx)
 	}()
 
-	var matchedCredentials []resolvedRegistryCredential
-	for _, cred := range externalCreds {
-		if cred.Enabled && strings.TrimSpace(cred.Username) != "" && strings.TrimSpace(cred.Token) != "" && kitregistry.Normalize(cred.URL) == kitregistry.Normalize(registryHost) {
-			matchedCredentials = append(matchedCredentials, resolvedRegistryCredential{
-				Username:      strings.TrimSpace(cred.Username),
-				Token:         strings.TrimSpace(cred.Token),
-				ServerAddress: normalizeRegistryServerAddress(cred.URL),
-			})
-		}
+	usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
+		return !cred.Enabled || strings.TrimSpace(cred.Username) == "" || strings.TrimSpace(cred.Token) == ""
+	})
+	matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
+	if err != nil {
+		return *new(T), nil, fmt.Errorf("%s failed: %w", operation, err)
 	}
-	for i := range registries {
-		if kitregistry.Normalize(registries[i].URL) != kitregistry.Normalize(registryHost) {
-			continue
-		}
-		credential, resolveErr := s.credentialForRegistry(ctx, &registries[i])
+	matchingRegistries, err := arcaneregistry.MatchingForImage(imageRef, registries, func(reg ContainerRegistry) string { return reg.URL })
+	if err != nil {
+		return *new(T), nil, fmt.Errorf("%s failed: %w", operation, err)
+	}
+
+	matchedCredentials := make([]resolvedRegistryCredential, 0, len(matchingCreds)+len(matchingRegistries))
+	for _, cred := range matchingCreds {
+		matchedCredentials = append(matchedCredentials, resolvedRegistryCredential{
+			Username:      strings.TrimSpace(cred.Username),
+			Token:         strings.TrimSpace(cred.Token),
+			ServerAddress: normalizeRegistryServerAddress(cred.URL),
+		})
+	}
+	for i := range matchingRegistries {
+		credential, resolveErr := s.credentialForRegistry(ctx, &matchingRegistries[i])
 		if resolveErr != nil {
-			slog.WarnContext(ctx, "failed to resolve registry credential", "registry", registries[i].URL, "error", resolveErr)
+			slog.WarnContext(ctx, "failed to resolve registry credential", "registry", matchingRegistries[i].URL, "error", resolveErr)
 		} else if credential != nil {
 			matchedCredentials = append(matchedCredentials, *credential)
 		}
@@ -1179,7 +1170,7 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 	lookupCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 	defer cancel()
 
-	tags, _, err := registryOperationWithCredentials(lookupCtx, s, parts.RegistryHost, "registry tag listing of "+parts.NormalizedRef, externalCreds,
+	tags, _, err := registryOperationWithCredentials(lookupCtx, s, parts.RegistryHost, parts.NormalizedRef, "registry tag listing of "+parts.NormalizedRef, externalCreds,
 		func(ctx context.Context, credential *resolvedRegistryCredential) ([]string, error) {
 			return registry.FetchTags(ctx, registry.Request{
 				Credential: func() *authn.AuthConfig {
@@ -1306,7 +1297,7 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 		if parseErr != nil {
 			return nil, false, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
-		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image config fetch for "+strings.TrimSpace(imageRef), opts.Credentials,
+		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), parsedRef.Name(), "image config fetch for "+strings.TrimSpace(imageRef), opts.Credentials,
 			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
 				return remote.Image(parsedRef,
 					remote.WithContext(ctx),
