@@ -237,7 +237,6 @@
   "common_select_all": "Select all",
   "common_select_row": "Select row",
   "common_showing_of_total": "Viser {shown} af {total}",
-  "table_pagination_bottom": "Paginering nederst på siden",
   "table_expand_row": "Udvid række",
   "table_collapse_row": "Skjul række",
   "table_group_items": "{count} vare(r)",
@@ -4490,5 +4489,14 @@
   "dusk": "Skumring",
   "ribbon": "Bånd",
   "silver": "Sølv",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Undgå, at backup-lagerpladsen vokser ubegrænset, ved at slette de backups, som ingen tidsplan længere administrerer.",
+  "unmanaged_backup_retention_days": "Opbevaringsperiode for ikke-administrerede sikkerhedskopier (dage)",
+  "unmanaged_backup_retention_days_description": "Slet sikkerhedskopier af fjernede diskenheder eller slettede planer så mange dage efter, at de ikke længere administreres, og sikkerhedskopier, der er taget før gendannelser, når de er så gamle.",
+  "unmanaged_backup_retention_days_help": "Oprydningen kører to gange om dagen og sletter også S3-kopierne. Indstil værdien til 0 for at gemme disse sikkerhedskopier på ubestemt tid.",
+  "unmanaged_backup_retention_summary": "Sikkerhedskopier af fjernede diskenheder eller slettede tidsplaner samt sikkerhedskopier slettes efter {days} dage på denne server.",
+  "unmanaged_backup_retention_disabled_summary": "Sikkerhedskopier af fjernede volumener eller slettede tidsplaner samt sikkerhedskopier opbevares på ubestemt tid på denne server.",
+  "table_pagination": "Paginering af tabeller",
+  "table_range_of_total": "{start}–{end} af {total}",
+  "table_range": "{start}–{end}"
 }
