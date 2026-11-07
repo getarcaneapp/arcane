@@ -237,7 +237,6 @@
   "common_select_all": "Selecionar tudo",
   "common_select_row": "Selecionar linha",
   "common_showing_of_total": "A exibir {shown} de {total}",
-  "table_pagination_bottom": "Paginação na parte inferior da tabela",
   "table_expand_row": "Expandir linha",
   "table_collapse_row": "Ocultar linha",
   "table_group_items": "{count} artigo(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "Crepúsculo",
   "ribbon": "Fita",
   "silver": "Prata",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Evite que o espaço de armazenamento de cópias de segurança aumente sem limites, eliminando as cópias de segurança que já não são geridas por nenhuma programação.",
+  "unmanaged_backup_retention_days": "Retenção de cópias de segurança não gerida (dias)",
+  "unmanaged_backup_retention_days_description": "Eliminar as cópias de segurança de volumes removidos ou de agendamentos eliminados passados este número de dias após deixarem de ser geridos, bem como as cópias de segurança de segurança efetuadas antes das restaurações, assim que atingirem esta antiguidade.",
+  "unmanaged_backup_retention_days_help": "A limpeza é executada duas vezes por dia e também remove as cópias do S3. Defina o valor 0 para manter estes cópias de segurança indefinidamente.",
+  "unmanaged_backup_retention_summary": "As cópias de segurança de volumes removidos ou de agendamentos eliminados, bem como as cópias de segurança de segurança, são eliminadas após {days} dias neste servidor.",
+  "unmanaged_backup_retention_disabled_summary": "As cópias de segurança de volumes removidos ou de agendamentos eliminados, bem como as cópias de segurança de precaução, são mantidas indefinidamente neste servidor.",
+  "table_pagination": "Paginação da tabela",
+  "table_range_of_total": "{start}–{end} de {total}",
+  "table_range": "{start}–{end}"
 }
