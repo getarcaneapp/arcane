@@ -237,7 +237,6 @@
   "common_select_all": "Selecionar tudo",
   "common_select_row": "Selecionar fileira",
   "common_showing_of_total": "Exibindo {shown} de {total}",
-  "table_pagination_bottom": "Paginação na parte inferior da tabela",
   "table_expand_row": "Expandir linha",
   "table_collapse_row": "Minimizar linha",
   "table_group_items": "{count} item(s)",
@@ -4490,5 +4489,14 @@
   "dusk": "Crepúsculo",
   "ribbon": "Fita",
   "silver": "Prata",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Evite que o espaço de armazenamento de backups cresça sem limites, removendo os backups que não são mais gerenciados por nenhuma programação.",
+  "unmanaged_backup_retention_days": "Retenção de backup não gerenciada (dias)",
+  "unmanaged_backup_retention_days_description": "Excluir backups de volumes removidos ou programações excluídas após esse número de dias a partir do momento em que deixarem de ser gerenciados, e backups de segurança criados antes das restaurações, assim que atingirem essa idade.",
+  "unmanaged_backup_retention_days_help": "A limpeza é executada duas vezes por dia e também remove as cópias do S3. Defina o valor 0 para manter esses backups indefinidamente.",
+  "unmanaged_backup_retention_summary": "Os backups de volumes removidos ou programações excluídas, bem como os backups de segurança, são excluídos após {days} dias neste servidor.",
+  "unmanaged_backup_retention_disabled_summary": "Os backups de volumes removidos ou programações excluídas, bem como os backups de segurança, são mantidos indefinidamente neste servidor.",
+  "table_pagination": "Paginação da tabela",
+  "table_range_of_total": "{start}–{end} de {total}",
+  "table_range": "{start}–{end}"
 }
