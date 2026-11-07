@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Navigateur",
   "volumes_nav_backups": "Sauvegardes",
   "volumes_workspace_files": "Espace de travail « Volume »",
-  "volumes_workspace_files_empty": "Ce volume ne contient aucun fichier d'espace de travail",
   "volumes_workspace_upload_description": "Importez un ou plusieurs fichiers dans l'espace de travail du volume.",
   "volumes_workspace_root_destination": "Racine du volume",
   "volumes_workspace_root_path": "Créer à la racine du volume.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "ID de l'image",
   "common_entrypoint": "Point d'entrée",
   "workspace": "Espace de travail",
-  "workspace_files": "Fichiers de l'espace de travail",
-  "workspace_files_empty": "Aucun fichier d'espace de travail",
   "workspace_new_file": "Nouveau fichier",
   "workspace_create_file_title": "Créer un fichier",
   "workspace_create_folder_title": "Créer un dossier",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Basculer entre la mise en page classique côte à côte et l'arborescence",
   "project_editor_layout": "Disposition par défaut de l'éditeur de projet",
   "project_editor_layout_description": "Présentation affichée lorsque vous ouvrez la configuration d'un projet.",
-  "project_editor_layout_auto_description": "Affichage de l'espace de travail pour les projets comportant des fichiers supplémentaires ; sinon, affichage classique.",
   "project_editor_layout_classic_description": "Compose et les éditeurs d'environnement côte à côte.",
   "project_editor_layout_tree_description": "Arborescence des fichiers de l'espace de travail avec des éditeurs à onglets.",
   "automatic": "Automatique",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Texte et polices",
   "layout_and_navigation": "Mise en page et navigation",
   "language_and_region": "Langue et région",
-  "editor": "Rédacteur en chef"
+  "editor": "Rédacteur en chef",
+  "files": "Fichiers"
 }
