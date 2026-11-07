@@ -4489,5 +4489,12 @@
   "files": "檔案",
   "log_raw_output": "原始輸出",
   "log_raw_output_tooltip": "顯示原始的行文字，而非經過解析的結構化日誌。",
-  "log_stderr_line": "標準誤差輸出"
+  "log_stderr_line": "標準誤差輸出",
+  "also_remove_deployed_swarm_stack": "同時也請移除已部署的 Swarm 堆疊",
+  "bring_down_stack": "摧毀堆疊",
+  "bring_down_stack_confirm_message": "要移除此堆疊中的服務、網路、設定檔和密鑰嗎？其儲存的 Compose 檔案將予以保留，以便日後再次部署。",
+  "stack_brought_down": "「{name}」堆疊已關閉",
+  "failed_to_bring_down_stack": "無法攤平堆疊「{name}」",
+  "stack_brought_up": "堆疊「{name}」已建立",
+  "failed_to_bring_up_stack": "無法載入堆疊「{name}」"
 }
