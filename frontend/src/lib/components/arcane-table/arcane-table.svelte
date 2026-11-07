@@ -754,7 +754,16 @@
 </script>
 
 {#snippet PaginationSnippet()}
-	<ArcaneTablePagination {items} {currentPage} {totalPages} {totalItems} {pageSize} {canPrev} {canNext} {setPage} {setPageSize} />
+	<ArcaneTablePagination
+		shown={items.data.length}
+		{currentPage}
+		{totalPages}
+		{totalItems}
+		{pageSize}
+		{canPrev}
+		{canNext}
+		{setPage}
+	/>
 {/snippet}
 
 {#snippet EmptySnippet()}
@@ -810,6 +819,9 @@
 					onViewModeChange={isMobile.current ? undefined : setViewMode}
 					{isFiltered}
 					onResetFilters={resetFilters}
+					pagination={withoutPagination || emptyFirstPage ? undefined : PaginationSnippet}
+					pageSize={withoutPagination ? undefined : pageSize}
+					onPageSizeChange={withoutPagination ? undefined : setPageSize}
 				/>
 			</div>
 		{/if}
@@ -948,10 +960,10 @@
 			</div>
 		{/if}
 
-		{#if !withoutPagination && !emptyFirstPage}
-			<nav aria-label={m.table_pagination_bottom()} class="shrink-0 border-t border-border/50 px-4 py-3">
+		{#if withoutSearch && !withoutPagination && !emptyFirstPage}
+			<div class="flex shrink-0 justify-end px-4 py-3">
 				{@render PaginationSnippet()}
-			</nav>
+			</div>
 		{/if}
 	</div>
 {/if}

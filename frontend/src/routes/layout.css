@@ -190,7 +190,8 @@
 		0 10px 24px -14px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent),
 		0 24px 48px -24px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
 
-	--shell-background: color-mix(in oklch, var(--background) 88%, var(--foreground));
+	--shell-background: var(--background);
+	--shell-glass: var(--background);
 	--shell-glass-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 1px oklch(1 0 0 / 0.08), 0 2px 16px -4px oklch(0 0 0 / 0.5);
 }
 
@@ -225,7 +226,7 @@ html.no-blur[data-backdrop] {
 
 /* Sticky table chrome is frosted so rows scrolling beneath it stay legible. */
 :root {
-	--table-head: color-mix(in oklab, color-mix(in oklab, var(--foreground) 5%, var(--background)) 75%, transparent);
+	--table-head: color-mix(in oklab, var(--foreground) 3%, var(--background));
 	--table-sticky: color-mix(in oklab, var(--background) 75%, transparent);
 }
 
@@ -236,40 +237,6 @@ html.no-blur {
 
 [data-slot='sidebar-inner'].shell-glass {
 	--sidebar-accent: color-mix(in oklch, var(--sidebar-foreground) 9%, transparent);
-}
-
-[data-overflow-right] tbody [data-slot='table-cell'][data-pinned] {
-	background-color: var(--table-sticky);
-	background-image: linear-gradient(var(--pinned-tint, transparent), var(--pinned-tint, transparent));
-	box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--color-border) 40%, transparent);
-	-webkit-backdrop-filter: blur(12px);
-	backdrop-filter: blur(12px);
-}
-
-[data-overflow-right] tbody [data-slot='table-cell'][data-pinned]::before {
-	content: '';
-	position: absolute;
-	inset-block: 0;
-	right: 100%;
-	width: 1.5rem;
-	pointer-events: none;
-	background: linear-gradient(to right, transparent, var(--table-sticky));
-}
-
-tbody tr:hover > [data-pinned] {
-	--pinned-tint: var(--color-row-hover);
-}
-
-tbody tr[data-expanded] > [data-pinned] {
-	--pinned-tint: var(--color-row-expanded);
-}
-
-tbody tr[data-state='selected'] > [data-pinned] {
-	--pinned-tint: var(--color-row-selected);
-}
-
-tbody tr[data-state='selected']:hover > [data-pinned] {
-	--pinned-tint: var(--color-row-selected-hover);
 }
 
 [data-slot='shell-main'] [data-slot='card'] {
