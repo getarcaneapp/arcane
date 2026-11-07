@@ -4489,5 +4489,12 @@
   "files": "Filer",
   "log_raw_output": "Obehandlad utdata",
   "log_raw_output_tooltip": "Visar den ursprungliga texten i raderna istället för de analyserade, strukturerade loggarna.",
-  "log_stderr_line": "Utmatning av standardfel"
+  "log_stderr_line": "Utmatning av standardfel",
+  "also_remove_deployed_swarm_stack": "Ta även bort den distribuerade swarm-stacken",
+  "bring_down_stack": "Ta ner stapeln",
+  "bring_down_stack_confirm_message": "Ska tjänsterna, nätverken, konfigurationerna och hemligheterna i denna stack tas bort? De sparade Compose-filerna behålls så att stacken kan distribueras på nytt.",
+  "stack_brought_down": "Stacken ”{name}” har tagits ner",
+  "failed_to_bring_down_stack": "Det gick inte att hämta stacken ”{name}”",
+  "stack_brought_up": "Stacken ”{name}” togs upp",
+  "failed_to_bring_up_stack": "Det gick inte att starta stacken ”{name}”"
 }
