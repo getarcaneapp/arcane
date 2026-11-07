@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Trình duyệt",
   "volumes_nav_backups": "Sao lưu",
   "volumes_workspace_files": "Không gian làm việc theo khối lượng",
-  "volumes_workspace_files_empty": "Không có tệp không gian làm việc nào trong ổ đĩa này",
   "volumes_workspace_upload_description": "Tải lên một hoặc nhiều tệp vào không gian làm việc của khối lượng.",
   "volumes_workspace_root_destination": "Căn bậc hai của thể tích",
   "volumes_workspace_root_path": "Tạo tại thư mục gốc của phân vùng.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Lệnh khởi chạy",
   "workspace": "Không gian làm việc",
-  "workspace_files": "Tệp trong không gian làm việc",
-  "workspace_files_empty": "Không có tệp trong không gian làm việc",
   "workspace_new_file": "Tệp mới",
   "workspace_create_file_title": "Tạo tệp",
   "workspace_create_folder_title": "Tạo thư mục",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Chuyển đổi giữa bố cục song song cổ điển và chế độ xem dạng cây",
   "project_editor_layout": "Bố cục mặc định của trình soạn thảo dự án",
   "project_editor_layout_description": "Giao diện hiển thị khi bạn mở phần cấu hình của dự án.",
-  "project_editor_layout_auto_description": "Chế độ xem không gian làm việc dành cho các dự án có tệp bổ sung; nếu không thì vẫn là chế độ xem cổ điển.",
   "project_editor_layout_classic_description": "Trình soạn thảo Compose và trình soạn thảo môi trường được hiển thị song song.",
   "project_editor_layout_tree_description": "Cây thư mục trong không gian làm việc với các trình soạn thảo dạng tab.",
   "automatic": "Tự động",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Văn bản & Phông chữ",
   "layout_and_navigation": "Bố cục & Điều hướng",
   "language_and_region": "Ngôn ngữ và khu vực",
-  "editor": "Biên tập viên"
+  "editor": "Biên tập viên",
+  "files": "Tệp tin"
 }
