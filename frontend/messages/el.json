@@ -4489,5 +4489,12 @@
   "files": "Αρχεία",
   "log_raw_output": "Ακατέργαστα δεδομένα εξόδου",
   "log_raw_output_tooltip": "Εμφανίζει το αρχικό κείμενο της γραμμής αντί για τα αναλυμένα δομημένα αρχεία καταγραφής.",
-  "log_stderr_line": "Εμφάνιση τυπικού σφάλματος"
+  "log_stderr_line": "Εμφάνιση τυπικού σφάλματος",
+  "also_remove_deployed_swarm_stack": "Αφαιρέστε επίσης το αναπτυγμένο swarm stack",
+  "bring_down_stack": "Μείωση στοίβας",
+  "bring_down_stack_confirm_message": "Να διαγραφούν οι υπηρεσίες, τα δίκτυα, οι ρυθμίσεις και τα μυστικά αυτής της στοίβας; Τα αποθηκευμένα αρχεία compose διατηρούνται, ώστε να είναι δυνατή η εκ νέου ανάπτυξή της.",
+  "stack_brought_down": "Το Stack «{name}» έκλεισε",
+  "failed_to_bring_down_stack": "Δεν κατέστη δυνατή η αποθήκευση της στοίβας «{name}»",
+  "stack_brought_up": "Εμφανίστηκε το stack «{name}»",
+  "failed_to_bring_up_stack": "Αποτυχία εκκίνησης της στοίβας «{name}»"
 }
