@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -304,8 +303,11 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 	}
 
 	result := make([]types.EnvVariable, 0, len(effective))
-	for _, key := range slices.Sorted(maps.Keys(effective)) {
-		result = append(result, effective[key])
+	for _, variable := range variables {
+		if entry, ok := effective[variable.Key]; ok {
+			result = append(result, entry)
+			delete(effective, variable.Key)
+		}
 	}
 	return result, nil
 }
@@ -678,7 +680,7 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 
 func (s *VariableService) loadVariables(ctx context.Context) ([]GlobalVariable, error) {
 	var variables []GlobalVariable
-	if err := s.db.WithContext(ctx).Preload("Environments").Order("key").Find(&variables).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Environments").Order("created_at, key").Find(&variables).Error; err != nil {
 		return nil, fmt.Errorf("failed to load global variables: %w", err)
 	}
 	return variables, nil
