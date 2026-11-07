@@ -4489,5 +4489,12 @@
   "files": "Filer",
   "log_raw_output": "Rådata",
   "log_raw_output_tooltip": "Viser den oprindelige tekst i linjerne i stedet for de analyserede, strukturerede logfiler.",
-  "log_stderr_line": "Visning af standardfejl"
+  "log_stderr_line": "Visning af standardfejl",
+  "also_remove_deployed_swarm_stack": "Fjern også den implementerede swarm-stack",
+  "bring_down_stack": "Fjern stakken",
+  "bring_down_stack_confirm_message": "Skal denne staks tjenester, netværk, konfigurationer og hemmeligheder fjernes? De gemte Compose-filer bevares, så stakken kan implementeres igen.",
+  "stack_brought_down": "Stakken »{name}« blev nedlagt",
+  "failed_to_bring_down_stack": "Det lykkedes ikke at hente stakken »{name}«",
+  "stack_brought_up": "Stakken »{name}« blev hentet frem",
+  "failed_to_bring_up_stack": "Det lykkedes ikke at hente stakken »{name}«"
 }
