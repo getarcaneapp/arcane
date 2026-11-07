@@ -111,13 +111,24 @@
 	);
 	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
 	let settledWidths = $state<{ key: string; widths: Record<string, number> }>({ key: '', widths: {} });
-	const minWidths = $derived(settledWidths.key === columnKey ? settledWidths.widths : {});
+	let layoutWidth = $state(0);
+	const settleKey = $derived(`${columnKey}:${layoutWidth}`);
+	const minWidths = $derived(settledWidths.key === settleKey && flatRows.length > 0 ? settledWidths.widths : {});
+
+	$effect(() => {
+		const container = scrollElement;
+		if (!container) return;
+		const observer = new ResizeObserver(() => {
+			layoutWidth = Math.round(container.clientWidth);
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	});
 
 	$effect(() => {
 		const tableNode = tableElement;
-		const key = columnKey;
-		void flatRows;
-		if (!tableNode || columnWidths) return;
+		const key = settleKey;
+		if (!tableNode || columnWidths || flatRows.length === 0) return;
 		const frame = requestAnimationFrame(() => {
 			const previous = settledWidths.key === key ? settledWidths.widths : {};
 			const next = { ...previous };
