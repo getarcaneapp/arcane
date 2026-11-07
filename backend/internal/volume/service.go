@@ -217,13 +217,12 @@ func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention type
 	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
 		return nil
 	}
-	keep := backup.RunRetention{Succeeded: retention.Keep + 1, Failed: retention.Keep}
 	return s.backup.DeleteExpiredBackups(ctx, volumebackup.ExpiredBackupDeletion{
 		IncludeRemote: retention.IncludeRemote,
 		Expired: func(ctx context.Context, within []string) ([]string, error) {
 			var expired []string
 			for _, seriesID := range retention.SeriesIDs {
-				ids, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", seriesID, keep)
+				ids, err := backup.ExpiredRunIDs(ctx, s.db, "volume_backups", seriesID, retention.Keep)
 				if err != nil {
 					return nil, err
 				}

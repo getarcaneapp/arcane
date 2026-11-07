@@ -44,11 +44,6 @@ import (
 )
 
 type (
-	RunRetention struct {
-		Succeeded int
-		Failed    int
-	}
-
 	Repository struct {
 		ID          string
 		Environment []string
@@ -943,22 +938,19 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	return fmt.Errorf("%w: %s", ErrRemoteRepositoryMissing, result.Reason)
 }
 
-func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep RunRetention) ([]string, error) {
+func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
 	var expired []string
-	for _, rank := range []struct {
-		status string
-		kept   int
-	}{{status: "succeeded", kept: keep.Succeeded}, {status: "failed", kept: keep.Failed}} {
+	for _, status := range []string{"succeeded", "failed"} {
 		var ids []string
 		if err := db.WithContext(ctx).
 			Table(table).
 			Where(
 				"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
 				policyID,
-				rank.status,
+				status,
 			).
 			Order("created_at DESC").
-			Offset(rank.kept).
+			Offset(keep).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
