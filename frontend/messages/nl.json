@@ -237,7 +237,6 @@
   "common_select_all": "Alles selecteren",
   "common_select_row": "Rij selecteren",
   "common_showing_of_total": "Weergave van {shown} van {total}",
-  "table_pagination_bottom": "Paginering onderaan de tabel",
   "table_expand_row": "Rij uitvouwen",
   "table_collapse_row": "Rij samenvouwen",
   "table_group_items": "{count} artikel(en)",
@@ -4490,5 +4489,14 @@
   "dusk": "Schemering",
   "ribbon": "Lint",
   "silver": "Zilver",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Voorkom dat de opslagruimte voor back-ups onbeperkt blijft groeien door back-ups te verwijderen die niet meer door een schema worden beheerd.",
+  "unmanaged_backup_retention_days": "Niet-beheerde bewaartermijn voor back-ups (dagen)",
+  "unmanaged_backup_retention_days_description": "Verwijder back-ups van verwijderde volumes of verwijderde schema’s zoveel dagen nadat ze niet meer worden beheerd, en veiligheidsback-ups die vóór herstelbewerkingen zijn gemaakt zodra ze zo oud zijn.",
+  "unmanaged_backup_retention_days_help": "De opschoonactie wordt twee keer per dag uitgevoerd en verwijdert ook de S3-kopieën. Stel de waarde in op 0 om deze back-ups voor onbepaalde tijd te bewaren.",
+  "unmanaged_backup_retention_summary": "Back-ups van verwijderde volumes of gewiste planningen, evenals veiligheidsback-ups, worden na {days} dagen op deze server verwijderd.",
+  "unmanaged_backup_retention_disabled_summary": "Back-ups van verwijderde volumes of gewiste planningen, evenals veiligheidsback-ups, worden voor onbepaalde tijd op deze server bewaard.",
+  "table_pagination": "Paginering van tabellen",
+  "table_range_of_total": "{start}–{end} van {total}",
+  "table_range": "{start}–{end}"
 }
