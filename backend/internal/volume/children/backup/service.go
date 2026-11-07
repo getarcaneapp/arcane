@@ -618,7 +618,24 @@ func (s *Service) deleteArchiveBackup(ctx context.Context, entry *types.VolumeBa
 	return nil
 }
 
-func (s *Service) pruneUnmanagedBackups(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
+	days := s.deps.Settings.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
+	if days <= 0 {
+		return nil
+	}
+	systemPolicies, err := s.deps.Settings.SystemVolumeBackupPolicies()
+	if err != nil {
+		return err
+	}
+	owners := []string{types.SystemVolumeManualSeriesOwner}
+	for _, policy := range systemPolicies.Policies {
+		owners = append(owners, policy.ID)
+	}
+	sweep := types.UnmanagedBackupSweep{
+		Now:                   time.Now(),
+		SystemVolumePolicyIDs: owners,
+		Retention:             time.Duration(days) * 24 * time.Hour,
+	}
 	expired, err := s.expiredUnmanagedBackupIDs(ctx, sweep)
 	if err != nil || len(expired) == 0 {
 		return err
@@ -810,13 +827,9 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	return deleteErr
 }
 
-// PruneLocalRepository ages out unmanaged backups when the sweep sets a retention, then frees deleted local backups' data.
-func (s *Service) PruneLocalRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	var unmanagedErr error
-	if sweep.Retention > 0 {
-		unmanagedErr = s.pruneUnmanagedBackups(ctx, sweep)
-	}
-	return errors.Join(unmanagedErr, s.pruneDeletedLocalBackups(ctx))
+// PruneLocalRepository ages out unmanaged backups, then frees deleted local backups' data.
+func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	return errors.Join(s.pruneUnmanagedBackups(ctx), s.pruneDeletedLocalBackups(ctx))
 }
 
 func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {

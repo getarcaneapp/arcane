@@ -193,8 +193,8 @@ func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protect
 	return s.backup.WatchAcceptedBackups(ctx)
 }
 
-func (s *SystemService) PruneLocalBackupRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	return s.backup.PruneLocalRepository(ctx, sweep)
+func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
 }
 
 func (s *SystemService) RegisterBackupJobOnStartup(ctx context.Context) {

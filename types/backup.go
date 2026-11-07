@@ -260,6 +260,7 @@ const (
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
+	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"

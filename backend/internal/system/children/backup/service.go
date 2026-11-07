@@ -892,14 +892,8 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBack
 	return deleteErr
 }
 
-// PruneLocalRepository ages out unmanaged backups when the sweep sets a retention, then frees deleted local backups' data.
-func (s *Service) PruneLocalRepository(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
-	volumeErr := s.volumes.PruneLocalRepository(ctx, sweep)
-	var unmanagedErr error
-	if sweep.Retention > 0 {
-		unmanagedErr = s.pruneUnmanagedRuns(ctx, sweep)
-	}
-	return errors.Join(volumeErr, unmanagedErr, s.pruneDeletedLocalRuns(ctx))
+func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	return errors.Join(s.pruneUnmanagedRuns(ctx), s.pruneDeletedLocalRuns(ctx))
 }
 
 func (s *Service) pruneDeletedLocalRuns(ctx context.Context) error {
@@ -1563,11 +1557,18 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 }
 
 // pruneUnmanagedRuns keeps runs while no recovery key can forget their snapshots.
-func (s *Service) pruneUnmanagedRuns(ctx context.Context, sweep types.UnmanagedBackupSweep) error {
+func (s *Service) pruneUnmanagedRuns(ctx context.Context) error {
+	days := s.settingsService.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
+	if days <= 0 {
+		return nil
+	}
 	if configured, err := s.recoveryKeys.Configured(ctx); err != nil || !configured {
 		return err
 	}
-	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, sweep)
+	expired, err := s.store.ExpiredUnmanagedRunIDs(ctx, types.UnmanagedBackupSweep{
+		Now:       time.Now(),
+		Retention: time.Duration(days) * 24 * time.Hour,
+	})
 	if err != nil || len(expired) == 0 {
 		return err
 	}
