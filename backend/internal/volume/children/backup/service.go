@@ -445,8 +445,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 			return err
 		}
 	}
-	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever. System-managed
-	// runs apply retention once for all their volumes through ApplySeriesRetention instead.
+	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
 		!strings.HasPrefix(plan.Policy.ID, types.SystemVolumePolicyPrefix) {
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, backup.RunRetention{
@@ -645,14 +644,10 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 	})
 }
 
-// ApplySeriesRetention trims every series to its newest backups in one deletion, pruning each repository once.
 func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.BackupSeriesRetention) error {
 	if retention.Keep <= 0 || len(retention.SeriesIDs) == 0 {
 		return nil
 	}
-	// Per-volume retention runs before its new backup is marked finished, so it keeps that backup plus Keep older
-	// successful ones. Each series here just gained a successful backup, so keep one more success to match; failed
-	// backups gained none and keep the same limit.
 	keep := backup.RunRetention{Succeeded: retention.Keep + 1, Failed: retention.Keep}
 	return s.deleteExpiredBackups(ctx, retention.IncludeRemote, func(ctx context.Context, within []string) ([]string, error) {
 		var expired []string
@@ -677,7 +672,6 @@ func (s *Service) ApplySeriesRetention(ctx context.Context, retention types.Back
 	})
 }
 
-// deleteExpiredBackups deletes the backups expired reports, rechecking that batch under the volumes' locks.
 func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, expired func(ctx context.Context, within []string) ([]string, error)) error {
 	ids, err := expired(ctx, nil)
 	if err != nil || len(ids) == 0 {
@@ -720,7 +714,6 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 			unlock()
 		}
 	}
-	// A restore or backup that finished first may have changed what is expired.
 	if ids, err = expired(ctx, ids); err != nil {
 		return errors.Join(deleteErr, err)
 	}
@@ -743,14 +736,12 @@ func (s *Service) deleteExpiredBackups(ctx context.Context, includeRemote bool, 
 	if len(rusticEntries) > 0 {
 		deleteErr = errors.Join(deleteErr, s.deleteRusticBackups(ctx, rusticEntries, nil, includeRemote))
 	}
-	// Callers log a failure; only a pass that fully succeeded reports what it freed.
 	if deleteErr == nil {
 		slog.InfoContext(ctx, "Deleted expired volume backups", "backups", deleted, "volumes", len(held))
 	}
 	return deleteErr
 }
 
-// backupsByID loads backups in bounded batches so a large deletion stays within SQL parameter limits.
 func (s *Service) backupsByID(ctx context.Context, ids []string) ([]*types.VolumeBackup, error) {
 	entries := make([]*types.VolumeBackup, 0, len(ids))
 	for batch := range slices.Chunk(ids, backup.DeletionBatchSize) {

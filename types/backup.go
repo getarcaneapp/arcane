@@ -236,7 +236,6 @@ type (
 		Status     string `json:"status"`
 	}
 
-	// BackupSeriesRetention keeps the newest Keep backups of each series and deletes the rest in one pass.
 	BackupSeriesRetention struct {
 		SeriesIDs     []string
 		Keep          int

@@ -213,7 +213,6 @@ func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
 	return s.backup.PruneLocalRepository(ctx)
 }
 
-// ApplySeriesRetention trims each backup series to its newest backups, pruning each repository once.
 func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention types.BackupSeriesRetention) error {
 	return s.backup.ApplySeriesRetention(ctx, retention)
 }

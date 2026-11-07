@@ -44,7 +44,6 @@ import (
 )
 
 type (
-	// RunRetention is how many finished runs of each status a policy keeps; each status is ranked separately.
 	RunRetention struct {
 		Succeeded int
 		Failed    int
@@ -529,8 +528,6 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
 		return err
 	}
-	// Forget in bounded batches and prune only with the last one: every prune scans the whole repository and
-	// repacks partly used packs, so a large deletion must still prune once.
 	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
 	for i, batch := range batches {
 		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)

@@ -457,7 +457,6 @@ func (s *Service) executeSystemVolumeBackups(
 		S3DestinationID: input.Policy.S3DestinationID,
 	}
 	previous, _ := jobcontext.Run(ctx)
-	// Series of every volume backed up in this run, including before a resume, trimmed together once the run ends.
 	var backedUp []string
 	for _, candidate := range input.Candidates {
 		seriesID := types.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, types.SystemVolumeManualSeriesOwner, input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
@@ -510,7 +509,6 @@ func (s *Service) executeSystemVolumeBackups(
 		backedUp = append(backedUp, seriesID)
 		succeeded++
 	}
-	// Retention failures must not fail the run; the next run trims the same series again.
 	if retentionErr := s.volumes.ApplySeriesRetention(ctx, types.BackupSeriesRetention{
 		SeriesIDs:     backedUp,
 		Keep:          input.Policy.RetentionCount,

@@ -264,7 +264,6 @@ func TestApplySeriesRetentionLeavesBusyVolumesForTheNextRun(t *testing.T) {
 			return entries, gormDB.WithContext(ctx).Table("volume_backups").Where("id IN ?", ids).Find(&entries).Error
 		}},
 	})
-	// A restore holds the volume's workspace lock, so its expired backups wait for the next run.
 	unlock := locks.Lock("app-data")
 	defer unlock()
 
