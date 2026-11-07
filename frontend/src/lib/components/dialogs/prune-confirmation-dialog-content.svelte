@@ -8,7 +8,7 @@
 	import type { PruneAllRequest } from '#lib/types/system.js';
 
 	interface Props {
-		defaults?: Settings | null;
+		defaults?: Partial<Settings> | null;
 		isPruning?: boolean;
 		onConfirm?: (request: PruneAllRequest) => void;
 		onCancel?: () => void;

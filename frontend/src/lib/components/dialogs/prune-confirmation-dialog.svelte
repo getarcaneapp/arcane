@@ -9,7 +9,7 @@
 	interface Props {
 		open: boolean;
 		isPruning?: boolean;
-		defaults?: Settings | null;
+		defaults?: Partial<Settings> | null;
 		onConfirm?: (request: PruneAllRequest) => void;
 		onCancel?: () => void;
 		environments?: { id: string; name: string }[];
