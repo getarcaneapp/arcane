@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -48,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	libswarm "getarcane.dev/arcane/v3/pkg/swarm"
 	"getarcane.dev/types/v3"
 )
 
@@ -109,6 +111,11 @@ type (
 		Request   types.GitOpsSync
 	}
 
+	SyncDelete struct {
+		Actor       types.Actor
+		RemoveStack bool
+	}
+
 	SyncRequest struct {
 		EnvironmentID string
 		SyncID        string
@@ -133,6 +140,17 @@ var syncRuns = func() metric.Int64Counter {
 	}
 	return counter
 }()
+
+// validateSwarmStackName rejects a stack sync whose name Docker Swarm would refuse at deploy time.
+func validateSwarmStackName(targetType, stackName string) error {
+	if strings.TrimSpace(targetType) != "swarm_stack" {
+		return nil
+	}
+	if err := libswarm.ValidateStackName(strings.TrimSpace(stackName)); err != nil {
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: err})
+	}
+	return nil
+}
 
 func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current *projectpkg.GitOpsSync, in lifecycleConfigInput) error {
 	var currentScript, currentRunner *string
@@ -513,6 +531,9 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	case mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(change.Request.ComposePath) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composePath", Err: errors.New("compose path is required")})
 	}
+	if err := validateSwarmStackName(change.Request.TargetType, cmp.Or(change.Request.ProjectName, change.Request.Name)); err != nil {
+		return nil, err
+	}
 
 	repo, err := s.repoService.GetRepositoryByID(ctx, change.Request.RepositoryID)
 	if err != nil {
@@ -684,6 +705,15 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			hasPreDeployConfig(change.Submitted)):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
 	}
+	// Only checked when the name or target changes, so unrelated edits to an existing sync still save.
+	if change.Submitted["targetType"] || change.Submitted["projectName"] {
+		if nameErr := validateSwarmStackName(
+			kit.Ternary(change.Submitted["targetType"], change.Request.TargetType, syncRecord.TargetType),
+			kit.Ternary(change.Submitted["projectName"], change.Request.ProjectName, syncRecord.ProjectName),
+		); nameErr != nil {
+			return nil, nameErr
+		}
+	}
 
 	// Captured before the update so the job can follow the new state.
 	oldAutoSync := syncRecord.AutoSync
@@ -790,13 +820,32 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
-func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor types.Actor) error {
+func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, opts SyncDelete) error {
 	// Even a row that can no longer be loaded must stop firing; an in-flight run re-reads it and skips.
 	s.jobs.Unregister(ctx, id)
 	s.backups.cancel(id)
 
 	// The row is loaded only for the audit event, so a corrupt or environment-mismatched row is still deletable.
 	syncRecord, loadErr := s.getSyncByID(ctx, environmentID, id, false)
+
+	if opts.RemoveStack && loadErr == nil && syncRecord.TargetType == "swarm_stack" {
+		admitCtx, cancelAdmit := context.WithTimeout(ctx, defaultGitSyncTimeout)
+		lease, leaseErr := s.jobs.Acquire(admitCtx, id)
+		cancelAdmit()
+		if leaseErr != nil {
+			if syncRecord.AutoSync {
+				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+			}
+			return fmt.Errorf("failed to wait for active GitOps sync: %w", leaseErr)
+		}
+		defer lease.Release(ctx)
+		if stackErr := s.swarmService.RemoveStack(ctx, syncRecord.EnvironmentID, syncRecord.ProjectName); stackErr != nil && !errdefs.IsNotFound(stackErr) {
+			if syncRecord.AutoSync {
+				s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+			}
+			return fmt.Errorf("failed to remove swarm stack %s: %w", syncRecord.ProjectName, stackErr)
+		}
+	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Keyed on the sync ID, so orphaned managed flags clear even when the row could not be loaded.
@@ -830,8 +879,8 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		ResourceType:  new("git_sync"),
 		ResourceID:    new(syncRecord.ID),
 		ResourceName:  new(syncRecord.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
+		UserID:        new(opts.Actor.ID),
+		Username:      new(opts.Actor.Username),
 		EnvironmentID: new(syncRecord.EnvironmentID),
 	})
 

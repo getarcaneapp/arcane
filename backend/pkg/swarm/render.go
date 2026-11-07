@@ -35,7 +35,7 @@ type (
 
 func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRenderResult, error) {
 	stackName := strings.TrimSpace(opts.Name)
-	if err := validateStackName(stackName); err != nil {
+	if err := ValidateStackName(stackName); err != nil {
 		return nil, invalidStackError(err)
 	}
 	ns := namespace{name: stackName}

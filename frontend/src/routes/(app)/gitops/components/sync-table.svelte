@@ -151,8 +151,10 @@
 			message: m.git_sync_remove_message(),
 			confirmLabel: m.common_remove(),
 			destructive: true,
+			checkboxes:
+				sync.targetType === 'swarm_stack' ? [{ id: 'removeStack', label: m.also_remove_deployed_swarm_stack(), initialState: false }] : undefined,
 			setLoading: (loading) => (isLoading.removing = loading),
-			run: () => gitOpsSyncService.deleteSync(sync.environmentId, sync.id),
+			run: (checkboxStates) => gitOpsSyncService.deleteSync(sync.environmentId, sync.id, checkboxStates['removeStack'] === true),
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
