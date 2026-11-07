@@ -1856,8 +1856,6 @@
   "navigation_desktop_sidebar_title": "Postranní lišta na ploše",
   "navigation_default_landing_page_label": "Výchozí úvodní stránka",
   "navigation_default_landing_page_description": "Stránka, která se otevře po přihlášení.",
-  "navigation_sidebar_hover_expansion_label": "Povolit rozbalení při najetí",
-  "navigation_sidebar_hover_expansion_description": "Je-li tato funkce zapnutá, stačí najet myší nad sbalený postranní panel a ten se dočasně rozbalí, aby se zobrazily úplné názvy položek. Je-li tato funkce vypnutá, zobrazí se místo toho popisky, což zajistí přehlednější navigaci s pevnou šířkou.",
   "navigation_keyboard_shortcuts_label": "Klávesové zkratky",
   "navigation_keyboard_shortcuts_description": "Zapněte klávesové zkratky pro rychlou navigaci (např. Mod+1 pro Dashboard). Pokud jsou tyto zkratky vypnuté, skryjí se také nápovědy ke zkratkám v popiscích.",
   "server_default": "Výchozí nastavení serveru",
