@@ -4489,5 +4489,12 @@
   "files": "파일",
   "log_raw_output": "원본 출력",
   "log_raw_output_tooltip": "구문 분석된 구조화된 로그 대신 원본 라인 텍스트를 표시합니다.",
-  "log_stderr_line": "표준 오차 출력"
+  "log_stderr_line": "표준 오차 출력",
+  "also_remove_deployed_swarm_stack": "또한 배포된 스웜 스택도 제거하십시오.",
+  "bring_down_stack": "스택 줄이기",
+  "bring_down_stack_confirm_message": "이 스택의 서비스, 네트워크, 구성 및 시크릿을 제거하시겠습니까? 저장된 Compose 파일은 유지되므로 다시 배포할 수 있습니다.",
+  "stack_brought_down": "\"{name}\" 스택이 중단되었습니다",
+  "failed_to_bring_down_stack": "스택 \"{name} \"을 가져오는 데 실패했습니다.",
+  "stack_brought_up": "\"{name}\" 스택이 생성되었습니다.",
+  "failed_to_bring_up_stack": "스택 \"{name} \"을 불러오는 데 실패했습니다."
 }
