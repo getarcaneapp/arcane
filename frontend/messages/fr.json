@@ -4489,5 +4489,12 @@
   "files": "Fichiers",
   "log_raw_output": "Sortie brute",
   "log_raw_output_tooltip": "Affiche le texte original de la ligne au lieu des journaux structurés et analysés.",
-  "log_stderr_line": "Affichage de l'erreur-type"
+  "log_stderr_line": "Affichage de l'erreur-type",
+  "also_remove_deployed_swarm_stack": "Supprimez également la pile Swarm déployée",
+  "bring_down_stack": "Réduire la pile",
+  "bring_down_stack_confirm_message": "Supprimer les services, les réseaux, les configurations et les secrets de cette pile ? Ses fichiers Compose enregistrés sont conservés afin de pouvoir la déployer à nouveau.",
+  "stack_brought_down": "La pile «{name}» a été supprimée",
+  "failed_to_bring_down_stack": "Échec de la récupération de la pile «{name}»",
+  "stack_brought_up": "La pile «{name}» a été créée",
+  "failed_to_bring_up_stack": "Échec de l'initialisation de la pile «{name}»"
 }
