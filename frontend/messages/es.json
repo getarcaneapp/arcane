@@ -4437,8 +4437,6 @@
   "installed_fonts": "Fuentes instaladas",
   "installed_fonts_unavailable": "No se han podido leer las fuentes instaladas",
   "font_preview_sample": "El rápido zorro marrón salta por encima del perro perezoso 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "No se ha podido cargar el archivo",
   "failed_to_save_file": "No se ha podido guardar el archivo",
   "copy_current_path": "Copiar la ruta actual",
