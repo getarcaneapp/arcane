@@ -1091,7 +1091,6 @@
   "volumes_nav_browser": "Browser",
   "volumes_nav_backups": "Backups",
   "volumes_workspace_files": "Térfogat-munkaterület",
-  "volumes_workspace_files_empty": "Ezen a köteten nincsenek munkaterületi fájlok",
   "volumes_workspace_upload_description": "Töltsön fel egy vagy több fájlt a kötet munkaterületére.",
   "volumes_workspace_root_destination": "Kockagyök",
   "volumes_workspace_root_path": "Hozzon létre a kötet gyökérkönyvtárában.",
@@ -2963,8 +2962,6 @@
   "common_image_id": "Image ID",
   "common_entrypoint": "Entrypoint",
   "workspace": "Munkaterület",
-  "workspace_files": "Munkaterületi fájlok",
-  "workspace_files_empty": "Nincsenek munkaterületi fájlok",
   "workspace_new_file": "Új fájl",
   "workspace_create_file_title": "Fájl létrehozása",
   "workspace_create_folder_title": "Mappa létrehozása",
@@ -3006,7 +3003,6 @@
   "project_view_description": "Switch between classic side-by-side layout and tree view",
   "project_editor_layout": "A projektszerkesztő alapértelmezett elrendezése",
   "project_editor_layout_description": "A projekt konfigurációjának megnyitásakor megjelenő elrendezés.",
-  "project_editor_layout_auto_description": "A munkaterület megjelenése a kiegészítő fájlokkal rendelkező projektek esetében; egyébként a klasszikus nézet jelenik meg.",
   "project_editor_layout_classic_description": "A Compose és a környezeti szerkesztők egymás mellett.",
   "project_editor_layout_tree_description": "Munkaterületi fájlfa fülös szerkesztőkkel.",
   "automatic": "Automatikus",
@@ -4494,5 +4490,6 @@
   "text_and_fonts": "Szöveg és betűtípusok",
   "layout_and_navigation": "Elrendezés és navigáció",
   "language_and_region": "Nyelv és régió",
-  "editor": "Szerkesztő"
+  "editor": "Szerkesztő",
+  "files": "Fájlok"
 }
