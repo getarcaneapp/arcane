@@ -4459,13 +4459,6 @@
   "hide_diff": "Hide diff",
   "show_diff": "Show diff",
   "activity_stream_unavailable": "Live activity updates are unavailable",
-  "also_remove_deployed_swarm_stack": "Also remove the deployed swarm stack",
-  "bring_down_stack": "Bring Down Stack",
-  "bring_down_stack_confirm_message": "Remove this stack's services, networks, configs and secrets? Its saved compose files are kept so it can be deployed again.",
-  "stack_brought_down": "Stack \"{name}\" brought down",
-  "failed_to_bring_down_stack": "Failed to bring down stack \"{name}\"",
-  "stack_brought_up": "Stack \"{name}\" brought up",
-  "failed_to_bring_up_stack": "Failed to bring up stack \"{name}\""
   "background_image": "Background Image",
   "background_image_description": "Show a photo behind the sidebar and content. Panels turn to frosted glass over it.",
   "uploaded": "Uploaded",
@@ -4498,5 +4491,12 @@
   "layout_and_navigation": "Layout & Navigation",
   "language_and_region": "Language & Region",
   "editor": "Editor",
-  "files": "Files"
+  "files": "Files",
+  "also_remove_deployed_swarm_stack": "Also remove the deployed swarm stack",
+  "bring_down_stack": "Bring Down Stack",
+  "bring_down_stack_confirm_message": "Remove this stack's services, networks, configs and secrets? Its saved compose files are kept so it can be deployed again.",
+  "stack_brought_down": "Stack \"{name}\" brought down",
+  "failed_to_bring_down_stack": "Failed to bring down stack \"{name}\"",
+  "stack_brought_up": "Stack \"{name}\" brought up",
+  "failed_to_bring_up_stack": "Failed to bring up stack \"{name}\""
 }
