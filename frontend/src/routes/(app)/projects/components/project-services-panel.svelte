@@ -194,17 +194,6 @@
 					{#if item.health}
 						<HealthIcon class={cn('size-3.5 shrink-0', healthClass(item.health))} />
 					{/if}
-					{#if serviceImageRef(item)}
-						{@const imageRef = serviceImageRef(item)}
-						{@const parsed = parseImageRef(imageRef)}
-						<ImageUpdateItem
-							updateInfo={updateInfoByRef[imageRef]}
-							{imageRef}
-							repo={parsed.repo}
-							tag={parsed.tag}
-							{environmentId}
-						/>
-					{/if}
 					{#if item.containerId}
 						{@const containerId = item.containerId}
 						<RowActionsMenu
@@ -261,13 +250,24 @@
 						</RowActionsMenu>
 					{/if}
 				</div>
-				{#if item.serviceConfig?.ports?.length}
-					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} />
-					</div>
-				{:else if item.ports?.length}
-					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} />
+				{#if serviceImageRef(item) || item.serviceConfig?.ports?.length || item.ports?.length}
+					<div class="mt-1 flex min-w-0 items-center gap-2 pl-11">
+						{#if serviceImageRef(item)}
+							{@const imageRef = serviceImageRef(item)}
+							{@const parsed = parseImageRef(imageRef)}
+							<ImageUpdateItem
+								updateInfo={updateInfoByRef[imageRef]}
+								{imageRef}
+								repo={parsed.repo}
+								tag={parsed.tag}
+								{environmentId}
+							/>
+						{/if}
+						{#if item.serviceConfig?.ports?.length}
+							<PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} />
+						{:else if item.ports?.length}
+							<PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} />
+						{/if}
 					</div>
 				{/if}
 			</div>
