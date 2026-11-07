@@ -275,39 +275,39 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 		return nil, err
 	}
 
-	effective := make(map[string]types.EnvVariable)
-	for _, scoped := range []bool{false, true} {
-		for _, variable := range variables {
-			if variable.AllEnvironments == scoped {
-				continue
-			}
-			if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
-				continue
-			}
-			value := variable.Value
-			if variable.IsSecret {
-				decrypted, decryptErr := crypto.Decrypt(value)
-				if decryptErr != nil {
-					slog.WarnContext(ctx, "Failed to decrypt global variable for sync; skipping",
-						"variableId", variable.ID, "key", variable.Key, "error", decryptErr)
-					continue
-				}
-				value = decrypted
-			}
-			effective[variable.Key] = types.EnvVariable{
-				Key:      variable.Key,
-				Value:    value,
-				NoInject: !variable.InjectIntoContainers,
-			}
-		}
-	}
-
-	result := make([]types.EnvVariable, 0, len(effective))
+	result := make([]types.EnvVariable, 0, len(variables))
+	positions := make(map[string]int, len(variables))
+	scopedKeys := make(map[string]bool)
 	for _, variable := range variables {
-		if entry, ok := effective[variable.Key]; ok {
-			result = append(result, entry)
-			delete(effective, variable.Key)
+		scoped := !variable.AllEnvironments
+		if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
+			continue
 		}
+		if !scoped && scopedKeys[variable.Key] {
+			continue
+		}
+		value := variable.Value
+		if variable.IsSecret {
+			decrypted, decryptErr := crypto.Decrypt(value)
+			if decryptErr != nil {
+				slog.WarnContext(ctx, "Failed to decrypt global variable for sync; skipping",
+					"variableId", variable.ID, "key", variable.Key, "error", decryptErr)
+				continue
+			}
+			value = decrypted
+		}
+		entry := types.EnvVariable{
+			Key:      variable.Key,
+			Value:    value,
+			NoInject: !variable.InjectIntoContainers,
+		}
+		if index, ok := positions[variable.Key]; ok {
+			result[index] = entry
+		} else {
+			positions[variable.Key] = len(result)
+			result = append(result, entry)
+		}
+		scopedKeys[variable.Key] = scopedKeys[variable.Key] || scoped
 	}
 	return result, nil
 }

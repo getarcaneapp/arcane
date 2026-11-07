@@ -242,15 +242,15 @@ func TestResolveEffectiveVariables_MarksInterpolationOnlyVariables(t *testing.T)
 	forA, err := service.resolveEffectiveVariables(ctx, "env-a")
 	require.NoError(t, err)
 	require.Equal(t, []types.EnvVariable{
-		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 		{Key: "TZ", Value: "Europe/Paris", NoInject: true},
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 	}, forA)
 
 	forB, err := service.resolveEffectiveVariables(ctx, "env-b")
 	require.NoError(t, err)
 	require.Equal(t, []types.EnvVariable{
-		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 		{Key: "TZ", Value: "UTC"},
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 	}, forB)
 }
 
@@ -426,8 +426,8 @@ func TestSyncEnvironment_AgentPayloadOmitsNoInjectWhenAllInjected(t *testing.T) 
 	var materialized types.EnvSummary
 	require.NoError(t, json.Unmarshal(putBodies[1], &materialized))
 	require.Equal(t, []types.EnvVariable{
-		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 		{Key: "TZ", Value: "UTC"},
+		{Key: "DB_PASSWORD", Value: "hunter2", NoInject: true},
 	}, materialized.Variables)
 }
 
