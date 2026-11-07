@@ -237,7 +237,6 @@
   "common_select_all": "Alle auswählen",
   "common_select_row": "Zeile auswählen",
   "common_showing_of_total": "Anzeige von {shown} von {total}",
-  "table_pagination_bottom": "Paginierung am Tabellenende",
   "table_expand_row": "Zeile erweitern",
   "table_collapse_row": "Zeile ausblenden",
   "table_group_items": "{count} Artikel",
@@ -4490,5 +4489,14 @@
   "dusk": "Abenddämmerung",
   "ribbon": "Band",
   "silver": "Silber",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Verhindern Sie, dass der Speicherplatz für Backups unbegrenzt wächst, indem Sie Backups entfernen, die von keinem Zeitplan mehr verwaltet werden.",
+  "unmanaged_backup_retention_days": "Aufbewahrungsdauer für nicht verwaltete Backups (Tage)",
+  "unmanaged_backup_retention_days_description": "Sicherungskopien von entfernten Volumes oder gelöschten Zeitplänen werden so viele Tage nach Beendigung ihrer Verwaltung gelöscht, ebenso wie Sicherheitskopien, die vor Wiederherstellungen erstellt wurden, sobald sie so alt sind.",
+  "unmanaged_backup_retention_days_help": "Die Bereinigung wird zweimal täglich ausgeführt und löscht dabei auch die S3-Kopien. Setzen Sie den Wert auf 0, um diese Sicherungskopien auf unbestimmte Zeit aufzubewahren.",
+  "unmanaged_backup_retention_summary": "Sicherungen von entfernten Volumes oder gelöschten Zeitplänen sowie Sicherheitskopien werden nach {days} Tagen auf diesem Server gelöscht.",
+  "unmanaged_backup_retention_disabled_summary": "Sicherungen von entfernten Volumes oder gelöschten Zeitplänen sowie Sicherheitskopien werden auf diesem Server auf unbestimmte Zeit aufbewahrt.",
+  "table_pagination": "Paginierung von Tabellen",
+  "table_range_of_total": "{start}–{end} von {total}",
+  "table_range": "{start}–{end}"
 }
