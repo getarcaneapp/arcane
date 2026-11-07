@@ -237,7 +237,6 @@
   "common_select_all": "Zaznacz wszystko",
   "common_select_row": "Zaznacz wiersz",
   "common_showing_of_total": "Wyświetlono {shown} z {total}",
-  "table_pagination_bottom": "Paginacja w dolnej części tabeli",
   "table_expand_row": "Rozwiń wiersz",
   "table_collapse_row": "Zwiń wiersz",
   "table_group_items": "{count} pozycja(e)",
@@ -4490,5 +4489,14 @@
   "dusk": "Zmierzch",
   "ribbon": "Wstążka",
   "silver": "Srebro",
-  "ember": "Ember"
+  "ember": "Ember",
+  "backup_cleanup_description": "Zapobiegaj nieograniczonemu wzrostowi objętości pamięci przeznaczonej na kopie zapasowe poprzez usuwanie kopii zapasowych, którymi nie zarządza już żaden harmonogram.",
+  "unmanaged_backup_retention_days": "Czas przechowywania kopii zapasowych bez nadzoru (dni)",
+  "unmanaged_backup_retention_days_description": "Usuń kopie zapasowe usuniętych woluminów lub usuniętych harmonogramów po upływie tej liczby dni od momentu, gdy przestały być zarządzane, a także kopie zapasowe utworzone przed przywróceniem danych, gdy osiągną ten wiek.",
+  "unmanaged_backup_retention_days_help": "Czynność czyszczenia odbywa się dwa razy dziennie i obejmuje również usunięcie kopii z serwera S3. Aby zachować te kopie zapasowe na czas nieokreślony, należy ustawić wartość 0.",
+  "unmanaged_backup_retention_summary": "Kopie zapasowe usuniętych woluminów lub skasowanych harmonogramów oraz kopie zapasowe zabezpieczające są usuwane z tego serwera po upływie {days} dni.",
+  "unmanaged_backup_retention_disabled_summary": "Kopie zapasowe usuniętych woluminów lub skasowanych harmonogramów, a także kopie zapasowe zabezpieczające są przechowywane na tym serwerze przez czas nieokreślony.",
+  "table_pagination": "Paginacja tabeli",
+  "table_range_of_total": "{start}–{end} z {total}",
+  "table_range": "{start}–{end}"
 }
