@@ -4489,5 +4489,12 @@
   "files": "Archivos",
   "log_raw_output": "Salida sin procesar",
   "log_raw_output_tooltip": "Muestra el texto original de la línea en lugar de los registros estructurados y analizados.",
-  "log_stderr_line": "Salida del error estándar"
+  "log_stderr_line": "Salida del error estándar",
+  "also_remove_deployed_swarm_stack": "Elimina también la pila de Swarm desplegada.",
+  "bring_down_stack": "Reducir la pila",
+  "bring_down_stack_confirm_message": "¿Deseas eliminar los servicios, las redes, las configuraciones y los secretos de esta pila? Los archivos «compose» guardados se conservan para que se pueda volver a implementar.",
+  "stack_brought_down": "Se ha producido un error de pila en «{name}»",
+  "failed_to_bring_down_stack": "No se ha podido desmontar la pila «{name}».",
+  "stack_brought_up": "Se ha creado la pila «{name}»",
+  "failed_to_bring_up_stack": "No se ha podido cargar la pila «{name}»."
 }
