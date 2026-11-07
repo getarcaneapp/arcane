@@ -4489,5 +4489,12 @@
   "files": "File",
   "log_raw_output": "Dati grezzi",
   "log_raw_output_tooltip": "Mostra il testo originale della riga anziché i log strutturati e analizzati.",
-  "log_stderr_line": "Visualizzazione dell'errore standard"
+  "log_stderr_line": "Visualizzazione dell'errore standard",
+  "also_remove_deployed_swarm_stack": "Rimuovere anche lo stack Swarm distribuito",
+  "bring_down_stack": "Riduci la pila",
+  "bring_down_stack_confirm_message": "Rimuovere i servizi, le reti, le configurazioni e i segreti di questo stack? I file Compose salvati vengono conservati in modo da poterlo distribuire nuovamente.",
+  "stack_brought_down": "Lo stack \"{name}\" è stato eliminato",
+  "failed_to_bring_down_stack": "Impossibile scaricare lo stack \"{name}\"",
+  "stack_brought_up": "È stato visualizzato lo stack \"{name}\"",
+  "failed_to_bring_up_stack": "Impossibile avviare lo stack \"{name}\""
 }
