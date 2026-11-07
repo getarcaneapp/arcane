@@ -4489,5 +4489,12 @@
   "files": "Soubory",
   "log_raw_output": "Neupravený výstup",
   "log_raw_output_tooltip": "Zobrazuje původní text řádků namísto analyzovaných strukturovaných protokolů.",
-  "log_stderr_line": "Výstup standardní chyby"
+  "log_stderr_line": "Výstup standardní chyby",
+  "also_remove_deployed_swarm_stack": "Odstraňte také nasazený swarm stack",
+  "bring_down_stack": "Složit hromadu",
+  "bring_down_stack_confirm_message": "Mám odstranit služby, sítě, konfigurace a tajné údaje tohoto stacku? Uložené soubory Compose zůstanou zachovány, aby bylo možné stack znovu nasadit.",
+  "stack_brought_down": "Byl vyřazen stack „{name}“",
+  "failed_to_bring_down_stack": "Nepodařilo se vyprázdnit zásobník „{name}“",
+  "stack_brought_up": "Zobrazil se záznam „{name}“",
+  "failed_to_bring_up_stack": "Nepodařilo se načíst zásobník „{name}“"
 }
