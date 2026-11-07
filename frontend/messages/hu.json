@@ -4437,8 +4437,6 @@
   "installed_fonts": "Telepített betűtípusok",
   "installed_fonts_unavailable": "A telepített betűtípusok beolvasása nem sikerült",
   "font_preview_sample": "A gyors barna róka átugorja a lusta kutyát 0123456789",
-  "montserrat": "Montserrat",
-  "geist_mono": "Geist Mono",
   "failed_to_load_file": "A fájl betöltése nem sikerült",
   "failed_to_save_file": "A fájl mentése nem sikerült",
   "copy_current_path": "Az aktuális elérési út másolása",
