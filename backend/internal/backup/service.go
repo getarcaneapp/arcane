@@ -44,6 +44,11 @@ import (
 )
 
 type (
+	RunRetention struct {
+		Succeeded int
+		Failed    int
+	}
+
 	Repository struct {
 		ID          string
 		Environment []string
@@ -143,7 +148,7 @@ const (
 	RunKeyPrefix                   = "run:"
 	VolumeRoot                     = "arcane-volume-backups"
 	rusticRepositoryMissingMessage = "No repository config file found"
-	unmanagedSweepBatch            = 500
+	DeletionBatchSize              = 500
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 )
@@ -509,24 +514,28 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	for _, snapshot := range snapshots {
 		existing[strings.ToLower(snapshot.ID)] = snapshot.ID
 	}
-	command := []string{"forget", "--prune"}
+	var listed []string
 	for _, id := range requested {
 		if listedID, found := existing[id]; found {
-			if len(command) == 2 {
-				command = append(command, "--")
-			}
-			command = append(command, listedID)
+			listed = append(listed, listedID)
 		}
 	}
-	if len(command) == 2 && len(requested) > 0 {
+	if len(listed) == 0 && len(requested) > 0 {
 		slog.DebugContext(ctx, "No requested snapshots found in repository; skipping forget", "repositoryId", repository.ID, "requested", requested)
 		return nil
 	}
-	if len(command) == 2 {
-		command = []string{"prune"}
+	if len(listed) == 0 {
+		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
+		return err
 	}
-	_, err = e.runContainer(ctx, dockerClient, repository, password, command)
-	return err
+	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
+	for i, batch := range batches {
+		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
+		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, currentPassword, newPassword string) error {
@@ -934,19 +943,22 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	return fmt.Errorf("%w: %s", ErrRemoteRepositoryMissing, result.Reason)
 }
 
-func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
+func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep RunRetention) ([]string, error) {
 	var expired []string
-	for _, status := range []string{"succeeded", "failed"} {
+	for _, rank := range []struct {
+		status string
+		kept   int
+	}{{status: "succeeded", kept: keep.Succeeded}, {status: "failed", kept: keep.Failed}} {
 		var ids []string
 		if err := db.WithContext(ctx).
 			Table(table).
 			Where(
 				"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
 				policyID,
-				status,
+				rank.status,
 			).
 			Order("created_at DESC").
-			Offset(keep).
+			Offset(rank.kept).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -977,12 +989,12 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 			}
 			managed = append(managed, id)
 		}
-		for batch := range slices.Chunk(managed, unmanagedSweepBatch) {
+		for batch := range slices.Chunk(managed, DeletionBatchSize) {
 			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", nil).Error; err != nil {
 				return fmt.Errorf("clear backup orphan marks: %w", err)
 			}
 		}
-		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), unmanagedSweepBatch) {
+		for batch := range slices.Chunk(slices.Collect(maps.Keys(orphaned)), DeletionBatchSize) {
 			if err := tx.Table(table).Where("id IN ?", batch).Update("orphaned_at", sweep.Now).Error; err != nil {
 				return fmt.Errorf("mark orphaned backups: %w", err)
 			}
@@ -993,7 +1005,7 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		if len(sweep.Within) > 0 {
 			query = query.Where("id IN ?", sweep.Within)
 		}
-		return query.Order("RANDOM()").Limit(unmanagedSweepBatch).Pluck("id", &expired).Error
+		return query.Order("RANDOM()").Limit(DeletionBatchSize).Pluck("id", &expired).Error
 	})
 	return expired, err
 }

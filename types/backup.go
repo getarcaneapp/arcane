@@ -236,6 +236,12 @@ type (
 		Status     string `json:"status"`
 	}
 
+	BackupSeriesRetention struct {
+		SeriesIDs     []string
+		Keep          int
+		IncludeRemote bool
+	}
+
 	// UnmanagedBackupSweep's Within, when set, limits a recheck to the batch it already locked.
 	UnmanagedBackupSweep struct {
 		Now                   time.Time
