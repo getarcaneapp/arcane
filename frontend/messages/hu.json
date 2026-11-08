@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Ez a kép már nem kap biztonsági frissítéseket a {date}oldalon. Készítse el újra egy újabb verzió alapján.",
   "count_hardened_images_end_of_life": "{count} megkeményített képek élettartamuk lejártát követően",
   "count_hardened_images_ending_soon": "{count} elhasználódott képek, amelyek élettartama a végéhez közeledik",
-  "hardened_images_eol_detail": "A véglegesített képek az élettartamuk lejártával már nem kapnak biztonsági frissítéseket"
+  "hardened_images_eol_detail": "A véglegesített képek az élettartamuk lejártával már nem kapnak biztonsági frissítéseket",
+  "reveal_value": "Érték feltárása"
 }
