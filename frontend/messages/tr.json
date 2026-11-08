@@ -4416,7 +4416,7 @@
   "interface_font": "Arayüz yazı tipi",
   "interface_font_description": "Arayüz metni için yazı tipi. Çince, Japonca ve Korece karakterler için yüklü sistem yazı tipleri kullanılır.",
   "monospace_font": "Monospace yazı tipi",
-  "monospace_font_description": "Başlıklar, kimlikler ve diğer sabit genişlikli metinler için yazı tipi",
+  "monospace_font_description": "Kimlikler ve diğer sabit genişlikli metinler için yazı tipi",
   "code_font": "Kod yazı tipi",
   "code_font_description": "Kod düzenleyici, kod blokları ve terminal için yazı tipi. Terminal, yeniden açıldığında güncellenir.",
   "custom_font": "Özel yazı tipi",
