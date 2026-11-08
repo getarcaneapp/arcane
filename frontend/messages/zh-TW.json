@@ -4416,7 +4416,7 @@
   "interface_font": "介面字型",
   "interface_font_description": "介面文字的字型。中文、日文和韓文的字形會使用已安裝的系統字型。",
   "monospace_font": "等寬字型",
-  "monospace_font_description": "用於標題、ID 及其他等寬文字的字型",
+  "monospace_font_description": "用於 ID 及其他等寬文字的字型",
   "code_font": "程式碼字型",
   "code_font_description": "用於程式碼編輯器、程式碼區塊及終端機的字型。重新開啟終端機時，字型會自動更新。",
   "custom_font": "自訂字型",
