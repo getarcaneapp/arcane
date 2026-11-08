@@ -4416,7 +4416,7 @@
   "interface_font": "Schriftart der Benutzeroberfläche",
   "interface_font_description": "Schriftart für den Text der Benutzeroberfläche. Für chinesische, japanische und koreanische Zeichen werden die installierten Systemschriftarten verwendet.",
   "monospace_font": "Monospace-Schriftart",
-  "monospace_font_description": "Schriftart für Überschriften, IDs und anderen Text in Monospace-Schrift",
+  "monospace_font_description": "Schriftart für IDs und anderen Text mit fester Zeichenbreite",
   "code_font": "Code-Schriftart",
   "code_font_description": "Schriftart für den Code-Editor, Code-Blöcke und das Terminal. Das Terminal wird beim erneuten Öffnen aktualisiert.",
   "custom_font": "Benutzerdefinierte Schriftart",
