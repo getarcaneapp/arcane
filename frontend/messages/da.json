@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Dette billede modtager ikke længere sikkerhedsopdateringer på {date}. Genopbyg det på en nyere version.",
   "count_hardened_images_end_of_life": "{count} hærdede billeder efter udløb af levetiden",
   "count_hardened_images_ending_soon": "{count} hærdede billeder, der nærmer sig udløbsdatoen",
-  "hardened_images_eol_detail": "Hærdede billeder modtager ikke længere sikkerhedsopdateringer, når deres levetid udløber"
+  "hardened_images_eol_detail": "Hærdede billeder modtager ikke længere sikkerhedsopdateringer, når deres levetid udløber",
+  "reveal_value": "Vis værdi"
 }
