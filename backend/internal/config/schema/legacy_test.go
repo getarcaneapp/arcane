@@ -81,8 +81,10 @@ func TestCheckLegacyEnvWarnsForRetiredNames(t *testing.T) {
 	t.Setenv("DEPOT_TOKEN", "")
 	t.Setenv("JWT_SECRET", "legacy")
 	t.Setenv("ANALYTICS_DISABLED", "true")
+	t.Setenv("VOLUME_WORKSPACE_MAX_DEPTH", "50")
 
 	require.NoError(t, CheckLegacyEnv(t.Context()))
 	assert.Contains(t, logs.String(), "env=JWT_SECRET")
 	assert.Contains(t, logs.String(), "env=ANALYTICS_DISABLED")
+	assert.Contains(t, logs.String(), "env=VOLUME_WORKSPACE_MAX_DEPTH")
 }
