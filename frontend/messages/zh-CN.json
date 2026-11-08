@@ -4416,7 +4416,7 @@
   "interface_font": "界面字体",
   "interface_font_description": "界面文本的字体。中文、日文和韩文的字符使用已安装的系统字体。",
   "monospace_font": "等宽字体",
-  "monospace_font_description": "标题、ID 及其他等宽文本的字体",
+  "monospace_font_description": "用于ID和其他等宽文本的字体",
   "code_font": "代码字体",
   "code_font_description": "代码编辑器、代码块和终端所用的字体。重新打开终端时，字体会自动更新。",
   "custom_font": "自定义字体",
