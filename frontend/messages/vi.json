@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Hình ảnh này đã ngừng nhận các bản cập nhật bảo mật trên {date}. Hãy xây dựng lại hình ảnh này trên một phiên bản mới hơn.",
   "count_hardened_images_end_of_life": "{count} Các hình ảnh đã được gia cố sau khi hết vòng đời",
   "count_hardened_images_ending_soon": "{count} Các hình ảnh đã được gia cố sắp hết tuổi thọ",
-  "hardened_images_eol_detail": "Các bản hình ảnh đã được cố định sẽ ngừng nhận các bản cập nhật bảo mật khi hết vòng đời"
+  "hardened_images_eol_detail": "Các bản hình ảnh đã được cố định sẽ ngừng nhận các bản cập nhật bảo mật khi hết vòng đời",
+  "reveal_value": "Giá trị cốt lõi"
 }
