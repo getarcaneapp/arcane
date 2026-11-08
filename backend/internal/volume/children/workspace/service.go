@@ -3,9 +3,8 @@ package workspace
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -167,12 +166,12 @@ func (s *Service) MaxFileSizeBytes(ctx context.Context) int64 {
 	return workspacepkg.MaxFileSizeBytes(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxFileSizeMb"))
 }
 
-func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*types.Workspace, error) {
+func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName, folderPath string) (*types.Workspace, error) {
 	defer s.deps.Locks.RLock(volumeName)()
 
 	totalStartedAt := time.Now()
 	defer func() {
-		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "totalDuration", time.Since(totalStartedAt))
+		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "path", folderPath, "totalDuration", time.Since(totalStartedAt))
 	}()
 
 	inspectionStartedAt := time.Now()
@@ -180,6 +179,13 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*t
 		return nil, classifyVolumeWorkspaceHelperSupportError(err)
 	}
 	slog.DebugContext(ctx, "volume workspace inspection completed", "volume", volumeName, "duration", time.Since(inspectionStartedAt))
+	rel := ""
+	if strings.TrimSpace(folderPath) != "" {
+		var err error
+		if rel, err = kit.NormalizeRelativePath(folderPath); err != nil {
+			return nil, common.Classify(common.ErrVolumeWorkspaceForbidden, fmt.Errorf("invalid volume workspace path: %w", err))
+		}
+	}
 
 	helperStartedAt := time.Now()
 	containerID, cleanup, err := s.deps.AcquireHelper(ctx, volumeName)
@@ -192,33 +198,16 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*t
 	}
 	slog.DebugContext(ctx, "volume workspace helper acquired", "volume", volumeName, "containerId", containerID, "duration", time.Since(helperStartedAt))
 
-	scanStartedAt := time.Now()
-	tree, err := s.readVolumeWorkspaceFromContainer(ctx, containerID)
+	listStartedAt := time.Now()
+	folder, err := s.listVolumeWorkspaceFolder(ctx, containerID, rel)
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(
-		ctx,
-		"volume workspace tree scan completed",
-		"volume",
-		volumeName,
-		"fileCount",
-		len(
-			tree.Files,
-		),
-		"truncated",
-		tree.FileTreeTruncated,
-		"duration",
-		time.Since(
-			scanStartedAt,
-		),
-	)
-	return tree, nil
+	slog.DebugContext(ctx, "volume workspace folder listed", "volume", volumeName, "fileCount", len(folder.Files), "truncated", folder.FileTreeTruncated, "duration", time.Since(listStartedAt))
+	return folder, nil
 }
 
-func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containerID string) (*types.Workspace, error) {
-	maxEntries := s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxEntries")
-
+func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, relativePath string) (*types.Workspace, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -232,10 +221,6 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		cmd := []string{
-			"acfs", "walk", "--root", "/volume", "--path", "/",
-			"--max-depth", strconv.Itoa(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxDepth")), "--max-entries", strconv.Itoa(maxEntries),
-		}
 		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, docker.ExecRequest{
 			Stdout:      pipeWriter,
 			Stderr:      &stderr,
@@ -243,31 +228,31 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 			Options: client.ExecCreateOptions{
 				AttachStdout: true,
 				AttachStderr: true,
-				Cmd:          cmd,
+				Cmd:          []string{"acfs", "list", "--root", "/volume", "--path", "/" + relativePath},
 			},
 		})
 		if execErr == nil && exitCode != 0 {
-			execErr = fmt.Errorf("acfs walk exited with code %d", exitCode)
+			execErr = fmt.Errorf("acfs list exited with code %d", exitCode)
 		}
 		_ = pipeWriter.CloseWithError(execErr)
 		done <- execErr
 	}()
 
-	tree, parseErr := decodeVolumeWorkspaceWalk(pipeReader, maxEntries, s.MaxFileSizeBytes(ctx))
-	if parseErr != nil {
+	folder, parseErr := decodeVolumeWorkspaceList(pipeReader, s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxEntries"), s.MaxFileSizeBytes(ctx))
+	stopped := parseErr != nil || folder.FileTreeTruncated
+	if stopped {
 		cancel()
 		_ = pipeReader.CloseWithError(parseErr)
 	}
 	execErr := <-done
 	_ = pipeReader.Close()
-	if execErr != nil && (parseErr == nil || ctx.Err() != nil || !errors.Is(execErr, context.Canceled)) {
-		return nil, classifyVolumeWorkspaceExecError(execErr, stderr.String(), "read volume workspace")
+	if execErr != nil && (!stopped || ctx.Err() != nil || !errors.Is(execErr, context.Canceled)) {
+		return nil, classifyVolumeWorkspaceExecError(execErr, stderr.String(), "list volume workspace folder")
 	}
 	if parseErr != nil {
-		return nil, fmt.Errorf("parse volume workspace: %w", parseErr)
+		return nil, fmt.Errorf("parse volume workspace folder: %w", parseErr)
 	}
-
-	return tree, nil
+	return folder, nil
 }
 
 func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*types.WorkspaceFileContent, error) {
@@ -495,28 +480,28 @@ func (s *Service) UpdateVolumeWorkspace(
 	manifest types.VolumeWorkspaceUpdateManifest,
 	uploads map[int][]byte,
 	user types.Actor,
-) (*types.Workspace, error) {
+) error {
 	totalStartedAt := time.Now()
 	defer func() {
 		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "fileChangeCount", len(manifest.FileChanges), "totalDuration", time.Since(totalStartedAt))
 	}()
 
-	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
-		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+	if err := workspacepkg.ValidateUpdateManifest(len(manifest.FileChanges), 500); err != nil {
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
 	uploadReferences := make([]workspacepkg.UploadReference, 0, len(manifest.FileChanges))
 	for _, change := range manifest.FileChanges {
 		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex, BaselineIndex: change.BaselineIndex})
 		if err := validateVolumeWorkspaceFileChange(change); err != nil {
-			return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+			return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 		}
 	}
 	if err := workspacepkg.ValidateUploadIndices(uploadReferences, len(uploads), types.FileOpCreateFile, types.FileOpUpdateFile); err != nil {
-		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
 	inspectionStartedAt := time.Now()
 	if err := s.validateVolumeHelperSupport(ctx, volumeName); err != nil {
-		return nil, classifyVolumeWorkspaceHelperSupportError(err)
+		return classifyVolumeWorkspaceHelperSupportError(err)
 	}
 	slog.DebugContext(ctx, "volume workspace inspection completed", "volume", volumeName, "duration", time.Since(inspectionStartedAt))
 	defer s.deps.Locks.Lock(volumeName)()
@@ -527,64 +512,43 @@ func (s *Service) UpdateVolumeWorkspace(
 	helperStartedAt := time.Now()
 	containerID, cleanup, err := s.createVolumeWorkspaceMutationContainer(ctx, volumeName, needsBackups)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cleanup()
 	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
-		return nil, requireVolumeHelperACFSErr
+		return requireVolumeHelperACFSErr
 	}
 	slog.DebugContext(ctx, "volume workspace mutation helper acquired", "volume", volumeName, "containerId", containerID, "dedicated", needsBackups, "duration", time.Since(helperStartedAt))
 
-	revisionScanStartedAt := time.Now()
-	current, err := s.readVolumeWorkspaceFromContainer(ctx, containerID)
-	if err != nil {
-		return nil, err
-	}
-	slog.DebugContext(
-		ctx,
-		"volume workspace revision tree scan completed",
-		"volume",
-		volumeName,
-		"fileCount",
-		len(
-			current.Files,
-		),
-		"truncated",
-		current.FileTreeTruncated,
-		"duration",
-		time.Since(
-			revisionScanStartedAt,
-		),
-	)
-	if strings.TrimSpace(manifest.FileTreeRevision) != current.FileTreeRevision {
-		return nil, common.Classify(common.ErrVolumeWorkspaceConflict, errors.New("volume workspace changed; refresh it and try again"))
+	if verifyErr := s.verifyVolumeWorkspaceBaselines(ctx, containerID, manifest.FileChanges, uploads); verifyErr != nil {
+		return verifyErr
 	}
 
 	stagingStartedAt := time.Now()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	identity := s.resolveVolumeWorkspaceWriteIdentity(ctx, containerID, volumeName)
 	stagedFiles, err := s.stageVolumeWorkspaceChanges(ctx, dockerClient, containerID, manifest.FileChanges, uploads, identity)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	slog.DebugContext(ctx, "volume workspace staging completed", "volume", volumeName, "stagedFileCount", len(stagedFiles), "duration", time.Since(stagingStartedAt))
 
 	backupStartedAt := time.Now()
 	scope, err := volumeWorkspaceBackupScope(manifest.FileChanges)
 	if err != nil {
-		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}
 	for _, relativePath := range scope {
 		if _, stderr, validateErr := s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceValidatePathScript, "sh", relativePath, "1"}); validateErr != nil {
-			return nil, classifyVolumeWorkspaceExecError(validateErr, stderr, "validate volume workspace path")
+			return classifyVolumeWorkspaceExecError(validateErr, stderr, "validate volume workspace path")
 		}
 	}
 	backup, err := s.backupVolumeWorkspaceScope(ctx, containerID, scope)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	slog.DebugContext(ctx, "volume workspace backup completed", "volume", volumeName, "scopeCount", len(scope), "duration", time.Since(backupStartedAt))
 
@@ -615,31 +579,9 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, volumeWorkspaceRollbackPaths(
 			return nil
 		},
 	); applyVolumeWorkspaceChangesErr != nil {
-		return nil, applyVolumeWorkspaceChangesErr
+		return applyVolumeWorkspaceChangesErr
 	}
 	slog.DebugContext(ctx, "volume workspace changes applied", "volume", volumeName, "fileChangeCount", len(manifest.FileChanges), "duration", time.Since(applyStartedAt))
-
-	finalScanStartedAt := time.Now()
-	tree, err := s.readVolumeWorkspaceFromContainer(ctx, containerID)
-	if err != nil {
-		return nil, err
-	}
-	slog.DebugContext(
-		ctx,
-		"volume workspace final tree scan completed",
-		"volume",
-		volumeName,
-		"fileCount",
-		len(
-			tree.Files,
-		),
-		"truncated",
-		tree.FileTreeTruncated,
-		"duration",
-		time.Since(
-			finalScanStartedAt,
-		),
-	)
 
 	metadata := database.JSON{"action": "workspace_update", "fileChangeCount": len(manifest.FileChanges)}
 	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
@@ -654,7 +596,62 @@ for rel do rm -rf -- "/volume/$rel"; done`, "sh"}, volumeWorkspaceRollbackPaths(
 	}); logErr != nil {
 		slog.WarnContext(ctx, "could not log volume workspace update event", "volume", volumeName, "error", logErr.Error())
 	}
-	return tree, nil
+	return nil
+}
+
+func (s *Service) verifyVolumeWorkspaceBaselines(ctx context.Context, containerID string, changes []types.VolumeWorkspaceFileChange, uploads map[int][]byte) error {
+	for index, change := range changes {
+		if change.BaselineIndex == nil {
+			continue
+		}
+		rel, existed := volumeWorkspaceOriginalPath(changes[:index], change.RelativePath)
+		if !existed {
+			continue
+		}
+		baseline := uploads[*change.BaselineIndex]
+		reader, _, err := s.startVolumeWorkspaceRead(ctx, containerID, rel, int64(len(baseline))+1, func() {})
+		if err != nil {
+			return fmt.Errorf("read volume workspace file: %w", err)
+		}
+		current, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if contentErr := cmp.Or(readErr, closeErr); contentErr != nil {
+			return fmt.Errorf("read volume workspace file content: %w", contentErr)
+		}
+		if !bytes.Equal(current, baseline) {
+			return common.Classify(common.ErrVolumeWorkspaceConflict, fmt.Errorf("file %s changed since it was loaded; refresh it and try again", rel))
+		}
+	}
+	return nil
+}
+
+// volumeWorkspaceOriginalPath maps a path back through earlier renames and moves; false means an earlier change created or replaced it.
+func volumeWorkspaceOriginalPath(earlier []types.VolumeWorkspaceFileChange, relativePath string) (string, bool) {
+	current, err := kit.NormalizeRelativePath(relativePath)
+	if err != nil {
+		return "", false
+	}
+	for _, change := range slices.Backward(earlier) {
+		source, normalizeErr := kit.NormalizeRelativePath(change.RelativePath)
+		if normalizeErr != nil {
+			return "", false
+		}
+		target := ""
+		if change.Operation == types.FileOpRename || change.Operation == types.FileOpMove {
+			applyChange, mapErr := mapVolumeWorkspaceChangeToACFS(change, volumeWorkspaceStagedFile{})
+			if mapErr != nil {
+				return "", false
+			}
+			target = strings.TrimPrefix(applyChange.TargetPath, "/")
+		}
+		switch {
+		case target != "" && kit.FilePathMatches(current, target):
+			current = source + strings.TrimPrefix(current, target)
+		case kit.FilePathMatches(current, source):
+			return "", false
+		}
+	}
+	return current, true
 }
 
 func volumeWorkspaceWriteIdentityFromConfigUser(configUser string) volumeWorkspaceWriteIdentity {
@@ -1231,90 +1228,53 @@ func volumeWorkspaceFileContentResponse(relativePath, kind string, size int64, c
 	}, nil
 }
 
-func volumeWorkspaceEntryFromACFS(entry acfstypes.Entry, maxFileSizeBytes int64) (types.WorkspaceFileEntry, string) {
-	fileEntry := workspacepkg.FileEntry(entry)
-	fileEntry.RelativePath = strings.TrimPrefix(entry.Path, "/")
-	switch {
-	case entry.IsDirectory:
-		fileEntry.Size = 0
-		fileEntry.Editable = true
-		return fileEntry, "dir"
-	case entry.IsSymlink:
-		fileEntry.ReadOnlyReason = types.FileReadOnlySymlink
-		return fileEntry, "symlink"
-	case !entry.IsDirectory && !entry.IsSymlink && strings.HasPrefix(entry.Mode, "-"):
-		if entry.Size > maxFileSizeBytes {
-			fileEntry.ReadOnlyReason = types.FileReadOnlyTooLarge
-		} else {
-			fileEntry.Editable = true
-		}
-		return fileEntry, "file"
-	default:
-		fileEntry.ReadOnlyReason = types.FileReadOnlySpecial
-		return fileEntry, "special"
-	}
-}
-
-func decodeVolumeWorkspaceWalk(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*types.Workspace, error) {
+func decodeVolumeWorkspaceList(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*types.Workspace, error) {
 	decoder := jsontext.NewDecoder(source)
+	if token, err := decoder.ReadToken(); err != nil || token.Kind() != '{' {
+		return nil, cmp.Or(err, errors.New("acfs list emitted an invalid response"))
+	}
 	files := make([]types.WorkspaceFileEntry, 0, min(maxEntries, 256))
-	classifications := make(map[string]string, min(maxEntries, 256))
-	trailerSeen := false
-	truncated := false
-	for {
-		var record acfstypes.WalkRecord
-		err := json.UnmarshalDecode(decoder, &record)
-		if errors.Is(err, io.EOF) {
-			break
-		}
+	version := 0
+	for decoder.PeekKind() != '}' {
+		name, err := decoder.ReadToken()
 		if err != nil {
 			return nil, err
 		}
-		if record.Version != acfstypes.ProtocolVersion {
-			return nil, fmt.Errorf("unsupported acfs protocol %d", record.Version)
-		}
-		if trailerSeen {
-			return nil, errors.New("acfs walk emitted a record after its trailer")
-		}
-		if record.End {
-			trailerSeen = true
-			truncated = record.Truncated
-			if record.Count != len(files) {
-				return nil, errors.New("acfs walk trailer count does not match emitted entries")
+		switch name.String() {
+		case "entries":
+			if token, readErr := decoder.ReadToken(); readErr != nil || token.Kind() != '[' {
+				return nil, cmp.Or(readErr, errors.New("acfs list emitted invalid entries"))
 			}
-			continue
+			for decoder.PeekKind() != ']' {
+				if len(files) >= maxEntries {
+					slices.SortFunc(files, workspacepkg.CompareEntries)
+					return &types.Workspace{Files: files, FileTreeTruncated: true}, nil
+				}
+				var entry acfstypes.Entry
+				if unmarshalErr := json.UnmarshalDecode(decoder, &entry); unmarshalErr != nil {
+					return nil, unmarshalErr
+				}
+				files = append(files, workspacepkg.EntryFromACFS(entry, maxFileSizeBytes))
+			}
+			if _, readErr := decoder.ReadToken(); readErr != nil {
+				return nil, readErr
+			}
+		case "version":
+			if unmarshalErr := json.UnmarshalDecode(decoder, &version); unmarshalErr != nil {
+				return nil, unmarshalErr
+			}
+		default:
+			if skipErr := decoder.SkipValue(); skipErr != nil {
+				return nil, skipErr
+			}
 		}
-		if record.Entry == nil {
-			return nil, errors.New("acfs walk emitted an empty record")
-		}
-		if len(files) >= maxEntries {
-			return nil, errors.New("acfs walk exceeded the requested entry limit")
-		}
-		fileEntry, classification := volumeWorkspaceEntryFromACFS(*record.Entry, maxFileSizeBytes)
-		classifications[fileEntry.RelativePath] = classification
-		files = append(files, fileEntry)
 	}
-	if !trailerSeen {
-		return nil, errors.New("acfs walk ended without a trailer")
+	if _, err := decoder.ReadToken(); err != nil {
+		return nil, err
 	}
-
-	revisionEntries := slices.Clone(files)
-	slices.SortFunc(revisionEntries, func(a, b types.WorkspaceFileEntry) int {
-		return strings.Compare(a.RelativePath, b.RelativePath)
-	})
-	h := sha256.New()
-	for _, entry := range revisionEntries {
-		kit.WriteRecord(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode)
+	if version != acfstypes.ProtocolVersion {
+		return nil, fmt.Errorf("unsupported acfs protocol %d", version)
 	}
-	slices.SortFunc(files, func(a, b types.WorkspaceFileEntry) int {
-		if a.IsDirectory != b.IsDirectory {
-			return kit.Ternary(a.IsDirectory, -1, 1)
-		}
-		return strings.Compare(a.RelativePath, b.RelativePath)
-	})
-	return &types.Workspace{
-		Files:             files,
-		FileTreeRevision:  hex.EncodeToString(h.Sum(nil)),
-		FileTreeTruncated: truncated,
-	}, nil
+	slices.SortFunc(files, workspacepkg.CompareEntries)
+	return &types.Workspace{Files: files}, nil
 }

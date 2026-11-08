@@ -196,7 +196,6 @@ var (
 		"upgradeLogRetentionDays",
 		"upgradeMaxParallelAgents",
 		"volumeHelperIdleTimeout",
-		"volumeWorkspaceMaxDepth",
 		"volumeWorkspaceMaxEntries",
 		"volumeWorkspaceMaxFileSizeMb",
 		"vulnerabilityScanEnabled",

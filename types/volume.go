@@ -213,8 +213,7 @@ type (
 	}
 
 	VolumeWorkspaceUpdateManifest struct {
-		FileTreeRevision string                      `json:"fileTreeRevision" binding:"required"`
-		FileChanges      []VolumeWorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
+		FileChanges []VolumeWorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
 	}
 
 	VolumeBackupFileRestoreOptions struct {

@@ -22,6 +22,7 @@ import (
 
 	"kit.getarcane.app"
 
+	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
@@ -46,24 +47,19 @@ func newWorkspaceCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.GetJSON[types.Workspace](cmd.Context(), clitypes.VolumeWorkspace(c.EnvID(), resolved.Name))
+			folder := ""
+			if len(args) == 2 {
+				folder = strings.Trim(filepath.ToSlash(args[1]), "/")
+			}
+			result, err := c.GetJSON[types.Workspace](cmd.Context(), cmdutil.AppendQuery(
+				clitypes.VolumeWorkspace(c.EnvID(), resolved.Name),
+				url.Values{"path": []string{folder}},
+			))
 			if err != nil {
 				return fmt.Errorf("failed to get volume workspace: %w", err)
 			}
 
-			// The endpoint returns the full tree; an optional path argument
-			// narrows the listing to that subtree.
 			entries := result.Data.Files
-			if len(args) == 2 {
-				prefix := strings.Trim(args[1], "/")
-				filtered := entries[:0:0]
-				for _, entry := range entries {
-					if entry.RelativePath == prefix || strings.HasPrefix(entry.RelativePath, prefix+"/") {
-						filtered = append(filtered, entry)
-					}
-				}
-				entries = filtered
-			}
 
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintJSON(entries)
@@ -90,7 +86,7 @@ func newWorkspaceCmd() *cobra.Command {
 				return tableErr
 			}
 			if result.Data.FileTreeTruncated {
-				output.Warning("File listing was truncated by the server")
+				output.Warning("Folder listing was truncated by the server")
 			}
 			return nil
 		},
@@ -251,13 +247,19 @@ func newWorkspacePutCmd() *cobra.Command {
 				return confirmationErr
 			}
 
-			current, err := c.GetJSON[types.Workspace](cmd.Context(), clitypes.VolumeWorkspace(c.EnvID(), resolved.Name))
+			parent := path.Dir(relativePath)
+			parentListing, err := c.GetJSON[types.Workspace](cmd.Context(), cmdutil.AppendQuery(
+				clitypes.VolumeWorkspace(c.EnvID(), resolved.Name),
+				url.Values{"path": []string{kit.Ternary(parent == ".", "", parent)}},
+			))
 			if err != nil {
-				return fmt.Errorf("failed to get volume workspace: %w", err)
+				if statusErr, ok := errors.AsType[*client.StatusError](err); !ok || statusErr.StatusCode != http.StatusNotFound {
+					return fmt.Errorf("failed to get volume workspace: %w", err)
+				}
 			}
 
 			operation := types.FileOpCreateFile
-			if slices.ContainsFunc(current.Data.Files, func(entry types.WorkspaceFileEntry) bool {
+			if err == nil && slices.ContainsFunc(parentListing.Data.Files, func(entry types.WorkspaceFileEntry) bool {
 				return entry.RelativePath == relativePath && !entry.IsDirectory
 			}) {
 				operation = types.FileOpUpdateFile
@@ -265,7 +267,6 @@ func newWorkspacePutCmd() *cobra.Command {
 
 			uploadIndex := 0
 			manifest := types.VolumeWorkspaceUpdateManifest{
-				FileTreeRevision: current.Data.FileTreeRevision,
 				FileChanges: []types.VolumeWorkspaceFileChange{{
 					Operation:    operation,
 					RelativePath: relativePath,

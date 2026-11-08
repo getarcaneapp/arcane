@@ -268,6 +268,8 @@ export const queryKeys = {
 			['volumes', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName] as const,
 		workspace: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName, 'workspace'] as const,
+		workspaceFolder: (environmentId: string, volumeName: string, path: string) =>
+			['volume', environmentId, volumeName, 'workspace', path] as const,
 		workspaceFile: (environmentId: string, volumeName: string, relativePath: string) =>
 			['volume', environmentId, volumeName, 'workspace-file', relativePath] as const,
 		backups: (volumeName: string) => ['volume-backups', volumeName] as const,
