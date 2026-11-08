@@ -205,9 +205,7 @@
 	}));
 
 	function isFolderUnloaded(relativePath: string): boolean {
-		return (
-			!!loadedFolders && !!relativePath && !loadedFolders.has(relativePath) && entryByPath.get(relativePath)?.pending !== true
-		);
+		return !!loadedFolders && !!relativePath && !loadedFolders.has(relativePath);
 	}
 
 	function toggleFolder(relativePath: string) {

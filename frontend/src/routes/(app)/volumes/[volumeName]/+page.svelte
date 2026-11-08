@@ -68,7 +68,8 @@
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		workspaceFileParentPath,
-		workspaceFilePathMatches
+		workspaceFilePathMatches,
+		workspaceFileServerPath
 	} from '#lib/utils/workspace-files.js';
 
 	import BackupList from '../components/volume-backup-table.svelte';
@@ -161,9 +162,6 @@
 		};
 	});
 	const workspaceRootQuery = $derived(workspaceQueries[0]);
-	const loadedWorkspaceFolders = $derived(
-		new Set(workspaceFolderPaths.filter((_, index) => workspaceQueries[index]?.data && !workspaceQueries[index]?.error))
-	);
 	const workspaceTruncated = $derived(workspaceQueries.some((query) => query.data?.fileTreeTruncated));
 
 	const visibleWorkspaceFiles = $derived.by(() =>
@@ -185,6 +183,20 @@
 		})
 	);
 	const workspaceFilePaths = $derived.by(() => new Set(visibleWorkspaceFiles.map((file) => file.relativePath)));
+	const loadedWorkspaceFolders = $derived.by(() => {
+		const loadedServerFolders = new Set(
+			workspaceFolderPaths.filter((_, index) => workspaceQueries[index]?.data && !workspaceQueries[index]?.error)
+		);
+		return new Set(
+			visibleWorkspaceFiles
+				.filter((file) => {
+					if (!file.isDirectory) return false;
+					const serverPath = workspaceFileServerPath(workspaceFileChanges, file.relativePath);
+					return serverPath === null || loadedServerFolders.has(serverPath);
+				})
+				.map((file) => file.relativePath)
+		);
+	});
 	const changedWorkspaceTextPaths = $derived.by(() =>
 		Object.keys(workspaceFileContents).filter(
 			(relativePath) => workspaceFileContents[relativePath] !== loadedWorkspaceFileContents[relativePath]
@@ -285,11 +297,10 @@
 		const volumeName = volume?.name;
 		if (!active || !volumeName) return false;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
-		if (relativePath && (!entry?.isDirectory || entry.pending)) return true;
-		if (!workspaceFolderPaths.includes(relativePath)) workspaceFolderPaths = [...workspaceFolderPaths, relativePath];
-		const result = await tryCatch(
-			queryClient.ensureQueryData(volumeWorkspaceFolderQuery(environmentId, volumeName, relativePath))
-		);
+		const serverPath = workspaceFileServerPath(workspaceFileChanges, relativePath);
+		if (serverPath === null || (relativePath && !entry?.isDirectory)) return true;
+		if (!workspaceFolderPaths.includes(serverPath)) workspaceFolderPaths = [...workspaceFolderPaths, serverPath];
+		const result = await tryCatch(queryClient.ensureQueryData(volumeWorkspaceFolderQuery(environmentId, volumeName, serverPath)));
 		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return false;
 		if (result.error !== null) {
 			toast.error(m.common_load_failed({ resource: relativePath }), { description: extractApiErrorMessage(result.error) });
@@ -517,10 +528,9 @@
 		loadSelectedWorkspaceFile();
 	}
 
-	async function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
+	function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
 		const normalizedName = validateWorkspaceFileName(newName);
-		if (!normalizedName || !(await loadVolumeWorkspaceFolder(relativePath))) return;
-		if (!workspaceFilePaths.has(relativePath)) return;
+		if (!normalizedName) return;
 		const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
 		if (newPath !== relativePath && workspaceFilePaths.has(newPath)) {
 			toast.error(m.workspace_file_duplicate_name());
@@ -531,12 +541,7 @@
 	}
 
 	async function moveVolumeWorkspaceFile(relativePath: string, newParentPath: string) {
-		if (
-			newParentPath === workspaceFileParentPath(relativePath) ||
-			!(await loadVolumeWorkspaceFolder(newParentPath)) ||
-			!(await loadVolumeWorkspaceFolder(relativePath))
-		)
-			return;
+		if (newParentPath === workspaceFileParentPath(relativePath) || !(await loadVolumeWorkspaceFolder(newParentPath))) return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
 		if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {
