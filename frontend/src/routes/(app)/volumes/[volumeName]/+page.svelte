@@ -517,9 +517,10 @@
 		loadSelectedWorkspaceFile();
 	}
 
-	function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
+	async function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
 		const normalizedName = validateWorkspaceFileName(newName);
-		if (!normalizedName) return;
+		if (!normalizedName || !(await loadVolumeWorkspaceFolder(relativePath))) return;
+		if (!workspaceFilePaths.has(relativePath)) return;
 		const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
 		if (newPath !== relativePath && workspaceFilePaths.has(newPath)) {
 			toast.error(m.workspace_file_duplicate_name());
@@ -530,7 +531,12 @@
 	}
 
 	async function moveVolumeWorkspaceFile(relativePath: string, newParentPath: string) {
-		if (newParentPath === workspaceFileParentPath(relativePath) || !(await loadVolumeWorkspaceFolder(newParentPath))) return;
+		if (
+			newParentPath === workspaceFileParentPath(relativePath) ||
+			!(await loadVolumeWorkspaceFolder(newParentPath)) ||
+			!(await loadVolumeWorkspaceFolder(relativePath))
+		)
+			return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
 		if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {

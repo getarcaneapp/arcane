@@ -1272,6 +1272,10 @@ func decodeVolumeWorkspaceList(source io.Reader, maxEntries int, maxFileSizeByte
 	if _, err := decoder.ReadToken(); err != nil {
 		return nil, err
 	}
+	// Reading to EOF drains the exec pipe so its writer can finish.
+	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
+		return nil, cmp.Or(err, errors.New("acfs list emitted trailing data"))
+	}
 	if version != acfstypes.ProtocolVersion {
 		return nil, fmt.Errorf("unsupported acfs protocol %d", version)
 	}

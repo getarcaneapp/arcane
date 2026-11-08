@@ -92,12 +92,14 @@ func TestUpdateVolumeWorkspaceRejectsEmptyManifest(t *testing.T) {
 }
 
 func TestDecodeVolumeWorkspaceListSortsFolderEntries(t *testing.T) {
-	folder, err := decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[`+
+	trailingNewline := strings.NewReader("\n")
+	folder, err := decodeVolumeWorkspaceList(io.MultiReader(strings.NewReader(`{"entries":[`+
 		`{"name":"a.txt","path":"/docs/a.txt","mode":"-rw-r--r--","size":3},`+
 		`{"name":"large.bin","path":"/docs/large.bin","mode":"-rw-r--r--","size":11},`+
 		`{"name":"nested","path":"/docs/nested","mode":"drwxr-xr-x","size":4096,"isDirectory":true}`+
-		`],"version":2}`+"\n"), 10, 10)
+		`],"version":2}`), trailingNewline), 10, 10)
 	require.NoError(t, err)
+	require.Zero(t, trailingNewline.Len())
 	require.False(t, folder.FileTreeTruncated)
 	require.Len(t, folder.Files, 3)
 	require.Equal(t, "docs/nested", folder.Files[0].RelativePath)
@@ -129,6 +131,8 @@ func TestDecodeVolumeWorkspaceListRejectsInvalidResponses(t *testing.T) {
 	require.Error(t, err)
 	_, err = decodeVolumeWorkspaceList(strings.NewReader(`[]`), 10, 10)
 	require.Error(t, err)
+	_, err = decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[],"version":2}{}`), 10, 10)
+	require.ErrorContains(t, err, "trailing data")
 }
 
 func TestVolumeWorkspaceOriginalPathFollowsEarlierChanges(t *testing.T) {
