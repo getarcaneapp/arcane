@@ -158,6 +158,5 @@ export type ProjectDeployOptions = {
 };
 
 export interface ProjectWorkspaceUpdateManifest {
-	fileTreeRevision: string;
 	fileChanges: WorkspaceFileChange[];
 }

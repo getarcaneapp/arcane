@@ -393,8 +393,7 @@ type (
 	}
 
 	ProjectWorkspaceUpdateManifest struct {
-		FileTreeRevision string                `json:"fileTreeRevision" binding:"required"`
-		FileChanges      []WorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
+		FileChanges []WorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
 	}
 
 	CreateProjectWorkspaceManifest struct {

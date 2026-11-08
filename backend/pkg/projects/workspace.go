@@ -3,11 +3,8 @@ package projects
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -19,6 +16,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"
 
 	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
@@ -26,200 +24,54 @@ import (
 )
 
 type (
-	ProjectWorkspaceApplyOptions struct {
-		ExpectedRevision string
+	ProjectWorkspaceListOptions struct {
 		SkipDirectories  string
 		ComposeFileName  string
-		MaxDepth         int
 		MaxEntries       int
 		MaxFileSizeBytes int64
 	}
 
-	projectWorkspaceTreeWalker struct {
-		ctx              context.Context
-		revisionHash     hash.Hash
-		protected        map[string]bool
-		skipDirs         map[string]bool
-		projectAbs       string
-		files            []types.WorkspaceFileEntry
-		maxDepth         int
-		maxEntries       int
-		maxFileSizeBytes int64
-		entryCount       int
-		truncated        bool
+	ProjectWorkspaceApplyOptions struct {
+		ComposeFileName  string
+		MaxFileSizeBytes int64
 	}
 )
 
 var (
-	ErrProjectWorkspaceRevisionConflict        = errors.New("project workspace changed; refresh it and try again")
+	ErrProjectWorkspaceFileChanged             = errors.New("project workspace file changed since it was loaded; refresh it and try again")
 	ErrProjectWorkspaceOutsideProjectDirectory = errors.New("path is outside project directory")
 	ErrProjectWorkspaceProtectedPath           = errors.New("protected project configuration cannot be modified through the workspace")
 	ErrProjectWorkspaceSymlinkPath             = errors.New("symlink workspace paths are not supported")
 )
 
-func ReadProjectWorkspace(
-	ctx context.Context,
-	projectPath string,
-	maxDepth int,
-	skipDirectories, composeFileName string,
-	maxEntries int,
-	maxFileSizeBytes int64,
-) ([]types.WorkspaceFileEntry, string, bool, error) {
-	projectAbs, err := filepath.Abs(projectPath)
-	if err != nil {
-		return nil, "", false, fmt.Errorf("resolve project path: %w", err)
+func ListProjectWorkspaceFolder(ctx context.Context, projectPath, relativePath string, opts ProjectWorkspaceListOptions) (*types.Workspace, error) {
+	skipDirs := projectScanSkipDirectorySet(opts.SkipDirectories)
+	if relativePath != "" && slices.ContainsFunc(strings.Split(relativePath, "/"), func(segment string) bool { return skipDirs[segment] }) {
+		return nil, fmt.Errorf("project workspace folder %s: %w", relativePath, fs.ErrNotExist)
 	}
-	projectAbs = filepath.Clean(projectAbs)
-
-	root, err := os.OpenRoot(projectAbs)
-	if err != nil {
-		return nil, "", false, fmt.Errorf("open project directory: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-
-	walker := &projectWorkspaceTreeWalker{
-		ctx:              ctx,
-		projectAbs:       projectAbs,
-		maxDepth:         maxDepth,
-		maxEntries:       maxEntries,
-		maxFileSizeBytes: kit.Ternary(maxFileSizeBytes <= 0, workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB), maxFileSizeBytes),
-		protected:        ProtectedProjectPaths(projectAbs, composeFileName),
-		skipDirs:         projectScanSkipDirectorySet(skipDirectories),
-		files:            []types.WorkspaceFileEntry{},
-		revisionHash:     sha256.New(),
-	}
-
-	if walkErr := walker.walk(root.FS()); walkErr != nil {
-		return nil, "", false, walkErr
-	}
-
-	slices.SortFunc(walker.files, func(a, b types.WorkspaceFileEntry) int {
-		if a.IsDirectory != b.IsDirectory {
-			return kit.Ternary(a.IsDirectory, -1, 1)
+	protected := ProtectedProjectPaths(projectPath, opts.ComposeFileName)
+	files := make([]types.WorkspaceFileEntry, 0, min(opts.MaxEntries, 256))
+	truncated := false
+	err := acfs.Root{Path: projectPath}.ListEach(ctx, "/"+relativePath, func(entry acfstypes.Entry) error {
+		switch {
+		case entry.IsDirectory && skipDirs[entry.Name], relativePath == "" && protected[entry.Name]:
+			return nil
+		case len(files) >= opts.MaxEntries:
+			truncated = true
+			return fs.SkipAll
 		}
-		return strings.Compare(a.RelativePath, b.RelativePath)
+		files = append(files, workspacepkg.EntryFromACFS(entry, opts.MaxFileSizeBytes))
+		return nil
 	})
-
-	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
-}
-
-func (w *projectWorkspaceTreeWalker) walk(fsys fs.FS) error {
-	for queue := []string{"."}; len(queue) > 0; queue = queue[1:] {
-		entries, err := fs.ReadDir(fsys, queue[0])
-		if err != nil {
-			if queue[0] != "." && (os.IsPermission(err) || os.IsNotExist(err)) {
-				slog.DebugContext(w.ctx, "Skipping unreadable project workspace subdirectory", "relativePath", queue[0], "error", err)
-				continue
-			}
-			return err
-		}
-		for _, entry := range entries {
-			rel := path.Join(queue[0], entry.Name())
-			descend, visitErr := w.visit(rel, entry)
-			if visitErr != nil {
-				return visitErr
-			}
-			if w.truncated {
-				return nil
-			}
-			if descend {
-				queue = append(queue, rel)
-			}
-		}
-	}
-	return nil
-}
-
-func (w *projectWorkspaceTreeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
-	// Entries are visited in a fixed level-by-level, name-sorted order, so
-	// cutting off after maxEntries still yields a stable revision as long as
-	// the concurrency compare walk uses the same cap.
-	if w.maxEntries > 0 && w.entryCount >= w.maxEntries {
-		w.truncated = true
-		return false, nil
-	}
-
-	depth := strings.Count(rel, "/") + 1
-	if depth > w.maxDepth {
-		return false, nil
-	}
-
-	if entry.IsDir() && w.skipDirs[entry.Name()] {
-		return false, nil
-	}
-
-	info, err := entry.Info()
-	if err != nil {
-		// An entry that vanished mid-walk or that we are not allowed to stat is
-		// skipped rather than failing the whole tree; anything else surfaces.
-		if !os.IsPermission(err) && !os.IsNotExist(err) {
-			return false, err
-		}
-		slog.DebugContext(w.ctx, "Skipping unreadable project workspace entry", "relativePath", rel, "error", err)
-		return false, nil
-	}
-
-	isProtected := w.protected[rel]
-	if isProtected {
-		return entry.IsDir(), nil
-	}
-
-	// Protected Compose configuration is intentionally absent from both the
-	// workspace response and its revision so configuration saves cannot make
-	// a workspace draft stale.
-	kind := "file"
 	switch {
-	case entry.IsDir():
-		kind = "dir"
-	case info.Mode()&os.ModeSymlink != 0:
-		kind = "symlink"
-	case !info.Mode().IsRegular():
-		kind = "special"
+	case errors.Is(err, fs.ErrPermission) && relativePath != "":
+		slog.DebugContext(ctx, "Skipping unreadable project workspace folder", "relativePath", relativePath, "error", err)
+		return &types.Workspace{}, nil
+	case err != nil && !errors.Is(err, fs.SkipAll):
+		return nil, err
 	}
-	kit.WriteRecord(w.revisionHash, rel, kind)
-	w.entryCount++
-
-	size := info.Size()
-	if entry.IsDir() {
-		size = 0
-	}
-	workspaceEntry := types.WorkspaceFileEntry{
-		Path:         filepath.Join(w.projectAbs, filepath.FromSlash(rel)),
-		RelativePath: rel,
-		Name:         entry.Name(),
-		IsDirectory:  entry.IsDir(),
-		Size:         size,
-		ModTime:      info.ModTime(),
-		Mode:         info.Mode().String(),
-		IsSymlink:    info.Mode()&os.ModeSymlink != 0,
-	}
-	switch kind {
-	case "dir":
-		workspaceEntry.Editable = true
-	case "symlink":
-		workspaceEntry.ReadOnlyReason = types.FileReadOnlySymlink
-		if target, readlinkErr := os.Readlink(workspaceEntry.Path); readlinkErr == nil {
-			workspaceEntry.LinkTarget = target
-		}
-	case "special":
-		workspaceEntry.ReadOnlyReason = types.FileReadOnlySpecial
-	case "file":
-		workspaceEntry.Editable, workspaceEntry.ReadOnlyReason = classifyProjectWorkspaceFile(workspaceEntry.Path, size, w.maxFileSizeBytes)
-	}
-	w.files = append(w.files, workspaceEntry)
-
-	return entry.IsDir(), nil
-}
-
-func classifyProjectWorkspaceFile(filePath string, size, maxFileSizeBytes int64) (bool, string) {
-	if size > maxFileSizeBytes {
-		return false, types.FileReadOnlyTooLarge
-	}
-	content, err := os.ReadFile(filePath)
-	if err != nil || !bytes.Equal(bytes.ToValidUTF8(content, []byte{}), content) || bytes.IndexByte(content, 0) >= 0 {
-		return false, types.FileReadOnlyBinary
-	}
-	return true, ""
+	slices.SortFunc(files, workspacepkg.CompareEntries)
+	return &types.Workspace{Files: files, FileTreeTruncated: truncated}, nil
 }
 
 func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, changes []types.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
@@ -235,16 +87,6 @@ func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, chang
 	}
 	if len(changes) == 0 {
 		return nil
-	}
-
-	if opts.ExpectedRevision != "" {
-		_, currentRevision, _, err := ReadProjectWorkspace(ctx, projectPath, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName, opts.MaxEntries, opts.MaxFileSizeBytes)
-		if err != nil {
-			return fmt.Errorf("read project workspace revision: %w", err)
-		}
-		if currentRevision != opts.ExpectedRevision {
-			return ErrProjectWorkspaceRevisionConflict
-		}
 	}
 
 	root, err := os.OpenRoot(projectPath)
@@ -409,7 +251,7 @@ func updateProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel st
 			return fmt.Errorf("read project workspace file: %w", readProjectWorkspaceFileLimitedErr)
 		}
 		if !bytes.Equal(current, baseline) {
-			return fmt.Errorf("file content changed since it was loaded: %w", ErrProjectWorkspaceRevisionConflict)
+			return fmt.Errorf("%s: %w", rel, ErrProjectWorkspaceFileChanged)
 		}
 	}
 

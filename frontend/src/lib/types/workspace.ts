@@ -16,9 +16,7 @@ export interface WorkspaceFileEntry {
 
 export interface Workspace {
 	files: WorkspaceFileEntry[];
-	fileTreeRevision: string;
 	fileTreeTruncated: boolean;
-	activityId?: string;
 }
 
 export interface WorkspaceFileContent {

@@ -30,8 +30,6 @@ type (
 	}
 
 	Workspace struct {
-		ActivityID        *string              `json:"activityId,omitempty"`
-		FileTreeRevision  string               `json:"fileTreeRevision"`
 		Files             []WorkspaceFileEntry `json:"files"`
 		FileTreeTruncated bool                 `json:"fileTreeTruncated"`
 	}

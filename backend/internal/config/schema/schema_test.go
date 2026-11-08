@@ -154,7 +154,6 @@ var (
 		"pollingInterval",
 		"projectScanMaxDepth",
 		"projectScanSkipDirs",
-		"projectWorkspaceMaxDepth",
 		"projectWorkspaceMaxEntries",
 		"projectWorkspaceMaxFileSizeMb",
 		"projectsDirectory",

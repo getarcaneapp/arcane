@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createQueries, createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -28,6 +28,7 @@
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { useWorkspaceFolders } from '#lib/hooks/use-workspace-folders.svelte.js';
 	import {
 		VolumesIcon,
 		ClockIcon,
@@ -49,7 +50,7 @@
 	import type { VolumeWorkspaceFileContent } from '#lib/types/ui/volume.js';
 	import type { VolumeBackupEntry, VolumeWorkspaceFileChange, Volume } from '#lib/types/volume.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
@@ -108,7 +109,6 @@
 	const queryClient = useQueryClient();
 
 	let workspaceRequested = $state(false);
-	let workspaceFolderPaths = $state<string[]>(['']);
 	let workspaceFileChanges = $state<VolumeWorkspaceFileChange[]>([]);
 	let workspaceFileContents = $state<Record<string, string>>({});
 	let loadedWorkspaceFileContents = $state<Record<string, string>>({});
@@ -149,28 +149,13 @@
 		return workspaceBackupPathQuery.data ?? null;
 	});
 
-	const workspaceQueries = createQueries(() => {
-		const environmentId = currentEnvId;
-		const volumeName = volume?.name ?? '';
-		return {
-			queries: workspaceFolderPaths.map((path) => ({
-				...volumeWorkspaceFolderQuery(environmentId, volumeName, path),
-				enabled: !!volumeName && workspaceRequested && canReadVolume,
-				refetchOnMount: false
-			}))
-		};
+	const workspaceFolders = useWorkspaceFolders({
+		folderQuery: (path) => volumeWorkspaceFolderQuery(currentEnvId, volume?.name ?? '', path),
+		enabled: () => !!volume?.name && workspaceRequested && canReadVolume
 	});
-	const workspaceRootQuery = $derived(workspaceQueries[0]);
-	const loadedWorkspaceFolders = $derived(
-		new Set(workspaceFolderPaths.filter((_, index) => workspaceQueries[index]?.data && !workspaceQueries[index]?.error))
-	);
-	const workspaceTruncated = $derived(workspaceQueries.some((query) => query.data?.fileTreeTruncated));
 
 	const visibleWorkspaceFiles = $derived.by(() =>
-		applyWorkspaceFileChangesForDisplay(
-			workspaceQueries.flatMap((query) => (query.error ? [] : (query.data?.files ?? []))),
-			workspaceFileChanges
-		).map((file) => {
+		applyWorkspaceFileChangesForDisplay(workspaceFolders.files, workspaceFileChanges).map((file) => {
 			const modeType = file.mode?.[0];
 			const metadata = workspaceFileMetadata[file.relativePath];
 			const editable = metadata?.editable ?? file.editable;
@@ -263,40 +248,10 @@
 		);
 		selectedWorkspaceFile = workspacePrefs.current.selectedFile;
 		openWorkspaceTabs = workspacePrefs.current.openTabs;
-		workspaceFolderPaths = [
-			...new Set([
-				'',
-				...[...openWorkspaceTabs, selectedWorkspaceFile]
-					.filter((key) => key.startsWith('file:'))
-					.flatMap((key) => workspaceFolderChain(workspaceFileParentPath(key.slice(5))))
-			])
-		];
-		loadSelectedWorkspaceFile();
-	}
-
-	function workspaceFolderChain(relativePath: string): string[] {
-		const folders: string[] = [];
-		for (let folder = relativePath; folder; folder = workspaceFileParentPath(folder)) folders.unshift(folder);
-		return folders;
-	}
-
-	async function loadVolumeWorkspaceFolder(relativePath: string): Promise<boolean> {
-		const environmentId = currentEnvId;
-		const volumeName = volume?.name;
-		if (!active || !volumeName) return false;
-		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
-		if (relativePath && (!entry?.isDirectory || entry.pending)) return true;
-		if (!workspaceFolderPaths.includes(relativePath)) workspaceFolderPaths = [...workspaceFolderPaths, relativePath];
-		const result = await tryCatch(
-			queryClient.ensureQueryData(volumeWorkspaceFolderQuery(environmentId, volumeName, relativePath))
+		workspaceFolders.reveal(
+			[...openWorkspaceTabs, selectedWorkspaceFile].filter((key) => key.startsWith('file:')).map((key) => key.slice(5))
 		);
-		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return false;
-		if (result.error !== null) {
-			toast.error(m.common_load_failed({ resource: relativePath }), { description: extractApiErrorMessage(result.error) });
-			return false;
-		}
-		await tick();
-		return true;
+		loadSelectedWorkspaceFile();
 	}
 
 	function persistWorkspacePrefs() {
@@ -463,7 +418,7 @@
 
 	async function createVolumeWorkspaceFile(parentPath: string, name: string) {
 		const normalizedName = validateWorkspaceFileName(name);
-		if (!normalizedName || !(await loadVolumeWorkspaceFolder(parentPath))) return;
+		if (!normalizedName || !(await workspaceFolders.load(parentPath))) return;
 		const relativePath = joinWorkspaceFilePath(parentPath, normalizedName);
 		if (workspaceFilePaths.has(relativePath)) {
 			toast.error(m.workspace_file_duplicate_name());
@@ -489,7 +444,7 @@
 
 	async function createVolumeWorkspaceFolder(parentPath: string, name: string) {
 		const normalizedName = validateWorkspaceFileName(name);
-		if (!normalizedName || !(await loadVolumeWorkspaceFolder(parentPath))) return;
+		if (!normalizedName || !(await workspaceFolders.load(parentPath))) return;
 		const relativePath = joinWorkspaceFilePath(parentPath, normalizedName);
 		if (workspaceFilePaths.has(relativePath)) {
 			toast.error(m.workspace_file_duplicate_name());
@@ -519,7 +474,7 @@
 
 	async function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
 		const normalizedName = validateWorkspaceFileName(newName);
-		if (!normalizedName || !(await loadVolumeWorkspaceFolder(relativePath))) return;
+		if (!normalizedName || !(await workspaceFolders.load(relativePath))) return;
 		if (!workspaceFilePaths.has(relativePath)) return;
 		const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
 		if (newPath !== relativePath && workspaceFilePaths.has(newPath)) {
@@ -533,8 +488,8 @@
 	async function moveVolumeWorkspaceFile(relativePath: string, newParentPath: string) {
 		if (
 			newParentPath === workspaceFileParentPath(relativePath) ||
-			!(await loadVolumeWorkspaceFolder(newParentPath)) ||
-			!(await loadVolumeWorkspaceFolder(relativePath))
+			!(await workspaceFolders.load(newParentPath)) ||
+			!(await workspaceFolders.load(relativePath))
 		)
 			return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
@@ -610,7 +565,7 @@
 			result,
 			message: m.common_delete_failed({ resource: entry.name }),
 			onSuccess: async (response) => {
-				workspaceFolderPaths = workspaceFolderPaths.filter((path) => !workspaceFilePathMatches(path, relativePath));
+				workspaceFolders.forget(relativePath);
 				workspaceFileChanges = workspaceFileChanges.filter(
 					(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
 				);
@@ -674,7 +629,7 @@
 		const invalidFile = files.find((file) => !validateWorkspaceFileName(file.name));
 		if (invalidFile) return m.workspace_file_invalid_name();
 		if (new Set(files.map((file) => file.name)).size !== files.length) return m.workspace_file_duplicate_name();
-		if (!(await loadVolumeWorkspaceFolder(parentPath))) return;
+		if (!(await workspaceFolders.load(parentPath))) return;
 		const directoryCollision = files.find((file) =>
 			visibleWorkspaceFiles.some(
 				(entry) => entry.relativePath === joinWorkspaceFilePath(parentPath, file.name) && entry.isDirectory
@@ -754,14 +709,7 @@
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (response) => {
-				workspaceFolderPaths = [
-					...new Set([
-						...workspaceFolderPaths.filter(
-							(path) => !path || visibleWorkspaceFiles.some((file) => file.relativePath === path && file.isDirectory)
-						),
-						...visibleWorkspaceFiles.map((file) => workspaceFileParentPath(file.relativePath))
-					])
-				];
+				workspaceFolders.keepSaved(visibleWorkspaceFiles);
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(response.activityId));
 				await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName) });
@@ -1009,8 +957,8 @@
 		title={m.volumes_workspace_files()}
 		leadingRows={[]}
 		entries={visibleWorkspaceFiles}
-		loadedFolders={loadedWorkspaceFolders}
-		onOpenFolder={loadVolumeWorkspaceFolder}
+		loadedFolders={workspaceFolders.loaded}
+		onOpenFolder={workspaceFolders.load}
 		selectedFile={selectedWorkspaceFile}
 		disabled={isLoading.save}
 		uploadDescription={m.volumes_workspace_upload_description()}
@@ -1090,17 +1038,17 @@
 		<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
 			{m.common_access_denied()}
 		</div>
-	{:else if workspaceRootQuery?.isPending}
+	{:else if workspaceFolders.root?.isPending}
 		<div class="flex min-h-96 items-center justify-center rounded-lg border text-muted-foreground">
 			<Spinner class="size-6" />
 		</div>
-	{:else if workspaceRootQuery?.error}
+	{:else if workspaceFolders.root?.error}
 		<div class="flex min-h-96 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
-			{workspaceRootQuery.error instanceof Error ? workspaceRootQuery.error.message : m.common_failed()}
+			{workspaceFolders.root.error instanceof Error ? workspaceFolders.root.error.message : m.common_failed()}
 		</div>
 	{:else}
 		<div class="space-y-3">
-			{#if workspaceTruncated}
+			{#if workspaceFolders.truncated}
 				<Alert.Root>
 					<AlertIcon class="size-4" />
 					<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>

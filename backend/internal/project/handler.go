@@ -125,6 +125,7 @@ type (
 	GetProjectWorkspaceInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
+		Path          string `query:"path" doc:"Folder path relative to the project workspace root; empty lists the root"`
 	}
 
 	GetProjectWorkspaceFileInput struct {
@@ -821,7 +822,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 }
 
 func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
-	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID)
+	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID, input.Path)
 	if err != nil {
 		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
@@ -853,7 +854,7 @@ func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input
 	return handlerutil.DownloadResponse(reader, size, name), nil
 }
 
-func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*handlerutil.Out[types.MessageResponse], error) {
 	manifest, err := handlerutil.ParseMultipartJSONPart[types.ProjectWorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
@@ -866,7 +867,6 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 	if err != nil {
 		return nil, err
 	}
-	var result *types.Workspace
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID: input.EnvironmentID, Type: types.ActivityTypeResourceAction, ResourceType: "project", ResourceID: input.ProjectID, ResourceName: h.projectActivityName(
@@ -876,9 +876,7 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 		Step: "Updating project workspace", Message: "Updating project workspace", SuccessMessage: "Project workspace updated successfully",
 		Metadata: database.JSON{"action": "update_project_workspace", "fileChangeCount": len(manifest.FileChanges)},
 	}, func(runtimeCtx context.Context) error {
-		var updateErr error
-		result, updateErr = h.projectService.UpdateProjectWorkspace(runtimeCtx, input.ProjectID, manifest, uploads, *user)
-		return updateErr
+		return h.projectService.UpdateProjectWorkspace(runtimeCtx, input.ProjectID, manifest, uploads, *user)
 	})
 	if err != nil {
 		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
@@ -886,10 +884,5 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 		}
 		return nil, huma.Error500InternalServerError("internal error")
 	}
-	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: types.Workspace{
-		Files:             result.Files,
-		FileTreeRevision:  result.FileTreeRevision,
-		FileTreeTruncated: result.FileTreeTruncated,
-		ActivityID:        mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-	}}}, nil
+	return handlerutil.MessageOutput("Project workspace updated successfully", activityID), nil
 }

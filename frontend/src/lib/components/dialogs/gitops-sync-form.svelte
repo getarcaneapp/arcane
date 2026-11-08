@@ -73,18 +73,18 @@
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { useWorkspaceFolders } from '#lib/hooks/use-workspace-folders.svelte.js';
 	import { FolderOpenIcon } from '#lib/icons/index.js';
 	import { gitRepositoryBranchesQuery, gitRepositoryListQuery } from '#lib/query/git-repositories.js';
+	import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitOpsSyncMode, GitRepository } from '#lib/types/gitops.js';
 	import type { Project } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { GitOpsSyncCreate, GitOpsSyncUpdate, GitOpsSyncWritable } from '#lib/types/ui/gitops.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import type { WorkspaceDisplayEntry } from '#lib/utils/workspace-files.js';
@@ -309,16 +309,13 @@
 	const suggestedBackupDirectory = $derived(selectedProject?.name ?? '');
 	const effectiveBackupDirectory = $derived(inputs.backupDirectory.value.trim() || suggestedBackupDirectory);
 
-	const workspaceQuery = createQuery(() => {
-		const requestProjectId = selectedProjectId;
-		return {
-			queryKey: queryKeys.projects.workspace(environmentId, requestProjectId),
-			queryFn: () => projectWorkspaceService.getWorkspace(requestProjectId, environmentId),
-			enabled: open && isBackupMode && !!requestProjectId
-		};
+	const workspaceFolders = useWorkspaceFolders({
+		folderQuery: (path) => projectWorkspaceFolderQuery(environmentId, selectedProjectId, path),
+		enabled: () => open && isBackupMode && !!selectedProjectId
 	});
-	const workspaceFiles = $derived<WorkspaceFileEntry[]>(workspaceQuery.data?.files ?? []);
-	const loadingWorkspace = $derived(!!selectedProjectId && (workspaceQuery.isPending || workspaceQuery.isFetching));
+	const loadingWorkspace = $derived(
+		!!selectedProjectId && (!!workspaceFolders.root?.isPending || !!workspaceFolders.root?.isFetching)
+	);
 
 	function isEnvFileInternal(name: string): boolean {
 		const lowered = name.toLowerCase();
@@ -568,7 +565,9 @@
 				{backupProjectOptions}
 				{backupNamePlaceholder}
 				{suggestedBackupDirectory}
-				{workspaceFiles}
+				workspaceFiles={workspaceFolders.files}
+				loadedFolders={workspaceFolders.loaded}
+				onOpenFolder={workspaceFolders.load}
 				{loadingWorkspace}
 				isNodeChecked={isNodeCheckedInternal}
 				isNodeLocked={isNodeLockedInternal}
