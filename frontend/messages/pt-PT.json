@@ -4416,7 +4416,7 @@
   "interface_font": "Tipo de letra da interface",
   "interface_font_description": "Tipo de letra para o texto da interface. Os glifos em chinês, japonês e coreano utilizam os tipos de letra instalados no sistema.",
   "monospace_font": "Tipo de letra monoespaçado",
-  "monospace_font_description": "Tipo de letra para títulos, identificadores e outro texto em fonte monoespaçada",
+  "monospace_font_description": "Tipo de letra para IDs e outro texto com espaçamento fixo",
   "code_font": "Tipo de letra do código",
   "code_font_description": "Tipo de letra para o editor de código, blocos de código e terminal. O terminal atualiza-se quando é reaberto.",
   "custom_font": "Tipo de letra personalizado",
