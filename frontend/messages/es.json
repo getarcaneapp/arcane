@@ -4416,7 +4416,7 @@
   "interface_font": "Fuente de la interfaz",
   "interface_font_description": "Fuente para el texto de la interfaz. Los glifos en chino, japonés y coreano utilizan las fuentes instaladas en el sistema.",
   "monospace_font": "Fuente Monospace",
-  "monospace_font_description": "Fuente para títulos, identificadores y otro texto en fuente monoespaciada",
+  "monospace_font_description": "Fuente para identificadores y otros textos en fuente monoespaciada",
   "code_font": "Fuente del código",
   "code_font_description": "Fuente para el editor de código, los bloques de código y la terminal. La terminal se actualiza al volver a abrirla.",
   "custom_font": "Fuente personalizada",
