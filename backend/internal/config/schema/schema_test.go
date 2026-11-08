@@ -301,7 +301,7 @@ func TestGenerate_RenamedAndRetiredEnv(t *testing.T) {
 
 	assert.Equal(t, RenamedEnv(), doc.RenamedEnv)
 	assert.Equal(t, "ARCANE_PORT", doc.RenamedEnv["PORT"])
-	assert.Equal(t, []string{"ANALYTICS_DISABLED", "JWT_SECRET", "UPDATE_CHECK_DISABLED"}, doc.RetiredEnv)
+	assert.Equal(t, []string{"ANALYTICS_DISABLED", "ARCANE_VOLUME_WORKSPACE_MAX_DEPTH", "JWT_SECRET", "UPDATE_CHECK_DISABLED", "VOLUME_WORKSPACE_MAX_DEPTH"}, doc.RetiredEnv)
 }
 
 func TestGenerate_EnvNamesAreUnique(t *testing.T) {
