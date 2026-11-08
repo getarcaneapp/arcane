@@ -324,7 +324,7 @@
 			<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 		{/if}
 		{#if item.hardened}
-			<HardenedImageBadge info={item.hardened} size="xs" />
+			<HardenedImageBadge info={item.hardened} />
 		{/if}
 	</div>
 {/snippet}
