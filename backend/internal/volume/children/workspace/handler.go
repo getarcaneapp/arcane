@@ -5,10 +5,8 @@ import (
 	"errors"
 	"mime/multipart"
 	"path"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/samber/mo"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -30,6 +28,7 @@ type (
 	GetVolumeWorkspaceInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		VolumeName    string `path:"volumeName" doc:"Volume name"`
+		Path          string `query:"path" doc:"Folder path relative to the volume workspace root; empty lists the root"`
 	}
 
 	GetVolumeWorkspaceFileInput struct {
@@ -65,7 +64,7 @@ func volumeWorkspaceHTTPError(err error) error {
 }
 
 func (h *Handler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
-	result, err := h.service.GetVolumeWorkspace(ctx, input.VolumeName)
+	result, err := h.service.GetVolumeWorkspace(ctx, input.VolumeName, input.Path)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPError(err)
 	}
@@ -102,7 +101,7 @@ func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string
 	return nil
 }
 
-func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*handlerutil.Out[types.MessageResponse], error) {
 	manifest, err := handlerutil.ParseMultipartJSONPart[types.VolumeWorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
@@ -118,20 +117,16 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 	if err != nil {
 		return nil, err
 	}
-	var result *types.Workspace
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID: input.EnvironmentID, Type: types.ActivityTypeResourceAction, ResourceType: "volume", ResourceID: input.VolumeName, ResourceName: input.VolumeName, User: user,
 		Step: "Updating volume workspace", Message: "Updating volume workspace", SuccessMessage: "Volume workspace updated successfully",
 		Metadata: database.JSON{"action": "update_volume_workspace", "fileChangeCount": len(manifest.FileChanges)},
 	}, func(runtimeCtx context.Context) error {
-		var updateErr error
-		result, updateErr = h.service.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, uploads, *user)
-		return updateErr
+		return h.service.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, uploads, *user)
 	})
 	if err != nil {
 		return nil, volumeWorkspaceHTTPError(err)
 	}
-	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
+	return handlerutil.MessageOutput("Volume workspace updated successfully", activityID), nil
 }

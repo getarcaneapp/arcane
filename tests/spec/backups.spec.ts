@@ -185,7 +185,6 @@ test.describe('Workspace restore', () => {
 	type VolumeWorkspaceRestoreState = {
 		content: string;
 		restoredContent: string;
-		revision: number;
 		failRestore: boolean;
 		workspaceRequests: number;
 		fileRequests: number;
@@ -196,7 +195,7 @@ test.describe('Workspace restore', () => {
 	async function mockVolumeWorkspaceRestore(page: Page, state: VolumeWorkspaceRestoreState) {
 		const encodedVolume = encodeURIComponent(VOLUME_NAME);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace$`),
+			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace(?:\\?.*)?$`),
 			async (route) => {
 				state.workspaceRequests += 1;
 				await route.fulfill({
@@ -213,7 +212,6 @@ test.describe('Workspace restore', () => {
 								editable: true
 							}
 						],
-						fileTreeRevision: `revision-${state.revision}`,
 						fileTreeTruncated: false
 					})
 				});
@@ -247,7 +245,6 @@ test.describe('Workspace restore', () => {
 					return;
 				}
 				state.content = state.restoredContent;
-				state.revision += 1;
 				await route.fulfill({ json: response({ message: 'restored' }) });
 			}
 		);
@@ -258,7 +255,6 @@ test.describe('Workspace restore', () => {
 			async (route) => {
 				state.fullRestoreRequests += 1;
 				state.content = state.restoredContent;
-				state.revision += 1;
 				await route.fulfill({ json: response({ message: 'restored' }) });
 			}
 		);
@@ -489,7 +485,6 @@ test.describe('Workspace restore', () => {
 			const state: VolumeWorkspaceRestoreState = {
 				content: 'before restore',
 				restoredContent: 'after restore',
-				revision: 1,
 				failRestore: false,
 				workspaceRequests: 0,
 				fileRequests: 0,
@@ -534,7 +529,6 @@ test.describe('Workspace restore', () => {
 			const state: VolumeWorkspaceRestoreState = {
 				content: 'before restore',
 				restoredContent: 'after restore',
-				revision: 1,
 				failRestore: false,
 				workspaceRequests: 0,
 				fileRequests: 0,
@@ -602,7 +596,6 @@ test.describe('Workspace restore', () => {
 			const state: VolumeWorkspaceRestoreState = {
 				content: 'before restore',
 				restoredContent: 'after restore',
-				revision: 1,
 				failRestore: false,
 				workspaceRequests: 0,
 				fileRequests: 0,
@@ -980,19 +973,6 @@ test.describe('S3 storage', () => {
 		);
 	}
 
-	async function getVolumeWorkspaceRevision(page: Page, volumeName: string) {
-		const response = await page.request.get(
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`
-		);
-		if (!response.ok()) {
-			throw new Error(
-				`Failed to read ${volumeName} workspace: ${response.status()} ${await response.text()}`
-			);
-		}
-		const body = await response.json();
-		return body.data.fileTreeRevision as string;
-	}
-
 	async function writeVolumeFile(
 		page: Page,
 		volumeName: string,
@@ -1000,13 +980,11 @@ test.describe('S3 storage', () => {
 		content: string,
 		operation: 'create_file' | 'update_file' = 'create_file'
 	) {
-		const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
 		const response = await page.request.patch(
 			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
 			{
 				multipart: {
 					manifest: JSON.stringify({
-						fileTreeRevision,
 						fileChanges: [{ operation, relativePath: fileName, uploadIndex: 0 }]
 					}),
 					files: { name: fileName, mimeType: 'text/plain', buffer: Buffer.from(content) }
