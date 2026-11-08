@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Esta imagem deixou de receber atualizações de segurança em {date}. Recrie-a numa versão mais recente.",
   "count_hardened_images_end_of_life": "{count} imagens fixadas após o fim da vida útil",
   "count_hardened_images_ending_soon": "{count} imagens compiladas que se aproximam do fim da sua vida útil",
-  "hardened_images_eol_detail": "As imagens consolidadas deixam de receber atualizações de segurança no final do seu ciclo de vida"
+  "hardened_images_eol_detail": "As imagens consolidadas deixam de receber atualizações de segurança no final do seu ciclo de vida",
+  "reveal_value": "Valor de revelação"
 }
