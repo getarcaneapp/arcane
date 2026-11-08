@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Tento obraz již nedostává bezpečnostní aktualizace na adrese {date}. Vytvořte jej znovu na novější verzi.",
   "count_hardened_images_end_of_life": "{count} zachované snímky po uplynutí doby životnosti",
   "count_hardened_images_ending_soon": "{count} zpevněné obrazy blížící se konci životnosti",
-  "hardened_images_eol_detail": "Po skončení životnosti přestanou být pro zabezpečené obrazy vydávány bezpečnostní aktualizace"
+  "hardened_images_eol_detail": "Po skončení životnosti přestanou být pro zabezpečené obrazy vydávány bezpečnostní aktualizace",
+  "reveal_value": "Zobrazit hodnotu"
 }
