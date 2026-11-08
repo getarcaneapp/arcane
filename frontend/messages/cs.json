@@ -4416,7 +4416,7 @@
   "interface_font": "Písmo rozhraní",
   "interface_font_description": "Písmo pro text v uživatelském rozhraní. Pro čínské, japonské a korejské znaky se používají nainstalovaná systémová písma.",
   "monospace_font": "Písmo typu monospace",
-  "monospace_font_description": "Písmo pro nadpisy, identifikátory a další text s pevnou šířkou znaků",
+  "monospace_font_description": "Písmo pro identifikační čísla a další text s pevnou šířkou znaků",
   "code_font": "Písmo kódu",
   "code_font_description": "Písmo pro editor kódu, bloky kódu a terminál. Terminál se aktualizuje při opětovném otevření.",
   "custom_font": "Vlastní písmo",
