@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Bu görüntü, {date}adresinde güvenlik güncellemelerini almayı durdurdu. Daha yeni bir sürümde yeniden oluşturun.",
   "count_hardened_images_end_of_life": "{count} kullanım ömrü sona ermiş, sertleştirilmiş görüntüler",
   "count_hardened_images_ending_soon": "{count} kullanım ömrünün sonuna yaklaşan sertleştirilmiş görüntüler",
-  "hardened_images_eol_detail": "Kullanıma son verilen görüntüler, kullanım ömürlerinin sonunda güvenlik güncellemeleri almayı durdurur"
+  "hardened_images_eol_detail": "Kullanıma son verilen görüntüler, kullanım ömürlerinin sonunda güvenlik güncellemeleri almayı durdurur",
+  "reveal_value": "Değeri ortaya çıkarmak"
 }
