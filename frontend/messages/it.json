@@ -4416,7 +4416,7 @@
   "interface_font": "Carattere dell'interfaccia",
   "interface_font_description": "Carattere per il testo dell'interfaccia. I glifi cinesi, giapponesi e coreani utilizzano i caratteri di sistema installati.",
   "monospace_font": "Carattere Monospace",
-  "monospace_font_description": "Carattere per titoli, ID e altro testo a spaziatura fissa",
+  "monospace_font_description": "Carattere per gli ID e altri testi a spaziatura fissa",
   "code_font": "Carattere del codice",
   "code_font_description": "Carattere per l'editor di codice, i blocchi di codice e il terminale. Il terminale si aggiorna quando viene riaperto.",
   "custom_font": "Carattere personalizzato",
