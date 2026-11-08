@@ -4416,7 +4416,7 @@
   "interface_font": "インターフェースのフォント",
   "interface_font_description": "インターフェースのテキストに使用するフォント。中国語、日本語、韓国語のグリフには、インストール済みのシステムフォントが使用されます。",
   "monospace_font": "モノスペースフォント",
-  "monospace_font_description": "見出し、ID、およびその他の等幅テキスト用のフォント",
+  "monospace_font_description": "IDやその他の等幅テキスト用のフォント",
   "code_font": "コード用フォント",
   "code_font_description": "コードエディタ、コードブロック、およびターミナル用のフォント。ターミナルは再起動時に更新されます。",
   "custom_font": "カスタムフォント",
