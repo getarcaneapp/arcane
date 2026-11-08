@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Ĉi tiu bildo ĉesis ricevi sekurecajn ĝisdatigojn en {date}. Rekonstruu ĝin sur pli nova versio.",
   "count_hardened_images_end_of_life": "{count} Malmolebligitaj bildoj post la fino de ilia vivdaŭro",
   "count_hardened_images_ending_soon": "{count} Maljuniĝantaj bildoj proksimiĝas al la fino de sia vivodaŭro",
-  "hardened_images_eol_detail": "Malnovigitaj bildoj ĉesas ricevi sekurecajn ĝisdatigojn ĉe la fino de sia vivdaŭro."
+  "hardened_images_eol_detail": "Malnovigitaj bildoj ĉesas ricevi sekurecajn ĝisdatigojn ĉe la fino de sia vivdaŭro.",
+  "reveal_value": "Malkaŝu valoron"
 }
