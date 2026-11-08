@@ -48,6 +48,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -1557,6 +1558,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
 			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
 		UpdateInfo: updates[details.ID],
+		Hardened:   dhi.Info(details.Labels, time.Now()),
 		ActivityID: details.ActivityID,
 	}, nil
 }

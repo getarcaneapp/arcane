@@ -29,6 +29,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/startup"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
@@ -509,10 +510,10 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 		return nil, types.ImageUsageCounts{}, err
 	}
 
-	return images, CountImageUsage(images, containers), nil
+	return images, CountImageUsage(images, containers, time.Now()), nil
 }
 
-func CountImageUsage(images []image.Summary, containers []container.Summary) types.ImageUsageCounts {
+func CountImageUsage(images []image.Summary, containers []container.Summary, now time.Time) types.ImageUsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
 		if c.ImageID == "" {
@@ -525,6 +526,12 @@ func CountImageUsage(images []image.Summary, containers []container.Summary) typ
 	for _, img := range images {
 		counts.Total++
 		counts.TotalSize += img.Size
+		switch kit.FromPtr(dhi.Info(img.Labels, now)).SupportStatus {
+		case types.HardenedImageEndingSoon:
+			counts.HardenedEndingSoon++
+		case types.HardenedImageEndOfLife:
+			counts.HardenedEndOfLife++
+		}
 		if _, ok := inUseImageIDs[img.ID]; ok {
 			counts.Inuse++
 			continue

@@ -43,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -331,6 +332,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	}
 	if len(containers) > 0 {
 		out.PinnedReferences = collectPinnedReferencesByImageID(containers)[inspect.ID] // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
+	}
+	if inspect.Config != nil {
+		out.Hardened = dhi.Info(inspect.Config.Labels, time.Now()) // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 	}
 	return &out, nil
 }
@@ -1166,10 +1170,12 @@ func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiRespo
 		var counts types.ImageUsageCounts
 		for _, environment := range environments {
 			counts = types.ImageUsageCounts{
-				Inuse:     counts.Inuse + environment.Data.Inuse,
-				Unused:    counts.Unused + environment.Data.Unused,
-				Total:     counts.Total + environment.Data.Total,
-				TotalSize: counts.TotalSize + environment.Data.TotalSize,
+				Inuse:              counts.Inuse + environment.Data.Inuse,
+				Unused:             counts.Unused + environment.Data.Unused,
+				Total:              counts.Total + environment.Data.Total,
+				HardenedEndingSoon: counts.HardenedEndingSoon + environment.Data.HardenedEndingSoon,
+				HardenedEndOfLife:  counts.HardenedEndOfLife + environment.Data.HardenedEndOfLife,
+				TotalSize:          counts.TotalSize + environment.Data.TotalSize,
 			}
 		}
 		return counts
@@ -1336,6 +1342,7 @@ func MapDockerImagesToDTOs(
 	vulnerabilityMap map[string]*types.VulnerabilityScanSummary,
 ) []types.ImageSummary {
 	pinnedRefsByImageID := collectPinnedReferencesByImageID(containers)
+	now := time.Now()
 	items := make([]types.ImageSummary, 0, len(dockerImages))
 	for _, di := range dockerImages {
 		repoTags, repoDigests := imageref.SplitRepositoryReferences(di.RepoTags, di.RepoDigests)
@@ -1385,6 +1392,7 @@ func MapDockerImagesToDTOs(
 				return nil
 			}(),
 			VulnerabilityScan: vulnerabilityMap[di.ID],
+			Hardened:          dhi.Info(di.Labels, now),
 		})
 	}
 	return items
@@ -1493,6 +1501,15 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[types.ImageS
 						value, valid := kit.ParseBool(filterValue)
 						return !valid || kit.FromPtr(i.UpdateInfo).HasUpdate == value
 					}
+				},
+			},
+			{
+				Key: "hardened",
+				Fn: func(i types.ImageSummary, filterValue string) bool {
+					if value, valid := kit.ParseBool(filterValue); valid {
+						return (i.Hardened != nil) == value
+					}
+					return i.Hardened != nil && string(i.Hardened.SupportStatus) == filterValue
 				},
 			},
 			pagination.LabelFilter(func(i types.ImageSummary) map[string]any {

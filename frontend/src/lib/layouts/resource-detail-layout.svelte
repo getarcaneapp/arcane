@@ -80,7 +80,7 @@
 							{#if environmentId}
 								<EnvironmentDestinationSelect value={environmentId} variant="prefix" readonly />
 							{/if}
-							<h1 class="truncate text-lg font-semibold tracking-tight" {title}>{title}</h1>
+							<h1 class="truncate text-sm font-semibold" {title}>{title}</h1>
 						</div>
 						{@render badges?.()}
 					</div>

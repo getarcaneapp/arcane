@@ -44,6 +44,31 @@ export interface ImageSummary {
 	tag: string;
 	updateInfo?: ImageUpdateInfo;
 	vulnerabilityScan?: VulnerabilityScanSummary;
+	hardened?: HardenedImageInfo;
+}
+
+export type HardenedImageSupportStatus = 'supported' | 'ending_soon' | 'end_of_life' | 'unknown';
+
+export interface HardenedImageInfo {
+	name: string;
+	title?: string;
+	version?: string;
+	definition?: string;
+	distro?: string;
+	variant?: string;
+	flavor?: string;
+	entitlement?: string;
+	url?: string;
+	chainId?: string;
+	created?: string;
+	compliance?: string[];
+	/** Empty when the image has no shell; absent when unknown. */
+	shell?: string;
+	/** Empty when the image has no package manager; absent when unknown. */
+	packageManager?: string;
+	releaseDate?: string;
+	endOfLifeDate?: string;
+	supportStatus: HardenedImageSupportStatus;
 }
 
 export interface ImageAttestationList {
@@ -113,6 +138,8 @@ export interface ImageUsageCounts {
 	imagesUnused: number;
 	totalImages: number;
 	totalImageSize: number;
+	hardenedEndingSoon?: number;
+	hardenedEndOfLife?: number;
 }
 
 export interface ImageLoadResult {
@@ -124,6 +151,7 @@ export interface ImageDetailSummary {
 	repoTags: string[];
 	repoDigests: string[];
 	pinnedReferences?: string[];
+	hardened?: HardenedImageInfo;
 	comment: string;
 	created: string;
 	author: string;

@@ -1134,7 +1134,9 @@
 			<div class="flex flex-col gap-1">
 				<div class="flex min-w-0 items-center">
 					<EnvironmentDestinationSelect value={currentEnvId} variant="prefix" readonly />
-					<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
+					<h1 class="max-w-40 min-w-0 truncate text-sm font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={volume.name}>
+						{volume.name}
+					</h1>
 				</div>
 				<div class="flex flex-wrap items-center gap-2 pt-1">
 					<InUseStatus inUse={volume.inUse} />
