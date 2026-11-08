@@ -748,9 +748,14 @@
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (response) => {
-				workspaceFolderPaths = workspaceFolderPaths.filter(
-					(path) => !path || visibleWorkspaceFiles.some((file) => file.relativePath === path && file.isDirectory)
-				);
+				workspaceFolderPaths = [
+					...new Set([
+						...workspaceFolderPaths.filter(
+							(path) => !path || visibleWorkspaceFiles.some((file) => file.relativePath === path && file.isDirectory)
+						),
+						...visibleWorkspaceFiles.map((file) => workspaceFileParentPath(file.relativePath))
+					])
+				];
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(response.activityId));
 				await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName) });
