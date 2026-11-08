@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Deze image ontvangt geen beveiligingsupdates meer op {date}. Maak een nieuwe versie op basis van een recentere versie.",
   "count_hardened_images_end_of_life": "{count} verouderde afbeeldingen waarvan de levensduur is verstreken",
   "count_hardened_images_ending_soon": "{count} verouderde afbeeldingen die bijna aan het einde van hun levensduur zijn",
-  "hardened_images_eol_detail": "Beveiligde afbeeldingen ontvangen geen beveiligingsupdates meer zodra hun levensduur is verstreken"
+  "hardened_images_eol_detail": "Beveiligde afbeeldingen ontvangen geen beveiligingsupdates meer zodra hun levensduur is verstreken",
+  "reveal_value": "Waarde weergeven"
 }
