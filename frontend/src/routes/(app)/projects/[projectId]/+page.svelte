@@ -242,6 +242,15 @@
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
+	watch(
+		() => project?.includeFiles,
+		(includeFiles) => {
+			if (!includeFiles) return;
+			projectWorkspaceFolders.reveal(
+				includeFiles.map((file) => file.relativePath).filter((relativePath) => !relativePath.startsWith('../'))
+			);
+		}
+	);
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');

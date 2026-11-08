@@ -25,7 +25,7 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 	let opened = $state({ scope: '', paths: [''] });
 	const paths = $derived(opened.scope === scope ? opened.paths : ['']);
 	const queries = createQueries(() => ({
-		queries: paths.map((path) => ({ ...folderQuery(path), enabled: enabled(), refetchOnMount: false }))
+		queries: paths.map((path) => ({ ...folderQuery(path), enabled: enabled() }))
 	}));
 	const files = $derived(queries.flatMap((query) => (query.error ? [] : (query.data?.files ?? []))));
 	const loaded = $derived(new Set(paths.filter((_, index) => queries[index]?.data && !queries[index]?.error)));
@@ -56,7 +56,7 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 			if (relativePath && !files.some((file) => file.relativePath === relativePath && file.isDirectory)) return true;
 			const requestedScope = scope;
 			setPaths([...paths, relativePath]);
-			const result = await tryCatch(queryClient.ensureQueryData(folderQuery(relativePath)));
+			const result = await tryCatch(queryClient.ensureQueryData({ ...folderQuery(relativePath), revalidateIfStale: true }));
 			if (requestedScope !== scope) return false;
 			if (result.error !== null) {
 				toast.error(m.common_load_failed({ resource: relativePath }), { description: extractApiErrorMessage(result.error) });
