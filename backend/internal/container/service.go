@@ -1531,6 +1531,12 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to fetch container update info", "error", err)
 	}
+	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, details.ImageID)
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to inspect container image", "imageId", details.ImageID, "error", err)
+	}
 	resolvedIcon := s.resolveContainerIcon(ctx, details.Labels, map[string]projects.ArcaneComposeMetadata{})
 
 	return types.ContainerDetails{ //exhaustruct:enforce
@@ -1558,7 +1564,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
 			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
 		UpdateInfo: updates[details.ID],
-		Hardened:   dhi.Info(details.Labels, time.Now()),
+		Hardened:   dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
 		ActivityID: details.ActivityID,
 	}, nil
 }

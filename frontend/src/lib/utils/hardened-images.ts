@@ -1,7 +1,7 @@
 import { ShieldAlertIcon, ShieldCheckIcon, ShieldXIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import type { HardenedImageInfo } from '#lib/types/image.js';
-import { formatRelativeTime } from '#lib/utils/formatting.js';
+import { formatDate } from '#lib/utils/formatting.js';
 
 export interface HardenedImageDisplay {
 	label: string;
@@ -21,7 +21,7 @@ export function hardenedImageDisplay(info: HardenedImageInfo): HardenedImageDisp
 }
 
 export function hardenedSupportSummary(info: HardenedImageInfo): string {
-	if (!info.endOfLifeDate) return '';
-	const time = formatRelativeTime(info.endOfLifeDate);
+	const time = formatDate(info.endOfLifeDate, { dateStyle: 'medium', timeZone: 'UTC' });
+	if (!time) return '';
 	return info.supportStatus === 'end_of_life' ? m.support_ended_time({ time }) : m.support_ends_time({ time });
 }

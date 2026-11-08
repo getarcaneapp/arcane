@@ -65,12 +65,36 @@ func TestInfo(t *testing.T) {
 		endOfLife string
 		status    types.HardenedImageSupportStatus
 	}{
-		{name: "past end of life", endOfLife: "2026-10-19", status: types.HardenedImageEndOfLife},
-		{name: "end of life today", endOfLife: "2026-10-20", status: types.HardenedImageEndingSoon},
-		{name: "at the ending soon threshold", endOfLife: "2026-11-19", status: types.HardenedImageEndingSoon},
-		{name: "supported", endOfLife: "2026-11-20", status: types.HardenedImageSupported},
-		{name: "missing end of life", endOfLife: "", status: types.HardenedImageSupportUnknown},
-		{name: "invalid end of life", endOfLife: "soon", status: types.HardenedImageSupportUnknown},
+		{
+			name:      "past end of life",
+			endOfLife: "2026-10-19",
+			status:    types.HardenedImageEndOfLife,
+		},
+		{
+			name:      "end of life today",
+			endOfLife: "2026-10-20",
+			status:    types.HardenedImageEndingSoon,
+		},
+		{
+			name:      "at the ending soon threshold",
+			endOfLife: "2026-11-19",
+			status:    types.HardenedImageEndingSoon,
+		},
+		{
+			name:      "supported",
+			endOfLife: "2026-11-20",
+			status:    types.HardenedImageSupported,
+		},
+		{
+			name:      "missing end of life",
+			endOfLife: "",
+			status:    types.HardenedImageSupportUnknown,
+		},
+		{
+			name:      "invalid end of life",
+			endOfLife: "soon",
+			status:    types.HardenedImageSupportUnknown,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
