@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "此映像已於 {date}停止接收安全性更新。請在較新版本上重新建立此映像。",
   "count_hardened_images_end_of_life": "{count} 已過使用壽命的強化影像",
   "count_hardened_images_ending_soon": "{count} 已固化且即將達到使用壽命末期的影像",
-  "hardened_images_eol_detail": "經過強化處理的映像在產品生命週期結束後將不再獲得安全性更新"
+  "hardened_images_eol_detail": "經過強化處理的映像在產品生命週期結束後將不再獲得安全性更新",
+  "reveal_value": "展現價值"
 }
