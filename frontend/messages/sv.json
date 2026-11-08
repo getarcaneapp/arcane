@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Den här bilden får inte längre säkerhetsuppdateringar på {date}. Skapa den på nytt med en nyare version.",
   "count_hardened_images_end_of_life": "{count} härdade bilder efter livslängdens slut",
   "count_hardened_images_ending_soon": "{count} härdade bilder som närmar sig slutet av sin livslängd",
-  "hardened_images_eol_detail": "Härdade bilder slutar få säkerhetsuppdateringar när deras livslängd löper ut"
+  "hardened_images_eol_detail": "Härdade bilder slutar få säkerhetsuppdateringar när deras livslängd löper ut",
+  "reveal_value": "Värdeavslöjande"
 }
