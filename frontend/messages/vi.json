@@ -4416,7 +4416,7 @@
   "interface_font": "Phông chữ giao diện",
   "interface_font_description": "Phông chữ cho văn bản giao diện. Các ký tự tiếng Trung, tiếng Nhật và tiếng Hàn sử dụng các phông chữ hệ thống đã cài đặt.",
   "monospace_font": "Phông chữ Monospace",
-  "monospace_font_description": "Phông chữ dành cho tiêu đề, ID và các văn bản có khoảng cách đều khác",
+  "monospace_font_description": "Phông chữ dành cho ID và các văn bản có khoảng cách đều khác",
   "code_font": "Phông chữ mã",
   "code_font_description": "Phông chữ cho trình soạn thảo mã, các khối mã và cửa sổ terminal. Cửa sổ terminal sẽ được cập nhật khi mở lại.",
   "custom_font": "Phông chữ tùy chỉnh",
