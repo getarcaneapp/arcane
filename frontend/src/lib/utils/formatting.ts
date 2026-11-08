@@ -31,6 +31,32 @@ export function withOccurrenceKeys(values?: readonly string[] | null) {
 	});
 }
 
+const sensitiveEnvKeyParts = new Set([
+	'SECRET',
+	'PASSWORD',
+	'PASSWD',
+	'PASS',
+	'PWD',
+	'TOKEN',
+	'KEY',
+	'APIKEY',
+	'PRIVATE',
+	'CREDENTIAL',
+	'CREDENTIALS',
+	'AUTH',
+	'DSN',
+	'SALT',
+	'COOKIE',
+	'SESSION'
+]);
+
+export function isSensitiveEnvKey(key: string, value: string): boolean {
+	const upperKey = key.toUpperCase();
+	if (['_FILE', '_PATH', '_DIR'].some((suffix) => upperKey.endsWith(suffix))) return false;
+	if (value.includes('://') && value.includes('@')) return true;
+	return upperKey.split('_').some((part) => sensitiveEnvKeyParts.has(part));
+}
+
 // --- Byte formatting (MIT, TJ Holowaychuk / Jed Watson) ---
 
 export type BytesFormatOptions = {
