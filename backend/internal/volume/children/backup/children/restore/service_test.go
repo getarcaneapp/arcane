@@ -78,11 +78,11 @@ func TestRestoreFileExtractsLegacyArchiveMember(t *testing.T) {
 		},
 	})
 
-	_, err := service.RestoreFile(t.Context(), "helper", "other-volume", "backup-1", "docs/app.conf")
+	_, err := service.RestoreFile(t.Context(), types.VolumeBackupFileRestoreOptions{ContainerID: "helper", VolumeName: "other-volume", BackupID: "backup-1", Path: "docs/app.conf"})
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceForbidden)
 	require.Empty(t, commands)
 
-	_, err = service.RestoreFile(t.Context(), "helper", "app-data", "backup-1", "/docs/app.conf")
+	_, err = service.RestoreFile(t.Context(), types.VolumeBackupFileRestoreOptions{ContainerID: "helper", VolumeName: "app-data", BackupID: "backup-1", Path: "/docs/app.conf"})
 	require.NoError(t, err)
 	require.Equal(t, [][]string{{"sh", "-c", restoreBackupFilesScript, "sh", "/backups/backup-1.tar.gz", "./docs/app.conf"}}, commands)
 }
@@ -131,7 +131,7 @@ func TestRestoreFileRestoresRusticSnapshotPath(t *testing.T) {
 		},
 	})
 
-	_, err = service.RestoreFile(t.Context(), "helper", "app-data", "backup-1", "docs/app.conf")
+	_, err = service.RestoreFile(t.Context(), types.VolumeBackupFileRestoreOptions{ContainerID: "helper", VolumeName: "app-data", BackupID: "backup-1", Path: "docs/app.conf"})
 	require.ErrorContains(t, err, "stop after create")
 	require.Equal(t, []string{"restore", "--verify-existing", "--", "snapshot-1:/docs/app.conf", "/volume/docs/app.conf"}, createRequest.Cmd)
 	require.NotNil(t, createRequest.HostConfig)

@@ -52,7 +52,7 @@ type (
 		Exec               func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		HelperImage        func(ctx context.Context) (string, error)
 		BackupStorageMount func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-		RestoreFile        func(ctx context.Context, containerID, volumeName, backupID, rel string) (string, error)
+		RestoreFile        func(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error)
 		Settings           *settings.SettingsService
 	}
 
@@ -801,7 +801,12 @@ func (s *Service) applyVolumeWorkspaceChanges(
 			if _, stderr, err := s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceValidatePathScript, "sh", rel, "1"}); err != nil {
 				return rollbackFailure(classifyVolumeWorkspaceExecError(err, stderr, "validate volume workspace path"))
 			}
-			stderr, err := s.deps.RestoreFile(ctx, containerID, volumeName, changes[index].BackupID, rel)
+			stderr, err := s.deps.RestoreFile(ctx, types.VolumeBackupFileRestoreOptions{
+				ContainerID: containerID,
+				VolumeName:  volumeName,
+				BackupID:    changes[index].BackupID,
+				Path:        rel,
+			})
 			if err != nil {
 				return rollbackFailure(classifyVolumeWorkspaceExecError(err, stderr, "restore volume workspace file"))
 			}

@@ -966,9 +966,9 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// RestoreFile restores one backed-up file into volumeName; legacy archives extract inside a helper that mounts backup storage at /backups.
-func (s *Service) RestoreFile(ctx context.Context, containerID, volumeName, backupID, rel string) (string, error) {
-	return s.restore.RestoreFile(ctx, containerID, volumeName, backupID, rel)
+// RestoreFile restores one backed-up file into the volume; legacy archives extract inside a helper that mounts backup storage at /backups.
+func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error) {
+	return s.restore.RestoreFile(ctx, opts)
 }
 
 // DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
