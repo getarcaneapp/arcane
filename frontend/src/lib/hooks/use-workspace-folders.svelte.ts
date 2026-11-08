@@ -27,8 +27,8 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 	const queries = createQueries(() => ({
 		queries: paths.map((path) => ({ ...folderQuery(path), enabled: enabled() }))
 	}));
-	const files = $derived(queries.flatMap((query) => (query.error ? [] : (query.data?.files ?? []))));
-	const loaded = $derived(new Set(paths.filter((_, index) => queries[index]?.data && !queries[index]?.error)));
+	const files = $derived(queries.flatMap((query) => query.data?.files ?? []));
+	const loaded = $derived(new Set(paths.filter((_, index) => queries[index]?.data)));
 	const truncated = $derived(queries.some((query) => query.data?.fileTreeTruncated));
 
 	function setPaths(next: string[]) {

@@ -175,17 +175,20 @@ func TestProjectService_GetProjectWorkspace_ListsRequestedFolder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"config/nested", "config/app.yaml"}, relativePaths(folder))
 
-	for folderPath, wantErr := range map[string]error{
-		"../escape":    common.ErrProjectWorkspaceForbidden,
-		"compose.yaml": common.ErrProjectWorkspaceForbidden,
-		"link":         common.ErrProjectWorkspaceForbidden,
-		"link/nested":  common.ErrProjectWorkspaceForbidden,
-		"notes.txt":    common.ErrProjectWorkspaceBadRequest,
-		"missing":      common.ErrProjectWorkspaceNotFound,
-		".git":         common.ErrProjectWorkspaceNotFound,
+	for _, tt := range []struct {
+		wantErr error
+		path    string
+	}{
+		{path: "../escape", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "compose.yaml", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "link", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "link/nested", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "notes.txt", wantErr: common.ErrProjectWorkspaceBadRequest},
+		{path: "missing", wantErr: common.ErrProjectWorkspaceNotFound},
+		{path: ".git", wantErr: common.ErrProjectWorkspaceNotFound},
 	} {
-		_, err = svc.GetProjectWorkspace(ctx, project.ID, folderPath)
-		require.ErrorIs(t, err, wantErr, folderPath)
+		_, err = svc.GetProjectWorkspace(ctx, project.ID, tt.path)
+		require.ErrorIs(t, err, tt.wantErr, tt.path)
 	}
 }
 
