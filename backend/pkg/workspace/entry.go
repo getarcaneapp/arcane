@@ -30,24 +30,32 @@ func FileEntry(entry acfstypes.Entry) types.WorkspaceFileEntry {
 }
 
 func EntryFromACFS(entry acfstypes.Entry, maxFileSizeBytes int64) types.WorkspaceFileEntry {
-	fileEntry := FileEntry(entry)
-	fileEntry.RelativePath = strings.TrimPrefix(entry.Path, "/")
+	size, editable, readOnlyReason := entry.Size, false, ""
 	switch {
 	case entry.IsDirectory:
-		fileEntry.Size = 0
-		fileEntry.Editable = true
+		size, editable = 0, true
 	case entry.IsSymlink:
-		fileEntry.ReadOnlyReason = types.FileReadOnlySymlink
-	case strings.HasPrefix(entry.Mode, "-"):
-		if entry.Size > maxFileSizeBytes {
-			fileEntry.ReadOnlyReason = types.FileReadOnlyTooLarge
-		} else {
-			fileEntry.Editable = true
-		}
+		readOnlyReason = types.FileReadOnlySymlink
+	case !strings.HasPrefix(entry.Mode, "-"):
+		readOnlyReason = types.FileReadOnlySpecial
+	case entry.Size > maxFileSizeBytes:
+		readOnlyReason = types.FileReadOnlyTooLarge
 	default:
-		fileEntry.ReadOnlyReason = types.FileReadOnlySpecial
+		editable = true
 	}
-	return fileEntry
+	return types.WorkspaceFileEntry{
+		ModTime:        FileEntry(entry).ModTime,
+		Name:           entry.Name,
+		Path:           entry.Path,
+		RelativePath:   strings.TrimPrefix(entry.Path, "/"),
+		Mode:           entry.Mode,
+		LinkTarget:     entry.LinkTarget,
+		ReadOnlyReason: readOnlyReason,
+		Size:           size,
+		IsDirectory:    entry.IsDirectory,
+		IsSymlink:      entry.IsSymlink,
+		Editable:       editable,
+	}
 }
 
 func CompareEntries(a, b types.WorkspaceFileEntry) int {
