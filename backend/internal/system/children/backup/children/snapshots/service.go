@@ -244,14 +244,7 @@ func (session systemBackupSnapshotSession) inspectProjectSnapshot(
 		)
 		return projectEntriesFromSnapshot(listed, snapshot.layout, folder, recursive), listErr
 	}
-	entries, err := func() ([]types.BackupFileEntry, error) {
-		if selection.SelectAll {
-			return list("", true)
-		}
-		return backupbrowser.ParentEntries(selection.Paths, func(folder string) ([]types.BackupFileEntry, error) {
-			return list(folder, false)
-		})
-	}()
+	entries, err := backupbrowser.ParentEntries(selection, list)
 	if err != nil {
 		return systemBackupSnapshot{}, fmt.Errorf("inspect %s project files: %w", location.name, err)
 	}

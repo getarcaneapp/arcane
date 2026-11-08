@@ -217,26 +217,29 @@ func (s *Service) resolveRestoreSelection(
 		}
 		return selectionPlan{globalRoot: true}, nil
 	}
-	var archivePaths []string
-	eligible, err := func() ([]types.BackupFileEntry, error) {
-		if entry.Format == types.VolumeBackupFormatArchive {
-			var archiveErr error
-			archivePaths, archiveErr = s.deps.ArchivePaths(ctx, entry.ID)
-			return backupbrowser.BuildEntries(archivePaths, "", true), archiveErr
+	if entry.Format == types.VolumeBackupFormatArchive {
+		archivePaths, err := s.deps.ArchivePaths(ctx, entry.ID)
+		if err != nil {
+			return selectionPlan{}, err
 		}
-		password, passwordErr := s.deps.Password(ctx, dockerClient, repository)
-		if passwordErr != nil {
-			return nil, passwordErr
+		entries, err := backupbrowser.NormalizeSelection(selection, backupbrowser.BuildEntries(archivePaths, "", true))
+		if err != nil {
+			return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 		}
-		if selection.SelectAll {
-			paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
-			return backupbrowser.BuildEntries(paths, "", true), listErr
-		}
-		return backupbrowser.ParentEntries(selection.Paths, func(folder string) ([]types.BackupFileEntry, error) {
-			paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, folder+"/", false)
-			return backupbrowser.BuildEntries(paths, folder, false), listErr
-		})
-	}()
+		return selectionPlan{
+			entries:      entries,
+			archivePaths: archivePaths,
+		}, nil
+	}
+	password, err := s.deps.Password(ctx, dockerClient, repository)
+	if err != nil {
+		return selectionPlan{}, err
+	}
+	list := func(folder string, recursive bool) ([]types.BackupFileEntry, error) {
+		paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, folder+"/", recursive)
+		return backupbrowser.BuildEntries(paths, folder, recursive), listErr
+	}
+	eligible, err := backupbrowser.ParentEntries(selection, list)
 	if err != nil {
 		return selectionPlan{}, err
 	}
@@ -244,10 +247,7 @@ func (s *Service) resolveRestoreSelection(
 	if err != nil {
 		return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
-	return selectionPlan{
-		entries:      entries,
-		archivePaths: archivePaths,
-	}, nil
+	return selectionPlan{entries: entries}, nil
 }
 
 func archiveMembersForSelection(paths []string, selected []types.BackupFileEntry) []string {

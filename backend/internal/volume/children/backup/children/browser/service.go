@@ -126,9 +126,10 @@ func (s *Service) BackupHasPath(ctx context.Context, backupID, filePath string) 
 			return strings.TrimPrefix(candidate, "/") == cleaned
 		}), nil
 	}
-	entries, err := backupbrowser.ParentEntries([]string{cleaned}, func(folder string) ([]types.BackupFileEntry, error) {
-		return s.backupFileEntries(ctx, entry, folder, false)
-	})
+	list := func(folder string, recursive bool) ([]types.BackupFileEntry, error) {
+		return s.backupFileEntries(ctx, entry, folder, recursive)
+	}
+	entries, err := backupbrowser.ParentEntries(types.BackupRestoreSelection{Paths: []string{cleaned}}, list)
 	if err != nil {
 		return false, err
 	}

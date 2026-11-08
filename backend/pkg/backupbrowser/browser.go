@@ -15,6 +15,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+const maxParentFolders = 4
+
 func NormalizePath(value string, allowEmpty bool) (string, error) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
 	if trimmed == "" || path.Clean(trimmed) == "." {
@@ -114,8 +116,18 @@ func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]t
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 }
 
-// ParentEntries lists the parent folder of each path once and returns the listed entries.
-func ParentEntries(paths []string, list func(folder string) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
+func ParentEntries(selection types.BackupRestoreSelection, list func(folder string, recursive bool) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
+	var normalizedPaths []string
+	folders := make(map[string]struct{})
+	for _, requested := range selection.Paths {
+		if normalized, err := NormalizePath(requested, false); err == nil {
+			normalizedPaths = append(normalizedPaths, normalized)
+			folders[path.Dir(normalized)] = struct{}{}
+		}
+	}
+	if selection.SelectAll || len(folders) > maxParentFolders {
+		return list("", true)
+	}
 	listed := make(map[string][]types.BackupFileEntry)
 	var eligible []types.BackupFileEntry
 	var listParent func(child string) ([]types.BackupFileEntry, error)
@@ -124,17 +136,18 @@ func ParentEntries(paths []string, list func(folder string) ([]types.BackupFileE
 		if entries, ok := listed[folder]; ok {
 			return entries, nil
 		}
-		entries, err := list(folder)
+		entries, err := list(folder, false)
 		if err != nil {
 			if folder == "" {
 				return nil, err
 			}
-			// An unlistable folder absent from its parent is missing, not unreadable.
 			siblings, parentErr := listParent(folder)
 			if parentErr != nil {
 				return nil, parentErr
 			}
-			if slices.ContainsFunc(siblings, func(sibling types.BackupFileEntry) bool { return sibling.Path == folder && sibling.IsDirectory }) {
+			if slices.ContainsFunc(siblings, func(sibling types.BackupFileEntry) bool {
+				return sibling.Path == folder && sibling.IsDirectory
+			}) {
 				return nil, err
 			}
 		}
@@ -142,12 +155,9 @@ func ParentEntries(paths []string, list func(folder string) ([]types.BackupFileE
 		eligible = append(eligible, entries...)
 		return entries, nil
 	}
-	for _, requested := range paths {
-		// NormalizeSelection rejects invalid paths.
-		if normalized, err := NormalizePath(requested, false); err == nil {
-			if _, err = listParent(normalized); err != nil {
-				return nil, err
-			}
+	for _, normalized := range normalizedPaths {
+		if _, err := listParent(normalized); err != nil {
+			return nil, err
 		}
 	}
 	return eligible, nil
