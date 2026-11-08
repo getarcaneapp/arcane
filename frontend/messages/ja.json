@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "このイメージは、 {date}以降、セキュリティ更新プログラムの提供が終了しています。新しいバージョンで再構築してください。",
   "count_hardened_images_end_of_life": "{count} サポート終了後も保存された画像",
   "count_hardened_images_ending_soon": "{count} 耐用年数の終わりに近づいている硬化済みイメージ",
-  "hardened_images_eol_detail": "サポート終了となったイメージには、セキュリティ更新プログラムの提供が停止されます"
+  "hardened_images_eol_detail": "サポート終了となったイメージには、セキュリティ更新プログラムの提供が停止されます",
+  "reveal_value": "価値を明らかにする"
 }
