@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Ten obraz przestał otrzymywać aktualizacje zabezpieczeń na stronie {date}. Należy go odtworzyć w nowszej wersji.",
   "count_hardened_images_end_of_life": "{count} utwardzone obrazy po upływie okresu użytkowania",
   "count_hardened_images_ending_soon": "{count} utwardzone obrazy zbliżające się do końca okresu użytkowania",
-  "hardened_images_eol_detail": "Po zakończeniu cyklu życia utwardzone obrazy przestają otrzymywać aktualizacje zabezpieczeń"
+  "hardened_images_eol_detail": "Po zakończeniu cyklu życia utwardzone obrazy przestają otrzymywać aktualizacje zabezpieczeń",
+  "reveal_value": "Wartość ujawniona"
 }
