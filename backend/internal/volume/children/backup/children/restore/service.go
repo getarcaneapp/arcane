@@ -470,47 +470,6 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-// RestoreFile restores one backed-up file into the volume; legacy archives extract
-// inside the container, which must mount backup storage at /backups.
-func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error) {
-	entry, err := s.deps.Run(ctx, opts.BackupID)
-	if err != nil {
-		return "", common.Classify(common.ErrVolumeWorkspaceNotFound, err)
-	}
-	if entry.VolumeName != opts.VolumeName {
-		return "", common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New("backup does not belong to volume"))
-	}
-	cleaned, err := kit.NormalizeRelativePath(strings.TrimLeft(strings.TrimSpace(opts.Path), "/"))
-	if err != nil {
-		return "", common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
-	}
-	if entry.Format == types.VolumeBackupFormatArchive {
-		filename, filenameErr := s.deps.ArchiveFilename(opts.BackupID)
-		if filenameErr != nil {
-			return "", common.Classify(common.ErrVolumeWorkspaceNotFound, filenameErr)
-		}
-		return s.RestoreArchiveMembers(ctx, opts.ContainerID, filename, []string{cleaned})
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return "", err
-	}
-	repository, snapshotID, err := s.deps.Repository(ctx, dockerClient, entry)
-	if err != nil {
-		return "", err
-	}
-	password, err := s.deps.Password(ctx, dockerClient, repository)
-	if err != nil {
-		return "", err
-	}
-	target := mount.Mount{Type: mount.TypeVolume, Source: opts.VolumeName, Target: "/volume"}
-	options := backup.RestoreOptions{SourcePath: cleaned, DestinationPath: path.Join(target.Target, cleaned)}
-	if restoreSnapshotErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, repository, password, snapshotID, target, options); restoreSnapshotErr != nil {
-		return "", fmt.Errorf("failed to restore %s from Rustic snapshot: %w", cleaned, restoreSnapshotErr)
-	}
-	return "", nil
-}
-
 func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user types.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 

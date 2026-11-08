@@ -140,17 +140,6 @@ type (
 
 func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}
-	repository := func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
-		if entry.LocalSnapshotID != "" {
-			local, err := s.localRusticRepository(ctx, dockerClient, true)
-			return local, entry.LocalSnapshotID, err
-		}
-		if entry.RemoteSnapshotID != "" {
-			remote, err := s.remoteRusticRepository(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
-			return remote, entry.RemoteSnapshotID, err
-		}
-		return backup.Repository{}, "", common.ErrVolumeBackupNoSnapshot
-	}
 	s.policies = policies.NewService(policies.Dependencies{
 		DB:             deps.DB,
 		S3Destinations: deps.S3Destinations,
@@ -175,7 +164,7 @@ func NewService(deps Dependencies) *Service {
 		Docker:     deps.Docker,
 		Engine:     deps.Engine,
 		Run:        deps.Store.Run,
-		Repository: repository,
+		Repository: s.snapshotRepository,
 		Password:   s.volumeBackupPassword,
 		SanitizePath: func(input string) (string, error) {
 			return kit.NormalizeRelativePath(strings.TrimLeft(strings.TrimSpace(input), "/"))
@@ -190,7 +179,7 @@ func NewService(deps Dependencies) *Service {
 		Events:          deps.Events,
 		Locks:           deps.Locks,
 		Run:             deps.Store.Run,
-		Repository:      repository,
+		Repository:      s.snapshotRepository,
 		Password:        s.volumeBackupPassword,
 		StopContainers:  s.stopRunningContainersForBackup,
 		StartContainers: s.startContainersAfterBackup,
@@ -968,7 +957,42 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 
 // RestoreFile restores one backed-up file into the volume; legacy archives extract inside a helper that mounts backup storage at /backups.
 func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error) {
-	return s.restore.RestoreFile(ctx, opts)
+	entry, err := s.deps.Store.Run(ctx, opts.BackupID)
+	if err != nil {
+		return "", common.Classify(common.ErrVolumeWorkspaceNotFound, err)
+	}
+	if entry.VolumeName != opts.VolumeName {
+		return "", common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New("backup does not belong to volume"))
+	}
+	cleaned, err := kit.NormalizeRelativePath(strings.TrimLeft(strings.TrimSpace(opts.Path), "/"))
+	if err != nil {
+		return "", common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+	}
+	if entry.Format == types.VolumeBackupFormatArchive {
+		filename, filenameErr := backupArchiveFilename(opts.BackupID)
+		if filenameErr != nil {
+			return "", common.Classify(common.ErrVolumeWorkspaceNotFound, filenameErr)
+		}
+		return s.restore.RestoreArchiveMembers(ctx, opts.ContainerID, filename, []string{cleaned})
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	repository, snapshotID, err := s.snapshotRepository(ctx, dockerClient, entry)
+	if err != nil {
+		return "", err
+	}
+	password, err := s.volumeBackupPassword(ctx, dockerClient, repository)
+	if err != nil {
+		return "", err
+	}
+	target := mount.Mount{Type: mount.TypeVolume, Source: opts.VolumeName, Target: "/volume"}
+	options := backup.RestoreOptions{SourcePath: cleaned, DestinationPath: path.Join(target.Target, cleaned)}
+	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, repository, password, snapshotID, target, options); restoreErr != nil {
+		return "", fmt.Errorf("failed to restore %s from Rustic snapshot: %w", cleaned, restoreErr)
+	}
+	return "", nil
 }
 
 // DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
