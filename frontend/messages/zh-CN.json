@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "该镜像在 {date}上已停止接收安全更新。请在较新版本上重新构建该镜像。",
   "count_hardened_images_end_of_life": "{count} 已过生命周期的加固映像",
   "count_hardened_images_ending_soon": "{count} 已固化的映像即将达到使用寿命的尽头",
-  "hardened_images_eol_detail": "经过固化的映像在生命周期结束时将不再获得安全更新"
+  "hardened_images_eol_detail": "经过固化的映像在生命周期结束时将不再获得安全更新",
+  "reveal_value": "展现价值"
 }
