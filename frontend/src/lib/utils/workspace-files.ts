@@ -22,7 +22,7 @@ export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable'
 	pending?: boolean;
 }
 
-type WorkspaceDisplayFileChange = Omit<WorkspaceFileChangeDto, 'operation'> & {
+export type WorkspaceDisplayFileChange = Omit<WorkspaceFileChangeDto, 'operation'> & {
 	operation: WorkspaceFileChangeOperation | 'restore_file';
 };
 
@@ -328,6 +328,25 @@ function remapWorkspaceDisplayEntries(entries: Map<string, WorkspaceDisplayEntry
 	for (const [entryPath, current] of remapped.entries()) entries.set(entryPath, current);
 }
 
+function workspaceFileChangeTargetPath(change: WorkspaceDisplayFileChange, relativePath: string): string {
+	return change.operation === 'rename' && change.newName
+		? joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName)
+		: joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
+}
+
+// Maps a displayed path back through staged renames and moves; null means a staged change created or replaced it.
+export function workspaceFileServerPath(changes: WorkspaceDisplayFileChange[], relativePath: string): string | null {
+	let current = normalizeWorkspaceRelativePath(relativePath);
+	for (const change of changes.toReversed()) {
+		const source = normalizeWorkspaceRelativePath(change.relativePath);
+		const target =
+			change.operation === 'rename' || change.operation === 'move' ? workspaceFileChangeTargetPath(change, source) : '';
+		if (target && workspaceFilePathMatches(current, target)) current = remapWorkspaceFilePath(current, target, source);
+		else if (workspaceFilePathMatches(current, source)) return null;
+	}
+	return current;
+}
+
 export function applyWorkspaceFileChangesForDisplay(
 	files: WorkspaceDisplayEntry[],
 	changes: WorkspaceDisplayFileChange[]
@@ -369,13 +388,8 @@ export function applyWorkspaceFileChangesForDisplay(
 			}
 			case 'rename':
 			case 'move': {
-				const entry = entries.get(relativePath);
-				if (!entry) break;
-				const newPath =
-					change.operation === 'rename' && change.newName
-						? joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName)
-						: joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
-				remapWorkspaceDisplayEntries(entries, relativePath, newPath);
+				if (!entries.has(relativePath)) break;
+				remapWorkspaceDisplayEntries(entries, relativePath, workspaceFileChangeTargetPath(change, relativePath));
 				break;
 			}
 			case 'delete':

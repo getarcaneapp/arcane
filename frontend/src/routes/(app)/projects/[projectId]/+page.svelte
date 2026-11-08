@@ -86,7 +86,6 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { summarizeUpdateCheckResult } from '#lib/utils/update-actions.js';
 	import {
-		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		planWorkspaceFileMove,
@@ -184,7 +183,8 @@
 
 	const projectWorkspaceFolders = useWorkspaceFolders({
 		folderQuery: (path) => projectWorkspaceFolderQuery(envId, projectId, path),
-		enabled: () => !!projectId
+		enabled: () => !!projectId,
+		changes: () => projectWorkspaceChanges
 	});
 
 	const lifecycleSyncQuery = createQuery(() => {
@@ -275,7 +275,7 @@
 		)
 	);
 	const projectWorkspaceEntries = $derived.by(() =>
-		applyWorkspaceFileChangesForDisplay(projectWorkspaceFolders.files, projectWorkspaceChanges).map((file) => {
+		projectWorkspaceFolders.displayFiles.map((file) => {
 			const metadata = projectWorkspaceFileMetadata[file.relativePath];
 			const editable = metadata?.editable ?? file.editable;
 			return {
@@ -786,7 +786,9 @@
 		openTabsPreference = [selectedFilePreference];
 		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
 		projectWorkspaceFolders.reveal(
-			[...openTabsPreference, selectedFilePreference].filter((key) => key.startsWith('file:')).map((key) => key.slice(5))
+			[...openTabsPreference, selectedFilePreference]
+				.filter((key) => key.startsWith('file:') || key.startsWith('dir:'))
+				.map((key) => key.slice(key.indexOf(':') + 1))
 		);
 
 		// Stored layout only counts when saved under the account default still in effect (legacy prefs count as auto).
@@ -1458,8 +1460,7 @@
 		selectedFilePreference = `file:${relativePath}`;
 	}
 
-	async function renameProjectWorkspaceFile(relativePath: string, newName: string) {
-		if (!(await projectWorkspaceFolders.load(relativePath)) || !projectWorkspacePaths.has(relativePath)) return;
+	function renameProjectWorkspaceFile(relativePath: string, newName: string) {
 		const plan = planProjectWorkspaceFileRename(projectWorkspacePaths, relativePath, newName, composeFileName);
 		if (!plan) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'rename', relativePath, newName: plan.newName }];
@@ -1467,7 +1468,7 @@
 	}
 
 	async function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
-		if (!(await projectWorkspaceFolders.load(newParentPath)) || !(await projectWorkspaceFolders.load(relativePath))) return;
+		if (!(await projectWorkspaceFolders.load(newParentPath))) return;
 		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 		const newPath = planWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;

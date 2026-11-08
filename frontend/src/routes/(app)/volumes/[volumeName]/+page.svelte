@@ -57,7 +57,6 @@
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
-		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		joinWorkspaceFilePath,
@@ -151,11 +150,12 @@
 
 	const workspaceFolders = useWorkspaceFolders({
 		folderQuery: (path) => volumeWorkspaceFolderQuery(currentEnvId, volume?.name ?? '', path),
-		enabled: () => !!volume?.name && workspaceRequested && canReadVolume
+		enabled: () => !!volume?.name && workspaceRequested && canReadVolume,
+		changes: () => workspaceFileChanges
 	});
 
 	const visibleWorkspaceFiles = $derived.by(() =>
-		applyWorkspaceFileChangesForDisplay(workspaceFolders.files, workspaceFileChanges).map((file) => {
+		workspaceFolders.displayFiles.map((file) => {
 			const modeType = file.mode?.[0];
 			const metadata = workspaceFileMetadata[file.relativePath];
 			const editable = metadata?.editable ?? file.editable;
@@ -472,10 +472,9 @@
 		loadSelectedWorkspaceFile();
 	}
 
-	async function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
+	function renameVolumeWorkspaceFile(relativePath: string, newName: string) {
 		const normalizedName = validateWorkspaceFileName(newName);
-		if (!normalizedName || !(await workspaceFolders.load(relativePath))) return;
-		if (!workspaceFilePaths.has(relativePath)) return;
+		if (!normalizedName) return;
 		const newPath = joinWorkspaceFilePath(workspaceFileParentPath(relativePath), normalizedName);
 		if (newPath !== relativePath && workspaceFilePaths.has(newPath)) {
 			toast.error(m.workspace_file_duplicate_name());
@@ -486,12 +485,7 @@
 	}
 
 	async function moveVolumeWorkspaceFile(relativePath: string, newParentPath: string) {
-		if (
-			newParentPath === workspaceFileParentPath(relativePath) ||
-			!(await workspaceFolders.load(newParentPath)) ||
-			!(await workspaceFolders.load(relativePath))
-		)
-			return;
+		if (newParentPath === workspaceFileParentPath(relativePath) || !(await workspaceFolders.load(newParentPath))) return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry) return;
 		if (entry.isDirectory && newParentPath && workspaceFilePathMatches(newParentPath, relativePath)) {

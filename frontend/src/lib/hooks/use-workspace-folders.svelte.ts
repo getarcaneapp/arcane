@@ -6,11 +6,19 @@ import { m } from '#lib/paraglide/messages.js';
 import type { Workspace, WorkspaceFileEntry } from '#lib/types/workspace.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
-import { workspaceFileParentPath, workspaceFilePathMatches } from '#lib/utils/workspace-files.js';
+import {
+	applyWorkspaceFileChangesForDisplay,
+	workspaceFileParentPath,
+	workspaceFilePathMatches,
+	workspaceFileServerPath,
+	type WorkspaceDisplayFileChange
+} from '#lib/utils/workspace-files.js';
 
 type UseWorkspaceFoldersOptions<TQueryKey extends QueryKey> = {
 	folderQuery: (path: string) => CreateQueryOptions<Workspace, Error, Workspace, TQueryKey>;
 	enabled: () => boolean;
+	// Staged changes shown in `displayFiles`; `load` and `loaded` then use displayed paths.
+	changes?: () => WorkspaceDisplayFileChange[];
 };
 
 function workspaceFolderChain(relativePath: string): string[] {
@@ -19,7 +27,11 @@ function workspaceFolderChain(relativePath: string): string[] {
 	return folders;
 }
 
-export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, enabled }: UseWorkspaceFoldersOptions<TQueryKey>) {
+export function useWorkspaceFolders<TQueryKey extends QueryKey>({
+	folderQuery,
+	enabled,
+	changes
+}: UseWorkspaceFoldersOptions<TQueryKey>) {
 	const queryClient = useQueryClient();
 	const scope = $derived(hashKey(folderQuery('').queryKey));
 	let opened = $state({ scope: '', paths: [''] });
@@ -28,7 +40,21 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 		queries: paths.map((path) => ({ ...folderQuery(path), enabled: enabled() }))
 	}));
 	const files = $derived(queries.flatMap((query) => query.data?.files ?? []));
-	const loaded = $derived(new Set(paths.filter((_, index) => queries[index]?.data)));
+	const displayFiles = $derived(applyWorkspaceFileChangesForDisplay(files, changes?.() ?? []));
+	const loadedPaths = $derived(new Set(paths.filter((_, index) => queries[index]?.data)));
+	const loaded = $derived.by(() => {
+		if (!changes) return loadedPaths;
+		const staged = changes();
+		return new Set(
+			displayFiles
+				.filter((file) => {
+					if (!file.isDirectory) return false;
+					const serverPath = workspaceFileServerPath(staged, file.relativePath);
+					return serverPath === null || loadedPaths.has(serverPath);
+				})
+				.map((file) => file.relativePath)
+		);
+	});
 	const truncated = $derived(queries.some((query) => query.data?.fileTreeTruncated));
 
 	function setPaths(next: string[]) {
@@ -42,6 +68,9 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 		get files() {
 			return files;
 		},
+		get displayFiles() {
+			return displayFiles;
+		},
 		get loaded() {
 			return loaded;
 		},
@@ -53,10 +82,12 @@ export function useWorkspaceFolders<TQueryKey extends QueryKey>({ folderQuery, e
 		},
 		async load(relativePath: string): Promise<boolean> {
 			if (!enabled()) return false;
-			if (relativePath && !files.some((file) => file.relativePath === relativePath && file.isDirectory)) return true;
+			const serverPath = changes ? workspaceFileServerPath(changes(), relativePath) : relativePath;
+			if (serverPath === null || (serverPath && !files.some((file) => file.relativePath === serverPath && file.isDirectory)))
+				return true;
 			const requestedScope = scope;
-			setPaths([...paths, relativePath]);
-			const result = await tryCatch(queryClient.ensureQueryData({ ...folderQuery(relativePath), revalidateIfStale: true }));
+			setPaths([...paths, serverPath]);
+			const result = await tryCatch(queryClient.ensureQueryData({ ...folderQuery(serverPath), revalidateIfStale: true }));
 			if (requestedScope !== scope) return false;
 			if (result.error !== null) {
 				toast.error(m.common_load_failed({ resource: relativePath }), { description: extractApiErrorMessage(result.error) });
