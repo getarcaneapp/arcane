@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Für dieses Image werden auf {date}keine Sicherheitsupdates mehr bereitgestellt. Erstellen Sie es auf einer neueren Version neu.",
   "count_hardened_images_end_of_life": "{count} gehärtete Images nach Ablauf der Lebensdauer",
   "count_hardened_images_ending_soon": "{count} gehärtete Images, deren Lebensdauer sich dem Ende nähert",
-  "hardened_images_eol_detail": "Für „gehärtete“ Images werden nach Ablauf der Lebensdauer keine Sicherheitsupdates mehr bereitgestellt"
+  "hardened_images_eol_detail": "Für „gehärtete“ Images werden nach Ablauf der Lebensdauer keine Sicherheitsupdates mehr bereitgestellt",
+  "reveal_value": "Wert anzeigen"
 }
