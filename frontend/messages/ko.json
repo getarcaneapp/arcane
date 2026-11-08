@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "이 이미지는 {date}에서 더 이상 보안 업데이트를 받지 않습니다. 최신 버전을 사용하여 다시 빌드하십시오.",
   "count_hardened_images_end_of_life": "{count} 수명 종료 후에도 보존된 이미지",
   "count_hardened_images_ending_soon": "{count} 수명이 거의 다 된 경화 이미지",
-  "hardened_images_eol_detail": "지원 기간이 종료된 이미지는 더 이상 보안 업데이트를 받지 못합니다."
+  "hardened_images_eol_detail": "지원 기간이 종료된 이미지는 더 이상 보안 업데이트를 받지 못합니다.",
+  "reveal_value": "가치 드러내기"
 }
