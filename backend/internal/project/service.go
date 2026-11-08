@@ -3359,10 +3359,7 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	uploads map[int][]byte,
 	user types.Actor,
 ) (*types.Workspace, error) {
-	if strings.TrimSpace(manifest.FileTreeRevision) == "" {
-		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace revision is required"))
-	}
-	if err := workspacepkg.ValidateUpdateManifest(len(manifest.FileChanges), 500); err != nil {
+	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, err)
 	}
 	unlock, err := s.lockProject(ctx, "update project workspace", projectID)

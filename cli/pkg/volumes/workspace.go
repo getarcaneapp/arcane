@@ -14,7 +14,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -247,28 +246,18 @@ func newWorkspacePutCmd() *cobra.Command {
 				return confirmationErr
 			}
 
-			parent := path.Dir(relativePath)
-			parentListing, err := c.GetJSON[types.Workspace](cmd.Context(), cmdutil.AppendQuery(
-				clitypes.VolumeWorkspace(c.EnvID(), resolved.Name),
-				url.Values{"path": []string{kit.Ternary(parent == ".", "", parent)}},
+			_, lookupErr := c.GetJSON[types.WorkspaceFileContent](cmd.Context(), cmdutil.AppendQuery(
+				clitypes.VolumeWorkspaceFile(c.EnvID(), resolved.Name),
+				url.Values{"relativePath": []string{relativePath}},
 			))
-			if err != nil {
-				if statusErr, ok := errors.AsType[*client.StatusError](err); !ok || statusErr.StatusCode != http.StatusNotFound {
-					return fmt.Errorf("failed to get volume workspace: %w", err)
-				}
-			}
-
-			operation := types.FileOpCreateFile
-			if err == nil && slices.ContainsFunc(parentListing.Data.Files, func(entry types.WorkspaceFileEntry) bool {
-				return entry.RelativePath == relativePath && !entry.IsDirectory
-			}) {
-				operation = types.FileOpUpdateFile
+			if statusErr, ok := errors.AsType[*client.StatusError](lookupErr); lookupErr != nil && (!ok || statusErr.StatusCode != http.StatusNotFound) {
+				return fmt.Errorf("failed to inspect volume workspace file: %w", lookupErr)
 			}
 
 			uploadIndex := 0
 			manifest := types.VolumeWorkspaceUpdateManifest{
 				FileChanges: []types.VolumeWorkspaceFileChange{{
-					Operation:    operation,
+					Operation:    kit.Ternary(lookupErr == nil, types.FileOpUpdateFile, types.FileOpCreateFile),
 					RelativePath: relativePath,
 					UploadIndex:  &uploadIndex,
 				}},

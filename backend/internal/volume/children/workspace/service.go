@@ -486,8 +486,8 @@ func (s *Service) UpdateVolumeWorkspace(
 		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "fileChangeCount", len(manifest.FileChanges), "totalDuration", time.Since(totalStartedAt))
 	}()
 
-	if err := workspacepkg.ValidateUpdateManifest(len(manifest.FileChanges), 500); err != nil {
-		return common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+	if count := len(manifest.FileChanges); count == 0 || count > 500 {
+		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
 	}
 	uploadReferences := make([]workspacepkg.UploadReference, 0, len(manifest.FileChanges))
 	for _, change := range manifest.FileChanges {
@@ -610,6 +610,9 @@ func (s *Service) verifyVolumeWorkspaceBaselines(ctx context.Context, containerI
 		}
 		baseline := uploads[*change.BaselineIndex]
 		reader, _, err := s.startVolumeWorkspaceRead(ctx, containerID, rel, int64(len(baseline))+1, func() {})
+		if errors.Is(err, common.ErrVolumeWorkspaceNotFound) {
+			return common.Classify(common.ErrVolumeWorkspaceConflict, fmt.Errorf("file %s was removed since it was loaded; refresh it and try again", rel))
+		}
 		if err != nil {
 			return fmt.Errorf("read volume workspace file: %w", err)
 		}
@@ -636,18 +639,17 @@ func volumeWorkspaceOriginalPath(earlier []types.VolumeWorkspaceFileChange, rela
 		if normalizeErr != nil {
 			return "", false
 		}
-		target := ""
 		if change.Operation == types.FileOpRename || change.Operation == types.FileOpMove {
 			applyChange, mapErr := mapVolumeWorkspaceChangeToACFS(change, volumeWorkspaceStagedFile{})
 			if mapErr != nil {
 				return "", false
 			}
-			target = strings.TrimPrefix(applyChange.TargetPath, "/")
+			if target := strings.TrimPrefix(applyChange.TargetPath, "/"); kit.FilePathMatches(current, target) {
+				current = source + strings.TrimPrefix(current, target)
+				continue
+			}
 		}
-		switch {
-		case target != "" && kit.FilePathMatches(current, target):
-			current = source + strings.TrimPrefix(current, target)
-		case kit.FilePathMatches(current, source):
+		if kit.FilePathMatches(current, source) {
 			return "", false
 		}
 	}

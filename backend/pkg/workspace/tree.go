@@ -85,12 +85,7 @@ func Read(ctx context.Context, rootPath string, opts Options) ([]types.Workspace
 		return nil, "", false, walkErr
 	}
 
-	slices.SortFunc(walker.files, func(a, b types.WorkspaceFileEntry) int {
-		if a.IsDirectory != b.IsDirectory {
-			return kit.Ternary(a.IsDirectory, -1, 1)
-		}
-		return strings.Compare(a.RelativePath, b.RelativePath)
-	})
+	slices.SortFunc(walker.files, CompareEntries)
 
 	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
 }
