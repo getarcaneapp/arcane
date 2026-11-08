@@ -966,29 +966,9 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ArchiveFileTarget resolves a legacy archive and the sanitized member path for a single-file restore.
-func (s *Service) ArchiveFileTarget(ctx context.Context, volumeName, backupID, rel string) (string, string, error) {
-	filename, err := backupArchiveFilename(backupID)
-	if err != nil {
-		return "", "", common.Classify(common.ErrVolumeWorkspaceNotFound, err)
-	}
-	entry, err := s.deps.Store.Run(ctx, backupID)
-	if err != nil {
-		return "", "", common.Classify(common.ErrVolumeWorkspaceNotFound, err)
-	}
-	if entry.VolumeName != volumeName {
-		return "", "", common.Classify(common.ErrVolumeWorkspaceForbidden, errors.New("backup does not belong to volume"))
-	}
-	cleaned, err := kit.NormalizeRelativePath(strings.TrimLeft(strings.TrimSpace(rel), "/"))
-	if err != nil {
-		return "", "", common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
-	}
-	return filename, cleaned, nil
-}
-
-// RestoreArchiveMembers extracts members of a legacy archive into a helper that mounts backup storage at /backups.
-func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error) {
-	return s.restore.RestoreArchiveMembers(ctx, containerID, filename, cleanedPaths)
+// RestoreFile restores one backed-up file into volumeName; legacy archives extract inside a helper that mounts backup storage at /backups.
+func (s *Service) RestoreFile(ctx context.Context, containerID, volumeName, backupID, rel string) (string, error) {
+	return s.restore.RestoreFile(ctx, containerID, volumeName, backupID, rel)
 }
 
 // DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
