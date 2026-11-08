@@ -4416,7 +4416,7 @@
   "interface_font": "Felületi betűtípus",
   "interface_font_description": "A felületi szöveg betűtípusa. A kínai, japán és koreai karakterekhez a telepített rendszerbetűtípusok kerülnek felhasználásra.",
   "monospace_font": "Monospace betűtípus",
-  "monospace_font_description": "Betűtípus címsorokhoz, azonosítókhoz és egyéb szabványos szélességű szövegekhez",
+  "monospace_font_description": "Betűtípus azonosítókhoz és egyéb szabványos szélességű szövegekhez",
   "code_font": "Kód betűtípus",
   "code_font_description": "Betűtípus a kódszerkesztőhöz, a kódblokkokhoz és a terminálhoz. A terminál újbóli megnyitásakor frissül.",
   "custom_font": "Egyedi betűtípus",
