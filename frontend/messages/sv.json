@@ -4416,7 +4416,7 @@
   "interface_font": "Teckensnitt i gränssnittet",
   "interface_font_description": "Teckensnitt för gränssnittstext. Tecken på kinesiska, japanska och koreanska använder installerade systemteckensnitt.",
   "monospace_font": "Monospace-typsnitt",
-  "monospace_font_description": "Teckensnitt för rubriker, ID:n och annan text med fast teckenbredd",
+  "monospace_font_description": "Teckensnitt för ID-nummer och annan text med fast teckenbredd",
   "code_font": "Teckensnitt",
   "code_font_description": "Teckensnitt för kodredigeraren, kodblock och terminalen. Terminalen uppdateras när den öppnas på nytt.",
   "custom_font": "Anpassat typsnitt",
