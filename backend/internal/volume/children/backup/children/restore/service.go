@@ -217,26 +217,36 @@ func (s *Service) resolveRestoreSelection(
 		}
 		return selectionPlan{globalRoot: true}, nil
 	}
-	paths, err := func() ([]string, error) {
+	var archivePaths []string
+	eligible, err := func() ([]types.BackupFileEntry, error) {
 		if entry.Format == types.VolumeBackupFormatArchive {
-			return s.deps.ArchivePaths(ctx, entry.ID)
+			var archiveErr error
+			archivePaths, archiveErr = s.deps.ArchivePaths(ctx, entry.ID)
+			return backupbrowser.BuildEntries(archivePaths, "", true), archiveErr
 		}
 		password, passwordErr := s.deps.Password(ctx, dockerClient, repository)
 		if passwordErr != nil {
 			return nil, passwordErr
 		}
-		return s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
+		if selection.SelectAll {
+			paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
+			return backupbrowser.BuildEntries(paths, "", true), listErr
+		}
+		return backupbrowser.ParentEntries(selection.Paths, func(folder string) ([]types.BackupFileEntry, error) {
+			paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, folder+"/", false)
+			return backupbrowser.BuildEntries(paths, folder, false), listErr
+		})
 	}()
 	if err != nil {
 		return selectionPlan{}, err
 	}
-	entries, err := backupbrowser.NormalizeSelection(selection, backupbrowser.BuildEntries(paths, "", true))
+	entries, err := backupbrowser.NormalizeSelection(selection, eligible)
 	if err != nil {
 		return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
 	return selectionPlan{
 		entries:      entries,
-		archivePaths: kit.Ternary(entry.Format == types.VolumeBackupFormatArchive, paths, nil),
+		archivePaths: archivePaths,
 	}, nil
 }
 

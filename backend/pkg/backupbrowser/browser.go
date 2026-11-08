@@ -114,6 +114,45 @@ func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]t
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 }
 
+// ParentEntries lists the parent folder of each path once and returns the listed entries.
+func ParentEntries(paths []string, list func(folder string) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
+	listed := make(map[string][]types.BackupFileEntry)
+	var eligible []types.BackupFileEntry
+	var listParent func(child string) ([]types.BackupFileEntry, error)
+	listParent = func(child string) ([]types.BackupFileEntry, error) {
+		folder := child[:max(strings.LastIndex(child, "/"), 0)]
+		if entries, ok := listed[folder]; ok {
+			return entries, nil
+		}
+		entries, err := list(folder)
+		if err != nil {
+			if folder == "" {
+				return nil, err
+			}
+			// An unlistable folder absent from its parent is missing, not unreadable.
+			siblings, parentErr := listParent(folder)
+			if parentErr != nil {
+				return nil, parentErr
+			}
+			if slices.ContainsFunc(siblings, func(sibling types.BackupFileEntry) bool { return sibling.Path == folder && sibling.IsDirectory }) {
+				return nil, err
+			}
+		}
+		listed[folder] = entries
+		eligible = append(eligible, entries...)
+		return entries, nil
+	}
+	for _, requested := range paths {
+		// NormalizeSelection rejects invalid paths.
+		if normalized, err := NormalizePath(requested, false); err == nil {
+			if _, err = listParent(normalized); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return eligible, nil
+}
+
 func NormalizeSelection(selection types.BackupRestoreSelection, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {
 	if selection.SelectAll && len(selection.Paths) > 0 {
 		return nil, errors.New("selectAll cannot be combined with explicit paths")

@@ -220,19 +220,45 @@ func (session systemBackupSnapshotSession) firstReadableSnapshot(
 	return systemBackupSnapshot{}, fmt.Errorf("failed to open system recovery snapshot: %w", inspectErr)
 }
 
-func (session systemBackupSnapshotSession) inspectProjectSnapshot(ctx context.Context, location systemBackupSnapshotLocation) (systemBackupSnapshot, error) {
+func (session systemBackupSnapshotSession) inspectProjectSnapshot(
+	ctx context.Context,
+	location systemBackupSnapshotLocation,
+	selection types.BackupRestoreSelection,
+) (
+	systemBackupSnapshot,
+	error,
+) {
 	snapshot, err := session.inspectProjectManifest(ctx, location)
 	if err != nil {
 		return systemBackupSnapshot{}, err
 	}
-	listed, err := session.service.engine.ListSnapshotFiles(ctx, session.dockerClient, location.repository, session.recoveryKey, location.snapshotID, snapshot.layout.projectsPath+"/", true)
+	list := func(folder string, recursive bool) ([]types.BackupFileEntry, error) {
+		listed, listErr := session.service.engine.ListSnapshotFiles(
+			ctx,
+			session.dockerClient,
+			location.repository,
+			session.recoveryKey,
+			location.snapshotID,
+			path.Join(snapshot.layout.projectsPath, folder)+"/",
+			recursive,
+		)
+		return projectEntriesFromSnapshot(listed, snapshot.layout, folder, recursive), listErr
+	}
+	entries, err := func() ([]types.BackupFileEntry, error) {
+		if selection.SelectAll {
+			return list("", true)
+		}
+		return backupbrowser.ParentEntries(selection.Paths, func(folder string) ([]types.BackupFileEntry, error) {
+			return list(folder, false)
+		})
+	}()
 	if err != nil {
 		return systemBackupSnapshot{}, fmt.Errorf("inspect %s project files: %w", location.name, err)
 	}
 	return systemBackupSnapshot{
 		systemBackupSnapshotLocation: snapshot.systemBackupSnapshotLocation,
 		layout:                       snapshot.layout,
-		entries:                      projectEntriesFromSnapshot(listed, snapshot.layout, "", true),
+		entries:                      entries,
 	}, nil
 }
 
@@ -251,6 +277,7 @@ func (session systemBackupSnapshotSession) availableProjectSnapshots(
 	ctx context.Context,
 	locations []systemBackupSnapshotLocation,
 	setupErr error,
+	selection types.BackupRestoreSelection,
 	firstOnly bool,
 ) (
 	[]systemBackupSnapshot,
@@ -259,7 +286,7 @@ func (session systemBackupSnapshotSession) availableProjectSnapshots(
 	snapshots := make([]systemBackupSnapshot, 0, len(locations))
 	inspectErr := setupErr
 	for _, location := range locations {
-		snapshot, err := session.inspectProjectSnapshot(ctx, location)
+		snapshot, err := session.inspectProjectSnapshot(ctx, location, selection)
 		if err != nil {
 			inspectErr = errors.Join(inspectErr, err)
 			continue
@@ -348,6 +375,7 @@ func (session systemBackupSnapshotSession) openSafetySnapshot(
 	ctx context.Context,
 	source systemBackupSnapshot,
 	safetyRun *types.SystemBackupRun,
+	selection types.BackupRestoreSelection,
 ) (
 	systemBackupSafetySnapshot,
 	error,
@@ -362,7 +390,7 @@ func (session systemBackupSnapshotSession) openSafetySnapshot(
 	if location.snapshotID == "" {
 		return systemBackupSafetySnapshot{}, errors.New("pre-restore system backup has no snapshot in the selected repository")
 	}
-	snapshot, err := session.inspectProjectSnapshot(ctx, location)
+	snapshot, err := session.inspectProjectSnapshot(ctx, location, selection)
 	if err != nil {
 		return systemBackupSafetySnapshot{}, fmt.Errorf("open pre-restore system backup: %w", err)
 	}
@@ -494,7 +522,7 @@ func (s *Service) RestoreFiles(
 ) error {
 	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	locations, setupErr := s.backupSnapshotLocations(ctx, dockerClient, run)
-	snapshots, err := session.availableProjectSnapshots(ctx, locations, setupErr, false)
+	snapshots, err := session.availableProjectSnapshots(ctx, locations, setupErr, selection, false)
 	if err != nil {
 		return err
 	}
@@ -531,7 +559,7 @@ func (s *Service) RestoreFiles(
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
-	safety, err := session.openSafetySnapshot(ctx, source, safetyRun)
+	safety, err := session.openSafetySnapshot(ctx, source, safetyRun, selection)
 	if err != nil {
 		return err
 	}

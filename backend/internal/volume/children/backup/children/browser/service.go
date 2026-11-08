@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -112,16 +113,28 @@ func (s *Service) BackupHasPath(ctx context.Context, backupID, filePath string) 
 	if err != nil {
 		return false, err
 	}
-	files, err := s.ListBackupFiles(ctx, backupID)
+	entry, err := s.deps.Run(ctx, backupID)
 	if err != nil {
 		return false, err
 	}
-	for _, candidate := range files {
-		if strings.TrimPrefix(candidate, "/") == cleaned {
-			return true, nil
+	if entry.Format == types.VolumeBackupFormatArchive {
+		files, archiveErr := s.listArchiveBackupFiles(ctx, backupID)
+		if archiveErr != nil {
+			return false, archiveErr
 		}
+		return slices.ContainsFunc(files, func(candidate string) bool {
+			return strings.TrimPrefix(candidate, "/") == cleaned
+		}), nil
 	}
-	return false, nil
+	entries, err := backupbrowser.ParentEntries([]string{cleaned}, func(folder string) ([]types.BackupFileEntry, error) {
+		return s.backupFileEntries(ctx, entry, folder, false)
+	})
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(entries, func(candidate types.BackupFileEntry) bool {
+		return candidate.Path == cleaned
+	}), nil
 }
 
 func (s *Service) listArchiveBackupFiles(ctx context.Context, backupID string) ([]string, error) {
