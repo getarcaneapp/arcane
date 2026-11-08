@@ -4416,7 +4416,7 @@
   "interface_font": "Lettertype van de interface",
   "interface_font_description": "Lettertype voor tekst in de interface. Voor Chinese, Japanse en Koreaanse tekens worden de geïnstalleerde systeemlettertypen gebruikt.",
   "monospace_font": "Lettertype Monospace",
-  "monospace_font_description": "Lettertype voor koppen, ID’s en andere tekst met vaste tekenafstand",
+  "monospace_font_description": "Lettertype voor ID’s en andere tekst met vaste tekenafstand",
   "code_font": "Code-lettertype",
   "code_font_description": "Lettertype voor de code-editor, codeblokken en de terminal. De terminal wordt bij het opnieuw openen bijgewerkt.",
   "custom_font": "Aangepast lettertype",
