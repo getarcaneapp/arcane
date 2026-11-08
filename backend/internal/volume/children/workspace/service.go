@@ -44,17 +44,16 @@ import (
 
 type (
 	Dependencies struct {
-		Docker                *dockerInternal.DockerClientService
-		Events                *event.EventService
-		Locks                 *concurrency.KeyedMutex
-		AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
-		RequireACFS           func(ctx context.Context, volumeName, containerID string) error
-		Exec                  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-		HelperImage           func(ctx context.Context) (string, error)
-		BackupStorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-		ArchiveFileTarget     func(ctx context.Context, volumeName, backupID, rel string) (string, string, error)
-		RestoreArchiveMembers func(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error)
-		Settings              *settings.SettingsService
+		Docker             *dockerInternal.DockerClientService
+		Events             *event.EventService
+		Locks              *concurrency.KeyedMutex
+		AcquireHelper      func(ctx context.Context, volumeName string) (string, func(), error)
+		RequireACFS        func(ctx context.Context, volumeName, containerID string) error
+		Exec               func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		HelperImage        func(ctx context.Context) (string, error)
+		BackupStorageMount func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		RestoreFile        func(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error)
+		Settings           *settings.SettingsService
 	}
 
 	Service struct {
@@ -802,11 +801,12 @@ func (s *Service) applyVolumeWorkspaceChanges(
 			if _, stderr, err := s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceValidatePathScript, "sh", rel, "1"}); err != nil {
 				return rollbackFailure(classifyVolumeWorkspaceExecError(err, stderr, "validate volume workspace path"))
 			}
-			filename, cleaned, err := s.deps.ArchiveFileTarget(ctx, volumeName, changes[index].BackupID, rel)
-			if err != nil {
-				return rollbackFailure(err)
-			}
-			stderr, err := s.deps.RestoreArchiveMembers(ctx, containerID, filename, []string{cleaned})
+			stderr, err := s.deps.RestoreFile(ctx, types.VolumeBackupFileRestoreOptions{
+				ContainerID: containerID,
+				VolumeName:  volumeName,
+				BackupID:    changes[index].BackupID,
+				Path:        rel,
+			})
 			if err != nil {
 				return rollbackFailure(classifyVolumeWorkspaceExecError(err, stderr, "restore volume workspace file"))
 			}

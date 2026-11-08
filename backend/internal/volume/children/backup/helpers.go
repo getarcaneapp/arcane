@@ -21,6 +21,7 @@ import (
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -228,6 +229,18 @@ func backupArchiveFilename(backupID string) (string, error) {
 		return "", fmt.Errorf("invalid backup id: %w", err)
 	}
 	return name + ".tar.gz", nil
+}
+
+func (s *Service) snapshotRepository(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
+	if entry.LocalSnapshotID != "" {
+		local, err := s.localRusticRepository(ctx, dockerClient, true)
+		return local, entry.LocalSnapshotID, err
+	}
+	if entry.RemoteSnapshotID != "" {
+		remote, err := s.remoteRusticRepository(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
+		return remote, entry.RemoteSnapshotID, err
+	}
+	return backup.Repository{}, "", common.ErrVolumeBackupNoSnapshot
 }
 
 func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
