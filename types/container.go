@@ -318,6 +318,7 @@ type (
 
 		ComposeInfo      *ContainerComposeInfo `json:"composeInfo,omitempty"`
 		UpdateInfo       *ImageUpdateInfo      `json:"updateInfo,omitempty"`
+		Hardened         *HardenedImageInfo    `json:"hardened,omitempty"`
 		ActivityID       *string               `json:"activityId,omitempty"`
 		ID               string                `json:"id"`
 		Name             string                `json:"name"`

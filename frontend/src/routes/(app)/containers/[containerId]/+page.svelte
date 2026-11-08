@@ -497,7 +497,7 @@
 		<div class="flex min-w-0 items-center">
 			<EnvironmentDestinationSelect value={currentEnvId} variant="prefix" readonly />
 			<h1
-				class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88"
+				class="max-w-40 min-w-0 truncate text-sm font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88"
 				title={containerDisplayName}
 			>
 				{containerDisplayName}

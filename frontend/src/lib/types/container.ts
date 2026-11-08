@@ -1,6 +1,6 @@
 import type { PaginatedWithCounts } from './base';
 import type { ContainerRegistryCredential } from './containerregistry';
-import type { ImageUpdateInfo } from './image';
+import type { HardenedImageInfo, ImageUpdateInfo } from './image';
 
 export interface ContainerRestartPolicyCreate {
 	name?: 'no' | 'always' | 'on-failure' | 'unless-stopped';
@@ -281,6 +281,8 @@ export interface ContainerDetails {
 	autoUpdateEnabled?: boolean;
 	/** Stored update check for the container's current policy; absent on older agents. */
 	updateInfo?: ImageUpdateInfo;
+	/** Docker Hardened Image metadata from the image labels; absent on older agents. */
+	hardened?: HardenedImageInfo;
 }
 
 export interface ContainerCreated {

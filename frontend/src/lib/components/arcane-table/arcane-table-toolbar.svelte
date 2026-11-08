@@ -19,6 +19,7 @@
 	import type { BulkAction, TableViewMode } from './arcane-table.types.svelte';
 	import {
 		imageUpdateFilters,
+		hardenedImageFilters,
 		usageFilters,
 		severityFilters,
 		vulnerabilitySeverityFilters,
@@ -96,6 +97,9 @@
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
 	);
+	const hardenedColumn = $derived(
+		table.getAllColumns().some((col) => col.id === 'hardened') ? table.getColumn('hardened') : undefined
+	);
 	const severityColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'severity') ? table.getColumn('severity') : undefined
 	);
@@ -129,6 +133,7 @@
 				labelColumn,
 				usageColumn,
 				updatesColumn,
+				hardenedColumn,
 				severityColumn,
 				vulnSeverityColumn,
 				imageNameColumn && imageNameFilterOptions.length > 0,
@@ -156,6 +161,9 @@
 	{/if}
 	{#if updatesColumn}
 		<DataTableFacetedFilter column={updatesColumn} title={m.updates()} options={imageUpdateFilters} />
+	{/if}
+	{#if hardenedColumn}
+		<DataTableFacetedFilter column={hardenedColumn} title={m.docker_hardened_image()} options={hardenedImageFilters} />
 	{/if}
 	{#if vulnSeverityColumn}
 		<DataTableFacetedFilter column={vulnSeverityColumn} title={m.events_col_severity()} options={vulnerabilitySeverityFilters} />

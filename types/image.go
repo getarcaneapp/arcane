@@ -48,10 +48,35 @@ type (
 		ID   string `json:"id,omitempty"`
 	}
 
+	HardenedImageSupportStatus string
+
+	// HardenedImageInfo describes a Docker Hardened Image from its com.docker.dhi.* labels.
+	HardenedImageInfo struct {
+		// Shell and PackageManager are empty when the label says the image has none, and nil when the label is missing.
+		Shell          *string                    `json:"shell,omitzero" doc:"Shell in the image; empty when it has none"`
+		PackageManager *string                    `json:"packageManager,omitzero" doc:"Package manager in the image; empty when it has none"`
+		Name           string                     `json:"name" doc:"Hardened image name, such as dhi/aspnetcore"`
+		Title          string                     `json:"title,omitempty" doc:"Display title"`
+		Version        string                     `json:"version,omitempty" doc:"Image version"`
+		Definition     string                     `json:"definition,omitempty" doc:"Catalog definition path"`
+		Distro         string                     `json:"distro,omitempty" doc:"Base distribution"`
+		Variant        string                     `json:"variant,omitempty" doc:"Image variant, such as runtime or dev"`
+		Flavor         string                     `json:"flavor,omitempty" doc:"Image flavor"`
+		Entitlement    string                     `json:"entitlement,omitempty" doc:"Catalog entitlement"`
+		URL            string                     `json:"url,omitempty" doc:"Catalog page URL"`
+		ChainID        string                     `json:"chainId,omitempty" doc:"Build chain ID"`
+		Created        string                     `json:"created,omitempty" doc:"Build time (RFC 3339)"`
+		ReleaseDate    string                     `json:"releaseDate,omitempty" doc:"Release date (YYYY-MM-DD)"`
+		EndOfLifeDate  string                     `json:"endOfLifeDate,omitempty" doc:"End-of-life date (YYYY-MM-DD)"`
+		SupportStatus  HardenedImageSupportStatus `json:"supportStatus" enum:"supported,ending_soon,end_of_life,unknown" doc:"Support status from the end-of-life date"`
+		Compliance     []string                   `json:"compliance,omitempty" doc:"Compliance frameworks, such as cis"`
+	}
+
 	ImageSummary struct {
 		Labels            map[string]any            `json:"labels"`
 		UpdateInfo        *ImageUpdateInfo          `json:"updateInfo,omitempty"`
 		VulnerabilityScan *VulnerabilityScanSummary `json:"vulnerabilityScan,omitempty"`
+		Hardened          *HardenedImageInfo        `json:"hardened,omitempty"`
 
 		EnvironmentTag
 		ID               string        `json:"id" sortable:"true"`
@@ -137,6 +162,9 @@ type (
 		Unused int `json:"imagesUnused"`
 		Total  int `json:"totalImages"`
 
+		HardenedEndingSoon int `json:"hardenedEndingSoon" doc:"Hardened images whose end of life is near"`
+		HardenedEndOfLife  int `json:"hardenedEndOfLife" doc:"Hardened images past their end of life"`
+
 		TotalSize int64 `json:"totalImageSize"`
 	}
 
@@ -167,9 +195,10 @@ type (
 			Type   string   `json:"type"`
 			Layers []string `json:"layers"`
 		} `json:"rootFs"`
-		RepoTags         []string `json:"repoTags"`
-		RepoDigests      []string `json:"repoDigests"`
-		PinnedReferences []string `json:"pinnedReferences,omitempty"`
+		RepoTags         []string           `json:"repoTags"`
+		RepoDigests      []string           `json:"repoDigests"`
+		PinnedReferences []string           `json:"pinnedReferences,omitempty"`
+		Hardened         *HardenedImageInfo `json:"hardened,omitempty"`
 		Config           struct {
 			ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
 			Volumes      map[string]struct{} `json:"volumes,omitempty"`
@@ -226,6 +255,13 @@ type (
 		Load            bool              `json:"load"`
 		OutputTruncated bool              `json:"outputTruncated"`
 	}
+)
+
+const (
+	HardenedImageSupported      HardenedImageSupportStatus = "supported"
+	HardenedImageEndingSoon     HardenedImageSupportStatus = "ending_soon"
+	HardenedImageEndOfLife      HardenedImageSupportStatus = "end_of_life"
+	HardenedImageSupportUnknown HardenedImageSupportStatus = "unknown"
 )
 
 func NewImagePruneReport(src image.PruneReport) ImagePruneReport {

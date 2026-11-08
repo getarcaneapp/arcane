@@ -12,6 +12,7 @@
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { HardenedImageBadge } from '#lib/components/badges/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
@@ -47,7 +48,8 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
-	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { bytes, formatDate, formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { hardenedImageDisplay, hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -261,6 +263,13 @@
 			cell: VulnerabilitiesCell,
 			align: 'center'
 		},
+		{
+			id: 'hardened',
+			accessorFn: (row) => row.hardened?.supportStatus ?? 'none',
+			title: m.end_of_life(),
+			hidden: true,
+			cell: HardenedCell
+		},
 		{ accessorKey: 'created', title: m.common_created(), hidden: true, sortable: true, cellComponent: UnixCreatedCell },
 		{
 			id: 'usedBy',
@@ -279,6 +288,7 @@
 		{ id: 'usedBy', label: m.images_used_by(), defaultVisible: false },
 		{ id: 'updates', label: m.updates(), defaultVisible: false },
 		{ id: 'vulnerabilities', label: m.vuln_title(), defaultVisible: false },
+		{ id: 'hardened', label: m.docker_hardened_image(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
@@ -303,13 +313,30 @@
 </script>
 
 {#snippet RepoCell({ item }: { item: ImageRow })}
-	{#if item.repo && item.repo !== '<none>'}
-		<a
-			class="font-medium whitespace-nowrap hover:underline"
-			href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id })}>{item.repo}</a
-		>
+	<div class="flex items-center gap-2">
+		{#if item.repo && item.repo !== '<none>'}
+			<a
+				class="font-medium whitespace-nowrap hover:underline"
+				href={resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(item.environmentId)}`, { imageId: item.id })}
+				>{item.repo}</a
+			>
+		{:else}
+			<span class="text-muted-foreground italic">{m.images_untagged()}</span>
+		{/if}
+		{#if item.hardened}
+			<HardenedImageBadge info={item.hardened} size="xs" />
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet HardenedCell({ item }: { item: ImageRow })}
+	{#if item.hardened?.endOfLifeDate}
+		<div class="flex flex-col">
+			<span class="whitespace-nowrap">{formatDate(item.hardened.endOfLifeDate, { timeZone: 'UTC' })}</span>
+			<span class="text-xs whitespace-nowrap text-muted-foreground">{hardenedSupportSummary(item.hardened)}</span>
+		</div>
 	{:else}
-		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
+		<span class="text-muted-foreground">—</span>
 	{/if}
 {/snippet}
 
@@ -485,6 +512,11 @@
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
 		badges={[
 			inUseBadge(mobileFieldVisibility['inUse'] ?? true),
+			(item: ImageRow) => {
+				if (!(mobileFieldVisibility['hardened'] ?? true) || !item.hardened) return null;
+				const display = hardenedImageDisplay(item.hardened);
+				return { variant: display.variant, text: display.label };
+			},
 			(item: ImageRow) => {
 				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
 				if (!item.repoDigests || item.repoDigests.length === 0) {

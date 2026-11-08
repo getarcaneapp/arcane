@@ -588,6 +588,7 @@
 		buildAttentionItems({
 			environments: environmentCards.map(({ environment }) => environment),
 			containers: containersByEnvironment,
+			images: imagesByEnvironment,
 			events: eventsQuery.data.byEnvironment.flatMap(({ environment, data }) =>
 				data.data.map((event) => ({ environmentId: environment.id, event }))
 			),

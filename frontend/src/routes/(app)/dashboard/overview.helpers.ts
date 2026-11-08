@@ -9,6 +9,7 @@ import type { ApiKey } from '#lib/types/apikey.js';
 import type { ContainerStatusCounts } from '#lib/types/container.js';
 import type { Environment } from '#lib/types/environment.js';
 import type { Event } from '#lib/types/event.js';
+import type { ImageUsageCounts } from '#lib/types/image.js';
 import type { JobStatus } from '#lib/types/jobschedule.js';
 import type { RunStatus } from '#lib/types/scheduler.js';
 import type { SystemDiskUsage, SystemStats } from '#lib/types/system.js';
@@ -176,6 +177,7 @@ export interface DiskPressure {
 export interface AttentionSources {
 	environments: Environment[];
 	containers: Map<string, ContainerStatusCounts>;
+	images: Map<string, ImageUsageCounts>;
 	events: EnvironmentEvent[];
 	findings: EnvironmentRow<RiskFinding>[];
 	disk: ReadonlyMap<string, DiskPressure>;
@@ -377,6 +379,25 @@ export function diskPressure(stats: SystemStats | null): DiskPressure | null {
 	return { percent: Math.round(percent), detail: getCapacityLabel(stats?.diskUsage, stats?.diskTotal) };
 }
 
+function hardenedImageItems(environmentId: string, counts: ImageUsageCounts | undefined): AttentionItem[] {
+	const item = (key: string, severity: AttentionSeverity, title: string): AttentionItem => ({
+		key: `${key}:${environmentId}`,
+		severity,
+		environmentId,
+		title,
+		detail: m.hardened_images_eol_detail(),
+		timestamp: null,
+		actionLabel: m.common_view(),
+		target: { kind: 'link', href: resolve('/(app)/images') }
+	});
+	const endOfLife = counts?.hardenedEndOfLife ?? 0;
+	const endingSoon = counts?.hardenedEndingSoon ?? 0;
+	return [
+		...(endOfLife > 0 ? [item('hardened-eol', 'warning', m.count_hardened_images_end_of_life({ count: endOfLife }))] : []),
+		...(endingSoon > 0 ? [item('hardened-ending', 'info', m.count_hardened_images_ending_soon({ count: endingSoon }))] : [])
+	];
+}
+
 export function buildAttentionItems(sources: AttentionSources): AttentionItem[] {
 	const offline = sources.environments.filter((environment) => !isEnvironmentOnline(environment));
 	const online = sources.environments.filter((environment) => isEnvironmentOnline(environment));
@@ -445,6 +466,7 @@ export function buildAttentionItems(sources: AttentionSources): AttentionItem[] 
 				actionLabel: m.common_view(),
 				target: { kind: 'link', href: resolve('/(app)/security') }
 			})),
+		...online.flatMap((environment) => hardenedImageItems(environment.id, sources.images.get(environment.id))),
 		...online.flatMap((environment): AttentionItem[] => {
 			const disk = sources.disk.get(environment.id);
 			if (!disk) return [];

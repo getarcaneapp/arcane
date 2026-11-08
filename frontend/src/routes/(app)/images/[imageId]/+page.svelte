@@ -47,6 +47,7 @@
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability.js';
 
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
+	import HardenedImagePanel from './components/hardened-image-panel.svelte';
 	import ImageAttestationsPanel from './components/image-attestations-panel.svelte';
 	import ImageHistoryPanel from './components/image-history-panel.svelte';
 
@@ -64,6 +65,7 @@
 			{ value: 'overview', label: m.common_overview(), icon: ImagesIcon },
 			{ value: 'history', label: m.images_history_title(), icon: LayersIcon },
 			{ value: 'attestations', label: m.images_attestations_title(), icon: InspectIcon },
+			{ value: 'hardened', label: m.docker_hardened_image(), icon: ShieldCheckIcon, visible: !!image.hardened },
 			{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldCheckIcon, visible: vulnerabilityManagementEnabled }
 		],
 		defaultTab: () => 'overview'
@@ -195,8 +197,6 @@
 		});
 	}
 
-	const shortId = $derived.by(() => image?.id?.split(':')[1]?.substring(0, 12) || m.common_na());
-
 	const createdDate = $derived.by(() => {
 		if (!image?.created) return m.common_na();
 		return formatDateTimeShort(image.created) || m.common_na();
@@ -214,7 +214,7 @@
 	const detailTitle = $derived.by((): string => {
 		if (hasTags && repoTags[0]) return repoTags[0];
 		if (hasPinnedRefs && pinnedRefs[0]) return pinnedRefs[0];
-		return shortId;
+		return image?.id?.split(':')[1] || m.common_na();
 	});
 	const pinnedRepository = $derived.by(() => (pinnedRefs[0] ? parseImageRef(pinnedRefs[0]).repo : ''));
 
@@ -420,6 +420,11 @@
 				<Tabs.Content value="attestations">
 					<ImageAttestationsPanel {image} environmentId={currentEnvId} />
 				</Tabs.Content>
+				{#if image.hardened}
+					<Tabs.Content value="hardened">
+						<HardenedImagePanel info={image.hardened} />
+					</Tabs.Content>
+				{/if}
 				{#if vulnerabilityManagementEnabled}
 					<Tabs.Content value="vulnerabilities">
 						<VulnerabilityScanPanel
