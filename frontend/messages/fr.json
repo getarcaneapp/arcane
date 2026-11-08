@@ -4518,5 +4518,6 @@
   "hardened_image_end_of_life_description": "Cette image ne bénéficie plus de mises à jour de sécurité sur {date}. Veuillez la recréer à partir d'une version plus récente.",
   "count_hardened_images_end_of_life": "{count} images figées ayant dépassé leur durée de vie",
   "count_hardened_images_ending_soon": "{count} images intégrées en fin de vie",
-  "hardened_images_eol_detail": "Les images « durcies » ne reçoivent plus de mises à jour de sécurité à la fin de leur cycle de vie"
+  "hardened_images_eol_detail": "Les images « durcies » ne reçoivent plus de mises à jour de sécurité à la fin de leur cycle de vie",
+  "reveal_value": "Valeur de révélation"
 }
