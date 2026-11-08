@@ -4416,7 +4416,7 @@
   "interface_font": "Czcionka interfejsu",
   "interface_font_description": "Czcionka tekstu interfejsu. Znaki chińskie, japońskie i koreańskie wykorzystują zainstalowane czcionki systemowe.",
   "monospace_font": "Czcionka typu monospace",
-  "monospace_font_description": "Czcionka do nagłówków, identyfikatorów i innych tekstów pisanych czcionką o stałej szerokości",
+  "monospace_font_description": "Czcionka do identyfikatorów i innych tekstów pisanych czcionką o stałej szerokości",
   "code_font": "Czcionka kodu",
   "code_font_description": "Czcionka dla edytora kodu, bloków kodu i terminala. Terminal aktualizuje się po ponownym otwarciu.",
   "custom_font": "Czcionka niestandardowa",
