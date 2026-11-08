@@ -4416,7 +4416,7 @@
   "interface_font": "Interfaca tiparo",
   "interface_font_description": "Tiparo por interfaca teksto. Ĉinaj, japanaj kaj koreaj glifoj uzas instalitajn sistemajn tiparojn.",
   "monospace_font": "Monospaca tiparo",
-  "monospace_font_description": "Tiparo por titoloj, ID-oj kaj alia monospaca teksto",
+  "monospace_font_description": "Tiparo por ID-oj kaj alia monospaca teksto",
   "code_font": "Koda tiparo",
   "code_font_description": "Tiparo por la kodredaktilo, kodblokoj kaj terminalo. La terminalo ĝisdatigas kiam ĝi estas remalfermita.",
   "custom_font": "Personigita tiparo",
