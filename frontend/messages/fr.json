@@ -4416,7 +4416,7 @@
   "interface_font": "Police d'interface",
   "interface_font_description": "Police utilisée pour le texte de l'interface. Les glyphes chinois, japonais et coréens utilisent les polices système installées.",
   "monospace_font": "Police Monospace",
-  "monospace_font_description": "Police pour les titres, les identifiants et tout autre texte en police à espacement fixe",
+  "monospace_font_description": "Police pour les identifiants et autres textes en caractères monospacés",
   "code_font": "Police de code",
   "code_font_description": "Police utilisée pour l'éditeur de code, les blocs de code et le terminal. Le terminal se met à jour lorsqu'on le rouvre.",
   "custom_font": "Police personnalisée",
