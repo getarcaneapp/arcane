@@ -4416,7 +4416,7 @@
   "interface_font": "인터페이스 글꼴",
   "interface_font_description": "인터페이스 텍스트용 글꼴. 중국어, 일본어, 한국어 글리프는 설치된 시스템 글꼴을 사용합니다.",
   "monospace_font": "모노스페이스 글꼴",
-  "monospace_font_description": "제목, ID 및 기타 고정폭 텍스트용 글꼴",
+  "monospace_font_description": "ID 및 기타 고정폭 텍스트용 글꼴",
   "code_font": "코드 글꼴",
   "code_font_description": "코드 편집기, 코드 블록 및 터미널용 글꼴입니다. 터미널은 다시 열면 글꼴이 업데이트됩니다.",
   "custom_font": "사용자 정의 글꼴",
