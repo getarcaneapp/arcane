@@ -4416,7 +4416,7 @@
   "interface_font": "Skrifttype i brugergrænsefladen",
   "interface_font_description": "Skrifttype til tekst i brugergrænsefladen. Kinesiske, japanske og koreanske tegn bruger de installerede systemskrifttyper.",
   "monospace_font": "Monospace-skrifttype",
-  "monospace_font_description": "Skrifttype til overskrifter, ID’er og anden tekst med fast tegnbredde",
+  "monospace_font_description": "Skrifttype til ID’er og anden tekst med fast tegnbredde",
   "code_font": "Kodefont",
   "code_font_description": "Skrifttype til kodeditoren, kodeblokke og terminalen. Terminalen opdateres, når den åbnes igen.",
   "custom_font": "Brugerdefineret skrifttype",
