@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Kockagyök",
   "volumes_workspace_root_path": "Hozzon létre a kötet gyökérkönyvtárában.",
   "volumes_workspace_delete_confirm": "Törölje a „ {name} ” fájlt a kötetről? Ez a művelet visszafordíthatatlan.",
-  "volumes_workspace_truncated": "A munkaterületek listája a beállított mélység vagy a bejegyzések számának korláta miatt csonkítva jelenik meg. A rejtett útvonalak nem kerülnek megjelenítésre.",
+  "volumes_workspace_truncated": "Egyes mappákban több bejegyzés található, mint a mappánként beállított korlát. Ezekből a mappákból csak az első bejegyzések jelennek meg.",
   "volumes_workspace_select_file": "Válasszon ki egy fájlt, hogy megnyissa azt a szerkesztőben.",
   "volumes_workspace_restore_readonly": "A fájl tartalma a fokozatos visszaállítás mentéséig ismeretlen.",
   "volumes_workspace_locked_file": "Zárt fájl",
