@@ -36,7 +36,7 @@ const useInsecureLocalTLS =
 	(parsedDevBackendURL.protocol === 'https:' &&
 		(parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(() => ({
 	plugins: lazyPlugins(() => [
 		tailwindcss(),
 		sveltekit({
@@ -51,8 +51,7 @@ export default defineConfig(({ command }) => ({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
 			cookieName: 'locale',
-			strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
-			outputStructure: command === 'build' ? 'message-modules' : 'locale-modules'
+			strategy: ['cookie', 'preferredLanguage', 'baseLocale']
 		}),
 		Icons({
 			compiler: 'svelte',

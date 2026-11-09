@@ -64,3 +64,6 @@ inspections/**
 # Vite+ generated git hook dispatcher
 .vite-hooks/_
 .vitest/
+
+# inlang plugin cache (refetched on every Paraglide build)
+frontend/project.inlang/cache/

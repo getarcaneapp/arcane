@@ -13,7 +13,6 @@
 		"check": "svelte-kit sync && svelte-check --tsgo --incremental --tsconfig ./tsconfig.json",
 		"format": "vp fmt ./src",
 		"format:check": "vp fmt --check ./src",
-		"paraglide:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie preferredLanguage baseLocale --silent",
 		"fallow": "fallow",
 		"lint": "eslint src"
 	},
