@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Raiz do volume",
   "volumes_workspace_root_path": "Criar na raiz do volume.",
   "volumes_workspace_delete_confirm": "Deseja eliminar « {name} » do volume? Esta ação não pode ser revertida.",
-  "volumes_workspace_truncated": "A listagem da área de trabalho foi truncada pelo limite de profundidade ou de entradas configurado. Os caminhos ocultos não são apresentados.",
+  "volumes_workspace_truncated": "Algumas pastas têm mais entradas do que o limite definido por pasta. Apenas as primeiras entradas dessas pastas são apresentadas.",
   "volumes_workspace_select_file": "Selecione um ficheiro para o abrir no editor.",
   "volumes_workspace_restore_readonly": "O conteúdo deste ficheiro é desconhecido até a restauração preparada ser guardada.",
   "volumes_workspace_locked_file": "Ficheiro bloqueado",
