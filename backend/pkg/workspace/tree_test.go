@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -472,4 +473,140 @@ func TestApplyWorkspaceFileChanges_EnvDirectory(t *testing.T) {
 		{Operation: "create_file", RelativePath: ".env", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("B=1\n")}, opts)
 	require.ErrorIs(t, err, ErrProtectedPath)
+}
+
+func listFolderPaths(t *testing.T, projectDir, relativePath string, opts Options) []string {
+	t.Helper()
+	folder, err := ListFolder(t.Context(), projectDir, relativePath, opts)
+	require.NoError(t, err)
+	paths := make([]string, 0, len(folder.Files))
+	for _, file := range folder.Files {
+		paths = append(paths, file.RelativePath)
+	}
+	return paths
+}
+
+func TestListFolderExcludesProtectedFilesAndSkippedFolders(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("APP_VALUE=sample\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env.git"), []byte("APP_VALUE=git\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "README.md"), []byte("hello\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "nested"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "node_modules"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".git", "config"), []byte("private"), 0o644))
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		SkipDirectories:  "node_modules",
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	}
+
+	assert.Equal(t, []string{"config", "README.md"}, listFolderPaths(t, projectDir, "", opts))
+	assert.Equal(t, []string{"config/nested", "config/app.yaml", "config/compose.yaml"}, listFolderPaths(t, projectDir, "config", opts))
+	assert.Empty(t, listFolderPaths(t, projectDir, "config/nested", opts))
+
+	_, err := ListFolder(t.Context(), projectDir, ".git", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = ListFolder(t.Context(), projectDir, "config/node_modules", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = ListFolder(t.Context(), projectDir, "missing", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+func TestListFolderClassifiesBySizeWithoutReadingContent(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "db.sqlite"), []byte{0x00, 0xff, 0xfe}, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "large.txt"), []byte("12345"), 0o644))
+
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 4,
+	})
+	require.NoError(t, err)
+	require.Len(t, folder.Files, 2)
+	assert.Equal(t, "db.sqlite", folder.Files[0].RelativePath)
+	assert.True(t, folder.Files[0].Editable)
+	assert.Equal(t, "large.txt", folder.Files[1].RelativePath)
+	assert.Equal(t, types.FileReadOnlyTooLarge, folder.Files[1].ReadOnlyReason)
+}
+
+func TestListFolderListsSymlinksWithoutFollowing(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "config"), 0o755))
+	if err := os.Symlink("config", filepath.Join(projectDir, "link")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	})
+	require.NoError(t, err)
+	require.Len(t, folder.Files, 2)
+	link := folder.Files[1]
+	assert.Equal(t, "link", link.RelativePath)
+	assert.True(t, link.IsSymlink)
+	assert.False(t, link.IsDirectory)
+	assert.Equal(t, "config", link.LinkTarget)
+	assert.Equal(t, types.FileReadOnlySymlink, link.ReadOnlyReason)
+}
+
+func TestListFolderCapsEntriesPerFolder(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "a-large"), 0o755))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a-large", fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "z-later.txt"), []byte("x\n"), 0o644))
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       3,
+		MaxFileSizeBytes: 1024,
+	}
+
+	root, err := ListFolder(t.Context(), projectDir, "", opts)
+	require.NoError(t, err)
+	assert.False(t, root.FileTreeTruncated, "a large subfolder must not truncate its parent")
+	assert.Len(t, root.Files, 2)
+
+	large, err := ListFolder(t.Context(), projectDir, "a-large", opts)
+	require.NoError(t, err)
+	assert.True(t, large.FileTreeTruncated)
+	assert.Equal(t, []string{"a-large/file-0.txt", "a-large/file-1.txt", "a-large/file-2.txt"}, []string{large.Files[0].RelativePath, large.Files[1].RelativePath, large.Files[2].RelativePath})
+}
+
+func TestListFolderListsEnvDirectoryContents(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("APP_VALUE=sub\n"), 0o644))
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	}
+
+	assert.Equal(t, []string{".env"}, listFolderPaths(t, projectDir, "", opts))
+	assert.Equal(t, []string{".env/app.env"}, listFolderPaths(t, projectDir, ".env", opts))
 }

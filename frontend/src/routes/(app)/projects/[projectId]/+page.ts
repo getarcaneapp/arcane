@@ -1,8 +1,8 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
+import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
-import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 import { variableService } from '#lib/services/variable-service.js';
 import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
 import { userHasPermission } from '#lib/utils/auth.js';
@@ -44,12 +44,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		project = operationResult.data;
 	}
 
-	// Kick off the file-tree walk without awaiting it: on large projects it can
-	// take a while and must not block navigation.
-	void queryClient.prefetchQuery({
-		queryKey: queryKeys.projects.workspace(envId, params.projectId),
-		queryFn: () => projectWorkspaceService.getWorkspace(params.projectId, envId)
-	});
+	void queryClient.prefetchQuery(projectWorkspaceFolderQuery(envId, params.projectId, ''));
 
 	const { globalVariables, globalVariablesError } = userHasPermission(user, 'variables:list')
 		? await loadGlobalVariables(queryClient)

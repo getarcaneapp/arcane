@@ -22,7 +22,7 @@ export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable'
 	pending?: boolean;
 }
 
-type WorkspaceDisplayFileChange = Omit<WorkspaceFileChangeDto, 'operation'> & {
+export type WorkspaceDisplayFileChange = Omit<WorkspaceFileChangeDto, 'operation'> & {
 	operation: WorkspaceFileChangeOperation | 'restore_file';
 };
 

@@ -23,6 +23,8 @@
 		backupNamePlaceholder: string;
 		suggestedBackupDirectory: string;
 		workspaceFiles: WorkspaceFileEntry[];
+		loadedFolders: ReadonlySet<string>;
+		onOpenFolder: (relativePath: string) => void;
 		loadingWorkspace: boolean;
 		isNodeChecked: (node: WorkspaceDisplayEntry) => boolean;
 		isNodeLocked: (node: WorkspaceDisplayEntry) => boolean;
@@ -43,6 +45,8 @@
 		backupNamePlaceholder,
 		suggestedBackupDirectory,
 		workspaceFiles,
+		loadedFolders,
+		onOpenFolder,
 		loadingWorkspace,
 		isNodeChecked,
 		isNodeLocked,
@@ -119,6 +123,8 @@
 			<WorkspaceFileTreePanel
 				title={m.included_files()}
 				entries={workspaceFiles}
+				{loadedFolders}
+				{onOpenFolder}
 				selectable
 				isChecked={isNodeChecked}
 				isSelectionLocked={isNodeLocked}

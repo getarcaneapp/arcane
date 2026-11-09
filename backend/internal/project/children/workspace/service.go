@@ -32,39 +32,38 @@ func New(settingsService *settings.SettingsService) *Service {
 	return &Service{settingsService: settingsService}
 }
 
-func (s *Service) Read(ctx context.Context, projectPath, composeFileName string, owned map[string]struct{}) (*types.Workspace, error) {
-	files, revision, truncated, err := workspacepkg.Read(ctx, projectPath, workspacepkg.Options{
+func (s *Service) Read(ctx context.Context, projectPath, composeFileName, folderPath string, owned map[string]struct{}) (*types.Workspace, error) {
+	rel, err := resolveFolder(ctx, projectPath, composeFileName, folderPath)
+	if err != nil {
+		return nil, err
+	}
+	folder, err := workspacepkg.ListFolder(ctx, projectPath, rel, workspacepkg.Options{
 		ProtectedFiles:   projects.ProtectedProjectFilePaths(composeFileName),
 		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
 		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read project workspace: %w", err)
+		return nil, classifyACFSError(err, "list project workspace folder")
 	}
-	for i := range files {
-		if _, ok := owned[files[i].RelativePath]; ok {
-			files[i] = types.WorkspaceFileEntry{ //exhaustruct:enforce
-				ModTime:        files[i].ModTime,
-				Name:           files[i].Name,
-				Path:           files[i].Path,
-				RelativePath:   files[i].RelativePath,
-				Mode:           files[i].Mode,
-				LinkTarget:     files[i].LinkTarget,
-				Size:           files[i].Size,
-				IsDirectory:    files[i].IsDirectory,
-				IsSymlink:      files[i].IsSymlink,
+	for i, file := range folder.Files {
+		if _, ok := owned[file.RelativePath]; ok {
+			folder.Files[i] = types.WorkspaceFileEntry{ //exhaustruct:enforce
+				ModTime:        file.ModTime,
+				Name:           file.Name,
+				Path:           file.Path,
+				RelativePath:   file.RelativePath,
+				Mode:           file.Mode,
+				LinkTarget:     file.LinkTarget,
+				Size:           file.Size,
+				IsDirectory:    file.IsDirectory,
+				IsSymlink:      file.IsSymlink,
 				Editable:       false,
 				ReadOnlyReason: types.FileReadOnlyGitOpsManaged,
 			}
 		}
 	}
-	return &types.Workspace{
-		Files:             files,
-		FileTreeRevision:  revision,
-		FileTreeTruncated: truncated,
-	}, nil
+	return folder, nil
 }
 
 func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*types.WorkspaceFileContent, error) {
@@ -104,7 +103,7 @@ func (s *Service) Download(ctx context.Context, projectPath, composeFileName, re
 func (s *Service) Apply(
 	ctx context.Context,
 	projectsDirectory, projectPath, composeFileName string,
-	manifest types.WorkspaceUpdateManifest,
+	manifest types.ProjectWorkspaceUpdateManifest,
 	uploads map[int][]byte,
 ) error {
 	var paths []string
@@ -119,10 +118,6 @@ func (s *Service) Apply(
 
 	if applyErr := workspacepkg.Apply(ctx, projectPath, manifest.FileChanges, uploads, workspacepkg.Options{
 		ProtectedFiles:   projects.ProtectedProjectFilePaths(composeFileName),
-		ExpectedRevision: strings.TrimSpace(manifest.FileTreeRevision),
-		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
-		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	}); applyErr != nil {
 		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, projectPath, backup); restoreErr != nil {
@@ -155,6 +150,24 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 	return owned, nil
 }
 
+func resolveFolder(ctx context.Context, projectPath, composeFileName, folderPath string) (string, error) {
+	if strings.TrimSpace(folderPath) == "" {
+		return "", nil
+	}
+	rel, entry, err := resolvePath(ctx, projectPath, composeFileName, folderPath)
+	if err != nil {
+		return "", err
+	}
+	// Stat follows intermediate symlinks, so a different path means one was followed.
+	switch {
+	case entry.IsSymlink || entry.Path != "/"+rel:
+		return "", common.Classify(common.ErrProjectWorkspaceForbidden, workspacepkg.ErrSymlinkPath)
+	case !entry.IsDirectory:
+		return "", common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is not a folder"))
+	}
+	return rel, nil
+}
+
 func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, acfstypes.Entry, error) {
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
@@ -167,7 +180,7 @@ func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath
 	}
 	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 		}
 		return "", acfstypes.Entry{}, classifyACFSError(err, "inspect project workspace file")
@@ -249,7 +262,7 @@ func classifyACFSError(err error, operation string) error {
 		return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%s: %w", operation, err))
 	case errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
 		return common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("%s: %w", operation, err))
-	case os.IsNotExist(err):
+	case errors.Is(err, os.ErrNotExist):
 		return common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 	default:
 		return fmt.Errorf("%s: %w", operation, err)

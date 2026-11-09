@@ -1451,9 +1451,6 @@ func (s *ProjectService) CreateProject(
 
 	if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, manifest.FileChanges, uploads, workspacepkg.Options{
 		ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
-		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
-		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	}); applyProjectWorkspaceChangesErr != nil {
 		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
@@ -3323,7 +3320,7 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	return services, nil
 }
 
-func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*types.Workspace, error) {
+func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID, folderPath string) (*types.Workspace, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -3332,7 +3329,7 @@ func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID stri
 		return nil, ensureProjectPathUnderRootErr
 	}
 	ownedPaths, ownedErr := s.gitOpsOwnedWorkspacePaths(ctx, proj)
-	return s.workspace.Read(ctx, proj.Path, s.workspaceComposeFileName(ctx, proj), kit.Ternary(ownedErr == nil, ownedPaths, nil))
+	return s.workspace.Read(ctx, proj.Path, s.workspaceComposeFileName(ctx, proj), folderPath, kit.Ternary(ownedErr == nil, ownedPaths, nil))
 }
 
 func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID, relativePath string) (*types.WorkspaceFileContent, error) {
@@ -3355,56 +3352,56 @@ func (s *ProjectService) DownloadProjectWorkspaceFile(ctx context.Context, proje
 func (s *ProjectService) UpdateProjectWorkspace(
 	ctx context.Context,
 	projectID string,
-	manifest types.WorkspaceUpdateManifest,
+	manifest types.ProjectWorkspaceUpdateManifest,
 	uploads map[int][]byte,
 	user types.Actor,
-) (*types.Workspace, error) {
-	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
-		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, err)
+) error {
+	if count := len(manifest.FileChanges); count == 0 || count > 500 {
+		return common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
 	}
 	unlock, err := s.lockProject(ctx, "update project workspace", projectID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer unlock()
 
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Only GitOps-owned paths are locked; the rest is an operator overlay that stays editable (#3634).
 	ownedPaths, err := s.gitOpsOwnedWorkspacePaths(ctx, proj)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if validateWorkspaceChangesAgainstGitOpsErr := workspace.ValidateWorkspaceChangesAgainstGitOps(manifest.FileChanges, ownedPaths); validateWorkspaceChangesAgainstGitOpsErr != nil {
-		return nil, validateWorkspaceChangesAgainstGitOpsErr
+		return validateWorkspaceChangesAgainstGitOpsErr
 	}
 	if ensureProjectPathUnderRootErr := s.EnsureProjectPathUnderRoot(ctx, proj, true); ensureProjectPathUnderRootErr != nil {
-		return nil, ensureProjectPathUnderRootErr
+		return ensureProjectPathUnderRootErr
 	}
 
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if ensureProjectEnvReadableErr := update.EnsureProjectEnvReadable(ctx, projectsDirectory, proj.Path); ensureProjectEnvReadableErr != nil {
-		return nil, ensureProjectEnvReadableErr
+		return ensureProjectEnvReadableErr
 	}
 	if applyErr := s.workspace.Apply(ctx, projectsDirectory, proj.Path, s.workspaceComposeFileName(ctx, proj), manifest, uploads); applyErr != nil {
-		return nil, applyErr
+		return applyErr
 	}
 
 	s.refreshProjectImageRefs(ctx, proj)
 	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); updateProjectStatusandCountsErr != nil {
-		return nil, fmt.Errorf("refresh project after workspace update: %w", updateProjectStatusandCountsErr)
+		return fmt.Errorf("refresh project after workspace update: %w", updateProjectStatusandCountsErr)
 	}
 	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, database.JSON{
 		"action":          "update_project_workspace",
 		"fileChangeCount": len(manifest.FileChanges),
 	}, "could not log project workspace update")
 	s.FilesChanged.Publish(proj.ID)
-	return s.GetProjectWorkspace(ctx, projectID)
+	return nil
 }
 
 func (s *ProjectService) workspaceComposeFileName(ctx context.Context, proj *Project) string {

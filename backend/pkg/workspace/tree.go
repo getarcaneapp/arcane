@@ -20,6 +20,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"
 
 	"getarcane.dev/types/v3"
@@ -88,6 +89,36 @@ func Read(ctx context.Context, rootPath string, opts Options) ([]types.Workspace
 	slices.SortFunc(walker.files, CompareEntries)
 
 	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
+}
+
+func ListFolder(ctx context.Context, rootPath, relativePath string, opts Options) (*types.Workspace, error) {
+	skipDirs := SkipDirectorySet(opts.SkipDirectories)
+	if relativePath != "" && slices.ContainsFunc(strings.Split(relativePath, "/"), func(segment string) bool { return skipDirs[segment] }) {
+		return nil, fmt.Errorf("workspace folder %s: %w", relativePath, fs.ErrNotExist)
+	}
+	protected := ProtectedPaths(rootPath, opts.ProtectedFiles)
+	files := make([]types.WorkspaceFileEntry, 0, min(opts.MaxEntries, 256))
+	truncated := false
+	err := acfs.Root{Path: rootPath}.ListEach(ctx, "/"+relativePath, func(entry acfstypes.Entry) error {
+		switch {
+		case entry.IsDirectory && skipDirs[entry.Name], relativePath == "" && protected[entry.Name]:
+			return nil
+		case len(files) >= opts.MaxEntries:
+			truncated = true
+			return fs.SkipAll
+		}
+		files = append(files, EntryFromACFS(entry, opts.MaxFileSizeBytes))
+		return nil
+	})
+	switch {
+	case errors.Is(err, fs.ErrPermission) && relativePath != "":
+		slog.DebugContext(ctx, "Skipping unreadable workspace folder", "relativePath", relativePath, "error", err)
+		return &types.Workspace{}, nil
+	case err != nil && !errors.Is(err, fs.SkipAll):
+		return nil, err
+	}
+	slices.SortFunc(files, CompareEntries)
+	return &types.Workspace{Files: files, FileTreeTruncated: truncated}, nil
 }
 
 func (w *treeWalker) walk(fsys fs.FS) error {

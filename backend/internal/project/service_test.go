@@ -141,9 +141,60 @@ func TestUpdateProjectWorkspaceRejectsInvalidManifestBeforeProjectLookup(t *test
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
-	_, err := service.UpdateProjectWorkspace(t.Context(), "missing", types.WorkspaceUpdateManifest{}, nil, types.Actor{})
+	err := service.UpdateProjectWorkspace(t.Context(), "missing", types.ProjectWorkspaceUpdateManifest{}, nil, types.Actor{})
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceBadRequest)
-	require.ErrorContains(t, err, "revision")
+	require.ErrorContains(t, err, "fileChanges")
+}
+
+func TestProjectService_GetProjectWorkspace_ListsRequestedFolder(t *testing.T) {
+	ctx := t.Context()
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-workspace")
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "nested"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "notes.txt"), []byte("notes\n"), 0o644))
+	require.NoError(t, os.Symlink("config", filepath.Join(projectPath, "link")))
+	project := &Project{
+		ID:      "project-workspace-folder",
+		Name:    "demo-workspace",
+		DirName: new("demo-workspace"),
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	relativePaths := func(folder *types.Workspace) []string {
+		paths := make([]string, 0, len(folder.Files))
+		for _, file := range folder.Files {
+			paths = append(paths, file.RelativePath)
+		}
+		return paths
+	}
+	root, err := svc.GetProjectWorkspace(ctx, project.ID, "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"config", "link", "notes.txt"}, relativePaths(root))
+	folder, err := svc.GetProjectWorkspace(ctx, project.ID, "config/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"config/nested", "config/app.yaml"}, relativePaths(folder))
+
+	for _, tt := range []struct {
+		wantErr error
+		path    string
+	}{
+		{path: "../escape", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "compose.yaml", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "link", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "link/nested", wantErr: common.ErrProjectWorkspaceForbidden},
+		{path: "notes.txt", wantErr: common.ErrProjectWorkspaceBadRequest},
+		{path: "missing", wantErr: common.ErrProjectWorkspaceNotFound},
+		{path: ".git", wantErr: common.ErrProjectWorkspaceNotFound},
+	} {
+		_, err = svc.GetProjectWorkspace(ctx, project.ID, tt.path)
+		require.ErrorIs(t, err, tt.wantErr, tt.path)
+	}
 }
 
 func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {

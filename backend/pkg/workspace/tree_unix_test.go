@@ -53,3 +53,32 @@ func TestReadSkipsUnreadableDirectory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, revision, again)
 }
+
+func TestListFolderSkipsUnreadableFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits are ignored when running as root")
+	}
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("include: []\n"), 0o644))
+	workdir := filepath.Join(projectDir, "volumes", "workdir")
+	require.NoError(t, os.MkdirAll(workdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "data.db"), []byte("opaque"), 0o644))
+	require.NoError(t, os.Chmod(workdir, 0o000))
+	// Restore before t.TempDir's own cleanup runs, or it cannot remove the tree.
+	t.Cleanup(func() { _ = os.Chmod(workdir, 0o755) })
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	}
+
+	parent, err := ListFolder(t.Context(), projectDir, "volumes", opts)
+	require.NoError(t, err)
+	require.Len(t, parent.Files, 1)
+	assert.Equal(t, "volumes/workdir", parent.Files[0].RelativePath)
+
+	unreadable, err := ListFolder(t.Context(), projectDir, "volumes/workdir", opts)
+	require.NoError(t, err)
+	assert.Empty(t, unreadable.Files)
+}

@@ -31,6 +31,7 @@
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import { useWorkspaceFolders } from '#lib/hooks/use-workspace-folders.svelte.js';
 	import {
 		ArrowLeftIcon,
 		ArrowDownIcon,
@@ -53,6 +54,7 @@
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -84,7 +86,6 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { summarizeUpdateCheckResult } from '#lib/utils/update-actions.js';
 	import {
-		applyWorkspaceFileChangesForDisplay,
 		buildWorkspaceMultipartUpdate,
 		isWorkspaceFileSelectionUnder,
 		planWorkspaceFileMove,
@@ -180,12 +181,11 @@
 		return response.tags;
 	}
 
-	// The workspace walk can be slow on large projects, so it loads lazily and
-	// never blocks navigation; +page.ts prefetches this key without awaiting.
-	const projectWorkspaceQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.workspace(envId, projectId),
-		queryFn: () => projectWorkspaceService.getWorkspace(projectId, envId)
-	}));
+	const projectWorkspaceFolders = useWorkspaceFolders({
+		folderQuery: (path) => projectWorkspaceFolderQuery(envId, projectId, path),
+		enabled: () => !!projectId,
+		changes: () => projectWorkspaceChanges
+	});
 
 	const lifecycleSyncQuery = createQuery(() => {
 		const syncId = data.project?.gitOpsManagedBy;
@@ -198,6 +198,12 @@
 	});
 
 	const lifecycleSync = $derived(lifecycleSyncQuery.data);
+	watch(
+		() => lifecycleSync?.preDeployScriptPath,
+		(scriptPath) => {
+			if (scriptPath) projectWorkspaceFolders.reveal([scriptPath]);
+		}
+	);
 	const hasLifecycleHook = $derived(
 		!!(lifecycleSync?.preDeployScriptPath && lifecycleSync.preDeployScriptPath.trim().length > 0)
 	);
@@ -236,6 +242,15 @@
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
+	watch(
+		() => project?.includeFiles,
+		(includeFiles) => {
+			if (!includeFiles) return;
+			projectWorkspaceFolders.reveal(
+				includeFiles.map((file) => file.relativePath).filter((relativePath) => !relativePath.startsWith('../'))
+			);
+		}
+	);
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
@@ -260,7 +275,7 @@
 		)
 	);
 	const projectWorkspaceEntries = $derived.by(() =>
-		applyWorkspaceFileChangesForDisplay(projectWorkspaceQuery.data?.files ?? [], projectWorkspaceChanges).map((file) => {
+		projectWorkspaceFolders.displayFiles.map((file) => {
 			const metadata = projectWorkspaceFileMetadata[file.relativePath];
 			const editable = metadata?.editable ?? file.editable;
 			return {
@@ -770,6 +785,11 @@
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 		openTabsPreference = [selectedFilePreference];
 		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
+		projectWorkspaceFolders.reveal(
+			[...openTabsPreference, selectedFilePreference]
+				.filter((key) => key.startsWith('file:') || key.startsWith('dir:'))
+				.map((key) => key.slice(key.indexOf(':') + 1))
+		);
 
 		// Stored layout only counts when saved under the account default still in effect (legacy prefs count as auto).
 		const defaultMode = resolveProjectEditorLayout('tree');
@@ -831,17 +851,14 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (workspaceUpdate.fileChanges.length > 0) {
-						const workspace = await projectWorkspaceService.updateWorkspace(
+						await projectWorkspaceService.updateWorkspace(
 							projectId,
-							{
-								fileTreeRevision: projectWorkspaceQuery.data?.fileTreeRevision ?? '',
-								fileChanges: workspaceUpdate.fileChanges
-							},
+							{ fileChanges: workspaceUpdate.fileChanges },
 							workspaceUpdate.files,
 							envId
 						);
 						workspaceCommitted = true;
-						queryClient.setQueryData(queryKeys.projects.workspace(envId, projectId), workspace);
+						projectWorkspaceFolders.keepSaved(projectWorkspaceEntries);
 
 						loadedProjectWorkspaceContents = {
 							...loadedProjectWorkspaceContents,
@@ -859,6 +876,7 @@
 						projectWorkspaceChanges = [];
 						projectWorkspaceStagedFiles = {};
 						projectWorkspaceStagedUploadedText = {};
+						await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
 					}
 
 					const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
@@ -1289,15 +1307,12 @@
 		};
 		const unsubscribe = cache.subscribe((event) => {
 			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
-			const workspace = cache.find({
-				queryKey: queryKeys.projects.workspace(envId, projectId),
-				exact: true
-			});
+			const workspace = cache.findAll({ queryKey: queryKeys.projects.workspace(envId, projectId) });
 			const detail = cache.find({
 				queryKey: queryKeys.projects.detail(envId, projectId),
 				exact: true
 			});
-			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
+			if (workspace.includes(event.query) || event.query === detail) void loadAfterUpdate();
 		});
 		void loadAfterUpdate();
 		return () => {
@@ -1351,7 +1366,8 @@
 		loadSelectedProjectWorkspaceFiles();
 	}
 
-	function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
+	async function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
+		if (!(await projectWorkspaceFolders.load(parentPath))) return;
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
@@ -1396,6 +1412,7 @@
 		const result = await readWorkspaceUpload(file, projectWorkspaceMaxFileSizeMb);
 		if (result.error) return result.error;
 		if (result.binary) {
+			if (!(await projectWorkspaceFolders.load(parentPath))) return;
 			const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, file.name, composeFileName);
 			if (!relativePath) return;
 			projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_file', relativePath }];
@@ -1419,7 +1436,7 @@
 			openFileTab(`file:${relativePath}`);
 			return;
 		}
-		createProjectWorkspaceFile(parentPath, file.name, result.content ?? '', file);
+		await createProjectWorkspaceFile(parentPath, file.name, result.content ?? '', file);
 	}
 
 	async function downloadProjectWorkspaceFile(relativePath: string) {
@@ -1435,7 +1452,8 @@
 		}
 	}
 
-	function createProjectWorkspaceFolder(parentPath: string, name: string) {
+	async function createProjectWorkspaceFolder(parentPath: string, name: string) {
+		if (!(await projectWorkspaceFolders.load(parentPath))) return;
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
 		projectWorkspaceChanges = [...projectWorkspaceChanges, { operation: 'create_folder', relativePath }];
@@ -1449,7 +1467,8 @@
 		remapProjectWorkspaceState(relativePath, plan.newPath);
 	}
 
-	function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
+	async function moveProjectWorkspaceFile(relativePath: string, newParentPath: string) {
+		if (!(await projectWorkspaceFolders.load(newParentPath))) return;
 		const entry = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 		const newPath = planWorkspaceFileMove(entry, projectWorkspacePaths, relativePath, newParentPath);
 		if (!newPath) return;
@@ -1488,10 +1507,7 @@
 		const result = await tryCatch(
 			projectWorkspaceService.updateWorkspace(
 				projectId,
-				{
-					fileTreeRevision: projectWorkspaceQuery.data?.fileTreeRevision ?? '',
-					fileChanges: [{ operation: 'delete', relativePath, recursive: entry.isDirectory }]
-				},
+				{ fileChanges: [{ operation: 'delete', relativePath, recursive: entry.isDirectory }] },
 				[],
 				environmentId
 			)
@@ -1502,12 +1518,13 @@
 			});
 			return;
 		}
-		queryClient.setQueryData(queryKeys.projects.workspace(environmentId, projectId), result.data);
+		projectWorkspaceFolders.forget(relativePath);
 		projectWorkspaceChanges = projectWorkspaceChanges.filter(
 			(change) => !workspaceFilePathMatches(change.relativePath, relativePath)
 		);
 		removeProjectWorkspaceState(relativePath);
 		toast.success(m.common_delete_success({ resource: entry.name }), activityToastOptions(result.data.activityId));
+		await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(environmentId, projectId) });
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {
@@ -1730,7 +1747,7 @@
 					{/if}
 				</div>
 
-				{#if layoutMode === 'tree' && projectWorkspaceQuery.data?.fileTreeTruncated}
+				{#if layoutMode === 'tree' && projectWorkspaceFolders.truncated}
 					<Alert.Root class="mb-3 shrink-0">
 						<AlertIcon class="size-4" />
 						<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
@@ -1754,6 +1771,8 @@
 										leadingRows={projectWorkspaceLeadingRows}
 										rootMenuItems={projectWorkspaceRootMenuItems}
 										entries={projectWorkspaceEntries}
+										loadedFolders={projectWorkspaceFolders.loaded}
+										onOpenFolder={projectWorkspaceFolders.load}
 										{selectedFile}
 										disabled={!canEditProjectWorkspace}
 										readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}

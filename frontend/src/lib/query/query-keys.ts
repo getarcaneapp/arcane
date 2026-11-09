@@ -226,6 +226,8 @@ export const queryKeys = {
 		tags: (environmentId: string) => ['projects', environmentId, 'tags'] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
+		workspaceFolder: (environmentId: string, projectId: string, path: string) =>
+			['project', environmentId, projectId, 'workspace', path] as const,
 		workspaceFile: (environmentId: string, projectId: string, relativePath: string) =>
 			['project', environmentId, projectId, 'workspace-file', relativePath] as const
 	},

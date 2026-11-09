@@ -293,10 +293,7 @@ test.describe('Workspace restore', () => {
 		return editor;
 	}
 
-	async function mockProjectWorkspacePage(
-		page: Page,
-		workspaceState: () => { content: string; revision: number }
-	) {
+	async function mockProjectWorkspacePage(page: Page, workspaceState: () => { content: string }) {
 		const encodedProject = encodeURIComponent(PROJECT_ID);
 		await mockAppShell(page);
 		await page.route(/\/api\/variables(?:\?.*)?$/, async (route) => {
@@ -306,7 +303,7 @@ test.describe('Workspace restore', () => {
 			await route.fulfill({ json: response([]) });
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/projects/${encodedProject}/workspace$`),
+			new RegExp(`/api/environments/0/projects/${encodedProject}/workspace(?:\\?.*)?$`),
 			async (route) => {
 				const state = workspaceState();
 				await route.fulfill({
@@ -323,7 +320,6 @@ test.describe('Workspace restore', () => {
 								editable: true
 							}
 						],
-						fileTreeRevision: `revision-${state.revision}`,
 						fileTreeTruncated: false
 					})
 				});
@@ -633,7 +629,7 @@ test.describe('Workspace restore', () => {
 		});
 
 		test('refreshes clean project workspace files after a system restore', async ({ page }) => {
-			const workspaceState = { content: 'before restore', revision: 1 };
+			const workspaceState = { content: 'before restore' };
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await mockProjectWorkspacePage(page, () => workspaceState);
 
@@ -662,7 +658,6 @@ test.describe('Workspace restore', () => {
 				async (body, route) => {
 					restoreBodies.push(body);
 					workspaceState.content = 'after restore';
-					workspaceState.revision += 1;
 					await route.fulfill({ json: response({ message: 'restored' }) });
 				},
 				false
