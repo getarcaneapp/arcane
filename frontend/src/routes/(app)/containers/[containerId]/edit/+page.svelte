@@ -80,7 +80,7 @@
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
 			<div class="flex min-w-0 items-center">
 				<EnvironmentDestinationSelect value={data.envId} variant="prefix" readonly />
-				<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
+				<h1 class="truncate text-sm font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
 			</div>
 		</div>
 	</div>

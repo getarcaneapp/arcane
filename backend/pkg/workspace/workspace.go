@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"kit.getarcane.app"
@@ -25,7 +26,10 @@ func MaxFileSizeBytes(configuredMB int) int64 {
 	return int64(kit.Ternary(configuredMB <= 0, DefaultMaxFileSizeMB, configuredMB)) * 1024 * 1024
 }
 
-func ValidateUpdateManifest(fileChangeCount, maxFileChanges int) error {
+func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileChanges int) error {
+	if strings.TrimSpace(fileTreeRevision) == "" {
+		return errors.New("workspace revision is required")
+	}
 	if fileChangeCount == 0 || fileChangeCount > maxFileChanges {
 		return fmt.Errorf("fileChanges must contain between 1 and %d changes", maxFileChanges)
 	}

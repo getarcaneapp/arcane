@@ -1,0 +1,591 @@
+package workspace
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
+)
+
+var testProtectedFiles = map[string]bool{
+	"compose.yaml": true,
+	".env":         true,
+	".env.git":     true,
+	"project.env":  true,
+}
+
+func TestReadExcludesProtectedFilesAndReturnsFolders(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("APP_VALUE=sample\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env.git"), []byte("APP_VALUE=git\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "README.md"), []byte("hello\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "nested"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".git", "config"), []byte("private"), 0o644))
+
+	files, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3})
+	require.NoError(t, err)
+	require.NotEmpty(t, revision)
+
+	relativePaths := make([]string, 0, len(files))
+	for _, file := range files {
+		relativePaths = append(relativePaths, file.RelativePath)
+	}
+
+	assert.ElementsMatch(t, []string{"README.md", "config", filepath.ToSlash(filepath.Join("config", "app.yaml")), filepath.ToSlash(filepath.Join("config", "nested"))}, relativePaths)
+}
+
+func TestReadZeroMaxDepthDisablesExpansion(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+
+	files, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles})
+	require.NoError(t, err)
+	assert.NotEmpty(t, revision)
+	assert.Empty(t, files)
+}
+
+func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	testCases := []struct {
+		name   string
+		change types.WorkspaceFileChange
+		upload []byte
+	}{
+		{
+			name: "traversal",
+			change: types.WorkspaceFileChange{
+				Operation:    "create_file",
+				RelativePath: "../escape.txt",
+				UploadIndex:  new(0),
+			},
+			upload: []byte("safe\n"),
+		},
+		{
+			name: "protected compose",
+			change: types.WorkspaceFileChange{
+				Operation:    "delete",
+				RelativePath: "compose.yaml",
+			},
+		},
+		{
+			name: "move protected compose",
+			change: types.WorkspaceFileChange{
+				Operation:     "move",
+				RelativePath:  "compose.yaml",
+				NewParentPath: "config",
+			},
+		},
+		{
+			name: "protected compose descendant",
+			change: types.WorkspaceFileChange{
+				Operation:    "create_file",
+				RelativePath: "compose.yaml/child.yaml",
+				UploadIndex:  new(0),
+			},
+			upload: []byte("bad\n"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			uploads := map[int][]byte{}
+			if tc.upload != nil {
+				uploads[0] = tc.upload
+			}
+			err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{tc.change}, uploads, Options{ProtectedFiles: testProtectedFiles})
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestApplyWorkspaceFileChanges_CreatesBinaryFileVerbatim(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	binary := []byte{0x1f, 0x8b, 0x08, 0x00, 0xff, 0x00, 0xde, 0xad, 0xbe, 0xef}
+	err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "create_file", RelativePath: "db.sqlite", UploadIndex: new(0)},
+	}, map[int][]byte{0: binary}, Options{ProtectedFiles: testProtectedFiles})
+	require.NoError(t, err)
+
+	stored, err := os.ReadFile(filepath.Join(projectDir, "db.sqlite"))
+	require.NoError(t, err)
+	require.Equal(t, binary, stored)
+}
+
+func TestApplyWorkspaceFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "delete", RelativePath: "compose.yaml"},
+	}, nil, Options{ProtectedFiles: testProtectedFiles})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrProtectedPath)
+
+	targetPath := filepath.Join(projectDir, "target.txt")
+	linkPath := filepath.Join(projectDir, "link.txt")
+	require.NoError(t, os.WriteFile(targetPath, []byte("target\n"), 0o644))
+	if symlinkErr := os.Symlink(targetPath, linkPath); symlinkErr != nil {
+		t.Skipf("symlink creation is unavailable: %v", symlinkErr)
+	}
+
+	content := []byte("updated\n")
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: "link.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: content}, Options{ProtectedFiles: testProtectedFiles})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrSymlinkPath)
+
+	outsideDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "outside.txt"), []byte("outside\n"), 0o644))
+	linkDirPath := filepath.Join(projectDir, "link-dir")
+	if symlinkErr2 := os.Symlink(outsideDir, linkDirPath); symlinkErr2 != nil {
+		t.Skipf("symlink creation is unavailable: %v", symlinkErr2)
+	}
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: "link-dir/outside.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: content}, Options{ProtectedFiles: testProtectedFiles})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSymlinkPath)
+}
+
+func TestApplyWorkspaceFileChanges_UsesRevisionConflictDetection(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("old\n"), 0o644))
+
+	_, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("changed elsewhere\n"), 0o644))
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: "notes.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("new\n")}, Options{
+		ExpectedRevision: revision,
+		ProtectedFiles:   testProtectedFiles,
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrRevisionConflict)
+}
+
+func TestApplyWorkspaceFileChanges_AppliesOrderedTextFileOperations(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	updated := []byte("updated\n")
+	err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "create_folder", RelativePath: "config"},
+		{Operation: "create_file", RelativePath: "config/app.yaml", UploadIndex: new(0)},
+		{Operation: "update_file", RelativePath: "config/app.yaml", UploadIndex: new(1)},
+		{Operation: "rename", RelativePath: "config/app.yaml", NewName: "renamed.yaml"},
+	}, map[int][]byte{0: []byte("hello\n"), 1: updated}, Options{ProtectedFiles: testProtectedFiles})
+	require.NoError(t, err)
+
+	bytes, err := os.ReadFile(filepath.Join(projectDir, "config", "renamed.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, string(updated), string(bytes))
+}
+
+func TestApplyWorkspaceFileChanges_MovesProjectPaths(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "nested"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "archive"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "nested", "child.txt"), []byte("child\n"), 0o644))
+
+	err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "move", RelativePath: "config/app.yaml", NewParentPath: "archive"},
+		{Operation: "move", RelativePath: "config/nested"},
+	}, nil, Options{ProtectedFiles: testProtectedFiles})
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(projectDir, "config", "app.yaml"))
+	assert.FileExists(t, filepath.Join(projectDir, "archive", "app.yaml"))
+	assert.NoDirExists(t, filepath.Join(projectDir, "config", "nested"))
+	assert.FileExists(t, filepath.Join(projectDir, "nested", "child.txt"))
+}
+
+func TestApplyWorkspaceFileChanges_RejectsInvalidMoves(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		relativePath  string
+		newParentPath string
+		wantError     string
+	}{
+		{
+			name:          "duplicate destination",
+			relativePath:  "config/app.yaml",
+			newParentPath: "archive",
+			wantError:     "workspace path already exists",
+		},
+		{
+			name:          "folder into descendant",
+			relativePath:  "config",
+			newParentPath: "config/nested",
+			wantError:     "folder cannot be moved into itself or a descendant",
+		},
+		{
+			name:          "missing destination folder",
+			relativePath:  "config/app.yaml",
+			newParentPath: "missing",
+			wantError:     "destination folder not found",
+		},
+		{
+			name:          "same destination",
+			relativePath:  "config/app.yaml",
+			newParentPath: "config",
+			wantError:     "already in the destination folder",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+			require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "nested"), 0o755))
+			require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "archive"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "archive", "app.yaml"), []byte("existing\n"), 0o644))
+
+			err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+				{Operation: "move", RelativePath: tc.relativePath, NewParentPath: tc.newParentPath},
+			}, nil, Options{ProtectedFiles: testProtectedFiles})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantError)
+		})
+	}
+}
+
+func TestApplyWorkspaceFileChanges_RequiresRecursiveForNonEmptyFolderDelete(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+
+	err := Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "delete", RelativePath: "config"},
+	}, nil, Options{ProtectedFiles: testProtectedFiles})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "folder is not empty")
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "delete", RelativePath: "config", Recursive: true},
+	}, nil, Options{ProtectedFiles: testProtectedFiles})
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(projectDir, "config"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestApplyRejectsUnusedUploadsForEmptyManifest(t *testing.T) {
+	t.Parallel()
+
+	err := Apply(t.Context(), t.TempDir(), nil, map[int][]byte{0: []byte("unused")}, Options{})
+	require.ErrorContains(t, err, "unused")
+}
+
+func TestReadCapsEntriesWithStableRevision(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "a-large"), 0o755))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a-large", fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "z-later.txt"), []byte("x\n"), 0o644))
+
+	files, revision, truncated, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3, MaxEntries: 3})
+	require.NoError(t, err)
+	assert.True(t, truncated)
+	assert.Len(t, files, 3)
+	assert.True(t, slices.ContainsFunc(files, func(entry types.WorkspaceFileEntry) bool {
+		return entry.RelativePath == "z-later.txt"
+	}), "a large early subtree must not hide later root-level siblings")
+
+	_, again, truncatedAgain, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3, MaxEntries: 3})
+	require.NoError(t, err)
+	assert.True(t, truncatedAgain)
+	assert.Equal(t, revision, again)
+}
+
+func TestApplyWorkspaceFileChanges_SucceedsWithCappedRevision(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+
+	_, revision, truncated, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3, MaxEntries: 3})
+	require.NoError(t, err)
+	require.True(t, truncated)
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: "file-0.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("new\n")}, Options{
+		ExpectedRevision: revision,
+		MaxDepth:         3,
+		MaxEntries:       3,
+		ProtectedFiles:   testProtectedFiles,
+	})
+	require.NoError(t, err)
+}
+
+func TestApplyContentChurnDoesNotConflict(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "app.log"), []byte("line1\n"), 0o644))
+
+	_, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3})
+	require.NoError(t, err)
+
+	// A running container appending to files in its own project directory
+	// (changed size + mtime) must not invalidate the workspace draft (#3199).
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "app.log"), []byte("line1\nline2\n"), 0o644))
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpCreateFile, RelativePath: "notes.txt", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("hello")}, Options{ProtectedFiles: testProtectedFiles, ExpectedRevision: revision, MaxDepth: 3})
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(projectDir, "notes.txt"))
+
+	// Structural drift (notes.txt now exists) does conflict against the old revision.
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpDelete, RelativePath: "app.log"},
+	}, nil, Options{ProtectedFiles: testProtectedFiles, ExpectedRevision: revision, MaxDepth: 3})
+	require.ErrorIs(t, err, ErrRevisionConflict)
+}
+
+func TestApplyBaselineGuardsConcurrentEdit(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("original\n"), 0o644))
+
+	_, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3})
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("external newer edit\n"), 0o644))
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	}, map[int][]byte{0: []byte("stale draft\n"), 1: []byte("original\n")}, Options{ProtectedFiles: testProtectedFiles, ExpectedRevision: revision, MaxDepth: 3})
+	require.ErrorIs(t, err, ErrRevisionConflict)
+	content, err := os.ReadFile(filepath.Join(projectDir, "config.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "external newer edit\n", string(content))
+
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	}, map[int][]byte{
+		0: []byte("fresh draft\n"),
+		1: []byte("external newer edit\n"),
+	}, Options{
+		ProtectedFiles:   testProtectedFiles,
+		ExpectedRevision: revision,
+		MaxDepth:         3,
+	})
+	require.NoError(t, err)
+	content, err = os.ReadFile(filepath.Join(projectDir, "config.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "fresh draft\n", string(content))
+}
+
+func TestReadListsEnvDirectoryContents(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("APP_VALUE=sub\n"), 0o644))
+
+	files, _, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 3})
+	require.NoError(t, err)
+
+	relativePaths := make([]string, 0, len(files))
+	for _, file := range files {
+		relativePaths = append(relativePaths, file.RelativePath)
+	}
+	assert.ElementsMatch(t, []string{".env", ".env/app.env"}, relativePaths)
+}
+
+func TestApplyWorkspaceFileChanges_EnvDirectory(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("A=1\n"), 0o644))
+	opts := Options{ProtectedFiles: testProtectedFiles}
+
+	require.NoError(t, Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: ".env/app.env", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("A=2\n")}, opts))
+	content, err := os.ReadFile(filepath.Join(projectDir, ".env", "app.env"))
+	require.NoError(t, err)
+	assert.Equal(t, "A=2\n", string(content))
+
+	// Once the directory is gone, the name is protected configuration again,
+	// even within the same batch.
+	err = Apply(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: "delete", RelativePath: ".env", Recursive: true},
+		{Operation: "create_file", RelativePath: ".env", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("B=1\n")}, opts)
+	require.ErrorIs(t, err, ErrProtectedPath)
+}
+
+func listFolderPaths(t *testing.T, projectDir, relativePath string, opts Options) []string {
+	t.Helper()
+	folder, err := ListFolder(t.Context(), projectDir, relativePath, opts)
+	require.NoError(t, err)
+	paths := make([]string, 0, len(folder.Files))
+	for _, file := range folder.Files {
+		paths = append(paths, file.RelativePath)
+	}
+	return paths
+}
+
+func TestListFolderExcludesProtectedFilesAndSkippedFolders(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("APP_VALUE=sample\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env.git"), []byte("APP_VALUE=git\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "README.md"), []byte("hello\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "nested"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config", "node_modules"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".git", "config"), []byte("private"), 0o644))
+	opts := Options{ProtectedFiles: testProtectedFiles, SkipDirectories: "node_modules", MaxEntries: 100, MaxFileSizeBytes: 1024}
+
+	assert.Equal(t, []string{"config", "README.md"}, listFolderPaths(t, projectDir, "", opts))
+	assert.Equal(t, []string{"config/nested", "config/app.yaml", "config/compose.yaml"}, listFolderPaths(t, projectDir, "config", opts))
+	assert.Empty(t, listFolderPaths(t, projectDir, "config/nested", opts))
+
+	_, err := ListFolder(t.Context(), projectDir, ".git", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = ListFolder(t.Context(), projectDir, "config/node_modules", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = ListFolder(t.Context(), projectDir, "missing", opts)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+func TestListFolderClassifiesBySizeWithoutReadingContent(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "db.sqlite"), []byte{0x00, 0xff, 0xfe}, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "large.txt"), []byte("12345"), 0o644))
+
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 4})
+	require.NoError(t, err)
+	require.Len(t, folder.Files, 2)
+	assert.Equal(t, "db.sqlite", folder.Files[0].RelativePath)
+	assert.True(t, folder.Files[0].Editable)
+	assert.Equal(t, "large.txt", folder.Files[1].RelativePath)
+	assert.Equal(t, types.FileReadOnlyTooLarge, folder.Files[1].ReadOnlyReason)
+}
+
+func TestListFolderListsSymlinksWithoutFollowing(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "config"), 0o755))
+	if err := os.Symlink("config", filepath.Join(projectDir, "link")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 1024})
+	require.NoError(t, err)
+	require.Len(t, folder.Files, 2)
+	link := folder.Files[1]
+	assert.Equal(t, "link", link.RelativePath)
+	assert.True(t, link.IsSymlink)
+	assert.False(t, link.IsDirectory)
+	assert.Equal(t, "config", link.LinkTarget)
+	assert.Equal(t, types.FileReadOnlySymlink, link.ReadOnlyReason)
+}
+
+func TestListFolderCapsEntriesPerFolder(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "a-large"), 0o755))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a-large", fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "z-later.txt"), []byte("x\n"), 0o644))
+	opts := Options{ProtectedFiles: testProtectedFiles, MaxEntries: 3, MaxFileSizeBytes: 1024}
+
+	root, err := ListFolder(t.Context(), projectDir, "", opts)
+	require.NoError(t, err)
+	assert.False(t, root.FileTreeTruncated, "a large subfolder must not truncate its parent")
+	assert.Len(t, root.Files, 2)
+
+	large, err := ListFolder(t.Context(), projectDir, "a-large", opts)
+	require.NoError(t, err)
+	assert.True(t, large.FileTreeTruncated)
+	assert.Equal(t, []string{"a-large/file-0.txt", "a-large/file-1.txt", "a-large/file-2.txt"}, []string{large.Files[0].RelativePath, large.Files[1].RelativePath, large.Files[2].RelativePath})
+}
+
+func TestListFolderListsEnvDirectoryContents(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("APP_VALUE=sub\n"), 0o644))
+	opts := Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 1024}
+
+	assert.Equal(t, []string{".env"}, listFolderPaths(t, projectDir, "", opts))
+	assert.Equal(t, []string{".env/app.env"}, listFolderPaths(t, projectDir, ".env", opts))
+}

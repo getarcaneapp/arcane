@@ -501,6 +501,9 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 		{ID: "sha256:image-a", Containers: -1, Size: 100},
 		{ID: "sha256:image-b", Containers: 0, Size: 25},
 		{ID: "sha256:image-c", Containers: 99, Size: 3},
+		{ID: "sha256:image-d", Labels: map[string]string{"com.docker.dhi.name": "dhi/node", "com.docker.dhi.date.end-of-life": "2026-11-10"}},
+		{ID: "sha256:image-e", Labels: map[string]string{"com.docker.dhi.name": "dhi/node", "com.docker.dhi.date.end-of-life": "2026-10-01"}},
+		{ID: "sha256:image-f", Labels: map[string]string{"com.docker.dhi.name": "dhi/node", "com.docker.dhi.date.end-of-life": "2027-11-10"}},
 	}
 
 	containers := []container.Summary{
@@ -510,16 +513,18 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 		{ImageID: ""},
 	}
 
-	counts := CountImageUsage(images, containers)
+	counts := CountImageUsage(images, containers, time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC))
 
 	assert.Equal(t, 2, counts.Inuse)
-	assert.Equal(t, 1, counts.Unused)
-	assert.Equal(t, 3, counts.Total)
+	assert.Equal(t, 4, counts.Unused)
+	assert.Equal(t, 6, counts.Total)
+	assert.Equal(t, 1, counts.HardenedEndingSoon)
+	assert.Equal(t, 1, counts.HardenedEndOfLife)
 	assert.Equal(t, int64(128), counts.TotalSize)
 }
 
 func TestCountImageUsage_NoImages(t *testing.T) {
-	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}})
+	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}}, time.Now())
 
 	assert.Equal(t, types.ImageUsageCounts{}, counts)
 }

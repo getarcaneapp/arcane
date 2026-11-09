@@ -8,7 +8,10 @@ import {
 	CheckIcon,
 	UpdateIcon,
 	PlayIcon,
-	StopIcon
+	StopIcon,
+	ShieldCheckIcon,
+	ShieldAlertIcon,
+	ShieldXIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 
@@ -46,6 +49,29 @@ export const imageUpdateFilters: FilterOption[] = [
 	{
 		value: 'unknown',
 		label: m.common_unknown(),
+		icon: InfoIcon
+	}
+];
+
+export const hardenedImageFilters: FilterOption[] = [
+	{
+		value: true,
+		label: m.hardened(),
+		icon: ShieldCheckIcon
+	},
+	{
+		value: 'ending_soon',
+		label: m.ending_soon(),
+		icon: ShieldAlertIcon
+	},
+	{
+		value: 'end_of_life',
+		label: m.end_of_life(),
+		icon: ShieldXIcon
+	},
+	{
+		value: false,
+		label: m.not_hardened(),
 		icon: InfoIcon
 	}
 ];

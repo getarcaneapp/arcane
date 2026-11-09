@@ -151,12 +151,11 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/discover", CommandName: "volume.backup.discover"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/backups/history", CommandName: "backup.history.list"},
 
-		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.list"},
-		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse/content", CommandName: "build_workspace.browse.read_file"},
-		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse/download", CommandName: "build_workspace.browse.download"},
-		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/builds/browse/upload", CommandName: "build_workspace.browse.upload"},
-		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/builds/browse/mkdir", CommandName: "build_workspace.browse.mkdir"},
-		{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.delete"},
+		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/workspace", CommandName: "build_workspace.list"},
+		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/workspace/file", CommandName: "build_workspace.read_file"},
+		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/workspace/file/download", CommandName: "build_workspace.download"},
+		{Method: http.MethodPatch, PathPattern: "/api/environments/{id}/builds/workspace", CommandName: "build_workspace.update"},
+		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/builds/workspace/upload", CommandName: "build_workspace.upload"},
 
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/networks", CommandName: "network.list"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/networks/counts", CommandName: "network.counts"},

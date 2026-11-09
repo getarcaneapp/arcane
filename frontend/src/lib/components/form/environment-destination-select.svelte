@@ -60,7 +60,7 @@
 {/snippet}
 
 {#snippet prefixSeparator()}
-	<span class="text-lg text-muted-foreground/60">/</span>
+	<span class="text-sm text-muted-foreground/60">/</span>
 {/snippet}
 
 {#if variant === 'field'}

@@ -55,6 +55,7 @@ type (
 		Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 		InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 		Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
+		Hardened      string `query:"hardened" doc:"Filter by Docker Hardened Image status (true/false or a support status)"`
 		Label         string `query:"label" doc:"Filter by label key or key=value"`
 		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
@@ -143,6 +144,9 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 	}
 	if input.Updates != "" {
 		params.Filters["updates"] = input.Updates
+	}
+	if input.Hardened != "" {
+		params.Filters["hardened"] = input.Hardened
 	}
 	if input.Label != "" {
 		params.Filters["label"] = input.Label

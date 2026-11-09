@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 
+	import { HardenedImageBadge } from '#lib/components/badges/index.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -11,6 +12,7 @@
 	import type { ContainerDetails } from '#lib/types/container.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
+	import { hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -135,6 +137,15 @@
 			<KeyValueCard label={m.common_id()} valueTitle={m.common_click_to_select()}>{container.id}</KeyValueCard>
 
 			<KeyValueCard label={m.common_image_id()} valueTitle={m.common_click_to_select()}>{container.imageId}</KeyValueCard>
+
+			{#if container.hardened}
+				<KeyValueCard label={m.docker_hardened_image()} valueFormat="text">
+					<HardenedImageBadge info={container.hardened} />
+					{#if container.hardened.endOfLifeDate}
+						<div class="mt-1 text-xs font-normal text-muted-foreground">{hardenedSupportSummary(container.hardened)}</div>
+					{/if}
+				</KeyValueCard>
+			{/if}
 
 			<KeyValueCard label={m.common_created()} valueFormat="text">
 				{formatRelativeTime(createdInstant) || m.common_na()}

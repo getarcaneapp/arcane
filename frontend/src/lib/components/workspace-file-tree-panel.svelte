@@ -75,6 +75,7 @@
 		title?: string;
 		leadingRows?: WorkspaceTreeLeadingRow[];
 		rootMenuItems?: WorkspaceTreeMenuItem[];
+		rowMenuItems?: (entry: WorkspaceDisplayEntry) => WorkspaceTreeMenuItem[];
 		entries: WorkspaceDisplayEntry[];
 		loadedFolders?: ReadonlySet<string>;
 		onOpenFolder?: (relativePath: string) => void;
@@ -110,6 +111,7 @@
 		title = m.files(),
 		leadingRows = [],
 		rootMenuItems = [],
+		rowMenuItems,
 		entries,
 		loadedFolders,
 		onOpenFolder,
@@ -629,7 +631,7 @@
 			disabled: action.disabled,
 			onSelect: action.onclick
 		}));
-		return [createItems, actionItems].filter((group) => group.length > 0);
+		return [createItems, rowMenuItems?.(row) ?? [], actionItems].filter((group) => group.length > 0);
 	}
 
 	function leadingRowMenuGroups(leadingRow: WorkspaceTreeLeadingRow): WorkspaceTreeMenuItem[][] {

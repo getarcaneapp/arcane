@@ -2,13 +2,16 @@ package workspace
 
 import (
 	"context"
-	"path"
+	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/workspace"
 	"getarcane.dev/types/v3"
 )
 
@@ -18,41 +21,23 @@ type (
 		uploadService *upload.UploadService
 	}
 
-	BrowseBuildsInput struct {
+	GetBuildWorkspaceInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" default:"/" doc:"Directory path to browse"`
 	}
 
-	GetBuildFileContentInput struct {
+	GetBuildWorkspaceFileInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" doc:"File path"`
-		MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
+		RelativePath  string `query:"relativePath" doc:"Path relative to the build workspace root"`
 	}
 
-	BuildFileContentResponse struct {
-		MimeType string `json:"mimeType"`
-		Content  []byte `json:"content"`
+	UpdateBuildWorkspaceInput struct {
+		RawBody       multipart.Form `contentType:"multipart/form-data"`
+		EnvironmentID string         `path:"id" doc:"Environment ID"`
 	}
 
-	DownloadBuildFileInput struct {
+	UploadBuildWorkspaceFileInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" doc:"File path"`
-	}
-
-	UploadBuildFileInput struct {
-		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" default:"/" doc:"Destination path"`
-		Body          types.UploadConsumeRequest
-	}
-
-	CreateBuildDirectoryInput struct {
-		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" doc:"Directory path to create"`
-	}
-
-	DeleteBuildFileInput struct {
-		EnvironmentID string `path:"id" doc:"Environment ID"`
-		Path          string `query:"path" doc:"File or directory path to delete"`
+		Body          types.WorkspaceUploadRequest
 	}
 )
 
@@ -61,34 +46,60 @@ func workspaceHTTPError(err error) error {
 	return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 }
 
-func (h *Handler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*handlerutil.Out[[]types.WorkspaceFileEntry], error) {
-	entries, err := h.service.ListDirectory(ctx, input.Path)
+func (h *Handler) GetBuildWorkspace(ctx context.Context, _ *GetBuildWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+	result, err := h.service.Read(ctx)
 	if err != nil {
 		return nil, workspaceHTTPError(err)
 	}
-	return &handlerutil.Out[[]types.WorkspaceFileEntry]{Body: types.ApiResponse[[]types.WorkspaceFileEntry]{Success: true, Data: entries}}, nil
+	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }
 
-func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*handlerutil.Out[BuildFileContentResponse], error) {
-	content, mimeType, err := h.service.GetFileContent(ctx, input.Path, input.MaxBytes)
+func (h *Handler) GetBuildWorkspaceFile(ctx context.Context, input *GetBuildWorkspaceFileInput) (*handlerutil.Out[types.WorkspaceFileContent], error) {
+	result, err := h.service.File(ctx, input.RelativePath)
 	if err != nil {
 		return nil, workspaceHTTPError(err)
 	}
-	return &handlerutil.Out[BuildFileContentResponse]{Body: types.ApiResponse[BuildFileContentResponse]{
-		Success: true,
-		Data:    BuildFileContentResponse{Content: content, MimeType: mimeType},
-	}}, nil
+	return &handlerutil.Out[types.WorkspaceFileContent]{Body: types.ApiResponse[types.WorkspaceFileContent]{Success: true, Data: *result}}, nil
 }
 
-func (h *Handler) DownloadFile(ctx context.Context, input *DownloadBuildFileInput) (*huma.StreamResponse, error) {
-	reader, size, err := h.service.DownloadFile(ctx, input.Path)
+func (h *Handler) DownloadBuildWorkspaceFile(ctx context.Context, input *GetBuildWorkspaceFileInput) (*huma.StreamResponse, error) {
+	reader, size, name, err := h.service.Download(ctx, input.RelativePath)
 	if err != nil {
 		return nil, workspaceHTTPError(err)
 	}
-	return handlerutil.DownloadResponse(reader, size, path.Base(input.Path)), nil
+	return handlerutil.DownloadResponse(reader, size, name), nil
 }
 
-func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*types.ApiResponse[types.MessageResponse], error) {
+func (h *Handler) UpdateBuildWorkspace(ctx context.Context, input *UpdateBuildWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+	manifest, err := handlerutil.ParseMultipartJSONPart[types.WorkspaceUpdateManifest](input.RawBody, "manifest")
+	if err != nil {
+		return nil, err
+	}
+	permissions, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || permissions == nil {
+		return nil, huma.Error403Forbidden("insufficient permissions")
+	}
+	required, valid := authz.BuildWorkspaceRequiredPermissions(manifest.FileChanges)
+	if !valid {
+		return nil, huma.Error400BadRequest("unsupported build workspace operation")
+	}
+	for _, permission := range required {
+		if !permissions.Allows(permission, input.EnvironmentID) {
+			return nil, huma.Error403Forbidden("insufficient permissions for build workspace operation")
+		}
+	}
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspace.MaxFileSizeBytes(h.service.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")))
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.service.Update(ctx, manifest, uploads)
+	if err != nil {
+		return nil, workspaceHTTPError(err)
+	}
+	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
+}
+
+func (h *Handler) UploadBuildWorkspaceFile(ctx context.Context, input *UploadBuildWorkspaceFileInput) (*handlerutil.Out[types.Workspace], error) {
 	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindBuildWorkspace, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
@@ -98,31 +109,9 @@ func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (
 	}
 	defer cleanup()
 
-	if uploadFileErr := h.service.UploadFile(ctx, input.Path, file, session.Filename, session.Size); uploadFileErr != nil {
-		return nil, workspaceHTTPError(uploadFileErr)
-	}
-	return &types.ApiResponse[types.MessageResponse]{
-		Success: true,
-		Data:    types.MessageResponse{Message: "File uploaded successfully"},
-	}, nil
-}
-
-func (h *Handler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*types.ApiResponse[types.MessageResponse], error) {
-	if err := h.service.CreateDirectory(ctx, input.Path); err != nil {
+	result, err := h.service.Upload(ctx, input.Body.ParentPath, session.Filename, file, session.Size)
+	if err != nil {
 		return nil, workspaceHTTPError(err)
 	}
-	return &types.ApiResponse[types.MessageResponse]{
-		Success: true,
-		Data:    types.MessageResponse{Message: "Directory created successfully"},
-	}, nil
-}
-
-func (h *Handler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*types.ApiResponse[types.MessageResponse], error) {
-	if err := h.service.DeleteFile(ctx, input.Path); err != nil {
-		return nil, workspaceHTTPError(err)
-	}
-	return &types.ApiResponse[types.MessageResponse]{
-		Success: true,
-		Data:    types.MessageResponse{Message: "Deleted successfully"},
-	}, nil
+	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }

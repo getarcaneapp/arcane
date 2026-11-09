@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -38,20 +37,20 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName, folder
 	if strings.TrimSpace(folderPath) != "" {
 		var entry acfstypes.Entry
 		var err error
-		if rel, _, entry, err = resolvePath(ctx, projectPath, composeFileName, folderPath); err != nil {
+		if rel, entry, err = resolvePath(ctx, projectPath, composeFileName, folderPath); err != nil {
 			return nil, err
 		}
 		// Stat follows intermediate symlinks, so a different path means one was followed.
 		switch {
 		case entry.IsSymlink || entry.Path != "/"+rel:
-			return nil, common.Classify(common.ErrProjectWorkspaceForbidden, projects.ErrProjectWorkspaceSymlinkPath)
+			return nil, common.Classify(common.ErrProjectWorkspaceForbidden, workspacepkg.ErrSymlinkPath)
 		case !entry.IsDirectory:
 			return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is not a folder"))
 		}
 	}
-	folder, err := projects.ListProjectWorkspaceFolder(ctx, projectPath, rel, projects.ProjectWorkspaceListOptions{
+	folder, err := workspacepkg.ListFolder(ctx, projectPath, rel, workspacepkg.Options{
+		ProtectedFiles:   projects.ProtectedProjectFilePaths(composeFileName),
 		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		ComposeFileName:  composeFileName,
 		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	})
@@ -79,56 +78,26 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName, folder
 }
 
 func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*types.WorkspaceFileContent, error) {
-	rel, fullPath, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
+	rel, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
 		return nil, err
-	}
-	response := func(readOnlyReason, mimeType, content string) *types.WorkspaceFileContent {
-		return &types.WorkspaceFileContent{
-			Path:           fullPath,
-			RelativePath:   rel,
-			Name:           entry.Name,
-			Content:        content,
-			MimeType:       mimeType,
-			Size:           entry.Size,
-			Editable:       readOnlyReason == "",
-			ReadOnlyReason: readOnlyReason,
-		}
 	}
 	if entry.IsDirectory {
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is a directory"))
 	}
-	if entry.IsSymlink {
-		return response(types.FileReadOnlySymlink, "", ""), nil
-	}
-	if entry.IsDirectory || entry.IsSymlink || !strings.HasPrefix(entry.Mode, "-") {
-		return response(types.FileReadOnlySpecial, "", ""), nil
-	}
-	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb"))
-	if entry.Size > maxFileSizeBytes {
-		return response(types.FileReadOnlyTooLarge, "", ""), nil
-	}
-	reader, _, err := acfs.Root{Path: projectPath}.OpenRead(ctx, "/"+rel, maxFileSizeBytes)
+	file, err := workspacepkg.ReadFile(ctx, projectPath, rel, entry, workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")))
 	if err != nil {
 		return nil, classifyACFSError(err, "read project workspace file")
 	}
-	defer func() { _ = reader.Close() }()
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("read project workspace file: %w", err)
-	}
-	if !workspacepkg.IsTextContent(content) {
-		return response(types.FileReadOnlyBinary, http.DetectContentType(content), ""), nil
-	}
-	if _, ok := owned[rel]; ok {
+	if _, ok := owned[rel]; ok && file.Editable {
 		// Sync-owned files stay viewable but read-only: git is their source of truth (#3634).
-		return response(types.FileReadOnlyGitOpsManaged, http.DetectContentType(content), string(content)), nil
+		return new(workspacepkg.ReadOnlyFile(file, types.FileReadOnlyGitOpsManaged, file.MimeType)), nil
 	}
-	return response("", http.DetectContentType(content), string(content)), nil
+	return &file, nil
 }
 
 func (s *Service) Download(ctx context.Context, projectPath, composeFileName, relativePath string) (io.ReadCloser, int64, string, error) {
-	rel, _, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
+	rel, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -158,9 +127,9 @@ func (s *Service) Apply(
 	}
 	defer cleanup()
 
-	if applyErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
+	if applyErr := workspacepkg.Apply(ctx, projectPath, manifest.FileChanges, uploads, workspacepkg.Options{
+		ProtectedFiles:   projects.ProtectedProjectFilePaths(composeFileName),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
-		ComposeFileName:  composeFileName,
 	}); applyErr != nil {
 		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, projectPath, backup); restoreErr != nil {
 			return errors.Join(WrapProjectWorkspaceError(applyErr), fmt.Errorf("rollback project workspace: %w", restoreErr))
@@ -192,25 +161,24 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 	return owned, nil
 }
 
-func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, acfstypes.Entry, error) {
+func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, acfstypes.Entry, error) {
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
+		return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
 	}
 	rootName, _, _ := strings.Cut(rel, "/")
-	protected := projects.ProtectedProjectPaths(projectPath, composeFileName)
+	protected := workspacepkg.ProtectedPaths(projectPath, projects.ProtectedProjectFilePaths(composeFileName))
 	if protected[rel] || protected[rootName] {
-		return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
+		return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}
-	fullPath := filepath.Join(projectPath, filepath.FromSlash(rel))
 	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
+			return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 		}
-		return "", "", acfstypes.Entry{}, classifyACFSError(err, "inspect project workspace file")
+		return "", acfstypes.Entry{}, classifyACFSError(err, "inspect project workspace file")
 	}
-	return rel, fullPath, entry, nil
+	return rel, entry, nil
 }
 
 func WrapProjectWorkspaceError(err error) error {
@@ -219,13 +187,12 @@ func WrapProjectWorkspaceError(err error) error {
 	}
 
 	switch {
-	case errors.Is(err, projects.ErrProjectWorkspaceFileChanged):
+	case errors.Is(err, workspacepkg.ErrRevisionConflict):
 		return common.Classify(common.ErrProjectWorkspaceConflict, err)
 	case errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
 		return common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("conflicting project workspace path: %w", err))
-	case errors.Is(err, projects.ErrProjectWorkspaceOutsideProjectDirectory),
-		errors.Is(err, projects.ErrProjectWorkspaceProtectedPath),
-		errors.Is(err, projects.ErrProjectWorkspaceSymlinkPath),
+	case errors.Is(err, workspacepkg.ErrProtectedPath),
+		errors.Is(err, workspacepkg.ErrSymlinkPath),
 		errors.Is(err, acfs.ErrOutsideRoot),
 		errors.Is(err, acfs.ErrInvalidPath),
 		errors.Is(err, acfs.ErrSymlinkLoop),
@@ -275,7 +242,7 @@ func ChangeTargetPaths(change types.WorkspaceFileChange) []string {
 			paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
 		}
 	case types.FileOpMove:
-		if parent, parentErr := projects.NormalizeProjectParentPath(change.NewParentPath); parentErr == nil {
+		if parent, parentErr := workspacepkg.NormalizeParentPath(change.NewParentPath); parentErr == nil {
 			paths = append(paths, path.Join(parent, path.Base(rel)))
 		}
 	}

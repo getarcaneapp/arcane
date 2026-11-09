@@ -10,51 +10,32 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func FileEntry(entry acfstypes.Entry) types.WorkspaceFileEntry {
-	modTime := entry.ModTime
-	if entry.ModTimeUnixNano != 0 {
-		modTime = time.Unix(0, entry.ModTimeUnixNano)
-	}
-
-	return types.WorkspaceFileEntry{
-		ModTime:      modTime,
-		Name:         entry.Name,
-		Path:         entry.Path,
-		RelativePath: entry.Path,
-		Mode:         entry.Mode,
-		LinkTarget:   entry.LinkTarget,
-		Size:         entry.Size,
-		IsDirectory:  entry.IsDirectory,
-		IsSymlink:    entry.IsSymlink,
-	}
-}
-
 func EntryFromACFS(entry acfstypes.Entry, maxFileSizeBytes int64) types.WorkspaceFileEntry {
-	size, editable, readOnlyReason := entry.Size, false, ""
-	switch {
-	case entry.IsDirectory:
-		size, editable = 0, true
-	case entry.IsSymlink:
-		readOnlyReason = types.FileReadOnlySymlink
-	case !strings.HasPrefix(entry.Mode, "-"):
-		readOnlyReason = types.FileReadOnlySpecial
-	case entry.Size > maxFileSizeBytes:
-		readOnlyReason = types.FileReadOnlyTooLarge
-	default:
-		editable = true
-	}
+	readOnlyReason := func() string {
+		switch {
+		case entry.IsDirectory:
+			return ""
+		case entry.IsSymlink:
+			return types.FileReadOnlySymlink
+		case !strings.HasPrefix(entry.Mode, "-"):
+			return types.FileReadOnlySpecial
+		case entry.Size > maxFileSizeBytes:
+			return types.FileReadOnlyTooLarge
+		}
+		return ""
+	}()
 	return types.WorkspaceFileEntry{
-		ModTime:        FileEntry(entry).ModTime,
+		ModTime:        kit.Ternary(entry.ModTimeUnixNano != 0, time.Unix(0, entry.ModTimeUnixNano), entry.ModTime),
 		Name:           entry.Name,
 		Path:           entry.Path,
 		RelativePath:   strings.TrimPrefix(entry.Path, "/"),
 		Mode:           entry.Mode,
 		LinkTarget:     entry.LinkTarget,
 		ReadOnlyReason: readOnlyReason,
-		Size:           size,
+		Size:           kit.Ternary(entry.IsDirectory, 0, entry.Size),
 		IsDirectory:    entry.IsDirectory,
 		IsSymlink:      entry.IsSymlink,
-		Editable:       editable,
+		Editable:       readOnlyReason == "",
 	}
 }
 

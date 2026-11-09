@@ -99,7 +99,7 @@
 	</ArcaneButton>
 {:else}
 	<Tooltip.Root>
-		<Tooltip.Trigger>
+		<Tooltip.Trigger class="rounded-xl">
 			<ArcaneButton
 				bind:ref
 				action="base"

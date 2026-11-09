@@ -22,9 +22,7 @@ const FIELD_LABELS = {
 async function navigateToBuildWorkspace(page: Page) {
 	await page.goto(ROUTES.page);
 	await page.waitForLoadState('load');
-	await expect(
-		page.getByRole('heading', { level: 1, name: 'Build Workspace', exact: true })
-	).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Builds', exact: true })).toBeVisible();
 }
 
 async function ensureSwitchState(toggle: Locator, desired: boolean) {
@@ -40,18 +38,22 @@ async function setRequiredBuildInputs(page: Page, tags = `e2e/build:${Date.now()
 	await tagsInput.fill(tags);
 }
 
-async function switchContextMode(page: Page, mode: 'Workspace' | 'Remote Git'): Promise<void> {
-	await page.getByRole('button', { name: mode, exact: true }).first().click();
+async function switchContextMode(
+	page: Page,
+	mode: 'Workspace folder' | 'Git repository'
+): Promise<void> {
+	await page.getByRole('tab', { name: mode, exact: true }).click();
 }
 
 async function openAdvancedBuildOptions(page: Page) {
-	const dockerfileInput = page.locator('#dockerfile');
-	const trigger = page.getByRole('button', { name: 'Advanced', exact: true }).first();
-	await expect(trigger).toBeVisible();
-	if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
-		await trigger.click();
+	for (const section of [/^Build options/, /^Runtime and cache/]) {
+		const trigger = page.getByRole('button', { name: section }).first();
+		await expect(trigger).toBeVisible();
+		if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+			await trigger.click();
+		}
 	}
-	await expect(dockerfileInput).toBeVisible();
+	await expect(page.locator('#dockerfile')).toBeVisible();
 }
 
 async function selectBuildProvider(page: Page, provider: 'local' | 'depot') {
@@ -184,14 +186,21 @@ test.describe('Build workspace provider flows', () => {
 	test('persists the selected primary tab in the URL', async ({ page }) => {
 		await navigateToBuildWorkspace(page);
 		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('build');
+		await expect(page.getByRole('tab', { name: 'Build', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
 
-		const historyTab = page.getByRole('tab', { name: 'Build History', exact: true });
+		await page.getByRole('tab', { name: 'Files', exact: true }).click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('files');
+
+		const historyTab = page.getByRole('tab', { name: /^Build History/ });
 		await historyTab.click();
 		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('history');
 		await expect(historyTab).toHaveAttribute('data-state', 'active');
 
 		await page.reload();
-		await expect(page.getByRole('tab', { name: 'Build History', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: /^Build History/ })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
@@ -199,7 +208,7 @@ test.describe('Build workspace provider flows', () => {
 
 	test('submits remote git build context from the dedicated context mode', async ({ page }) => {
 		await navigateToBuildWorkspace(page);
-		await switchContextMode(page, 'Remote Git');
+		await switchContextMode(page, 'Git repository');
 		await page
 			.locator('#remote-context-url')
 			.fill('https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app');

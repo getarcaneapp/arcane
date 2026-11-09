@@ -16,7 +16,9 @@ export interface WorkspaceFileEntry {
 
 export interface Workspace {
 	files: WorkspaceFileEntry[];
+	fileTreeRevision: string;
 	fileTreeTruncated: boolean;
+	activityId?: string;
 }
 
 export interface WorkspaceFileContent {
@@ -42,7 +44,7 @@ export interface WorkspaceFileChange {
 	recursive?: boolean;
 }
 
-export interface BuildFileContentResponse {
-	mimeType: string;
-	content: string;
+export interface WorkspaceUpdateManifest {
+	fileTreeRevision: string;
+	fileChanges: WorkspaceFileChange[];
 }

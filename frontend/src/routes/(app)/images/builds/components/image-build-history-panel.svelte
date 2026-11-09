@@ -8,13 +8,9 @@
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		ArrowDownIcon,
 		ClockIcon,
@@ -34,17 +30,17 @@
 	import type { Paginated } from '#lib/types/base.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/image.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { type EnvironmentRow, readableEnvironments } from '#lib/utils/environments.js';
 
 	import {
 		buildHistoryStatusLabel,
 		formatBuildDuration,
 		formatBuildTimestamp,
-		getBuildDetailItems,
 		getBuildStatusBadgeVariant,
-		getBuildTitle,
-		parseBuildOutput
+		getBuildTitle
 	} from '../image-build-history';
+	import ImageBuildDetailPanel from './image-build-detail-panel.svelte';
 
 	type BuildRow = EnvironmentRow<ImageBuildRecord>;
 
@@ -68,7 +64,6 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let selectedOptimistic = $state<BuildRow | null>(null);
 	let selectedId = $state<string | null>(null);
-	let detailsOpen = $state(false);
 
 	const historyQuery = createQuery(() => {
 		const scope = environmentStore.shownKey;
@@ -86,20 +81,18 @@
 		return {
 			queryKey: queryKeys.images.buildRecord(requestedEnvironmentId, buildId ?? 'none'),
 			queryFn: () => imageService.getImageBuild(buildId!, requestedEnvironmentId),
-			enabled: !!buildId && detailsOpen
+			enabled: !!buildId
 		};
 	});
 
 	const selectedBuild = $derived<ImageBuildRecord | null>(detailQuery.data ?? selectedOptimistic);
-	const detailsLoading = $derived(detailQuery.isPending || detailQuery.isFetching);
-	const outputEntries = $derived.by(() => parseBuildOutput(selectedBuild?.output ?? ''));
 
 	onMount(() => {
 		const cache = queryClient.getQueryCache();
 		let historyLastError = '';
 		let detailLastError = '';
 		function reportError(error: unknown, detail: boolean) {
-			if (!error || (detail && !detailsOpen)) return;
+			if (!error || (detail && !selectedId)) return;
 			let message: string = m.common_error();
 			if (error instanceof Error) message = error.message;
 			if (detail) {
@@ -132,8 +125,6 @@
 			}
 		});
 	});
-
-	const detailItems = $derived(selectedBuild ? getBuildDetailItems(selectedBuild) : []);
 
 	const columns = $derived([
 		...environmentColumns<BuildRow>(),
@@ -179,13 +170,16 @@
 	function openDetails(build: BuildRow) {
 		selectedId = build.id;
 		selectedOptimistic = build;
-		detailsOpen = true;
+	}
+
+	function closeDetails() {
+		selectedId = null;
+		selectedOptimistic = null;
 	}
 
 	function applySelectedBuild() {
 		if (!selectedBuild || !selectedOptimistic) return;
 		onApplyBuild(selectedBuild, selectedOptimistic.environmentId);
-		detailsOpen = false;
 	}
 
 	const buildIconVariant: Record<string, 'emerald' | 'red' | 'blue'> = {
@@ -230,6 +224,12 @@
 				<InfoIcon class="size-4" />
 				{m.common_view_details()}
 			</DropdownMenu.Item>
+			{#if hasPermission('images:build', item.environmentId)}
+				<DropdownMenu.Item onclick={() => onApplyBuild(item, item.environmentId)}>
+					<RedeployIcon class="size-4" />
+					{m.build_rebuild()}
+				</DropdownMenu.Item>
+			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {/snippet}
@@ -289,106 +289,40 @@
 	/>
 {/snippet}
 
-<div class="flex h-full flex-col p-6">
-	<ArcaneTable
-		persistKey="arcane-build-history-table"
-		items={historyItems}
-		bind:requestOptions
-		bind:selectedIds
-		bind:mobileFieldVisibility
-		onRetry={() => historyQuery.refetch()}
-		selectionDisabled={true}
-		{columns}
-		{mobileFields}
-		rowActions={BuildHistoryRowActions}
-		mobileCard={BuildHistoryMobileCard}
-	>
-		{#snippet emptyState()}
-			<EmptyState
-				icon={HammerIcon}
-				title={m.image_build_history_empty_title()}
-				description={m.image_build_history_empty_description()}
+<div class="flex flex-col gap-4 lg:flex-row lg:items-start">
+	<div class="min-w-0 flex-1">
+		<ArcaneTable
+			persistKey="arcane-build-history-table"
+			items={historyItems}
+			bind:requestOptions
+			bind:selectedIds
+			bind:mobileFieldVisibility
+			onRetry={() => historyQuery.refetch()}
+			selectionDisabled={true}
+			{columns}
+			{mobileFields}
+			rowActions={BuildHistoryRowActions}
+			mobileCard={BuildHistoryMobileCard}
+		>
+			{#snippet emptyState()}
+				<EmptyState
+					icon={HammerIcon}
+					title={m.image_build_history_empty_title()}
+					description={m.image_build_history_empty_description()}
+				/>
+			{/snippet}
+		</ArcaneTable>
+	</div>
+
+	{#if selectedBuild && selectedOptimistic}
+		<div class="border-t border-border/50 pt-4 lg:w-96 lg:shrink-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
+			<ImageBuildDetailPanel
+				build={selectedBuild}
+				environmentId={selectedOptimistic.environmentId}
+				loading={detailQuery.isPending || detailQuery.isFetching}
+				onClose={closeDetails}
+				onRebuild={applySelectedBuild}
 			/>
-		{/snippet}
-	</ArcaneTable>
-
-	<ResponsiveDialog
-		bind:open={detailsOpen}
-		title={selectedBuild ? (selectedBuild.tags?.[0] ?? m.build_output()) : m.build_output()}
-		description={selectedBuild ? selectedBuild.contextDir : undefined}
-		contentClass="sm:max-w-275"
-		class="min-h-0 lg:overflow-hidden"
-	>
-		<div class="space-y-4 pb-4">
-			{#if selectedBuild}
-				<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-					<div class="flex flex-wrap items-center gap-2">
-						<Badge variant={getBuildStatusBadgeVariant(selectedBuild.status)} size="sm" minWidth="20"
-							>{buildHistoryStatusLabel(selectedBuild.status)}</Badge
-						>
-						{#if selectedBuild.provider}
-							<span class="text-muted-foreground">{selectedBuild.provider}</span>
-						{/if}
-						{#if selectedBuild.durationMs}
-							<span class="text-muted-foreground">{formatBuildDuration(selectedBuild.durationMs)}</span>
-						{/if}
-						<span class="text-muted-foreground">{formatBuildTimestamp(selectedBuild.createdAt)}</span>
-					</div>
-					<IfPermitted perm="images:build" envId={selectedOptimistic?.environmentId}>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							icon={RedeployIcon}
-							customLabel={m.build_rebuild()}
-							onclick={applySelectedBuild}
-						/>
-					</IfPermitted>
-				</div>
-				{#if selectedBuild.errorMessage}
-					<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-						{selectedBuild.errorMessage}
-					</div>
-				{/if}
-			{/if}
-
-			<div class="grid gap-4 lg:h-screen-70 lg:grid-cols-aside-90 lg:items-stretch">
-				<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
-					{#each detailItems as detail (detail.label)}
-						<KeyValueCard label={detail.label} compact>
-							{detail.value}
-						</KeyValueCard>
-					{/each}
-				</div>
-				<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card/10">
-					<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
-						<div class="text-sm font-medium">{m.build_output()}</div>
-						{#if selectedBuild?.outputTruncated}
-							<span class="text-xs text-warning">{m.build_output_truncated()}</span>
-						{/if}
-					</div>
-					<div class="max-h-screen-60 min-h-65 overflow-auto overscroll-contain p-4 lg:max-h-none lg:min-h-0 lg:flex-1">
-						{#if detailsLoading}
-							<div class="flex h-full items-center justify-center">
-								<Spinner tone="muted" class="size-6" />
-							</div>
-						{:else if selectedBuild?.output}
-							{#if outputEntries.length > 0}
-								<div class="rounded-lg border border-border/50 bg-muted/50 p-3 font-mono text-xs leading-relaxed">
-									{#each outputEntries as entry, entryIndex (entry.text + entryIndex)}
-										<div class={`break-words whitespace-pre-wrap ${entry.isError ? 'text-destructive' : 'text-foreground'}`}>
-											{entry.text}
-										</div>
-									{/each}
-								</div>
-							{:else}
-								<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
-							{/if}
-						{:else}
-							<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
-						{/if}
-					</div>
-				</div>
-			</div>
 		</div>
-	</ResponsiveDialog>
+	{/if}
 </div>

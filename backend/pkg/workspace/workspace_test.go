@@ -81,9 +81,10 @@ func TestValidateUploadIndices(t *testing.T) {
 }
 
 func TestValidateUpdateManifest(t *testing.T) {
-	require.NoError(t, ValidateUpdateManifest(1, 500))
-	require.ErrorContains(t, ValidateUpdateManifest(0, 500), "between 1 and 500")
-	require.ErrorContains(t, ValidateUpdateManifest(501, 500), "between 1 and 500")
+	require.NoError(t, ValidateUpdateManifest("revision", 1, 500))
+	require.ErrorContains(t, ValidateUpdateManifest(" ", 1, 500), "revision")
+	require.ErrorContains(t, ValidateUpdateManifest("revision", 0, 500), "between 1 and 500")
+	require.ErrorContains(t, ValidateUpdateManifest("revision", 501, 500), "between 1 and 500")
 }
 
 func TestEntryFromACFS(t *testing.T) {

@@ -215,6 +215,13 @@ type (
 	VolumeWorkspaceUpdateManifest struct {
 		FileChanges []VolumeWorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
 	}
+
+	VolumeBackupFileRestoreOptions struct {
+		ContainerID string
+		VolumeName  string
+		BackupID    string
+		Path        string
+	}
 )
 
 const (

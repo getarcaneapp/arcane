@@ -1449,9 +1449,9 @@ func (s *ProjectService) CreateProject(
 		return cause
 	}
 
-	if applyProjectWorkspaceChangesErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
+	if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, manifest.FileChanges, uploads, workspacepkg.Options{
+		ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
-		ComposeFileName:  projects.DefaultComposeFileName,
 	}); applyProjectWorkspaceChangesErr != nil {
 		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
 	}
@@ -3356,8 +3356,8 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	uploads map[int][]byte,
 	user types.Actor,
 ) error {
-	if err := workspacepkg.ValidateUpdateManifest(len(manifest.FileChanges), 500); err != nil {
-		return common.Classify(common.ErrProjectWorkspaceBadRequest, err)
+	if count := len(manifest.FileChanges); count == 0 || count > 500 {
+		return common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
 	}
 	unlock, err := s.lockProject(ctx, "update project workspace", projectID)
 	if err != nil {

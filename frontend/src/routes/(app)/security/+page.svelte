@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQueries, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { watch } from 'runed';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -24,6 +24,7 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { publicSettingsQuery } from '#lib/query/settings.js';
 	import { patchTargetListQuery, vulnerabilityListQuery, vulnerabilityOverviewQuery } from '#lib/query/vulnerabilities.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
@@ -71,6 +72,12 @@
 	let selectedVulnerabilityIds = $state<string[]>([]);
 	let showIgnored = $state(false);
 	let fixAvailable = $state(false);
+	const ignoreUnfixed = createQueries(() => ({
+		queries: vulnerabilityEnvironments().map((env) => publicSettingsQuery(env.id)),
+		combine: (results) => ({
+			everywhere: results.length > 0 && results.every((result) => result.data?.values.trivyIgnoreUnfixed === true)
+		})
+	}));
 
 	function vulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
 		return mapVulnerabilityRequest(withVulnerabilityToggles(options, { showIgnored, fixAvailable }));
@@ -432,19 +439,17 @@
 							{/each}
 						</div>
 					{/if}
-					<div class="rounded-xl border border-border/60">
-						<SecurityVulnerabilityTable
-							emptyState={vulnerabilitiesEmptyState}
-							{vulnerabilities}
-							bind:requestOptions
-							bind:selectedIds={selectedVulnerabilityIds}
-							{showIgnored}
-							onToggleIgnored={toggleIgnored}
-							{fixAvailable}
-							onToggleFixAvailable={toggleFixAvailable}
-							onRetry={() => vulnerabilitiesQuery.refetch()}
-						/>
-					</div>
+					<SecurityVulnerabilityTable
+						emptyState={vulnerabilitiesEmptyState}
+						{vulnerabilities}
+						bind:requestOptions
+						bind:selectedIds={selectedVulnerabilityIds}
+						{showIgnored}
+						onToggleIgnored={toggleIgnored}
+						{fixAvailable}
+						onToggleFixAvailable={ignoreUnfixed.everywhere ? undefined : toggleFixAvailable}
+						onRetry={() => vulnerabilitiesQuery.refetch()}
+					/>
 				</Tabs.Content>
 				<Tabs.Content value="patches" class="mt-4">
 					{#if patchTargetsQuery.error}
@@ -455,13 +460,11 @@
 							</div>
 						</Alert.Root>
 					{/if}
-					<div class="rounded-xl border border-border/60">
-						<SecurityPatchTable
-							targets={patchTargets}
-							bind:requestOptions={patchRequestOptions}
-							onRetry={() => patchTargetsQuery.refetch()}
-						/>
-					</div>
+					<SecurityPatchTable
+						targets={patchTargets}
+						bind:requestOptions={patchRequestOptions}
+						onRetry={() => patchTargetsQuery.refetch()}
+					/>
 				</Tabs.Content>
 			</Tabs.Root>
 		{/if}

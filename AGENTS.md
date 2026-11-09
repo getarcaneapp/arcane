@@ -304,7 +304,6 @@ Don't stop at `console.error`. Pick the matching path:
 ```bash
 just test backend
 just test cli
-just test types
 ```
 
 - `just test e2e`: browser coverage, when the environment is ready.

@@ -1,269 +1,266 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { ArrowDownIcon } from '#lib/icons/index.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
+	import BuildConfigSection from './build-config-section.svelte';
 	import type { BuildFormInputs, SelectOption } from './build-form.types';
 
 	let {
 		environmentId = $bindable(),
 		inputs = $bindable(),
 		provider,
-		showAdvanced = $bindable(false),
+		showBuildOptions = $bindable(false),
+		showRuntimeOptions = $bindable(false),
 		isPushMode = false,
 		registryOptions = [],
 		repositoryOptions = [],
 		fullImageReference = '',
 		registryLoadFailed = false,
-		onSubmit
+		onSubmit,
+		source
 	}: {
 		environmentId: string;
 		inputs: BuildFormInputs;
 		provider: 'local' | 'depot';
-		showAdvanced?: boolean;
+		showBuildOptions?: boolean;
+		showRuntimeOptions?: boolean;
 		isPushMode?: boolean;
 		registryOptions?: SelectOption[];
 		repositoryOptions?: SelectOption[];
 		fullImageReference?: string;
 		registryLoadFailed?: boolean;
-		onSubmit?: () => void;
+		onSubmit: () => void;
+		source: Snippet;
 	} = $props();
 
 	const providerIsLocal = $derived(provider === 'local');
 	const providerIsDepot = $derived(provider === 'depot');
 </script>
 
-<div class="space-y-7 p-8">
-	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
-		<div class="space-y-4">
-			<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" variant="field" />
-			{#if isPushMode}
-				<SelectWithLabel
-					id="build-push-registry"
-					label={m.common_registry()}
-					placeholder={m.select_a_registry()}
-					options={registryOptions}
-					description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
-					error={registryLoadFailed ? m.registries_no_list_permission() : null}
-					bind:value={
-						() => inputs.registryId.value,
-						(value) => {
-							if (value === inputs.registryId.value) return;
-							inputs.registryId.value = value;
-							inputs.repositoryName.value = '';
-						}
+<form onsubmit={preventDefault(onSubmit)} class="space-y-6">
+	{@render source()}
+
+	<section class="space-y-4">
+		<h2 class="text-sm font-semibold">{m.common_image()}</h2>
+		<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" variant="field" />
+		{#if isPushMode}
+			<SelectWithLabel
+				id="build-push-registry"
+				label={m.common_registry()}
+				placeholder={m.select_a_registry()}
+				options={registryOptions}
+				description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
+				error={registryLoadFailed ? m.registries_no_list_permission() : null}
+				bind:value={
+					() => inputs.registryId.value,
+					(value) => {
+						if (value === inputs.registryId.value) return;
+						inputs.registryId.value = value;
+						inputs.repositoryName.value = '';
 					}
-				/>
-
-				<SelectWithLabel
-					id="build-push-repository"
-					label={m.repository_name()}
-					placeholder={m.select_a_repository_name()}
-					options={repositoryOptions}
-					description={inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
-						? m.registries_no_repository_names()
-						: undefined}
-					bind:value={inputs.repositoryName.value}
-				/>
-
-				<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={inputs.pushTag} />
-
-				{#if fullImageReference}
-					<div class="space-y-1">
-						<span class="text-xs font-medium text-muted-foreground">{m.image_reference()}</span>
-						<div class="rounded-md bg-muted/50 px-3 py-2">
-							<code class="text-xs break-all">{fullImageReference}</code>
-						</div>
+				}
+			/>
+			<SelectWithLabel
+				id="build-push-repository"
+				label={m.repository_name()}
+				placeholder={m.select_a_repository_name()}
+				options={repositoryOptions}
+				description={inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
+					? m.registries_no_repository_names()
+					: undefined}
+				bind:value={inputs.repositoryName.value}
+			/>
+			<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={inputs.pushTag} />
+			{#if fullImageReference}
+				<div class="space-y-1">
+					<span class="text-xs font-medium text-muted-foreground">{m.image_reference()}</span>
+					<div class="rounded-xl bg-muted/40 px-3 py-2">
+						<code class="text-xs break-all">{fullImageReference}</code>
 					</div>
-				{/if}
-			{:else}
-				<FormInput
-					label={m.image_tags()}
-					type="text"
-					placeholder={m.image_tags_placeholder()}
-					description={m.image_tags_description()}
-					bind:input={inputs.tags}
-				/>
+				</div>
 			{/if}
+		{:else}
+			<FormInput
+				label={m.image_tags()}
+				type="text"
+				placeholder={m.image_tags_placeholder()}
+				description={m.image_tags_description()}
+				bind:input={inputs.tags}
+			/>
+		{/if}
 
-			<Collapsible.Root bind:open={showAdvanced}>
-				<Collapsible.Trigger>
-					{#snippet child({ props })}
-						<button
-							{...props}
-							type="button"
-							class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						>
-							{m.common_advanced()}
-							<ArrowDownIcon class={showAdvanced ? 'size-4 rotate-180 transition-transform' : 'size-4 transition-transform'} />
-						</button>
-					{/snippet}
-				</Collapsible.Trigger>
-				<Collapsible.Content>
-					<div class="mt-4 grid gap-6">
-						<div class="grid gap-4 sm:grid-cols-2">
-							<FormInput
-								label={m.dockerfile()}
-								type="text"
-								placeholder={m.dockerfile()}
-								description={m.dockerfile_description()}
-								bind:input={inputs.dockerfile}
-							/>
-
-							<FormInput
-								label={m.target()}
-								type="text"
-								placeholder={m.target_placeholder()}
-								description={m.target_description()}
-								bind:input={inputs.target}
-							/>
-						</div>
-
-						<FormInput
-							label={m.platforms_label()}
-							type="text"
-							placeholder={m.platforms_placeholder()}
-							description={m.platforms_description()}
-							bind:input={inputs.platforms}
-							warningText={providerIsLocal ? m.build_provider_warning_single_platform_local() : undefined}
-						/>
-
-						<FormInput
-							label={m.build_args()}
-							type="textarea"
-							rows={3}
-							placeholder={m.build_args_placeholder()}
-							description={m.build_args_description()}
-							bind:input={inputs.buildArgs}
-						/>
-
-						<FormInput
-							label={m.common_labels()}
-							type="textarea"
-							rows={3}
-							placeholder={m.build_labels_placeholder()}
-							description={m.build_labels_description()}
-							bind:input={inputs.labels}
-						/>
-
-						<FormInput
-							label={m.build_cache_from_label()}
-							type="textarea"
-							rows={2}
-							placeholder={m.build_cache_from_placeholder()}
-							description={m.build_cache_from_description()}
-							bind:input={inputs.cacheFrom}
-						/>
-
-						<FormInput
-							label={m.build_cache_to_label()}
-							type="textarea"
-							rows={2}
-							placeholder={m.build_cache_to_placeholder()}
-							description={m.build_cache_to_description()}
-							bind:input={inputs.cacheTo}
-							disabled={providerIsLocal}
-							warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
-						/>
-
-						<div class="grid gap-4 sm:grid-cols-2">
-							<FormInput
-								label={m.resource_network_cap()}
-								type="text"
-								placeholder={m.build_network_placeholder()}
-								description={m.build_network_description()}
-								bind:input={inputs.network}
-								disabled={providerIsDepot}
-								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
-							/>
-
-							<FormInput
-								label={m.isolation()}
-								type="text"
-								placeholder={m.build_isolation_placeholder()}
-								description={m.build_isolation_description()}
-								bind:input={inputs.isolation}
-								disabled={providerIsDepot}
-								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
-							/>
-						</div>
-
-						<div class="grid gap-4 sm:grid-cols-2">
-							<FormInput
-								label={m.build_shm_size_label()}
-								type="text"
-								placeholder={m.build_shm_size_placeholder()}
-								description={m.build_shm_size_description()}
-								bind:input={inputs.shmSize}
-								disabled={providerIsDepot}
-								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
-							/>
-
-							<FormInput
-								label={m.build_entitlements_label()}
-								type="textarea"
-								rows={2}
-								placeholder={m.build_entitlements_placeholder()}
-								description={m.build_entitlements_description()}
-								bind:input={inputs.entitlements}
-								disabled={providerIsLocal}
-								warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
-							/>
-						</div>
-
-						<FormInput
-							label={m.build_ulimits_label()}
-							type="textarea"
-							rows={2}
-							placeholder={m.build_ulimits_placeholder()}
-							description={m.build_ulimits_description()}
-							bind:input={inputs.ulimits}
-							disabled={providerIsDepot}
-							warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
-						/>
-
-						<FormInput
-							label={m.build_extra_hosts_label()}
-							type="textarea"
-							rows={2}
-							placeholder={m.build_extra_hosts_placeholder()}
-							description={m.build_extra_hosts_description()}
-							bind:input={inputs.extraHosts}
-							disabled={providerIsDepot}
-							warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
-						/>
-
-						<div class="grid gap-4 sm:grid-cols-2">
-							<FormInput
-								label={m.build_privileged_label()}
-								type="switch"
-								description={m.build_privileged_description()}
-								bind:input={inputs.privileged}
-								disabled={providerIsLocal}
-								warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
-							/>
-
-							<FormInput
-								label={m.build_no_cache_label()}
-								type="switch"
-								description={m.build_no_cache_description()}
-								bind:input={inputs.noCache}
-							/>
-						</div>
-
-						<FormInput
-							label={m.build_pull_base_images_label()}
-							type="switch"
-							description={m.build_pull_base_images_description()}
-							bind:input={inputs.pull}
-						/>
-					</div>
-				</Collapsible.Content>
-			</Collapsible.Root>
+		<div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+			<SwitchWithLabel
+				id="build-load"
+				label={m.load()}
+				checked={inputs.load.value}
+				disabled={providerIsDepot}
+				onCheckedChange={(value) => (inputs.load.value = value)}
+			/>
+			<IfPermitted perm="images:push" envId={environmentId}>
+				<SwitchWithLabel
+					id="build-push"
+					label={m.push()}
+					checked={inputs.push.value}
+					onCheckedChange={(value) => (inputs.push.value = value)}
+				/>
+			</IfPermitted>
+			<SwitchWithLabel
+				id="no-cache"
+				label={m.build_no_cache_label()}
+				checked={inputs.noCache.value}
+				onCheckedChange={(value) => (inputs.noCache.value = value)}
+			/>
 		</div>
-	</form>
-</div>
+	</section>
+
+	<BuildConfigSection title={m.build_options()} description={m.build_options_description()} bind:open={showBuildOptions}>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<FormInput
+				label={m.dockerfile()}
+				type="text"
+				placeholder={m.dockerfile()}
+				description={m.dockerfile_description()}
+				bind:input={inputs.dockerfile}
+			/>
+			<FormInput
+				label={m.target()}
+				type="text"
+				placeholder={m.target_placeholder()}
+				description={m.target_description()}
+				bind:input={inputs.target}
+			/>
+		</div>
+		<FormInput
+			label={m.platforms_label()}
+			type="text"
+			placeholder={m.platforms_placeholder()}
+			description={m.platforms_description()}
+			bind:input={inputs.platforms}
+			warningText={providerIsLocal ? m.build_provider_warning_single_platform_local() : undefined}
+		/>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<FormInput
+				label={m.build_args()}
+				type="textarea"
+				rows={3}
+				placeholder={m.build_args_placeholder()}
+				description={m.build_args_description()}
+				bind:input={inputs.buildArgs}
+			/>
+			<FormInput
+				label={m.common_labels()}
+				type="textarea"
+				rows={3}
+				placeholder={m.build_labels_placeholder()}
+				description={m.build_labels_description()}
+				bind:input={inputs.labels}
+			/>
+		</div>
+	</BuildConfigSection>
+
+	<BuildConfigSection
+		title={m.runtime_and_cache()}
+		description={m.runtime_and_cache_description()}
+		bind:open={showRuntimeOptions}
+	>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<FormInput
+				label={m.build_cache_from_label()}
+				type="textarea"
+				rows={2}
+				placeholder={m.build_cache_from_placeholder()}
+				description={m.build_cache_from_description()}
+				bind:input={inputs.cacheFrom}
+			/>
+			<FormInput
+				label={m.build_cache_to_label()}
+				type="textarea"
+				rows={2}
+				placeholder={m.build_cache_to_placeholder()}
+				description={m.build_cache_to_description()}
+				bind:input={inputs.cacheTo}
+				disabled={providerIsLocal}
+				warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
+			/>
+			<FormInput
+				label={m.resource_network_cap()}
+				type="text"
+				placeholder={m.build_network_placeholder()}
+				description={m.build_network_description()}
+				bind:input={inputs.network}
+				disabled={providerIsDepot}
+				warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
+			/>
+			<FormInput
+				label={m.isolation()}
+				type="text"
+				placeholder={m.build_isolation_placeholder()}
+				description={m.build_isolation_description()}
+				bind:input={inputs.isolation}
+				disabled={providerIsDepot}
+				warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
+			/>
+			<FormInput
+				label={m.build_shm_size_label()}
+				type="text"
+				placeholder={m.build_shm_size_placeholder()}
+				description={m.build_shm_size_description()}
+				bind:input={inputs.shmSize}
+				disabled={providerIsDepot}
+				warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
+			/>
+			<FormInput
+				label={m.build_ulimits_label()}
+				type="textarea"
+				rows={2}
+				placeholder={m.build_ulimits_placeholder()}
+				description={m.build_ulimits_description()}
+				bind:input={inputs.ulimits}
+				disabled={providerIsDepot}
+				warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
+			/>
+			<FormInput
+				label={m.build_entitlements_label()}
+				type="textarea"
+				rows={2}
+				placeholder={m.build_entitlements_placeholder()}
+				description={m.build_entitlements_description()}
+				bind:input={inputs.entitlements}
+				disabled={providerIsLocal}
+				warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
+			/>
+			<FormInput
+				label={m.build_extra_hosts_label()}
+				type="textarea"
+				rows={2}
+				placeholder={m.build_extra_hosts_placeholder()}
+				description={m.build_extra_hosts_description()}
+				bind:input={inputs.extraHosts}
+				disabled={providerIsDepot}
+				warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
+			/>
+			<FormInput
+				label={m.build_privileged_label()}
+				type="switch"
+				description={m.build_privileged_description()}
+				bind:input={inputs.privileged}
+				disabled={providerIsLocal}
+				warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
+			/>
+			<FormInput
+				label={m.build_pull_base_images_label()}
+				type="switch"
+				description={m.build_pull_base_images_description()}
+				bind:input={inputs.pull}
+			/>
+		</div>
+	</BuildConfigSection>
+</form>

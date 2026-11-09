@@ -112,7 +112,7 @@
 				<button
 					type="button"
 					class={cn(
-						'w-full truncate bg-transparent px-0 py-0 text-left text-lg font-semibold',
+						'w-full truncate bg-transparent px-0 py-0 text-left text-sm font-semibold',
 						!shownValue && placeholder && 'text-muted-foreground',
 						error && 'rounded-xl border border-destructive px-1'
 					)}
