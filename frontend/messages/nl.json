@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Volumewortel",
   "volumes_workspace_root_path": "Maak het aan in de hoofdmap van het volume.",
   "volumes_workspace_delete_confirm": "{name} van het volume verwijderen? Deze handeling kan niet ongedaan worden gemaakt.",
-  "volumes_workspace_truncated": "De lijst met werkruimten wordt afgekapt op basis van de ingestelde diepte of het aantal vermeldingen. Verborgen paden worden niet weergegeven.",
+  "volumes_workspace_truncated": "Sommige mappen bevatten meer items dan de ingestelde limiet per map. Alleen de eerste items van die mappen worden weergegeven.",
   "volumes_workspace_select_file": "Selecteer een bestand om het in de editor te openen.",
   "volumes_workspace_restore_readonly": "De inhoud van dit bestand is onbekend totdat het stapsgewijze herstel is opgeslagen.",
   "volumes_workspace_locked_file": "Vergrendeld bestand",
