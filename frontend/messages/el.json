@@ -4527,11 +4527,11 @@
   "workspace_saved": "Ο χώρος εργασίας αποθηκεύτηκε",
   "build_workspace_upload_description": "Ανεβάστε ένα ή περισσότερα αρχεία οποιουδήποτε μεγέθους στον χώρο εργασίας κατασκευής.",
   "workspace_upload_save_pending_first": "Αποθηκεύστε τις εκκρεμείς αλλαγές στο φάκελο πριν από τη μεταφόρτωση σε αυτόν τον φάκελο.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Πηγή",
+  "workspace_folder": "Φάκελος «Workspace»",
+  "git_repository": "Αποθετήριο Git",
+  "choose_folder": "Επιλογή φακέλου",
+  "build_choose_context_description": "Επιλέξτε τον φάκελο του χώρου εργασίας που θα χρησιμοποιηθεί ως πλαίσιο κατασκευής.",
+  "build_edit_files_hint": "Επεξεργαστείτε τα αρχεία στην καρτέλα «Αρχεία».",
+  "no_file_open": "Δεν υπάρχει ανοιχτό αρχείο"
 }
