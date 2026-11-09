@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Volymrot",
   "volumes_workspace_root_path": "Skapa i volymens rotkatalog.",
   "volumes_workspace_delete_confirm": "Vill du ta bort {name} från volymen? Detta går inte att ångra.",
-  "volumes_workspace_truncated": "Listan över arbetsytor avkortas enligt det inställda djupet eller antalet poster. Dolda sökvägar visas inte.",
+  "volumes_workspace_truncated": "Vissa mappar innehåller fler poster än den inställda gränsen per mapp. Endast de första posterna i dessa mappar visas.",
   "volumes_workspace_select_file": "Välj en fil för att öppna den i redigeraren.",
   "volumes_workspace_restore_readonly": "Innehållet i den här filen är okänt tills den stegvisa återställningen har sparats.",
   "volumes_workspace_locked_file": "Låst fil",
