@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Stammverzeichnis",
   "volumes_workspace_root_path": "Erstellen Sie die Datei im Stammverzeichnis des Volumes.",
   "volumes_workspace_delete_confirm": "„ {name} “ vom Datenträger löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.",
-  "volumes_workspace_truncated": "Die Auflistung des Arbeitsverzeichnisses wird entsprechend der konfigurierten Tiefe oder des Eingabelimits gekürzt. Ausgeblendete Pfade werden nicht angezeigt.",
+  "volumes_workspace_truncated": "Einige Ordner enthalten mehr Einträge als das festgelegte Limit pro Ordner. Von diesen Ordnern werden nur die ersten Einträge angezeigt.",
   "volumes_workspace_select_file": "Wählen Sie eine Datei aus, um sie im Editor zu öffnen.",
   "volumes_workspace_restore_readonly": "Der Inhalt dieser Datei ist unbekannt, bis die vorbereitete Wiederherstellung gespeichert wurde.",
   "volumes_workspace_locked_file": "Gesperrte Datei",
