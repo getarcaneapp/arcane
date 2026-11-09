@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Voluma radiko",
   "volumes_workspace_root_path": "Kreu ĉe la volumradiko.",
   "volumes_workspace_delete_confirm": "Forigi {name} el la volumo? Tio ne povas esti nuligita.",
-  "volumes_workspace_truncated": "La listo de laborspacoj estas mallongigita laŭ la agordita profundo aŭ la limo de eniroj. Kaŝitaj vojoj ne estas montrataj.",
+  "volumes_workspace_truncated": "Kelkaj dosierujoj havas pli da eniroj ol la agordita limo por ĉiu dosierujo. Nur la unuaj eniroj de tiuj dosierujoj estas montrataj.",
   "volumes_workspace_select_file": "Elektu dosieron por malfermi ĝin en la redaktilo.",
   "volumes_workspace_restore_readonly": "La enhavo de ĉi tiu dosiero estas nekonata ĝis la planita restarigo estas konservita.",
   "volumes_workspace_locked_file": "Ŝlosita dosiero",
