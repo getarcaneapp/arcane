@@ -22,7 +22,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -418,7 +418,7 @@ func hasSchemaSourceFiles(ctx context.Context, root string) bool {
 	}
 
 	for _, filename := range required {
-		if _, err := (acfs.Host{}).Stat(ctx, filename, acfstypes.StatOptions{FollowFinal: true}); err != nil {
+		if _, err := (acfs.Host{}).Stat(ctx, filename, types.StatOptions{FollowFinal: true}); err != nil {
 			return false
 		}
 	}

@@ -25,7 +25,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 )
 
 type (
@@ -104,7 +104,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			return nil, err
 		}
 		logical := "/" + selected
-		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, acfstypes.StatOptions{})
+		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, types.StatOptions{})
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("selected path %s does not exist: %w", selected, ErrSelectionUnreadable)
@@ -120,7 +120,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			}
 			continue
 		}
-		_, err = acfs.Root{Path: root}.Walk(ctx, logical, acfstypes.WalkOptions{}, func(child acfstypes.Entry) error { return c.visit(ctx, child) })
+		_, err = acfs.Root{Path: root}.Walk(ctx, logical, types.WalkOptions{}, func(child types.Entry) error { return c.visit(ctx, child) })
 		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
 			return nil, fmt.Errorf("cannot walk %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
@@ -135,7 +135,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 	return c.files, nil
 }
 
-func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error {
+func (c *fileCollector) visit(ctx context.Context, child types.Entry) error {
 	if child.IsDirectory && (child.Name == ".git" || (c.opts.SkipDir != nil && c.opts.SkipDir(child.Name))) {
 		return fs.SkipDir
 	}
@@ -145,7 +145,7 @@ func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error 
 	return c.add(ctx, child)
 }
 
-func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
+func (c *fileCollector) add(ctx context.Context, entry types.Entry) error {
 	relative := strings.TrimPrefix(entry.Path, "/")
 	if _, ok := c.seen[relative]; ok {
 		return nil
@@ -329,7 +329,7 @@ func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *gi
 		if err := ValidatePath(checkout.RepoPath, removed); err != nil {
 			return err
 		}
-		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), acfstypes.StatOptions{}); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), types.StatOptions{}); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}

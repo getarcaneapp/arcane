@@ -387,8 +387,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		if err != nil {
 			return fieldErr("projectsDirectory", fmt.Errorf("cannot use projects directory %q: %w", projectsDir, err))
 		}
-		if _, err := (acfs.Host{}).List(ctx, resolved); err != nil {
-			return fieldErr("projectsDirectory", fmt.Errorf("cannot read projects directory %q: %w", resolved, err))
+		if _, listErr := (acfs.Host{}).List(ctx, resolved); listErr != nil {
+			return fieldErr("projectsDirectory", fmt.Errorf("cannot read projects directory %q: %w", resolved, listErr))
 		}
 	}
 

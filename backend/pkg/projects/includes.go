@@ -14,7 +14,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 )
 
 type (
@@ -88,7 +88,7 @@ func (l *MissingIncludeStubLoader) resolveMissingInclude(localPath string) mo.Op
 		return mo.None[string]()
 	}
 
-	if _, statErr := (acfs.Host{}).Stat(l.ctx, validatedPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
+	if _, statErr := (acfs.Host{}).Stat(l.ctx, validatedPath, types.StatOptions{FollowFinal: true}); statErr == nil {
 		return mo.None[string]()
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return mo.None[string]()

@@ -107,7 +107,7 @@ func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (str
 
 	var envPtr *string
 	for _, envName := range []string{".env.example", ".env"} {
-		if eb, rerr := (acfs.Root{Path: folderPath}).ReadFile(ctx, "/"+envName); rerr == nil {
+		if eb, rerr := (acfs.Host{}).ReadFile(ctx, filepath.Join(folderPath, envName)); rerr == nil {
 			envPtr = new(string(eb))
 			break
 		}

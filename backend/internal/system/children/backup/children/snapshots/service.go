@@ -1134,7 +1134,11 @@ func (s *Service) Create(
 			break
 		}
 		current, exists := after[filePath]
-		if !exists || original.Device != current.Device || original.Inode != current.Inode || original.UnixMode != current.UnixMode || (!original.IsDirectory && (original.Size != current.Size || original.ModTimeUnixNano != current.ModTimeUnixNano)) {
+		if !exists ||
+			original.Device != current.Device ||
+			original.Inode != current.Inode ||
+			original.UnixMode != current.UnixMode ||
+			(!original.IsDirectory && (original.Size != current.Size || original.ModTimeUnixNano != current.ModTimeUnixNano)) {
 			err = fmt.Errorf("system backup source %q changed during capture; retry when file updates finish", filePath)
 		}
 	}

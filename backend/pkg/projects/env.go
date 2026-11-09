@@ -623,7 +623,6 @@ func ReadProjectEnvState(ctx context.Context, projectPath string) (ProjectEnvSta
 	}
 
 	if effectiveUnreadable || gitSourceUnreadable || overrideUnreadable {
-		ctx := context.Background() //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
 		slog.WarnContext(ctx, "skipping unreadable project env file(s); leaving them untouched",
 			"projectPath", projectPath,
 			"effectiveUnreadable", effectiveUnreadable,

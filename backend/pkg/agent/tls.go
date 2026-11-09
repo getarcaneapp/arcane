@@ -30,7 +30,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
@@ -134,7 +134,7 @@ func (m *MTLS) CAPath(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve agent mTLS CA path: %w", err)
 	}
-	if _, statErr := (acfs.Host{}).Stat(ctx, caAbs, acfstypes.StatOptions{FollowFinal: true}); statErr != nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, caAbs, types.StatOptions{FollowFinal: true}); statErr != nil {
 		return "", fmt.Errorf("stat agent mTLS CA: %w", statErr)
 	}
 	return caPath, nil
@@ -346,7 +346,7 @@ func (m *MTLS) ResetClient(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, statErr := (acfs.Host{}).Stat(ctx, assetsDir, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := (acfs.Host{}).Stat(ctx, assetsDir, types.StatOptions{FollowFinal: true}); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
 	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
@@ -526,7 +526,7 @@ func (m *MTLS) UsesGeneratedCA(ctx context.Context) bool {
 
 func (m *MTLS) assetsDir(ctx context.Context, name string) (string, error) {
 	baseDir := filepath.Join("data", name)
-	if _, statErr := (acfs.Host{}).Stat(ctx, "/app/data", acfstypes.StatOptions{FollowFinal: true}); m.AssetsDir == "" && statErr == nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, "/app/data", types.StatOptions{FollowFinal: true}); m.AssetsDir == "" && statErr == nil {
 		baseDir = "/app/data/" + name
 	}
 	resolved, err := filepath.Abs(cmp.Or(m.AssetsDir, baseDir))
@@ -752,6 +752,6 @@ func removeStaleLock(ctx context.Context, lockPath string) bool {
 }
 
 func fileExists(ctx context.Context, localPath string) bool {
-	entry, err := acfs.Host{}.Stat(ctx, localPath, acfstypes.StatOptions{FollowFinal: true})
+	entry, err := acfs.Host{}.Stat(ctx, localPath, types.StatOptions{FollowFinal: true})
 	return err == nil && !entry.IsDirectory
 }

@@ -15,7 +15,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/fs"
 )
 
@@ -283,7 +283,7 @@ func prepareWritablePathsWithRoots(ctx context.Context, uid, gid int, mountpoint
 		return nil
 	}
 
-	if _, statErr := (acfs.Host{}).Stat(ctx, buildsDirectory, acfstypes.StatOptions{FollowFinal: true}); statErr != nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, buildsDirectory, types.StatOptions{FollowFinal: true}); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return nil
 		}
@@ -348,7 +348,7 @@ func sqliteDatabasePath(databaseURL string) (string, bool, error) {
 }
 
 func chownRecursive(ctx context.Context, path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
-	entry, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{})
+	entry, err := acfs.Host{}.Stat(ctx, path, types.StatOptions{})
 	if err != nil {
 		return err
 	}
@@ -359,7 +359,7 @@ func chownRecursive(ctx context.Context, path string, uid, gid int, mountpoints 
 		return nil
 	}
 
-	_, err = acfs.Root{Path: path}.Walk(ctx, "/", acfstypes.WalkOptions{}, func(child acfstypes.Entry) error {
+	_, err = acfs.Root{Path: path}.Walk(ctx, "/", types.WalkOptions{}, func(child types.Entry) error {
 		currentPath := filepath.Join(path, filepath.FromSlash(child.Path))
 		if _, mounted := mountpoints[currentPath]; mounted {
 			return filepath.SkipDir

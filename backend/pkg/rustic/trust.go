@@ -66,13 +66,21 @@ func trustBundle(ctx context.Context) []byte {
 	}
 
 	for _, file := range files {
-		if data, err := (acfs.Host{}).ReadFile(ctx, file); err == nil {
+		path, err := filepath.Abs(file)
+		if err != nil {
+			continue
+		}
+		if data, readErr := (acfs.Host{}).ReadFile(ctx, path); readErr == nil {
 			appendCerts(data)
 			break
 		}
 	}
 	for _, dir := range dirs {
-		entries, err := acfs.Host{}.List(ctx, dir)
+		path, err := filepath.Abs(dir)
+		if err != nil {
+			continue
+		}
+		entries, err := acfs.Host{}.List(ctx, path)
 		if err != nil {
 			continue
 		}

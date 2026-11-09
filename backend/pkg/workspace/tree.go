@@ -128,10 +128,7 @@ func (w *treeWalker) walk() error {
 		}
 		for _, entry := range entries {
 			rel := path.Join(queue[0], entry.Name)
-			descend, visitErr := w.visit(rel, entry)
-			if visitErr != nil {
-				return visitErr
-			}
+			descend := w.visit(rel, entry)
 			if w.truncated {
 				return nil
 			}
@@ -143,27 +140,27 @@ func (w *treeWalker) walk() error {
 	return nil
 }
 
-func (w *treeWalker) visit(rel string, entry acfstypes.Entry) (bool, error) {
+func (w *treeWalker) visit(rel string, entry acfstypes.Entry) bool {
 	// Entries are visited in a fixed level-by-level, name-sorted order, so
 	// cutting off after maxEntries still yields a stable revision as long as
 	// the concurrency compare walk uses the same cap.
 	if w.maxEntries > 0 && w.entryCount >= w.maxEntries {
 		w.truncated = true
-		return false, nil
+		return false
 	}
 
 	depth := strings.Count(rel, "/") + 1
 	if depth > w.maxDepth {
-		return false, nil
+		return false
 	}
 
 	if entry.IsDirectory && w.skipDirs[entry.Name] {
-		return false, nil
+		return false
 	}
 
 	isProtected := w.protected[rel]
 	if isProtected {
-		return entry.IsDirectory, nil
+		return entry.IsDirectory
 	}
 
 	// Protected Compose configuration is intentionally absent from both the
@@ -210,7 +207,7 @@ func (w *treeWalker) visit(rel string, entry acfstypes.Entry) (bool, error) {
 	}
 	w.files = append(w.files, workspaceEntry)
 
-	return entry.IsDirectory, nil
+	return entry.IsDirectory
 }
 
 func classifyFile(ctx context.Context, rootPath, rel string, size, maxFileSizeBytes int64) (bool, string) {
@@ -416,11 +413,19 @@ func updateFile(ctx context.Context, root acfs.Root, protected map[string]bool, 
 		}
 	}
 
-	if writeErr := root.Write(ctx, "/"+rel, content, acfs.WriteOptions{
-		Mode:    os.FileMode(entry.UnixMode) & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky),
-		InPlace: true,
-	}); writeErr != nil {
-		return fmt.Errorf("update workspace file: %w", writeErr)
+	file, err := root.OpenFile(ctx, "/"+rel, acfs.OpenOptions{
+		Write:    true,
+		Truncate: true,
+	})
+	if err != nil {
+		return fmt.Errorf("update workspace file: %w", err)
+	}
+	if _, err = file.Write(content); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("update workspace file: %w", err)
+	}
+	if err = file.Close(); err != nil {
+		return fmt.Errorf("update workspace file: %w", err)
 	}
 	return nil
 }

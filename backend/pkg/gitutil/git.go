@@ -203,9 +203,9 @@ func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.
 		return knownhosts.New(knownHostsPaths...)
 	}
 
-	knownHostsPath, err := filepath.Abs(knownHostsPaths[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve known_hosts path: %w", err)
+	knownHostsPath, absErr := filepath.Abs(knownHostsPaths[0])
+	if absErr != nil {
+		return nil, fmt.Errorf("failed to resolve known_hosts path: %w", absErr)
 	}
 	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(knownHostsPath), 0o700); mkdirErr != nil {
 		return nil, fmt.Errorf("failed to create known_hosts directory: %w", mkdirErr)

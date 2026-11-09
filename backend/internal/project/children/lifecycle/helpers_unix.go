@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 )
@@ -42,7 +42,7 @@ func describeLifecyclePathAccess(ctx context.Context, projectPath, resolvedScrip
 		}
 		return paths
 	}() {
-		entry, err := acfs.Host{}.Stat(ctx, candidate, acfstypes.StatOptions{})
+		entry, err := acfs.Host{}.Stat(ctx, candidate, types.StatOptions{})
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("  %q: %v", candidate, err))
 			break

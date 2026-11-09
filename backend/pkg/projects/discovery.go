@@ -16,7 +16,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/workspace"
@@ -45,7 +45,7 @@ var (
 	}
 )
 
-func IsProjectDirectoryEntry(ctx context.Context, entry acfstypes.Entry, followSymlinks bool) bool {
+func IsProjectDirectoryEntry(ctx context.Context, entry types.Entry, followSymlinks bool) bool {
 	if entry.IsDirectory {
 		return true
 	}
@@ -54,7 +54,7 @@ func IsProjectDirectoryEntry(ctx context.Context, entry acfstypes.Entry, followS
 		return false
 	}
 
-	resolved, err := acfs.Host{}.Stat(ctx, entry.Path, acfstypes.StatOptions{FollowFinal: true})
+	resolved, err := acfs.Host{}.Stat(ctx, entry.Path, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return false
 	}
@@ -63,7 +63,7 @@ func IsProjectDirectoryEntry(ctx context.Context, entry acfstypes.Entry, followS
 }
 
 func IsProjectDirectoryPath(ctx context.Context, path string, followSymlinks bool) (bool, error) {
-	info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{})
+	info, err := acfs.Host{}.Stat(ctx, path, types.StatOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -76,7 +76,7 @@ func IsProjectDirectoryPath(ctx context.Context, path string, followSymlinks boo
 		return false, nil
 	}
 
-	resolved, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
+	resolved, err := acfs.Host{}.Stat(ctx, path, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return false, err
 	}

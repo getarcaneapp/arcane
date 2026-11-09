@@ -162,7 +162,7 @@ func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
 			continue
 		}
 
-		if err := (acfs.Host{}).Remove(ctx, localPath); err != nil {
+		if err := (acfs.Host{}).Remove(context.WithoutCancel(ctx), localPath); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", localPath, "error", err)
 		}
 	}

@@ -18,7 +18,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -42,7 +42,7 @@ func ResolveConfiguredContainerDirectory(ctx context.Context, configuredPath, de
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
 	projectsDirectory := ResolveConfiguredContainerDirectory(ctx, projectsDir, "/app/data/projects")
 
-	if _, statErr := (acfs.Host{}).Stat(ctx, projectsDirectory, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := (acfs.Host{}).Stat(ctx, projectsDirectory, types.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
 		if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
@@ -91,7 +91,7 @@ func findBackendModuleRoot(ctx context.Context) mo.Option[string] {
 
 func isBackendModuleRoot(ctx context.Context, path string) bool {
 	for _, name := range []string{"go.mod", "internal", "pkg"} {
-		if _, err := (acfs.Host{}).Stat(ctx, filepath.Join(path, name), acfstypes.StatOptions{FollowFinal: true}); err != nil {
+		if _, err := (acfs.Host{}).Stat(ctx, filepath.Join(path, name), types.StatOptions{FollowFinal: true}); err != nil {
 			return false
 		}
 	}
@@ -140,7 +140,7 @@ func HasComposeRootKeysInFile(ctx context.Context, path string) (bool, error) {
 
 func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, error) {
 	resolved := ResolveConfiguredContainerDirectory(ctx, templatesDir, "/app/data/templates")
-	if _, statErr := (acfs.Host{}).Stat(ctx, resolved, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := (acfs.Host{}).Stat(ctx, resolved, types.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
 		if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, resolved, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
@@ -151,7 +151,7 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 
 func syncedProjectFileMatches(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
-	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, types.StatOptions{})
 	if err != nil {
 		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
@@ -168,7 +168,7 @@ func syncedProjectFileMatches(ctx context.Context, projectPath string, file Sync
 }
 
 func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
-	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, acfstypes.StatOptions{FollowFinal: true}); err != nil {
+	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, types.StatOptions{FollowFinal: true}); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return true, nil
 		}
@@ -299,7 +299,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 		}
 
 		if candidate == basePath {
-			entry, statErr := acfs.Root{Path: projectsRoot}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
+			entry, statErr := acfs.Root{Path: projectsRoot}.Stat(ctx, logicalPath, types.StatOptions{})
 			if statErr != nil {
 				return "", "", false, fmt.Errorf("inspect existing project directory: %w", statErr)
 			}

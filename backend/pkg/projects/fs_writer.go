@@ -17,7 +17,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
 )
@@ -73,7 +73,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	mode := kitfs.FilePerm
 	if existingFile := detectExistingComposeFile(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
-		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, acfstypes.StatOptions{}); statErr == nil {
+		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, types.StatOptions{}); statErr == nil {
 			mode = os.FileMode(entry.UnixMode).Perm()
 		}
 	}
@@ -115,7 +115,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	}
 
 	logicalPath := "/" + fileName
-	entry, statErr := acfs.Root{Path: dirPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
+	entry, statErr := acfs.Root{Path: dirPath}.Stat(ctx, logicalPath, types.StatOptions{})
 	switch {
 	case statErr == nil && entry.IsSymlink:
 		// Only .env is written through a symlink (handled above); every other
@@ -164,7 +164,7 @@ func writeEnvThroughSymlink(ctx context.Context, envPath, content string) (bool,
 }
 
 func resolveEnvFileWriteTarget(ctx context.Context, envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
-	entry, err := acfs.Host{}.Stat(ctx, envPath, acfstypes.StatOptions{})
+	entry, err := acfs.Host{}.Stat(ctx, envPath, types.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return envPath, kitfs.FilePerm, false, nil
@@ -179,7 +179,7 @@ func resolveEnvFileWriteTarget(ctx context.Context, envPath string) (writePath s
 	if err != nil {
 		return "", 0, false, fmt.Errorf("resolve env file symlink: %w", err)
 	}
-	target, err := acfs.Host{}.Stat(ctx, resolvedPath, acfstypes.StatOptions{FollowFinal: true})
+	target, err := acfs.Host{}.Stat(ctx, resolvedPath, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return "", 0, false, fmt.Errorf("inspect env file symlink target: %w", err)
 	}
@@ -320,7 +320,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, mkdirAllErr)
 		}
 
-		entry, statErr := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
+		entry, statErr := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, types.StatOptions{})
 		switch {
 		case statErr == nil && entry.IsDirectory:
 			if removeAllErr := (acfs.Root{Path: projectPath}).RemoveAll(ctx, logicalPath); removeAllErr != nil {
@@ -410,7 +410,7 @@ func warnOnMultipleComposeOverrides(found []string) {
 
 func DetectComposeOverrideFile(ctx context.Context, dir string) string {
 	found := findComposeOverrideCandidates(func(name string) bool {
-		entry, err := acfs.Host{}.Stat(ctx, filepath.Join(dir, name), acfstypes.StatOptions{FollowFinal: true})
+		entry, err := acfs.Host{}.Stat(ctx, filepath.Join(dir, name), types.StatOptions{FollowFinal: true})
 		return err == nil && !entry.IsDirectory
 	})
 	if len(found) == 0 {

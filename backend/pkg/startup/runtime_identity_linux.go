@@ -11,7 +11,7 @@ import (
 	"github.com/samber/mo"
 
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 )
 
 func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) error {
@@ -47,7 +47,7 @@ func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) 
 }
 
 func resolveSocketGroup(ctx context.Context, socketPath string) mo.Option[uint32] {
-	entry, err := acfs.Host{}.Stat(ctx, socketPath, acfstypes.StatOptions{FollowFinal: true})
+	entry, err := acfs.Host{}.Stat(ctx, socketPath, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return mo.None[uint32]()
 	}

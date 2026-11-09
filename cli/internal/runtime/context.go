@@ -102,9 +102,6 @@ func (a *AppContext) IsJSON() bool {
 }
 
 func (a *AppContext) Client() (*client.Client, error) {
-	if a == nil {
-		return client.NewFromConfig(context.Background())
-	}
 	a.clientOnce.Do(func() {
 		a.client, a.clientErr = client.New(a.Config())
 		if a.clientErr != nil {
@@ -119,9 +116,6 @@ func (a *AppContext) Client() (*client.Client, error) {
 }
 
 func (a *AppContext) UnauthClient() (*client.Client, error) {
-	if a == nil {
-		return client.NewFromConfigUnauthenticated(context.Background())
-	}
 	a.unauthClientOnce.Do(func() {
 		a.unauthClient, a.unauthClientErr = client.NewUnauthenticated(a.Config())
 		if a.unauthClientErr != nil {
