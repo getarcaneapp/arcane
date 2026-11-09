@@ -4527,11 +4527,11 @@
   "workspace_saved": "A munkaterület elmentve",
   "build_workspace_upload_description": "Töltsön fel egy vagy több fájlt – bármilyen méretűt – a fejlesztési munkaterületre.",
   "workspace_upload_save_pending_first": "Mielőtt fájlokat töltene fel ebbe a mappába, mentse el a mappában végzett módosításokat.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Forrás",
+  "workspace_folder": "Munkaterület mappa",
+  "git_repository": "Git-tárház",
+  "choose_folder": "Mappa kiválasztása",
+  "build_choose_context_description": "Válassza ki azt a munkaterületi mappát, amelyet építési kontextusként szeretne használni.",
+  "build_edit_files_hint": "A fájlok szerkesztése a „Fájlok” fülön történik.",
+  "no_file_open": "Nincs megnyitott fájl"
 }
