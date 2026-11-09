@@ -4527,11 +4527,11 @@
   "workspace_saved": "작업 공간 저장됨",
   "build_workspace_upload_description": "크기에 상관없이 하나 이상의 파일을 빌드 작업 공간에 업로드합니다.",
   "workspace_upload_save_pending_first": "이 폴더에 파일을 업로드하기 전에 폴더에 적용될 예정인 변경 사항을 먼저 저장하십시오.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "출처",
+  "workspace_folder": "작업 공간 폴더",
+  "git_repository": "Git 저장소",
+  "choose_folder": "폴더 선택",
+  "build_choose_context_description": "빌드 컨텍스트로 사용할 작업 공간 폴더를 선택하십시오.",
+  "build_edit_files_hint": "'파일' 탭에서 파일을 편집하세요.",
+  "no_file_open": "열린 파일이 없습니다"
 }
