@@ -4527,11 +4527,11 @@
   "workspace_saved": "Werkruimte opgeslagen",
   "build_workspace_upload_description": "Upload één of meer bestanden van willekeurige grootte naar de build-werkruimte.",
   "workspace_upload_save_pending_first": "Sla nog niet-opgeslagen wijzigingen in de map op voordat u bestanden naar deze map uploadt.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Bron",
+  "workspace_folder": "Werkruimte-map",
+  "git_repository": "Git-repository",
+  "choose_folder": "Kies een map",
+  "build_choose_context_description": "Kies de map met de werkruimte die je als buildcontext wilt gebruiken.",
+  "build_edit_files_hint": "Bewerk bestanden op het tabblad ‘Bestanden’.",
+  "no_file_open": "Er is geen bestand geopend"
 }
