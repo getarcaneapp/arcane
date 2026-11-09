@@ -4527,11 +4527,11 @@
   "workspace_saved": "Đã lưu không gian làm việc",
   "build_workspace_upload_description": "Tải lên một hoặc nhiều tệp có kích thước bất kỳ vào không gian làm việc xây dựng.",
   "workspace_upload_save_pending_first": "Hãy lưu các thay đổi đang chờ xử lý trong thư mục này trước khi tải lên thư mục này.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Nguồn",
+  "workspace_folder": "Thư mục không gian làm việc",
+  "git_repository": "Kho lưu trữ Git",
+  "choose_folder": "Chọn thư mục",
+  "build_choose_context_description": "Chọn thư mục không gian làm việc để sử dụng làm bối cảnh xây dựng.",
+  "build_edit_files_hint": "Chỉnh sửa các tệp trong tab “Tệp”.",
+  "no_file_open": "Không có tệp nào đang mở"
 }
