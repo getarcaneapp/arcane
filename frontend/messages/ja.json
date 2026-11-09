@@ -4527,11 +4527,11 @@
   "workspace_saved": "ワークスペースが保存されました",
   "build_workspace_upload_description": "サイズを問わず、1つ以上のファイルをビルドワークスペースにアップロードします。",
   "workspace_upload_save_pending_first": "このフォルダにアップロードする前に、フォルダへの変更内容を保存してください。",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "出典",
+  "workspace_folder": "ワークスペースフォルダ",
+  "git_repository": "Gitリポジトリ",
+  "choose_folder": "フォルダを選択してください",
+  "build_choose_context_description": "ビルドコンテキストとして使用するワークスペースフォルダを選択してください。",
+  "build_edit_files_hint": "[ファイル] タブでファイルを編集します。",
+  "no_file_open": "開いているファイルはありません"
 }
