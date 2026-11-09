@@ -109,6 +109,8 @@
 			}
 		});
 
+		terminal.onResize(sendSize);
+
 		resizeObserver = new ResizeObserver(() => {
 			handleResize();
 		});
@@ -132,6 +134,7 @@
 
 		ws.onopen = () => {
 			openedAt = Date.now();
+			sendSize();
 			onConnected?.();
 		};
 
@@ -167,6 +170,12 @@
 				onDisconnected?.();
 			}
 		};
+	}
+
+	function sendSize() {
+		if (terminal && ws && ws.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
+		}
 	}
 
 	function handleResize() {
