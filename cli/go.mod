@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.1
 	charm.land/fang/v2 v2.0.1
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.0
 	charm.land/log/v2 v2.0.1
 	getarcane.dev/types/v3 v3.0.0
 	github.com/charmbracelet/colorprofile v0.4.3
@@ -17,19 +17,19 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/docker/go-connections v0.8.2
 	github.com/docker/go-units v0.5.0
-	github.com/gofrs/flock v0.13.1
+	github.com/gofrs/flock v0.13.2
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
-	github.com/sigstore/sigstore v1.11.2
+	github.com/sigstore/sigstore v1.11.3
 	github.com/sigstore/sigstore-go v1.4.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/stretchr/testify v1.12.1
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.7.0
-	kit.getarcane.app/builds v0.5.0
+	kit.getarcane.app/builds v0.5.1
 	kit.getarcane.app/docker v0.3.0
 )
 
@@ -42,9 +42,9 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.47.7 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.33.15 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.15 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.47.8 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.33.16 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.16 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -144,8 +144,9 @@ require (
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
