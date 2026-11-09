@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
@@ -289,7 +288,87 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	unlockMutation()
 }
 
-func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
+func newVolumeWorkspaceTestSettings(t *testing.T, name string) *settings.SettingsService {
+	t.Helper()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     &database.DB{DB: gormDB},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return settingsService
+}
+
+func TestGetVolumeWorkspaceListsRequestedFolderUpToEntryLimit(t *testing.T) {
+	var execCommands [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, map[string]any{
+				"Id":    "helper",
+				"State": map[string]any{"Running": true},
+			})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper/exec"):
+			var request struct {
+				Cmd []string `json:"Cmd"`
+			}
+			if err := json.UnmarshalRead(r.Body, &request); err != nil {
+				t.Errorf("decode exec request: %v", err)
+				return
+			}
+			execCommands = append(execCommands, request.Cmd)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, map[string]string{"Id": "list-exec"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/exec/list-exec/start"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			writeDockerExecAttachResponse(t, w, `{"entries":[`+
+				`{"name":"b.txt","path":"/config/b.txt","mode":"-rw-r--r--","size":1},`+
+				`{"name":"nested","path":"/config/nested","mode":"drwxr-xr-x","isDirectory":true},`+
+				`{"name":"z.txt","path":"/config/z.txt","mode":"-rw-r--r--","size":1}`+
+				`],"version":2}`+"\n")
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/list-exec/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, map[string]any{"Running": false, "ExitCode": 0})
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	settingsService := newVolumeWorkspaceTestSettings(t, "volume-workspace-folder-limit")
+	require.NoError(t, settingsService.SetIntSetting(t.Context(), "volumeWorkspaceMaxEntries", 2))
+	service := NewVolumeService(VolumeServiceParams{
+		Config:          &config.Config{},
+		DockerService:   newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server)),
+		SettingsService: settingsService,
+	})
+	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion}
+
+	folder, err := service.workspace.GetVolumeWorkspace(t.Context(), "workspace-volume", "config/")
+	require.NoError(t, err)
+	require.Equal(t, [][]string{{"acfs", "list", "--root", "/volume", "--path", "/config"}}, execCommands)
+	require.True(t, folder.FileTreeTruncated)
+	require.Len(t, folder.Files, 2)
+	require.Equal(t, "config/nested", folder.Files[0].RelativePath)
+	require.Equal(t, "config/b.txt", folder.Files[1].RelativePath)
+
+	_, err = service.workspace.GetVolumeWorkspace(t.Context(), "workspace-volume", "../escape")
+	require.ErrorIs(t, err, common.ErrVolumeWorkspaceForbidden)
+	require.Len(t, execCommands, 1)
+}
+
+func TestUpdateVolumeWorkspaceRejectsChangedFileBeforeStaging(t *testing.T) {
 	var execCommands [][]string
 	archiveCopies := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -318,11 +397,16 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			_ = json.MarshalWrite(w, map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
-			output := kit.Ternary(
-				strings.Contains(r.URL.Path, "workspace-exec-1"),
-				"{\"end\":true,\"version\":2}\n",
-				"{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n",
-			)
+			output := "{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n"
+			if strings.Contains(r.URL.Path, "workspace-exec-1") {
+				var content bytes.Buffer
+				if err := acfs.WriteStreamHeader(&content, 8); err != nil {
+					t.Errorf("write ACFS stream header: %v", err)
+					return
+				}
+				_, _ = content.WriteString("external")
+				output = content.String()
+			}
 			writeDockerExecAttachResponse(t, w, output)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
@@ -336,41 +420,25 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-workspace-stale-revision?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
-		Ctx:    t.Context(),
-		DB:     &database.DB{DB: gormDB},
-		Config: &config.Config{},
-		Env:    settings.Env{},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
-	})
-
-	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewVolumeService(VolumeServiceParams{
 		Config:          &config.Config{},
-		DockerService:   newVolumeTestDockerService(t, dockerClient),
-		SettingsService: settingsService,
+		DockerService:   newVolumeTestDockerService(t, newVolumeWorkspaceTestDockerClient(t, server)),
+		SettingsService: newVolumeWorkspaceTestSettings(t, "volume-workspace-changed-baseline"),
 	})
-	uploadIndex := 0
-	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
-		FileTreeRevision: "stale",
+	err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileChanges: []types.VolumeWorkspaceFileChange{{
-			Operation:    types.FileOpCreateFile,
-			RelativePath: "new.txt",
-			UploadIndex:  &uploadIndex,
+			Operation:     types.FileOpUpdateFile,
+			RelativePath:  "config.txt",
+			UploadIndex:   new(0),
+			BaselineIndex: new(1),
 		}},
-	}, map[int][]byte{0: []byte("new content")}, types.Actor{})
+	}, map[int][]byte{0: []byte("draft"), 1: []byte("original")}, types.Actor{})
 
-	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)
-	require.Len(t, execCommands, 2)
-	require.Equal(t, []string{"acfs", "version"}, execCommands[0])
-	require.Equal(t, []string{"acfs", "walk", "--root", "/volume", "--path", "/", "--max-depth", "50", "--max-entries", "10000"}, execCommands[1])
+	require.Equal(t, [][]string{
+		{"acfs", "version"},
+		{"acfs", "read", "--root", "/volume", "--path", "/config.txt", "--limit", "9"},
+	}, execCommands)
 	require.Zero(t, archiveCopies)
 }
 

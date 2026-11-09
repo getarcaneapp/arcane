@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Volume root",
   "volumes_workspace_root_path": "Create at the volume root.",
   "volumes_workspace_delete_confirm": "Delete {name} from the volume? This cannot be undone.",
-  "volumes_workspace_truncated": "The workspace listing is truncated by the configured depth or entry limit. Hidden paths are not shown.",
+  "volumes_workspace_truncated": "Some folders have more entries than the configured per-folder limit. Only the first entries of those folders are shown.",
   "volumes_workspace_select_file": "Select a file to open it in the editor.",
   "volumes_workspace_restore_readonly": "This file's contents are unknown until the staged restore is saved.",
   "volumes_workspace_locked_file": "Locked file",

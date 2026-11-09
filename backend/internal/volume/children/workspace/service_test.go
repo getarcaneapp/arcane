@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -78,8 +79,8 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 	require.Error(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
 }
 
-func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) {
-	tree, err := (&Service{}).UpdateVolumeWorkspace(
+func TestUpdateVolumeWorkspaceRejectsEmptyManifest(t *testing.T) {
+	err := (&Service{}).UpdateVolumeWorkspace(
 		t.Context(),
 		"volume",
 		types.VolumeWorkspaceUpdateManifest{},
@@ -87,8 +88,74 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 		types.Actor{},
 	)
 
-	require.Nil(t, tree)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceBadRequest)
+}
+
+func TestDecodeVolumeWorkspaceListSortsFolderEntries(t *testing.T) {
+	trailingNewline := strings.NewReader("\n")
+	folder, err := decodeVolumeWorkspaceList(io.MultiReader(strings.NewReader(`{"entries":[`+
+		`{"name":"a.txt","path":"/docs/a.txt","mode":"-rw-r--r--","size":3},`+
+		`{"name":"large.bin","path":"/docs/large.bin","mode":"-rw-r--r--","size":11},`+
+		`{"name":"nested","path":"/docs/nested","mode":"drwxr-xr-x","size":4096,"isDirectory":true}`+
+		`],"version":2}`), trailingNewline), 10, 10)
+	require.NoError(t, err)
+	require.Zero(t, trailingNewline.Len())
+	require.False(t, folder.FileTreeTruncated)
+	require.Len(t, folder.Files, 3)
+	require.Equal(t, "docs/nested", folder.Files[0].RelativePath)
+	require.Zero(t, folder.Files[0].Size)
+	require.Equal(t, "docs/a.txt", folder.Files[1].RelativePath)
+	require.True(t, folder.Files[1].Editable)
+	require.Equal(t, types.FileReadOnlyTooLarge, folder.Files[2].ReadOnlyReason)
+
+	empty, err := decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[],"version":2}`), 10, 10)
+	require.NoError(t, err)
+	require.Empty(t, empty.Files)
+}
+
+func TestDecodeVolumeWorkspaceListStopsAtEntryLimit(t *testing.T) {
+	source := io.MultiReader(
+		strings.NewReader(`{"entries":[{"name":"z.txt","path":"/z.txt","mode":"-rw-r--r--"},{"name":"a","path":"/a","mode":"drwxr-xr-x","isDirectory":true},`),
+		iotest.ErrReader(errors.New("read past the entry limit")),
+	)
+	folder, err := decodeVolumeWorkspaceList(source, 2, 10)
+	require.NoError(t, err)
+	require.True(t, folder.FileTreeTruncated)
+	require.Equal(t, []string{"a", "z.txt"}, []string{folder.Files[0].RelativePath, folder.Files[1].RelativePath})
+}
+
+func TestDecodeVolumeWorkspaceListRejectsInvalidResponses(t *testing.T) {
+	_, err := decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[],"version":1}`), 10, 10)
+	require.ErrorContains(t, err, "unsupported acfs protocol 1")
+	_, err = decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[]`), 10, 10)
+	require.Error(t, err)
+	_, err = decodeVolumeWorkspaceList(strings.NewReader(`[]`), 10, 10)
+	require.Error(t, err)
+	_, err = decodeVolumeWorkspaceList(strings.NewReader(`{"entries":[],"version":2}{}`), 10, 10)
+	require.ErrorContains(t, err, "trailing data")
+}
+
+func TestVolumeWorkspaceOriginalPathFollowsEarlierChanges(t *testing.T) {
+	changes := []types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpRename, RelativePath: "docs/old.txt", NewName: "new.txt"},
+		{Operation: types.FileOpMove, RelativePath: "docs", NewParentPath: "archive"},
+		{Operation: types.FileOpCreateFile, RelativePath: "fresh.txt", UploadIndex: new(0)},
+		{Operation: types.FileOpRestoreFile, RelativePath: "restored", BackupID: "backup-id"},
+	}
+	original, existed := volumeWorkspaceOriginalPath(changes, "archive/docs/new.txt")
+	require.True(t, existed)
+	require.Equal(t, "docs/old.txt", original)
+
+	original, existed = volumeWorkspaceOriginalPath(changes, "untouched.txt")
+	require.True(t, existed)
+	require.Equal(t, "untouched.txt", original)
+
+	_, existed = volumeWorkspaceOriginalPath(changes, "fresh.txt")
+	require.False(t, existed)
+	_, existed = volumeWorkspaceOriginalPath(changes, "restored/file.txt")
+	require.False(t, existed)
+	_, existed = volumeWorkspaceOriginalPath(changes, "docs/other.txt")
+	require.False(t, existed)
 }
 
 func TestVolumeWorkspaceFileContentResponse(t *testing.T) {
@@ -483,10 +550,12 @@ func TestVolumeWorkspaceScriptsAgainstToolsImage(t *testing.T) {
 printf child > /volume/folder/nested/child.txt
 printf hidden > /volume/.hidden
 printf alpha > /volume/z.txt`)
-	treeOutput := runInVolume(volumeName, `acfs walk --root /volume --path / --max-depth 5 --max-entries 100`)
-	require.Contains(t, treeOutput, `"path":"/folder/nested/child.txt"`)
-	require.Contains(t, treeOutput, `"path":"/.hidden"`)
-	require.Contains(t, treeOutput, `"end":true`)
+	rootFolder, err := decodeVolumeWorkspaceList(strings.NewReader(runInVolume(volumeName, `acfs list --root /volume --path /`)), 100, 100)
+	require.NoError(t, err)
+	require.Equal(t, []string{"folder", ".hidden", "z.txt"}, []string{rootFolder.Files[0].RelativePath, rootFolder.Files[1].RelativePath, rootFolder.Files[2].RelativePath})
+	nestedFolder, err := decodeVolumeWorkspaceList(strings.NewReader(runInVolume(volumeName, `acfs list --root /volume --path /folder/nested`)), 100, 100)
+	require.NoError(t, err)
+	require.Equal(t, "folder/nested/child.txt", nestedFolder.Files[0].RelativePath)
 
 	runInVolume(volumeName, `set -e
 mkdir -p /tmp/staging

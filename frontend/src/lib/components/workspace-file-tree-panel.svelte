@@ -77,6 +77,8 @@
 		rootMenuItems?: WorkspaceTreeMenuItem[];
 		rowMenuItems?: (entry: WorkspaceDisplayEntry) => WorkspaceTreeMenuItem[];
 		entries: WorkspaceDisplayEntry[];
+		loadedFolders?: ReadonlySet<string>;
+		onOpenFolder?: (relativePath: string) => void;
 		selectedFile?: string;
 		disabled?: boolean;
 		readOnlyMessage?: string;
@@ -111,6 +113,8 @@
 		rootMenuItems = [],
 		rowMenuItems,
 		entries,
+		loadedFolders,
+		onOpenFolder,
 		selectedFile = '',
 		disabled = false,
 		readOnlyMessage,
@@ -200,11 +204,17 @@
 		overscan: 8
 	}));
 
+	function isFolderUnloaded(relativePath: string): boolean {
+		return !!loadedFolders && !!relativePath && !loadedFolders.has(relativePath);
+	}
+
 	function toggleFolder(relativePath: string) {
 		activeFolderPath = relativePath;
+		const open = openFolders[relativePath] !== true;
+		if (open && isFolderUnloaded(relativePath)) onOpenFolder?.(relativePath);
 		openFolders = {
 			...openFolders,
-			[relativePath]: openFolders[relativePath] !== true
+			[relativePath]: open
 		};
 	}
 
@@ -307,7 +317,7 @@
 					relativePath: candidate.relativePath,
 					label: workspaceFileBasename(candidate.relativePath),
 					depth: destinationDepth(candidate.relativePath),
-					hasChildren: (childCounts.get(candidate.relativePath) ?? 0) > 0,
+					hasChildren: (childCounts.get(candidate.relativePath) ?? 0) > 0 || isFolderUnloaded(candidate.relativePath),
 					disabled: false
 				}))
 		];
@@ -358,9 +368,11 @@
 	}
 
 	function toggleDestinationFolder(relativePath: string) {
+		const open = destinationOpenFolders[relativePath] !== true;
+		if (open && isFolderUnloaded(relativePath)) onOpenFolder?.(relativePath);
 		destinationOpenFolders = {
 			...destinationOpenFolders,
-			[relativePath]: destinationOpenFolders[relativePath] !== true
+			[relativePath]: open
 		};
 	}
 

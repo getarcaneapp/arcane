@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	RetiredEnv         = []string{"JWT_SECRET", "UPDATE_CHECK_DISABLED", "ANALYTICS_DISABLED"}
+	RetiredEnv         = []string{"JWT_SECRET", "UPDATE_CHECK_DISABLED", "ANALYTICS_DISABLED", "ARCANE_VOLUME_WORKSPACE_MAX_DEPTH", "VOLUME_WORKSPACE_MAX_DEPTH"}
 	envFileSuffixes    = []string{"", "_FILE", "__FILE"}
 	alreadyPrefixedEnv = []string{
 		"ARCANE_BACKUP_VOLUME_NAME",

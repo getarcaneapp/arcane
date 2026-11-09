@@ -16,7 +16,6 @@ export interface VolumeWorkspaceFileChange extends Omit<WorkspaceFileChange, 'op
 }
 
 export interface VolumeWorkspaceUpdateManifest {
-	fileTreeRevision: string;
 	fileChanges: VolumeWorkspaceFileChange[];
 }
 

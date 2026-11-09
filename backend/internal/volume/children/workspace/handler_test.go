@@ -28,10 +28,9 @@ func TestParseVolumeWorkspaceManifest(t *testing.T) {
 	require.Error(t, err)
 
 	manifest, err := handlerutil.ParseMultipartJSONPart[types.VolumeWorkspaceUpdateManifest](multipart.Form{Value: map[string][]string{
-		"manifest": {`{"fileTreeRevision":"revision","fileChanges":[{"operation":"delete","relativePath":"old.txt"}]}`},
+		"manifest": {`{"fileChanges":[{"operation":"delete","relativePath":"old.txt"}]}`},
 	}}, "manifest")
 	require.NoError(t, err)
-	require.Equal(t, "revision", manifest.FileTreeRevision)
 	require.Equal(t, types.FileOpDelete, manifest.FileChanges[0].Operation)
 }
 

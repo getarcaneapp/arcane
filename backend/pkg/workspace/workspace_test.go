@@ -1,10 +1,15 @@
 package workspace
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	acfstypes "kit.getarcane.app/acfs/types"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestMaxFileSizeBytes(t *testing.T) {
@@ -80,4 +85,41 @@ func TestValidateUpdateManifest(t *testing.T) {
 	require.ErrorContains(t, ValidateUpdateManifest(" ", 1, 500), "revision")
 	require.ErrorContains(t, ValidateUpdateManifest("revision", 0, 500), "between 1 and 500")
 	require.ErrorContains(t, ValidateUpdateManifest("revision", 501, 500), "between 1 and 500")
+}
+
+func TestEntryFromACFS(t *testing.T) {
+	directory := EntryFromACFS(acfstypes.Entry{Name: "config", Path: "/config", Mode: "drwxr-xr-x", Size: 4096, IsDirectory: true}, 4)
+	require.Equal(t, "config", directory.RelativePath)
+	require.Zero(t, directory.Size)
+	require.True(t, directory.Editable)
+
+	text := EntryFromACFS(acfstypes.Entry{Name: "a.txt", Path: "/config/a.txt", Mode: "-rw-r--r--", Size: 4}, 4)
+	require.Equal(t, "config/a.txt", text.RelativePath)
+	require.True(t, text.Editable)
+
+	large := EntryFromACFS(acfstypes.Entry{Name: "b.bin", Path: "/b.bin", Mode: "-rw-r--r--", Size: 5}, 4)
+	require.False(t, large.Editable)
+	require.Equal(t, types.FileReadOnlyTooLarge, large.ReadOnlyReason)
+
+	link := EntryFromACFS(acfstypes.Entry{Name: "link", Path: "/link", Mode: "Lrwxrwxrwx", IsSymlink: true}, 4)
+	require.Equal(t, types.FileReadOnlySymlink, link.ReadOnlyReason)
+
+	pipe := EntryFromACFS(acfstypes.Entry{Name: "pipe", Path: "/pipe", Mode: "prw-r--r--"}, 4)
+	require.Equal(t, types.FileReadOnlySpecial, pipe.ReadOnlyReason)
+}
+
+func TestCompareEntriesListsFoldersFirst(t *testing.T) {
+	entries := []types.WorkspaceFileEntry{
+		{RelativePath: "b.txt"},
+		{RelativePath: "z", IsDirectory: true},
+		{RelativePath: "a.txt"},
+		{RelativePath: "c", IsDirectory: true},
+	}
+	slices.SortFunc(entries, CompareEntries)
+	require.Equal(t, []types.WorkspaceFileEntry{
+		{RelativePath: "c", IsDirectory: true},
+		{RelativePath: "z", IsDirectory: true},
+		{RelativePath: "a.txt"},
+		{RelativePath: "b.txt"},
+	}, entries)
 }
