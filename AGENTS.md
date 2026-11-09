@@ -251,7 +251,6 @@ Don't stop at `console.error`. Pick the matching path:
   - `"view_details": "View Details"`
   - Full sentences get a short descriptive key, like `"engine_info_description": "Detailed information about your container installation"`.
 - **Placement:** append new keys at the end. Existing keys keep their names until touched.
-- **Generated code:** run the existing tooling. Never hand-edit it.
 
 ## Environments and authorization
 
