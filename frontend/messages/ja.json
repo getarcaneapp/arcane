@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "体積の平方根",
   "volumes_workspace_root_path": "ボリュームのルートディレクトリに作成します。",
   "volumes_workspace_delete_confirm": "このボリュームから「 {name} 」を削除しますか？この操作は元に戻せません。",
-  "volumes_workspace_truncated": "ワークスペースの一覧は、設定された表示深度またはエントリ数の上限によって切り詰められます。非表示のパスは表示されません。",
+  "volumes_workspace_truncated": "一部のフォルダには、フォルダごとに設定された上限を超えるエントリが含まれています。それらのフォルダについては、最初のエントリのみが表示されます。",
   "volumes_workspace_select_file": "ファイルを選択して、エディタで開いてください。",
   "volumes_workspace_restore_readonly": "ステージング復元が保存されるまでは、このファイルの内容は不明です。",
   "volumes_workspace_locked_file": "ロックされたファイル",
