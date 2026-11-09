@@ -54,6 +54,7 @@
 		redeployLoading = $bindable(false),
 		hasBuildDirective = false,
 		disableRedeploy = false,
+		archived = false,
 		disabled = false,
 		disabledReason,
 		onRefresh,
@@ -74,6 +75,7 @@
 		redeployLoading?: boolean;
 		hasBuildDirective?: boolean;
 		disableRedeploy?: boolean;
+		archived?: boolean;
 		disabled?: boolean;
 		disabledReason?: string;
 		onRefresh?: () => void | Promise<void>;
@@ -540,7 +542,7 @@
 			disabled: action.disabled || isLifecycleActionPending
 		}));
 
-		if (!isRunning && canStart) {
+		if (!archived && !isRunning && canStart) {
 			if (type === 'container') {
 				list.push({
 					id: 'start',
@@ -569,7 +571,7 @@
 			}
 		}
 
-		if (isRunning && canStop) {
+		if (!archived && isRunning && canStop) {
 			list.push({
 				id: 'stop',
 				action: 'stop',
@@ -584,7 +586,7 @@
 			});
 		}
 
-		if (isRunning && canRestart) {
+		if (!archived && isRunning && canRestart) {
 			list.push({
 				id: 'restart',
 				action: 'restart',
@@ -598,7 +600,7 @@
 			});
 		}
 
-		if (canRedeploy) {
+		if (!archived && canRedeploy) {
 			list.push({
 				id: 'redeploy',
 				action: 'redeploy',
@@ -613,7 +615,7 @@
 			});
 		}
 
-		if (projectHasBuildDirective && canBuild) {
+		if (!archived && projectHasBuildDirective && canBuild) {
 			list.push({
 				id: 'build',
 				action: 'build',
@@ -626,7 +628,7 @@
 			});
 		}
 
-		if (canPull) {
+		if (!archived && canPull) {
 			list.push({
 				id: 'pull',
 				action: 'pull',
