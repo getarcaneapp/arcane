@@ -4527,11 +4527,11 @@
   "workspace_saved": "Робоча область збережена",
   "build_workspace_upload_description": "Завантажте один або кілька файлів будь-якого розміру в робочу область збірки.",
   "workspace_upload_save_pending_first": "Збережіть зміни, що очікують на збереження, у цій папці перед завантаженням файлів у неї.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Джерело",
+  "workspace_folder": "Папка «Робоча область»",
+  "git_repository": "Репозиторій Git",
+  "choose_folder": "Виберіть папку",
+  "build_choose_context_description": "Виберіть папку робочого простору, яку потрібно використовувати як контекст збірки.",
+  "build_edit_files_hint": "Редагуйте файли на вкладці «Файли».",
+  "no_file_open": "Файл не відкрито"
 }
