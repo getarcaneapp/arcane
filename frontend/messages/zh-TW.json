@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "體積根",
   "volumes_workspace_root_path": "在卷根目錄下建立。",
   "volumes_workspace_delete_confirm": "要從這卷中刪除「 {name} 」嗎？此操作無法撤銷。",
-  "volumes_workspace_truncated": "工作區清單會根據設定的深度或條目上限而被截斷。隱藏的路徑不會顯示。",
+  "volumes_workspace_truncated": "某些資料夾中的項目數量超過了設定的「每個資料夾」上限。僅會顯示這些資料夾中的前幾個項目。",
   "volumes_workspace_select_file": "請選擇一個檔案，以便在編輯器中開啟它。",
   "volumes_workspace_restore_readonly": "在分階段還原儲存之前，此檔案的內容尚不清楚。",
   "volumes_workspace_locked_file": "已鎖定的檔案",
