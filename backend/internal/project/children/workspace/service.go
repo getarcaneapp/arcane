@@ -33,20 +33,9 @@ func New(settingsService *settings.SettingsService) *Service {
 }
 
 func (s *Service) Read(ctx context.Context, projectPath, composeFileName, folderPath string, owned map[string]struct{}) (*types.Workspace, error) {
-	rel := ""
-	if strings.TrimSpace(folderPath) != "" {
-		var entry acfstypes.Entry
-		var err error
-		if rel, entry, err = resolvePath(ctx, projectPath, composeFileName, folderPath); err != nil {
-			return nil, err
-		}
-		// Stat follows intermediate symlinks, so a different path means one was followed.
-		switch {
-		case entry.IsSymlink || entry.Path != "/"+rel:
-			return nil, common.Classify(common.ErrProjectWorkspaceForbidden, workspacepkg.ErrSymlinkPath)
-		case !entry.IsDirectory:
-			return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is not a folder"))
-		}
+	rel, err := resolveFolder(ctx, projectPath, composeFileName, folderPath)
+	if err != nil {
+		return nil, err
 	}
 	folder, err := workspacepkg.ListFolder(ctx, projectPath, rel, workspacepkg.Options{
 		ProtectedFiles:   projects.ProtectedProjectFilePaths(composeFileName),
@@ -159,6 +148,24 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 		add(filepath.Base(composePath))
 	}
 	return owned, nil
+}
+
+func resolveFolder(ctx context.Context, projectPath, composeFileName, folderPath string) (string, error) {
+	if strings.TrimSpace(folderPath) == "" {
+		return "", nil
+	}
+	rel, entry, err := resolvePath(ctx, projectPath, composeFileName, folderPath)
+	if err != nil {
+		return "", err
+	}
+	// Stat follows intermediate symlinks, so a different path means one was followed.
+	switch {
+	case entry.IsSymlink || entry.Path != "/"+rel:
+		return "", common.Classify(common.ErrProjectWorkspaceForbidden, workspacepkg.ErrSymlinkPath)
+	case !entry.IsDirectory:
+		return "", common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is not a folder"))
+	}
+	return rel, nil
 }
 
 func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, acfstypes.Entry, error) {

@@ -157,8 +157,13 @@ func TestProjectService_GetProjectWorkspace_ListsRequestedFolder(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "config", "app.yaml"), []byte("value: true\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "notes.txt"), []byte("notes\n"), 0o644))
 	require.NoError(t, os.Symlink("config", filepath.Join(projectPath, "link")))
-	dirName := "demo-workspace"
-	project := &Project{ID: "project-workspace-folder", Name: "demo-workspace", DirName: &dirName, Path: projectPath, Status: ProjectStatusStopped}
+	project := &Project{
+		ID:      "project-workspace-folder",
+		Name:    "demo-workspace",
+		DirName: new("demo-workspace"),
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
 	require.NoError(t, db.Create(project).Error)
 
 	relativePaths := func(folder *types.Workspace) []string {

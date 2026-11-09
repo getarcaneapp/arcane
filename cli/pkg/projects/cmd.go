@@ -583,9 +583,14 @@ func newUpdateIncludesCmd() *cobra.Command {
 			}) {
 				operation = types.FileOpUpdateFile
 			}
-			uploadIndex := 0
 			manifest := types.ProjectWorkspaceUpdateManifest{
-				FileChanges: []types.WorkspaceFileChange{{Operation: operation, RelativePath: relativePath, UploadIndex: &uploadIndex}},
+				FileChanges: []types.WorkspaceFileChange{
+					{
+						Operation:    operation,
+						RelativePath: relativePath,
+						UploadIndex:  new(0),
+					},
+				},
 			}
 			manifestJSON, err := json.Marshal(manifest)
 			if err != nil {

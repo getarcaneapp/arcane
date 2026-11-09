@@ -501,7 +501,12 @@ func TestListFolderExcludesProtectedFilesAndSkippedFolders(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "compose.yaml"), []byte("services: {}\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".git"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".git", "config"), []byte("private"), 0o644))
-	opts := Options{ProtectedFiles: testProtectedFiles, SkipDirectories: "node_modules", MaxEntries: 100, MaxFileSizeBytes: 1024}
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		SkipDirectories:  "node_modules",
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	}
 
 	assert.Equal(t, []string{"config", "README.md"}, listFolderPaths(t, projectDir, "", opts))
 	assert.Equal(t, []string{"config/nested", "config/app.yaml", "config/compose.yaml"}, listFolderPaths(t, projectDir, "config", opts))
@@ -523,7 +528,11 @@ func TestListFolderClassifiesBySizeWithoutReadingContent(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "db.sqlite"), []byte{0x00, 0xff, 0xfe}, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "large.txt"), []byte("12345"), 0o644))
 
-	folder, err := ListFolder(t.Context(), projectDir, "", Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 4})
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 4,
+	})
 	require.NoError(t, err)
 	require.Len(t, folder.Files, 2)
 	assert.Equal(t, "db.sqlite", folder.Files[0].RelativePath)
@@ -542,7 +551,11 @@ func TestListFolderListsSymlinksWithoutFollowing(t *testing.T) {
 		t.Skipf("symlink creation is unavailable: %v", err)
 	}
 
-	folder, err := ListFolder(t.Context(), projectDir, "", Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 1024})
+	folder, err := ListFolder(t.Context(), projectDir, "", Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	})
 	require.NoError(t, err)
 	require.Len(t, folder.Files, 2)
 	link := folder.Files[1]
@@ -563,7 +576,11 @@ func TestListFolderCapsEntriesPerFolder(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a-large", fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "z-later.txt"), []byte("x\n"), 0o644))
-	opts := Options{ProtectedFiles: testProtectedFiles, MaxEntries: 3, MaxFileSizeBytes: 1024}
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       3,
+		MaxFileSizeBytes: 1024,
+	}
 
 	root, err := ListFolder(t.Context(), projectDir, "", opts)
 	require.NoError(t, err)
@@ -584,7 +601,11 @@ func TestListFolderListsEnvDirectoryContents(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
 	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("APP_VALUE=sub\n"), 0o644))
-	opts := Options{ProtectedFiles: testProtectedFiles, MaxEntries: 100, MaxFileSizeBytes: 1024}
+	opts := Options{
+		ProtectedFiles:   testProtectedFiles,
+		MaxEntries:       100,
+		MaxFileSizeBytes: 1024,
+	}
 
 	assert.Equal(t, []string{".env"}, listFolderPaths(t, projectDir, "", opts))
 	assert.Equal(t, []string{".env/app.env"}, listFolderPaths(t, projectDir, ".env", opts))
