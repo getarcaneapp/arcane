@@ -3,6 +3,7 @@ package projects
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
+
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/types/v3"
 )
@@ -24,7 +28,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 	}
 
 	globalEnvPath := filepath.Join(projectsDirectory, GlobalEnvFileName)
-	globalEnv, err := ParseValidationEnvFile(globalEnvPath, fullEnvMap)
+	globalEnv, err := ParseValidationEnvFile(ctx, globalEnvPath, fullEnvMap)
 	if err != nil {
 		return nil, fmt.Errorf("parse global env file: %w", err)
 	}
@@ -40,7 +44,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 			}
 			maps.Copy(fullEnvMap, projectEnv)
 		} else {
-			projectEnv, parseValidationEnvFileErr := ParseValidationEnvFile(filepath.Join(projectPath, ".env"), fullEnvMap)
+			projectEnv, parseValidationEnvFileErr := ParseValidationEnvFile(ctx, filepath.Join(projectPath, ".env"), fullEnvMap)
 			if parseValidationEnvFileErr != nil {
 				return nil, fmt.Errorf("parse project env file: %w", parseValidationEnvFileErr)
 			}
@@ -53,19 +57,19 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 	return fullEnvMap, nil
 }
 
-func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
-	info, err := os.Stat(path)
+func ParseValidationEnvFile(ctx context.Context, path string, contextEnv EnvMap) (EnvMap, error) {
+	info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("stat file: %w", err)
 	}
-	if info.IsDir() {
+	if info.IsDirectory {
 		return nil, nil
 	}
 
-	content, err := os.ReadFile(path)
+	content, err := acfs.Host{}.ReadFile(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}

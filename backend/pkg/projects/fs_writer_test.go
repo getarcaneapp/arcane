@@ -414,11 +414,11 @@ func TestReadComposeOverrideContent(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	assert.Empty(t, ReadComposeOverrideContent(dir))
+	assert.Empty(t, ReadComposeOverrideContent(t.Context(), dir))
 
 	content := "services:\n  app:\n    image: busybox:latest\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte(content), 0o600))
-	assert.Equal(t, content, ReadComposeOverrideContent(dir))
+	assert.Equal(t, content, ReadComposeOverrideContent(t.Context(), dir))
 }
 
 func TestResolveComposeOverride(t *testing.T) {

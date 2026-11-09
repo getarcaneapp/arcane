@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -19,6 +20,8 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/builds/api"
 	"kit.getarcane.app/builds/pkg/contextsource"
 	buildtypes "kit.getarcane.app/builds/types"
@@ -339,14 +342,12 @@ func (s *BuildService) resolveBuildRequest(
 		contextDir = filepath.Join(repoPath, filepath.FromSlash(source.Subdir))
 	}
 
-	// os.* rather than acfs: the build context path comes from the user-provided
-	// source and may point anywhere on the host, so no confinement root exists.
-	info, err := os.Stat(contextDir)
+	entry, err := acfs.Root{Path: repoPath}.Stat(ctx, path.Join("/", source.Subdir), acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		_ = s.cleanupGitContext(repoPath)
 		return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to stat resolved git build context: %w", err)
 	}
-	if !info.IsDir() {
+	if !entry.IsDirectory {
 		_ = s.cleanupGitContext(repoPath)
 		return buildtypes.BuildRequest{}, func() error { return nil }, errors.New("resolved git build context is not a directory")
 	}

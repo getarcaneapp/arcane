@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -161,7 +163,11 @@ func newSecretCreateCmd() *cobra.Command {
 				if opts.file == "" {
 					return output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Secret value", "file")
 				}
-				content, readErr := os.ReadFile(opts.file)
+				filePath, absErr := filepath.Abs(opts.file)
+				if absErr != nil {
+					return "", absErr
+				}
+				content, readErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 				return string(content), readErr
 			}()
 			if err != nil {
@@ -217,7 +223,11 @@ func newSecretUpdateCmd() *cobra.Command {
 				if opts.file == "" {
 					return output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "New secret value", "file")
 				}
-				content, readErr := os.ReadFile(opts.file)
+				filePath, absErr := filepath.Abs(opts.file)
+				if absErr != nil {
+					return "", absErr
+				}
+				content, readErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 				return string(content), readErr
 			}()
 			if err != nil {

@@ -115,8 +115,8 @@ func NewUnauthenticated(cfg *clitypes.Config) (*Client, error) {
 	}, nil
 }
 
-func NewFromConfig() (*Client, error) {
-	cfg, err := config.Load()
+func NewFromConfig(ctx context.Context) (*Client, error) {
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -132,8 +132,8 @@ func NewFromConfig() (*Client, error) {
 	return c, nil
 }
 
-func NewFromConfigUnauthenticated() (*Client, error) {
-	cfg, err := config.Load()
+func NewFromConfigUnauthenticated(ctx context.Context) (*Client, error) {
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -440,7 +440,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	c.refreshToken = newRefresh
 	charmLog.Default().Debug("Access token refreshed successfully")
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

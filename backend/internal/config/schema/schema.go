@@ -3,6 +3,7 @@ package schema
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -20,6 +21,8 @@ import (
 	"strings"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -154,8 +157,8 @@ var overrideDocRules = map[string]overrideDocRule{
 	},
 }
 
-func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
-	envConfig, err := collectEnvConfig(sourceRoot)
+func GenerateWithSourceRoot(ctx context.Context, sourceRoot string) (*SchemaDocument, error) {
+	envConfig, err := collectEnvConfig(ctx, sourceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("collect env config: %w", err)
 	}
@@ -179,8 +182,8 @@ func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
 	return output, nil
 }
 
-func collectEnvConfig(sourceRoot string) ([]ConfigEntry, error) {
-	root, err := resolveSourceRoot(sourceRoot)
+func collectEnvConfig(ctx context.Context, sourceRoot string) ([]ConfigEntry, error) {
+	root, err := resolveSourceRoot(ctx, sourceRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +360,7 @@ func exprString(expr ast.Expr) (string, error) {
 	return buf.String(), nil
 }
 
-func resolveSourceRoot(sourceRoot string) (string, error) {
+func resolveSourceRoot(ctx context.Context, sourceRoot string) (string, error) {
 	candidates := make([]string, 0, 2)
 	if strings.TrimSpace(sourceRoot) != "" {
 		candidates = append(candidates, sourceRoot)
@@ -370,7 +373,7 @@ func resolveSourceRoot(sourceRoot string) (string, error) {
 	}
 
 	for _, candidate := range candidates {
-		resolved, err := resolveSourceRootCandidate(candidate)
+		resolved, err := resolveSourceRootCandidate(ctx, candidate)
 		if err == nil {
 			return resolved, nil
 		}
@@ -383,19 +386,19 @@ func resolveSourceRoot(sourceRoot string) (string, error) {
 	return "", errors.New("resolve source root: run from the repository root/backend directory or pass --source-root")
 }
 
-func resolveSourceRootCandidate(candidate string) (string, error) {
+func resolveSourceRootCandidate(ctx context.Context, candidate string) (string, error) {
 	candidate, err := filepath.Abs(candidate)
 	if err != nil {
 		return "", fmt.Errorf("abs path for %q: %w", candidate, err)
 	}
 
 	for current := candidate; ; current = filepath.Dir(current) {
-		if hasSchemaSourceFiles(current) {
+		if hasSchemaSourceFiles(ctx, current) {
 			return current, nil
 		}
 
 		backendRoot := filepath.Join(current, "backend")
-		if hasSchemaSourceFiles(backendRoot) {
+		if hasSchemaSourceFiles(ctx, backendRoot) {
 			return backendRoot, nil
 		}
 
@@ -408,16 +411,14 @@ func resolveSourceRootCandidate(candidate string) (string, error) {
 	return "", fmt.Errorf("schema sources not found from %q", candidate)
 }
 
-func hasSchemaSourceFiles(root string) bool {
+func hasSchemaSourceFiles(ctx context.Context, root string) bool {
 	required := []string{
 		filepath.Join(root, "internal", "config", "config.go"),
 		filepath.Join(root, "internal", "config", "buildables_config.go"),
 	}
 
-	// os.* rather than acfs: this probes repo source files while walking up
-	// arbitrary ancestor directories at codegen time, so no confinement root exists.
 	for _, filename := range required {
-		if _, err := os.Stat(filename); err != nil {
+		if _, err := (acfs.Host{}).Stat(ctx, filename, acfstypes.StatOptions{FollowFinal: true}); err != nil {
 			return false
 		}
 	}

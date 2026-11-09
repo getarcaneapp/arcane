@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/gofrs/flock"
 	"go.yaml.in/yaml/v4"
 
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/fs/atomic"
 
@@ -94,7 +97,7 @@ func SetConfigPath(path string) error {
 	return nil
 }
 
-func Load() (*types.Config, error) {
+func Load(ctx context.Context) (*types.Config, error) {
 	path, err := ConfigPath()
 	if err != nil {
 		return nil, err
@@ -105,18 +108,18 @@ func Load() (*types.Config, error) {
 	}
 
 	cfg := DefaultConfig()
-	data, err := os.ReadFile(path)
+	data, err := acfs.Host{}.ReadFile(ctx, path)
 	switch {
 	case err == nil:
 		if parseErr := yaml.Unmarshal(data, cfg); parseErr != nil {
 			return nil, fmt.Errorf("failed to parse config file: %w", parseErr)
 		}
-	case !os.IsNotExist(err):
+	case !errors.Is(err, fs.ErrNotExist):
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 	// API key configs ignore saved sessions so they keep authenticating as the key.
 	if cfg.APIKey == "" {
-		auth, authErr := loadAuth()
+		auth, authErr := loadAuth(ctx)
 		if authErr != nil {
 			output.Warning("Ignoring saved sessions: %v", authErr)
 		}
@@ -158,7 +161,7 @@ func Save(ctx context.Context, c *types.Config) error {
 		}
 	}
 
-	if writeErr := writeConfig(path, cfg, false); writeErr != nil {
+	if writeErr := writeConfig(ctx, path, cfg, false); writeErr != nil {
 		return writeErr
 	}
 
@@ -172,20 +175,20 @@ func ClearTokens(ctx context.Context, cfg *types.Config) error {
 	return SaveTokens(ctx, cfg)
 }
 
-func InitDefaultFile() (bool, error) {
+func InitDefaultFile(ctx context.Context) (bool, error) {
 	path, err := ConfigPath()
 	if err != nil {
 		return false, err
 	}
 
-	info, err := os.Stat(path)
+	info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 	switch {
 	case err == nil:
-		if info.IsDir() {
+		if info.IsDirectory {
 			return false, fmt.Errorf("config path is a directory: %s", path)
 		}
 		return false, nil
-	case os.IsNotExist(err):
+	case errors.Is(err, fs.ErrNotExist):
 	default:
 		return false, fmt.Errorf("failed to stat config path: %w", err)
 	}
@@ -207,7 +210,7 @@ func InitDefaultFile() (bool, error) {
 		)
 	}
 
-	if writeErr := writeConfig(path, &template, true); writeErr != nil {
+	if writeErr := writeConfig(ctx, path, &template, true); writeErr != nil {
 		if errors.Is(writeErr, os.ErrExist) {
 			return false, nil
 		}
@@ -218,35 +221,22 @@ func InitDefaultFile() (bool, error) {
 	return true, nil
 }
 
-func writeConfig(path string, cfg any, exclusive bool) (err error) {
+func writeConfig(ctx context.Context, path string, cfg any, exclusive bool) error {
 	data, marshalErr := yaml.Marshal(cfg)
 	if marshalErr != nil {
 		return fmt.Errorf("failed to marshal config: %w", marshalErr)
 	}
-	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(path), 0o700); mkdirErr != nil {
 		return fmt.Errorf("failed to create config directory: %w", mkdirErr)
 	}
-	writePath := path
 	if exclusive {
-		stagingDir, tempErr := os.MkdirTemp(filepath.Dir(path), ".arcanecli-*")
-		if tempErr != nil {
-			return fmt.Errorf("failed to create config staging directory: %w", tempErr)
+		if writeErr := (acfs.Host{}).Write(ctx, path, data, acfs.WriteOptions{Mode: 0o600, Exclusive: true}); writeErr != nil {
+			return fmt.Errorf("failed to create config file: %w", writeErr)
 		}
-		defer func() {
-			if cleanupErr := os.RemoveAll(stagingDir); cleanupErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to remove config staging directory: %w", cleanupErr))
-			}
-		}()
-		writePath = filepath.Join(stagingDir, configFileName)
+		return nil
 	}
-	if writeErr := atomic.WriteFile(writePath, data, 0o600); writeErr != nil {
+	if writeErr := atomic.WriteFile(path, data, 0o600); writeErr != nil {
 		return fmt.Errorf("failed to write config file: %w", writeErr)
-	}
-	if exclusive {
-		// Linking publishes the complete file without replacing an existing path.
-		if linkErr := os.Link(writePath, path); linkErr != nil {
-			return fmt.Errorf("failed to create config file: %w", linkErr)
-		}
 	}
 	return nil
 }
@@ -271,7 +261,7 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	if cfg.APIKey != "" {
 		return nil
 	}
-	auth, err := loadAuth()
+	auth, err := loadAuth(ctx)
 	if err != nil {
 		return err
 	}
@@ -280,14 +270,14 @@ func SwitchServer(ctx context.Context, cfg *types.Config, serverURL string) erro
 	return nil
 }
 
-func loadAuth() (map[string]authTokens, error) {
+func loadAuth(ctx context.Context) (map[string]authTokens, error) {
 	path, err := AuthPath()
 	if err != nil {
 		return nil, err
 	}
 	auth := make(map[string]authTokens)
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	data, err := acfs.Host{}.ReadFile(ctx, path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return auth, nil
 	}
 	if err != nil {
@@ -308,7 +298,7 @@ func lockAuth(ctx context.Context) (func() error, error) {
 	if err != nil {
 		return nil, err
 	}
-	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr != nil {
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(path), 0o700); mkdirErr != nil {
 		return nil, fmt.Errorf("failed to create auth directory: %w", mkdirErr)
 	}
 	lock := flock.New(path + ".lock")
@@ -329,7 +319,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, unlock()) }()
-	auth, err := loadAuth()
+	auth, err := loadAuth(ctx)
 	if err != nil {
 		return err
 	}
@@ -346,7 +336,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 			return pathErr
 		}
 		if len(auth) == 0 {
-			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			if removeErr := (acfs.Host{}).Remove(ctx, path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 				return fmt.Errorf("failed to remove auth file: %w", removeErr)
 			}
 		} else {
@@ -362,12 +352,12 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 	return Save(ctx, cfg)
 }
 
-func BackupFile() (backupPath string, moved bool, err error) {
+func BackupFile(ctx context.Context) (backupPath string, moved bool, err error) {
 	path, err := ConfigPath()
 	if err != nil {
 		return "", false, err
 	}
-	return moveToBackup(path, "config")
+	return moveToBackup(ctx, path, "config")
 }
 
 func BackupAuthFile(ctx context.Context) (backupPath string, moved bool, err error) {
@@ -380,37 +370,37 @@ func BackupAuthFile(ctx context.Context) (backupPath string, moved bool, err err
 		return "", false, err
 	}
 	defer func() { err = errors.Join(err, unlock()) }()
-	return moveToBackup(path, "auth")
+	return moveToBackup(ctx, path, "auth")
 }
 
-func moveToBackup(path, kind string) (backupPath string, moved bool, err error) {
+func moveToBackup(ctx context.Context, path, kind string) (backupPath string, moved bool, err error) {
 	backupPath = path + ".bak"
 
-	info, err := os.Stat(path)
+	info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 	switch {
 	case err == nil:
-		if info.IsDir() {
+		if info.IsDirectory {
 			return "", false, fmt.Errorf("%s path is a directory: %s", kind, path)
 		}
-	case os.IsNotExist(err):
+	case errors.Is(err, fs.ErrNotExist):
 		return backupPath, false, nil
 	default:
 		return "", false, fmt.Errorf("failed to stat %s path: %w", kind, err)
 	}
 
-	if existingBackup, backupErr := os.Stat(backupPath); backupErr == nil {
-		if existingBackup.IsDir() {
+	if existingBackup, backupErr := (acfs.Host{}).Stat(ctx, backupPath, acfstypes.StatOptions{FollowFinal: true}); backupErr == nil {
+		if existingBackup.IsDirectory {
 			return "", false, fmt.Errorf("backup path is a directory: %s", backupPath)
 		}
 		rotatedPath := fmt.Sprintf("%s.%s", backupPath, time.Now().UTC().Format("20060102150405"))
-		if renameErr := os.Rename(backupPath, rotatedPath); renameErr != nil {
+		if renameErr := (acfs.Host{}).Rename(ctx, backupPath, rotatedPath); renameErr != nil {
 			return "", false, fmt.Errorf("failed to rotate existing backup %s: %w", backupPath, renameErr)
 		}
-	} else if !os.IsNotExist(backupErr) {
+	} else if !errors.Is(backupErr, fs.ErrNotExist) {
 		return "", false, fmt.Errorf("failed to stat backup path: %w", backupErr)
 	}
 
-	if backupConfigErr := os.Rename(path, backupPath); backupConfigErr != nil {
+	if backupConfigErr := (acfs.Host{}).Rename(ctx, path, backupPath); backupConfigErr != nil {
 		return "", false, fmt.Errorf("failed to move %s file to backup: %w", kind, backupConfigErr)
 	}
 

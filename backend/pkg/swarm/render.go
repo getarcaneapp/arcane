@@ -55,11 +55,11 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		project.Name = stackName
 	}
 
-	configMetaByKey, err := planConfigs(project, ns)
+	configMetaByKey, err := planConfigs(ctx, project, ns)
 	if err != nil {
 		return nil, invalidStackError(err)
 	}
-	secretMetaByKey, err := planSecrets(project, ns)
+	secretMetaByKey, err := planSecrets(ctx, project, ns)
 	if err != nil {
 		return nil, invalidStackError(err)
 	}

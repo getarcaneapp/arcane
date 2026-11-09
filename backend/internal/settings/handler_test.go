@@ -29,11 +29,11 @@ func TestSettingsHandlerRuntimeSettings(t *testing.T) {
 		mtls: agent.NewMTLS(agent.MTLSConfig{}),
 	}
 
-	publicRuntime := handler.runtimeSettings(false)
+	publicRuntime := handler.runtimeSettings(t.Context(), false)
 	require.Empty(t, publicRuntime.BackupVolumeName)
 	require.False(t, publicRuntime.DepotConfigured)
 
-	authenticatedRuntime := handler.runtimeSettings(true)
+	authenticatedRuntime := handler.runtimeSettings(t.Context(), true)
 	require.Equal(t, "custom-backups", authenticatedRuntime.BackupVolumeName)
 	require.False(t, authenticatedRuntime.AgentMTLSManagerCAAvailable)
 }
@@ -54,7 +54,7 @@ func TestSettingsHandlerRuntimeSettingsDoesNotGenerateAgentMTLSCA(t *testing.T) 
 		}),
 	}
 
-	require.False(t, handler.runtimeSettings(true).AgentMTLSManagerCAAvailable)
+	require.False(t, handler.runtimeSettings(t.Context(), true).AgentMTLSManagerCAAvailable)
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.crt"))
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.key"))
 }

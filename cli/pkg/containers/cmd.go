@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -540,7 +541,11 @@ func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) 
 	var req types.Container
 
 	if opts.file != "" {
-		data, readFileErr := os.ReadFile(opts.file)
+		filePath, absErr := filepath.Abs(opts.file)
+		if absErr != nil {
+			return req, fmt.Errorf("failed to read file %s: %w", opts.file, absErr)
+		}
+		data, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 		if readFileErr != nil {
 			return req, fmt.Errorf("failed to read file %s: %w", opts.file, readFileErr)
 		}

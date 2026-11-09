@@ -63,7 +63,7 @@ func init() {
 func runUpgrade(cmd *cobra.Command, args []string) error {
 	ctx := context.WithoutCancel(cmd.Context())
 
-	logFile, err := SetupMessageOnlyLogFile(selfcontainer.UpgradeLogDirectory, "arcane-upgrade", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile(ctx, selfcontainer.UpgradeLogDirectory, "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to setup file logging", "error", err)
 	} else {

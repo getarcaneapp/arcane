@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -44,7 +45,11 @@ func newKubePlayCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := os.ReadFile(args[0])
+			kubePath, err := filepath.Abs(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to read kube YAML: %w", err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), kubePath)
 			if err != nil {
 				return fmt.Errorf("failed to read kube YAML: %w", err)
 			}
@@ -114,7 +119,11 @@ func newKubeDownCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := os.ReadFile(args[0])
+			kubePath, err := filepath.Abs(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to read kube YAML: %w", err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), kubePath)
 			if err != nil {
 				return fmt.Errorf("failed to read kube YAML: %w", err)
 			}

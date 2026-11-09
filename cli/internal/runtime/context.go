@@ -57,8 +57,8 @@ const (
 	OutputModeJSON OutputMode = "json"
 )
 
-func New(opts Options) (*AppContext, error) {
-	cfg, err := config.Load()
+func New(ctx context.Context, opts Options) (*AppContext, error) {
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -103,7 +103,7 @@ func (a *AppContext) IsJSON() bool {
 
 func (a *AppContext) Client() (*client.Client, error) {
 	if a == nil {
-		return client.NewFromConfig()
+		return client.NewFromConfig(context.Background())
 	}
 	a.clientOnce.Do(func() {
 		a.client, a.clientErr = client.New(a.Config())
@@ -120,7 +120,7 @@ func (a *AppContext) Client() (*client.Client, error) {
 
 func (a *AppContext) UnauthClient() (*client.Client, error) {
 	if a == nil {
-		return client.NewFromConfigUnauthenticated()
+		return client.NewFromConfigUnauthenticated(context.Background())
 	}
 	a.unauthClientOnce.Do(func() {
 		a.unauthClient, a.unauthClientErr = client.NewUnauthenticated(a.Config())

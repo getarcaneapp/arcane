@@ -40,7 +40,7 @@ func newConfigShowCmd() *cobra.Command {
 		Short: "Show current configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -141,7 +141,7 @@ Legacy flag syntax (flags shown below) is still supported:
 	arcane config set --jwt-token eyJhbGciOi...`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -251,7 +251,7 @@ func newConfigTestCmd() *cobra.Command {
 		Short: "Test the API connection",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -313,7 +313,7 @@ If the config file already exists, this command is a no-op and does not overwrit
 				return err
 			}
 
-			created, err := config.InitDefaultFile()
+			created, err := config.InitDefaultFile(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to initialize config: %w", err)
 			}
@@ -361,7 +361,7 @@ With --auth, move ~/.arcanecli/auth.json instead, for example when it is damaged
 			if opts.auth {
 				backupPath, moved, err = config.BackupAuthFile(cmd.Context())
 			} else {
-				backupPath, moved, err = config.BackupFile()
+				backupPath, moved, err = config.BackupFile(cmd.Context())
 			}
 			if err != nil {
 				return fmt.Errorf("failed to backup %s: %w", filepath.Base(path), err)

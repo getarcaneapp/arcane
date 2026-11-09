@@ -65,9 +65,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 		return fmt.Errorf("refusing to write compose file: path outside projects root: %w", err)
 	}
 
-	// The project directory is the confinement root for the write itself, so it
-	// has to exist before acfs can open it.
-	if err := os.MkdirAll(dirPath, kitfs.DirPerm); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, dirPath, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -102,12 +100,12 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		return fmt.Errorf("invalid project file name %q", fileName)
 	}
 
-	if err := os.MkdirAll(dirPath, kitfs.DirPerm); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, dirPath, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	if fileName == EffectiveEnvFileName {
-		written, err := writeEnvThroughSymlink(filepath.Join(dirPath, fileName), content)
+		written, err := writeEnvThroughSymlink(ctx, filepath.Join(dirPath, fileName), content)
 		if err != nil {
 			return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 		}
@@ -146,8 +144,8 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	return nil
 }
 
-func writeEnvThroughSymlink(envPath, content string) (bool, error) {
-	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTarget(envPath)
+func writeEnvThroughSymlink(ctx context.Context, envPath, content string) (bool, error) {
+	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTarget(ctx, envPath)
 	if err != nil {
 		return false, fmt.Errorf("resolve write target: %w", err)
 	}
@@ -155,7 +153,7 @@ func writeEnvThroughSymlink(envPath, content string) (bool, error) {
 		return false, nil
 	}
 
-	existingContent, readErr := os.ReadFile(resolvedPath)
+	existingContent, readErr := acfs.Host{}.ReadFile(ctx, resolvedPath)
 	if readErr == nil && string(existingContent) == content {
 		return true, nil
 	}
@@ -165,15 +163,15 @@ func writeEnvThroughSymlink(envPath, content string) (bool, error) {
 	return true, atomic.WriteFile(resolvedPath, []byte(content), resolvedPerm)
 }
 
-func resolveEnvFileWriteTarget(envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
-	info, err := os.Lstat(envPath)
+func resolveEnvFileWriteTarget(ctx context.Context, envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
+	entry, err := acfs.Host{}.Stat(ctx, envPath, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return envPath, kitfs.FilePerm, false, nil
 		}
 		return "", 0, false, fmt.Errorf("inspect env file: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !entry.IsSymlink {
 		return envPath, kitfs.FilePerm, false, nil
 	}
 
@@ -181,15 +179,15 @@ func resolveEnvFileWriteTarget(envPath string) (writePath string, perm os.FileMo
 	if err != nil {
 		return "", 0, false, fmt.Errorf("resolve env file symlink: %w", err)
 	}
-	targetInfo, err := os.Stat(resolvedPath)
+	target, err := acfs.Host{}.Stat(ctx, resolvedPath, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return "", 0, false, fmt.Errorf("inspect env file symlink target: %w", err)
 	}
-	if !targetInfo.Mode().IsRegular() {
+	if !os.FileMode(target.UnixMode).IsRegular() {
 		return "", 0, false, fmt.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
 	}
 
-	return resolvedPath, targetInfo.Mode().Perm(), true, nil
+	return resolvedPath, os.FileMode(target.UnixMode).Perm(), true, nil
 }
 
 func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName string) error {
@@ -220,9 +218,8 @@ func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeConten
 	return WriteProjectFile(ctx, projectsRoot, dirPath, ".env", *envContent)
 }
 
-func WriteTemplateFile(filePath, content string) error {
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
+func WriteTemplateFile(ctx context.Context, filePath, content string) error {
+	if err := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(filePath), kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
@@ -233,9 +230,8 @@ func WriteTemplateFile(filePath, content string) error {
 	return nil
 }
 
-func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, kitfs.DirPerm); err != nil {
+func WriteFileWithPerm(ctx context.Context, filePath, content string, perm os.FileMode) error {
+	if err := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(filePath), kitfs.DirPerm); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -253,8 +249,8 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 		return false, nil
 	}
 
-	oldExists, _ := pathExists(oldPath)
-	newExists, _ := pathExists(newPath)
+	oldExists, _ := acfs.Host{}.Exists(ctx, oldPath)
+	newExists, _ := acfs.Host{}.Exists(ctx, newPath)
 	switch {
 	case oldExists && newExists:
 		conflictPath, relocateRenameConflictDirectoryErr := relocateRenameConflictDirectory(ctx, newPath)
@@ -272,7 +268,7 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 		if parent := filepath.Dir(newPath); parent == filepath.Dir(oldPath) {
 			renameErr = acfs.Root{Path: parent}.Rename(ctx, "/"+filepath.Base(newPath), "/"+filepath.Base(oldPath))
 		} else {
-			renameErr = os.Rename(newPath, oldPath)
+			renameErr = acfs.Host{}.Rename(ctx, newPath, oldPath)
 		}
 		if renameErr != nil {
 			return false, fmt.Errorf("rollback project directory rename: %w", renameErr)
@@ -308,9 +304,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 		return nil, fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
-	// The project directory is the confinement root for every write below, so
-	// it has to exist before acfs can open it.
-	if err := os.MkdirAll(projectPath, kitfs.DirPerm); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, projectPath, kitfs.DirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
@@ -414,12 +408,10 @@ func warnOnMultipleComposeOverrides(found []string) {
 	}
 }
 
-func DetectComposeOverrideFile(dir string) string {
-	// Stays on os.*: override files may be symlinks resolving outside any
-	// confinement root (same class as #3556 includes), which acfs cannot follow.
+func DetectComposeOverrideFile(ctx context.Context, dir string) string {
 	found := findComposeOverrideCandidates(func(name string) bool {
-		info, err := os.Stat(filepath.Join(dir, name))
-		return err == nil && !info.IsDir()
+		entry, err := acfs.Host{}.Stat(ctx, filepath.Join(dir, name), acfstypes.StatOptions{FollowFinal: true})
+		return err == nil && !entry.IsDirectory
 	})
 	if len(found) == 0 {
 		return ""
@@ -428,12 +420,12 @@ func DetectComposeOverrideFile(dir string) string {
 	return filepath.Join(dir, found[0])
 }
 
-func ReadComposeOverrideContent(dir string) string {
-	overridePath := DetectComposeOverrideFile(dir)
+func ReadComposeOverrideContent(ctx context.Context, dir string) string {
+	overridePath := DetectComposeOverrideFile(ctx, dir)
 	if overridePath == "" {
 		return ""
 	}
-	content, err := os.ReadFile(overridePath)
+	content, err := acfs.Host{}.ReadFile(ctx, overridePath)
 	return kit.Ternary(err != nil, "", string(content))
 }
 
@@ -477,26 +469,26 @@ func WriteComposeOverrideFile(ctx context.Context, projectsRoot, dir string, con
 	return nil
 }
 
-func ExistingOrDefaultOverrideName(dir string) string {
-	if overridePath := DetectComposeOverrideFile(dir); overridePath != "" {
+func ExistingOrDefaultOverrideName(ctx context.Context, dir string) string {
+	if overridePath := DetectComposeOverrideFile(ctx, dir); overridePath != "" {
 		return filepath.Base(overridePath)
 	}
 	return DefaultComposeOverrideFileName
 }
 
-func ResolveEffectiveOverrideForValidation(dir string, overrideContent *string) (*string, string) {
+func ResolveEffectiveOverrideForValidation(ctx context.Context, dir string, overrideContent *string) (*string, string) {
 	switch {
 	case overrideContent == nil:
-		overridePath := DetectComposeOverrideFile(dir)
+		overridePath := DetectComposeOverrideFile(ctx, dir)
 		if overridePath == "" {
 			return nil, ""
 		}
-		onDisk := ReadComposeOverrideContent(dir)
+		onDisk := ReadComposeOverrideContent(ctx, dir)
 		return &onDisk, filepath.Base(overridePath)
 	case strings.TrimSpace(*overrideContent) == "":
 		return nil, ""
 	default:
-		return overrideContent, ExistingOrDefaultOverrideName(dir)
+		return overrideContent, ExistingOrDefaultOverrideName(ctx, dir)
 	}
 }
 
@@ -507,5 +499,5 @@ func ApplyOverrideFileChange(ctx context.Context, projectsRoot, dir string, over
 	if strings.TrimSpace(*overrideContent) == "" {
 		return WriteComposeOverrideFile(ctx, projectsRoot, dir, nil, "")
 	}
-	return WriteComposeOverrideFile(ctx, projectsRoot, dir, overrideContent, ExistingOrDefaultOverrideName(dir))
+	return WriteComposeOverrideFile(ctx, projectsRoot, dir, overrideContent, ExistingOrDefaultOverrideName(ctx, dir))
 }

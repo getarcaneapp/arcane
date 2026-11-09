@@ -2,14 +2,17 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/cache"
 
 	"getarcane.dev/types/v3"
@@ -51,9 +54,9 @@ func CloneComposeProject(project *composetypes.Project) *composetypes.Project {
 	return project.WithServicesDisabled()
 }
 
-func (c *composeCache[T]) Get(projectID, fingerprint string) (T, bool) {
+func (c *composeCache[T]) Get(ctx context.Context, projectID, fingerprint string) (T, bool) {
 	entry, found := c.entries.Peek(projectID)
-	if found && entry.fingerprint == fingerprint && validComposeCacheEntry(entry.stamps) {
+	if found && entry.fingerprint == fingerprint && validComposeCacheEntry(ctx, entry.stamps) {
 		if c.clone != nil {
 			return c.clone(entry.value), true
 		}
@@ -63,7 +66,7 @@ func (c *composeCache[T]) Get(projectID, fingerprint string) (T, bool) {
 	return zero, false
 }
 
-func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
+func (c *composeCache[T]) Set(ctx context.Context, projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
 	if strings.TrimSpace(projectID) == "" {
 		return nil
 	}
@@ -72,14 +75,14 @@ func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirec
 		if path == "" {
 			continue
 		}
-		info, err := os.Stat(path)
+		entry, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 		if err != nil {
 			return fmt.Errorf("stat compose file %s: %w", path, err)
 		}
-		if !info.ModTime().Before(loadedAt) {
+		if !time.Unix(0, entry.ModTimeUnixNano).Before(loadedAt) {
 			return nil
 		}
-		stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
+		stamps[path] = composeCacheStamp{modTime: time.Unix(0, entry.ModTimeUnixNano), size: entry.Size}
 	}
 	dependencies := append([]string{filepath.Join(projectPath, EffectiveEnvFileName)}, envFiles...)
 	if projectsDirectory != "" {
@@ -90,15 +93,15 @@ func (c *composeCache[T]) Set(projectID, fingerprint, projectPath, projectsDirec
 		dependencies = append(dependencies, filepath.Join(filepath.Dir(composePath), name))
 	}
 	for _, path := range dependencies {
-		info, err := os.Stat(path)
+		entry, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 		if err == nil {
-			if !info.ModTime().Before(loadedAt) {
+			if !time.Unix(0, entry.ModTimeUnixNano).Before(loadedAt) {
 				return nil
 			}
-			stamps[path] = composeCacheStamp{modTime: info.ModTime(), size: info.Size()}
+			stamps[path] = composeCacheStamp{modTime: time.Unix(0, entry.ModTimeUnixNano), size: entry.Size}
 			continue
 		}
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("stat compose dependency %s: %w", path, err)
 		}
 		stamps[path] = composeCacheStamp{}
@@ -117,20 +120,20 @@ func (c *composeCache[T]) Invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func validComposeCacheEntry(stamps map[string]composeCacheStamp) bool {
+func validComposeCacheEntry(ctx context.Context, stamps map[string]composeCacheStamp) bool {
 	for path, stamp := range stamps {
-		info, err := os.Stat(path)
+		entry, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 		if err != nil {
-			if !os.IsNotExist(err) || !stamp.modTime.IsZero() {
+			if !errors.Is(err, fs.ErrNotExist) || !stamp.modTime.IsZero() {
 				return false
 			}
 			continue
 		}
-		if stamp.modTime.IsZero() || !info.ModTime().Equal(stamp.modTime) || info.Size() != stamp.size {
+		if stamp.modTime.IsZero() || !time.Unix(0, entry.ModTimeUnixNano).Equal(stamp.modTime) || entry.Size != stamp.size {
 			return false
 		}
 		// A chmod does not bump mtime, so confirm the file is still readable.
-		file, err := os.Open(path)
+		file, _, err := acfs.Host{}.OpenRead(ctx, path, 0)
 		if err != nil {
 			return false
 		}
@@ -154,7 +157,7 @@ func LoadCachedComposeProject(ctx context.Context,
 ) {
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composePath, projectName, projectsDirectory, autoInject, pathMapper)
 	if projectCache != nil {
-		if cached, ok := projectCache.Get(projectID, fingerprint); ok {
+		if cached, ok := projectCache.Get(ctx, projectID, fingerprint); ok {
 			return cached, nil
 		}
 	}
@@ -179,7 +182,7 @@ func LoadCachedComposeProject(ctx context.Context,
 		// Metadata discovery failure disables caching; the executable model is valid.
 		return model, nil
 	}
-	if setErr := projectCache.Set(projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, loadedAt, model); setErr != nil {
+	if setErr := projectCache.Set(ctx, projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, loadedAt, model); setErr != nil {
 		return nil, setErr
 	}
 	return model, nil
@@ -193,7 +196,7 @@ func ComposeCacheDependencies(
 	autoInject bool,
 ) ([]string, []string, bool) {
 	envFiles := dependencies.EnvFiles
-	if envOpts, parseErr := ParseComposeEnvOptions(model.WorkingDir, EnvMap(model.Environment)); parseErr == nil {
+	if envOpts, parseErr := ParseComposeEnvOptions(ctx, model.WorkingDir, EnvMap(model.Environment)); parseErr == nil {
 		envFiles = append(envFiles, envOpts.EnvFiles...)
 	}
 	// Metadata discovery already follows recursive includes and their interpolation env files.

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	charmLog "charm.land/log/v2"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/output"
@@ -27,7 +27,11 @@ const (
 func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath string, showProgress bool) (string, error) {
 	log := charmLog.Default()
 
-	file, err := os.Open(filePath)
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	file, err := acfs.Host{}.OpenFile(ctx, absPath, acfs.OpenOptions{Read: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}

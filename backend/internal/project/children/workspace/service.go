@@ -174,7 +174,7 @@ func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath
 		return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
 	}
 	rootName, _, _ := strings.Cut(rel, "/")
-	protected := workspacepkg.ProtectedPaths(projectPath, projects.ProtectedProjectFilePaths(composeFileName))
+	protected := workspacepkg.ProtectedPaths(ctx, projectPath, projects.ProtectedProjectFilePaths(composeFileName))
 	if protected[rel] || protected[rootName] {
 		return "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}

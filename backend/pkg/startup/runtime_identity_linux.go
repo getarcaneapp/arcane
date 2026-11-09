@@ -9,15 +9,18 @@ import (
 	"syscall"
 
 	"github.com/samber/mo"
+
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 )
 
-func reexecWithRuntimeIdentity(_ context.Context, req runtimeIdentityRequest) error {
+func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	groups := runtimeIdentitySupplementaryGroups(req.DockerHost, resolveSocketGroup)
+	groups := runtimeIdentitySupplementaryGroups(ctx, req.DockerHost, resolveSocketGroup)
 	gids := make([]int, 0, len(groups))
 	for _, group := range groups {
 		gids = append(gids, int(group))
@@ -43,18 +46,11 @@ func reexecWithRuntimeIdentity(_ context.Context, req runtimeIdentityRequest) er
 	return nil
 }
 
-func resolveSocketGroup(socketPath string) mo.Option[uint32] {
-	// os.* rather than acfs: the docker socket is a host-configured system path
-	// probed during identity bootstrap, not under any acfs root.
-	info, err := os.Stat(socketPath)
+func resolveSocketGroup(ctx context.Context, socketPath string) mo.Option[uint32] {
+	entry, err := acfs.Host{}.Stat(ctx, socketPath, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return mo.None[uint32]()
 	}
 
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return mo.None[uint32]()
-	}
-
-	return mo.Some(stat.Gid)
+	return mo.Some(uint32(entry.GID))
 }

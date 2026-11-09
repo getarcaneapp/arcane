@@ -11,7 +11,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -181,7 +181,16 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 				}
 			}
 
-			file, openErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+			outputPath, openErr := filepath.Abs(outputFile)
+			if openErr != nil {
+				return fmt.Errorf("failed to create file %s: %w", outputFile, openErr)
+			}
+			file, openErr := acfs.Host{Special: true}.OpenFile(cmd.Context(), outputPath, acfs.OpenOptions{
+				Mode:     0o600,
+				Write:    true,
+				Create:   true,
+				Truncate: true,
+			})
 			if openErr != nil {
 				return fmt.Errorf("failed to create file %s: %w", outputFile, openErr)
 			}
@@ -231,7 +240,11 @@ func newWorkspacePutCmd() *cobra.Command {
 				return err
 			}
 
-			content, err := os.ReadFile(args[1])
+			localPath, err := filepath.Abs(args[1])
+			if err != nil {
+				return fmt.Errorf("failed to read local file: %w", err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), localPath)
 			if err != nil {
 				return fmt.Errorf("failed to read local file: %w", err)
 			}

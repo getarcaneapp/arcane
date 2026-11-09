@@ -38,7 +38,7 @@ func Command() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			app, ok := runtime.From(cmd.Context())
 			if !ok {
-				created, err := runtime.New(runtime.Options{})
+				created, err := runtime.New(cmd.Context(), runtime.Options{})
 				if err != nil {
 					return err
 				}

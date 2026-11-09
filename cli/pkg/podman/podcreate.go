@@ -3,11 +3,12 @@ package podman
 import (
 	"bufio"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"net/http"
-	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -170,7 +172,7 @@ func newPodCreateCmd() *cobra.Command {
 }
 
 func (o podCreateOptions) request(cmd *cobra.Command) (types.PodCreateRequest, error) {
-	labels, err := o.allLabels()
+	labels, err := o.allLabels(cmd.Context())
 	if err != nil {
 		return types.PodCreateRequest{}, err
 	}
@@ -309,10 +311,14 @@ func (o podCreateOptions) request(cmd *cobra.Command) (types.PodCreateRequest, e
 	}, nil
 }
 
-func (o podCreateOptions) allLabels() (map[string]string, error) {
+func (o podCreateOptions) allLabels(ctx context.Context) (map[string]string, error) {
 	labels := map[string]string{}
 	for _, path := range o.labelFiles {
-		file, err := os.Open(path)
+		labelPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("read --label-file: %w", err)
+		}
+		file, err := acfs.Host{Special: true}.OpenFile(ctx, labelPath, acfs.OpenOptions{Read: true})
 		if err != nil {
 			return nil, fmt.Errorf("read --label-file: %w", err)
 		}

@@ -156,7 +156,7 @@ volumes:
     driver: local
 `), 0o644))
 
-	explicit, err := composeVolumeKeysWithExplicitName([]string{rootCompose, includeCompose})
+	explicit, err := composeVolumeKeysWithExplicitName(t.Context(), []string{rootCompose, includeCompose})
 	require.NoError(t, err)
 
 	assert.Contains(t, explicit, "fixed")

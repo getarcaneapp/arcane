@@ -3,10 +3,11 @@
 package lifecycle
 
 import (
+	"context"
 	"fmt"
 )
 
-func describeLifecyclePathAccess(projectPath, resolvedScriptPath string) string {
+func describeLifecyclePathAccess(_ context.Context, projectPath, resolvedScriptPath string) string {
 	return fmt.Sprintf("Project path=%q, resolved script path=%q. Ensure the Arcane process can traverse every parent "+
 		"directory and inspect the script. A script being executable is not sufficient when ownership, ACLs, "+
 		"or mount permissions block access.", projectPath,

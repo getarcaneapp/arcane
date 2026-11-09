@@ -91,7 +91,7 @@ require (
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
 	kit.getarcane.app v0.7.0
-	kit.getarcane.app/acfs v0.8.0
+	kit.getarcane.app/acfs v0.10.0
 	kit.getarcane.app/builds v0.5.1
 	kit.getarcane.app/docker v0.3.0
 	kit.getarcane.app/docker/convert v0.4.1

@@ -80,7 +80,7 @@ func TestMTLSIssueClient(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, assets)
 	require.Empty(t, cfg.CAFile)
-	issued, err := cfg.ClientCertificate("env-123")
+	issued, err := cfg.ClientCertificate(t.Context(), "env-123")
 	require.NoError(t, err)
 	require.Equal(t, "Lab-Server-env-123", issued.Subject.CommonName)
 	require.Equal(t, "./arcane-agent-certs", assets.HostDirHint)
@@ -273,7 +273,7 @@ func TestRemoveStaleLock_PreservesLivePID(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), ".ca.lock")
 	require.NoError(t, os.WriteFile(lockPath, fmt.Appendf(nil, "%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)), 0o600))
 
-	require.False(t, removeStaleLock(lockPath))
+	require.False(t, removeStaleLock(t.Context(), lockPath))
 	require.FileExists(t, lockPath)
 }
 
@@ -282,7 +282,7 @@ func TestRemoveStaleLock_RemovesOldLockDespiteLivePID(t *testing.T) {
 	oldTimestamp := time.Now().Add(-(2*managerCALockTimeout + time.Second)).UTC().Format(time.RFC3339Nano)
 	require.NoError(t, os.WriteFile(lockPath, fmt.Appendf(nil, "%d %s\n", os.Getpid(), oldTimestamp), 0o600))
 
-	require.True(t, removeStaleLock(lockPath))
+	require.True(t, removeStaleLock(t.Context(), lockPath))
 	require.NoFileExists(t, lockPath)
 }
 

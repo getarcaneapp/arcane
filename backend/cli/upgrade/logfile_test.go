@@ -15,7 +15,7 @@ func TestSetupMessageOnlyLogFile(t *testing.T) {
 		slog.SetDefault(previousLogger)
 	})
 
-	logFile, err := SetupMessageOnlyLogFile(t.TempDir(), "upgrade-test", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile(t.Context(), t.TempDir(), "upgrade-test", slog.LevelInfo)
 
 	require.NoError(t, err,
 		"SetupMessageOnlyLogFile() error = %v", err)

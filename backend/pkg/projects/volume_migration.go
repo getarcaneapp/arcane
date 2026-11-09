@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
@@ -20,6 +19,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/pkg/volumes"
@@ -34,7 +34,7 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(composeProject.ComposeFiles)
+	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(ctx, composeProject.ComposeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}
@@ -157,14 +157,14 @@ func renamedVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[
 	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
 }
 
-func composeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct{}, error) {
+func composeVolumeKeysWithExplicitName(ctx context.Context, composeFiles []string) (map[string]struct{}, error) {
 	explicit := make(map[string]struct{})
 	for _, composeFile := range composeFiles {
 		composeFile = strings.TrimSpace(composeFile)
 		if composeFile == "" {
 			continue
 		}
-		keys, err := composeVolumeKeysWithExplicitNameInFile(composeFile)
+		keys, err := composeVolumeKeysWithExplicitNameInFile(ctx, composeFile)
 		if err != nil {
 			return nil, err
 		}
@@ -175,9 +175,8 @@ func composeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct
 	return explicit, nil
 }
 
-func composeVolumeKeysWithExplicitNameInFile(path string) (map[string]struct{}, error) {
-	// os.* rather than acfs: compose files may live outside the project directory via include.
-	content, err := os.ReadFile(path)
+func composeVolumeKeysWithExplicitNameInFile(ctx context.Context, path string) (map[string]struct{}, error) {
+	content, err := acfs.Host{}.ReadFile(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("read compose file: %w", err)
 	}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -78,7 +79,7 @@ func newListCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -144,7 +145,7 @@ func newDefaultCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -173,7 +174,7 @@ func newContentCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -209,7 +210,7 @@ func newRegistriesCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -257,7 +258,7 @@ func newDeleteCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			label := "template " + args[0]
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -288,7 +289,7 @@ func newDeleteRegistryCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			label := "template registry " + args[0]
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -314,7 +315,7 @@ func newGetCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -578,14 +579,22 @@ func newCreateCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := os.ReadFile(opts.file)
+			filePath, err := filepath.Abs(opts.file)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
 			}
 
 			var envContent string
 			if opts.envFile != "" {
-				envData, readFileErr := os.ReadFile(opts.envFile)
+				envPath, readFileErr := filepath.Abs(opts.envFile)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readFileErr)
+				}
+				envData, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), envPath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readFileErr)
 				}
@@ -601,7 +610,7 @@ func newCreateCmd() *cobra.Command {
 				EnvContent: &envContent,
 			}
 
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -642,7 +651,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -655,14 +664,22 @@ func newUpdateCmd() *cobra.Command {
 				req["description"] = opts.description
 			}
 			if opts.file != "" {
-				contentData, readFileErr := os.ReadFile(opts.file)
+				filePath, readFileErr := filepath.Abs(opts.file)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read file %s: %w", opts.file, readFileErr)
+				}
+				contentData, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read file %s: %w", opts.file, readFileErr)
 				}
 				req["content"] = string(contentData)
 			}
 			if opts.envFile != "" {
-				envData, readEnvFileErr := os.ReadFile(opts.envFile)
+				envPath, readEnvFileErr := filepath.Abs(opts.envFile)
+				if readEnvFileErr != nil {
+					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readEnvFileErr)
+				}
+				envData, readEnvFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), envPath)
 				if readEnvFileErr != nil {
 					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readEnvFileErr)
 				}
@@ -699,7 +716,7 @@ func newDownloadCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -719,11 +736,24 @@ func newDownloadCmd() *cobra.Command {
 				return fmt.Errorf("failed to download template: failed to decode response: %w", decodeErr)
 			}
 			if opts.outputFile != "" {
-				dir := filepath.Dir(opts.outputFile)
-				if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
-					return fmt.Errorf("failed to create directory %s: %w", dir, mkdirErr)
+				outputPath, absErr := filepath.Abs(opts.outputFile)
+				if absErr != nil {
+					return fmt.Errorf("failed to write file %s: %w", opts.outputFile, absErr)
 				}
-				if writeErr := os.WriteFile(opts.outputFile, []byte(data.Content), 0o600); writeErr != nil {
+				if mkdirErr := (acfs.Host{}).MkdirAll(cmd.Context(), filepath.Dir(outputPath), 0o755); mkdirErr != nil {
+					return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(opts.outputFile), mkdirErr)
+				}
+				file, openErr := acfs.Host{Special: true}.OpenFile(cmd.Context(), outputPath, acfs.OpenOptions{
+					Mode:     0o600,
+					Write:    true,
+					Create:   true,
+					Truncate: true,
+				})
+				if openErr != nil {
+					return fmt.Errorf("failed to write file %s: %w", opts.outputFile, openErr)
+				}
+				_, writeErr := file.WriteString(data.Content)
+				if writeErr = errors.Join(writeErr, file.Close()); writeErr != nil {
 					return fmt.Errorf("failed to write file %s: %w", opts.outputFile, writeErr)
 				}
 				if jsonMode {
@@ -754,14 +784,22 @@ func newDefaultsSaveCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := os.ReadFile(opts.saveFile)
+			savePath, err := filepath.Abs(opts.saveFile)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", opts.saveFile, err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), savePath)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", opts.saveFile, err)
 			}
 
 			var envContent string
 			if opts.envFile != "" {
-				envData, readFileErr := os.ReadFile(opts.envFile)
+				envPath, readFileErr := filepath.Abs(opts.envFile)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readFileErr)
+				}
+				envData, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), envPath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readFileErr)
 				}
@@ -773,7 +811,7 @@ func newDefaultsSaveCmd() *cobra.Command {
 				EnvContent:     envContent,
 			}
 
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -809,7 +847,7 @@ func newRegistriesUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -861,7 +899,7 @@ func newFetchCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}

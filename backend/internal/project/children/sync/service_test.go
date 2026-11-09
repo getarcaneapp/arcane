@@ -21,7 +21,7 @@ func TestPersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\n"), 0o600))
 
-	update, err := PrepareGitSyncEnvUpdate(projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
+	update, err := PrepareGitSyncEnvUpdate(t.Context(), projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
 	require.NoError(t, err)
 	require.NotNil(t, update.EffectiveContent)
 

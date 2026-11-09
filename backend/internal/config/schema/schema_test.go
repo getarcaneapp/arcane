@@ -205,7 +205,7 @@ var (
 )
 
 func TestGenerate_EnvConfigIncludesTaggedFields(t *testing.T) {
-	doc, err := GenerateWithSourceRoot("")
+	doc, err := GenerateWithSourceRoot(t.Context(), "")
 	require.NoError(t, err)
 
 	assert.Equal(t, expectedEnvConfigVars, envNames(doc.EnvConfig))
@@ -241,7 +241,7 @@ func TestGenerate_EnvConfigIncludesTaggedFields(t *testing.T) {
 }
 
 func TestGenerate_SettingsMatchModelMetadata(t *testing.T) {
-	doc, err := GenerateWithSourceRoot("")
+	doc, err := GenerateWithSourceRoot(t.Context(), "")
 	require.NoError(t, err)
 
 	assert.Len(t, doc.Settings, countDocumentedSettings())
@@ -296,7 +296,7 @@ func TestGenerate_SettingsMatchModelMetadata(t *testing.T) {
 }
 
 func TestGenerate_RenamedAndRetiredEnv(t *testing.T) {
-	doc, err := GenerateWithSourceRoot("")
+	doc, err := GenerateWithSourceRoot(t.Context(), "")
 	require.NoError(t, err)
 
 	assert.Equal(t, RenamedEnv(), doc.RenamedEnv)
@@ -305,7 +305,7 @@ func TestGenerate_RenamedAndRetiredEnv(t *testing.T) {
 }
 
 func TestGenerate_EnvNamesAreUnique(t *testing.T) {
-	doc, err := GenerateWithSourceRoot("")
+	doc, err := GenerateWithSourceRoot(t.Context(), "")
 	require.NoError(t, err)
 
 	seen := map[string]string{}
@@ -324,7 +324,7 @@ func TestGenerate_EnvNamesAreUnique(t *testing.T) {
 }
 
 func TestGenerate_OutputOrderingIsStable(t *testing.T) {
-	doc, err := GenerateWithSourceRoot("")
+	doc, err := GenerateWithSourceRoot(t.Context(), "")
 	require.NoError(t, err)
 
 	assert.Equal(t, envNames(doc.EnvConfig), sortedStrings(envNames(doc.EnvConfig)))

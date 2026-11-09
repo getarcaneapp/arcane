@@ -33,7 +33,7 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	)
 	allMounts := append([]mount.Mount{}, mounts...)
 	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
-	if bundle := trustBundle(); len(bundle) > 0 {
+	if bundle := trustBundle(ctx); len(bundle) > 0 {
 		trustVolume, stageErr := stageTrustBundle(ctx, dockerClient, bundle)
 		if stageErr != nil {
 			return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", stageErr)

@@ -1,17 +1,20 @@
 package backups
 
 import (
+	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -409,7 +412,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 
 			var req types.UpdateSystemBackupPolicies
 			if opts.file != "" {
-				req, err = opts.requestFromFile()
+				req, err = opts.requestFromFile(cmd.Context())
 			} else {
 				req, err = opts.requestFromFlags(cmd, c)
 			}
@@ -586,7 +589,7 @@ func renderSystemPolicies(policies types.SystemBackupPolicyCollection) error {
 	return output.Table(headers, rows)
 }
 
-func (opts policiesUpdateOptions) requestFromFile() (types.UpdateSystemBackupPolicies, error) {
+func (opts policiesUpdateOptions) requestFromFile(ctx context.Context) (types.UpdateSystemBackupPolicies, error) {
 	var req types.UpdateSystemBackupPolicies
 	var data []byte
 	var err error
@@ -596,7 +599,11 @@ func (opts policiesUpdateOptions) requestFromFile() (types.UpdateSystemBackupPol
 			return req, fmt.Errorf("failed to read policies from stdin: %w", err)
 		}
 	} else {
-		data, err = os.ReadFile(opts.file)
+		filePath, absErr := filepath.Abs(opts.file)
+		if absErr != nil {
+			return req, fmt.Errorf("failed to read file %s: %w", opts.file, absErr)
+		}
+		data, err = acfs.Host{Special: true}.ReadFile(ctx, filePath)
 		if err != nil {
 			return req, fmt.Errorf("failed to read file %s: %w", opts.file, err)
 		}

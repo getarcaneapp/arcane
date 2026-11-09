@@ -290,7 +290,7 @@ func (s *Service) RollbackFailedUpdate(
 		case filepath.Dir(originalPath) == filepath.Dir(currentPath):
 			return acfs.Root{Path: filepath.Dir(originalPath)}.Rename(context.WithoutCancel(ctx), "/"+filepath.Base(currentPath), "/"+filepath.Base(originalPath))
 		}
-		return os.Rename(currentPath, originalPath)
+		return acfs.Host{}.Rename(context.WithoutCancel(ctx), currentPath, originalPath)
 	}()
 	if renameErr != nil {
 		slog.WarnContext(ctx, "failed to rollback project directory rename", "from", currentPath, "to", originalPath, "error", renameErr)

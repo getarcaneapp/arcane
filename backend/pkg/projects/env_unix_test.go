@@ -25,7 +25,7 @@ func TestReadProjectEnvState_TreatsPermissionLockedEnvAsUnreadable(t *testing.T)
 	require.NoError(t, os.Chmod(envPath, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(envPath, 0o644) })
 
-	state, err := ReadProjectEnvState(projectDir)
+	state, err := ReadProjectEnvState(t.Context(), projectDir)
 	require.NoError(t, err)
 	assert.True(t, state.EffectiveUnreadable)
 	assert.False(t, state.HasEffective)
@@ -43,7 +43,7 @@ func TestReadProjectEnvState_TreatsDirectoryAsUnreadable(t *testing.T) {
 			projectDir := t.TempDir()
 			require.NoError(t, os.Mkdir(filepath.Join(projectDir, fileName), fs.DirPerm))
 
-			state, err := ReadProjectEnvState(projectDir)
+			state, err := ReadProjectEnvState(t.Context(), projectDir)
 			require.NoError(t, err)
 			assert.False(t, state.HasEffective)
 			assert.False(t, state.HasGitSource)
@@ -59,11 +59,11 @@ func TestParseEnvFile_IgnoresDirectory(t *testing.T) {
 	envDir := filepath.Join(t.TempDir(), EffectiveEnvFileName)
 	require.NoError(t, os.Mkdir(envDir, fs.DirPerm))
 
-	projectEnv, err := ParseProjectEnvFile(envDir, EnvMap{})
+	projectEnv, err := ParseProjectEnvFile(t.Context(), envDir, EnvMap{})
 	require.NoError(t, err)
 	assert.Nil(t, projectEnv)
 
-	validationEnv, err := ParseValidationEnvFile(envDir, EnvMap{})
+	validationEnv, err := ParseValidationEnvFile(t.Context(), envDir, EnvMap{})
 	require.NoError(t, err)
 	assert.Nil(t, validationEnv)
 }

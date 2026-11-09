@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
@@ -64,25 +65,19 @@ func Read(ctx context.Context, rootPath string, opts Options) ([]types.Workspace
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
-	root, err := os.OpenRoot(rootAbs)
-	if err != nil {
-		return nil, "", false, fmt.Errorf("open workspace root: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-
 	walker := &treeWalker{
 		ctx:              ctx,
 		rootAbs:          rootAbs,
 		maxDepth:         opts.MaxDepth,
 		maxEntries:       opts.MaxEntries,
 		maxFileSizeBytes: kit.Ternary(opts.MaxFileSizeBytes <= 0, MaxFileSizeBytes(DefaultMaxFileSizeMB), opts.MaxFileSizeBytes),
-		protected:        ProtectedPaths(rootAbs, opts.ProtectedFiles),
+		protected:        ProtectedPaths(ctx, rootAbs, opts.ProtectedFiles),
 		skipDirs:         SkipDirectorySet(opts.SkipDirectories),
 		files:            []types.WorkspaceFileEntry{},
 		revisionHash:     sha256.New(),
 	}
 
-	if walkErr := walker.walk(root.FS()); walkErr != nil {
+	if walkErr := walker.walk(); walkErr != nil {
 		return nil, "", false, walkErr
 	}
 
@@ -96,7 +91,7 @@ func ListFolder(ctx context.Context, rootPath, relativePath string, opts Options
 	if relativePath != "" && slices.ContainsFunc(strings.Split(relativePath, "/"), func(segment string) bool { return skipDirs[segment] }) {
 		return nil, fmt.Errorf("workspace folder %s: %w", relativePath, fs.ErrNotExist)
 	}
-	protected := ProtectedPaths(rootPath, opts.ProtectedFiles)
+	protected := ProtectedPaths(ctx, rootPath, opts.ProtectedFiles)
 	files := make([]types.WorkspaceFileEntry, 0, min(opts.MaxEntries, 256))
 	truncated := false
 	err := acfs.Root{Path: rootPath}.ListEach(ctx, "/"+relativePath, func(entry acfstypes.Entry) error {
@@ -121,18 +116,18 @@ func ListFolder(ctx context.Context, rootPath, relativePath string, opts Options
 	return &types.Workspace{Files: files, FileTreeTruncated: truncated}, nil
 }
 
-func (w *treeWalker) walk(fsys fs.FS) error {
+func (w *treeWalker) walk() error {
 	for queue := []string{"."}; len(queue) > 0; queue = queue[1:] {
-		entries, err := fs.ReadDir(fsys, queue[0])
+		entries, err := acfs.Root{Path: w.rootAbs}.List(w.ctx, kitfs.LogicalPath(queue[0]))
 		if err != nil {
-			if queue[0] != "." && (os.IsPermission(err) || os.IsNotExist(err)) {
+			if queue[0] != "." && (errors.Is(err, fs.ErrPermission) || errors.Is(err, fs.ErrNotExist)) {
 				slog.DebugContext(w.ctx, "Skipping unreadable workspace subdirectory", "relativePath", queue[0], "error", err)
 				continue
 			}
 			return err
 		}
 		for _, entry := range entries {
-			rel := path.Join(queue[0], entry.Name())
+			rel := path.Join(queue[0], entry.Name)
 			descend, visitErr := w.visit(rel, entry)
 			if visitErr != nil {
 				return visitErr
@@ -148,7 +143,7 @@ func (w *treeWalker) walk(fsys fs.FS) error {
 	return nil
 }
 
-func (w *treeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
+func (w *treeWalker) visit(rel string, entry acfstypes.Entry) (bool, error) {
 	// Entries are visited in a fixed level-by-level, name-sorted order, so
 	// cutting off after maxEntries still yields a stable revision as long as
 	// the concurrency compare walk uses the same cap.
@@ -162,24 +157,13 @@ func (w *treeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
 		return false, nil
 	}
 
-	if entry.IsDir() && w.skipDirs[entry.Name()] {
-		return false, nil
-	}
-
-	info, err := entry.Info()
-	if err != nil {
-		// An entry that vanished mid-walk or that we are not allowed to stat is
-		// skipped rather than failing the whole tree; anything else surfaces.
-		if !os.IsPermission(err) && !os.IsNotExist(err) {
-			return false, err
-		}
-		slog.DebugContext(w.ctx, "Skipping unreadable workspace entry", "relativePath", rel, "error", err)
+	if entry.IsDirectory && w.skipDirs[entry.Name] {
 		return false, nil
 	}
 
 	isProtected := w.protected[rel]
 	if isProtected {
-		return entry.IsDir(), nil
+		return entry.IsDirectory, nil
 	}
 
 	// Protected Compose configuration is intentionally absent from both the
@@ -187,53 +171,53 @@ func (w *treeWalker) visit(rel string, entry fs.DirEntry) (bool, error) {
 	// a workspace draft stale.
 	kind := "file"
 	switch {
-	case entry.IsDir():
+	case entry.IsDirectory:
 		kind = "dir"
-	case info.Mode()&os.ModeSymlink != 0:
+	case entry.IsSymlink:
 		kind = "symlink"
-	case !info.Mode().IsRegular():
+	case !os.FileMode(entry.UnixMode).IsRegular():
 		kind = "special"
 	}
 	kit.WriteRecord(w.revisionHash, rel, kind)
 	w.entryCount++
 
-	size := info.Size()
-	if entry.IsDir() {
+	size := entry.Size
+	if entry.IsDirectory {
 		size = 0
 	}
 	workspaceEntry := types.WorkspaceFileEntry{
 		Path:         filepath.Join(w.rootAbs, filepath.FromSlash(rel)),
 		RelativePath: rel,
-		Name:         entry.Name(),
-		IsDirectory:  entry.IsDir(),
+		Name:         entry.Name,
+		IsDirectory:  entry.IsDirectory,
 		Size:         size,
-		ModTime:      info.ModTime(),
-		Mode:         info.Mode().String(),
-		IsSymlink:    info.Mode()&os.ModeSymlink != 0,
+		ModTime:      time.Unix(0, entry.ModTimeUnixNano),
+		Mode:         os.FileMode(entry.UnixMode).String(),
+		IsSymlink:    entry.IsSymlink,
 	}
 	switch kind {
 	case "dir":
 		workspaceEntry.Editable = true
 	case "symlink":
 		workspaceEntry.ReadOnlyReason = types.FileReadOnlySymlink
-		if target, readlinkErr := os.Readlink(workspaceEntry.Path); readlinkErr == nil {
+		if target, readlinkErr := (acfs.Host{}).Readlink(w.ctx, workspaceEntry.Path); readlinkErr == nil {
 			workspaceEntry.LinkTarget = target
 		}
 	case "special":
 		workspaceEntry.ReadOnlyReason = types.FileReadOnlySpecial
 	case "file":
-		workspaceEntry.Editable, workspaceEntry.ReadOnlyReason = classifyFile(workspaceEntry.Path, size, w.maxFileSizeBytes)
+		workspaceEntry.Editable, workspaceEntry.ReadOnlyReason = classifyFile(w.ctx, w.rootAbs, rel, size, w.maxFileSizeBytes)
 	}
 	w.files = append(w.files, workspaceEntry)
 
-	return entry.IsDir(), nil
+	return entry.IsDirectory, nil
 }
 
-func classifyFile(filePath string, size, maxFileSizeBytes int64) (bool, string) {
+func classifyFile(ctx context.Context, rootPath, rel string, size, maxFileSizeBytes int64) (bool, string) {
 	if size > maxFileSizeBytes {
 		return false, types.FileReadOnlyTooLarge
 	}
-	content, err := os.ReadFile(filePath)
+	content, err := acfs.Root{Path: rootPath}.ReadFile(ctx, "/"+rel)
 	if err != nil || !bytes.Equal(bytes.ToValidUTF8(content, []byte{}), content) || bytes.IndexByte(content, 0) >= 0 {
 		return false, types.FileReadOnlyBinary
 	}
@@ -266,18 +250,12 @@ func Apply(ctx context.Context, rootPath string, changes []types.WorkspaceFileCh
 		}
 	}
 
-	root, err := os.OpenRoot(rootPath)
-	if err != nil {
-		return fmt.Errorf("open workspace root: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-
 	maxFileSizeBytes := kit.Ternary(opts.MaxFileSizeBytes <= 0, MaxFileSizeBytes(DefaultMaxFileSizeMB), opts.MaxFileSizeBytes)
 	for _, change := range changes {
 		// Recomputed per change: an earlier change may have removed a directory
 		// that shadowed a protected name.
-		protected := ProtectedPaths(rootPath, opts.ProtectedFiles)
-		if applyChangeErr := applyChange(root, protected, change, uploads, maxFileSizeBytes); applyChangeErr != nil {
+		protected := ProtectedPaths(ctx, rootPath, opts.ProtectedFiles)
+		if applyChangeErr := applyChange(ctx, acfs.Root{Path: rootPath}, protected, change, uploads, maxFileSizeBytes); applyChangeErr != nil {
 			return applyChangeErr
 		}
 	}
@@ -285,10 +263,10 @@ func Apply(ctx context.Context, rootPath string, changes []types.WorkspaceFileCh
 	return nil
 }
 
-func ProtectedPaths(rootPath string, files map[string]bool) map[string]bool {
+func ProtectedPaths(ctx context.Context, rootPath string, files map[string]bool) map[string]bool {
 	protected := maps.Clone(files)
 	for name := range protected {
-		if info, err := os.Lstat(filepath.Join(rootPath, name)); err == nil && info.IsDir() {
+		if entry, err := (acfs.Root{Path: rootPath}).Stat(ctx, "/"+name, acfstypes.StatOptions{}); err == nil && entry.IsDirectory {
 			delete(protected, name)
 		}
 	}
@@ -310,7 +288,7 @@ func SkipDirectorySet(skipDirectories string) map[string]bool {
 	return dirs
 }
 
-func applyChange(root *os.Root, protected map[string]bool, change types.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
+func applyChange(ctx context.Context, root acfs.Root, protected map[string]bool, change types.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return fmt.Errorf("invalid workspace path: %w", err)
@@ -318,48 +296,51 @@ func applyChange(root *os.Root, protected map[string]bool, change types.Workspac
 
 	switch change.Operation {
 	case types.FileOpCreateFile:
-		return createFile(root, protected, rel, uploads[*change.UploadIndex], maxFileSizeBytes)
+		return createFile(ctx, root, protected, rel, uploads[*change.UploadIndex], maxFileSizeBytes)
 	case types.FileOpCreateFolder:
-		return createFolder(root, protected, rel)
+		return createFolder(ctx, root, protected, rel)
 	case types.FileOpUpdateFile:
 		var baseline []byte
 		if change.BaselineIndex != nil {
 			baseline = uploads[*change.BaselineIndex]
 		}
-		return updateFile(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
+		return updateFile(ctx, root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
 	case types.FileOpRename:
 		newName, validateFileNameErr := kit.ValidateFileName(change.NewName)
 		if validateFileNameErr != nil {
 			return fmt.Errorf("invalid workspace file name: %w", validateFileNameErr)
 		}
-		return renamePath(root, protected, rel, newName)
+		return renamePath(ctx, root, protected, rel, newName)
 	case types.FileOpMove:
-		return movePath(root, protected, rel, change.NewParentPath)
+		return movePath(ctx, root, protected, rel, change.NewParentPath)
 	case types.FileOpDelete:
-		return deletePath(root, protected, rel, change.Recursive)
+		return deletePath(ctx, root, protected, rel, change.Recursive)
 	default:
 		return fmt.Errorf("unsupported workspace operation %q", change.Operation)
 	}
 }
 
-func createFile(root *os.Root, protected map[string]bool, rel string, content []byte, maxFileSizeBytes int64) error {
+func createFile(ctx context.Context, root acfs.Root, protected map[string]bool, rel string, content []byte, maxFileSizeBytes int64) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
 	if err := ValidateContentSize(content, maxFileSizeBytes); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, path.Dir(rel)); err != nil {
+	if err := ensureNoSymlink(ctx, root, path.Dir(rel)); err != nil {
 		return err
 	}
 
-	if err := root.MkdirAll(path.Dir(rel), kitfs.DirPerm); err != nil {
+	if err := root.MkdirAll(ctx, kitfs.LogicalPath(path.Dir(rel)), kitfs.DirPerm); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
 
-	// O_EXCL makes the exists-check-and-create atomic; os.Root confines the
-	// path to the project directory in the kernel.
-	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, kitfs.FilePerm)
+	f, err := root.OpenFile(ctx, "/"+rel, acfs.OpenOptions{
+		Mode:      kitfs.FilePerm,
+		Write:     true,
+		Create:    true,
+		Exclusive: true,
+	})
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("workspace file already exists: %s: %w", rel, acfs.ErrAlreadyExists)
@@ -376,52 +357,57 @@ func createFile(root *os.Root, protected map[string]bool, rel string, content []
 	return nil
 }
 
-func createFolder(root *os.Root, protected map[string]bool, rel string) error {
+func createFolder(ctx context.Context, root acfs.Root, protected map[string]bool, rel string) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, rel); err != nil {
+	if err := ensureNoSymlink(ctx, root, rel); err != nil {
 		return err
 	}
 
-	if _, err := root.Lstat(rel); err == nil {
+	if _, err := root.Stat(ctx, "/"+rel, acfstypes.StatOptions{}); err == nil {
 		return fmt.Errorf("workspace folder already exists: %s: %w", rel, acfs.ErrAlreadyExists)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect workspace folder: %w", err)
 	}
-	if err := root.MkdirAll(rel, kitfs.DirPerm); err != nil {
+	if err := root.MkdirAll(ctx, "/"+rel, kitfs.DirPerm); err != nil {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
 	return nil
 }
 
-func updateFile(root *os.Root, protected map[string]bool, rel string, content, baseline []byte, baselineSet bool, maxFileSizeBytes int64) error {
+func updateFile(ctx context.Context, root acfs.Root, protected map[string]bool, rel string, content, baseline []byte, baselineSet bool, maxFileSizeBytes int64) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
 	if err := ValidateContentSize(content, maxFileSizeBytes); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, rel); err != nil {
+	if err := ensureNoSymlink(ctx, root, rel); err != nil {
 		return err
 	}
 
-	info, err := root.Lstat(rel)
+	entry, err := root.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("workspace file not found: %s", rel)
 		}
 		return fmt.Errorf("inspect workspace file: %w", err)
 	}
-	if info.IsDir() {
+	if entry.IsDirectory {
 		return fmt.Errorf("path is a folder: %s", rel)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
+	if entry.IsSymlink {
 		return fmt.Errorf("symlink files are not supported: %w", ErrSymlinkPath)
 	}
 
 	if baselineSet {
-		current, readErr := readFileLimited(root, rel, int64(len(baseline))+1)
+		reader, _, openErr := root.OpenRead(ctx, "/"+rel, int64(len(baseline))+1)
+		if openErr != nil {
+			return fmt.Errorf("read workspace file: %w", openErr)
+		}
+		current, readErr := io.ReadAll(reader)
+		_ = reader.Close()
 		if readErr != nil {
 			return fmt.Errorf("read workspace file: %w", readErr)
 		}
@@ -430,37 +416,31 @@ func updateFile(root *os.Root, protected map[string]bool, rel string, content, b
 		}
 	}
 
-	if writeFileErr := root.WriteFile(rel, content, kitfs.FilePerm); writeFileErr != nil {
-		return fmt.Errorf("update workspace file: %w", writeFileErr)
+	if writeErr := root.Write(ctx, "/"+rel, content, acfs.WriteOptions{
+		Mode:    os.FileMode(entry.UnixMode) & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky),
+		InPlace: true,
+	}); writeErr != nil {
+		return fmt.Errorf("update workspace file: %w", writeErr)
 	}
 	return nil
 }
 
-func readFileLimited(root *os.Root, rel string, maxBytes int64) ([]byte, error) {
-	f, err := root.Open(rel)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	return io.ReadAll(io.LimitReader(f, maxBytes))
-}
-
-func renamePath(root *os.Root, protected map[string]bool, rel, newName string) error {
+func renamePath(ctx context.Context, root acfs.Root, protected map[string]bool, rel, newName string) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, rel); err != nil {
+	if err := ensureNoSymlink(ctx, root, rel); err != nil {
 		return err
 	}
 
-	info, err := root.Lstat(rel)
+	entry, err := root.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("workspace path not found: %s", rel)
 		}
 		return fmt.Errorf("inspect workspace path: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
+	if entry.IsSymlink {
 		return fmt.Errorf("symlink paths are not supported: %w", ErrSymlinkPath)
 	}
 
@@ -468,16 +448,16 @@ func renamePath(root *os.Root, protected map[string]bool, rel, newName string) e
 	if writableErr := ensureWritableRelPath(protected, targetRel); writableErr != nil {
 		return writableErr
 	}
-	if symlinkErr := ensureNoSymlink(root, path.Dir(targetRel)); symlinkErr != nil {
+	if symlinkErr := ensureNoSymlink(ctx, root, path.Dir(targetRel)); symlinkErr != nil {
 		return symlinkErr
 	}
-	if _, lstatErr := root.Lstat(targetRel); lstatErr == nil {
+	if _, lstatErr := root.Stat(ctx, "/"+targetRel, acfstypes.StatOptions{}); lstatErr == nil {
 		return fmt.Errorf("workspace path already exists: %s", targetRel)
 	} else if !errors.Is(lstatErr, os.ErrNotExist) {
 		return fmt.Errorf("inspect workspace path: %w", lstatErr)
 	}
 
-	if renameErr := root.Rename(rel, targetRel); renameErr != nil {
+	if renameErr := root.Rename(ctx, "/"+rel, "/"+targetRel); renameErr != nil {
 		return fmt.Errorf("rename workspace path: %w", renameErr)
 	}
 	return nil
@@ -490,11 +470,11 @@ func NormalizeParentPath(input string) (string, error) {
 	return kit.NormalizeRelativePath(input)
 }
 
-func movePath(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
+func movePath(ctx context.Context, root acfs.Root, protected map[string]bool, rel, newParentPath string) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, rel); err != nil {
+	if err := ensureNoSymlink(ctx, root, rel); err != nil {
 		return err
 	}
 
@@ -508,21 +488,21 @@ func movePath(root *os.Root, protected map[string]bool, rel, newParentPath strin
 		}
 	}
 
-	sourceInfo, err := root.Lstat(rel)
+	source, err := root.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("workspace path not found: %s", rel)
 		}
 		return fmt.Errorf("inspect workspace path: %w", err)
 	}
-	if sourceInfo.Mode()&os.ModeSymlink != 0 {
+	if source.IsSymlink {
 		return fmt.Errorf("symlink paths are not supported: %w", ErrSymlinkPath)
 	}
-	if sourceInfo.IsDir() && parentRel != "" && kit.FilePathMatches(parentRel, rel) {
+	if source.IsDirectory && parentRel != "" && kit.FilePathMatches(parentRel, rel) {
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 
-	if parentErr := validateMoveParent(root, parentRel); parentErr != nil {
+	if parentErr := validateMoveParent(ctx, root, parentRel); parentErr != nil {
 		return parentErr
 	}
 
@@ -536,86 +516,86 @@ func movePath(root *os.Root, protected map[string]bool, rel, newParentPath strin
 	if writableTargetErr := ensureWritableRelPath(protected, targetRel); writableTargetErr != nil {
 		return writableTargetErr
 	}
-	if symlinkErr := ensureNoSymlink(root, path.Dir(targetRel)); symlinkErr != nil {
+	if symlinkErr := ensureNoSymlink(ctx, root, path.Dir(targetRel)); symlinkErr != nil {
 		return symlinkErr
 	}
-	if _, lstatErr := root.Lstat(targetRel); lstatErr == nil {
+	if _, lstatErr := root.Stat(ctx, "/"+targetRel, acfstypes.StatOptions{}); lstatErr == nil {
 		return fmt.Errorf("workspace path already exists: %s", targetRel)
 	} else if !errors.Is(lstatErr, os.ErrNotExist) {
 		return fmt.Errorf("inspect workspace path: %w", lstatErr)
 	}
 
-	if renameErr := root.Rename(rel, targetRel); renameErr != nil {
+	if renameErr := root.Rename(ctx, "/"+rel, "/"+targetRel); renameErr != nil {
 		return fmt.Errorf("move workspace path: %w", renameErr)
 	}
 	return nil
 }
 
-func validateMoveParent(root *os.Root, parentRel string) error {
+func validateMoveParent(ctx context.Context, root acfs.Root, parentRel string) error {
 	if parentRel == "" {
 		return nil
 	}
-	if err := ensureNoSymlink(root, parentRel); err != nil {
+	if err := ensureNoSymlink(ctx, root, parentRel); err != nil {
 		return err
 	}
 
-	parentInfo, err := root.Lstat(parentRel)
+	parent, err := root.Stat(ctx, "/"+parentRel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("destination folder not found: %s", parentRel)
 		}
 		return fmt.Errorf("inspect destination folder: %w", err)
 	}
-	if parentInfo.Mode()&os.ModeSymlink != 0 {
+	if parent.IsSymlink {
 		return fmt.Errorf("symlink destination folders are not supported: %w", ErrSymlinkPath)
 	}
-	if !parentInfo.IsDir() {
+	if !parent.IsDirectory {
 		return fmt.Errorf("destination path is not a folder: %s", parentRel)
 	}
 	return nil
 }
 
-func deletePath(root *os.Root, protected map[string]bool, rel string, recursive bool) error {
+func deletePath(ctx context.Context, root acfs.Root, protected map[string]bool, rel string, recursive bool) error {
 	if err := ensureWritableRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureNoSymlink(root, rel); err != nil {
+	if err := ensureNoSymlink(ctx, root, rel); err != nil {
 		return err
 	}
 
-	info, err := root.Lstat(rel)
+	entry, err := root.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("workspace path not found: %s", rel)
 		}
 		return fmt.Errorf("inspect workspace path: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
+	if entry.IsSymlink {
 		return fmt.Errorf("symlink paths are not supported: %w", ErrSymlinkPath)
 	}
-	if info.IsDir() && !recursive {
-		empty, isDirectoryEmptyErr := isDirectoryEmpty(root, rel)
-		if isDirectoryEmptyErr != nil {
-			return isDirectoryEmptyErr
+	if entry.IsDirectory && !recursive {
+		children, listErr := root.List(ctx, "/"+rel)
+		if listErr != nil {
+			return fmt.Errorf("read folder: %w", listErr)
 		}
-		if !empty {
+		if len(children) > 0 {
 			return errors.New("folder is not empty")
 		}
 	}
 
-	if info.IsDir() {
-		if removeAllErr := root.RemoveAll(rel); removeAllErr != nil {
+	if entry.IsDirectory {
+		if removeAllErr := root.RemoveAll(ctx, "/"+rel); removeAllErr != nil {
 			return fmt.Errorf("delete workspace folder: %w", removeAllErr)
 		}
 		return nil
 	}
-	if removeErr := root.Remove(rel); removeErr != nil {
+	if removeErr := root.Remove(ctx, "/"+rel); removeErr != nil {
 		return fmt.Errorf("delete workspace file: %w", removeErr)
 	}
 	return nil
 }
 
-func ensureNoSymlink(root *os.Root, rel string) error {
+func ensureNoSymlink(ctx context.Context, root acfs.Root, rel string) error {
 	cleaned := path.Clean(rel)
 	if cleaned == "." || cleaned == "" {
 		return nil
@@ -629,14 +609,14 @@ func ensureNoSymlink(root *os.Root, rel string) error {
 			current = path.Join(current, segment)
 		}
 
-		info, err := root.Lstat(current)
+		entry, err := root.Stat(ctx, "/"+current, acfstypes.StatOptions{})
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
 			return fmt.Errorf("inspect workspace path: %w", err)
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		if entry.IsSymlink {
 			return fmt.Errorf("symlink paths are not supported: %w", ErrSymlinkPath)
 		}
 	}
@@ -652,21 +632,4 @@ func ensureWritableRelPath(protected map[string]bool, rel string) error {
 		return fmt.Errorf("%s: %w", rel, ErrProtectedPath)
 	}
 	return nil
-}
-
-func isDirectoryEmpty(root *os.Root, rel string) (bool, error) {
-	f, err := root.Open(rel)
-	if err != nil {
-		return false, fmt.Errorf("open folder: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	_, err = f.Readdirnames(1)
-	if errors.Is(err, io.EOF) {
-		return true, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("read folder: %w", err)
-	}
-	return false, nil
 }

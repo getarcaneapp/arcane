@@ -31,6 +31,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -208,7 +209,7 @@ func NewService(deps Dependencies) *Service {
 			},
 			DatabaseFile: func() (string, error) { return service.databaseFile() },
 			ProjectsDirectory: func(ctx context.Context) string {
-				return projects.ResolveConfiguredContainerDirectory(service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
+				return projects.ResolveConfiguredContainerDirectory(ctx, service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
 			},
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
@@ -1069,7 +1070,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return err
 	}
 	dataDirectory := filepath.Dir(databaseFile)
-	projectsDirectory := projects.ResolveConfiguredContainerDirectory(s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
+	projectsDirectory := projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
 	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, current.Mounts, dataDirectory, projectsDirectory)
 	if err != nil {
 		return err
@@ -1123,13 +1124,13 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return fmt.Errorf("encode recovery request: %w", err)
 	}
 	requestFile := path.Join("/app/data", snapshots.RecoveryRequestName)
-	if writeFileErr := os.WriteFile(requestFile, requestData, 0o600); writeFileErr != nil {
+	if writeFileErr := (acfs.Host{}).Write(ctx, requestFile, requestData, acfs.WriteOptions{Mode: 0o600}); writeFileErr != nil {
 		return fmt.Errorf("write recovery request: %w", writeFileErr)
 	}
 	cleanupRequest := true
 	defer func() {
 		if cleanupRequest {
-			_ = os.Remove(requestFile)
+			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), requestFile)
 		}
 	}()
 	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, s.dockerService.DockerHost(), &current,

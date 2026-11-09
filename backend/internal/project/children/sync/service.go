@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -28,7 +29,7 @@ type (
 )
 
 func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirectory, envContent string) error {
-	state, err := projects.ReadProjectEnvState(projectPath)
+	state, err := projects.ReadProjectEnvState(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("read project env state: %w", err)
 	}
@@ -39,7 +40,7 @@ func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirect
 		[]string{projects.EffectiveEnvFileName, projects.OverrideEnvFileName},
 		[]string{projects.EffectiveEnvFileName},
 	) {
-		if info, statErr := os.Stat(filepath.Join(projectPath, name)); statErr == nil && info.IsDir() {
+		if entry, statErr := (acfs.Host{}).Stat(ctx, filepath.Join(projectPath, name), acfstypes.StatOptions{FollowFinal: true}); statErr == nil && entry.IsDirectory {
 			return fmt.Errorf("cannot save environment: %s is a directory", name)
 		}
 	}
@@ -98,13 +99,13 @@ func ResolveStoredEffectiveEnvContent(state projects.ProjectEnvState) (string, e
 	return state.DirectContent, nil
 }
 
-func effectiveEnvContentForUpdate(projectPath string, envContent *string) (*string, error) {
+func effectiveEnvContentForUpdate(ctx context.Context, projectPath string, envContent *string) (*string, error) {
 	if envContent != nil {
 		return envContent, nil
 	}
 
 	// A sync without git env content resolves exactly the stored effective content.
-	update, err := PrepareGitSyncEnvUpdate(projectPath, nil)
+	update, err := PrepareGitSyncEnvUpdate(ctx, projectPath, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +113,7 @@ func effectiveEnvContentForUpdate(projectPath string, envContent *string) (*stri
 }
 
 func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory string) error {
-	state, err := projects.ReadProjectEnvState(projectPath)
+	state, err := projects.ReadProjectEnvState(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("read project env state: %w", err)
 	}
@@ -155,11 +156,11 @@ func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, p
 	if err != nil {
 		return fmt.Errorf("failed to read project files: %w", err)
 	}
-	effectiveEnvContent, err := effectiveEnvContentForUpdate(projectPath, envContent)
+	effectiveEnvContent, err := effectiveEnvContentForUpdate(ctx, projectPath, envContent)
 	if err != nil {
 		return fmt.Errorf("invalid compose file: %w", err)
 	}
-	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(projectPath, overrideContent)
+	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(ctx, projectPath, overrideContent)
 	if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
 		ProjectsDirectory: projectsDirectory,
 		ProjectPath:       projectPath,
@@ -195,8 +196,8 @@ func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, p
 	return nil
 }
 
-func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSyncEnvUpdate, error) {
-	state, err := projects.ReadProjectEnvState(projectPath)
+func PrepareGitSyncEnvUpdate(ctx context.Context, projectPath string, gitEnvContent *string) (GitSyncEnvUpdate, error) {
+	state, err := projects.ReadProjectEnvState(ctx, projectPath)
 	if err != nil {
 		return GitSyncEnvUpdate{}, fmt.Errorf("read project env state: %w", err)
 	}
@@ -282,7 +283,7 @@ func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory 
 }
 
 func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
-	update, err := PrepareGitSyncEnvUpdate(projectPath, gitEnvContent)
+	update, err := PrepareGitSyncEnvUpdate(ctx, projectPath, gitEnvContent)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve git env state: %w", err)
 	}
@@ -305,7 +306,7 @@ func LoadComposeMetadata(
 		return types.ComposeIdentity{ResolvedProjectName: normName}, err
 	}
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper)
-	if cached, ok := cache.Get(dirPath, fingerprint); ok {
+	if cached, ok := cache.Get(ctx, dirPath, fingerprint); ok {
 		return cached, nil
 	}
 
@@ -343,7 +344,7 @@ func LoadComposeMetadata(
 	}
 
 	if composeFiles, envFiles, ok := projects.ComposeCacheDependencies(ctx, proj, dependencies, composeFile, projectsDirectory, autoInjectEnv); ok {
-		if setErr := cache.Set(dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, loadedAt, meta); setErr != nil {
+		if setErr := cache.Set(ctx, dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, loadedAt, meta); setErr != nil {
 			slog.DebugContext(ctx, "failed to cache compose metadata", "path", dirPath, "error", setErr)
 		}
 	}

@@ -68,7 +68,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return ensureSwarmVolumesErr
 	}
 
-	configPlans, err := planConfigs(project, ns)
+	configPlans, err := planConfigs(ctx, project, ns)
 	if err != nil {
 		return invalidStackError(err)
 	}
@@ -82,7 +82,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
-	secretPlans, err := planSecrets(project, ns)
+	secretPlans, err := planSecrets(ctx, project, ns)
 	if err != nil {
 		return invalidStackError(err)
 	}

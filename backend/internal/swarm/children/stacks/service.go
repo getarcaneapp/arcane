@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -793,8 +792,7 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
-	// os rather than acfs: acfs can only open a root that already exists.
-	if mkdirAllErr := os.MkdirAll(rootDir, kitfs.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, rootDir, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source root: %w", mkdirAllErr)
 	}
 	if mkdirAllErr := (acfs.Root{Path: rootDir}).MkdirAll(ctx, stackLogical, kitfs.DirPerm); mkdirAllErr != nil {
@@ -910,7 +908,7 @@ func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, env
 		normalizedEnvironmentID = "0"
 	}
 
-	rootDir := projects.ResolveConfiguredContainerDirectory(s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"), defaultSwarmStackSourceRootDir)
+	rootDir := projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"), defaultSwarmStackSourceRootDir)
 
 	environmentDir := filepath.Clean(filepath.Join(rootDir, normalizedEnvironmentID))
 	if !projects.IsSafeSubdirectory(rootDir, environmentDir) {

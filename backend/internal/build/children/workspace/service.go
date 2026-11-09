@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -39,7 +38,7 @@ func NewService(settingsService *settings.SettingsService) *Service {
 }
 
 func (s *Service) Read(ctx context.Context) (*types.Workspace, error) {
-	root, err := s.resolveRoot()
+	root, err := s.resolveRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +82,7 @@ func (s *Service) Update(ctx context.Context, manifest types.WorkspaceUpdateMani
 	if err := workspace.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrBadRequest, err)
 	}
-	root, err := s.resolveRoot()
+	root, err := s.resolveRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +102,7 @@ func (s *Service) Upload(ctx context.Context, parentPath, filename string, conte
 	if err != nil {
 		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("invalid build workspace file name: %w", err))
 	}
-	root, err := s.resolveRoot()
+	root, err := s.resolveRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +123,7 @@ func (s *Service) options(ctx context.Context, expectedRevision string) workspac
 }
 
 func (s *Service) resolveFile(ctx context.Context, relativePath string) (string, string, acfstypes.Entry, error) {
-	root, err := s.resolveRoot()
+	root, err := s.resolveRoot(ctx)
 	if err != nil {
 		return "", "", acfstypes.Entry{}, err
 	}
@@ -142,7 +141,7 @@ func (s *Service) resolveFile(ctx context.Context, relativePath string) (string,
 	return root, rel, entry, nil
 }
 
-func (s *Service) resolveRoot() (string, error) {
+func (s *Service) resolveRoot(ctx context.Context) (string, error) {
 	root := cmp.Or(strings.TrimSpace(s.settingsService.GetSettingsConfig().BuildsDirectory.Value), defaultBuildsDirectory)
 
 	if !filepath.IsAbs(root) {
@@ -150,7 +149,7 @@ func (s *Service) resolveRoot() (string, error) {
 	}
 
 	cleaned := filepath.Clean(root)
-	if err := os.MkdirAll(cleaned, 0o755); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, cleaned, 0o755); err != nil {
 		return "", fmt.Errorf("failed to ensure builds directory: %w", err)
 	}
 

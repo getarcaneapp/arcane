@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/ci"
 	"getarcane.dev/cli/v3/internal/client"
@@ -60,7 +63,7 @@ GitHub Actions example:
 			}
 			audience := opts.audience
 
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -156,7 +159,11 @@ func resolveFederatedSubjectToken(cmd *cobra.Command, provider, audience, federa
 	}
 
 	if strings.TrimSpace(federatedTokenFile) != "" {
-		data, err := os.ReadFile(strings.TrimSpace(federatedTokenFile))
+		tokenPath, err := filepath.Abs(strings.TrimSpace(federatedTokenFile))
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read token file: %w", err)
+		}
+		data, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), tokenPath)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to read token file: %w", err)
 		}

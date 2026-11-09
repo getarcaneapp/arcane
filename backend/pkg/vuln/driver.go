@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -125,9 +126,8 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 	}
 }
 
-func CreateLogTempFile(prefix string) (*os.File, error) {
-	// System temp scratch with a user cache dir fallback: no acfs root exists for either.
-	file, primaryErr := os.CreateTemp("", prefix)
+func CreateLogTempFile(ctx context.Context, prefix string) (*os.File, error) {
+	file, _, primaryErr := acfs.Host{}.CreateTemp(ctx, os.TempDir(), prefix)
 	if primaryErr == nil {
 		return file, nil
 	}
@@ -137,10 +137,10 @@ func CreateLogTempFile(prefix string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to create trivy temp file (primary: %s) and user cache dir unavailable: %w", primaryErr.Error(), err)
 	}
 	fallbackDir := filepath.Join(cacheDir, "arcane", "trivy-tmp")
-	if mkdirAllErr := os.MkdirAll(fallbackDir, 0o700); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, fallbackDir, 0o700); mkdirAllErr != nil {
 		return nil, fmt.Errorf("failed to create trivy fallback temp dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), mkdirAllErr)
 	}
-	fallbackFile, err := os.CreateTemp(fallbackDir, prefix)
+	fallbackFile, _, err := acfs.Host{}.CreateTemp(ctx, fallbackDir, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trivy temp file in fallback dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), err)
 	}
@@ -162,8 +162,7 @@ func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
 			continue
 		}
 
-		// System temp scratch: no acfs root exists for it.
-		if err := os.Remove(localPath); err != nil {
+		if err := (acfs.Host{}).Remove(ctx, localPath); err != nil {
 			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", localPath, "error", err)
 		}
 	}

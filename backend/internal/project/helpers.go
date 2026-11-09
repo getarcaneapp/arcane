@@ -206,8 +206,8 @@ func (s tagStore) DeleteSource(projectID string, source types.ProjectTagSource) 
 	return s.tx.Where("project_id = ? AND source = ?", projectID, source).Delete(&ProjectTag{}).Error
 }
 
-func projectEnvDetails(projectPath string) (string, bool, error) {
-	envState, err := projects.ReadProjectEnvState(projectPath)
+func projectEnvDetails(ctx context.Context, projectPath string) (string, bool, error) {
+	envState, err := projects.ReadProjectEnvState(ctx, projectPath)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to read project env state: %w", err)
 	}

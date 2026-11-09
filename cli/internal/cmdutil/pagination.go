@@ -1,6 +1,7 @@
 package cmdutil
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -93,7 +94,7 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 				return v
 			}
 		}
-	} else if cfg, err := config.Load(); err == nil && cfg != nil {
+	} else if cfg, err := config.Load(cmp.Or(ctx, context.Background())); err == nil && cfg != nil {
 		if v := cfg.LimitFor(resource); v != 0 {
 			return v
 		}

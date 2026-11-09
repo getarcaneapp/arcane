@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 )
 
 type (
@@ -24,6 +25,7 @@ type (
 	}
 
 	MissingIncludeStubLoader struct {
+		ctx         context.Context
 		stubs       map[string]string
 		projectPath string
 		tempDir     string
@@ -49,8 +51,7 @@ func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (s
 	}
 
 	if l.tempDir == "" {
-		// System temp scratch dir: no acfs root exists for it.
-		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
+		tempDir, err := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-compose-include-*")
 		if err != nil {
 			return "", fmt.Errorf("create validation include temp dir: %w", err)
 		}
@@ -87,9 +88,7 @@ func (l *MissingIncludeStubLoader) resolveMissingInclude(localPath string) mo.Op
 		return mo.None[string]()
 	}
 
-	// os.Stat rather than acfs: the validated include target may live outside
-	// the project directory (#3556).
-	if _, statErr := os.Stat(validatedPath); statErr == nil {
+	if _, statErr := (acfs.Host{}).Stat(l.ctx, validatedPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
 		return mo.None[string]()
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return mo.None[string]()
@@ -100,20 +99,20 @@ func (l *MissingIncludeStubLoader) resolveMissingInclude(localPath string) mo.Op
 
 func (l *MissingIncludeStubLoader) Cleanup() {
 	if l.tempDir != "" {
-		_ = os.RemoveAll(l.tempDir)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(l.ctx), l.tempDir)
 	}
 }
 
-func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
-	content, err := os.ReadFile(composeFilePath)
+func ParseIncludes(ctx context.Context, composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
+	content, err := acfs.Host{}.ReadFile(ctx, composeFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read compose file: %w", err)
 	}
 
-	return ParseIncludesFromContent(composeFilePath, content, envMap, includeContent)
+	return ParseIncludesFromContent(ctx, composeFilePath, content, envMap, includeContent)
 }
 
-func ParseIncludesFromContent(composeFilePath string, content []byte, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
+func ParseIncludesFromContent(ctx context.Context, composeFilePath string, content []byte, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	var composeData map[string]any
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
 		return nil, fmt.Errorf("failed to parse compose file: %w", err)
@@ -131,14 +130,14 @@ func ParseIncludesFromContent(composeFilePath string, content []byte, envMap Env
 	switch v := includes.(type) {
 	case []any:
 		for _, item := range v {
-			incs, err := parseIncludeItem(item, composeDir, envMap, includeContent)
+			incs, err := parseIncludeItem(ctx, item, composeDir, envMap, includeContent)
 			if err != nil {
 				return nil, err
 			}
 			includeFiles = append(includeFiles, incs...)
 		}
 	case string:
-		incs, err := parseIncludeItem(v, composeDir, envMap, includeContent)
+		incs, err := parseIncludeItem(ctx, v, composeDir, envMap, includeContent)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +152,7 @@ func ParseIncludesFromContent(composeFilePath string, content []byte, envMap Env
 	return includeFiles, nil
 }
 
-func parseIncludeItem(item any, baseDir string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
+func parseIncludeItem(ctx context.Context, item any, baseDir string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	includePaths, err := extractIncludePaths(item)
 	if err != nil {
 		return nil, err
@@ -161,7 +160,7 @@ func parseIncludeItem(item any, baseDir string, envMap EnvMap, includeContent bo
 
 	results := make([]IncludeFile, 0, len(includePaths))
 	for _, includePath := range includePaths {
-		inc, resolveIncludeFileErr := resolveIncludeFile(includePath, baseDir, envMap, includeContent)
+		inc, resolveIncludeFileErr := resolveIncludeFile(ctx, includePath, baseDir, envMap, includeContent)
 		if resolveIncludeFileErr != nil {
 			return nil, resolveIncludeFileErr
 		}
@@ -201,7 +200,7 @@ func extractIncludePathsFromMap(v map[string]any) ([]string, error) {
 	}
 }
 
-func resolveIncludeFile(includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
+func resolveIncludeFile(ctx context.Context, includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
 	if includePath == "" {
 		return IncludeFile{}, errors.New("empty include path")
 	}
@@ -222,7 +221,7 @@ func resolveIncludeFile(includePath, baseDir string, envMap EnvMap, includeConte
 	}
 	fullPath = filepath.Clean(fullPath)
 
-	content, err := readIncludeContent(fullPath, includePath, includeContent)
+	content, err := readIncludeContent(ctx, fullPath, includePath, includeContent)
 	if err != nil {
 		return IncludeFile{}, err
 	}
@@ -245,13 +244,11 @@ func resolveIncludeFile(includePath, baseDir string, envMap EnvMap, includeConte
 	}, nil
 }
 
-func readIncludeContent(fullPath, includePath string, includeContent bool) (string, error) {
+func readIncludeContent(ctx context.Context, fullPath, includePath string, includeContent bool) (string, error) {
 	if !includeContent {
 		return "", nil
 	}
-	// os.ReadFile rather than acfs: fullPath may resolve outside the project
-	// directory (#3556).
-	fileContent, err := os.ReadFile(fullPath)
+	fileContent, err := acfs.Host{}.ReadFile(ctx, fullPath)
 	if err == nil {
 		return string(fileContent), nil
 	}

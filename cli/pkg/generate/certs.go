@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -14,7 +15,6 @@ import (
 	"math/big"
 	"net"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/fs/atomic"
 )
 
@@ -96,7 +97,7 @@ func generateMTLSOutput(cmd *cobra.Command, mtlsOutDir, mtlsEnvID, mtlsAppURL st
 		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
 
-	paths, err := generateAgentMTLSBundle(outDir, strings.TrimSpace(mtlsEnvID), strings.TrimSpace(mtlsAppURL))
+	paths, err := generateAgentMTLSBundle(cmd.Context(), outDir, strings.TrimSpace(mtlsEnvID), strings.TrimSpace(mtlsAppURL))
 	if err != nil {
 		return err
 	}
@@ -126,7 +127,7 @@ func generateTLSOutput(cmd *cobra.Command, tlsOutDir, tlsCommonName string, tlsH
 		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
 
-	paths, err := generateServerTLSBundle(outDir, strings.TrimSpace(tlsCommonName), tlsHosts, strings.TrimSpace(tlsCertName), strings.TrimSpace(tlsKeyName))
+	paths, err := generateServerTLSBundle(cmd.Context(), outDir, strings.TrimSpace(tlsCommonName), tlsHosts, strings.TrimSpace(tlsCertName), strings.TrimSpace(tlsKeyName))
 	if err != nil {
 		return err
 	}
@@ -143,11 +144,11 @@ func generateTLSOutput(cmd *cobra.Command, tlsOutDir, tlsCommonName string, tlsH
 	return nil
 }
 
-func generateAgentMTLSBundle(outDir, envID, appURL string) (*agentMTLSPaths, error) {
+func generateAgentMTLSBundle(ctx context.Context, outDir, envID, appURL string) (*agentMTLSPaths, error) {
 	if envID == "" {
 		return nil, errors.New("env ID is required")
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -204,7 +205,7 @@ func generateAgentMTLSBundle(outDir, envID, appURL string) (*agentMTLSPaths, err
 	return paths, nil
 }
 
-func generateServerTLSBundle(outDir, commonName string, hosts []string, certName, keyName string) (*serverTLSPaths, error) {
+func generateServerTLSBundle(ctx context.Context, outDir, commonName string, hosts []string, certName, keyName string) (*serverTLSPaths, error) {
 	if commonName == "" {
 		return nil, errors.New("common name is required")
 	}
@@ -216,7 +217,7 @@ func generateServerTLSBundle(outDir, commonName string, hosts []string, certName
 	if keyName == "." || keyName == "" {
 		return nil, errors.New("key file name is required")
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 

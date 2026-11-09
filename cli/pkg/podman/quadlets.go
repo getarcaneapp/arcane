@@ -7,7 +7,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -217,13 +217,21 @@ func newQuadletInstallCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := os.ReadFile(args[0])
+			quadletPath, err := filepath.Abs(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to read quadlet file: %w", err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), quadletPath)
 			if err != nil {
 				return fmt.Errorf("failed to read quadlet file: %w", err)
 			}
 			extraFiles := make([]types.QuadletFile, len(opts.extraFiles))
 			for i, extraPath := range opts.extraFiles {
-				extraContent, readErr := os.ReadFile(extraPath)
+				extraHostPath, readErr := filepath.Abs(extraPath)
+				if readErr != nil {
+					return fmt.Errorf("failed to read extra file: %w", readErr)
+				}
+				extraContent, readErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), extraHostPath)
 				if readErr != nil {
 					return fmt.Errorf("failed to read extra file: %w", readErr)
 				}

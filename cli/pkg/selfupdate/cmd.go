@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/config"
@@ -134,7 +135,7 @@ func (opts cliUpdateOptions) setCLIUpdateChannelAndRun(cmd *cobra.Command, chann
 	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
 		return fmt.Errorf("invalid update channel %q (expected stable or next)", channel)
 	}
-	cfg, err := config.Load()
+	cfg, err := config.Load(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -201,7 +202,7 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 		return nil, err
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -221,7 +222,7 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 	}
 	opts.verboseCLIUpdate("channel=%s target=%s platform=%s/%s", channel, targetPath, runtime.GOOS, runtime.GOARCH)
 
-	currentSHA, err := sha256File(targetPath)
+	currentSHA, err := sha256File(ctx, targetPath)
 	if err != nil {
 		return nil, err
 	}
@@ -409,11 +410,11 @@ func cliArtifactArch() (string, error) {
 }
 
 func (opts cliUpdateOptions) installCLIUpdate(ctx context.Context, plan *cliUpdatePlan, jsonMode bool) error {
-	tmpDir, err := os.MkdirTemp("", "arcane-cli-update-*")
+	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-cli-update-*")
 	if err != nil {
 		return fmt.Errorf("failed to create update temp dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer func() { _ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir) }()
 
 	loading := output.StartTracker(ctx, output.Stderr(), !jsonMode, "Downloading artifact", "Verifying artifact", "Installing executable")
 	loading.NextStep()
@@ -423,7 +424,7 @@ func (opts cliUpdateOptions) installCLIUpdate(ctx context.Context, plan *cliUpda
 		return downloadFileErr
 	}
 	loading.NextStep()
-	if gotSHA, sha256FileErr := sha256File(downloadPath); sha256FileErr != nil {
+	if gotSHA, sha256FileErr := sha256File(ctx, downloadPath); sha256FileErr != nil {
 		return sha256FileErr
 	} else if !strings.EqualFold(gotSHA, plan.ArtifactSHA) {
 		return fmt.Errorf("downloaded artifact SHA mismatch: got %s, expected %s", gotSHA, plan.ArtifactSHA)
@@ -433,28 +434,29 @@ func (opts cliUpdateOptions) installCLIUpdate(ctx context.Context, plan *cliUpda
 	binaryPath := downloadPath
 	if strings.HasSuffix(plan.ArtifactName, ".tar.gz") {
 		extractedPath := filepath.Join(tmpDir, "arcane-cli")
-		if extractCLIFromTarGzErr := extractCLIFromTarGz(downloadPath, extractedPath); extractCLIFromTarGzErr != nil {
+		if extractCLIFromTarGzErr := extractCLIFromTarGz(ctx, downloadPath, extractedPath); extractCLIFromTarGzErr != nil {
 			return extractCLIFromTarGzErr
 		}
 		binaryPath = extractedPath
 	}
 
-	if chmodErr := os.Chmod(binaryPath, 0o755); chmodErr != nil {
+	if chmodErr := (acfs.Host{}).Chmod(ctx, binaryPath, 0o755); chmodErr != nil {
 		return fmt.Errorf("failed to make downloaded binary executable: %w", chmodErr)
 	}
-	return replaceExecutable(binaryPath, plan.TargetPath)
+	return replaceExecutable(ctx, binaryPath, plan.TargetPath)
 }
 
-func replaceExecutable(sourcePath, targetPath string) error {
+func replaceExecutable(ctx context.Context, sourcePath, targetPath string) error {
 	targetDir := filepath.Dir(targetPath)
-	tmpTarget, err := os.CreateTemp(targetDir, filepath.Base(targetPath)+".update-*")
+	tmpTarget, tmpTargetPath, err := acfs.Host{}.CreateTemp(ctx, targetDir, filepath.Base(targetPath)+".update-*")
 	if err != nil {
 		return fmt.Errorf("failed to create replacement file in %s: %w", targetDir, err)
 	}
-	tmpTargetPath := tmpTarget.Name()
-	cleanup := func() { _ = os.Remove(tmpTargetPath) }
+	cleanup := func() {
+		_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), tmpTargetPath)
+	}
 
-	source, err := os.Open(sourcePath)
+	source, err := acfs.Host{}.OpenFile(ctx, sourcePath, acfs.OpenOptions{Read: true})
 	if err != nil {
 		_ = tmpTarget.Close()
 		cleanup()
@@ -481,24 +483,19 @@ func replaceExecutable(sourcePath, targetPath string) error {
 		cleanup()
 		return fmt.Errorf("failed to close replacement binary: %w", closeErr)
 	}
-	if renameErr := os.Rename(tmpTargetPath, targetPath); renameErr != nil {
+	if renameErr := (acfs.Host{}).Rename(ctx, tmpTargetPath, targetPath); renameErr != nil {
 		cleanup()
 		return fmt.Errorf("failed to replace %s: %w", targetPath, renameErr)
 	}
 
-	dirFile, err := os.Open(targetDir)
-	if err != nil {
-		return fmt.Errorf("failed to open target directory for sync: %w", err)
-	}
-	defer func() { _ = dirFile.Close() }()
-	if syncDirectoryErr := dirFile.Sync(); syncDirectoryErr != nil {
+	if syncDirectoryErr := (acfs.Host{}).Sync(ctx, targetDir); syncDirectoryErr != nil {
 		return fmt.Errorf("failed to sync target directory: %w", syncDirectoryErr)
 	}
 	return nil
 }
 
-func extractCLIFromTarGz(archivePath, outputPath string) error {
-	file, err := os.Open(archivePath)
+func extractCLIFromTarGz(ctx context.Context, archivePath, outputPath string) error {
+	file, err := acfs.Host{}.OpenFile(ctx, archivePath, acfs.OpenOptions{Read: true})
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
 	}
@@ -529,7 +526,12 @@ func extractCLIFromTarGz(archivePath, outputPath string) error {
 			return fmt.Errorf("arcane-cli archive entry has invalid size %d", header.Size)
 		}
 
-		out, nextErr := os.OpenFile(outputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		out, nextErr := acfs.Host{}.OpenFile(ctx, outputPath, acfs.OpenOptions{
+			Mode:     0o755,
+			Write:    true,
+			Create:   true,
+			Truncate: true,
+		})
 		if nextErr != nil {
 			return fmt.Errorf("failed to create extracted binary: %w", nextErr)
 		}
@@ -615,7 +617,12 @@ func (opts cliUpdateOptions) downloadFile(ctx context.Context, url, outputPath s
 		return fmt.Errorf("failed to download %s: HTTP %s", url, resp.Status)
 	}
 
-	out, err := os.OpenFile(outputPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	out, err := acfs.Host{}.OpenFile(ctx, outputPath, acfs.OpenOptions{
+		Mode:     0o600,
+		Write:    true,
+		Create:   true,
+		Truncate: true,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create download file: %w", err)
 	}
@@ -647,8 +654,8 @@ func (opts cliUpdateOptions) verboseCLIUpdate(format string, args ...any) {
 	_, _ = fmt.Fprintf(output.CoordinatedWriter(output.Stderr()), "self-update: "+format+"\n", args...)
 }
 
-func sha256File(filePath string) (string, error) {
-	file, err := os.Open(filePath)
+func sha256File(ctx context.Context, filePath string) (string, error) {
+	file, err := acfs.Host{}.OpenFile(ctx, filePath, acfs.OpenOptions{Read: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to open %s for SHA-256: %w", filePath, err)
 	}

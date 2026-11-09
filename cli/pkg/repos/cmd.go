@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -70,7 +71,7 @@ func newListCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -121,14 +122,18 @@ func newCreateCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
 
 			var sshKey string
 			if cmd.Flags().Changed("ssh-key") {
-				sshKeyData, readFileErr := os.ReadFile(opts.sshKey)
+				sshKeyPath, readFileErr := filepath.Abs(opts.sshKey)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read SSH key file: %w", readFileErr)
+				}
+				sshKeyData, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), sshKeyPath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read SSH key file: %w", readFileErr)
 				}
@@ -136,7 +141,11 @@ func newCreateCmd() *cobra.Command {
 			}
 			var signingKey string
 			if cmd.Flags().Changed("signing-key") {
-				signingKeyData, readSigningKeyErr := os.ReadFile(opts.signingKey)
+				signingKeyPath, readSigningKeyErr := filepath.Abs(opts.signingKey)
+				if readSigningKeyErr != nil {
+					return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
+				}
+				signingKeyData, readSigningKeyErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), signingKeyPath)
 				if readSigningKeyErr != nil {
 					return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
 				}
@@ -202,7 +211,7 @@ func newGetCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -264,7 +273,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -276,7 +285,11 @@ func newUpdateCmd() *cobra.Command {
 
 			var sshKey string
 			if cmd.Flags().Changed("ssh-key") {
-				sshKeyData, readFileErr := os.ReadFile(opts.sshKey)
+				sshKeyPath, readFileErr := filepath.Abs(opts.sshKey)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read SSH key file: %w", readFileErr)
+				}
+				sshKeyData, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), sshKeyPath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read SSH key file: %w", readFileErr)
 				}
@@ -284,7 +297,11 @@ func newUpdateCmd() *cobra.Command {
 			}
 			var signingKey string
 			if cmd.Flags().Changed("signing-key") && opts.signingKey != "" {
-				signingKeyData, readSigningKeyErr := os.ReadFile(opts.signingKey)
+				signingKeyPath, readSigningKeyErr := filepath.Abs(opts.signingKey)
+				if readSigningKeyErr != nil {
+					return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
+				}
+				signingKeyData, readSigningKeyErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), signingKeyPath)
 				if readSigningKeyErr != nil {
 					return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
 				}
@@ -360,7 +377,7 @@ func newDeleteCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -391,7 +408,7 @@ func newTestCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -421,7 +438,7 @@ func newBranchesCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -471,7 +488,7 @@ func newFilesCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}

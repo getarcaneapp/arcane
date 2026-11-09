@@ -203,15 +203,20 @@ func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.
 		return knownhosts.New(knownHostsPaths...)
 	}
 
-	// Other modes accept and remember new host keys; os.* reaches paths outside acfs roots and supports append/flock.
-	knownHostsPath := knownHostsPaths[0]
-	dir := filepath.Dir(knownHostsPath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
+	knownHostsPath, err := filepath.Abs(knownHostsPaths[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve known_hosts path: %w", err)
+	}
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(knownHostsPath), 0o700); mkdirErr != nil {
+		return nil, fmt.Errorf("failed to create known_hosts directory: %w", mkdirErr)
 	}
 
-	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-		file, openFileErr := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	if _, statErr := (acfs.Host{}).Stat(ctx, knownHostsPath, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
+		file, openFileErr := acfs.Host{}.OpenFile(ctx, knownHostsPath, acfs.OpenOptions{
+			Mode:   0o600,
+			Write:  true,
+			Create: true,
+		})
 		if openFileErr != nil {
 			return nil, fmt.Errorf("failed to create known_hosts file: %w", openFileErr)
 		}
@@ -254,8 +259,12 @@ func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.
 			}
 		}()
 
-		// acfs has no append API, and override paths can be outside its roots.
-		file, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		file, openErr := acfs.Host{}.OpenFile(ctx, knownHostsPath, acfs.OpenOptions{
+			Mode:   0o600,
+			Write:  true,
+			Create: true,
+			Append: true,
+		})
 		if openErr != nil {
 			saveErr = fmt.Errorf("failed to open known_hosts file: %w", openErr)
 			return nil
@@ -364,12 +373,14 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig,
 		return "", err
 	}
 
-	// os.* rather than acfs: the clone staging root must exist before acfs could open it.
-	workDir := cmp.Or(c.workDir, os.TempDir())
-	if err = os.MkdirAll(workDir, 0o755); err != nil {
+	workDir, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve work dir: %w", err)
+	}
+	if err = (acfs.Host{}).MkdirAll(ctx, workDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
-	tmpDir, err := os.MkdirTemp(workDir, CloneScratchPrefix+"*")
+	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, workDir, CloneScratchPrefix+"*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -384,12 +395,12 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig,
 	if err != nil && depth > 0 && strings.Contains(err.Error(), "shallow") {
 		// Servers without shallow support, go-git's own included, get a full clone.
 		cloneOptions.Depth = 0
-		if err = os.RemoveAll(tmpDir); err == nil {
+		if err = (acfs.Host{}).RemoveAll(ctx, tmpDir); err == nil {
 			repo, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 		}
 	}
 	if err != nil {
-		_ = os.RemoveAll(tmpDir)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 	if head, headErr := repo.Head(); headErr == nil {
@@ -539,15 +550,18 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 }
 
 func (c *Client) Discard(ctx context.Context, repoPath string) {
-	if err := os.RemoveAll(repoPath); err != nil {
+	if err := (acfs.Host{}).RemoveAll(context.WithoutCancel(ctx), repoPath); err != nil {
 		slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", err)
 	}
 }
 
 func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (int, error) {
-	root := cmp.Or(c.workDir, os.TempDir())
+	root, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve git work dir: %w", err)
+	}
 
-	entries, err := os.ReadDir(root)
+	entries, err := acfs.Host{}.List(ctx, root)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return 0, nil
@@ -560,22 +574,14 @@ func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (in
 		if errErr := ctx.Err(); errErr != nil {
 			return removed, errErr
 		}
-		entryPath := filepath.Join(root, entry.Name())
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), CloneScratchPrefix) {
+		if !entry.IsDirectory || !strings.HasPrefix(entry.Name, CloneScratchPrefix) {
 			continue
 		}
-		if maxAge > 0 {
-			info, infoErr := entry.Info()
-			if infoErr != nil {
-				slog.WarnContext(ctx, "Failed to stat git clone scratch dir", "path", entryPath, "error", infoErr)
-				continue
-			}
-			if time.Since(info.ModTime()) < maxAge {
-				continue
-			}
+		if maxAge > 0 && time.Since(entry.ModTime) < maxAge {
+			continue
 		}
-		if rmErr := os.RemoveAll(entryPath); rmErr != nil {
-			slog.WarnContext(ctx, "Failed to remove git clone scratch dir", "path", entryPath, "error", rmErr)
+		if rmErr := (acfs.Host{}).RemoveAll(ctx, entry.Path); rmErr != nil {
+			slog.WarnContext(ctx, "Failed to remove git clone scratch dir", "path", entry.Path, "error", rmErr)
 			continue
 		}
 		removed++

@@ -26,7 +26,7 @@ import (
 
 var ErrProjectDirExists = errors.New("project directory already exists")
 
-func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
+func ResolveConfiguredContainerDirectory(ctx context.Context, configuredPath, defaultPath string) string {
 	directory := cmp.Or(strings.TrimSpace(configuredPath), defaultPath)
 
 	// Handle mapping format: "container_path:host_path"
@@ -36,16 +36,14 @@ func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) str
 		}
 	}
 
-	return resolveProjectsDirectoryPath(directory)
+	return resolveProjectsDirectoryPath(ctx, directory)
 }
 
 func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
-	projectsDirectory := ResolveConfiguredContainerDirectory(projectsDir, "/app/data/projects")
+	projectsDirectory := ResolveConfiguredContainerDirectory(ctx, projectsDir, "/app/data/projects")
 
-	// os.* rather than acfs: this creates the confinement root itself, which
-	// has to exist before acfs can open it.
-	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, projectsDirectory, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
+		if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created projects directory", "path", projectsDirectory)
@@ -54,12 +52,12 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 	return projectsDirectory, nil
 }
 
-func resolveProjectsDirectoryPath(projectsDirectory string) string {
+func resolveProjectsDirectoryPath(ctx context.Context, projectsDirectory string) string {
 	if filepath.IsAbs(projectsDirectory) {
 		return filepath.Clean(projectsDirectory)
 	}
 
-	if backendRoot, ok := findBackendModuleRoot().Get(); ok {
+	if backendRoot, ok := findBackendModuleRoot(ctx).Get(); ok {
 		return filepath.Clean(filepath.Join(backendRoot, projectsDirectory))
 	}
 
@@ -71,7 +69,7 @@ func resolveProjectsDirectoryPath(projectsDirectory string) string {
 	return filepath.Clean(projectsDirectory)
 }
 
-func findBackendModuleRoot() mo.Option[string] {
+func findBackendModuleRoot(ctx context.Context) mo.Option[string] {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return mo.None[string]()
@@ -83,7 +81,7 @@ func findBackendModuleRoot() mo.Option[string] {
 	}
 
 	for _, candidate := range candidates {
-		if isBackendModuleRoot(candidate) {
+		if isBackendModuleRoot(ctx, candidate) {
 			return mo.Some(candidate)
 		}
 	}
@@ -91,15 +89,11 @@ func findBackendModuleRoot() mo.Option[string] {
 	return mo.None[string]()
 }
 
-func isBackendModuleRoot(path string) bool {
-	if _, err := os.Stat(filepath.Join(path, "go.mod")); err != nil {
-		return false
-	}
-	if _, err := os.Stat(filepath.Join(path, "internal")); err != nil {
-		return false
-	}
-	if _, err := os.Stat(filepath.Join(path, "pkg")); err != nil {
-		return false
+func isBackendModuleRoot(ctx context.Context, path string) bool {
+	for _, name := range []string{"go.mod", "internal", "pkg"} {
+		if _, err := (acfs.Host{}).Stat(ctx, filepath.Join(path, name), acfstypes.StatOptions{FollowFinal: true}); err != nil {
+			return false
+		}
 	}
 	return true
 }
@@ -114,25 +108,22 @@ func ReadProjectFiles(ctx context.Context, projectPath, composePath string) (com
 	}
 
 	if strings.TrimSpace(composePath) != "" {
-		content, rerr := os.ReadFile(composePath)
+		content, rerr := acfs.Host{}.ReadFile(ctx, composePath)
 		if rerr != nil {
 			return "", "", fmt.Errorf("failed to read compose file %s: %w", composePath, rerr)
 		}
 		composeContent = string(content)
 	}
 
-	envPath := filepath.Join(projectPath, ".env")
-	if content, rerr := os.ReadFile(envPath); rerr == nil {
+	if content, rerr := (acfs.Host{}).ReadFile(ctx, filepath.Join(projectPath, ".env")); rerr == nil {
 		envContent = string(content)
 	}
 
 	return composeContent, envContent, nil
 }
 
-func HasComposeRootKeysInFile(path string) (bool, error) {
-	// Stays on os.*: callers pass paths in imported projects outside the
-	// projects directory, where no acfs root exists.
-	content, err := os.ReadFile(path)
+func HasComposeRootKeysInFile(ctx context.Context, path string) (bool, error) {
+	content, err := acfs.Host{}.ReadFile(ctx, path)
 	if err != nil {
 		return false, err
 	}
@@ -148,11 +139,9 @@ func HasComposeRootKeysInFile(path string) (bool, error) {
 }
 
 func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, error) {
-	resolved := ResolveConfiguredContainerDirectory(templatesDir, "/app/data/templates")
-	// os.* rather than acfs: this creates the confinement root itself, which
-	// has to exist before acfs can open it.
-	if _, err := os.Stat(resolved); os.IsNotExist(err) {
-		if mkdirAllErr := os.MkdirAll(resolved, kitfs.DirPerm); mkdirAllErr != nil {
+	resolved := ResolveConfiguredContainerDirectory(ctx, templatesDir, "/app/data/templates")
+	if _, statErr := (acfs.Host{}).Stat(ctx, resolved, acfstypes.StatOptions{FollowFinal: true}); errors.Is(statErr, fs.ErrNotExist) {
+		if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, resolved, kitfs.DirPerm); mkdirAllErr != nil {
 			return "", mkdirAllErr
 		}
 		slog.InfoContext(ctx, "Created templates directory", "path", resolved)
@@ -178,23 +167,13 @@ func syncedProjectFileMatches(ctx context.Context, projectPath string, file Sync
 	return bytes.Equal(existingContent, file.Content), nil
 }
 
-func pathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	return false, kit.Ternary(os.IsNotExist(err), nil, err)
-}
-
 func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
-	// os.Stat rather than acfs: projectPath is the would-be confinement root
-	// itself, which acfs cannot probe before it exists.
-	if info, err := os.Stat(projectPath); err != nil {
-		if os.IsNotExist(err) {
+	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, acfstypes.StatOptions{FollowFinal: true}); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return true, nil
 		}
 		return false, err
-	} else if !info.IsDir() {
+	} else if !entry.IsDirectory {
 		return false, fmt.Errorf("project path is not a directory: %s", projectPath)
 	}
 
@@ -270,7 +249,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 			continue
 		}
 
-		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(filepath.Join(projectPath, name))
+		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(ctx, filepath.Join(projectPath, name))
 		if rootKeysErr != nil || !hasComposeRootKeys {
 			continue
 		}
@@ -320,7 +299,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 		}
 
 		if candidate == basePath {
-			info, statErr := os.Lstat(basePath)
+			entry, statErr := acfs.Root{Path: projectsRoot}.Stat(ctx, logicalPath, acfstypes.StatOptions{})
 			if statErr != nil {
 				return "", "", false, fmt.Errorf("inspect existing project directory: %w", statErr)
 			}
@@ -328,7 +307,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 			if claimedErr != nil {
 				return "", "", false, fmt.Errorf("check existing project directory claims: %w", claimedErr)
 			}
-			if info.IsDir() && !isClaimed {
+			if entry.IsDirectory && !isClaimed {
 				if composePath, detectErr := DetectComposeFile(ctx, projectsRoot, basePath); composePath == "" && errors.Is(detectErr, common.ErrComposeFileNotFound) {
 					return basePath, folderName, true, nil
 				}

@@ -166,7 +166,7 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.
 	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	envMap, _, _ := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)).LoadEnvironment(ctx)
 
-	includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
+	includes, parseErr := projects.ParseIncludes(ctx, composeFile, envMap, false)
 	if parseErr != nil {
 		slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", composeFile)
 		return nil
@@ -397,8 +397,8 @@ func ExcludeHiddenRuntimeServices(details []types.Project) ([][]types.ProjectRun
 	return visibleByIndex, hiddenServicesByProjectID, hiddenRefsByProjectID
 }
 
-func ResolveDetailsOverride(projectPath, overrideContent string, composeSelection []string) (fileName, content string) {
-	overridePath := projects.DetectComposeOverrideFile(projectPath)
+func ResolveDetailsOverride(ctx context.Context, projectPath, overrideContent string, composeSelection []string) (fileName, content string) {
+	overridePath := projects.DetectComposeOverrideFile(ctx, projectPath)
 	if len(composeSelection) > 0 {
 		if overridePath == "" {
 			return "", ""

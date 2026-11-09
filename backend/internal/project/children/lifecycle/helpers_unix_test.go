@@ -20,7 +20,7 @@ func TestDescribeLifecyclePathAccess_ReportsPathMetadata(t *testing.T) {
 	require.NoError(t, os.MkdirAll(scriptsDir, 0o750))
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0o755))
 
-	got := describeLifecyclePathAccess(dir, scriptPath)
+	got := describeLifecyclePathAccess(t.Context(), dir, scriptPath)
 
 	assert.Contains(t, got, "Arcane process identity: uid=")
 	assert.Contains(t, got, "Path inspection:")
@@ -49,10 +49,10 @@ func TestDescribeLifecyclePathAccess_StopsAtFirstInaccessibleComponent(t *testin
 		_ = os.Chmod(blockedDir, 0o700)
 	})
 
-	got := describeLifecyclePathAccess(dir, scriptPath)
+	got := describeLifecyclePathAccess(t.Context(), dir, scriptPath)
 
 	assert.Contains(t, got, fmt.Sprintf("%q: mode=", blockedDir))
-	assert.Contains(t, got, fmt.Sprintf("%q: lstat ", scriptPath))
+	assert.Contains(t, got, fmt.Sprintf("%q: stat ", scriptPath))
 	assert.Contains(t, got, "permission denied")
 	assert.NotContains(t, got, fmt.Sprintf("%q: mode=", scriptPath))
 }

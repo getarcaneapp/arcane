@@ -81,7 +81,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		return nil, fmt.Errorf("%w: chunk size must be between %d and %d bytes", common.ErrUploadSessionInvalid, types.UploadMinChunkSize, types.UploadMaxChunkSize)
 	}
 
-	if err := os.MkdirAll(s.root, 0o700); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
 		return nil, fmt.Errorf("create upload root: %w", err)
 	}
 	sessionDir, err := acfs.Root{Path: s.root}.MkdirTemp(ctx, "/", "*")
@@ -255,7 +255,7 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 }
 
 func (s *UploadService) PurgeExpiredSessions(ctx context.Context, maxAge time.Duration) (int, error) {
-	if _, err := os.Stat(s.root); os.IsNotExist(err) {
+	if exists, existsErr := (acfs.Host{}).Exists(ctx, s.root); existsErr == nil && !exists {
 		return 0, nil
 	}
 	entries, err := acfs.Root{Path: s.root}.List(ctx, "/")

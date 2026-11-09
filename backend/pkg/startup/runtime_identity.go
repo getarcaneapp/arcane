@@ -3,6 +3,7 @@ package startup
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -13,6 +14,8 @@ import (
 	"github.com/samber/mo"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/fs"
 )
 
@@ -48,7 +51,7 @@ const (
 	mountInfoPath           = "/proc/self/mountinfo"
 )
 
-var lchownFn = os.Lchown
+var lchownFn = acfs.Host{}.Lchown
 
 func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConfig) error {
 	if cfg == nil {
@@ -60,7 +63,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		projectsDir = filepath.Clean(strings.TrimSpace(cfg.ProjectsDirectory))
 	}
 
-	inContainer := runningInContainer(cfg.InContainer, os.Getenv, os.Stat)
+	inContainer := runningInContainer(ctx, cfg.InContainer, os.Getenv, acfs.Host{}.Exists)
 	req, warning, err := loadRuntimeIdentityRequest(cfg, inContainer)
 	if warning != "" {
 		slog.WarnContext(ctx, "Runtime identity warning", "warning", warning)
@@ -69,29 +72,29 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		return err
 	}
 	if !req.Enabled {
-		return ensureSQLiteFilesExist(cfg.DatabaseURL)
+		return ensureSQLiteFilesExist(ctx, cfg.DatabaseURL)
 	}
 
-	if configErr := ensureRuntimeDockerConfig(cfg, os.Setenv, req.UID, req.GID, inContainer); configErr != nil {
+	if configErr := ensureRuntimeDockerConfig(ctx, cfg, os.Setenv, req.UID, req.GID, inContainer); configErr != nil {
 		return configErr
 	}
 
 	switch {
 	case os.Geteuid() == req.UID && os.Getegid() == req.GID:
 		// Avoid re-execing forever when the requested runtime identity is already active.
-		return ensureSQLiteFilesExist(cfg.DatabaseURL)
+		return ensureSQLiteFilesExist(ctx, cfg.DatabaseURL)
 	case os.Geteuid() != 0:
 		slog.WarnContext(ctx, "Runtime identity warning: process is not root, continuing as current user",
 			"euid", os.Geteuid(), "puid", req.UID, "pgid", req.GID)
-		return ensureSQLiteFilesExist(cfg.DatabaseURL)
+		return ensureSQLiteFilesExist(ctx, cfg.DatabaseURL)
 	}
 
 	if inContainer {
-		mountInfo, readErr := os.ReadFile(mountInfoPath)
-		if readErr != nil && !os.IsNotExist(readErr) {
+		mountInfo, readErr := acfs.Host{}.ReadFile(ctx, mountInfoPath)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return fmt.Errorf("load mountpoints: %w", readErr)
 		}
-		if prepareErr := prepareWritablePathsWithRoots(req.UID, req.GID, parseMountpoints(string(mountInfo)), projectsDir, defaultDataDirectory, defaultBuildsDirectory); prepareErr != nil {
+		if prepareErr := prepareWritablePathsWithRoots(ctx, req.UID, req.GID, parseMountpoints(string(mountInfo)), projectsDir, defaultDataDirectory, defaultBuildsDirectory); prepareErr != nil {
 			return prepareErr
 		}
 	}
@@ -151,13 +154,13 @@ func loadRuntimeIdentityRequest(cfg *RuntimeIdentityConfig, inContainer bool) (r
 	}, "", nil
 }
 
-func runningInContainer(arcaneInContainer bool, getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
+func runningInContainer(ctx context.Context, arcaneInContainer bool, getenv func(string) string, exists func(context.Context, string) (bool, error)) bool {
 	if arcaneInContainer || strings.TrimSpace(getenv("container")) != "" {
 		return true
 	}
 
 	for _, markerPath := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := stat(markerPath); err == nil {
+		if found, err := exists(ctx, markerPath); err == nil && found {
 			return true
 		}
 	}
@@ -165,7 +168,7 @@ func runningInContainer(arcaneInContainer bool, getenv func(string) string, stat
 	return false
 }
 
-func ensureRuntimeDockerConfig(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) error {
+func ensureRuntimeDockerConfig(ctx context.Context, cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) error {
 	configDir, err := configureRuntimeDockerConfigEnv(cfg, setenv, uid, gid, inContainer)
 	if err != nil {
 		return err
@@ -174,12 +177,16 @@ func ensureRuntimeDockerConfig(cfg *RuntimeIdentityConfig, setenv func(string, s
 		return nil
 	}
 
-	if mkdirAllErr := os.MkdirAll(configDir, fs.DirPerm); mkdirAllErr != nil {
+	configAbs, err := filepath.Abs(configDir)
+	if err != nil {
+		return fmt.Errorf("resolve docker config directory: %w", err)
+	}
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, configAbs, fs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("create docker config directory: %w", mkdirAllErr)
 	}
 
 	if configDir == defaultDockerConfigDir && os.Geteuid() == 0 {
-		if chownErr := os.Chown(configDir, uid, gid); chownErr != nil {
+		if chownErr := (acfs.Host{}).Chown(ctx, configDir, uid, gid); chownErr != nil {
 			return fmt.Errorf("chown docker config directory: %w", chownErr)
 		}
 	}
@@ -215,7 +222,7 @@ func configureRuntimeDockerConfigEnv(cfg *RuntimeIdentityConfig, setenv func(str
 	return configDir, nil
 }
 
-func runtimeIdentitySupplementaryGroups(dockerHost string, socketGroup func(string) mo.Option[uint32]) []uint32 {
+func runtimeIdentitySupplementaryGroups(ctx context.Context, dockerHost string, socketGroup func(context.Context, string) mo.Option[uint32]) []uint32 {
 	socketPath := defaultDockerSocketPath
 	if value := strings.TrimSpace(dockerHost); value != "" {
 		parsed, err := url.Parse(value)
@@ -229,68 +236,68 @@ func runtimeIdentitySupplementaryGroups(dockerHost string, socketGroup func(stri
 		socketPath = filepath.Clean("/" + strings.TrimPrefix(socketPath, "/"))
 	}
 
-	socketGID, ok := socketGroup(socketPath).Get()
+	socketGID, ok := socketGroup(ctx, socketPath).Get()
 	if !ok {
 		return nil
 	}
 	return []uint32{socketGID}
 }
 
-func prepareWritablePathsWithRoots(uid, gid int, mountpoints map[string]struct{}, projectsDir, dataDirectory, buildsDirectory string) error {
-	if err := os.MkdirAll(dataDirectory, fs.DirPerm); err != nil {
+func prepareWritablePathsWithRoots(ctx context.Context, uid, gid int, mountpoints map[string]struct{}, projectsDir, dataDirectory, buildsDirectory string) error {
+	if err := (acfs.Host{}).MkdirAll(ctx, dataDirectory, fs.DirPerm); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
-	if err := os.Chown(dataDirectory, uid, gid); err != nil {
+	if err := (acfs.Host{}).Chown(ctx, dataDirectory, uid, gid); err != nil {
 		return fmt.Errorf("chown data directory: %w", err)
 	}
 
-	entries, err := os.ReadDir(dataDirectory)
+	entries, err := acfs.Host{}.List(ctx, dataDirectory)
 	if err != nil {
 		return fmt.Errorf("read data directory: %w", err)
 	}
 
 	for _, entry := range entries {
-		entryPath := filepath.Join(dataDirectory, entry.Name())
+		entryPath := entry.Path
 		if _, mounted := mountpoints[entryPath]; mounted {
-			if lchownErr := os.Lchown(entryPath, uid, gid); lchownErr != nil {
+			if lchownErr := (acfs.Host{}).Lchown(ctx, entryPath, uid, gid); lchownErr != nil {
 				return fmt.Errorf("chown mounted %s: %w", entryPath, lchownErr)
 			}
 			continue
 		}
 		if projectsDir != "" && filepath.Clean(entryPath) == projectsDir {
-			if lchownFnErr := lchownFn(entryPath, uid, gid); lchownFnErr != nil {
+			if lchownFnErr := lchownFn(ctx, entryPath, uid, gid); lchownFnErr != nil {
 				return fmt.Errorf("chown %s: %w", entryPath, lchownFnErr)
 			}
 			continue
 		}
-		if chownRecursiveErr := chownRecursive(entryPath, uid, gid, mountpoints, projectsDir); chownRecursiveErr != nil {
+		if chownRecursiveErr := chownRecursive(ctx, entryPath, uid, gid, mountpoints, projectsDir); chownRecursiveErr != nil {
 			return fmt.Errorf("chown %s: %w", entryPath, chownRecursiveErr)
 		}
 	}
 
 	if _, mounted := mountpoints[buildsDirectory]; mounted {
-		if lchownErr2 := os.Lchown(buildsDirectory, uid, gid); lchownErr2 != nil {
+		if lchownErr2 := (acfs.Host{}).Lchown(ctx, buildsDirectory, uid, gid); lchownErr2 != nil {
 			return fmt.Errorf("chown mounted builds directory: %w", lchownErr2)
 		}
 		return nil
 	}
 
-	if _, statErr := os.Stat(buildsDirectory); statErr != nil {
-		if os.IsNotExist(statErr) {
+	if _, statErr := (acfs.Host{}).Stat(ctx, buildsDirectory, acfstypes.StatOptions{FollowFinal: true}); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("stat builds directory: %w", statErr)
 	}
 
-	if chownRecursiveErr2 := chownRecursive(buildsDirectory, uid, gid, mountpoints, projectsDir); chownRecursiveErr2 != nil {
+	if chownRecursiveErr2 := chownRecursive(ctx, buildsDirectory, uid, gid, mountpoints, projectsDir); chownRecursiveErr2 != nil {
 		return fmt.Errorf("chown builds directory: %w", chownRecursiveErr2)
 	}
 
 	return nil
 }
 
-func ensureSQLiteFilesExist(databaseURL string) error {
+func ensureSQLiteFilesExist(ctx context.Context, databaseURL string) error {
 	sqlitePath, ok, err := sqliteDatabasePath(databaseURL)
 	if err != nil {
 		return err
@@ -299,14 +306,20 @@ func ensureSQLiteFilesExist(databaseURL string) error {
 		return nil
 	}
 
-	dir := filepath.Dir(sqlitePath)
-	if dir != "" && dir != "." {
-		if mkdirAllErr := os.MkdirAll(dir, fs.DirPerm); mkdirAllErr != nil {
-			return fmt.Errorf("create sqlite directory %s: %w", dir, mkdirAllErr)
-		}
+	sqliteAbs, err := filepath.Abs(sqlitePath)
+	if err != nil {
+		return fmt.Errorf("resolve sqlite file %s: %w", sqlitePath, err)
+	}
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, filepath.Dir(sqliteAbs), fs.DirPerm); mkdirAllErr != nil {
+		return fmt.Errorf("create sqlite directory %s: %w", filepath.Dir(sqlitePath), mkdirAllErr)
 	}
 
-	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, fs.FilePerm)
+	file, err := acfs.Host{}.OpenFile(ctx, sqliteAbs, acfs.OpenOptions{
+		Mode:   fs.FilePerm,
+		Read:   true,
+		Write:  true,
+		Create: true,
+	})
 	if err != nil {
 		return fmt.Errorf("create sqlite file %s: %w", sqlitePath, err)
 	}
@@ -334,26 +347,29 @@ func sqliteDatabasePath(databaseURL string) (string, bool, error) {
 	return filepath.Clean(pathPart), true, nil
 }
 
-func chownRecursive(path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
-	return filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		// Skip any sub-tree that is a separate mountpoint.
-		if currentPath != path {
-			if _, mounted := mountpoints[filepath.Clean(currentPath)]; mounted {
-				return filepath.SkipDir
-			}
-		}
-		if projectsDir != "" && filepath.Clean(currentPath) == projectsDir {
-			if lchownFnErr := lchownFn(currentPath, uid, gid); lchownFnErr != nil {
-				return lchownFnErr
-			}
+func chownRecursive(ctx context.Context, path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
+	entry, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{})
+	if err != nil {
+		return err
+	}
+	if lchownFnErr := lchownFn(ctx, path, uid, gid); lchownFnErr != nil {
+		return lchownFnErr
+	}
+	if !entry.IsDirectory || (projectsDir != "" && filepath.Clean(path) == projectsDir) {
+		return nil
+	}
+
+	_, err = acfs.Root{Path: path}.Walk(ctx, "/", acfstypes.WalkOptions{}, func(child acfstypes.Entry) error {
+		currentPath := filepath.Join(path, filepath.FromSlash(child.Path))
+		if _, mounted := mountpoints[currentPath]; mounted {
 			return filepath.SkipDir
 		}
-
-		return lchownFn(currentPath, uid, gid)
+		if lchownFnErr := lchownFn(ctx, currentPath, uid, gid); lchownFnErr != nil {
+			return lchownFnErr
+		}
+		return kit.Ternary(projectsDir != "" && currentPath == projectsDir, filepath.SkipDir, nil)
 	})
+	return err
 }
 
 func parseMountpoints(data string) map[string]struct{} {

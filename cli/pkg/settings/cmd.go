@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -85,7 +86,11 @@ func newUpdateCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := os.ReadFile(opts.file)
+			filePath, err := filepath.Abs(opts.file)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
+			}
+			data, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
 			}

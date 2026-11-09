@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -68,16 +67,10 @@ func ReadOnlyFile(file types.WorkspaceFileContent, reason, mimeType string) type
 }
 
 func WriteFile(ctx context.Context, rootPath, rel string, content io.Reader, size int64) error {
-	root, err := os.OpenRoot(rootPath)
-	if err != nil {
-		return fmt.Errorf("open workspace root: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-
-	if symlinkErr := ensureNoSymlink(root, rel); symlinkErr != nil {
+	if symlinkErr := ensureNoSymlink(ctx, acfs.Root{Path: rootPath}, rel); symlinkErr != nil {
 		return symlinkErr
 	}
-	if mkdirErr := root.MkdirAll(path.Dir(rel), kitfs.DirPerm); mkdirErr != nil {
+	if mkdirErr := (acfs.Root{Path: rootPath}).MkdirAll(ctx, kitfs.LogicalPath(path.Dir(rel)), kitfs.DirPerm); mkdirErr != nil {
 		return fmt.Errorf("create parent directory: %w", mkdirErr)
 	}
 	if _, writeErr := (acfs.Root{Path: rootPath}).WriteFrom(ctx, "/"+rel, content, acfs.WriteFromOptions{Size: size, Mode: kitfs.FilePerm}); writeErr != nil {

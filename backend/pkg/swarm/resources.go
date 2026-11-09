@@ -64,23 +64,24 @@ func planVolumes(project *composegotypes.Project, ns namespace) map[string]strin
 	return result
 }
 
-func planConfigs(project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
+func planConfigs(ctx context.Context, project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
 	configs := make(map[string]composegotypes.FileObjectConfig, len(project.Configs))
 	for key, config := range project.Configs {
 		configs[key] = composegotypes.FileObjectConfig(config)
 	}
-	return planManagedFileResources(configs, ns, project.WorkingDir, project.Environment, "config")
+	return planManagedFileResources(ctx, configs, ns, project.WorkingDir, project.Environment, "config")
 }
 
-func planSecrets(project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
+func planSecrets(ctx context.Context, project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
 	secrets := make(map[string]composegotypes.FileObjectConfig, len(project.Secrets))
 	for key, secret := range project.Secrets {
 		secrets[key] = composegotypes.FileObjectConfig(secret)
 	}
-	return planManagedFileResources(secrets, ns, project.WorkingDir, project.Environment, "secret")
+	return planManagedFileResources(ctx, secrets, ns, project.WorkingDir, project.Environment, "secret")
 }
 
 func planManagedFileResources(
+	ctx context.Context,
 	resources map[string]composegotypes.FileObjectConfig,
 	ns namespace,
 	workingDir string,
@@ -108,7 +109,7 @@ func planManagedFileResources(
 
 		var data []byte
 		if resource.Driver == "" {
-			resolvedData, err := resolveFileObjectContent(resource, workingDir, environment)
+			resolvedData, err := resolveFileObjectContent(ctx, resource, workingDir, environment)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load %s %s: %w", resourceType, baseName, err)
 			}

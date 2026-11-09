@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/cache"
 
 	"getarcane.dev/types/v3"
@@ -167,7 +167,7 @@ func (m *GPUMonitor) detect(ctx context.Context) error {
 			}
 			return errors.New("nvidia-smi not found but GPU_TYPE set to nvidia")
 		case "amd":
-			if HasAMDGPU() {
+			if HasAMDGPU(ctx) {
 				if m.markDetected("amd", AMDGPUSysfsPath) {
 					slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				}
@@ -193,7 +193,7 @@ func (m *GPUMonitor) detect(ctx context.Context) error {
 		}
 		return nil
 	}
-	if HasAMDGPU() {
+	if HasAMDGPU(ctx) {
 		if m.markDetected("amd", AMDGPUSysfsPath) {
 			slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", AMDGPUSysfsPath)
 		}
@@ -210,27 +210,25 @@ func (m *GPUMonitor) detect(ctx context.Context) error {
 	return errors.New("no supported GPU found")
 }
 
-func HasAMDGPU() bool {
-	// Reads fixed system paths under /sys; not under any acfs root.
-	entries, err := os.ReadDir(AMDGPUSysfsPath)
+func HasAMDGPU(ctx context.Context) bool {
+	entries, err := acfs.Host{}.List(ctx, AMDGPUSysfsPath)
 	if err != nil {
 		return false
 	}
 	for _, entry := range entries {
-		name := entry.Name()
+		name := entry.Name
 		if !strings.HasPrefix(name, "card") || strings.Contains(name, "-") {
 			continue
 		}
-		if _, statErr := os.Stat(fmt.Sprintf("%s/%s/device/mem_info_vram_total", AMDGPUSysfsPath, name)); statErr == nil {
+		if exists, existsErr := (acfs.Host{}).Exists(ctx, fmt.Sprintf("%s/%s/device/mem_info_vram_total", AMDGPUSysfsPath, name)); existsErr == nil && exists {
 			return true
 		}
 	}
 	return false
 }
 
-func readSysfsValue(path string) (uint64, error) {
-	// Reads fixed system paths under /sys; not under any acfs root.
-	data, err := os.ReadFile(path)
+func readSysfsValue(ctx context.Context, path string) (uint64, error) {
+	data, err := acfs.Host{}.ReadFile(ctx, path)
 	if err != nil {
 		return 0, err
 	}
@@ -294,8 +292,7 @@ func getNvidiaStats(ctx context.Context) ([]types.GPUStats, error) {
 }
 
 func getAMDStats(ctx context.Context) ([]types.GPUStats, error) {
-	// Reads fixed system paths under /sys; not under any acfs root.
-	entries, err := os.ReadDir(AMDGPUSysfsPath)
+	entries, err := acfs.Host{}.List(ctx, AMDGPUSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
 		return nil, fmt.Errorf("failed to read sysfs: %w", err)
@@ -304,17 +301,17 @@ func getAMDStats(ctx context.Context) ([]types.GPUStats, error) {
 	var stats []types.GPUStats
 	index := 0
 	for _, entry := range entries {
-		name := entry.Name()
+		name := entry.Name
 		if !strings.HasPrefix(name, "card") || strings.Contains(name, "-") {
 			continue
 		}
 
 		devicePath := fmt.Sprintf("%s/%s/device", AMDGPUSysfsPath, name)
-		memTotalBytes, readSysfsValueErr := readSysfsValue(devicePath + "/mem_info_vram_total")
+		memTotalBytes, readSysfsValueErr := readSysfsValue(ctx, devicePath+"/mem_info_vram_total")
 		if readSysfsValueErr != nil {
 			continue
 		}
-		memUsedBytes, readSysfsValueErr := readSysfsValue(devicePath + "/mem_info_vram_used")
+		memUsedBytes, readSysfsValueErr := readSysfsValue(ctx, devicePath+"/mem_info_vram_used")
 		if readSysfsValueErr != nil {
 			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", readSysfsValueErr)
 			continue

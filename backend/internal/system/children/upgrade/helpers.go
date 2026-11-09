@@ -2,18 +2,20 @@ package upgrade
 
 import (
 	"bufio"
+	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/environment"
@@ -161,8 +163,8 @@ func appendLogs(logs []string, lines ...string) []string {
 	return combined[max(len(combined)-upgradeJobLogLimit, 0):]
 }
 
-func readUpgradeLog(dir string, since time.Time) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+func readUpgradeLog(ctx context.Context, dir string, since time.Time) ([]string, error) {
+	entries, err := acfs.Root{Path: dir}.List(ctx, "/")
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -171,19 +173,15 @@ func readUpgradeLog(dir string, since time.Time) ([]string, error) {
 	}
 	newest, newestAt := "", since
 	for _, entry := range entries {
-		if !upgradeLogName.MatchString(entry.Name()) || !entry.Type().IsRegular() {
+		if !upgradeLogName.MatchString(entry.Name) || !os.FileMode(entry.UnixMode).IsRegular() || time.Unix(0, entry.ModTimeUnixNano).Before(newestAt) {
 			continue
 		}
-		info, infoErr := entry.Info()
-		if infoErr != nil || info.ModTime().Before(newestAt) {
-			continue
-		}
-		newest, newestAt = entry.Name(), info.ModTime()
+		newest, newestAt = entry.Name, time.Unix(0, entry.ModTimeUnixNano)
 	}
 	if newest == "" {
 		return nil, nil
 	}
-	content, err := os.ReadFile(filepath.Join(dir, newest))
+	content, err := acfs.Root{Path: dir}.ReadFile(ctx, "/"+newest)
 	if err != nil {
 		return nil, fmt.Errorf("read upgrade log %s: %w", newest, err)
 	}

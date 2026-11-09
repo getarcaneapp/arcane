@@ -209,12 +209,12 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	if err == nil {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			_ = os.RemoveAll(repoPath)
+			_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 			return nil, fmt.Errorf("failed to open checkout: %w", openErr)
 		}
 		head, headErr := repo.Head()
 		if headErr != nil {
-			_ = os.RemoveAll(repoPath)
+			_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 			return nil, fmt.Errorf("failed to resolve checkout head: %w", headErr)
 		}
 		return &WriteCheckout{RepoPath: repoPath, Branch: branch, HeadCommit: head.Hash().String(), BranchExists: true, url: normalized, repo: repo}, nil
@@ -222,7 +222,7 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 
 	switch {
 	case errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return c.initEmptyCheckout(normalized, branch)
+		return c.initEmptyCheckout(ctx, normalized, branch)
 	case errors.Is(err, git.NoMatchingRefSpecError{}):
 		return c.checkoutNewBranch(ctx, normalized, branch, auth)
 	default:
@@ -230,26 +230,29 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	}
 }
 
-func (c *Client) initEmptyCheckout(url, branch string) (*WriteCheckout, error) {
-	workDir := cmp.Or(c.workDir, os.TempDir())
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create work dir: %w", err)
+func (c *Client) initEmptyCheckout(ctx context.Context, url, branch string) (*WriteCheckout, error) {
+	workDir, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve work dir: %w", err)
 	}
-	repoPath, err := os.MkdirTemp(workDir, CloneScratchPrefix+"*")
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, workDir, 0o755); mkdirErr != nil {
+		return nil, fmt.Errorf("failed to create work dir: %w", mkdirErr)
+	}
+	repoPath, err := acfs.Host{}.MkdirTemp(ctx, workDir, CloneScratchPrefix+"*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	repo, err := git.PlainInit(repoPath, false)
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to initialize checkout: %w", err)
 	}
 	if _, createRemoteErr := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{url}}); createRemoteErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to configure remote: %w", createRemoteErr)
 	}
 	if setReferenceErr := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName(branch))); setReferenceErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to select branch: %w", setReferenceErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
@@ -262,16 +265,16 @@ func (c *Client) checkoutNewBranch(ctx context.Context, url, branch string, auth
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to open checkout: %w", err)
 	}
 	worktree, err := repo.Worktree()
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if checkoutErr := worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: true}); checkoutErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to create branch %s: %w", branch, checkoutErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil

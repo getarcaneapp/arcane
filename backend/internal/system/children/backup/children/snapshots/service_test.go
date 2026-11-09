@@ -7,7 +7,6 @@ import (
 	"slices"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -42,16 +41,16 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 		excludes:          []string{".arcane-snapshot-*", RecoveryRequestName, "arcane.db-wal", "arcane.db-shm", "arcane.db-journal", "arcane.francis.db-wal"},
 	}
 	type attributes struct {
-		modTime time.Time
+		modTime int64
 		size    int64
-		mode    os.FileMode
+		mode    uint32
 	}
 	walk := func() map[string]attributes {
 		files, walkErr := snapshotSourceFiles(t.Context(), layout)
 		require.NoError(t, walkErr)
 		result := make(map[string]attributes, len(files))
-		for filePath, info := range files {
-			result[filePath] = attributes{size: info.Size(), mode: info.Mode(), modTime: info.ModTime()}
+		for filePath, entry := range files {
+			result[filePath] = attributes{size: entry.Size, mode: entry.UnixMode, modTime: entry.ModTimeUnixNano}
 		}
 		return result
 	}
