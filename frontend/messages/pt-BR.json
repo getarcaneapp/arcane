@@ -4527,11 +4527,11 @@
   "workspace_saved": "Área de trabalho salva",
   "build_workspace_upload_description": "Envie um ou mais arquivos, de qualquer tamanho, para a área de trabalho de compilação.",
   "workspace_upload_save_pending_first": "Salve as alterações pendentes na pasta antes de fazer o upload para esta pasta.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Fonte",
+  "workspace_folder": "Pasta do espaço de trabalho",
+  "git_repository": "Repositório Git",
+  "choose_folder": "Escolha uma pasta",
+  "build_choose_context_description": "Escolha a pasta do espaço de trabalho a ser usada como contexto de compilação.",
+  "build_edit_files_hint": "Edite os arquivos na guia “Arquivos”.",
+  "no_file_open": "Nenhum arquivo aberto"
 }
