@@ -854,7 +854,7 @@ func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input
 }
 
 func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *UpdateProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
-	manifest, err := handlerutil.ParseMultipartJSONPart[types.ProjectWorkspaceUpdateManifest](input.RawBody, "manifest")
+	manifest, err := handlerutil.ParseMultipartJSONPart[types.WorkspaceUpdateManifest](input.RawBody, "manifest")
 	if err != nil {
 		return nil, err
 	}

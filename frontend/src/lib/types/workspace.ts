@@ -44,7 +44,7 @@ export interface WorkspaceFileChange {
 	recursive?: boolean;
 }
 
-export interface BuildFileContentResponse {
-	mimeType: string;
-	content: string;
+export interface WorkspaceUpdateManifest {
+	fileTreeRevision: string;
+	fileChanges: WorkspaceFileChange[];
 }

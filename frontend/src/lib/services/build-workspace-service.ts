@@ -1,66 +1,40 @@
-import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
-import type { WorkspaceFileEntry, BuildFileContentResponse } from '#lib/types/workspace.js';
+import type { Workspace, WorkspaceFileContent, WorkspaceUpdateManifest } from '#lib/types/workspace.js';
 import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
+import { createWorkspaceFormData } from '#lib/utils/workspace-files.js';
 
 import BaseAPIService from './api-service';
 import { uploadService } from './upload-service';
 
 class BuildWorkspaceService extends BaseAPIService {
-	async listDirectory(path: string = '/', environmentId: string): Promise<WorkspaceFileEntry[]> {
-		const res = await this.api.get(`/environments/${environmentId}/builds/browse`, {
-			params: { path }
-		});
-		return res.data.data;
+	async getWorkspace(environmentId: string): Promise<Workspace> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/builds/workspace`, { cache: 'no-store' }));
 	}
 
-	async getFileContent(path: string, environmentId: string): Promise<BuildFileContentResponse> {
-		const res = await this.api.get(`/environments/${environmentId}/builds/browse/content`, {
-			params: { path }
-		});
-		return res.data.data;
+	async getWorkspaceFile(relativePath: string, environmentId: string): Promise<WorkspaceFileContent> {
+		return this.handleResponse(
+			this.api.get(`/environments/${environmentId}/builds/workspace/file`, {
+				cache: 'no-store',
+				params: { relativePath }
+			})
+		);
 	}
 
-	async downloadFile(path: string, environmentId: string): Promise<void> {
-		const res = await this.api.get(`/environments/${environmentId}/builds/browse/download`, {
-			params: { path },
+	async updateWorkspace(manifest: WorkspaceUpdateManifest, files: File[], environmentId: string): Promise<Workspace> {
+		const form = createWorkspaceFormData(manifest, files);
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/builds/workspace`, form));
+	}
+
+	async uploadFile(parentPath: string, file: File, environmentId: string): Promise<Workspace> {
+		const uploadId = await uploadService.uploadFile(environmentId, 'build-workspace', file);
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/builds/workspace/upload`, { uploadId, parentPath }));
+	}
+
+	async downloadWorkspaceFile(relativePath: string, environmentId: string): Promise<void> {
+		const response = await this.api.get(`/environments/${environmentId}/builds/workspace/file/download`, {
+			params: { relativePath },
 			responseType: 'blob'
 		});
-
-		downloadBlob(res.data, filenameFromPath(path));
-	}
-
-	async uploadFile(
-		path: string,
-		file: File,
-		onProgress: UploadProgressCallback | undefined,
-		environmentId: string
-	): Promise<void> {
-		const uploadId = await uploadService.uploadFile(environmentId, 'build-workspace', file, onProgress);
-		return this.handleResponse(
-			this.api.post(
-				`/environments/${environmentId}/builds/browse/upload`,
-				{ uploadId },
-				{
-					params: { path }
-				}
-			)
-		);
-	}
-
-	async createDirectory(path: string, environmentId: string): Promise<void> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/builds/browse/mkdir`, null, {
-				params: { path }
-			})
-		);
-	}
-
-	async deleteFile(path: string, environmentId: string): Promise<void> {
-		return this.handleResponse(
-			this.api.delete(`/environments/${environmentId}/builds/browse`, {
-				params: { path }
-			})
-		);
+		downloadBlob(response.data, filenameFromPath(relativePath));
 	}
 }
 

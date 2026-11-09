@@ -1,78 +1,67 @@
 package workspace
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/types/v3"
 )
 
 func Register(api huma.API, workspaceService *Service, uploadService *upload.UploadService) {
-	h := &Handler{service: workspaceService, uploadService: uploadService}
+	h := &Handler{
+		service:       workspaceService,
+		uploadService: uploadService,
+	}
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse",
-		Method:      "GET",
-		Path:        "/environments/{id}/builds/browse",
-		Summary:     "Browse build workspace files",
-		Description: "List files and directories under the builds workspace root",
-		Tags:        []string{"Builds"},
+		OperationID: "get-build-workspace",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/builds/workspace",
+		Summary:     "Get build workspace",
+		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesList, h.BrowseDirectory)
+	}, authz.PermBuildWorkspacesList, h.GetBuildWorkspace)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse-content",
-		Method:      "GET",
-		Path:        "/environments/{id}/builds/browse/content",
-		Summary:     "Get build workspace file content",
-		Description: "Read file content under the builds workspace root",
-		Tags:        []string{"Builds"},
+		OperationID: "get-build-workspace-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/builds/workspace/file",
+		Summary:     "Get build workspace file",
+		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesRead, h.GetFileContent)
+	}, authz.PermBuildWorkspacesRead, h.GetBuildWorkspaceFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse-download",
-		Method:      "GET",
-		Path:        "/environments/{id}/builds/browse/download",
+		OperationID: "download-build-workspace-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/builds/workspace/file/download",
 		Summary:     "Download build workspace file",
-		Description: "Download a file from the builds workspace root",
-		Tags:        []string{"Builds"},
+		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesRead, h.DownloadFile)
+	}, authz.PermBuildWorkspacesRead, h.DownloadBuildWorkspaceFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse-upload",
-		Method:      "POST",
-		Path:        "/environments/{id}/builds/browse/upload",
+		OperationID: "update-build-workspace",
+		Method:      http.MethodPatch,
+		Path:        "/environments/{id}/builds/workspace",
+		Summary:     "Update build workspace",
+		Tags:        []string{"Build Workspace"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		RequestBody: handlerutil.WorkspaceMultipartRequestBody("JSON encoded build workspace manifest"),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.BuildWorkspaceConditions},
+	}, authz.PermBuildWorkspacesRead, h.UpdateBuildWorkspace)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "upload-build-workspace-file",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/builds/workspace/upload",
 		Summary:     "Upload build workspace file",
-		Description: "Copy a complete chunked upload session into the builds workspace root. multipart/form-data bodies " +
-			"are still accepted for backward compatibility; that form is deprecated and will be removed in a " +
-			"future release.",
-		Tags:        []string{"Builds"},
+		Description: "Write a complete chunked upload session into a build workspace folder",
+		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, uploadService, types.UploadKindBuildWorkspace),
-	}, authz.PermBuildWorkspacesCreate, h.UploadFile)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse-mkdir",
-		Method:      "POST",
-		Path:        "/environments/{id}/builds/browse/mkdir",
-		Summary:     "Create build workspace directory",
-		Description: "Create a directory under the builds workspace root",
-		Tags:        []string{"Builds"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesCreate, h.CreateDirectory)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "builds-browse-delete",
-		Method:      "DELETE",
-		Path:        "/environments/{id}/builds/browse",
-		Summary:     "Delete build workspace file",
-		Description: "Delete a file or directory under the builds workspace root",
-		Tags:        []string{"Builds"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermBuildWorkspacesDelete, h.DeleteFile)
+	}, authz.PermBuildWorkspacesCreate, h.UploadBuildWorkspaceFile)
 }

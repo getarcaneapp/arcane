@@ -1,19 +1,16 @@
 <script lang="ts">
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
-	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { CodeIcon, TerminalIcon } from '#lib/icons/index.js';
-	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import { ClockIcon, FolderOpenIcon, HammerIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { imageBuildListQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError } from '#lib/services/api-service.js';
+	import { buildWorkspaceService } from '#lib/services/build-workspace-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
@@ -22,20 +19,22 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
-	import { extractErrorMessage } from '#lib/utils/docker.js';
-	import { destinationEnvironmentId } from '#lib/utils/environments.js';
-	import { parseList } from '#lib/utils/form-parsers.js';
-	import { sanitizeLogText } from '#lib/utils/formatting.js';
+	import { destinationEnvironmentId, readableEnvironments } from '#lib/utils/environments.js';
 	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import { createBuildRequest } from './build-request';
+	import { BuildRun } from './build-run.svelte';
+	import { BuildWorkspaceDraft } from './build-workspace-draft.svelte';
 	import BuildConfigPanel from './components/build-config-panel.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import type { BuildProviderOption, SelectOption } from './components/build-form.types';
 	import BuildOutputPanel from './components/build-output-panel.svelte';
-	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
+	import BuildSourceSection from './components/build-source-section.svelte';
+	import BuildWorkspaceEditor from './components/build-workspace-editor.svelte';
 	import ImageBuildHistoryPanel from './components/image-build-history-panel.svelte';
 	import {
 		formatBuildArgs,
@@ -51,58 +50,57 @@
 	});
 	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
 		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
+	const historyRequestOptions = {
+		pagination: { page: 1, limit: 20 },
+		sort: { column: 'createdAt', direction: 'desc' }
+	} satisfies SearchPaginationSortRequest;
+	const registryRequestOptions = {
+		pagination: { page: 1, limit: 100 },
+		sort: { column: 'url', direction: 'asc' }
+	} satisfies SearchPaginationSortRequest;
+
 	let pickedEnvironmentId = $state('');
 	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
 	const queryClient = useQueryClient();
 	const buildSettingsQuery = createQuery(() => buildSettingsOptions(buildEnvironmentId));
 	const buildsRoot = $derived(buildsRootOf(buildSettingsQuery.data));
 	const buildsRootLabel = $derived.by(() => {
-		const raw = buildsRoot.trim();
-		if (!raw) return '/builds';
-		if (raw.length <= 36) return raw;
-		const parts = raw.split('/').filter(Boolean);
-		if (parts.length === 0) return raw;
-		const tail = parts.slice(-2).join('/');
-		return `…/${tail}`;
+		if (buildsRoot.length <= 36) return buildsRoot;
+		const parts = buildsRoot.split('/').filter(Boolean);
+		return parts.length === 0 ? buildsRoot : `…/${parts.slice(-2).join('/')}`;
 	});
-
 	const depotAvailable = $derived(isDepotBuildAvailable(buildSettingsQuery.data));
+	const maxFileSizeMb = $derived(buildSettingsQuery.data?.values.projectWorkspaceMaxFileSizeMb ?? 10);
+	const canEditWorkspace = $derived(hasPermission('images:build', buildEnvironmentId));
 
-	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
-		const options: BuildProviderOption[] = [
-			{
-				label: m.local_docker(),
-				value: 'local',
-				description: m.local_docker_description()
-			}
-		];
-		if (depotAvailable) {
-			options.push({
-				label: m.depot(),
-				value: 'depot',
-				description: m.depot_description()
-			});
-		}
-		return options;
-	});
+	const providerOptions = $derived<BuildProviderOption[]>([
+		{ label: m.local_docker(), value: 'local', description: m.local_docker_description() },
+		...(depotAvailable ? [{ label: m.depot(), value: 'depot' as const, description: m.depot_description() }] : [])
+	]);
 
-	// A picked directory belongs to its destination; another destination starts at its builds root.
-	let selectedContext = $state({ environmentId: '', path: '/' });
-	const selectedContextPath = $derived(selectedContext.environmentId === buildEnvironmentId ? selectedContext.path : '/');
+	const workspaceQuery = createQuery(() => ({
+		queryKey: queryKeys.buildWorkspace.workspace(buildEnvironmentId),
+		queryFn: () => buildWorkspaceService.getWorkspace(buildEnvironmentId),
+		refetchOnMount: false
+	}));
+	const workspace = $derived(
+		new BuildWorkspaceDraft({
+			environmentId: buildEnvironmentId,
+			workspace: () => workspaceQuery.data,
+			onWorkspace: (next) => queryClient.setQueryData(queryKeys.buildWorkspace.workspace(buildEnvironmentId), next)
+		})
+	);
+	const run = new BuildRun();
+
 	let contextMode = $state<'workspace' | 'remote'>('workspace');
 	let remoteContextSource = $state('');
-
-	const workspaceContextDir = $derived.by(() => {
-		const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
-		if (selectedContextPath === '/' || selectedContextPath === '') return root;
-		return `${root}${selectedContextPath.startsWith('/') ? '' : '/'}${selectedContextPath}`;
-	});
+	let showBuildOptions = $state(false);
+	let showRuntimeOptions = $state(false);
 
 	const contextDir = $derived.by(() => {
-		if (contextMode === 'remote') {
-			return remoteContextSource.trim();
-		}
-		return workspaceContextDir;
+		if (contextMode === 'remote') return remoteContextSource.trim();
+		const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
+		return workspace.contextPath ? `${root}/${workspace.contextPath}` : root;
 	});
 
 	const formSchema = z.object({
@@ -158,30 +156,8 @@
 	});
 	let inputs = $derived(form.inputs);
 
-	let isBuilding = $state(false);
-	let isDesktop = $state(true);
-	let buildStatusText = $state('');
-	let buildError = $state('');
-	let hasReachedComplete = $state(false);
-	let logLines = $state<string[]>([]);
-	let autoScroll = $state(true);
-	type MainTab = 'build' | 'history';
-	const mainUrlTab = useUrlTab<MainTab>({
-		validTabs: () => ['build', 'history'],
-		defaultTab: () => 'build'
-	});
-	const mainTab = $derived(mainUrlTab.value);
-	let buildTab = $state('workspace');
-	let rightPanelTab = $state<'config' | 'output'>('config');
-	let showAdvanced = $state(false);
-
 	const resolvedProvider = $derived(depotAvailable ? inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
-
-	const registryRequestOptions = {
-		pagination: { page: 1, limit: 100 },
-		sort: { column: 'url', direction: 'asc' }
-	} satisfies SearchPaginationSortRequest;
 
 	const registriesQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
@@ -189,9 +165,7 @@
 		staleTime: 0,
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	}));
-
 	const registries = $derived(registriesQuery.data?.data ?? []);
-
 	const registryOptions = $derived<SelectOption[]>(
 		registries
 			.filter((registry) => registry.enabled)
@@ -204,66 +178,43 @@
 				};
 			})
 	);
-
 	const selectedRegistry = $derived(registries.find((registry) => registry.id === inputs.registryId.value));
-
 	const repositoryOptions = $derived<SelectOption[]>(
-		(selectedRegistry?.repositoryNames ?? []).map((name) => ({
-			label: name,
-			value: name
-		}))
+		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
 	);
-
 	const fullImageReference = $derived(
 		isPushMode && selectedRegistry
 			? buildImageReference(selectedRegistry.host, selectedRegistry.namespace, inputs.repositoryName.value, inputs.pushTag.value)
 			: ''
 	);
 
-	function handleBuildLine(line: string): boolean {
-		if (line.trim() === '') return false;
-		try {
-			const event = JSON.parse(line) as Record<string, unknown>;
-			const errorMsg = extractErrorMessage(event, m.build_failed());
-			if (errorMsg) {
-				const cleanErrorMsg = sanitizeLogText(errorMsg);
-				buildError = cleanErrorMsg;
-				buildStatusText = cleanErrorMsg.toLowerCase().startsWith(m.build_failed().toLowerCase())
-					? cleanErrorMsg
-					: m.build_failed_with_error({ error: cleanErrorMsg });
-				appendLog(m.build_error_log({ error: cleanErrorMsg }));
-				return false;
-			}
+	const historyCountQuery = createQuery(() =>
+		imageBuildListQuery(environmentStore.shownKey, readableEnvironments('images:list'), historyRequestOptions)
+	);
 
-			// The terminal frame marks success; don't wait on the network EOF.
-			if (event['done'] === true) {
-				return true;
+	const mainUrlTab = useUrlTab({
+		tabs: () => [
+			{ value: 'build', label: m.build(), icon: HammerIcon },
+			{ value: 'files', label: m.files(), icon: FolderOpenIcon },
+			{
+				value: 'history',
+				label: m.build_history(),
+				icon: ClockIcon,
+				badge:
+					(historyCountQuery.data?.pagination.totalItems ?? -1) >= 0 ? historyCountQuery.data?.pagination.totalItems : undefined
 			}
-
-			// Raw docker CLI output arrives framed as {"log":"<line>"}.
-			if (typeof event['log'] === 'string') {
-				appendLog(event['log']);
-				buildStatusText = sanitizeLogText(event['log']);
-			}
-		} catch {
-			appendLog(line);
-		}
-		return false;
-	}
+		],
+		defaultTab: () => 'build',
+		aliases: () => ({ workspace: 'build' })
+	});
 
 	const buildMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.buildRun(buildEnvironmentId),
 		mutationFn: async (request: ImageBuildRequest & { envId: string }) => {
 			const { envId, ...payload } = request;
-			await imageService.buildImageStream(payload, envId, handleBuildLine);
-
-			if (buildError) {
-				throw new Error(buildError);
-			}
-
-			hasReachedComplete = true;
-			buildStatusText = m.build_completed();
-			appendLog(m.build_completed());
+			await imageService.buildImageStream(payload, envId, run.handleLine);
+			if (run.error) throw new Error(run.error);
+			run.complete();
 		},
 		onSettled: async (_data, _error, variables) => {
 			await Promise.all(
@@ -274,158 +225,21 @@
 		}
 	}));
 
-	const aggregateStatus = $derived.by(() => {
-		if (hasReachedComplete) return m.build_completed();
-		if (isBuilding) return buildStatusText || m.progress_building();
-		return buildStatusText;
-	});
-	const statusLabel = $derived.by(() => {
-		if (buildError) return m.common_error();
-		if (hasReachedComplete) return m.build_completed();
-		if (isBuilding) return m.common_live();
-		return m.idle();
-	});
-	const statusDotClass = $derived.by(() => {
-		if (buildError) return 'bg-destructive shadow-lg shadow-destructive/50';
-		if (hasReachedComplete) return 'bg-success shadow-lg shadow-success/50';
-		if (isBuilding) return 'animate-pulse bg-info shadow-lg shadow-info/50';
-		return 'bg-muted-foreground';
-	});
-	const buildMobileTabItems = $derived([
-		{ value: 'workspace', label: m.build_context() },
-		{ value: 'configuration', label: m.build_configuration() },
-		{ value: 'output', label: m.build_output() }
-	]);
-
-	const mainTabItems = $derived([
-		{ value: 'build', label: m.build_workspace() },
-		{ value: 'history', label: m.builds() }
-	]);
-
-	onMount(() => {
-		const mq = window.matchMedia('(min-width: 1024px)');
-		const update = () => {
-			isDesktop = mq.matches;
-		};
-
-		update();
-
-		mq.addEventListener('change', update);
-		return () => mq.removeEventListener('change', update);
-	});
-
-	function resetState() {
-		isBuilding = false;
-		buildStatusText = '';
-		buildError = '';
-		hasReachedComplete = false;
-		logLines = [];
-	}
-
-	function appendLog(line: string) {
-		// Keep ANSI sequences — the output panel renders them as colors.
-		if (sanitizeLogText(line).trim() === '') return;
-		logLines = [...logLines, line];
-	}
-
-	function parseBuildArgs(raw: string): Record<string, string> {
-		const result: Record<string, string> = {};
-		for (const line of raw.split('\n')) {
-			const trimmed = line.trim();
-			if (!trimmed) continue;
-			const idx = trimmed.indexOf('=');
-			if (idx === -1) continue;
-			const key = trimmed.slice(0, idx).trim();
-			const value = trimmed.slice(idx + 1).trim();
-			if (!key) continue;
-			result[key] = value;
-		}
-		return result;
-	}
-
-	function parseOptionalBytes(raw: string): number | undefined {
-		const trimmed = raw.trim();
-		if (!trimmed) return undefined;
-		const parsed = Number.parseInt(trimmed, 10);
-		if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-		return parsed;
-	}
-
-	// Push builds target a configured registry, so their reference is assembled
-	// from the selected registry, repository name and tag rather than the
-	// free-form tags field.
-	function resolveBuildTags(
-		data: z.infer<typeof formSchema>,
-		push: boolean
-	): { tags: string[]; error?: undefined } | { tags?: undefined; error: string } {
-		if (!push) {
-			const tags = parseList(data.tags);
-			return tags.length > 0 ? { tags } : { error: m.image_tags_required() };
-		}
-
-		const registry = registries.find((item) => item.id === data.registryId);
-		if (!registry) return { error: m.select_a_registry() };
-
-		const repositoryName = data.repositoryName.trim();
-		if (!repositoryName) return { error: m.select_a_repository_name() };
-		if (!registry.repositoryNames?.includes(repositoryName)) return { error: m.repository_name_not_configured() };
-
-		const reference = buildImageReference(registry.host, registry.namespace, repositoryName, data.pushTag);
-		if (!reference) return { error: m.tag_required() };
-
-		return { tags: [reference] };
-	}
-
-	function validateProviderCompatibility(
-		provider: 'local' | 'depot',
-		values: {
-			cacheTo: string[];
-			entitlements: string[];
-			privileged: boolean;
-			platforms: string[];
-			network?: string;
-			isolation?: string;
-			shmSize?: number;
-			ulimits: Record<string, string>;
-			extraHosts: string[];
-		}
-	): string | null {
-		const unsupportedFields =
-			provider === 'local'
-				? {
-						cacheTo: values.cacheTo.length > 0,
-						entitlements: values.entitlements.length > 0,
-						privileged: values.privileged,
-						platforms: values.platforms.length > 1
-					}
-				: {
-						network: Boolean(values.network),
-						isolation: Boolean(values.isolation),
-						shmSize: Boolean(values.shmSize),
-						ulimits: Object.keys(values.ulimits).length > 0,
-						extraHosts: values.extraHosts.length > 0
-					};
-		const unsupported = Object.entries(unsupportedFields)
-			.filter(([, present]) => present)
-			.map(([field]) => field);
-		if (unsupported.length === 0) return null;
-		const fields = unsupported.sort().join(', ');
-		return provider === 'local' ? m.build_provider_unsupported_local({ fields }) : m.build_provider_unsupported_depot({ fields });
+	function selectEnvironment(environmentId: string) {
+		pickedEnvironmentId = environmentId;
 	}
 
 	let latestApply = 0;
 	async function applyBuildConfig(build: ImageBuildRecord, environmentId: string) {
-		// Load the destination's builds root first, so the whole choice is applied at once and a newer one wins.
 		const apply = ++latestApply;
 		const remote = isGitBuildContextSource(build.contextDir);
 		const settings = remote ? undefined : await tryCatch(queryClient.ensureQueryData(buildSettingsOptions(environmentId)));
 		if (apply !== latestApply) return;
-		// Without the destination's builds root the saved directory cannot be resolved, so nothing is applied.
 		if (settings?.error) {
 			toast.error(m.common_load_failed({ resource: m.settings() }), { description: extractApiErrorMessage(settings.error) });
 			return;
 		}
-		pickedEnvironmentId = environmentId;
+		selectEnvironment(environmentId);
 		for (const key of ['dockerfile', 'target', 'network', 'isolation'] as const) form.setValue(key, build[key] ?? '');
 		for (const key of ['privileged', 'noCache', 'pull', 'push'] as const) form.setValue(key, build[key] ?? false);
 		form.setValue('tags', build.tags?.join(', ') ?? '');
@@ -441,36 +255,25 @@
 		form.setValue('provider', (build.provider as 'local' | 'depot') ?? 'local');
 		form.setValue('load', build.load ?? true);
 
-		showAdvanced =
-			[build.dockerfile, build.target, build.network, build.isolation, build.privileged, build.noCache, build.pull].some(
-				Boolean
-			) ||
-			[build.platforms, build.cacheFrom, build.cacheTo, build.entitlements, build.extraHosts].some(
-				(values) => (values?.length ?? 0) > 0
-			) ||
-			[build.buildArgs, build.labels, build.ulimits].some((values) => Object.keys(values ?? {}).length > 0) ||
+		showBuildOptions =
+			[build.dockerfile, build.target].some(Boolean) ||
+			(build.platforms?.length ?? 0) > 0 ||
+			[build.buildArgs, build.labels].some((values) => Object.keys(values ?? {}).length > 0);
+		showRuntimeOptions =
+			[build.network, build.isolation, build.privileged, build.pull].some(Boolean) ||
+			[build.cacheFrom, build.cacheTo, build.entitlements, build.extraHosts].some((values) => (values?.length ?? 0) > 0) ||
+			Object.keys(build.ulimits ?? {}).length > 0 ||
 			(build.shmSize ?? 0) > 0;
 
-		if (remote) {
-			contextMode = 'remote';
-			remoteContextSource = build.contextDir;
-		} else {
-			contextMode = 'workspace';
-			remoteContextSource = '';
-			selectedContext = {
-				environmentId: buildEnvironmentId,
-				path: getContextPathFromBuild(build, buildsRootOf(settings?.data ?? undefined))
-			};
-		}
+		contextMode = remote ? 'remote' : 'workspace';
+		remoteContextSource = remote ? build.contextDir : '';
+		workspace.contextPath = remote ? '' : getContextPathFromBuild(build, buildsRootOf(settings?.data ?? undefined));
 		mainUrlTab.select('build');
-		rightPanelTab = 'config';
-		buildTab = 'configuration';
 	}
 
 	async function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		// Without the destination's settings, the context path and providers would be guesses.
 		if (!buildSettingsQuery.data && buildSettingsQuery.error) {
 			toast.error(m.common_load_failed({ resource: m.settings() }), {
 				description: extractApiErrorMessage(buildSettingsQuery.error)
@@ -481,352 +284,103 @@
 			toast.info(m.common_loading());
 			return;
 		}
-
-		if (!contextDir || contextDir.trim() === '') {
+		if (!contextDir) {
 			toast.error(contextMode === 'remote' ? m.build_remote_context_required() : m.build_context_required());
 			return;
 		}
 
-		resetState();
-		rightPanelTab = 'output';
-		buildTab = 'output';
-		isBuilding = true;
-		buildStatusText = m.starting_build();
-		appendLog(m.using_context({ context: contextDir }));
-
-		const resolvedProvider = depotAvailable ? data.provider : 'local';
-		const push = resolvedProvider === 'depot' ? true : data.push;
-		const load = resolvedProvider === 'depot' ? false : data.load;
-
-		const resolvedTags = resolveBuildTags(data, push);
-		if (resolvedTags.error) {
-			toast.error(resolvedTags.error);
-			isBuilding = false;
-			return;
-		}
-		const tags = resolvedTags.tags;
-
-		const parsedCacheTo = parseList(data.cacheTo);
-		const parsedEntitlements = parseList(data.entitlements);
-		const parsedPlatforms = parseList(data.platforms);
-		const parsedExtraHosts = parseList(data.extraHosts);
-		const parsedUlimits = parseBuildArgs(data.ulimits);
-		const parsedShmSize = parseOptionalBytes(data.shmSize);
-
-		const network = data.network.trim() || undefined;
-		const isolation = data.isolation.trim() || undefined;
-
-		const providerValidationError = validateProviderCompatibility(resolvedProvider, {
-			cacheTo: parsedCacheTo,
-			entitlements: parsedEntitlements,
-			privileged: data.privileged,
-			platforms: parsedPlatforms,
-			network,
-			isolation,
-			shmSize: parsedShmSize,
-			ulimits: parsedUlimits,
-			extraHosts: parsedExtraHosts
+		const built = createBuildRequest(data, {
+			contextDir,
+			provider: depotAvailable ? data.provider : 'local',
+			registries
 		});
-		if (providerValidationError) {
-			toast.error(providerValidationError);
-			isBuilding = false;
+		if (!built.request) {
+			toast.error(built.error);
 			return;
 		}
 
-		const payload = {
-			contextDir: contextDir.trim(),
-			dockerfile: data.dockerfile.trim() || undefined,
-			tags,
-			target: data.target.trim() || undefined,
-			buildArgs: parseBuildArgs(data.buildArgs),
-			labels: parseBuildArgs(data.labels),
-			cacheFrom: parseList(data.cacheFrom),
-			cacheTo: parsedCacheTo,
-			noCache: data.noCache,
-			pull: data.pull,
-			network,
-			isolation,
-			shmSize: parsedShmSize,
-			ulimits: parsedUlimits,
-			entitlements: parsedEntitlements,
-			privileged: data.privileged,
-			extraHosts: parsedExtraHosts,
-			platforms: parsedPlatforms,
-			provider: resolvedProvider,
-			push,
-			load
-		};
+		if (contextMode === 'workspace' && workspace.hasChanges && !(await workspace.save())) return;
 
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await buildMutation.mutateAsync({
-						envId: buildEnvironmentId,
-						...payload
-					});
-					toast.success(m.build_completed());
-				})()
-			);
-			if (operationResult.error !== null && !isSessionCancelledError(operationResult.error)) {
-				const error = operationResult.error;
-
-				const message = sanitizeLogText(error instanceof Error ? error.message : m.build_failed());
-				buildError = message;
-				buildStatusText = message.toLowerCase().startsWith(m.build_failed().toLowerCase())
-					? message
-					: m.build_failed_with_error({ error: message });
-				appendLog(m.build_error_log({ error: message }));
-				toast.error(message);
-			}
-		} finally {
-			isBuilding = false;
+		run.start(contextDir);
+		const result = await tryCatch(buildMutation.mutateAsync({ envId: buildEnvironmentId, ...built.request }));
+		run.isBuilding = false;
+		if (result.error === null) {
+			toast.success(m.build_completed());
+			return;
 		}
-	}
-
-	function onBuildTabChange(value: string) {
-		buildTab = value;
-	}
-
-	function onMainTabChange(value: string) {
-		mainUrlTab.select(value);
+		if (isSessionCancelledError(result.error)) return;
+		const message = result.error instanceof Error ? result.error.message : m.build_failed();
+		if (!run.error) run.fail(message);
+		toast.error(run.error);
 	}
 </script>
 
-{#snippet workspaceCard()}
-	<Card.Root class="flex h-full flex-col overflow-hidden">
-		<BuildWorkspacePanel
-			rootLabel={buildsRootLabel}
-			rootPath={buildsRoot}
-			{contextMode}
-			{contextDir}
-			remoteContext={remoteContextSource}
-			onModeChange={(mode) => (contextMode = mode)}
-			onRemoteContextChange={(value: string) => (remoteContextSource = value)}
-			onSelectContext={(path: string) => (selectedContext = { environmentId: buildEnvironmentId, path })}
-			environmentId={buildEnvironmentId}
-		/>
-	</Card.Root>
-{/snippet}
-
-{#snippet configPanel()}
-	<BuildConfigPanel
-		bind:environmentId={() => buildEnvironmentId, (value) => (pickedEnvironmentId = value)}
-		bind:inputs
-		provider={resolvedProvider}
-		bind:showAdvanced
-		{isPushMode}
-		{registryOptions}
-		{repositoryOptions}
-		{fullImageReference}
-		registryLoadFailed={Boolean(registriesQuery.error)}
-		onSubmit={handleSubmit}
-	/>
-{/snippet}
-
-{#snippet historyContent()}
-	<ImageBuildHistoryPanel onApplyBuild={applyBuildConfig} />
-{/snippet}
-{#snippet rightPanel()}
-	<div class="flex h-full flex-col">
-		<Tabs.Root bind:value={rightPanelTab} class="flex h-full flex-col">
-			<div class="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/40 px-3 py-2">
-				<Tabs.List class="flex items-center">
-					<Tabs.Trigger value="config" size="sm">
-						<CodeIcon class="mr-2 size-3.5" />
-						{m.build_configuration()}
-					</Tabs.Trigger>
-					<Tabs.Trigger value="output" size="sm">
-						<TerminalIcon class="mr-2 size-3.5" />
-						{m.build_output()}
-						{#if logLines.length > 0}
-							<span
-								class="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-3xs font-semibold text-primary ring-1 ring-primary/20"
-							>
-								{logLines.length}
-							</span>
-						{/if}
-					</Tabs.Trigger>
-				</Tabs.List>
-
-				<div class="flex items-center gap-3 pr-2">
-					<BuildControls
-						bind:inputs
-						provider={resolvedProvider}
-						{providerOptions}
-						environmentId={buildEnvironmentId}
-						{isBuilding}
-						onBuild={handleSubmit}
-					/>
-					<div class="hidden h-4 w-px bg-border xl:block"></div>
-					<div class="flex items-center gap-2">
-						<div class="relative flex items-center">
-							<div class={['size-2 rounded-full transition-all', statusDotClass]}></div>
-							{#if isBuilding}
-								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-info opacity-75"></div>
-							{/if}
-						</div>
-						<span class="text-xs font-medium text-muted-foreground">{statusLabel}</span>
-					</div>
-				</div>
-			</div>
-
-			<Tabs.Content value="config" class="mt-0 min-h-0 flex-1 overflow-auto">
-				{@render configPanel()}
-			</Tabs.Content>
-			<Tabs.Content value="output" class="mt-0 min-h-0 flex-1 overflow-hidden">
-				<BuildOutputPanel
-					{logLines}
-					{aggregateStatus}
-					{hasReachedComplete}
-					{buildError}
-					{isBuilding}
-					bind:autoScroll
-					onReset={resetState}
-				/>
-			</Tabs.Content>
-		</Tabs.Root>
-	</div>
-{/snippet}
-
-{#if isDesktop}
-	<ResourceDetailLayout title={m.build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
-		<div class="h-screen-inset-12">
-			<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-full flex-col">
-				<Tabs.List class="mb-3 flex w-fit">
-					<Tabs.Trigger value="build">
-						{m.build_workspace()}
-					</Tabs.Trigger>
-					<Tabs.Trigger value="history">
-						{m.build_history()}
-					</Tabs.Trigger>
-				</Tabs.List>
-
-				<Tabs.Content value="build" class="min-h-0 flex-1">
-					<div class="relative flex h-full">
-						<ResizableSplit
-							class="flex h-full w-full gap-3"
-							firstClass="h-full"
-							secondClass="h-full"
-							minSize={300}
-							minSecondSize={520}
-							defaultRatio={0.28}
-							handleSize={10}
-							handleClass="bg-muted-foreground/50 rounded-full"
-							allowCollapse={true}
-							persistKey="arcane.build.workspace.split"
-						>
-							{#snippet first()}
-								{@render workspaceCard()}
-							{/snippet}
-							{#snippet second()}
-								<Card.Root class="flex h-full flex-col overflow-hidden">
-									{@render rightPanel()}
-								</Card.Root>
-							{/snippet}
-						</ResizableSplit>
-					</div>
-				</Tabs.Content>
-
-				<Tabs.Content value="history" class="min-h-0 flex-1">
-					<Card.Root class="flex h-full flex-col overflow-hidden">
-						{@render historyContent()}
-					</Card.Root>
-				</Tabs.Content>
-			</Tabs.Root>
+<TabbedPageLayout tabItems={mainUrlTab.items} selectedTab={mainUrlTab.value} onTabChange={mainUrlTab.select}>
+	{#snippet headerInfo()}
+		<div class="flex flex-col gap-0.5">
+			<h1 class="text-sm font-semibold">{m.builds()}</h1>
+			<p class="text-xs text-muted-foreground">{m.manual_build_workspace_subtitle()}</p>
 		</div>
-	</ResourceDetailLayout>
-{:else}
-	<TabbedPageLayout tabItems={mainTabItems} selectedTab={mainTab} onTabChange={onMainTabChange} class="min-h-screen-inset-10">
-		{#snippet headerInfo()}
-			<div class="flex flex-col gap-1">
-				{#if mainTab === 'history'}
-					<h1 class="text-2xl font-semibold tracking-tight">
-						{m.builds()}
-					</h1>
-					<p class="text-sm text-muted-foreground">
-						{m.build_output()}
-					</p>
-				{:else}
-					<h1 class="text-2xl font-semibold tracking-tight">
-						{m.build_workspace()}
-					</h1>
-					<p class="text-sm text-muted-foreground">
-						{m.manual_build_workspace_subtitle()}
-					</p>
-				{/if}
-			</div>
-		{/snippet}
+	{/snippet}
 
-		{#snippet headerActions()}
-			{#if mainTab === 'build'}
-				<BuildControls
+	{#snippet headerActions()}
+		<BuildControls
+			bind:inputs
+			provider={resolvedProvider}
+			{providerOptions}
+			environmentId={buildEnvironmentId}
+			isBuilding={run.isBuilding || workspace.saving}
+			onBuild={handleSubmit}
+		/>
+	{/snippet}
+
+	{#snippet tabContent(tab)}
+		{#if tab === 'history'}
+			<ImageBuildHistoryPanel onApplyBuild={applyBuildConfig} />
+		{:else if tab === 'files'}
+			<div class="flex h-screen-inset-15 min-h-128 flex-col">
+				<BuildWorkspaceEditor
+					{workspace}
+					rootLabel={buildsRootLabel}
+					loading={workspaceQuery.isPending}
+					error={workspaceQuery.error}
+					truncated={workspaceQuery.data?.fileTreeTruncated ?? false}
+					canEdit={canEditWorkspace}
+					{maxFileSizeMb}
+					onRetry={() => workspaceQuery.refetch()}
+				/>
+			</div>
+		{:else}
+			<div class="grid items-start gap-4 lg:grid-cols-build-form">
+				<BuildConfigPanel
+					bind:environmentId={() => buildEnvironmentId, selectEnvironment}
 					bind:inputs
 					provider={resolvedProvider}
-					{providerOptions}
-					environmentId={buildEnvironmentId}
-					{isBuilding}
-					onBuild={handleSubmit}
-				/>
-			{/if}
-		{/snippet}
-
-		{#snippet tabContent(tab)}
-			<div class="min-h-screen-60">
-				{#if tab === 'build'}
-					<TabbedPageLayout
-						tabItems={buildMobileTabItems}
-						selectedTab={buildTab}
-						onTabChange={onBuildTabChange}
-						class="min-h-screen-60"
-					>
-						{#snippet headerInfo()}
-							<div class="flex flex-col gap-1">
-								<h2 class="text-lg font-semibold">
-									{m.build_workspace()}
-								</h2>
-								<p class="text-xs text-muted-foreground">
-									{m.manual_build_workspace_subtitle()}
-								</p>
-							</div>
-						{/snippet}
-						{#snippet headerActions()}
-							<BuildControls
-								bind:inputs
-								provider={resolvedProvider}
-								{providerOptions}
-								environmentId={buildEnvironmentId}
-								{isBuilding}
-								onBuild={handleSubmit}
-							/>
-						{/snippet}
-						{#snippet tabContent(buildTabValue)}
-							{#if buildTabValue === 'workspace'}
-								{@render workspaceCard()}
-							{:else if buildTabValue === 'configuration'}
-								<Card.Root class="overflow-hidden">
-									{@render configPanel()}
-								</Card.Root>
-							{:else}
-								<Card.Root class="flex h-full min-h-125 flex-col overflow-hidden">
-									<BuildOutputPanel
-										{logLines}
-										{aggregateStatus}
-										{hasReachedComplete}
-										{buildError}
-										{isBuilding}
-										bind:autoScroll
-										onReset={resetState}
-									/>
-								</Card.Root>
-							{/if}
-						{/snippet}
-					</TabbedPageLayout>
-				{:else}
-					<Card.Root class="flex h-full min-h-125 flex-col overflow-hidden">
-						{@render historyContent()}
-					</Card.Root>
-				{/if}
+					bind:showBuildOptions
+					bind:showRuntimeOptions
+					{isPushMode}
+					{registryOptions}
+					{repositoryOptions}
+					{fullImageReference}
+					registryLoadFailed={Boolean(registriesQuery.error)}
+					onSubmit={handleSubmit}
+				>
+					{#snippet source()}
+						<BuildSourceSection
+							{workspace}
+							{contextDir}
+							{buildsRoot}
+							loading={workspaceQuery.isPending}
+							bind:contextMode
+							bind:remoteContext={remoteContextSource}
+							onEditFiles={() => mainUrlTab.select('files')}
+						/>
+					{/snippet}
+				</BuildConfigPanel>
+				<div class="h-128 lg:sticky lg:top-0 lg:h-screen-inset-15">
+					<BuildOutputPanel {run} />
+				</div>
 			</div>
-		{/snippet}
-	</TabbedPageLayout>
-{/if}
+		{/if}
+	{/snippet}
+</TabbedPageLayout>

@@ -36,6 +36,16 @@ type (
 		FileTreeTruncated bool                 `json:"fileTreeTruncated"`
 	}
 
+	WorkspaceUploadRequest struct {
+		UploadID   string `json:"uploadId" required:"true" doc:"ID of a complete upload session"`
+		ParentPath string `json:"parentPath,omitempty" doc:"Folder relative to the workspace root that receives the file"`
+	}
+
+	WorkspaceUpdateManifest struct {
+		FileTreeRevision string                `json:"fileTreeRevision" binding:"required"`
+		FileChanges      []WorkspaceFileChange `json:"fileChanges" binding:"required" minItems:"1" maxItems:"500"`
+	}
+
 	WorkspaceFileContent struct {
 		Path           string `json:"path"`
 		RelativePath   string `json:"relativePath"`

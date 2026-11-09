@@ -160,21 +160,6 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 	return resolved, nil
 }
 
-func projectScanSkipDirectorySet(skipDirectories string) map[string]bool {
-	dirs := map[string]bool{}
-	for dir := range strings.SplitSeq(skipDirectories, ",") {
-		dir = strings.TrimSpace(dir)
-		if dir != "" {
-			dirs[dir] = true
-		}
-	}
-
-	// Never allow .git contents to be exposed through the project workspace.
-	dirs[".git"] = true
-
-	return dirs
-}
-
 func syncedProjectFileMatches(ctx context.Context, projectPath string, file SyncFile) (bool, error) {
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
 	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logicalPath, acfstypes.StatOptions{})

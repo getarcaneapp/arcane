@@ -9,11 +9,16 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
+	import { TabBar } from '#lib/components/tab-bar/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		EllipsisIcon,
 		CodeIcon,
@@ -23,6 +28,7 @@
 		RegistryIcon,
 		ExternalLinkIcon,
 		MoveToFolderIcon,
+		TemplateIcon,
 		TrashIcon
 	} from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
@@ -288,6 +294,27 @@
 			return url;
 		}
 	});
+
+	const urlTab = useUrlTab({
+		tabs: () => [
+			{ value: 'overview', label: m.common_overview(), icon: TemplateIcon },
+			{ value: 'compose', label: 'compose.yaml', icon: CodeIcon },
+			{ value: 'env', label: '.env', icon: FileTextIcon, visible: !!data.templateData.envContent }
+		],
+		defaultTab: () => 'overview',
+		ready: () => template.isRemote
+	});
+
+	const metaItems = $derived(
+		[
+			{ label: m.common_version(), value: template.metadata?.version ?? '' },
+			{ label: m.common_author(), value: template.metadata?.author ?? '' },
+			{
+				label: m.common_updated(),
+				value: template.metadata?.updatedAt ? formatDateTimeShort(template.metadata.updatedAt) : ''
+			}
+		].filter((item) => item.value !== '')
+	);
 </script>
 
 {#if !template.isRemote}
@@ -364,161 +391,102 @@
 			{/if}
 		{/snippet}
 
-		<div class="flex flex-col gap-8 lg:flex-row">
-			<div class="min-w-0 flex-1 space-y-8">
-				<section class="space-y-2">
-					<div class="flex items-center gap-2">
-						<CodeIcon class="size-4 text-muted-foreground" />
-						<h2 class="font-mono text-sm font-medium">compose.yaml</h2>
-					</div>
-					<CodeBlock.Root class="h-120 sm:h-140">
-						<CodeBlock.Content lineNumbers class="flex-1">
-							{#each remoteComposeLines.current as line, index (index)}
-								<CodeBlock.Line code={line} />
-							{/each}
-						</CodeBlock.Content>
-					</CodeBlock.Root>
-				</section>
+		<Tabs.Root value={urlTab.value}>
+			<div class="space-y-6">
+				<TabBar items={urlTab.items} onValueChange={(value) => urlTab.select(value)} />
 
-				{#if data.templateData.envContent}
-					<section class="space-y-2">
-						<div class="flex items-center gap-2">
-							<FileTextIcon class="size-4 text-muted-foreground" />
-							<h2 class="font-mono text-sm font-medium">.env</h2>
-						</div>
-						<CodeBlock.Root class="h-70">
+				<Tabs.Content value="overview">
+					<div class="space-y-6">
+						{#if metaItems.length > 0 || template.metadata?.documentationUrl || template.metadata?.tags?.length}
+							<DetailMetaStrip items={metaItems}>
+								{#if template.metadata?.documentationUrl}
+									<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
+										<span class="text-xs font-semibold tracking-wide uppercase">{m.common_documentation()}</span>
+										<a
+											href={template.metadata.documentationUrl}
+											target="_blank"
+											rel="external noopener noreferrer"
+											class="inline-flex items-center gap-1 font-medium break-all text-primary-text hover:underline"
+										>
+											{documentationHost}
+											<ExternalLinkIcon class="size-3.5 shrink-0" />
+										</a>
+									</div>
+								{/if}
+								{#if template.metadata?.tags?.length}
+									<div class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+										<span class="text-xs font-semibold tracking-wide uppercase">{m.common_tags()}</span>
+										{#each template.metadata.tags as tag (tag)}
+											<Badge variant="outline">{tag}</Badge>
+										{/each}
+									</div>
+								{/if}
+							</DetailMetaStrip>
+						{/if}
+
+						{#if services?.length}
+							<DetailSection title="{m.services()} ({services.length})" icon={ContainersIcon} class="border-t-0 pt-0">
+								<ul class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+									{#each services as service (service)}
+										<li class="flex min-w-0 items-center gap-2.5 rounded-xl border border-border/50 bg-card/10 px-3.5 py-3">
+											<ContainersIcon class="size-4 shrink-0 text-muted-foreground" />
+											<span class="min-w-0 truncate font-mono text-sm" title={service}>{service}</span>
+										</li>
+									{/each}
+								</ul>
+							</DetailSection>
+						{/if}
+
+						{#if envVars?.length}
+							<DetailSection title="{m.common_environment_variables()} ({envVars.length})" icon={FileTextIcon}>
+								<div class="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+									{#each envVars as envVar (envVar.key)}
+										{#if envVar.value}
+											<KeyValueCard label={envVar.key} valueTitle={envVar.value}>{envVar.value}</KeyValueCard>
+										{:else}
+											<KeyValueCard label={envVar.key} valueFormat="custom">
+												<span class="text-sm text-muted-foreground italic">{m.common_no_default_value()}</span>
+											</KeyValueCard>
+										{/if}
+									{/each}
+								</div>
+							</DetailSection>
+						{/if}
+					</div>
+				</Tabs.Content>
+
+				<Tabs.Content value="compose">
+					<div class="h-screen-inset-15 min-h-80">
+						<CodeBlock.Root class="h-full">
+							<CodeBlock.Actions>
+								<CopyButton text={data.templateData.content} size="icon" class="size-7" />
+							</CodeBlock.Actions>
 							<CodeBlock.Content lineNumbers class="flex-1">
-								{#each remoteEnvLines.current as line, index (index)}
+								{#each remoteComposeLines.current as line, index (index)}
 									<CodeBlock.Line code={line} />
 								{/each}
 							</CodeBlock.Content>
 						</CodeBlock.Root>
-					</section>
+					</div>
+				</Tabs.Content>
+
+				{#if data.templateData.envContent}
+					<Tabs.Content value="env">
+						<div class="h-screen-inset-15 min-h-80">
+							<CodeBlock.Root class="h-full">
+								<CodeBlock.Actions>
+									<CopyButton text={data.templateData.envContent} size="icon" class="size-7" />
+								</CodeBlock.Actions>
+								<CodeBlock.Content lineNumbers class="flex-1">
+									{#each remoteEnvLines.current as line, index (index)}
+										<CodeBlock.Line code={line} />
+									{/each}
+								</CodeBlock.Content>
+							</CodeBlock.Root>
+						</div>
+					</Tabs.Content>
 				{/if}
 			</div>
-
-			<aside class="w-full shrink-0 space-y-6 lg:w-72 lg:border-l lg:border-border/50 lg:pl-8 xl:w-80">
-				<div class="space-y-3">
-					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-						{m.common_overview()}
-					</h3>
-					<dl class="space-y-2 text-sm">
-						{#if template.registry?.name}
-							<div class="flex items-center justify-between gap-4">
-								<dt class="shrink-0 text-muted-foreground">
-									{m.common_registry()}
-								</dt>
-								<dd class="min-w-0 text-right font-medium break-words">
-									{template.registry.name}
-								</dd>
-							</div>
-						{/if}
-						{#if template.metadata?.version}
-							<div class="flex items-center justify-between gap-4">
-								<dt class="shrink-0 text-muted-foreground">
-									{m.common_version()}
-								</dt>
-								<dd class="min-w-0 text-right font-medium break-words">
-									{template.metadata.version}
-								</dd>
-							</div>
-						{/if}
-						{#if template.metadata?.author}
-							<div class="flex items-center justify-between gap-4">
-								<dt class="shrink-0 text-muted-foreground">
-									{m.common_author()}
-								</dt>
-								<dd class="min-w-0 text-right font-medium break-words">
-									{template.metadata.author}
-								</dd>
-							</div>
-						{/if}
-						{#if template.metadata?.updatedAt}
-							<div class="flex items-center justify-between gap-4">
-								<dt class="shrink-0 text-muted-foreground">
-									{m.common_updated()}
-								</dt>
-								<dd class="min-w-0 text-right font-medium break-words">
-									{formatDateTimeShort(template.metadata.updatedAt)}
-								</dd>
-							</div>
-						{/if}
-						{#if template.metadata?.documentationUrl}
-							<div class="flex items-center justify-between gap-4">
-								<dt class="shrink-0 text-muted-foreground">
-									{m.common_documentation()}
-								</dt>
-								<dd class="min-w-0 text-right">
-									<a
-										href={template.metadata.documentationUrl}
-										target="_blank"
-										rel="external noopener noreferrer"
-										class="inline-flex items-center gap-1 font-medium break-all text-primary-text hover:underline"
-									>
-										{documentationHost}
-										<ExternalLinkIcon class="size-3.5 shrink-0" />
-									</a>
-								</dd>
-							</div>
-						{/if}
-					</dl>
-				</div>
-
-				{#if services?.length}
-					<div class="space-y-3 border-t border-border/50 pt-6">
-						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.services()} ({services.length})
-						</h3>
-						<ul class="space-y-1.5">
-							{#each services as service (service)}
-								<li class="flex min-w-0 items-center gap-2 text-sm">
-									<ContainersIcon class="size-4 shrink-0 text-muted-foreground" />
-									<span class="min-w-0 truncate font-mono">{service}</span>
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				{#if envVars?.length}
-					<div class="space-y-3 border-t border-border/50 pt-6">
-						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.common_environment_variables()} ({envVars.length})
-						</h3>
-						<div class="space-y-2.5">
-							{#each envVars as envVar (envVar.key)}
-								<div class="min-w-0">
-									<div class="font-mono text-xs font-medium break-words select-all">
-										{envVar.key}
-									</div>
-									{#if envVar.value}
-										<div class="font-mono text-xs break-words text-muted-foreground select-all">
-											{envVar.value}
-										</div>
-									{:else}
-										<div class="text-xs text-muted-foreground italic">
-											{m.common_no_default_value()}
-										</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				{#if template.metadata?.tags && template.metadata.tags.length > 0}
-					<div class="space-y-3 border-t border-border/50 pt-6">
-						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.common_tags()}
-						</h3>
-						<div class="flex flex-wrap gap-1">
-							{#each template.metadata.tags as tag (tag)}
-								<Badge variant="outline">{tag}</Badge>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</aside>
-		</div>
+		</Tabs.Root>
 	</ResourceDetailLayout>
 {/if}

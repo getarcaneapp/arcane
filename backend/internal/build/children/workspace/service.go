@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,15 +16,17 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	workspacepkg "getarcane.dev/arcane/v3/pkg/workspace"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/workspace"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Service struct {
-		buildsDirectory func() string
+		settingsService *settings.SettingsService
 	}
 )
 
@@ -33,167 +34,116 @@ const (
 	defaultBuildsDirectory = "/builds"
 )
 
-func NewService(buildsDirectory func() string) *Service {
-	return &Service{buildsDirectory: buildsDirectory}
+func NewService(settingsService *settings.SettingsService) *Service {
+	return &Service{settingsService: settingsService}
 }
 
-func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]types.WorkspaceFileEntry, error) {
-	slog.DebugContext(ctx, "build workspace: list directory", "path", dirPath)
+func (s *Service) Read(ctx context.Context) (*types.Workspace, error) {
 	root, err := s.resolveRoot()
 	if err != nil {
 		return nil, err
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(dirPath)
+	files, revision, truncated, err := workspace.Read(ctx, root, s.options(ctx, ""))
 	if err != nil {
-		return nil, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
+		return nil, classifyWorkspaceError(fmt.Errorf("read build workspace: %w", err))
 	}
-
-	entries, err := acfs.Root{Path: root}.List(ctx, cleaned)
-	if err != nil {
-		return nil, classifyWorkspaceError(fmt.Errorf("failed to list directory: %w", err))
-	}
-
-	results := make([]types.WorkspaceFileEntry, 0, len(entries))
-	for _, entry := range entries {
-		results = append(results, workspacepkg.FileEntry(entry))
-	}
-
-	return results, nil
+	return &types.Workspace{
+		Files:             files,
+		FileTreeRevision:  revision,
+		FileTreeTruncated: truncated,
+	}, nil
 }
 
-func (s *Service) GetFileContent(ctx context.Context, filePath string, maxBytes int64) ([]byte, string, error) {
-	slog.DebugContext(ctx, "build workspace: get file content", "path", filePath, "maxBytes", maxBytes)
-	root, err := s.resolveRoot()
+func (s *Service) File(ctx context.Context, relativePath string) (*types.WorkspaceFileContent, error) {
+	root, rel, entry, err := s.resolveFile(ctx, relativePath)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(filePath)
+	file, err := workspace.ReadFile(ctx, root, rel, entry, workspace.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")))
 	if err != nil {
-		return nil, "", common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
+		return nil, classifyWorkspaceError(err)
 	}
-
-	if maxBytes <= 0 {
-		maxBytes = 1048576
-	}
-
-	file, _, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, maxBytes)
-	if err != nil {
-		return nil, "", classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
-	}
-	defer func() { _ = file.Close() }()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read file: %w", err)
-	}
-
-	mimeType := http.DetectContentType(content)
-	return content, mimeType, nil
+	return &file, nil
 }
 
-func (s *Service) DownloadFile(ctx context.Context, filePath string) (io.ReadCloser, int64, error) {
-	slog.DebugContext(ctx, "build workspace: download file", "path", filePath)
-	root, err := s.resolveRoot()
+func (s *Service) Download(ctx context.Context, relativePath string) (io.ReadCloser, int64, string, error) {
+	root, rel, _, err := s.resolveFile(ctx, relativePath)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(filePath)
+	file, size, err := acfs.Root{Path: root}.OpenRead(ctx, "/"+rel, 0)
 	if err != nil {
-		return nil, 0, common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
+		return nil, 0, "", classifyWorkspaceError(fmt.Errorf("open build workspace file: %w", err))
 	}
-
-	file, size, err := acfs.Root{Path: root}.OpenRead(ctx, cleaned, 0)
-	if err != nil {
-		return nil, 0, classifyWorkspaceError(fmt.Errorf("failed to open file: %w", err))
-	}
-
-	return file, size, nil
+	return file, size, path.Base(rel), nil
 }
 
-func (s *Service) UploadFile(ctx context.Context, destPath string, content io.Reader, filename string, size int64) error {
-	slog.DebugContext(ctx, "build workspace: upload file", "destPath", destPath, "filename", filename)
+func (s *Service) Update(ctx context.Context, manifest types.WorkspaceUpdateManifest, uploads map[int][]byte) (*types.Workspace, error) {
+	slog.DebugContext(ctx, "build workspace: update", "fileChangeCount", len(manifest.FileChanges))
+	if err := workspace.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
+		return nil, common.Classify(common.ErrBadRequest, err)
+	}
 	root, err := s.resolveRoot()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	safeFilename, err := sanitizeUploadFilename(filename)
-	if err != nil {
-		return common.Classify(common.ErrBadRequest, err)
+	if applyErr := workspace.Apply(ctx, root, manifest.FileChanges, uploads, s.options(ctx, strings.TrimSpace(manifest.FileTreeRevision))); applyErr != nil {
+		return nil, classifyApplyError(applyErr)
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(destPath)
-	if err != nil {
-		return common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
-	}
-
-	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
-		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
-	}
-
-	targetFile := path.Join(cleaned, safeFilename)
-	if _, writeFromErr := (acfs.Root{Path: root}).WriteFrom(ctx, targetFile, content, acfs.WriteFromOptions{Size: size, Mode: 0o644}); writeFromErr != nil {
-		return classifyWorkspaceError(fmt.Errorf("failed to write file: %w", writeFromErr))
-	}
-
-	return nil
+	return s.Read(ctx)
 }
 
-func (s *Service) CreateDirectory(ctx context.Context, dirPath string) error {
-	slog.DebugContext(ctx, "build workspace: create directory", "path", dirPath)
+func (s *Service) Upload(ctx context.Context, parentPath, filename string, content io.Reader, size int64) (*types.Workspace, error) {
+	slog.DebugContext(ctx, "build workspace: upload", "parentPath", parentPath, "filename", filename)
+	parent, err := workspace.NormalizeParentPath(parentPath)
+	if err != nil {
+		return nil, common.Classify(common.ErrForbidden, fmt.Errorf("invalid build workspace path: %w", err))
+	}
+	name, err := kit.ValidateFileName(filename)
+	if err != nil {
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("invalid build workspace file name: %w", err))
+	}
 	root, err := s.resolveRoot()
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(dirPath)
-	if err != nil {
-		return common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
+	if writeErr := workspace.WriteFile(ctx, root, path.Join(parent, name), content, size); writeErr != nil {
+		return nil, classifyApplyError(writeErr)
 	}
-
-	if cleaned == "/" {
-		return nil
-	}
-
-	if mkdirAllErr := (acfs.Root{Path: root}).MkdirAll(ctx, cleaned, 0o755); mkdirAllErr != nil {
-		return classifyWorkspaceError(fmt.Errorf("failed to create directory: %w", mkdirAllErr))
-	}
-
-	return nil
+	return s.Read(ctx)
 }
 
-func (s *Service) DeleteFile(ctx context.Context, filePath string) error {
-	slog.DebugContext(ctx, "build workspace: delete path", "path", filePath)
+func (s *Service) options(ctx context.Context, expectedRevision string) workspace.Options {
+	return workspace.Options{
+		ExpectedRevision: expectedRevision,
+		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
+		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		MaxFileSizeBytes: workspace.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
+	}
+}
+
+func (s *Service) resolveFile(ctx context.Context, relativePath string) (string, string, acfstypes.Entry, error) {
 	root, err := s.resolveRoot()
 	if err != nil {
-		return err
+		return "", "", acfstypes.Entry{}, err
 	}
-
-	cleaned, err := kit.SanitizeBrowsePath(filePath)
+	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return common.Classify(common.ErrForbidden, fmt.Errorf("invalid path: %w", err))
+		return "", "", acfstypes.Entry{}, common.Classify(common.ErrForbidden, fmt.Errorf("invalid build workspace path: %w", err))
 	}
-
-	if cleaned == "/" {
-		return common.Classify(common.ErrBadRequest, errors.New("cannot delete root directory"))
+	entry, err := acfs.Root{Path: root}.Stat(ctx, "/"+rel, acfstypes.StatOptions{})
+	if err != nil {
+		return "", "", acfstypes.Entry{}, classifyWorkspaceError(fmt.Errorf("inspect build workspace file: %w", err))
 	}
-
-	if removeAllErr := (acfs.Root{Path: root}).RemoveAll(ctx, cleaned); removeAllErr != nil {
-		return classifyWorkspaceError(fmt.Errorf("failed to delete path: %w", removeAllErr))
+	if entry.IsDirectory {
+		return "", "", acfstypes.Entry{}, common.Classify(common.ErrBadRequest, errors.New("workspace path is a directory"))
 	}
-
-	return nil
+	return root, rel, entry, nil
 }
 
 func (s *Service) resolveRoot() (string, error) {
-	if s.buildsDirectory == nil {
-		return "", errors.New("settings service not available")
-	}
-
-	root := cmp.Or(strings.TrimSpace(s.buildsDirectory()), defaultBuildsDirectory)
+	root := cmp.Or(strings.TrimSpace(s.settingsService.GetSettingsConfig().BuildsDirectory.Value), defaultBuildsDirectory)
 
 	if !filepath.IsAbs(root) {
 		return "", errors.New("builds directory must be an absolute path")
@@ -224,28 +174,14 @@ func classifyWorkspaceError(err error) error {
 	}
 }
 
-func sanitizeUploadFilename(filename string) (string, error) {
-	name := strings.TrimSpace(filename)
-	if name == "" {
-		return "", errors.New("invalid filename")
+func classifyApplyError(err error) error {
+	switch {
+	case errors.Is(err, workspace.ErrRevisionConflict), errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
+		return common.Classify(common.ErrConflict, err)
+	case errors.Is(err, workspace.ErrSymlinkPath), errors.Is(err, acfs.ErrOutsideRoot), errors.Is(err, acfs.ErrInvalidPath),
+		errors.Is(err, acfs.ErrSymlink), errors.Is(err, acfs.ErrSymlinkLoop):
+		return common.Classify(common.ErrForbidden, err)
+	default:
+		return common.Classify(common.ErrBadRequest, err)
 	}
-
-	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return "", errors.New("invalid filename: must not contain path separators")
-	}
-
-	// On Windows, disallow drive/volume prefixes (e.g. C: or \\server\share).
-	if vol := filepath.VolumeName(name); vol != "" {
-		return "", errors.New("invalid filename: must not include volume prefix")
-	}
-
-	base := filepath.Base(name)
-	if base != name {
-		return "", errors.New("invalid filename: must not contain path separators")
-	}
-	if base == "." || base == ".." {
-		return "", errors.New("invalid filename")
-	}
-
-	return base, nil
 }

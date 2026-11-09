@@ -1,95 +1,93 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { TerminalIcon } from '#lib/icons/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { CloseIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { ansiToHtml } from '#lib/utils/formatting.js';
+	import { ansiToHtml, sanitizeLogText } from '#lib/utils/formatting.js';
 
-	let {
-		logLines,
-		aggregateStatus,
-		hasReachedComplete,
-		buildError,
-		autoScroll = $bindable(true),
-		isBuilding = false,
-		onReset
-	}: {
-		logLines: string[];
-		aggregateStatus: string;
-		hasReachedComplete: boolean;
-		buildError: string;
-		autoScroll?: boolean;
-		isBuilding?: boolean;
-		onReset?: () => void;
-	} = $props();
+	import type { BuildRun } from '../build-run.svelte';
 
-	const statusDotClass = $derived.by(() => {
-		if (buildError) return 'bg-destructive';
-		if (hasReachedComplete) return 'bg-success';
-		if (isBuilding) return 'animate-pulse bg-info';
-		return 'bg-muted-foreground/30';
+	let { run }: { run: BuildRun } = $props();
+
+	const phaseBadge = $derived.by(() => {
+		switch (run.phase) {
+			case 'building':
+				return { variant: 'blue' as const, label: m.progress_building() };
+			case 'completed':
+				return { variant: 'green' as const, label: m.completed() };
+			case 'failed':
+				return { variant: 'red' as const, label: m.common_failed() };
+			default:
+				return { variant: 'gray' as const, label: m.idle() };
+		}
 	});
+	const plainLog = $derived(run.logLines.map((line) => sanitizeLogText(line)).join('\n'));
 
 	function autoScrollToBottom(node: HTMLElement) {
-		if (logLines.length > 0 && autoScroll) node.scrollTop = node.scrollHeight;
+		if (run.logLines.length > 0 && run.autoScroll) node.scrollTop = node.scrollHeight;
 	}
 </script>
 
-<div class="flex h-full flex-col p-8">
-	<div class="mb-6 shrink-0 space-y-4 rounded-2xl border border-border/50 bg-card p-5">
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-3">
-				<div class={['size-2 rounded-full', statusDotClass]}></div>
-				<span class="truncate text-sm font-medium">
-					{#if hasReachedComplete}
-						{m.build_completed()}
-					{:else}
-						{aggregateStatus || m.idle()}
-					{/if}
-				</span>
-			</div>
-			<SwitchWithLabel id="auto-scroll" checked={autoScroll} label={m.auto_scroll()} onCheckedChange={(v) => (autoScroll = v)} />
-		</div>
-		{#if isBuilding && !hasReachedComplete}
-			<Progress value={100} max={100} class="h-1.5 w-full" indeterminate />
+<section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-table-head">
+	<div class="flex h-10 shrink-0 items-center gap-2 pr-1.5 pl-3">
+		<TerminalIcon class="size-3.5 shrink-0 text-muted-foreground" />
+		<h2 class="shrink-0 text-xs font-medium">{m.build_output()}</h2>
+		<Badge variant={phaseBadge.variant} size="sm">{phaseBadge.label}</Badge>
+		{#if run.statusText && run.phase === 'building'}
+			<span class="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title={run.statusText}>
+				{run.statusText}
+			</span>
 		{/if}
-	</div>
-
-	<div
-		{@attach autoScrollToBottom}
-		class="group dark relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-background p-5 font-mono text-xs-plus leading-relaxed text-foreground shadow-2xl shadow-black/50"
-	>
-		<div class="relative">
-			{#if logLines.length === 0}
-				<div class="flex min-h-50 items-center justify-center">
-					<div class="text-center">
-						<TerminalIcon class="mx-auto mb-3 size-8 text-muted-foreground/50" />
-						<p class="text-sm text-muted-foreground">{m.build_output_placeholder()}</p>
-					</div>
-				</div>
-			{:else}
-				{#each logLines as line, idx (idx)}
-					<div class="rounded-xl px-1 py-0.5 break-words whitespace-pre-wrap transition-colors hover:bg-white/[0.03]">
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
-						{@html ansiToHtml(line)}
-					</div>
-				{/each}
+		<div class="ml-auto flex shrink-0 items-center gap-1">
+			<div class="mr-1 flex items-center gap-2">
+				<Switch id="build-output-auto-scroll" bind:checked={run.autoScroll} />
+				<label for="build-output-auto-scroll" class="text-xs text-muted-foreground">{m.auto_scroll()}</label>
+			</div>
+			{#if run.logLines.length > 0}
+				<CopyButton text={plainLog} class="size-6" />
+				{#if !run.isBuilding}
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="icon"
+						class="size-6"
+						icon={CloseIcon}
+						showLabel={false}
+						customLabel={m.clear_output()}
+						title={m.clear_output()}
+						onclick={run.reset}
+					/>
+				{/if}
 			{/if}
 		</div>
 	</div>
 
-	{#if buildError}
-		<div class="mt-4 shrink-0 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-			{buildError}
+	{#if run.isBuilding}
+		<Progress value={100} max={100} class="h-0.5 w-full" indeterminate />
+	{/if}
+	<div
+		{@attach autoScrollToBottom}
+		class="min-h-0 flex-1 overflow-auto px-3 pt-1 pb-3 font-mono text-xs-plus leading-relaxed text-foreground"
+	>
+		{#if run.logLines.length === 0}
+			<div class="flex h-full items-center justify-center font-sans text-sm text-muted-foreground">
+				{m.build_output_placeholder()}
+			</div>
+		{:else}
+			{#each run.logLines as line, idx (idx)}
+				<div class="break-words whitespace-pre-wrap">
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
+					{@html ansiToHtml(line)}
+				</div>
+			{/each}
+		{/if}
+	</div>
+	{#if run.error}
+		<div class="shrink-0 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+			{run.error}
 		</div>
 	{/if}
-
-	{#if logLines.length > 0 && !isBuilding}
-		<div class="mt-4 shrink-0">
-			<ArcaneButton action="base" tone="outline" onclick={() => onReset?.()}>
-				{m.clear_output()}
-			</ArcaneButton>
-		</div>
-	{/if}
-</div>
+</section>

@@ -92,6 +92,57 @@ var (
 		},
 	}
 
+	BuildWorkspaceConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpCreateFile,
+			Permission: PermBuildWorkspacesCreate,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpCreateFolder,
+			Permission: PermBuildWorkspacesCreate,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpUpdateFile,
+			Permission: PermBuildWorkspacesCreate,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpRename,
+			Permission: PermBuildWorkspacesCreate,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpRename,
+			Permission: PermBuildWorkspacesDelete,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpMove,
+			Permission: PermBuildWorkspacesCreate,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpMove,
+			Permission: PermBuildWorkspacesDelete,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "fileChanges.operation",
+			Value:      types.FileOpDelete,
+			Permission: PermBuildWorkspacesDelete,
+		},
+	}
+
 	VolumeWorkspaceConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,

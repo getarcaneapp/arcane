@@ -42,7 +42,11 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPatch},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
-		{path: "/environments/{id}/builds/browse", method: http.MethodGet},
+		{path: "/environments/{id}/builds/workspace", method: http.MethodGet},
+		{path: "/environments/{id}/builds/workspace", method: http.MethodPatch},
+		{path: "/environments/{id}/builds/workspace/file", method: http.MethodGet},
+		{path: "/environments/{id}/builds/workspace/file/download", method: http.MethodGet},
+		{path: "/environments/{id}/builds/workspace/upload", method: http.MethodPost},
 	}
 	for _, route := range canonical {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
@@ -53,6 +57,8 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 				require.NotNil(t, item.Get)
 			case http.MethodPatch:
 				require.NotNil(t, item.Patch)
+			case http.MethodPost:
+				require.NotNil(t, item.Post)
 			}
 		})
 	}
@@ -68,6 +74,11 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 		"/environments/{id}/volumes/{volumeName}/browse/download",
 		"/environments/{id}/volumes/{volumeName}/browse/upload",
 		"/environments/{id}/volumes/{volumeName}/browse/mkdir",
+		"/environments/{id}/builds/browse",
+		"/environments/{id}/builds/browse/content",
+		"/environments/{id}/builds/browse/download",
+		"/environments/{id}/builds/browse/upload",
+		"/environments/{id}/builds/browse/mkdir",
 	}
 	for _, path := range legacy {
 		t.Run("absent "+path, func(t *testing.T) {

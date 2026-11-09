@@ -584,7 +584,7 @@ func newUpdateIncludesCmd() *cobra.Command {
 				operation = types.FileOpUpdateFile
 			}
 			uploadIndex := 0
-			manifest := types.ProjectWorkspaceUpdateManifest{
+			manifest := types.WorkspaceUpdateManifest{
 				FileTreeRevision: current.Data.FileTreeRevision,
 				FileChanges:      []types.WorkspaceFileChange{{Operation: operation, RelativePath: relativePath, UploadIndex: &uploadIndex}},
 			}

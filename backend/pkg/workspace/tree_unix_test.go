@@ -1,6 +1,6 @@
 //go:build unix
 
-package projects
+package workspace
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
+func TestReadSkipsUnreadableDirectory(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits are ignored when running as root")
 	}
@@ -28,7 +28,7 @@ func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 	// Restore before t.TempDir's own cleanup runs, or it cannot remove the tree.
 	t.Cleanup(func() { _ = os.Chmod(workdir, 0o755) })
 
-	files, revision, _, err := ReadProjectWorkspace(t.Context(), projectDir, 5, "", "compose.yaml", 0, 0)
+	files, revision, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 5})
 	require.NoError(t, err)
 	require.NotEmpty(t, revision, "an empty revision blocks every project workspace edit")
 
@@ -49,7 +49,7 @@ func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 
 	// The compare walk in ApplyWorkspaceFileChanges skips identically, so the
 	// optimistic-concurrency check does not spuriously conflict.
-	_, again, _, err := ReadProjectWorkspace(t.Context(), projectDir, 5, "", "compose.yaml", 0, 0)
+	_, again, _, err := Read(t.Context(), projectDir, Options{ProtectedFiles: testProtectedFiles, MaxDepth: 5})
 	require.NoError(t, err)
 	assert.Equal(t, revision, again)
 }

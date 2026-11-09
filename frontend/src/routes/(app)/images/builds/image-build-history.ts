@@ -33,52 +33,6 @@ export function formatBuildDuration(ms?: number): string {
 	return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
-function formatBuildDetailValue(value?: string | null): string {
-	return value || '-';
-}
-
-function formatBuildDetailList(values?: string[]): string {
-	return formatBuildDetailValue(values?.join(', '));
-}
-
-function formatBuildDetailBoolean(value?: boolean): string {
-	return value ? m.common_yes() : m.common_no();
-}
-
-function formatBuildDetailBytes(value?: number): string {
-	return value ? m.build_bytes({ size: String(value) }) : '-';
-}
-
-export function getBuildDetailItems(build: ImageBuildRecord): Array<{ label: string; value: string }> {
-	return [
-		{ label: m.build_context(), value: build.contextDir },
-		{ label: m.common_tags(), value: formatBuildDetailList(build.tags) },
-		{ label: m.dockerfile(), value: formatBuildDetailValue(build.dockerfile) },
-		{ label: m.target(), value: formatBuildDetailValue(build.target) },
-		{ label: m.platforms_label(), value: formatBuildDetailList(build.platforms) },
-		{ label: m.build_provider(), value: formatBuildDetailValue(build.provider) },
-		{
-			label: `${m.push()} / ${m.load()}`,
-			value: `${formatBuildDetailBoolean(build.push)} / ${formatBuildDetailBoolean(build.load)}`
-		},
-		{
-			label: m.build_no_cache_pull_base_label(),
-			value: `${formatBuildDetailBoolean(build.noCache)} / ${formatBuildDetailBoolean(build.pull)}`
-		},
-		{ label: m.resource_network_cap(), value: formatBuildDetailValue(build.network) },
-		{ label: m.build_args(), value: formatBuildDetailValue(formatBuildArgs(build.buildArgs)) },
-		{ label: m.common_labels(), value: formatBuildDetailValue(formatKeyValueMap(build.labels)) },
-		{ label: m.build_cache_from_label(), value: formatBuildDetailList(build.cacheFrom) },
-		{ label: m.build_cache_to_label(), value: formatBuildDetailList(build.cacheTo) },
-		{ label: m.isolation(), value: formatBuildDetailValue(build.isolation) },
-		{ label: m.build_shm_size_short_label(), value: formatBuildDetailBytes(build.shmSize) },
-		{ label: m.build_ulimits_label(), value: formatBuildDetailValue(formatKeyValueMap(build.ulimits)) },
-		{ label: m.build_entitlements_label(), value: formatBuildDetailList(build.entitlements) },
-		{ label: m.build_privileged_heading_label(), value: formatBuildDetailBoolean(build.privileged) },
-		{ label: m.build_extra_hosts_label(), value: formatBuildDetailList(build.extraHosts) }
-	];
-}
-
 export function isGitBuildContextSource(value?: string): boolean {
 	const trimmed = value?.trim();
 	if (!trimmed) return false;
@@ -109,10 +63,10 @@ export function getBuildTitle(build: ImageBuildRecord): string {
 }
 
 export function getContextPathFromBuild(build: ImageBuildRecord, buildsRoot: string): string {
-	if (isGitBuildContextSource(build.contextDir)) return '/';
+	if (isGitBuildContextSource(build.contextDir)) return '';
 	const root = buildsRoot.endsWith('/') ? buildsRoot.slice(0, -1) : buildsRoot;
-	if (!build.contextDir || build.contextDir === root) return '/';
-	return build.contextDir.startsWith(`${root}/`) ? build.contextDir.slice(root.length) : '/';
+	if (!build.contextDir || build.contextDir === root) return '';
+	return build.contextDir.startsWith(`${root}/`) ? build.contextDir.slice(root.length + 1) : '';
 }
 
 export function parseBuildOutput(output: string): BuildOutputEntry[] {

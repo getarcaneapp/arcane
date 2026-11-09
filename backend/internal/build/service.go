@@ -86,8 +86,8 @@ func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 		gitProbeFn:      p.GitRepository.ProbeRemote,
 		gitCloneFn:      p.GitRepository.Clone,
 		gitCleanupFn:    os.RemoveAll,
+		workspace:       workspace.NewService(p.LocalSettings),
 	}
-	svc.workspace = workspace.NewService(func() string { return p.LocalSettings.GetSettingsConfig().BuildsDirectory.Value })
 
 	// registry.ContainerRegistryService already implements buildtypes.RegistryAuthProvider,
 	// so the builder consumes it directly instead of through forwarding methods on BuildService.

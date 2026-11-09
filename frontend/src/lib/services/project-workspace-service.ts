@@ -1,5 +1,4 @@
-import type { ProjectWorkspaceUpdateManifest } from '#lib/types/project.js';
-import type { Workspace, WorkspaceFileContent } from '#lib/types/workspace.js';
+import type { Workspace, WorkspaceFileContent, WorkspaceUpdateManifest } from '#lib/types/workspace.js';
 import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 import { createWorkspaceFormData } from '#lib/utils/workspace-files.js';
 
@@ -23,7 +22,7 @@ class ProjectWorkspaceService extends BaseAPIService {
 
 	async updateWorkspace(
 		projectId: string,
-		manifest: ProjectWorkspaceUpdateManifest,
+		manifest: WorkspaceUpdateManifest,
 		files: File[],
 		environmentId: string
 	): Promise<Workspace> {

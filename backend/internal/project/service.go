@@ -1449,12 +1449,12 @@ func (s *ProjectService) CreateProject(
 		return cause
 	}
 
-	if applyProjectWorkspaceChangesErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
+	if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, manifest.FileChanges, uploads, workspacepkg.Options{
+		ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
+		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
 		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
 		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
-		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		ComposeFileName:  projects.DefaultComposeFileName,
 	}); applyProjectWorkspaceChangesErr != nil {
 		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
 	}
@@ -3355,7 +3355,7 @@ func (s *ProjectService) DownloadProjectWorkspaceFile(ctx context.Context, proje
 func (s *ProjectService) UpdateProjectWorkspace(
 	ctx context.Context,
 	projectID string,
-	manifest types.ProjectWorkspaceUpdateManifest,
+	manifest types.WorkspaceUpdateManifest,
 	uploads map[int][]byte,
 	user types.Actor,
 ) (*types.Workspace, error) {

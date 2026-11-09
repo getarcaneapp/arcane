@@ -288,10 +288,6 @@ export const queryKeys = {
 			['vulnerabilities', environmentId, 'image', imageId, scanTime, stableSerialize(request)] as const
 	},
 	buildWorkspace: {
-		all: ['build-workspace'] as const,
-		listPrefix: (environmentId: string) => ['build-workspace', environmentId, 'list'] as const,
-		list: (environmentId: string, path: string) => ['build-workspace', environmentId, 'list', path] as const,
-		contentPrefix: (environmentId: string) => ['build-workspace', environmentId, 'content'] as const,
-		content: (environmentId: string, path: string) => ['build-workspace', environmentId, 'content', path] as const
+		workspace: (environmentId: string) => ['build-workspace', environmentId, 'workspace'] as const
 	}
 } as const;

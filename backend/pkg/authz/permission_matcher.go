@@ -128,3 +128,15 @@ func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChang
 	}
 	return kit.Unique(required), true
 }
+
+func BuildWorkspaceRequiredPermissions(changes []types.WorkspaceFileChange) ([]string, bool) {
+	required := make([]string, 0, 2)
+	for _, change := range changes {
+		perms := BuildWorkspaceConditions.Required("fileChanges.operation", change.Operation)
+		if len(perms) == 0 {
+			return nil, false
+		}
+		required = append(required, perms...)
+	}
+	return kit.Unique(required), true
+}

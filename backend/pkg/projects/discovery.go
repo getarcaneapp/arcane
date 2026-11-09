@@ -17,6 +17,7 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/workspace"
 )
 
 type (
@@ -97,7 +98,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectories(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySet(skipDirectories), ancestors, &discovered)
+		err = walkProjectDirectories(ctx, root, root, true, 0, maxDepth, followSymlinks, workspace.SkipDirectorySet(skipDirectories), ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even

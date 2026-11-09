@@ -1,7 +1,7 @@
 import { QueryObserver, type QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
-import { settingsService } from '#lib/services/settings-service.js';
+import { publicSettingsQuery } from '#lib/query/settings.js';
 import type { FeatureID } from '#lib/types/features.js';
 import type { EnvironmentFeatures } from '#lib/types/ui/features.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
@@ -11,15 +11,6 @@ let environments = $state.raw<Record<string, EnvironmentFeatures>>({});
 const unsubscribers = new Map<string, () => void>();
 const appliedAt = new Map<string, number>();
 let queryClient: QueryClient | undefined;
-
-function featureQuery(environmentId: string) {
-	return {
-		queryKey: queryKeys.settings.public(environmentId),
-		queryFn: ({ signal }: { signal: AbortSignal }) => settingsService.getPublicSettingsForEnvironment(environmentId, signal),
-		retry: false,
-		retryOnMount: false
-	};
-}
 
 async function clearVulnerabilityQueries(environmentId: string): Promise<void> {
 	if (!queryClient) return;
@@ -54,7 +45,7 @@ async function apply(environmentId: string): Promise<void> {
 
 function observe(client: QueryClient, environmentId: string) {
 	if (unsubscribers.has(environmentId)) return;
-	const observer = new QueryObserver(client, featureQuery(environmentId));
+	const observer = new QueryObserver(client, publicSettingsQuery(environmentId));
 	unsubscribers.set(
 		environmentId,
 		observer.subscribe(() => void apply(environmentId))
@@ -68,7 +59,7 @@ async function load(environmentId: string, force = false): Promise<void> {
 	if (!status) {
 		environments = { ...environments, [environmentId]: { status: 'loading', features: {} } };
 	}
-	await queryClient.query({ ...featureQuery(environmentId), ...(force ? { staleTime: 0 } : {}) }).catch(() => undefined);
+	await queryClient.query({ ...publicSettingsQuery(environmentId), ...(force ? { staleTime: 0 } : {}) }).catch(() => undefined);
 	observe(queryClient, environmentId);
 	await apply(environmentId);
 }

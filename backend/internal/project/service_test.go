@@ -141,7 +141,7 @@ func TestUpdateProjectWorkspaceRejectsInvalidManifestBeforeProjectLookup(t *test
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
-	_, err := service.UpdateProjectWorkspace(t.Context(), "missing", types.ProjectWorkspaceUpdateManifest{}, nil, types.Actor{})
+	_, err := service.UpdateProjectWorkspace(t.Context(), "missing", types.WorkspaceUpdateManifest{}, nil, types.Actor{})
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceBadRequest)
 	require.ErrorContains(t, err, "revision")
 }

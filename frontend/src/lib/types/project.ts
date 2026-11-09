@@ -1,5 +1,4 @@
 import type { ImageUpdateInfo } from './image';
-import type { WorkspaceFileChange } from './workspace';
 
 export interface ProjectIncludeFile {
 	path: string;
@@ -156,8 +155,3 @@ export type ProjectDeployOptions = {
 	removeOrphans?: boolean;
 	recreateVolumes?: boolean;
 };
-
-export interface ProjectWorkspaceUpdateManifest {
-	fileTreeRevision: string;
-	fileChanges: WorkspaceFileChange[];
-}
