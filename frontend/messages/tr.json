@@ -4527,11 +4527,11 @@
   "workspace_saved": "Çalışma alanı kaydedildi",
   "build_workspace_upload_description": "Derleme çalışma alanına, boyutları ne olursa olsun bir veya daha fazla dosya yükleyin.",
   "workspace_upload_save_pending_first": "Bu klasöre yüklemeden önce, klasörde bekleyen değişiklikleri kaydedin.",
-  "source": "Source",
-  "workspace_folder": "Workspace folder",
-  "git_repository": "Git repository",
-  "choose_folder": "Choose folder",
-  "build_choose_context_description": "Pick the workspace folder to use as the build context.",
-  "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "source": "Kaynak",
+  "workspace_folder": "Çalışma alanı klasörü",
+  "git_repository": "Git deposu",
+  "choose_folder": "Klasör seçin",
+  "build_choose_context_description": "Derleme bağlamı olarak kullanılacak çalışma alanı klasörünü seçin.",
+  "build_edit_files_hint": "Dosyalar sekmesinden dosyaları düzenleyin.",
+  "no_file_open": "Açık dosya yok"
 }
