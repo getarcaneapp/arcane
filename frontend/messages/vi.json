@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Căn bậc hai của thể tích",
   "volumes_workspace_root_path": "Tạo tại thư mục gốc của phân vùng.",
   "volumes_workspace_delete_confirm": "Xóa {name} khỏi ổ đĩa? Thao tác này không thể hoàn tác.",
-  "volumes_workspace_truncated": "Danh sách không gian làm việc bị cắt bớt theo độ sâu hoặc giới hạn mục đã được cấu hình. Các đường dẫn ẩn sẽ không được hiển thị.",
+  "volumes_workspace_truncated": "Một số thư mục có số mục nhiều hơn giới hạn đã định cấu hình cho mỗi thư mục. Chỉ các mục đầu tiên trong các thư mục đó mới được hiển thị.",
   "volumes_workspace_select_file": "Chọn một tệp để mở tệp đó trong trình soạn thảo.",
   "volumes_workspace_restore_readonly": "Nội dung của tệp này sẽ không được biết cho đến khi quá trình khôi phục theo từng giai đoạn được lưu lại.",
   "volumes_workspace_locked_file": "Tệp bị khóa",
