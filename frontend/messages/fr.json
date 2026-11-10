@@ -7,7 +7,7 @@
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "layout_title": "Arcane",
   "accent_color": "Couleur d'accentuation",
-  "accent_color_description": "Sélectionnez une couleur d'accentuation pour personnaliser l'apparence des Arcanes",
+  "accent_color_description": "Choisissez une couleur d'accentuation pour personnaliser l'apparence d'Arcane",
   "font_size": "Taille de la police",
   "font_size_description": "Régler la taille du texte et de l'interface utilisateur",
   "layout_mode": "Mise en page",
