@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Pierwiastek z objętości",
   "volumes_workspace_root_path": "Utwórz w katalogu głównym woluminu.",
   "volumes_workspace_delete_confirm": "Czy chcesz usunąć plik „ {name} ” z woluminu? Tego działania nie można cofnąć.",
-  "volumes_workspace_truncated": "Lista obszarów roboczych jest skracana zgodnie ze skonfigurowaną głębokością lub limitem wpisów. Ukryte ścieżki nie są wyświetlane.",
+  "volumes_workspace_truncated": "Niektóre foldery zawierają więcej wpisów niż ustalony limit dla danego folderu. Wyświetlane są tylko pierwsze wpisy z tych folderów.",
   "volumes_workspace_select_file": "Wybierz plik, aby otworzyć go w edytorze.",
   "volumes_workspace_restore_readonly": "Zawartość tego pliku pozostaje nieznana do momentu zapisania przywracania etapowego.",
   "volumes_workspace_locked_file": "Plik zablokowany",

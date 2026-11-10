@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Kořen svazku",
   "volumes_workspace_root_path": "Vytvořit v kořenovém adresáři svazku.",
   "volumes_workspace_delete_confirm": "Chcete odstranit soubor „ {name} “ ze svazku? Tuto akci nelze vrátit zpět.",
-  "volumes_workspace_truncated": "Seznam pracovních prostorů je zkrácen podle nastavené hloubky nebo limitu záznamů. Skryté cesty se nezobrazují.",
+  "volumes_workspace_truncated": "Některé složky obsahují více položek, než je nastavený limit pro danou složku. Z těchto složek se zobrazují pouze první položky.",
   "volumes_workspace_select_file": "Vyberte soubor, který chcete otevřít v editoru.",
   "volumes_workspace_restore_readonly": "Obsah tohoto souboru zůstává neznámý, dokud není uložen postupný obnovovací soubor.",
   "volumes_workspace_locked_file": "Zamčený soubor",

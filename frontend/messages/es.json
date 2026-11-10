@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Raíz del volumen",
   "volumes_workspace_root_path": "Crear en la raíz del volumen.",
   "volumes_workspace_delete_confirm": "¿Eliminar «{name}» del volumen? Esta acción no se puede deshacer.",
-  "volumes_workspace_truncated": "El listado del espacio de trabajo se ha truncado por la profundidad o el límite de entradas configurado. No se muestran las rutas ocultas.",
+  "volumes_workspace_truncated": "Algunas carpetas contienen más entradas que el límite configurado por carpeta. Solo se muestran las primeras entradas de esas carpetas.",
   "volumes_workspace_select_file": "Seleccione un archivo para abrirlo en el editor.",
   "volumes_workspace_restore_readonly": "El contenido de este archivo es desconocido hasta que se guarde la restauración en cola.",
   "volumes_workspace_locked_file": "Archivo bloqueado",

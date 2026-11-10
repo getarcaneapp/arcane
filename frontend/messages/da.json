@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Volumenrod",
   "volumes_workspace_root_path": "Opret i volumenrodmappen.",
   "volumes_workspace_delete_confirm": "Skal {name} slettes fra disken? Dette kan ikke fortrydes.",
-  "volumes_workspace_truncated": "Listen over arbejdsområder afkortes i henhold til den konfigurerede dybde eller antallet af poster. Skjulte stier vises ikke.",
+  "volumes_workspace_truncated": "Nogle mapper indeholder flere poster end den indstillede grænse pr. mappe. Kun de første poster i disse mapper vises.",
   "volumes_workspace_select_file": "Vælg en fil for at åbne den i redigeringsprogrammet.",
   "volumes_workspace_restore_readonly": "Indholdet af denne fil er ukendt, indtil den trinvise gendannelse er gemt.",
   "volumes_workspace_locked_file": "Låst fil",

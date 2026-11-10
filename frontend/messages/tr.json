@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Birim kökü",
   "volumes_workspace_root_path": "Birim kök dizininde oluşturun.",
   "volumes_workspace_delete_confirm": "{name} dosyasını birimden silmek istiyor musunuz? Bu işlem geri alınamaz.",
-  "volumes_workspace_truncated": "Çalışma alanı listesi, yapılandırılan derinlik veya giriş sınırı nedeniyle kısaltılmıştır. Gizli yollar gösterilmez.",
+  "volumes_workspace_truncated": "Bazı klasörlerde, klasör başına ayarlanan sınırdan daha fazla giriş bulunmaktadır. Bu klasörlerin yalnızca ilk girişleri gösterilmektedir.",
   "volumes_workspace_select_file": "Dosyayı düzenleyici içinde açmak için bir dosya seçin.",
   "volumes_workspace_restore_readonly": "Aşamalı geri yükleme kaydedilene kadar bu dosyanın içeriği bilinmemektedir.",
   "volumes_workspace_locked_file": "Kilitli dosya",

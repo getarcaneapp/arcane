@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Radice del volume",
   "volumes_workspace_root_path": "Crea nella directory principale del volume.",
   "volumes_workspace_delete_confirm": "Elimina {name} dal volume? Questa operazione non può essere annullata.",
-  "volumes_workspace_truncated": "L'elenco degli spazi di lavoro viene troncato in base alla profondità o al limite di voci configurati. I percorsi nascosti non vengono visualizzati.",
+  "volumes_workspace_truncated": "Alcune cartelle contengono un numero di voci superiore al limite configurato per ciascuna cartella. Vengono visualizzate solo le prime voci di tali cartelle.",
   "volumes_workspace_select_file": "Seleziona un file per aprirlo nell'editor.",
   "volumes_workspace_restore_readonly": "Il contenuto di questo file rimane sconosciuto fino a quando il ripristino graduale non viene salvato.",
   "volumes_workspace_locked_file": "File bloccato",

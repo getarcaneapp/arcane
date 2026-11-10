@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "数据卷根目录",
   "volumes_workspace_root_path": "在卷根目录下创建。",
   "volumes_workspace_delete_confirm": "是否要从卷中删除“ {name} ”？此操作无法撤销。",
-  "volumes_workspace_truncated": "工作区列表会根据配置的深度或条目限制而被截断。隐藏的路径不会显示。",
+  "volumes_workspace_truncated": "某些文件夹中的条目数量超过了配置的每个文件夹的上限。这些文件夹中仅显示前几个条目。",
   "volumes_workspace_select_file": "选择一个文件以在编辑器中打开。",
   "volumes_workspace_restore_readonly": "在保存暂存的还原操作之前，此文件的内容未知。",
   "volumes_workspace_locked_file": "被锁定的文件",

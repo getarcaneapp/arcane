@@ -1093,7 +1093,7 @@
   "volumes_workspace_root_destination": "Racine du volume",
   "volumes_workspace_root_path": "Créer à la racine du volume.",
   "volumes_workspace_delete_confirm": "Souhaitez-vous supprimer « {name} » du volume ? Cette action ne peut pas être annulée.",
-  "volumes_workspace_truncated": "La liste des espaces de travail est tronquée en fonction de la profondeur ou du nombre maximal d'entrées défini. Les chemins masqués ne sont pas affichés.",
+  "volumes_workspace_truncated": "Certains dossiers contiennent plus d'entrées que la limite définie par dossier. Seules les premières entrées de ces dossiers sont affichées.",
   "volumes_workspace_select_file": "Sélectionnez un fichier pour l'ouvrir dans l'éditeur.",
   "volumes_workspace_restore_readonly": "Le contenu de ce fichier reste inconnu tant que la restauration par étapes n'a pas été enregistrée.",
   "volumes_workspace_locked_file": "Fichier verrouillé",
