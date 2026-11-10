@@ -47,15 +47,15 @@ func TestReadUpgradeLog(t *testing.T) {
 	write("arcane-upgrade-200.log", "Pulling image\n\nUpgrade complete\n", now.Add(-time.Minute))
 	write("notes.log", "ignored\n", now)
 
-	lines, err := readUpgradeLog(dir, now.Add(-time.Hour))
+	lines, err := readUpgradeLog(t.Context(), dir, now.Add(-time.Hour))
 	require.NoError(t, err)
 	require.Equal(t, []string{"Pulling image", "Upgrade complete"}, lines)
 
-	lines, err = readUpgradeLog(dir, now.Add(time.Hour))
+	lines, err = readUpgradeLog(t.Context(), dir, now.Add(time.Hour))
 	require.NoError(t, err)
 	require.Empty(t, lines)
 
-	lines, err = readUpgradeLog(filepath.Join(dir, "missing"), time.Time{})
+	lines, err = readUpgradeLog(t.Context(), filepath.Join(dir, "missing"), time.Time{})
 	require.NoError(t, err)
 	require.Empty(t, lines)
 }

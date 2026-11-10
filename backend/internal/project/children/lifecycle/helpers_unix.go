@@ -3,16 +3,19 @@
 package lifecycle
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 )
 
-func describeLifecyclePathAccess(projectPath, resolvedScriptPath string) string {
+func describeLifecyclePathAccess(ctx context.Context, projectPath, resolvedScriptPath string) string {
 	lines := []string{
 		fmt.Sprintf("Arcane process identity: uid=%d gid=%d.", os.Geteuid(), os.Getegid()),
 		"Path inspection:",
@@ -39,30 +42,25 @@ func describeLifecyclePathAccess(projectPath, resolvedScriptPath string) string 
 		}
 		return paths
 	}() {
-		// os.* rather than acfs: diagnostics walk arbitrary ancestors of a user-configured path with no confinement root.
-		info, err := os.Lstat(candidate)
+		entry, err := acfs.Host{}.Stat(ctx, candidate, types.StatOptions{})
 		if err != nil {
 			lines = append(lines, fmt.Sprintf("  %q: %v", candidate, err))
 			break
 		}
 		lines = append(lines, fmt.Sprintf(
-			"  %q: mode=%s permissions=%04o %s type=%s",
+			"  %q: mode=%s permissions=%04o uid=%d gid=%d type=%s",
 			candidate,
-			info.Mode(),
-			info.Mode().Perm(),
-			func() string {
-				if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-					return fmt.Sprintf("uid=%d gid=%d", stat.Uid, stat.Gid)
-				}
-				return "uid=unknown gid=unknown"
-			}(),
+			os.FileMode(entry.UnixMode),
+			os.FileMode(entry.UnixMode).Perm(),
+			entry.UID,
+			entry.GID,
 			func() string {
 				switch {
-				case info.Mode()&os.ModeSymlink != 0:
+				case entry.IsSymlink:
 					return "symlink"
-				case info.IsDir():
+				case entry.IsDirectory:
 					return "directory"
-				case info.Mode().IsRegular():
+				case os.FileMode(entry.UnixMode).IsRegular():
 					return "regular"
 				}
 				return "other"

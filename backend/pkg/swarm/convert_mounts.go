@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -12,6 +13,8 @@ import (
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
+
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 )
@@ -191,6 +194,7 @@ func convertServiceConfigRefs(configs []composegotypes.ServiceConfigObjConfig, c
 }
 
 func resolveFileObjectContent(
+	ctx context.Context,
 	fileConfig composegotypes.FileObjectConfig,
 	workingDir string,
 	environment composegotypes.Mapping,
@@ -210,7 +214,7 @@ func resolveFileObjectContent(
 		if err != nil {
 			return nil, err
 		}
-		return os.ReadFile(path)
+		return acfs.Host{}.ReadFile(ctx, path)
 	}
 	return nil, errors.New("config or secret content is required")
 }

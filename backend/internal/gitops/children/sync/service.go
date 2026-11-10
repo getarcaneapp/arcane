@@ -535,7 +535,7 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 		}
 		stage.backupScope.Paths = slices.Concat(stage.syncedFiles, stage.oldSyncedFiles, staleFiles,
 			[]string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName})
-		if linkErr := linkProjectIntoStage(stage.project.Path, stage.stagePath, stage.backupScope.Paths); linkErr != nil {
+		if linkErr := linkProjectIntoStage(ctx, stage.project.Path, stage.stagePath, stage.backupScope.Paths); linkErr != nil {
 			return nil, nil, false, false, fmt.Errorf("failed to stage current project files: %w", linkErr)
 		}
 		if _, seedErr := seedStageEnvFromDir(ctx, stage.project.Path, projectsDir, stage.stagePath); seedErr != nil {
@@ -575,14 +575,14 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 
 func (s *Service) seedStageEnvFromCandidateDir(ctx context.Context, sync *projectpkg.GitOpsSync, projectsDir, stagePath string) error {
 	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
-	info, err := os.Stat(candidatePath)
+	entry, err := (acfs.Host{}).Stat(ctx, candidatePath, acfstypes.StatOptions{FollowFinal: true})
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("inspect pre-existing project directory %s: %w", candidatePath, err)
 	}
-	if !info.IsDir() {
+	if !entry.IsDirectory {
 		return nil
 	}
 	state, err := seedStageEnvFromDir(ctx, candidatePath, projectsDir, stagePath)
@@ -814,7 +814,7 @@ func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectp
 	}
 	stage.stagePath = ""
 
-	if chmodErr := os.Chmod(projectPath, kitfs.DirPerm); chmodErr != nil {
+	if chmodErr := (acfs.Root{Path: projectsDir}).Chmod(ctx, projectLogical, kitfs.DirPerm); chmodErr != nil {
 		_ = acfs.Root{Path: projectsDir}.RemoveAll(ctx, projectLogical)
 		return nil, fmt.Errorf("failed to set project directory permissions: %w", chmodErr)
 	}
@@ -845,18 +845,16 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	projectPath := filepath.Clean(project.Path)
 	existed := true
 
-	// The project directory is the confinement root for the writes below and may
-	// itself be a symlink, so it is probed and bootstrapped through os.
-	if info, err := os.Stat(projectPath); err == nil {
-		if !info.IsDir() {
+	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, acfstypes.StatOptions{FollowFinal: true}); err == nil {
+		if !entry.IsDirectory {
 			return nil, fmt.Errorf("project path is not a directory: %s", projectPath)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		existed = false
-		if mkdirAllErr := os.MkdirAll(projectPath, kitfs.DirPerm); mkdirAllErr != nil {
+		if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, projectPath, kitfs.DirPerm); mkdirAllErr != nil {
 			return nil, fmt.Errorf("failed to recreate project directory: %w", mkdirAllErr)
 		}
-		if chmodErr := os.Chmod(projectPath, kitfs.DirPerm); chmodErr != nil {
+		if chmodErr := (acfs.Host{}).Chmod(ctx, projectPath, kitfs.DirPerm); chmodErr != nil {
 			return nil, fmt.Errorf("failed to set project directory permissions: %w", chmodErr)
 		}
 	} else {
@@ -916,7 +914,7 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 }
 
 func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath string) (projects.ProjectEnvState, error) {
-	state, err := projects.ReadProjectEnvState(sourceDir)
+	state, err := projects.ReadProjectEnvState(ctx, sourceDir)
 	if err != nil {
 		return state, fmt.Errorf("read env files from %s: %w", sourceDir, err)
 	}
@@ -938,7 +936,7 @@ func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath 
 	return state, nil
 }
 
-func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error {
+func linkProjectIntoStage(ctx context.Context, livePath, stagePath string, scopePaths []string) error {
 	scope := make(map[string]struct{}, len(scopePaths))
 	ancestors := make(map[string]struct{})
 	for _, scopePath := range scopePaths {
@@ -951,18 +949,18 @@ func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error
 
 	var link func(rel string) error
 	link = func(rel string) error {
-		entries, err := os.ReadDir(filepath.Join(livePath, filepath.FromSlash(rel)))
+		entries, err := (acfs.Host{}).List(ctx, filepath.Join(livePath, filepath.FromSlash(rel)))
 		if err != nil {
 			return kit.Ternary(rel == "" && errors.Is(err, fs.ErrNotExist), nil, err)
 		}
 		for _, entry := range entries {
-			entryRel := path.Join(rel, entry.Name())
+			entryRel := path.Join(rel, entry.Name)
 			if _, touched := scope[entryRel]; touched {
 				continue
 			}
 			stageEntry := filepath.Join(stagePath, filepath.FromSlash(entryRel))
-			if _, isAncestor := ancestors[entryRel]; isAncestor && entry.IsDir() {
-				if mkdirErr := os.Mkdir(stageEntry, kitfs.DirPerm); mkdirErr != nil {
+			if _, isAncestor := ancestors[entryRel]; isAncestor && entry.IsDirectory {
+				if mkdirErr := (acfs.Host{}).Mkdir(ctx, stageEntry, kitfs.DirPerm); mkdirErr != nil {
 					return mkdirErr
 				}
 				if linkErr := link(entryRel); linkErr != nil {
@@ -970,7 +968,7 @@ func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error
 				}
 				continue
 			}
-			if symlinkErr := os.Symlink(filepath.Join(livePath, filepath.FromSlash(entryRel)), stageEntry); symlinkErr != nil {
+			if symlinkErr := (acfs.Host{}).Symlink(ctx, filepath.Join(livePath, filepath.FromSlash(entryRel)), stageEntry); symlinkErr != nil {
 				return symlinkErr
 			}
 		}

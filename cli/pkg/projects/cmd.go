@@ -10,7 +10,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -406,7 +406,11 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			composeBytes, err := os.ReadFile(opts.createFile)
+			createPath, err := filepath.Abs(opts.createFile)
+			if err != nil {
+				return fmt.Errorf("failed to read compose file: %w", err)
+			}
+			composeBytes, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), createPath)
 			if err != nil {
 				return fmt.Errorf("failed to read compose file: %w", err)
 			}
@@ -417,7 +421,11 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			if opts.createEnvFile != "" {
-				envBytes, readFileErr := os.ReadFile(opts.createEnvFile)
+				createEnvPath, readFileErr := filepath.Abs(opts.createEnvFile)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read env file: %w", readFileErr)
+				}
+				envBytes, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), createEnvPath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read env file: %w", readFileErr)
 				}
@@ -513,14 +521,22 @@ func newUpdateCmd() *cobra.Command {
 				req["name"] = opts.updateName
 			}
 			if cmd.Flags().Changed("file") {
-				composeBytes, readFileErr := os.ReadFile(opts.updateFile)
+				updatePath, readFileErr := filepath.Abs(opts.updateFile)
+				if readFileErr != nil {
+					return fmt.Errorf("failed to read compose file: %w", readFileErr)
+				}
+				composeBytes, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), updatePath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read compose file: %w", readFileErr)
 				}
 				req["composeContent"] = string(composeBytes)
 			}
 			if cmd.Flags().Changed("env-file") {
-				envBytes, readEnvFileErr := os.ReadFile(opts.updateEnvFile)
+				updateEnvPath, readEnvFileErr := filepath.Abs(opts.updateEnvFile)
+				if readEnvFileErr != nil {
+					return fmt.Errorf("failed to read env file: %w", readEnvFileErr)
+				}
+				envBytes, readEnvFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), updateEnvPath)
 				if readEnvFileErr != nil {
 					return fmt.Errorf("failed to read env file: %w", readEnvFileErr)
 				}
@@ -566,7 +582,11 @@ func newUpdateIncludesCmd() *cobra.Command {
 				return err
 			}
 
-			content, err := os.ReadFile(opts.includesFile)
+			includesPath, err := filepath.Abs(opts.includesFile)
+			if err != nil {
+				return fmt.Errorf("failed to read include file: %w", err)
+			}
+			content, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), includesPath)
 			if err != nil {
 				return fmt.Errorf("failed to read include file: %w", err)
 			}

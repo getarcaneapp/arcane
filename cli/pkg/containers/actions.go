@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -202,7 +203,11 @@ func newEditCmd() *cobra.Command {
 				})
 			}
 
-			data, err := os.ReadFile(opts.file)
+			filePath, err := filepath.Abs(opts.file)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
+			}
+			data, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
 			}

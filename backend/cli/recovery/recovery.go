@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/crypto"
@@ -58,7 +59,11 @@ func init() {
 
 func runRestore(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-	data, err := os.ReadFile(requestPath)
+	requestFile, err := filepath.Abs(requestPath)
+	if err != nil {
+		return fmt.Errorf("read recovery request: %w", err)
+	}
+	data, err := acfs.Host{}.ReadFile(ctx, requestFile)
 	if err != nil {
 		return fmt.Errorf("read recovery request: %w", err)
 	}
@@ -66,7 +71,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	if unmarshalErr := json.Unmarshal(data, &request); unmarshalErr != nil {
 		return fmt.Errorf("decode recovery request: %w", unmarshalErr)
 	}
-	_ = os.Remove(requestPath)
+	_ = acfs.Host{}.Remove(ctx, requestFile)
 	if len(request.Stages) == 0 {
 		return errors.New("recovery request has no restore stages")
 	}
@@ -104,7 +109,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		if rollbackErr := runStages(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
 			return errors.Join(runStagesErr, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
 		}
-		rollbackManifest, readErr := os.ReadFile("/app/data/.arcane-recovery.json")
+		rollbackManifest, readErr := acfs.Root{Path: "/app/data"}.ReadFile(context.WithoutCancel(ctx), "/.arcane-recovery.json")
 		var rollback types.RecoveryManifest
 		if readErr == nil {
 			readErr = json.Unmarshal(rollbackManifest, &rollback)
@@ -121,7 +126,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	if !request.ProjectsIncluded {
 		slog.WarnContext(ctx, "the restored system backup did not include the projects directory; the current projects directory was left untouched")
 	}
-	manifestData, err := os.ReadFile("/app/data/.arcane-recovery.json")
+	manifestData, err := acfs.Root{Path: "/app/data"}.ReadFile(ctx, "/.arcane-recovery.json")
 	if err != nil {
 		restart()
 		return fmt.Errorf("read restored recovery manifest: %w", err)
@@ -131,7 +136,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		restart()
 		return fmt.Errorf("decode restored recovery manifest: %w", unmarshalErr2)
 	}
-	_ = os.Remove("/app/data/.arcane-recovery.json")
+	_ = acfs.Root{Path: "/app/data"}.Remove(ctx, "/.arcane-recovery.json")
 	if !slices.Contains([]int{1, 2, types.RecoveryManifestFormatVersion}, manifest.FormatVersion) || len(manifest.Environment) == 0 {
 		restart()
 		return errors.New("unsupported or incomplete Arcane recovery manifest")

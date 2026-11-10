@@ -1,7 +1,6 @@
 package cmdutil
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -81,21 +80,16 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 		if flag := cmd.Flags().Lookup(flagName); flag != nil && flag.Changed {
 			return kit.Ternary(flagValue > 0 || flagValue == ShowAllLimit, flagValue, 0)
 		}
-	}
-
-	var ctx context.Context
-	if cmd != nil {
-		ctx = cmd.Context()
-	}
-	if app, ok := runtime.From(ctx); ok {
-		if cfg := app.Config(); cfg != nil {
+		if app, ok := runtime.From(cmd.Context()); ok {
+			if cfg := app.Config(); cfg != nil {
+				if v := cfg.LimitFor(resource); v != 0 {
+					return v
+				}
+			}
+		} else if cfg, err := config.Load(cmd.Context()); err == nil && cfg != nil {
 			if v := cfg.LimitFor(resource); v != 0 {
 				return v
 			}
-		}
-	} else if cfg, err := config.Load(); err == nil && cfg != nil {
-		if v := cfg.LimitFor(resource); v != 0 {
-			return v
 		}
 	}
 

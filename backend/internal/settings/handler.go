@@ -57,7 +57,7 @@ type (
 	}
 )
 
-func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRuntime {
+func (h *SettingsHandler) runtimeSettings(ctx context.Context, authenticated bool) types.SettingsRuntime {
 	telemetryRuntime := types.SettingsRuntime{
 		FrontendTracingEnabled: !h.cfg.AgentEnabled && telemetry.Endpoint("traces") != "",
 		FrontendMetricsEnabled: !h.cfg.AgentEnabled && telemetry.Endpoint("metrics") != "",
@@ -67,7 +67,7 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 		return telemetryRuntime
 	}
 
-	_, agentMTLSCAErr := h.mtls.CAPath()
+	_, agentMTLSCAErr := h.mtls.CAPath(ctx)
 	settingsCfg := h.settingsService.GetSettingsConfig()
 	return types.SettingsRuntime{
 		FrontendTracingEnabled:      telemetryRuntime.FrontendTracingEnabled,
@@ -84,7 +84,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.Enviro
 	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(authenticated, SettingVisibilityNonAdmin, SettingVisibilityPublic))
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
 		Settings: snapshot.Settings,
-		Runtime:  h.runtimeSettings(false),
+		Runtime:  h.runtimeSettings(ctx, false),
 		ReadOnly: snapshot.ReadOnly,
 	}}, nil
 }
@@ -97,7 +97,7 @@ func (h *SettingsHandler) GetEnvironmentSettings(ctx context.Context, input *typ
 		}
 		return &SettingsSnapshotOutput{Body: *snapshot}, nil
 	}
-	return h.scopedSnapshot(SettingScopeEnvironment), nil
+	return h.scopedSnapshot(ctx, SettingScopeEnvironment), nil
 }
 
 func (h *SettingsHandler) UpdateEnvironmentSettings(ctx context.Context, input *UpdateSettingsInput) (*SettingsSnapshotOutput, error) {
@@ -113,30 +113,30 @@ func (h *SettingsHandler) UpdateEnvironmentSettings(ctx context.Context, input *
 	if err := h.updateLocal(ctx, input.Body); err != nil {
 		return nil, err
 	}
-	return h.scopedSnapshot(SettingScopeEnvironment), nil
+	return h.scopedSnapshot(ctx, SettingScopeEnvironment), nil
 }
 
-func (h *SettingsHandler) GetManagerSettings(_ context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
-	return h.scopedSnapshot(SettingScopeManager), nil
+func (h *SettingsHandler) GetManagerSettings(ctx context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
+	return h.scopedSnapshot(ctx, SettingScopeManager), nil
 }
 
 func (h *SettingsHandler) UpdateManagerSettings(ctx context.Context, input *UpdateScopedSettingsInput) (*SettingsSnapshotOutput, error) {
 	return h.updateScoped(ctx, SettingScopeManager, input.Body)
 }
 
-func (h *SettingsHandler) GetAuthenticationSettings(_ context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
-	return h.scopedSnapshot(SettingScopeAuthentication), nil
+func (h *SettingsHandler) GetAuthenticationSettings(ctx context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {
+	return h.scopedSnapshot(ctx, SettingScopeAuthentication), nil
 }
 
 func (h *SettingsHandler) UpdateAuthenticationSettings(ctx context.Context, input *UpdateScopedSettingsInput) (*SettingsSnapshotOutput, error) {
 	return h.updateScoped(ctx, SettingScopeAuthentication, input.Body)
 }
 
-func (h *SettingsHandler) scopedSnapshot(scope SettingScope) *SettingsSnapshotOutput {
+func (h *SettingsHandler) scopedSnapshot(ctx context.Context, scope SettingScope) *SettingsSnapshotOutput {
 	snapshot := h.settingsService.SettingsSnapshot(SettingVisibilityAll, scope)
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
 		Settings: snapshot.Settings,
-		Runtime:  h.runtimeSettings(true),
+		Runtime:  h.runtimeSettings(ctx, true),
 		ReadOnly: snapshot.ReadOnly,
 	}}
 }
@@ -148,7 +148,7 @@ func (h *SettingsHandler) updateScoped(ctx context.Context, scope SettingScope, 
 	if err := h.updateLocal(ctx, updates); err != nil {
 		return nil, err
 	}
-	return h.scopedSnapshot(scope), nil
+	return h.scopedSnapshot(ctx, scope), nil
 }
 
 func (h *SettingsHandler) updateLocal(ctx context.Context, updates types.SettingsUpdate) error {

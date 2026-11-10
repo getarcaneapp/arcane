@@ -211,8 +211,8 @@ type (
 	}
 
 	ComposeCache[T any] interface {
-		Get(projectID, fingerprint string) (T, bool)
-		Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error
+		Get(ctx context.Context, projectID, fingerprint string) (T, bool)
+		Set(ctx context.Context, projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error
 		Invalidate(projectID string)
 	}
 

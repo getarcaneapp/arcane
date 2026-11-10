@@ -25,7 +25,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 )
 
 type (
@@ -104,7 +104,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			return nil, err
 		}
 		logical := "/" + selected
-		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, acfstypes.StatOptions{})
+		entry, err := acfs.Root{Path: root}.Stat(ctx, logical, types.StatOptions{})
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("selected path %s does not exist: %w", selected, ErrSelectionUnreadable)
@@ -120,7 +120,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 			}
 			continue
 		}
-		_, err = acfs.Root{Path: root}.Walk(ctx, logical, acfstypes.WalkOptions{}, func(child acfstypes.Entry) error { return c.visit(ctx, child) })
+		_, err = acfs.Root{Path: root}.Walk(ctx, logical, types.WalkOptions{}, func(child types.Entry) error { return c.visit(ctx, child) })
 		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
 			return nil, fmt.Errorf("cannot walk %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
@@ -135,7 +135,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 	return c.files, nil
 }
 
-func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error {
+func (c *fileCollector) visit(ctx context.Context, child types.Entry) error {
 	if child.IsDirectory && (child.Name == ".git" || (c.opts.SkipDir != nil && c.opts.SkipDir(child.Name))) {
 		return fs.SkipDir
 	}
@@ -145,7 +145,7 @@ func (c *fileCollector) visit(ctx context.Context, child acfstypes.Entry) error 
 	return c.add(ctx, child)
 }
 
-func (c *fileCollector) add(ctx context.Context, entry acfstypes.Entry) error {
+func (c *fileCollector) add(ctx context.Context, entry types.Entry) error {
 	relative := strings.TrimPrefix(entry.Path, "/")
 	if _, ok := c.seen[relative]; ok {
 		return nil
@@ -209,12 +209,12 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	if err == nil {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			_ = os.RemoveAll(repoPath)
+			_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 			return nil, fmt.Errorf("failed to open checkout: %w", openErr)
 		}
 		head, headErr := repo.Head()
 		if headErr != nil {
-			_ = os.RemoveAll(repoPath)
+			_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 			return nil, fmt.Errorf("failed to resolve checkout head: %w", headErr)
 		}
 		return &WriteCheckout{RepoPath: repoPath, Branch: branch, HeadCommit: head.Hash().String(), BranchExists: true, url: normalized, repo: repo}, nil
@@ -222,7 +222,7 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 
 	switch {
 	case errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return c.initEmptyCheckout(normalized, branch)
+		return c.initEmptyCheckout(ctx, normalized, branch)
 	case errors.Is(err, git.NoMatchingRefSpecError{}):
 		return c.checkoutNewBranch(ctx, normalized, branch, auth)
 	default:
@@ -230,26 +230,29 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	}
 }
 
-func (c *Client) initEmptyCheckout(url, branch string) (*WriteCheckout, error) {
-	workDir := cmp.Or(c.workDir, os.TempDir())
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create work dir: %w", err)
+func (c *Client) initEmptyCheckout(ctx context.Context, url, branch string) (*WriteCheckout, error) {
+	workDir, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve work dir: %w", err)
 	}
-	repoPath, err := os.MkdirTemp(workDir, CloneScratchPrefix+"*")
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, workDir, 0o755); mkdirErr != nil {
+		return nil, fmt.Errorf("failed to create work dir: %w", mkdirErr)
+	}
+	repoPath, err := acfs.Host{}.MkdirTemp(ctx, workDir, CloneScratchPrefix+"*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	repo, err := git.PlainInit(repoPath, false)
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to initialize checkout: %w", err)
 	}
 	if _, createRemoteErr := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{url}}); createRemoteErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to configure remote: %w", createRemoteErr)
 	}
 	if setReferenceErr := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName(branch))); setReferenceErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to select branch: %w", setReferenceErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
@@ -262,16 +265,16 @@ func (c *Client) checkoutNewBranch(ctx context.Context, url, branch string, auth
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to open checkout: %w", err)
 	}
 	worktree, err := repo.Worktree()
 	if err != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if checkoutErr := worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: true}); checkoutErr != nil {
-		_ = os.RemoveAll(repoPath)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), repoPath)
 		return nil, fmt.Errorf("failed to create branch %s: %w", branch, checkoutErr)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
@@ -326,7 +329,7 @@ func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *gi
 		if err := ValidatePath(checkout.RepoPath, removed); err != nil {
 			return err
 		}
-		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), acfstypes.StatOptions{}); err != nil {
+		if _, err := (acfs.Root{Path: checkout.RepoPath}).Stat(ctx, path.Join("/", filepath.ToSlash(removed)), types.StatOptions{}); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}

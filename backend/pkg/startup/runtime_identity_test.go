@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -100,12 +101,13 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 func TestRunningInContainer(t *testing.T) {
 	t.Run("explicit arcane env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			t.Context(),
 			true,
 			func(string) string {
 				return ""
 			},
-			func(string) (os.FileInfo, error) {
-				return nil, os.ErrNotExist
+			func(context.Context, string) (bool, error) {
+				return false, nil
 			},
 		)
 
@@ -114,12 +116,13 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("container env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			t.Context(),
 			false,
 			func(key string) string {
 				return kit.Ternary(key == "container", "podman", "")
 			},
-			func(string) (os.FileInfo, error) {
-				return nil, os.ErrNotExist
+			func(context.Context, string) (bool, error) {
+				return false, nil
 			},
 		)
 
@@ -128,10 +131,11 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("container marker file enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			t.Context(),
 			false,
 			func(string) string { return "" },
-			func(path string) (os.FileInfo, error) {
-				return nil, kit.Ternary(path == "/run/.containerenv", nil, os.ErrNotExist)
+			func(_ context.Context, path string) (bool, error) {
+				return path == "/run/.containerenv", nil
 			},
 		)
 
@@ -140,10 +144,11 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("no signal disables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			t.Context(),
 			false,
 			func(string) string { return "" },
-			func(string) (os.FileInfo, error) {
-				return nil, os.ErrNotExist
+			func(context.Context, string) (bool, error) {
+				return false, nil
 			},
 		)
 
@@ -272,6 +277,7 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 	cfg := &RuntimeIdentityConfig{DockerConfig: customDir}
 
 	require.NoError(t, ensureRuntimeDockerConfig(
+		t.Context(),
 		cfg,
 		func(string, string) error {
 			require.FailNow(t, "setenv should not be called for explicit DOCKER_CONFIG")
@@ -291,8 +297,9 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("maps default docker socket group when docker host unset", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroups(
+			t.Context(),
 			"",
-			func(socketPath string) mo.Option[uint32] {
+			func(_ context.Context, socketPath string) mo.Option[uint32] {
 				require.Equal(t, defaultDockerSocketPath, socketPath)
 				return mo.Some(uint32(997))
 			},
@@ -303,8 +310,9 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 
 	t.Run("maps custom unix docker host socket group", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroups(
+			t.Context(),
 			"unix:///tmp/docker.sock",
-			func(socketPath string) mo.Option[uint32] {
+			func(_ context.Context, socketPath string) mo.Option[uint32] {
 				require.Equal(t, "/tmp/docker.sock", socketPath)
 				return mo.Some(uint32(998))
 			},
@@ -317,8 +325,9 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 		called := false
 
 		groups := runtimeIdentitySupplementaryGroups(
+			t.Context(),
 			"tcp://docker:2375",
-			func(string) mo.Option[uint32] {
+			func(context.Context, string) mo.Option[uint32] {
 				called = true
 				return mo.None[uint32]()
 			},
@@ -330,8 +339,11 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 
 	t.Run("skips socket group when socket lookup fails", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroups(
+			t.Context(),
 			"unix:///tmp/missing.sock",
-			func(string) mo.Option[uint32] { return mo.None[uint32]() },
+			func(context.Context, string) mo.Option[uint32] {
+				return mo.None[uint32]()
+			},
 		)
 
 		require.Nil(t, groups)
@@ -385,7 +397,7 @@ func TestEnsureSQLiteFilesExist(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "arcane.db")
 
-	require.NoError(t, ensureSQLiteFilesExist("file:"+dbPath))
+	require.NoError(t, ensureSQLiteFilesExist(t.Context(), "file:"+dbPath))
 
 	require.FileExists(t, dbPath)
 	require.NoFileExists(t, dbPath+"-wal")
@@ -396,7 +408,7 @@ func TestEnsureSQLiteFilesExistInternalCreatesParentDir(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "subdir", "arcane.db")
 
-	require.NoError(t, ensureSQLiteFilesExist("file:"+dbPath))
+	require.NoError(t, ensureSQLiteFilesExist(t.Context(), "file:"+dbPath))
 
 	require.FileExists(t, dbPath)
 }
@@ -435,7 +447,7 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 
 	visited := make(map[string]bool)
 	oldLchownFn := lchownFn
-	lchownFn = func(path string, uid, gid int) error {
+	lchownFn = func(_ context.Context, path string, uid, gid int) error {
 		visited[filepath.Clean(path)] = true
 		return nil
 	}
@@ -444,7 +456,7 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	})
 
 	mountpoints := make(map[string]struct{})
-	err := chownRecursive(tempDir, 1000, 1000, mountpoints, filepath.Clean(projectsDir))
+	err := chownRecursive(t.Context(), tempDir, 1000, 1000, mountpoints, filepath.Clean(projectsDir))
 	require.NoError(t, err)
 
 	cleanedTempDir := filepath.Clean(tempDir)
@@ -477,7 +489,7 @@ func TestPrepareWritablePathsInternalChownsTopLevelProjectsShallowly(t *testing.
 
 	visited := make(map[string]bool)
 	oldLchownFn := lchownFn
-	lchownFn = func(path string, uid, gid int) error {
+	lchownFn = func(_ context.Context, path string, uid, gid int) error {
 		visited[filepath.Clean(path)] = true
 		return nil
 	}
@@ -485,7 +497,7 @@ func TestPrepareWritablePathsInternalChownsTopLevelProjectsShallowly(t *testing.
 		lchownFn = oldLchownFn
 	})
 
-	err := prepareWritablePathsWithRoots(os.Getuid(), os.Getgid(), map[string]struct{}{}, filepath.Clean(projectsDir), dataDir, buildsDir)
+	err := prepareWritablePathsWithRoots(t.Context(), os.Getuid(), os.Getgid(), map[string]struct{}{}, filepath.Clean(projectsDir), dataDir, buildsDir)
 	require.NoError(t, err)
 
 	require.True(t, visited[filepath.Clean(projectsDir)], "top-level projects dir must be chowned")

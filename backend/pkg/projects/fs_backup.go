@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"kit.getarcane.app/acfs"
-	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
 )
@@ -47,17 +47,15 @@ func (s ProjectUpdateBackupScope) IsEmpty() bool {
 }
 
 func BackupProjectUpdateScope(ctx context.Context, projectDir, backupDir string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, error) {
-	projRoot, err := os.OpenRoot(projectDir)
-	if err != nil {
+	projRoot := acfs.Root{Path: projectDir}
+	if _, err := projRoot.Stat(ctx, "/", types.StatOptions{}); err != nil {
 		return nil, fmt.Errorf("open project directory: %w", err)
 	}
-	defer func() { _ = projRoot.Close() }()
 
-	backupRoot, err := os.OpenRoot(backupDir)
-	if err != nil {
+	backupRoot := acfs.Root{Path: backupDir}
+	if _, err := backupRoot.Stat(ctx, "/", types.StatOptions{}); err != nil {
 		return nil, fmt.Errorf("open backup directory: %w", err)
 	}
-	defer func() { _ = backupRoot.Close() }()
 
 	backup := &ProjectUpdateBackup{
 		BackupDir:     backupDir,
@@ -66,13 +64,13 @@ func BackupProjectUpdateScope(ctx context.Context, projectDir, backupDir string,
 	}
 
 	if scope.TopLevelFiles {
-		if backupTopLevelFilesErr := backupTopLevelFiles(projRoot, backupRoot, backup); backupTopLevelFilesErr != nil {
+		if backupTopLevelFilesErr := backupTopLevelFiles(ctx, projRoot, backupRoot, backup); backupTopLevelFilesErr != nil {
 			return nil, backupTopLevelFilesErr
 		}
 	}
 
 	for _, rel := range normalizeScopePaths(scope.Paths) {
-		if backupScopePathErr := backupScopePath(ctx, projRoot, backupRoot, projectDir, backupDir, rel, backup); backupScopePathErr != nil {
+		if backupScopePathErr := backupScopePath(ctx, projRoot, backupRoot, rel, backup); backupScopePathErr != nil {
 			return nil, backupScopePathErr
 		}
 	}
@@ -95,20 +93,20 @@ func normalizeScopePaths(paths []string) []string {
 	return slices.Compact(normalized)
 }
 
-func backupTopLevelFiles(projRoot, backupRoot *os.Root, backup *ProjectUpdateBackup) error {
-	entries, err := os.ReadDir(projRoot.Name())
+func backupTopLevelFiles(ctx context.Context, projRoot, backupRoot acfs.Root, backup *ProjectUpdateBackup) error {
+	entries, err := projRoot.List(ctx, "/")
 	if err != nil {
 		return fmt.Errorf("read project directory: %w", err)
 	}
 	for _, entry := range entries {
-		name := entry.Name()
+		name := entry.Name
 		switch {
-		case entry.Type().IsRegular():
-			if copyBackupFileErr := copyBackupFile(projRoot, backupRoot, name, backup); copyBackupFileErr != nil {
+		case os.FileMode(entry.UnixMode).IsRegular():
+			if copyBackupFileErr := copyBackupFile(ctx, projRoot, backupRoot, name, backup); copyBackupFileErr != nil {
 				return copyBackupFileErr
 			}
-		case name == EffectiveEnvFileName && entry.Type()&os.ModeSymlink != 0:
-			if copyBackupEnvSymlinkErr := copyBackupEnvSymlink(projRoot, backupRoot, name, backup); copyBackupEnvSymlinkErr != nil {
+		case name == EffectiveEnvFileName && entry.IsSymlink:
+			if copyBackupEnvSymlinkErr := copyBackupEnvSymlink(ctx, projRoot, backupRoot, name, backup); copyBackupEnvSymlinkErr != nil {
 				return copyBackupEnvSymlinkErr
 			}
 		}
@@ -116,12 +114,12 @@ func backupTopLevelFiles(projRoot, backupRoot *os.Root, backup *ProjectUpdateBac
 	return nil
 }
 
-func backupScopePath(ctx context.Context, projRoot, backupRoot *os.Root, projectDir, backupDir, rel string, backup *ProjectUpdateBackup) error {
-	info, err := projRoot.Lstat(rel)
+func backupScopePath(ctx context.Context, projRoot, backupRoot acfs.Root, rel string, backup *ProjectUpdateBackup) error {
+	info, err := projRoot.Stat(ctx, "/"+rel, types.StatOptions{})
 	if errors.Is(err, os.ErrNotExist) {
 		// Record the shallowest nonexistent ancestor so MkdirAll debris from a
 		// failed create is removed on restore too.
-		absent, absentErr := shallowestAbsentAncestor(projRoot, rel)
+		absent, absentErr := shallowestAbsentAncestor(ctx, projRoot, rel)
 		if absentErr != nil {
 			return absentErr
 		}
@@ -133,12 +131,12 @@ func backupScopePath(ctx context.Context, projRoot, backupRoot *os.Root, project
 	}
 
 	switch {
-	case info.IsDir():
-		destDir := filepath.Join(backupDir, filepath.FromSlash(rel))
-		if mkdirAllErr := os.MkdirAll(destDir, 0o755); mkdirAllErr != nil {
+	case info.IsDirectory:
+		destDir := filepath.Join(backupRoot.Path, filepath.FromSlash(rel))
+		if mkdirAllErr := backupRoot.MkdirAll(ctx, "/"+rel, 0o755); mkdirAllErr != nil {
 			return fmt.Errorf("create backup directory: %w", mkdirAllErr)
 		}
-		copied, copyDirErr := acfs.Root{Path: filepath.Join(projectDir, filepath.FromSlash(rel))}.CopyTo(ctx, acfs.Root{Path: destDir}, acfstypes.CopyOptions{TolerateUnreadable: true})
+		copied, copyDirErr := acfs.Root{Path: filepath.Join(projRoot.Path, filepath.FromSlash(rel))}.CopyTo(ctx, acfs.Root{Path: destDir}, types.CopyOptions{TolerateUnreadable: true})
 		if copyDirErr != nil {
 			return fmt.Errorf("backup project directory %s: %w", rel, copyDirErr)
 		}
@@ -146,12 +144,12 @@ func backupScopePath(ctx context.Context, projRoot, backupRoot *os.Root, project
 			backup.Skipped = append(backup.Skipped, path.Join(rel, filepath.ToSlash(sub)))
 		}
 		backup.DirEntries = append(backup.DirEntries, rel)
-	case info.Mode().IsRegular():
-		if copyBackupFileErr := copyBackupFile(projRoot, backupRoot, rel, backup); copyBackupFileErr != nil {
+	case os.FileMode(info.UnixMode).IsRegular():
+		if copyBackupFileErr := copyBackupFile(ctx, projRoot, backupRoot, rel, backup); copyBackupFileErr != nil {
 			return copyBackupFileErr
 		}
-	case rel == EffectiveEnvFileName && info.Mode()&os.ModeSymlink != 0:
-		if copyBackupEnvSymlinkErr := copyBackupEnvSymlink(projRoot, backupRoot, rel, backup); copyBackupEnvSymlinkErr != nil {
+	case rel == EffectiveEnvFileName && info.IsSymlink:
+		if copyBackupEnvSymlinkErr := copyBackupEnvSymlink(ctx, projRoot, backupRoot, rel, backup); copyBackupEnvSymlinkErr != nil {
 			return copyBackupEnvSymlinkErr
 		}
 	default:
@@ -161,11 +159,11 @@ func backupScopePath(ctx context.Context, projRoot, backupRoot *os.Root, project
 	return nil
 }
 
-func shallowestAbsentAncestor(projRoot *os.Root, rel string) (string, error) {
+func shallowestAbsentAncestor(ctx context.Context, projRoot acfs.Root, rel string) (string, error) {
 	current := ""
 	for segment := range strings.SplitSeq(rel, "/") {
 		current = path.Join(current, segment)
-		if _, err := projRoot.Lstat(current); err != nil {
+		if _, err := projRoot.Stat(ctx, "/"+current, types.StatOptions{}); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return current, nil
 			}
@@ -175,12 +173,12 @@ func shallowestAbsentAncestor(projRoot *os.Root, rel string) (string, error) {
 	return rel, nil
 }
 
-func copyBackupFile(projRoot, backupRoot *os.Root, rel string, backup *ProjectUpdateBackup) error {
-	info, err := projRoot.Lstat(rel)
+func copyBackupFile(ctx context.Context, projRoot, backupRoot acfs.Root, rel string, backup *ProjectUpdateBackup) error {
+	info, err := projRoot.Stat(ctx, "/"+rel, types.StatOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect project file %s: %w", rel, err)
 	}
-	content, err := projRoot.ReadFile(rel)
+	content, err := projRoot.ReadFile(ctx, "/"+rel)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			backup.Skipped = append(backup.Skipped, rel)
@@ -189,20 +187,19 @@ func copyBackupFile(projRoot, backupRoot *os.Root, rel string, backup *ProjectUp
 		return fmt.Errorf("read project file %s: %w", rel, err)
 	}
 	if dir := path.Dir(rel); dir != "." {
-		if mkdirAllErr := backupRoot.MkdirAll(dir, 0o755); mkdirAllErr != nil {
+		if mkdirAllErr := backupRoot.MkdirAll(ctx, "/"+dir, 0o755); mkdirAllErr != nil {
 			return fmt.Errorf("create backup directory: %w", mkdirAllErr)
 		}
 	}
-	if writeFileErr := atomic.WriteFile(filepath.Join(backupRoot.Name(), filepath.FromSlash(rel)), content, info.Mode().Perm()); writeFileErr != nil {
+	if writeFileErr := atomic.WriteFile(filepath.Join(backupRoot.Path, filepath.FromSlash(rel)), content, os.FileMode(info.UnixMode).Perm()); writeFileErr != nil {
 		return fmt.Errorf("write backup file %s: %w", rel, writeFileErr)
 	}
 	backup.FileEntries = append(backup.FileEntries, rel)
 	return nil
 }
 
-func copyBackupEnvSymlink(projRoot, backupRoot *os.Root, rel string, backup *ProjectUpdateBackup) error {
-	envPath := filepath.Join(projRoot.Name(), filepath.FromSlash(rel))
-	linkTarget, err := os.Readlink(envPath)
+func copyBackupEnvSymlink(ctx context.Context, projRoot, backupRoot acfs.Root, rel string, backup *ProjectUpdateBackup) error {
+	linkTarget, err := projRoot.Readlink(ctx, "/"+rel)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			backup.Skipped = append(backup.Skipped, rel)
@@ -211,7 +208,7 @@ func copyBackupEnvSymlink(projRoot, backupRoot *os.Root, rel string, backup *Pro
 		return fmt.Errorf("read project env symlink %s: %w", rel, err)
 	}
 
-	resolvedPath, perm, isSymlink, err := resolveEnvFileWriteTarget(envPath)
+	resolvedPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projRoot.Path, filepath.FromSlash(rel)))
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			backup.Skipped = append(backup.Skipped, rel)
@@ -227,7 +224,7 @@ func copyBackupEnvSymlink(projRoot, backupRoot *os.Root, rel string, backup *Pro
 		return fmt.Errorf("project env file %s is no longer a symlink", rel)
 	}
 
-	content, err := os.ReadFile(resolvedPath)
+	content, err := acfs.Host{}.ReadFile(ctx, resolvedPath)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			backup.Skipped = append(backup.Skipped, rel)
@@ -235,7 +232,7 @@ func copyBackupEnvSymlink(projRoot, backupRoot *os.Root, rel string, backup *Pro
 		}
 		return fmt.Errorf("read project env symlink target %s: %w", rel, err)
 	}
-	if writeFileErr := atomic.WriteFile(filepath.Join(backupRoot.Name(), filepath.FromSlash(rel)), content, perm); writeFileErr != nil {
+	if writeFileErr := atomic.WriteFile(filepath.Join(backupRoot.Path, filepath.FromSlash(rel)), content, perm); writeFileErr != nil {
 		return fmt.Errorf("write backup file %s: %w", rel, writeFileErr)
 	}
 
@@ -264,38 +261,36 @@ func dedupeCoveredBackupEntries(backup *ProjectUpdateBackup) {
 }
 
 func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *ProjectUpdateBackup) error {
-	projRoot, err := os.OpenRoot(projectDir)
-	if err != nil {
+	projRoot := acfs.Root{Path: projectDir}
+	if _, err := projRoot.Stat(ctx, "/", types.StatOptions{}); err != nil {
 		return fmt.Errorf("open project directory: %w", err)
 	}
-	defer func() { _ = projRoot.Close() }()
 
-	if undoRenamedDirsAndDebrisErr := undoRenamedDirsAndDebris(projRoot, backup); undoRenamedDirsAndDebrisErr != nil {
+	if undoRenamedDirsAndDebrisErr := undoRenamedDirsAndDebris(ctx, projRoot, backup); undoRenamedDirsAndDebrisErr != nil {
 		return undoRenamedDirsAndDebrisErr
 	}
 
 	for _, rel := range backup.DirEntries {
-		if live, lstatErr := projRoot.Lstat(rel); lstatErr == nil && !live.IsDir() {
-			if removeErr := projRoot.Remove(rel); removeErr != nil {
+		if live, lstatErr := projRoot.Stat(ctx, "/"+rel, types.StatOptions{}); lstatErr == nil && !live.IsDirectory {
+			if removeErr := projRoot.Remove(ctx, "/"+rel); removeErr != nil {
 				return fmt.Errorf("remove conflicting file %s: %w", rel, removeErr)
 			}
 		}
-		if mkdirAllErr := projRoot.MkdirAll(rel, 0o755); mkdirAllErr != nil {
+		if mkdirAllErr := projRoot.MkdirAll(ctx, "/"+rel, 0o755); mkdirAllErr != nil {
 			return fmt.Errorf("recreate project directory %s: %w", rel, mkdirAllErr)
 		}
 		preserve := skippedUnder(backup.Skipped, rel)
 		src := filepath.Join(backup.BackupDir, filepath.FromSlash(rel))
 		dest := filepath.Join(projectDir, filepath.FromSlash(rel))
-		if mirrorDirErr := (acfs.Root{Path: src}).MirrorTo(ctx, acfs.Root{Path: dest}, acfstypes.MirrorOptions{Preserve: preserve}); mirrorDirErr != nil {
+		if mirrorDirErr := (acfs.Root{Path: src}).MirrorTo(ctx, acfs.Root{Path: dest}, types.MirrorOptions{Preserve: preserve}); mirrorDirErr != nil {
 			return fmt.Errorf("restore project directory %s: %w", rel, mirrorDirErr)
 		}
 	}
 
-	backupRoot, err := os.OpenRoot(backup.BackupDir)
-	if err != nil {
+	backupRoot := acfs.Root{Path: backup.BackupDir}
+	if _, err := backupRoot.Stat(ctx, "/", types.StatOptions{}); err != nil {
 		return fmt.Errorf("open backup directory: %w", err)
 	}
-	defer func() { _ = backupRoot.Close() }()
 
 	for _, rel := range backup.FileEntries {
 		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, rel); restoreBackupFileErr != nil {
@@ -312,14 +307,14 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 	return nil
 }
 
-func undoRenamedDirsAndDebris(projRoot *os.Root, backup *ProjectUpdateBackup) error {
+func undoRenamedDirsAndDebris(ctx context.Context, projRoot acfs.Root, backup *ProjectUpdateBackup) error {
 	handledAbsent := make(map[string]bool)
 	for _, pair := range backup.RenamedDirs {
 		src, dest := pair[0], pair[1]
-		if _, err := projRoot.Lstat(dest); err != nil {
+		if _, err := projRoot.Stat(ctx, "/"+dest, types.StatOptions{}); err != nil {
 			continue
 		}
-		if _, err := projRoot.Lstat(src); err == nil {
+		if _, err := projRoot.Stat(ctx, "/"+src, types.StatOptions{}); err == nil {
 			// The failed batch recreated something at src (e.g. rename a -> b
 			// then create_folder a). Clear it only when the backup covers src —
 			// debris at an absent path or a directory we hold a full copy of —
@@ -328,12 +323,12 @@ func undoRenamedDirsAndDebris(projRoot *os.Root, backup *ProjectUpdateBackup) er
 			if !slices.Contains(backup.DirEntries, src) && !slices.Contains(backup.AbsentEntries, src) {
 				continue
 			}
-			if removeAllErr := projRoot.RemoveAll(src); removeAllErr != nil {
+			if removeAllErr := projRoot.RemoveAll(ctx, "/"+src); removeAllErr != nil {
 				return fmt.Errorf("remove recreated path %s: %w", src, removeAllErr)
 			}
 			handledAbsent[src] = true
 		}
-		if err := projRoot.Rename(dest, src); err != nil {
+		if err := projRoot.Rename(ctx, "/"+dest, "/"+src); err != nil {
 			return fmt.Errorf("undo rename of %s: %w", src, err)
 		}
 	}
@@ -344,7 +339,7 @@ func undoRenamedDirsAndDebris(projRoot *os.Root, backup *ProjectUpdateBackup) er
 			// the original directory at this path — do not delete it again.
 			continue
 		}
-		if err := projRoot.RemoveAll(rel); err != nil {
+		if err := projRoot.RemoveAll(ctx, "/"+rel); err != nil {
 			return fmt.Errorf("remove created path %s: %w", rel, err)
 		}
 	}
@@ -362,55 +357,57 @@ func skippedUnder(skipped []string, rel string) []string {
 	return under
 }
 
-func restoreBackupFile(ctx context.Context, backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup, rel string) error {
-	info, err := backupRoot.Lstat(rel)
+func restoreBackupFile(ctx context.Context, backupRoot, projRoot acfs.Root, backup *ProjectUpdateBackup, rel string) error {
+	info, err := backupRoot.Stat(ctx, "/"+rel, types.StatOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect backup file %s: %w", rel, err)
 	}
-	content, err := backupRoot.ReadFile(rel)
+	content, err := backupRoot.ReadFile(ctx, "/"+rel)
 	if err != nil {
 		return fmt.Errorf("read backup file %s: %w", rel, err)
 	}
 	if backup.envSymlink != nil && backup.envSymlink.relativePath == rel {
-		return restoreBackupEnvSymlink(projRoot, backup.envSymlink, content, info.Mode().Perm())
+		return restoreBackupEnvSymlink(ctx, projRoot, backup.envSymlink, content, os.FileMode(info.UnixMode).Perm())
 	}
-	live, liveErr := projRoot.Lstat(rel)
-	if liveErr == nil && live.Mode().IsRegular() {
+	live, liveErr := projRoot.Stat(ctx, "/"+rel, types.StatOptions{})
+	if liveErr == nil && os.FileMode(live.UnixMode).IsRegular() {
 		// In place: the inode survives so container bind mounts of the file stay valid.
-		if writeErr := (acfs.Root{Path: projRoot.Name()}).Write(ctx, "/"+rel, content, acfs.WriteOptions{Mode: info.Mode().Perm(), InPlace: true}); writeErr != nil {
+		if writeErr := projRoot.Write(ctx, "/"+rel, content, acfs.WriteOptions{
+			Mode:    os.FileMode(info.UnixMode).Perm(),
+			InPlace: true,
+		}); writeErr != nil {
 			return fmt.Errorf("restore project file %s: %w", rel, writeErr)
 		}
 		return nil
 	}
-	if liveErr == nil && live.IsDir() {
-		if removeAllErr := projRoot.RemoveAll(rel); removeAllErr != nil {
+	if liveErr == nil && live.IsDirectory {
+		if removeAllErr := projRoot.RemoveAll(ctx, "/"+rel); removeAllErr != nil {
 			return fmt.Errorf("remove conflicting directory %s: %w", rel, removeAllErr)
 		}
 	}
 	if dir := path.Dir(rel); dir != "." {
-		if mkdirAllErr := projRoot.MkdirAll(dir, 0o755); mkdirAllErr != nil {
+		if mkdirAllErr := projRoot.MkdirAll(ctx, "/"+dir, 0o755); mkdirAllErr != nil {
 			return fmt.Errorf("recreate parent directory of %s: %w", rel, mkdirAllErr)
 		}
 	}
 	// Atomic create: a crash mid-restore leaves either nothing or the fully
 	// restored file, never a torn write.
-	if writeFileErr := atomic.WriteFile(filepath.Join(projRoot.Name(), filepath.FromSlash(rel)), content, info.Mode().Perm()); writeFileErr != nil {
+	if writeFileErr := atomic.WriteFile(filepath.Join(projRoot.Path, filepath.FromSlash(rel)), content, os.FileMode(info.UnixMode).Perm()); writeFileErr != nil {
 		return fmt.Errorf("restore project file %s: %w", rel, writeFileErr)
 	}
 	return nil
 }
 
-func restoreBackupEnvSymlink(projRoot *os.Root, envBackup *projectUpdateEnvSymlinkBackup, content []byte, perm os.FileMode) error {
-	envPath := filepath.Join(projRoot.Name(), filepath.FromSlash(envBackup.relativePath))
-	info, err := os.Lstat(envPath)
+func restoreBackupEnvSymlink(ctx context.Context, projRoot acfs.Root, envBackup *projectUpdateEnvSymlinkBackup, content []byte, perm os.FileMode) error {
+	info, err := projRoot.Stat(ctx, "/"+envBackup.relativePath, types.StatOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect project env symlink during restore: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !info.IsSymlink {
 		return fmt.Errorf("refusing to restore project env file %s: destination is no longer a symlink", envBackup.relativePath)
 	}
 
-	linkTarget, err := os.Readlink(envPath)
+	linkTarget, err := projRoot.Readlink(ctx, "/"+envBackup.relativePath)
 	if err != nil {
 		return fmt.Errorf("read project env symlink during restore: %w", err)
 	}
@@ -418,7 +415,7 @@ func restoreBackupEnvSymlink(projRoot *os.Root, envBackup *projectUpdateEnvSymli
 		return fmt.Errorf("refusing to restore project env file %s: symlink target changed", envBackup.relativePath)
 	}
 
-	resolvedPath, _, isSymlink, err := resolveEnvFileWriteTarget(envPath)
+	resolvedPath, _, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projRoot.Path, filepath.FromSlash(envBackup.relativePath)))
 	if err != nil {
 		return fmt.Errorf("resolve project env symlink during restore: %w", err)
 	}
@@ -432,15 +429,15 @@ func restoreBackupEnvSymlink(projRoot *os.Root, envBackup *projectUpdateEnvSymli
 	return nil
 }
 
-func restoreTopLevelFiles(ctx context.Context, backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup) error {
-	backupEntries, err := os.ReadDir(backupRoot.Name())
+func restoreTopLevelFiles(ctx context.Context, backupRoot, projRoot acfs.Root, backup *ProjectUpdateBackup) error {
+	backupEntries, err := backupRoot.List(ctx, "/")
 	if err != nil {
 		return fmt.Errorf("read backup directory: %w", err)
 	}
 	inBackup := make(map[string]bool, len(backupEntries))
 	for _, entry := range backupEntries {
-		if entry.Type().IsRegular() {
-			inBackup[entry.Name()] = true
+		if os.FileMode(entry.UnixMode).IsRegular() {
+			inBackup[entry.Name] = true
 		}
 	}
 	skippedTopLevel := make(map[string]bool)
@@ -450,27 +447,25 @@ func restoreTopLevelFiles(ctx context.Context, backupRoot, projRoot *os.Root, ba
 		}
 	}
 
-	liveEntries, err := os.ReadDir(projRoot.Name())
+	liveEntries, err := projRoot.List(ctx, "/")
 	if err != nil {
 		return fmt.Errorf("read project directory: %w", err)
 	}
 	for _, entry := range liveEntries {
-		name := entry.Name()
-		if !entry.Type().IsRegular() || inBackup[name] || skippedTopLevel[name] {
+		name := entry.Name
+		if !os.FileMode(entry.UnixMode).IsRegular() || inBackup[name] || skippedTopLevel[name] {
 			continue
 		}
-		if removeErr := projRoot.Remove(name); removeErr != nil {
+		if removeErr := projRoot.Remove(ctx, "/"+name); removeErr != nil {
 			return fmt.Errorf("prune created file %s: %w", name, removeErr)
 		}
 	}
 
-	// backupEntries is sorted by os.ReadDir, so restoration order is
-	// deterministic and mirrors the backup order.
 	for _, entry := range backupEntries {
-		if !entry.Type().IsRegular() {
+		if !os.FileMode(entry.UnixMode).IsRegular() {
 			continue
 		}
-		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, entry.Name()); restoreBackupFileErr != nil {
+		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, entry.Name); restoreBackupFileErr != nil {
 			return restoreBackupFileErr
 		}
 	}

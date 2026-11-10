@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -24,6 +23,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
@@ -1036,11 +1036,13 @@ func (s *Service) Create(
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	stage, err := os.MkdirTemp(layout.dataDirectory, ".arcane-snapshot-")
+	stage, err := acfs.Host{}.MkdirTemp(ctx, layout.dataDirectory, ".arcane-snapshot-")
 	if err != nil {
 		return backup.Snapshot{}, fmt.Errorf("create system backup staging directory: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
+	defer func() {
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), stage)
+	}()
 	sqlDB, err := s.sqlDB()
 	if err != nil {
 		return backup.Snapshot{}, err
@@ -1064,11 +1066,12 @@ func (s *Service) Create(
 	if err != nil {
 		return backup.Snapshot{}, fmt.Errorf("failed to encode recovery manifest: %w", err)
 	}
-	manifestPath := filepath.Join(layout.dataDirectory, RecoveryManifestName)
-	if err = os.WriteFile(manifestPath, manifestData, 0o600); err != nil {
+	if err = (acfs.Root{Path: layout.dataDirectory}).Write(ctx, "/"+RecoveryManifestName, manifestData, acfs.WriteOptions{Mode: 0o600}); err != nil {
 		return backup.Snapshot{}, fmt.Errorf("failed to write recovery manifest: %w", err)
 	}
-	defer func() { _ = os.Remove(manifestPath) }()
+	defer func() {
+		_ = acfs.Root{Path: layout.dataDirectory}.Remove(context.WithoutCancel(ctx), "/"+RecoveryManifestName)
+	}()
 	files, err := snapshotSourceFiles(ctx, layout)
 	if err != nil {
 		return backup.Snapshot{}, err
@@ -1131,7 +1134,11 @@ func (s *Service) Create(
 			break
 		}
 		current, exists := after[filePath]
-		if !exists || !os.SameFile(original, current) || original.Mode() != current.Mode() || (!original.IsDir() && (original.Size() != current.Size() || !original.ModTime().Equal(current.ModTime()))) {
+		if !exists ||
+			original.Device != current.Device ||
+			original.Inode != current.Inode ||
+			original.UnixMode != current.UnixMode ||
+			(!original.IsDirectory && (original.Size != current.Size || original.ModTimeUnixNano != current.ModTimeUnixNano)) {
 			err = fmt.Errorf("system backup source %q changed during capture; retry when file updates finish", filePath)
 		}
 	}
@@ -1160,21 +1167,16 @@ func (s *Service) Create(
 	return backup.Snapshot{}, errors.Join(err, cleanupErr)
 }
 
-func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]os.FileInfo, error) {
-	projectsInfo, statErr := os.Stat(layout.projectsDirectory)
+func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]acfstypes.Entry, error) {
+	projectsEntry, statErr := acfs.Host{}.Stat(ctx, layout.projectsDirectory, acfstypes.StatOptions{FollowFinal: true})
+	dataEntry, err := acfs.Host{}.Stat(ctx, layout.dataDirectory, acfstypes.StatOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("inspect system backup sources: %w", err)
+	}
 	actorDatabase := francis.StorePath(layout.databaseName)
-	files := make(map[string]os.FileInfo)
-	visit := func(filePath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(layout.dataDirectory, filePath)
-		if err != nil {
-			return err
-		}
+	files := map[string]acfstypes.Entry{layout.dataDirectory: dataEntry}
+	visit := func(entry acfstypes.Entry) error {
+		relative := strings.TrimPrefix(entry.Path, "/")
 		if relative == layout.databaseName || relative == actorDatabase {
 			return nil
 		}
@@ -1186,41 +1188,35 @@ func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[st
 			if !matched {
 				continue
 			}
-			if entry.IsDir() {
-				return filepath.SkipDir
+			if entry.IsDirectory {
+				return fs.SkipDir
 			}
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
+		if entry.IsDirectory && statErr == nil && entry.Device == projectsEntry.Device && entry.Inode == projectsEntry.Inode {
+			return fs.SkipDir
 		}
-		if entry.IsDir() && relative != "." && statErr == nil && os.SameFile(info, projectsInfo) {
-			return filepath.SkipDir
-		}
-		files[filePath] = info
+		files[filepath.Join(layout.dataDirectory, entry.Path)] = entry
 		return nil
 	}
-	if err := filepath.WalkDir(layout.dataDirectory, visit); err != nil {
+	if _, err = (acfs.Root{Path: layout.dataDirectory}).Walk(ctx, "/", acfstypes.WalkOptions{}, visit); err != nil {
 		return nil, fmt.Errorf("inspect system backup sources: %w", err)
 	}
 	return files, nil
 }
 
 func stageDatabase(ctx context.Context, db *sql.DB, databasePath, stagedDatabase string) error {
-	info, err := os.Stat(databasePath)
+	entry, err := acfs.Host{}.Stat(ctx, databasePath, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return err
 	}
 	if _, err = db.ExecContext(ctx, "VACUUM INTO ?", stagedDatabase); err != nil {
 		return fmt.Errorf("stage Arcane database: %w", err)
 	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		if err = os.Chown(stagedDatabase, int(stat.Uid), int(stat.Gid)); err != nil {
-			return fmt.Errorf("preserve staged database ownership: %w", err)
-		}
+	if err = (acfs.Host{}).Chown(ctx, stagedDatabase, entry.UID, entry.GID); err != nil {
+		return fmt.Errorf("preserve staged database ownership: %w", err)
 	}
-	if err = os.Chmod(stagedDatabase, info.Mode()); err != nil {
+	if err = (acfs.Host{}).Chmod(ctx, stagedDatabase, os.FileMode(entry.UnixMode)); err != nil {
 		return fmt.Errorf("preserve staged database permissions: %w", err)
 	}
 	return nil

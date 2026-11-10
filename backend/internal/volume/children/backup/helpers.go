@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path"
 	"slices"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	"github.com/moby/moby/client"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -61,7 +62,7 @@ func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerCl
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
 		return true
 	}
-	_, err = os.Stat(path.Join("/backups", path.Base(volumeRusticRepositoryPath), "config"))
+	_, err = acfs.Host{}.Stat(ctx, path.Join("/backups", path.Base(volumeRusticRepositoryPath), "config"), acfstypes.StatOptions{FollowFinal: true})
 	return !errors.Is(err, fs.ErrNotExist)
 }
 

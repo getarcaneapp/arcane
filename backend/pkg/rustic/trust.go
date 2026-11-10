@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -37,7 +38,7 @@ var (
 	defaultCertDirs = []string{"/etc/ssl/certs", "/etc/pki/tls/certs"}
 )
 
-func trustBundle() []byte {
+func trustBundle(ctx context.Context) []byte {
 	files := defaultCertFiles
 	if file := os.Getenv("SSL_CERT_FILE"); file != "" {
 		files = []string{file}
@@ -65,18 +66,26 @@ func trustBundle() []byte {
 	}
 
 	for _, file := range files {
-		if data, err := os.ReadFile(file); err == nil {
+		path, err := filepath.Abs(file)
+		if err != nil {
+			continue
+		}
+		if data, readErr := (acfs.Host{}).ReadFile(ctx, path); readErr == nil {
 			appendCerts(data)
 			break
 		}
 	}
 	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
+		path, err := filepath.Abs(dir)
+		if err != nil {
+			continue
+		}
+		entries, err := acfs.Host{}.List(ctx, path)
 		if err != nil {
 			continue
 		}
 		for _, entry := range entries {
-			if data, readErr := os.ReadFile(filepath.Join(dir, entry.Name())); readErr == nil {
+			if data, readErr := (acfs.Host{}).ReadFile(ctx, entry.Path); readErr == nil {
 				appendCerts(data)
 			}
 		}

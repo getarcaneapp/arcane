@@ -94,7 +94,7 @@ func newLoginCmd() *cobra.Command {
 				return cmdutil.PrintJSON(tokenResult)
 			}
 
-			cfg, loadErr := config.Load()
+			cfg, loadErr := config.Load(cmd.Context())
 			if loadErr != nil {
 				return fmt.Errorf("failed to load config: %w", loadErr)
 			}
@@ -130,7 +130,7 @@ func newLogoutCmd() *cobra.Command {
 				return fmt.Errorf("logout failed: %w", err)
 			}
 
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -237,7 +237,7 @@ func newRefreshCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			refreshToken := opts.refreshToken
 
-			cfg, err := config.Load()
+			cfg, err := config.Load(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}

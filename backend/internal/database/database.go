@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"gorm.io/plugin/opentelemetry/metrics"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/arcane/v3/internal/database/migrations"
 	sqliteutil "getarcane.dev/arcane/v3/pkg/sqlite"
@@ -80,7 +80,13 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		}
 		dir := filepath.Dir(path)
 		if path != "" && !strings.HasPrefix(path, ":memory:") && dir != "" && dir != "." {
-			if err = os.MkdirAll(dir, 0o755); err != nil {
+			var absDir string
+			absDir, err = filepath.Abs(dir)
+			if err != nil {
+				err = fmt.Errorf("failed to prepare SQLite directory: %w", err)
+				break
+			}
+			if err = (acfs.Host{}).MkdirAll(ctx, absDir, 0o755); err != nil {
 				err = fmt.Errorf("failed to prepare SQLite directory: %w", err)
 				break
 			}

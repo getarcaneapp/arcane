@@ -24,6 +24,8 @@ import (
 	"github.com/docker/go-units"
 	"github.com/samber/mo"
 
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -107,17 +109,14 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 		return files[0], nil
 	}
 
-	// Stays on os.*: compose files may be symlinks resolving outside any
-	// confinement root, and dir itself can be an imported project living
-	// outside the projects directory; acfs cannot follow either.
 	for _, filename := range ComposeFileCandidates {
 		composePath := filepath.Join(dir, filename)
-		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {
+		if entry, err := (acfs.Host{}).Stat(ctx, composePath, acfstypes.StatOptions{FollowFinal: true}); err == nil && !entry.IsDirectory {
 			return composePath, envErr
 		}
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := acfs.Host{}.List(ctx, dir)
 	if err != nil {
 		return "", err
 	}
@@ -131,11 +130,11 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	composeNamedCandidates := make([]string, 0)
 
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDirectory {
 			continue
 		}
 
-		name := entry.Name()
+		name := entry.Name
 		if slices.Contains(ProjectFileCandidates, name) || !IsProjectFile(name) {
 			continue
 		}
@@ -147,7 +146,7 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 		dirMatched := normalizedStem != "" && (normalizedStem == normalizedDirBase || normalizedStem == normalizedTrimmedDirBase)
 		composeNamed := strings.Contains(strings.ToLower(stem), "compose")
 
-		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(candidatePath)
+		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(ctx, candidatePath)
 		if rootKeysErr == nil {
 			if !hasComposeRootKeys {
 				continue
@@ -352,7 +351,7 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 		slog.WarnContext(ctx, "Failed to set PWD environment variable", "workdir", workdir, "error", absErr)
 	}
 
-	envOpts, envOptsErr := ParseComposeEnvOptions(workdir, fullEnvMap)
+	envOpts, envOptsErr := ParseComposeEnvOptions(ctx, workdir, fullEnvMap)
 	if envOptsErr != nil {
 		return nil, envOptsErr
 	}
@@ -372,7 +371,7 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 	default:
 		configFiles = []composetypes.ConfigFile{{Filename: opts.ComposeFile}}
 		if slices.Contains(ComposeFileCandidates, filepath.Base(opts.ComposeFile)) {
-			if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
+			if overrideFile := DetectComposeOverrideFile(ctx, workdir); overrideFile != "" {
 				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
 				slog.DebugContext(ctx, "merging compose override file", "base", opts.ComposeFile, "override", overrideFile)
 			}
@@ -671,7 +670,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 
 	// COMPOSE_FILE in the (edited) env selects the exact file set, so validate
 	// against it — a save that introduces a broken selection fails fast.
-	envOpts, envOptsErr := ParseComposeEnvOptions(req.ProjectPath, fullEnvMap)
+	envOpts, envOptsErr := ParseComposeEnvOptions(ctx, req.ProjectPath, fullEnvMap)
 	if envOptsErr != nil {
 		return envOptsErr
 	}
@@ -715,7 +714,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	missingIncludeLoader := &MissingIncludeStubLoader{projectPath: req.ProjectPath}
+	missingIncludeLoader := &MissingIncludeStubLoader{ctx: ctx, projectPath: req.ProjectPath}
 	defer missingIncludeLoader.Cleanup()
 
 	err = WithTransientValidationEnvFile(ctx, req.ProjectPath, req.EnvContent, func() error {

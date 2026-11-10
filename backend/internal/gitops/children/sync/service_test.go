@@ -193,7 +193,7 @@ services:
 	require.NoError(t, err)
 	assert.Equal(t, gitEnvContent, string(gitEnvBytes))
 
-	parsedEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env"), nil)
+	parsedEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(project.Path, ".env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", parsedEnv["CLOUDFLARE_CLIENT_SECRET"])
 	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", parsedEnv["QUOTED_SECRET"])
@@ -373,15 +373,15 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	require.NoError(t, err)
 	assert.Equal(t, "FOO=useredit\n", string(overrideBytes))
 
-	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env"), nil)
+	effectiveEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(updatedProject.Path, ".env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"FOO": "useredit", "BAR": "new"}, effectiveEnv)
 
-	gitEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env.git"), nil)
+	gitEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(updatedProject.Path, ".env.git"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"FOO": "gitnew", "BAR": "new"}, gitEnv)
 
-	overrideEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, "project.env"), nil)
+	overrideEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(updatedProject.Path, "project.env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"FOO": "useredit"}, overrideEnv)
 }
@@ -443,11 +443,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
 
-	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env"), nil)
+	effectiveEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(updatedProject.Path, ".env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"BASE": "git", "LOCAL_ONLY": "1"}, effectiveEnv)
 
-	overrideEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, "project.env"), nil)
+	overrideEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(updatedProject.Path, "project.env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"LOCAL_ONLY": "1"}, overrideEnv)
 }
@@ -495,14 +495,14 @@ func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles
 	require.True(t, created)
 	require.ElementsMatch(t, []string{"docker-compose.yaml"}, syncedFiles)
 
-	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env"), nil)
+	effectiveEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(project.Path, ".env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"FOO": "fromgit"}, effectiveEnv)
 
 	gitBytes, err := os.ReadFile(filepath.Join(project.Path, ".env.git"))
 	require.NoError(t, err)
 	assert.NotContains(t, string(gitBytes), "poison")
-	gitEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env.git"), nil)
+	gitEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(project.Path, ".env.git"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, projects.EnvMap{"FOO": "fromgit"}, gitEnv)
 

@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -310,7 +311,16 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 				outputFile = args[2]
 			}
 
-			file, err := os.Create(outputFile)
+			outputPath, err := filepath.Abs(outputFile)
+			if err != nil {
+				return fmt.Errorf("failed to create file %s: %w", outputFile, err)
+			}
+			file, err := acfs.Host{Special: true}.OpenFile(cmd.Context(), outputPath, acfs.OpenOptions{
+				Mode:     0o666,
+				Write:    true,
+				Create:   true,
+				Truncate: true,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create file %s: %w", outputFile, err)
 			}

@@ -88,7 +88,7 @@ configs:
 	})
 	require.NoError(t, err)
 
-	plans, err := planConfigs(project, namespace{name: "stack"})
+	plans, err := planConfigs(t.Context(), project, namespace{name: "stack"})
 	require.NoError(t, err)
 	require.Empty(t, plans["app_config"].Data)
 	require.Equal(t, managedResourceName("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
@@ -247,9 +247,9 @@ secrets:
 	ns := namespace{name: "stack"}
 	networkNames := planNetworks(project, ns)
 	volumeNames := planVolumes(project, ns)
-	configPlans, err := planConfigs(project, ns)
+	configPlans, err := planConfigs(t.Context(), project, ns)
 	require.NoError(t, err)
-	secretPlans, err := planSecrets(project, ns)
+	secretPlans, err := planSecrets(t.Context(), project, ns)
 	require.NoError(t, err)
 	configMeta := make(map[string]resourceMeta, len(configPlans))
 	for key, plan := range configPlans {

@@ -77,7 +77,7 @@ func NewRootCommand() *cobra.Command {
 			runtimeMode := kit.Ternary(jsonMode, runtimectx.OutputModeJSON, runtimectx.OutputModeText)
 			output.Configure(cmd.OutOrStdout(), cmd.ErrOrStderr(), jsonMode, opts.noColor, cmd.Short)
 
-			app, err := runtimectx.New(runtimectx.Options{
+			app, err := runtimectx.New(cmd.Context(), runtimectx.Options{
 				EnvOverride:    opts.envOverride,
 				OutputMode:     runtimeMode,
 				AssumeYes:      opts.assumeYes,

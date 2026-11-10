@@ -47,7 +47,7 @@ func newListCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func newTestCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -113,7 +113,7 @@ func newGetCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -157,7 +157,7 @@ func newCreateCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -221,7 +221,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -276,7 +276,7 @@ func newDeleteCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -303,7 +303,7 @@ func newUsageCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := client.NewFromConfig()
+			c, err := client.NewFromConfig(cmd.Context())
 			if err != nil {
 				return err
 			}

@@ -314,7 +314,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		if len(reportData) == 0 {
 			return "", nil
 		}
-		reportDir, mkdirErr := os.MkdirTemp("", "arcane-patch-report")
+		reportDir, mkdirErr := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-patch-report")
 		if mkdirErr != nil {
 			return "", mkdirErr
 		}
@@ -325,11 +325,11 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 	}
 	if reportPath != "" {
 		defer func() {
-			if cleanupErr := os.RemoveAll(filepath.Dir(reportPath)); cleanupErr != nil {
+			if cleanupErr := (acfs.Host{}).RemoveAll(context.WithoutCancel(ctx), filepath.Dir(reportPath)); cleanupErr != nil {
 				slog.WarnContext(ctx, "Failed to remove image patch temporary directory", "directory", filepath.Dir(reportPath), "error", cleanupErr)
 			}
 		}()
-		if writeErr := os.WriteFile(reportPath, reportData, 0o600); writeErr != nil {
+		if writeErr := (acfs.Host{}).Write(ctx, reportPath, reportData, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 			return fail(writeErr, 0)
 		}
 	}
@@ -342,7 +342,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		if reportPath == "" {
 			return ""
 		}
-		vexDir, mkdirErr := os.MkdirTemp("", "arcane-patch-vex")
+		vexDir, mkdirErr := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-patch-vex")
 		if mkdirErr != nil {
 			return ""
 		}
@@ -350,7 +350,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 	}()
 	if vexOutputPath != "" {
 		defer func() {
-			if cleanupErr := os.RemoveAll(filepath.Dir(vexOutputPath)); cleanupErr != nil {
+			if cleanupErr := (acfs.Host{}).RemoveAll(context.WithoutCancel(ctx), filepath.Dir(vexOutputPath)); cleanupErr != nil {
 				slog.WarnContext(ctx, "Failed to remove image patch temporary directory", "directory", filepath.Dir(vexOutputPath), "error", cleanupErr)
 			}
 		}()

@@ -157,7 +157,7 @@ func (s *EnrollmentService) Enroll(ctx context.Context, p EnrollParams) (enrolle
 }
 
 func (s *EnrollmentService) EnrollMTLS(ctx context.Context, p EnrollMTLSParams) ([]agent.GeneratedMTLSFile, error) {
-	if !s.mtls.UsesGeneratedCA() {
+	if !s.mtls.UsesGeneratedCA(ctx) {
 		return nil, errMTLSEnrollUnavailable
 	}
 	if p.AgentToken == "" {

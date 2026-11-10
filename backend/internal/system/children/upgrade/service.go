@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -30,6 +29,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
@@ -802,7 +802,7 @@ func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	if manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
 		return r.EnvironmentID == environment.LocalEnvironmentID
 	}); manager >= 0 {
-		lines, replayErr := readUpgradeLog(selfcontainer.UpgradeLogDirectory, job.CreatedAt)
+		lines, replayErr := readUpgradeLog(ctx, selfcontainer.UpgradeLogDirectory, job.CreatedAt)
 		if replayErr != nil {
 			slog.WarnContext(ctx, "upgrade job: failed to replay manager upgrade log", "jobId", job.ID, "error", replayErr)
 		}
@@ -1385,7 +1385,7 @@ func (s *Service) StreamProgress(ctx context.Context, deliver func(types.Upgrade
 	history, live, active, unsubscribe := s.progress.subscribe()
 	defer unsubscribe()
 	if !active && len(history) == 0 {
-		lines, err := readUpgradeLog(selfcontainer.UpgradeLogDirectory, time.Now().Add(-upgradeJobManagerWatchTimeout))
+		lines, err := readUpgradeLog(ctx, selfcontainer.UpgradeLogDirectory, time.Now().Add(-upgradeJobManagerWatchTimeout))
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to replay upgrade log", "error", err)
 		}
@@ -1687,19 +1687,10 @@ func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time
 		return 0, err
 	}
 
-	root, err := os.OpenRoot(dataDir)
+	entries, err := acfs.Root{Path: dataDir}.List(ctx, "/")
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
-	if err != nil {
-		return 0, fmt.Errorf("open upgrade log directory: %w", err)
-	}
-	defer func() {
-		if closeErr := root.Close(); closeErr != nil {
-			slog.WarnContext(ctx, "Failed to close upgrade log directory", "error", closeErr)
-		}
-	}()
-	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
 		return 0, fmt.Errorf("read upgrade log directory: %w", err)
 	}
@@ -1711,23 +1702,12 @@ func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time
 		if cancellationErr := ctx.Err(); cancellationErr != nil {
 			return removed, errors.Join(append(failures, cancellationErr)...)
 		}
-		if !upgradeLogName.MatchString(entry.Name()) {
+		if !upgradeLogName.MatchString(entry.Name) || !os.FileMode(entry.UnixMode).IsRegular() || !time.Unix(0, entry.ModTimeUnixNano).Before(cutoff) {
 			continue
 		}
-		info, lstatErr := root.Lstat(entry.Name())
-		if errors.Is(lstatErr, os.ErrNotExist) {
-			continue
-		}
-		if lstatErr != nil {
-			failures = append(failures, fmt.Errorf("inspect upgrade log %s: %w", entry.Name(), lstatErr))
-			continue
-		}
-		if !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
-			continue
-		}
-		if removeErr := root.Remove(entry.Name()); removeErr != nil {
+		if removeErr := (acfs.Root{Path: dataDir}).Remove(ctx, entry.Path); removeErr != nil {
 			if !errors.Is(removeErr, os.ErrNotExist) {
-				failures = append(failures, fmt.Errorf("remove upgrade log %s: %w", entry.Name(), removeErr))
+				failures = append(failures, fmt.Errorf("remove upgrade log %s: %w", entry.Name, removeErr))
 			}
 			continue
 		}

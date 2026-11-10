@@ -29,6 +29,7 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.7.0
+	kit.getarcane.app/acfs v0.10.0
 	kit.getarcane.app/builds v0.5.1
 	kit.getarcane.app/docker v0.3.0
 )

@@ -30,6 +30,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/fs"
 	"kit.getarcane.app/fs/atomic"
@@ -85,7 +86,7 @@ func (m *MTLS) Server(ctx context.Context) (*tls.Config, error) {
 		return nil, nil
 	}
 	if m.CAFile == "" {
-		assetsDir, err := m.assetsDir(managerMTLSDirName)
+		assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +106,7 @@ func (m *MTLS) Server(ctx context.Context) (*tls.Config, error) {
 	}
 
 	caPool := x509.NewCertPool()
-	if err := appendCAFile(caPool, m.CAFile); err != nil {
+	if err := appendCAFile(ctx, caPool, m.CAFile); err != nil {
 		return nil, fmt.Errorf("failed to load agent mTLS CA file: %w", err)
 	}
 	// Agents enroll before owning a certificate, so even "required" mode verifies only given certificates.
@@ -116,28 +117,31 @@ func (m *MTLS) Server(ctx context.Context) (*tls.Config, error) {
 	}, nil
 }
 
-func (m *MTLS) CAPath() (string, error) {
+func (m *MTLS) CAPath(ctx context.Context) (string, error) {
 	if m.Mode == MTLSModeDisabled {
 		return "", errors.New("agent mTLS is disabled")
 	}
 
 	caPath := m.CAFile
 	if caPath == "" {
-		assetsDir, err := m.assetsDir(managerMTLSDirName)
+		assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 		if err != nil {
 			return "", fmt.Errorf("resolve agent mTLS CA path: %w", err)
 		}
 		caPath = filepath.Join(assetsDir, generatedMTLSCACertFileName)
 	}
-	// os rather than acfs: the assets dir may be configured anywhere on the host.
-	if _, statErr := os.Stat(caPath); statErr != nil {
+	caAbs, err := filepath.Abs(caPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve agent mTLS CA path: %w", err)
+	}
+	if _, statErr := (acfs.Host{}).Stat(ctx, caAbs, types.StatOptions{FollowFinal: true}); statErr != nil {
 		return "", fmt.Errorf("stat agent mTLS CA: %w", statErr)
 	}
 	return caPath, nil
 }
 
 func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*GeneratedMTLSAssets, error) {
-	if !m.UsesGeneratedCA() {
+	if !m.UsesGeneratedCA(ctx) {
 		return nil, nil
 	}
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(opts.EnvironmentID), "_")
@@ -145,7 +149,7 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 		return nil, errors.New("environment ID is required")
 	}
 
-	assetsDir, err := m.assetsDir(managerMTLSDirName)
+	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +257,7 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 }
 
 func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*MTLSEnrollment, error) {
-	assetsDir, err := m.assetsDir(managerMTLSDirName)
+	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +266,7 @@ func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*M
 		return nil, errors.New("environment ID is required")
 	}
 	markerPath := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName)
-	marker, readErr := os.ReadFile(markerPath)
+	marker, readErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join("/", generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName))
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read agent mTLS enrollment marker: %w", readErr)
 	}
@@ -294,11 +298,11 @@ func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*M
 	return &MTLSEnrollment{Assets: assets, Reenrolled: readErr == nil}, nil
 }
 
-func (m *MTLS) ClientCertificate(envID string) (*x509.Certificate, error) {
+func (m *MTLS) ClientCertificate(ctx context.Context, envID string) (*x509.Certificate, error) {
 	if m.Mode == MTLSModeDisabled {
 		return nil, errors.New("agent mTLS is disabled")
 	}
-	assetsDir, err := m.assetsDir(managerMTLSDirName)
+	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 	if err != nil {
 		return nil, err
 	}
@@ -306,8 +310,7 @@ func (m *MTLS) ClientCertificate(envID string) (*x509.Certificate, error) {
 	if safeEnvID == "" {
 		return nil, errors.New("environment ID is required")
 	}
-	// os rather than acfs: the assets dir may be configured anywhere on the host.
-	certPEM, err := os.ReadFile(filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSClientCertName))
+	certPEM, err := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join("/", generatedClientMTLSSubdir, safeEnvID, generatedMTLSClientCertName))
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +342,11 @@ func (m *MTLS) ManagerClient(ctx context.Context, opts ManagerClientOptions) (*h
 }
 
 func (m *MTLS) ResetClient(ctx context.Context) error {
-	assetsDir, err := m.assetsDir(agentMTLSDirName)
+	assetsDir, err := m.assetsDir(ctx, agentMTLSDirName)
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(assetsDir); errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := (acfs.Host{}).Stat(ctx, assetsDir, types.StatOptions{FollowFinal: true}); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
 	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
@@ -359,7 +362,7 @@ func (m *MTLS) enrollClient(ctx context.Context, agentToken string) error {
 		return nil
 	}
 
-	assetsDir, err := m.assetsDir(agentMTLSDirName)
+	assetsDir, err := m.assetsDir(ctx, agentMTLSDirName)
 	if err != nil {
 		return err
 	}
@@ -371,7 +374,7 @@ func (m *MTLS) enrollClient(ctx context.Context, agentToken string) error {
 
 	_, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore)
 	if reason != "" {
-		if fileExists(certPath) {
+		if fileExists(ctx, certPath) {
 			slog.WarnContext(ctx, "Existing agent mTLS assets need renewal; enrolling new assets", "reason", reason, "certPath", certPath)
 		}
 		if enrollErr := m.downloadClientAssets(ctx, agentToken, assetsDir, certPath, keyPath); enrollErr != nil {
@@ -388,7 +391,7 @@ func (m *MTLS) enrollClient(ctx context.Context, agentToken string) error {
 		}
 	}
 
-	if reason != "" || !fileExists(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
+	if reason != "" || !fileExists(ctx, filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
 		marker := []byte(time.Now().UTC().Format(time.RFC3339) + "\n")
 		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+generatedMTLSEnrolledName, marker, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 			return fmt.Errorf("failed to write agent mTLS enrollment marker: %w", writeErr)
@@ -397,7 +400,7 @@ func (m *MTLS) enrollClient(ctx context.Context, agentToken string) error {
 	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 	m.MTLSConfig = MTLSConfig{
 		Mode:       m.Mode,
-		CAFile:     cmp.Or(m.CAFile, kit.Ternary(fileExists(caPath), caPath, "")),
+		CAFile:     cmp.Or(m.CAFile, kit.Ternary(fileExists(ctx, caPath), caPath, "")),
 		CertFile:   certPath,
 		KeyFile:    keyPath,
 		ServerName: m.ServerName,
@@ -457,8 +460,7 @@ func (m *MTLS) downloadClientAssets(ctx context.Context, agentToken, assetsDir, 
 		return errors.New("agent mTLS enrollment response did not include any files")
 	}
 
-	// The assets dir is the acfs confinement root for the writes below, so os creates it.
-	if mkdirErr := os.MkdirAll(assetsDir, fs.DirPerm); mkdirErr != nil {
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, assetsDir, fs.DirPerm); mkdirErr != nil {
 		return fmt.Errorf("failed to create agent mTLS asset dir: %w", mkdirErr)
 	}
 	for _, file := range enrollResp.Files {
@@ -485,7 +487,7 @@ func (m *MTLS) clientTLS(ctx context.Context) (*tls.Config, error) {
 			slog.WarnContext(ctx, "Failed to load system certificate pool; falling back to configured agent mTLS CA only", "error", err)
 			pool = x509.NewCertPool()
 		}
-		if appendErr := appendCAFile(pool, m.CAFile); appendErr != nil {
+		if appendErr := appendCAFile(ctx, pool, m.CAFile); appendErr != nil {
 			return nil, fmt.Errorf("failed to load agent mTLS CA file: %w", appendErr)
 		}
 		tlsConfig.RootCAs = pool
@@ -510,41 +512,40 @@ func (m *MTLS) clientTLS(ctx context.Context) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func (m *MTLS) UsesGeneratedCA() bool {
+func (m *MTLS) UsesGeneratedCA(ctx context.Context) bool {
 	if m.Mode == MTLSModeDisabled {
 		return false
 	}
 	if m.CAFile == "" {
 		return true
 	}
-	assetsDir, err := m.assetsDir(managerMTLSDirName)
-	return err == nil && filepath.Clean(m.CAFile) == filepath.Join(assetsDir, generatedMTLSCACertFileName)
+	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
+	caFile, absErr := filepath.Abs(m.CAFile)
+	return err == nil && absErr == nil && caFile == filepath.Join(assetsDir, generatedMTLSCACertFileName)
 }
 
-func (m *MTLS) assetsDir(name string) (string, error) {
-	if m.AssetsDir != "" {
-		return m.AssetsDir, nil
-	}
-
+func (m *MTLS) assetsDir(ctx context.Context, name string) (string, error) {
 	baseDir := filepath.Join("data", name)
-	// Probes the fixed system path /app/data, which is not under any acfs root.
-	if _, err := os.Stat("/app/data"); err == nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, "/app/data", types.StatOptions{FollowFinal: true}); m.AssetsDir == "" && statErr == nil {
 		baseDir = "/app/data/" + name
 	}
-	resolved, err := filepath.Abs(baseDir)
+	resolved, err := filepath.Abs(cmp.Or(m.AssetsDir, baseDir))
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve agent mTLS assets dir: %w", err)
 	}
 	return resolved, nil
 }
 
-// appendCAFile reads with os rather than acfs: the path may be configured anywhere on the host.
-func appendCAFile(pool *x509.CertPool, caFile string) error {
+func appendCAFile(ctx context.Context, pool *x509.CertPool, caFile string) error {
 	caFile = strings.TrimSpace(caFile)
 	if caFile == "" {
 		return errors.New("CA file is required")
 	}
-	pemBytes, err := os.ReadFile(caFile)
+	caAbs, err := filepath.Abs(caFile)
+	if err != nil {
+		return err
+	}
+	pemBytes, err := acfs.Host{}.ReadFile(ctx, caAbs)
 	if err != nil {
 		return err
 	}
@@ -566,8 +567,7 @@ func certificateHasURISAN(cert *x509.Certificate, expected *url.URL) bool {
 }
 
 func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bool, error) {
-	// The assets dir is the acfs confinement root for callers, so os creates it.
-	if err := os.MkdirAll(assetsDir, fs.DirPerm); err != nil {
+	if err := (acfs.Host{}).MkdirAll(ctx, assetsDir, fs.DirPerm); err != nil {
 		return tls.Certificate{}, false, fmt.Errorf("failed to create agent mTLS assets dir: %w", err)
 	}
 	unlock, err := lockAgentMTLSPath(ctx, assetsDir, ".ca.lock")
@@ -578,9 +578,8 @@ func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bo
 
 	certPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSCAKeyFileName)
-	// os rather than acfs: the assets dir may be configured anywhere on the host.
-	certPEM, certErr := os.ReadFile(certPath)
-	rawKey, keyErr := os.ReadFile(keyPath)
+	certPEM, certErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, "/"+generatedMTLSCACertFileName)
+	rawKey, keyErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, "/"+generatedMTLSCAKeyFileName)
 	for _, readErr := range []error{certErr, keyErr} {
 		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return tls.Certificate{}, false, fmt.Errorf("failed to read agent mTLS CA: %w", readErr)
@@ -682,20 +681,25 @@ func lockAgentMTLSPath(ctx context.Context, dir, lockName string) (func(), error
 	deadline := time.Now().Add(managerCALockTimeout)
 	for {
 		if unlock, held := managerCALocks.TryLock(lockPath); held {
-			file, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			file, openErr := acfs.Host{}.OpenFile(ctx, lockPath, acfs.OpenOptions{
+				Mode:      0o600,
+				Write:     true,
+				Create:    true,
+				Exclusive: true,
+			})
 			if openErr == nil {
 				_, _ = fmt.Fprintf(file, "%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
 				_ = file.Close()
 				return func() {
-					_ = os.Remove(lockPath)
+					_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), lockPath)
 					unlock()
 				}, nil
 			}
 			expired := time.Now().After(deadline)
-			removedStale := os.IsExist(openErr) && expired && removeStaleLock(lockPath)
+			removedStale := errors.Is(openErr, os.ErrExist) && expired && removeStaleLock(ctx, lockPath)
 			unlock()
 			switch {
-			case !os.IsExist(openErr):
+			case !errors.Is(openErr, os.ErrExist):
 				return nil, fmt.Errorf("failed to acquire agent mTLS CA lock: %w", openErr)
 			case removedStale:
 				// Retry at once with a fresh deadline now that the stale lock is gone.
@@ -714,8 +718,8 @@ func lockAgentMTLSPath(ctx context.Context, dir, lockName string) (func(), error
 	}
 }
 
-func removeStaleLock(lockPath string) bool {
-	content, err := os.ReadFile(lockPath)
+func removeStaleLock(ctx context.Context, lockPath string) bool {
+	content, err := acfs.Host{}.ReadFile(ctx, lockPath)
 	if err != nil {
 		return false
 	}
@@ -743,11 +747,11 @@ func removeStaleLock(lockPath string) bool {
 		}
 	}
 
-	removeErr := os.Remove(lockPath)
+	removeErr := acfs.Host{}.Remove(ctx, lockPath)
 	return removeErr == nil || errors.Is(removeErr, os.ErrNotExist)
 }
 
-func fileExists(localPath string) bool {
-	info, err := os.Stat(localPath)
-	return err == nil && !info.IsDir()
+func fileExists(ctx context.Context, localPath string) bool {
+	entry, err := acfs.Host{}.Stat(ctx, localPath, types.StatOptions{FollowFinal: true})
+	return err == nil && !entry.IsDirectory
 }

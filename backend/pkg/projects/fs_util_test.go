@@ -41,17 +41,17 @@ func TestGetProjectsDirectory_ResolvesRelativePathFromBackendWorkingDirectory(t 
 
 func TestResolveConfiguredContainerDirectory(t *testing.T) {
 	t.Run("uses default when empty", func(t *testing.T) {
-		got := ResolveConfiguredContainerDirectory("", "/app/data/swarm/sources")
+		got := ResolveConfiguredContainerDirectory(t.Context(), "", "/app/data/swarm/sources")
 		assert.Equal(t, "/app/data/swarm/sources", got)
 	})
 
 	t.Run("preserves plain absolute path", func(t *testing.T) {
-		got := ResolveConfiguredContainerDirectory("/app/data/custom/stacks", "/app/data/swarm/sources")
+		got := ResolveConfiguredContainerDirectory(t.Context(), "/app/data/custom/stacks", "/app/data/swarm/sources")
 		assert.Equal(t, "/app/data/custom/stacks", got)
 	})
 
 	t.Run("extracts container path from bind mapping", func(t *testing.T) {
-		got := ResolveConfiguredContainerDirectory("/app/data/swarm/sources:/srv/arcane/swarm", "/app/data/swarm/sources")
+		got := ResolveConfiguredContainerDirectory(t.Context(), "/app/data/swarm/sources:/srv/arcane/swarm", "/app/data/swarm/sources")
 		assert.Equal(t, "/app/data/swarm/sources", got)
 	})
 
@@ -59,7 +59,7 @@ func TestResolveConfiguredContainerDirectory(t *testing.T) {
 		cwd := t.TempDir()
 		t.Chdir(cwd)
 
-		got := ResolveConfiguredContainerDirectory("data/swarm/sources", "/app/data/swarm/sources")
+		got := ResolveConfiguredContainerDirectory(t.Context(), "data/swarm/sources", "/app/data/swarm/sources")
 		assert.Equal(t, filepath.Join(cwd, "data", "swarm", "sources"), got)
 	})
 }

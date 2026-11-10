@@ -99,7 +99,7 @@ func TestDetectComposeOverrideFile(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
-		assert.Empty(t, DetectComposeOverrideFile(dir))
+		assert.Empty(t, DetectComposeOverrideFile(t.Context(), dir))
 	})
 
 	t.Run("detects override file", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestDetectComposeOverrideFile(t *testing.T) {
 		dir := t.TempDir()
 		overridePath := filepath.Join(dir, "compose.override.yaml")
 		require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
-		assert.Equal(t, overridePath, DetectComposeOverrideFile(dir))
+		assert.Equal(t, overridePath, DetectComposeOverrideFile(t.Context(), dir))
 	})
 
 	t.Run("prefers highest-preference override when multiple present", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestDetectComposeOverrideFile(t *testing.T) {
 		preferred := filepath.Join(dir, "compose.override.yml")
 		require.NoError(t, os.WriteFile(preferred, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.override.yaml"), []byte("services:\n  app:\n    image: alpine:3\n"), 0o600))
-		assert.Equal(t, preferred, DetectComposeOverrideFile(dir))
+		assert.Equal(t, preferred, DetectComposeOverrideFile(t.Context(), dir))
 	})
 }
 

@@ -727,12 +727,11 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 			return "", err
 		}
 		if composeFileName := strings.TrimSpace(filepath.Base(composePath)); composeFileName != "" && composeFileName != "." {
-			// os.Stat rather than acfs: an imported project or a symlinked compose file may resolve outside the projects directory.
-			info, statErr := os.Stat(filepath.Join(proj.Path, composeFileName))
-			if statErr == nil && !info.IsDir() {
+			entry, statErr := (acfs.Host{}).Stat(ctx, filepath.Join(proj.Path, composeFileName), acfstypes.StatOptions{FollowFinal: true})
+			if statErr == nil && !entry.IsDirectory {
 				return filepath.Join(proj.Path, composeFileName), nil
 			}
-			if statErr != nil && !os.IsNotExist(statErr) {
+			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 				return "", fmt.Errorf("failed to inspect GitOps compose file %s: %w", filepath.Join(proj.Path, composeFileName), statErr)
 			}
 		}
@@ -1426,7 +1425,7 @@ func (s *ProjectService) CreateProject(
 		}
 		envContent = kit.Ternary(strings.TrimSpace(kit.FromPtr(envContent)) == "", nil, envContent)
 		if envContent != nil {
-			currentEnv, readEnvErr := os.ReadFile(filepath.Join(projectPath, projects.EffectiveEnvFileName))
+			currentEnv, readEnvErr := acfs.Host{}.ReadFile(ctx, filepath.Join(projectPath, projects.EffectiveEnvFileName))
 			if !errors.Is(readEnvErr, os.ErrNotExist) && (readEnvErr != nil || string(currentEnv) != *envContent) {
 				return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf(".env already exists in %q with different content; clear the environment content to keep it", folderName))
 			}
@@ -1852,7 +1851,7 @@ func (s *ProjectService) projectContent(ctx context.Context, projectID string) (
 		return "", "", "", err
 	}
 
-	return composeContent, envContent, projects.ReadComposeOverrideContent(proj.Path), nil
+	return composeContent, envContent, projects.ReadComposeOverrideContent(ctx, proj.Path), nil
 }
 
 func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error) {
@@ -1886,11 +1885,11 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		if !opts.IncludeComposeContent {
 			return "", ""
 		}
-		return projectdetails.ResolveDetailsOverride(proj.Path, overrideContent, kit.Ternary(selErr == nil, composeSelection, nil))
+		return projectdetails.ResolveDetailsOverride(ctx, proj.Path, overrideContent, kit.Ternary(selErr == nil, composeSelection, nil))
 	}()
-	envContent, envFileExists, err := kit.Ternary(opts.IncludeEnvState, projectEnvDetails, func(string) (string, bool, error) {
+	envContent, envFileExists, err := kit.Ternary(opts.IncludeEnvState, projectEnvDetails, func(context.Context, string) (string, bool, error) {
 		return "", false, nil
-	})(proj.Path)
+	})(ctx, proj.Path)
 	if err != nil {
 		return types.Project{}, err
 	}
@@ -2480,7 +2479,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 	}
 
 	fingerprint := fmt.Sprintf("%q|%q|%t", composeFile, env.projectsDirectory, env.autoInjectEnv)
-	if cached, ok := s.metaCache.Get(p.ID, fingerprint); ok && p.ID != "" {
+	if cached, ok := s.metaCache.Get(ctx, p.ID, fingerprint); ok && p.ID != "" {
 		return cached
 	}
 
@@ -2494,7 +2493,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 	if p.ID == "" {
 		return meta
 	}
-	if setErr := s.metaCache.Set(p.ID, fingerprint, p.Path, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles, loadedAt, meta); setErr != nil {
+	if setErr := s.metaCache.Set(ctx, p.ID, fingerprint, p.Path, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles, loadedAt, meta); setErr != nil {
 		slog.DebugContext(ctx, "failed to cache Compose metadata", "projectId", p.ID, "error", setErr)
 	}
 
@@ -2628,7 +2627,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 
 	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, scanMaxDepth, s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"))
 	if discoveryErr != nil {
-		if os.IsNotExist(discoveryErr) {
+		if errors.Is(discoveryErr, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("Failed to discover projects in %q: %w", projectsDir, discoveryErr) //nolint:staticcheck // Preserve the existing error message.
@@ -2679,9 +2678,9 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 			pendingDeletions = append(pendingDeletions, projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"})
 			continue
 		}
-		validDir, statErr := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
+		validDir, statErr := projects.IsProjectDirectoryPath(ctx, p.Path, followProjectSymlinks)
 		switch {
-		case os.IsNotExist(statErr):
+		case errors.Is(statErr, os.ErrNotExist):
 			pendingDeletions = append(pendingDeletions, projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"})
 			continue
 		case statErr != nil:
@@ -3006,16 +3005,12 @@ func (s *ProjectService) applyProjectUpdate(
 			if logicalErr != nil {
 				return fmt.Errorf("failed to resolve project directory rename target: %w", logicalErr)
 			}
-			// Crossing roots cannot be a confined rename, so that move checks cancellation itself.
 			if renameErr := func() error {
 				currentLogical, currentErr := acfs.Root{Path: projectsDirectory}.LogicalPath(filepath.Clean(proj.Path))
 				if currentErr == nil {
 					return acfs.Root{Path: projectsDirectory}.Rename(ctx, currentLogical, targetLogical)
 				}
-				if cancellationErr := ctx.Err(); cancellationErr != nil {
-					return cancellationErr
-				}
-				return os.Rename(filepath.Clean(proj.Path), targetPath)
+				return acfs.Host{}.Rename(ctx, filepath.Clean(proj.Path), targetPath)
 			}(); renameErr != nil {
 				return fmt.Errorf("failed to rename project directory: %w", renameErr)
 			}
@@ -3092,7 +3087,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	}
 	beforeCompose, beforeEnv, beforeOverride, beforeErr := s.projectContent(ctx, proj.ID)
 
-	envUpdate, err := projectsync.PrepareGitSyncEnvUpdate(proj.Path, gitEnvContent)
+	envUpdate, err := projectsync.PrepareGitSyncEnvUpdate(ctx, proj.Path, gitEnvContent)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to resolve git env state: %w", err)
 	}

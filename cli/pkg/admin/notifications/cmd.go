@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -145,7 +147,11 @@ func newSettingsSetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var req types.NotificationSettings
 			if opts.file != "" {
-				data, err := os.ReadFile(opts.file)
+				filePath, err := filepath.Abs(opts.file)
+				if err != nil {
+					return fmt.Errorf("failed to read settings file: %w", err)
+				}
+				data, err := acfs.Host{Special: true}.ReadFile(cmd.Context(), filePath)
 				if err != nil {
 					return fmt.Errorf("failed to read settings file: %w", err)
 				}

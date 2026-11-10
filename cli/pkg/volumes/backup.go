@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
-	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -484,7 +485,16 @@ func newBackupsDownloadCmd() *cobra.Command {
 				}
 			}
 
-			file, openErr := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+			outputPath, openErr := filepath.Abs(outputFile)
+			if openErr != nil {
+				return fmt.Errorf("failed to create file %s: %w", outputFile, openErr)
+			}
+			file, openErr := acfs.Host{Special: true}.OpenFile(cmd.Context(), outputPath, acfs.OpenOptions{
+				Mode:     0o600,
+				Write:    true,
+				Create:   true,
+				Truncate: true,
+			})
 			if openErr != nil {
 				return fmt.Errorf("failed to create file %s: %w", outputFile, openErr)
 			}
@@ -638,7 +648,11 @@ func renderVolumePolicies(name string, data types.VolumeBackupPolicyCollection) 
 func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opts backupPolicyOptions) (types.UpdateVolumeBackupPolicies, error) {
 	var payload types.UpdateVolumeBackupPolicies
 	if opts.policyFile != "" {
-		raw, readFileErr := os.ReadFile(opts.policyFile)
+		policyPath, readFileErr := filepath.Abs(opts.policyFile)
+		if readFileErr != nil {
+			return payload, fmt.Errorf("failed to read policy file: %w", readFileErr)
+		}
+		raw, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), policyPath)
 		if readFileErr != nil {
 			return payload, fmt.Errorf("failed to read policy file: %w", readFileErr)
 		}

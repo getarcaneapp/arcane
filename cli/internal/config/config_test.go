@@ -45,7 +45,7 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 			"expected config file to be missing, got err=%v", err)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(t.Context())
 
 	require.NoError(t, err,
 		"Load() failed: %v", err)
@@ -59,7 +59,7 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 		"LogLevel=%q, want %q", cfg.LogLevel, "info")
 
 	cfg.ServerURL = "https://mutated.invalid"
-	cfg2, err := Load()
+	cfg2, err := Load(t.Context())
 
 	require.NoError(t, err,
 		"Load() second call failed: %v", err)
@@ -125,7 +125,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 			cfg.APIKey = "changed after save"
 			cfg.SetResourceLimit("images", 99)
-			cached, cacheErr := Load()
+			cached, cacheErr := Load(t.Context())
 			require.NoError(t, cacheErr)
 			require.True(t, cached.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", cached.APIKey)
@@ -134,7 +134,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.NotContains(t, cached.Pagination.Resources, "GitOps")
 			require.NotContains(t, cached.Pagination.Resources, "volumes")
 			configCache.Purge()
-			loaded, err := Load()
+			loaded, err := Load(t.Context())
 
 			require.NoError(t, err,
 				"Load() failed: %v", err)
@@ -161,7 +161,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Equal(t, "audience_test", loaded.FederatedAudience)
 			require.Equal(t, 8, loaded.LimitFor("gitops-syncs"))
 			loaded.SetResourceLimit("images", 101)
-			reloaded, reloadErr := Load()
+			reloaded, reloadErr := Load(t.Context())
 			require.NoError(t, reloadErr)
 			require.Equal(t, 17, reloaded.LimitFor("images"))
 
@@ -202,7 +202,7 @@ pagination:
 			"failed to write config fixture: %v", err)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(t.Context())
 
 	require.NoError(t, err,
 		"Load() failed: %v", err)
@@ -288,12 +288,12 @@ pagination:
 		t.Run(tc.name, func(t *testing.T) {
 			fixturePath := setTempConfigPath(t)
 			require.NoError(t, os.WriteFile(fixturePath, []byte(tc.content), 0o600))
-			loaded, loadErr := Load()
+			loaded, loadErr := Load(t.Context())
 			if tc.errorText != "" {
 				require.ErrorContains(t, loadErr, tc.errorText)
 				require.Nil(t, loaded)
 				require.NoError(t, os.WriteFile(fixturePath, []byte("server_url: https://recovered.test\n"), 0o600))
-				recovered, recoveryErr := Load()
+				recovered, recoveryErr := Load(t.Context())
 				require.NoError(t, recoveryErr)
 				require.Equal(t, "https://recovered.test", recovered.ServerURL)
 				return
@@ -312,10 +312,10 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	path := setTempConfigPath(t)
 	path = filepath.Join(filepath.Dir(path), "template.json")
 	require.NoError(t, SetConfigPath(path))
-	_, initialErr := Load()
+	_, initialErr := Load(t.Context())
 	require.NoError(t, initialErr)
 
-	created, err := InitDefaultFile()
+	created, err := InitDefaultFile(t.Context())
 
 	require.NoError(t, err,
 		"InitDefaultFile() failed: %v", err)
@@ -359,7 +359,7 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 			"expected generated config to contain resource key %q:\n%s", resource, text)
 	}
 
-	cfg, err := Load()
+	cfg, err := Load(t.Context())
 
 	require.NoError(t, err,
 		"Load() after init failed: %v", err)
@@ -385,7 +385,7 @@ func TestInitDefaultFileDoesNotOverwriteExistingFile(t *testing.T) {
 			"failed to write fixture file: %v", err)
 	}
 
-	created, err := InitDefaultFile()
+	created, err := InitDefaultFile(t.Context())
 
 	require.NoError(t, err,
 		"InitDefaultFile() failed: %v", err)
@@ -393,7 +393,7 @@ func TestInitDefaultFileDoesNotOverwriteExistingFile(t *testing.T) {
 	require.False(t, created,
 		"InitDefaultFile() created = true, want false")
 	// The writer must also refuse an existing file after the initial path check.
-	require.ErrorIs(t, writeConfig(path, DefaultConfig(), true), os.ErrExist)
+	require.ErrorIs(t, writeConfig(t.Context(), path, DefaultConfig(), true), os.ErrExist)
 	entries, readDirErr := os.ReadDir(filepath.Dir(path))
 	require.NoError(t, readDirErr)
 	require.Len(t, entries, 1)
@@ -416,7 +416,7 @@ func TestBackupFileMovesConfig(t *testing.T) {
 			"failed to write config fixture: %v", err)
 	}
 
-	backupPath, moved, err := BackupFile()
+	backupPath, moved, err := BackupFile(t.Context())
 
 	require.NoError(t, err,
 		"BackupFile() failed: %v", err)
@@ -450,7 +450,7 @@ func TestBackupFileNoConfig(t *testing.T) {
 			"expected missing config before backup, stat err=%v", err)
 	}
 
-	backupPath, moved, err := BackupFile()
+	backupPath, moved, err := BackupFile(t.Context())
 
 	require.NoError(t, err,
 		"BackupFile() failed: %v", err)
@@ -478,7 +478,7 @@ func TestBackupFileRotatesExistingBak(t *testing.T) {
 			"failed to write existing backup: %v", err)
 	}
 
-	newBackupPath, moved, err := BackupFile()
+	newBackupPath, moved, err := BackupFile(t.Context())
 
 	require.NoError(t, err,
 		"BackupFile() failed: %v", err)
@@ -510,14 +510,14 @@ func TestAuthTokens(t *testing.T) {
 	path := setTempConfigPath(t)
 	require.NoError(t, os.WriteFile(path, []byte("server_url: https://a.test\n"), 0o600))
 
-	session, err := Load()
+	session, err := Load(t.Context())
 	require.NoError(t, err)
 	session.JWTToken, session.RefreshToken = "a_jwt", "a_refresh"
 	require.NoError(t, SaveTokens(t.Context(), session))
 
 	session.LogLevel = "debug"
 	require.NoError(t, Save(t.Context(), session))
-	loadedSession, err := Load()
+	loadedSession, err := Load(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "a_jwt", loadedSession.JWTToken)
 	require.Equal(t, "a_refresh", loadedSession.RefreshToken)
@@ -544,11 +544,11 @@ func TestAuthTokens(t *testing.T) {
 	apiKeyConfig := &types.Config{ServerURL: "https://a.test", APIKey: "arc_key"}
 	require.NoError(t, Save(t.Context(), apiKeyConfig))
 	configCache.Purge()
-	loaded, err := Load()
+	loaded, err := Load(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "arc_key", loaded.APIKey)
 	require.Empty(t, loaded.JWTToken)
-	auth, err := loadAuth()
+	auth, err := loadAuth(t.Context())
 	require.NoError(t, err)
 	require.Len(t, auth, 2)
 
@@ -560,11 +560,11 @@ func TestAuthTokens(t *testing.T) {
 	require.NoError(t, SetConfigPath(waitingPath))
 	stale.LogLevel = "warn"
 	require.NoError(t, Save(t.Context(), stale))
-	auth, err = loadAuth()
+	auth, err = loadAuth(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "refreshed_jwt", auth["https://a.test"].AccessToken)
 	require.Equal(t, "refreshed_refresh", auth["https://a.test"].RefreshToken)
-	loaded, err = Load()
+	loaded, err = Load(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "refreshed_jwt", loaded.JWTToken)
 	require.Equal(t, "warn", loaded.LogLevel)
@@ -574,17 +574,17 @@ func TestAuthTokens(t *testing.T) {
 	require.Equal(t, "arc_key", apiKeyConfig.APIKey)
 	require.NoError(t, SetConfigPath(waitingPath))
 	require.NoError(t, Save(t.Context(), stale))
-	loaded, err = Load()
+	loaded, err = Load(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, loaded.JWTToken)
 	require.Empty(t, loaded.RefreshToken)
-	auth, err = loadAuth()
+	auth, err = loadAuth(t.Context())
 	require.NoError(t, err)
 	require.NotContains(t, auth, "https://a.test")
 	require.Equal(t, "b_jwt", auth["https://b.test"].AccessToken)
 	require.NoError(t, os.WriteFile(path+".session", []byte("server_url: https://a.test\n"), 0o600))
 	require.NoError(t, SetConfigPath(path+".session"))
-	loaded, err = Load()
+	loaded, err = Load(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, loaded.JWTToken)
 	require.Empty(t, loaded.RefreshToken)

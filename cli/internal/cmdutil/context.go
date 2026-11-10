@@ -26,7 +26,7 @@ func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if app, ok := runtime.From(cmd.Context()); ok {
 		return app.Client()
 	}
-	return client.NewFromConfig()
+	return client.NewFromConfig(cmd.Context())
 }
 
 func UnauthClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
@@ -36,7 +36,7 @@ func UnauthClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if app, ok := runtime.From(cmd.Context()); ok {
 		return app.UnauthClient()
 	}
-	return client.NewFromConfigUnauthenticated()
+	return client.NewFromConfigUnauthenticated(cmd.Context())
 }
 
 // Runtime JSON mode includes --output json, even when --json is explicitly false.

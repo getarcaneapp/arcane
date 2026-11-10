@@ -317,7 +317,7 @@ func TestReadProjectEnvState(t *testing.T) {
 		projectDir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(projectDir, EffectiveEnvFileName), []byte("FOO=bar\n"), fs.FilePerm))
 
-		state, err := ReadProjectEnvState(projectDir)
+		state, err := ReadProjectEnvState(t.Context(), projectDir)
 		require.NoError(t, err)
 		assert.Equal(t, ProjectEnvModeDirect, state.Mode)
 		assert.Equal(t, EffectiveEnvFileName, state.EditableFileName)
@@ -332,7 +332,7 @@ func TestReadProjectEnvState(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(projectDir, GitSourceEnvFileName), []byte("A=1\n"), fs.FilePerm))
 		require.NoError(t, os.WriteFile(filepath.Join(projectDir, OverrideEnvFileName), []byte("B=2\n"), fs.FilePerm))
 
-		state, err := ReadProjectEnvState(projectDir)
+		state, err := ReadProjectEnvState(t.Context(), projectDir)
 		require.NoError(t, err)
 		assert.Equal(t, ProjectEnvModeOverride, state.Mode)
 		assert.Equal(t, OverrideEnvFileName, state.EditableFileName)
@@ -364,7 +364,7 @@ func TestParseComposeEnvOptions(t *testing.T) {
 			"COMPOSE_PARALLEL_LIMIT": "4",
 		}
 
-		opts, err := ParseComposeEnvOptions(dir, env)
+		opts, err := ParseComposeEnvOptions(t.Context(), dir, env)
 		require.NoError(t, err)
 		assert.Equal(t, []string{filepath.Join(dir, "base.yml"), filepath.Join(dir, "sub", "extra.yml")}, opts.ConfigFiles)
 		assert.Equal(t, []string{"frontend", "debug"}, opts.Profiles)
@@ -376,7 +376,7 @@ func TestParseComposeEnvOptions(t *testing.T) {
 
 	t.Run("invalid scalars are ignored", func(t *testing.T) {
 		t.Parallel()
-		opts, err := ParseComposeEnvOptions(dir, EnvMap{
+		opts, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{
 			"COMPOSE_REMOVE_ORPHANS": "nope",
 			"COMPOSE_PARALLEL_LIMIT": "-3",
 		})
@@ -387,39 +387,39 @@ func TestParseComposeEnvOptions(t *testing.T) {
 
 	t.Run("COMPOSE_ENV_FILES resolved in order, traversal rejected", func(t *testing.T) {
 		t.Parallel()
-		opts, err := ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_ENV_FILES": "sub/extra.env, .env.local"})
+		opts, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_ENV_FILES": "sub/extra.env, .env.local"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{filepath.Join(dir, "sub", "extra.env"), filepath.Join(dir, ".env.local")}, opts.EnvFiles)
 
-		_, err = ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_ENV_FILES": "../outside.env"})
+		_, err = ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_ENV_FILES": "../outside.env"})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrComposeFileEnvInvalid)
 	})
 
 	t.Run("absolute entry rejected", func(t *testing.T) {
 		t.Parallel()
-		_, err := ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_FILE": filepath.Join(dir, "base.yml")})
+		_, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_FILE": filepath.Join(dir, "base.yml")})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrComposeFileEnvInvalid)
 	})
 
 	t.Run("escaping entry rejected", func(t *testing.T) {
 		t.Parallel()
-		_, err := ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_FILE": "../base.yml"})
+		_, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_FILE": "../base.yml"})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrComposeFileEnvInvalid)
 	})
 
 	t.Run("non-root first entry rejected", func(t *testing.T) {
 		t.Parallel()
-		_, err := ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_FILE": "sub/extra.yml:base.yml"})
+		_, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_FILE": "sub/extra.yml:base.yml"})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrComposeFileEnvInvalid)
 	})
 
 	t.Run("missing entry rejected", func(t *testing.T) {
 		t.Parallel()
-		_, err := ParseComposeEnvOptions(dir, EnvMap{"COMPOSE_FILE": "base.yml:sub/missing.yml"})
+		_, err := ParseComposeEnvOptions(t.Context(), dir, EnvMap{"COMPOSE_FILE": "base.yml:sub/missing.yml"})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrComposeFileEnvInvalid)
 	})

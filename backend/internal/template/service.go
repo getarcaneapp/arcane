@@ -352,7 +352,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, req typ
 				return common.Classify(common.ErrValidation, errors.New("the name and description of a template from the templates directory cannot be changed"))
 			}
 			var writeErr error
-			restoreFiles, writeErr = writeImportedTemplateFiles(filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty())
+			restoreFiles, writeErr = writeImportedTemplateFiles(ctx, filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty())
 			if writeErr != nil {
 				return writeErr
 			}
@@ -428,11 +428,11 @@ func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *Compo
 }
 
 // restore puts back every file it changed and is set even when err is.
-func writeImportedTemplateFiles(folderPath, composePath, content, envContent string) (restore func() error, err error) {
+func writeImportedTemplateFiles(ctx context.Context, folderPath, composePath, content, envContent string) (restore func() error, err error) {
 	envPath := filepath.Join(folderPath, ".env.example")
-	if _, statErr := os.Stat(envPath); statErr != nil {
+	if _, statErr := (acfs.Host{}).Stat(ctx, envPath, acfstypes.StatOptions{FollowFinal: true}); statErr != nil {
 		dotEnvPath := filepath.Join(folderPath, ".env")
-		if _, dotEnvErr := os.Stat(dotEnvPath); dotEnvErr == nil {
+		if _, dotEnvErr := (acfs.Host{}).Stat(ctx, dotEnvPath, acfstypes.StatOptions{FollowFinal: true}); dotEnvErr == nil {
 			envPath = dotEnvPath
 		} else if strings.TrimSpace(envContent) == "" {
 			envPath = ""
@@ -444,9 +444,9 @@ func writeImportedTemplateFiles(folderPath, composePath, content, envContent str
 		var errs []error
 		for _, prev := range slices.Backward(written) {
 			if prev.existed {
-				errs = append(errs, projects.WriteFileWithPerm(prev.path, prev.content, prev.perm))
+				errs = append(errs, projects.WriteFileWithPerm(context.WithoutCancel(ctx), prev.path, prev.content, prev.perm))
 			} else {
-				errs = append(errs, os.Remove(prev.path))
+				errs = append(errs, (acfs.Host{}).Remove(context.WithoutCancel(ctx), prev.path))
 			}
 		}
 		return errors.Join(errs...)
@@ -461,22 +461,23 @@ func writeImportedTemplateFiles(folderPath, composePath, content, envContent str
 			continue
 		}
 		prev := templateFileSnapshot{path: file.path, perm: fs.FilePerm}
-		info, statErr := os.Stat(file.path)
+		entry, statErr := (acfs.Host{}).Stat(ctx, file.path, acfstypes.StatOptions{FollowFinal: true})
 		switch {
 		case statErr == nil:
-			target, resolveErr := filepath.EvalSymlinks(file.path)
-			if resolveErr != nil {
-				return restore, fmt.Errorf("failed to resolve template file: %w", resolveErr)
-			}
-			data, readErr := os.ReadFile(target)
+			data, readErr := acfs.Host{}.ReadFile(ctx, entry.Path)
 			if readErr != nil {
 				return restore, fmt.Errorf("failed to read template file: %w", readErr)
 			}
-			prev = templateFileSnapshot{path: target, content: string(data), perm: info.Mode().Perm(), existed: true}
+			prev = templateFileSnapshot{
+				path:    entry.Path,
+				content: string(data),
+				perm:    os.FileMode(entry.UnixMode).Perm(),
+				existed: true,
+			}
 		case !errors.Is(statErr, os.ErrNotExist):
 			return restore, fmt.Errorf("failed to stat template file: %w", statErr)
 		}
-		if writeErr := projects.WriteFileWithPerm(prev.path, file.content, prev.perm); writeErr != nil {
+		if writeErr := projects.WriteFileWithPerm(ctx, prev.path, file.content, prev.perm); writeErr != nil {
 			return restore, writeErr
 		}
 		written = append(written, prev)
@@ -980,7 +981,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 
 	var resultTemplate *ComposeTemplate
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		slug, existing, targetErr := resolveDownloadTarget(tx, templatesDir, base, strings.TrimSpace(kit.FromPtr(kit.FromPtr(remoteTemplate.Metadata).RemoteURL)))
+		slug, existing, targetErr := resolveDownloadTarget(ctx, tx, templatesDir, base, strings.TrimSpace(kit.FromPtr(kit.FromPtr(remoteTemplate.Metadata).RemoteURL)))
 		if targetErr != nil {
 			return targetErr
 		}
@@ -990,7 +991,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 			return ensureErr
 		}
 
-		envPtr, writeErr := projects.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
+		envPtr, writeErr := projects.WriteTemplateFiles(ctx, composePath, envPath, composeContent, envContent)
 		if writeErr != nil {
 			return writeErr
 		}
@@ -1027,7 +1028,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 	return resultTemplate, nil
 }
 
-func resolveDownloadTarget(tx *gorm.DB, templatesDir, base, remoteURL string) (string, *ComposeTemplate, error) {
+func resolveDownloadTarget(ctx context.Context, tx *gorm.DB, templatesDir, base, remoteURL string) (string, *ComposeTemplate, error) {
 	if remoteURL != "" {
 		prefix := "Imported from " + filepath.Join(templatesDir, base)
 		var owned []ComposeTemplate
@@ -1063,12 +1064,12 @@ func resolveDownloadTarget(tx *gorm.DB, templatesDir, base, remoteURL string) (s
 			continue
 		}
 
-		_, statErr := os.Lstat(dir)
+		exists, existsErr := (acfs.Host{}).Exists(ctx, dir)
 		switch {
-		case errors.Is(statErr, os.ErrNotExist):
+		case existsErr != nil:
+			return "", nil, fmt.Errorf("failed to check template directory %s: %w", dir, existsErr)
+		case !exists:
 			return slug, nil, nil
-		case statErr != nil:
-			return "", nil, fmt.Errorf("failed to check template directory %s: %w", dir, statErr)
 		}
 	}
 	return "template-" + uuid.New().String(), nil, nil
@@ -1144,7 +1145,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 
 	entries, err := acfs.Root{Path: dir}.List(ctx, "/")
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("read dir %s: %w", dir, err)

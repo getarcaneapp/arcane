@@ -27,7 +27,7 @@ func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
 	requireNoError(os.WriteFile(includePath, []byte("services: {}\n"), 0o600))
 	requireNoError(os.WriteFile(composePath, []byte("include:\n  - ./includes/config.yaml\n"), 0o600))
 
-	includes, err := ParseIncludes(composePath, nil, false)
+	includes, err := ParseIncludes(t.Context(), composePath, nil, false)
 	requireNoError(err)
 
 	require.Len(t, includes, 1,
@@ -52,7 +52,7 @@ func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
 
 	requireNoError(os.WriteFile(composePath, []byte("include:\n  - path:\n      - ./base.yaml\n      - ./override.yaml\n"), 0o600))
 
-	includes, err := ParseIncludes(composePath, nil, false)
+	includes, err := ParseIncludes(t.Context(), composePath, nil, false)
 	requireNoError(err)
 
 	require.Len(t, includes, 2,

@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/consts"
@@ -20,6 +19,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -166,7 +166,7 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars 
 }
 
 func (l *EnvLoader) mergeComposeEnvFiles(ctx context.Context, envMap, injectionVars EnvMap) {
-	parse := func(path string, contextEnv EnvMap) (EnvMap, error) {
+	parse := func(ctx context.Context, path string, contextEnv EnvMap) (EnvMap, error) {
 		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(contextEnv), 16)}, "\x00")
 		entry, err := loadCachedEnvFile(ctx, projectEnvFileCache, key, path, contextEnv)
 		if err != nil {
@@ -223,29 +223,27 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-func loadCachedEnvFile(_ context.Context, envCache *cache.Cache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+func loadCachedEnvFile(ctx context.Context, envCache *cache.Cache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
 	if cached, ok := envCache.Peek(key); ok {
-		if validEnvFileCacheEntry(cached) {
+		if validEnvFileCacheEntry(ctx, cached) {
 			return cached, nil
 		}
 		envCache.Delete(key)
 	}
 
 	entry, found, err := envCache.GetOrLoad(key, func(string) (envFileCacheEntry, bool, error) {
-		// Stays on os.*: env files may be symlinks resolving outside any
-		// confinement root (a supported setup), which acfs cannot follow.
-		info, err := os.Stat(path)
+		info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return envFileCacheEntry{path: path}, true, nil
 			}
 			return envFileCacheEntry{}, false, err
 		}
-		if info.IsDir() {
+		if info.IsDirectory {
 			return envFileCacheEntry{}, false, fmt.Errorf("path is a directory: %s", path)
 		}
 
-		content, err := os.ReadFile(path)
+		content, err := acfs.Host{}.ReadFile(ctx, path)
 		if err != nil {
 			return envFileCacheEntry{}, false, fmt.Errorf("parse env file: read file: %w", err)
 		}
@@ -255,8 +253,8 @@ func loadCachedEnvFile(_ context.Context, envCache *cache.Cache[string, envFileC
 		}
 		return envFileCacheEntry{
 			path:         path,
-			mtime:        info.ModTime(),
-			size:         info.Size(),
+			mtime:        time.Unix(0, info.ModTimeUnixNano),
+			size:         info.Size,
 			exists:       true,
 			values:       parsed,
 			noInjectKeys: ParseNoInjectDirectives(string(content)),
@@ -271,29 +269,27 @@ func loadCachedEnvFile(_ context.Context, envCache *cache.Cache[string, envFileC
 	return entry, nil
 }
 
-func validEnvFileCacheEntry(entry envFileCacheEntry) bool {
-	// os.Stat rather than acfs: env files may be symlinks resolving outside
-	// any confinement root (a supported setup).
-	info, err := os.Stat(entry.path)
+func validEnvFileCacheEntry(ctx context.Context, entry envFileCacheEntry) bool {
+	info, err := acfs.Host{}.Stat(ctx, entry.path, acfstypes.StatOptions{FollowFinal: true})
 	if err != nil {
 		return !entry.exists && errors.Is(err, os.ErrNotExist)
 	}
-	if info.IsDir() {
+	if info.IsDirectory {
 		return false
 	}
-	if !entry.exists || !info.ModTime().Equal(entry.mtime) || info.Size() != entry.size {
+	if !entry.exists || !time.Unix(0, info.ModTimeUnixNano).Equal(entry.mtime) || info.Size != entry.size {
 		return false
 	}
 	// A chmod does not bump mtime, so confirm the file is still readable.
-	file, err := os.Open(entry.path)
+	file, err := acfs.Host{}.OpenFile(ctx, entry.path, acfs.OpenOptions{Read: true})
 	if err != nil {
 		return false
 	}
 	return file.Close() == nil
 }
 
-func parseProjectEnvFileExisting(path string, contextEnv EnvMap) (EnvMap, error) {
-	content, err := os.ReadFile(path)
+func parseProjectEnvFileExisting(ctx context.Context, path string, contextEnv EnvMap) (EnvMap, error) {
+	content, err := acfs.Host{}.ReadFile(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
@@ -322,12 +318,12 @@ func ParseNoInjectDirectives(content string) map[string]bool {
 	return keys
 }
 
-func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
+func ParseProjectEnvFile(ctx context.Context, path string, contextEnv EnvMap) (EnvMap, error) {
+	info, err := acfs.Host{}.Stat(ctx, path, acfstypes.StatOptions{FollowFinal: true})
+	if err != nil || info.IsDirectory {
 		return nil, nil //nolint:nilerr // missing .env is not an error
 	}
-	return parseProjectEnvFileExisting(path, contextEnv)
+	return parseProjectEnvFileExisting(ctx, path, contextEnv)
 }
 
 func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
@@ -345,13 +341,10 @@ func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 }
 
 func WithTransientValidationEnvFile(ctx context.Context, projectPath string, effectiveEnvContent *string, run func() error) (err error) {
-	// Read through os rather than the root-confined API: a project .env is
-	// allowed to be a symlink whose target lives outside the project directory,
-	// and that write-through is deliberately preserved (#3556).
-	originalContent, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	originalContent, readErr := acfs.Host{}.ReadFile(ctx, filepath.Join(projectPath, ".env"))
 	originalExists := readErr == nil
-	if readErr != nil && !os.IsNotExist(readErr) {
-		if !errors.Is(readErr, os.ErrPermission) && !errors.Is(readErr, syscall.EISDIR) {
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		if !errors.Is(readErr, os.ErrPermission) && !errors.Is(readErr, acfs.ErrIsDirectory) {
 			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
 		}
 		// The path exists but is permission-locked (e.g. chmod 000, foreign-owned) or a directory.
@@ -385,7 +378,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 				restoreErr = acfs.Root{Path: projectPath}.Remove(ctx, "/.env")
 			}
 
-			if restoreErr != nil && !os.IsNotExist(restoreErr) {
+			if restoreErr != nil && !errors.Is(restoreErr, os.ErrNotExist) {
 				if err == nil {
 					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
 				}
@@ -583,7 +576,7 @@ func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error
 
 func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *types.ProjectConfigurationError {
 	envPath := filepath.Join(dir, EffectiveEnvFileName)
-	file, err := os.Open(envPath)
+	file, err := acfs.Host{}.OpenFile(ctx, envPath, acfs.OpenOptions{Read: true})
 	if err == nil {
 		if closeErr := file.Close(); closeErr != nil {
 			slog.WarnContext(ctx, "failed to close project env access probe", "path", envPath, "error", closeErr)
@@ -596,7 +589,7 @@ func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *types.
 
 	disabled := false
 	if strings.TrimSpace(projectsDir) != "" {
-		globalEnv, globalErr := ParseProjectEnvFile(filepath.Join(projectsDir, GlobalEnvFileName), make(EnvMap))
+		globalEnv, globalErr := ParseProjectEnvFile(ctx, filepath.Join(projectsDir, GlobalEnvFileName), make(EnvMap))
 		if globalErr != nil {
 			slog.DebugContext(ctx, "Failed to read global env while checking project env access", "path", projectsDir, "error", globalErr)
 		} else {
@@ -613,24 +606,23 @@ func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *types.
 	}
 }
 
-func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
-	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFile(projectPath, EffectiveEnvFileName)
+func ReadProjectEnvState(ctx context.Context, projectPath string) (ProjectEnvState, error) {
+	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFile(ctx, projectPath, EffectiveEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	gitContent, hasGitSource, gitSourceUnreadable, err := readOptionalProjectFile(projectPath, GitSourceEnvFileName)
+	gitContent, hasGitSource, gitSourceUnreadable, err := readOptionalProjectFile(ctx, projectPath, GitSourceEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	overrideContent, hasOverride, overrideUnreadable, err := readOptionalProjectFile(projectPath, OverrideEnvFileName)
+	overrideContent, hasOverride, overrideUnreadable, err := readOptionalProjectFile(ctx, projectPath, OverrideEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
 	if effectiveUnreadable || gitSourceUnreadable || overrideUnreadable {
-		ctx := context.Background() //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
 		slog.WarnContext(ctx, "skipping unreadable project env file(s); leaving them untouched",
 			"projectPath", projectPath,
 			"effectiveUnreadable", effectiveUnreadable,
@@ -699,15 +691,15 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 	}
 }
 
-func readOptionalProjectFile(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
-	raw, readErr := os.ReadFile(filepath.Join(projectPath, fileName))
+func readOptionalProjectFile(ctx context.Context, projectPath, fileName string) (content string, exists, unreadable bool, err error) {
+	raw, readErr := acfs.Host{}.ReadFile(ctx, filepath.Join(projectPath, fileName))
 	if readErr == nil {
 		return string(raw), true, false, nil
 	}
 	if errors.Is(readErr, os.ErrNotExist) {
 		return "", false, false, nil
 	}
-	if errors.Is(readErr, os.ErrPermission) || errors.Is(readErr, syscall.EISDIR) {
+	if errors.Is(readErr, os.ErrPermission) || errors.Is(readErr, acfs.ErrIsDirectory) {
 		return "", false, true, nil
 	}
 	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
@@ -753,12 +745,12 @@ func formatEnvValue(value string) string {
 	return `"` + escaped + `"`
 }
 
-func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, error) {
+func ParseComposeEnvOptions(ctx context.Context, workdir string, env EnvMap) (ComposeEnvOptions, error) {
 	opts := ComposeEnvOptions{
 		ProjectName: strings.TrimSpace(env[consts.ComposeProjectName]),
 	}
 
-	files, err := resolveComposeFileSelection(workdir, env)
+	files, err := resolveComposeFileSelection(ctx, workdir, env)
 	if err != nil {
 		return ComposeEnvOptions{}, err
 	}
@@ -805,7 +797,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	// sources merged so far (.env.global), matching LoadEnvironment.
 	if !parseComposeBool(envMap, consts.ComposeDisableDefaultEnvFile) {
 		projectEnvPath := filepath.Join(dir, EffectiveEnvFileName)
-		projectEnv, err := ParseProjectEnvFile(projectEnvPath, envMap)
+		projectEnv, err := ParseProjectEnvFile(ctx, projectEnvPath, envMap)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
 				return nil,
@@ -824,7 +816,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 		return nil, nil
 	}
 	mergeComposeEnvFiles(ctx, dir, envMap, ParseProjectEnvFile, nil)
-	return resolveComposeFileSelection(dir, envMap)
+	return resolveComposeFileSelection(ctx, dir, envMap)
 }
 
 func ComposeFileEntriesFromEnv(env EnvMap) []string {
@@ -849,7 +841,7 @@ func ComposeEnvFileEntriesFromEnv(env EnvMap) []string {
 	return kit.TrimNonEmpty(strings.Split(raw, ","))
 }
 
-func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
+func resolveComposeFileSelection(ctx context.Context, workdir string, env EnvMap) ([]string, error) {
 	entries := ComposeFileEntriesFromEnv(env)
 	if len(entries) == 0 {
 		return nil, nil
@@ -875,14 +867,11 @@ func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
 			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("the first COMPOSE_FILE entry %q must be in the project directory", entry))
 		}
 
-		// os.Stat rather than acfs: compose files may be symlinks resolving
-		// outside any confinement root, and workdir can be an imported project
-		// living outside the projects directory.
-		info, statErr := os.Stat(resolved)
+		info, statErr := acfs.Host{}.Stat(ctx, resolved, acfstypes.StatOptions{FollowFinal: true})
 		if statErr != nil {
 			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q: %w", entry, statErr))
 		}
-		if info.IsDir() {
+		if info.IsDirectory {
 			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q is a directory", entry))
 		}
 
@@ -892,20 +881,18 @@ func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
 	return files, nil
 }
 
-func mergeComposeEnvFiles(ctx context.Context, workdir string, envMap EnvMap, parse func(path string, contextEnv EnvMap) (EnvMap, error), onMerged func(values EnvMap)) {
+func mergeComposeEnvFiles(ctx context.Context, workdir string, envMap EnvMap, parse func(ctx context.Context, path string, contextEnv EnvMap) (EnvMap, error), onMerged func(values EnvMap)) {
 	for _, entry := range ComposeEnvFileEntriesFromEnv(envMap) {
 		resolved, err := ResolvePathWithinDir(workdir, entry)
 		if err != nil {
 			slog.WarnContext(ctx, "skipping COMPOSE_ENV_FILES entry outside project directory", "entry", entry, "error", err)
 			continue
 		}
-		// os.Stat rather than acfs: env files may be symlinks resolving outside
-		// any confinement root (a supported setup).
-		if _, statErr := os.Stat(resolved); statErr != nil {
+		if _, statErr := (acfs.Host{}).Stat(ctx, resolved, acfstypes.StatOptions{FollowFinal: true}); statErr != nil {
 			slog.WarnContext(ctx, "COMPOSE_ENV_FILES entry not found", "path", resolved, "error", statErr)
 			continue
 		}
-		values, err := parse(resolved, envMap)
+		values, err := parse(ctx, resolved, envMap)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to load COMPOSE_ENV_FILES entry", "path", resolved, "error", err)
 			continue

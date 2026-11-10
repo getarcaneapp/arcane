@@ -22,6 +22,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/mapping"
@@ -415,7 +416,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	out = h.environmentService.ApplyRuntimeState(out)
 	if env.ID != LocalEnvironmentID {
 		out.AgentMTLSCertificate = func() *types.AgentMTLSCertificate { // keep: optional field on a 22-field mapped DTO
-			cert, certErr := h.mtls.ClientCertificate(env.ID)
+			cert, certErr := h.mtls.ClientCertificate(ctx, env.ID)
 			if certErr != nil {
 				return nil
 			}
@@ -758,13 +759,17 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 }
 
 func (h *EnvironmentHandler) DownloadAgentMTLSCA(ctx context.Context, _ *DownloadAgentMTLSCAInput) (*huma.StreamResponse, error) {
-	caPath, err := h.mtls.CAPath()
+	caPath, err := h.mtls.CAPath(ctx)
 	if err != nil {
 		return nil, huma.Error404NotFound("Arcane-managed agent mTLS CA is not available")
 	}
 
-	// os rather than acfs: the CA path may be configured anywhere on the host.
-	caPEM, err := os.ReadFile(caPath)
+	caAbs, err := filepath.Abs(caPath)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to read generated agent mTLS CA", "path", caPath, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated agent mTLS CA")
+	}
+	caPEM, err := acfs.Host{}.ReadFile(ctx, caAbs)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to read generated agent mTLS CA", "path", caPath, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated agent mTLS CA")

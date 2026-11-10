@@ -535,10 +535,8 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 		return err
 	}
 
-	// The data directory is the confinement root for the write, so it is created
-	// through os before acfs opens it.
 	projectsDirectory := filepath.Dir(envPath)
-	if mkdirAllErr := os.MkdirAll(projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, projectsDirectory, kitfs.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create projects directory: %w", mkdirAllErr)
 	}
 

@@ -100,15 +100,14 @@ func ReadFolderComposeTemplate(ctx context.Context, baseDir, folder string) (str
 		return "", nil, "", false, fmt.Errorf("detect compose file: %w", err)
 	}
 
-	b, err := os.ReadFile(composePath)
+	b, err := acfs.Host{}.ReadFile(ctx, composePath)
 	if err != nil {
 		return "", nil, "", false, fmt.Errorf("read compose %s: %w", composePath, err)
 	}
 
 	var envPtr *string
 	for _, envName := range []string{".env.example", ".env"} {
-		envPath := filepath.Join(folderPath, envName)
-		if eb, rerr := os.ReadFile(envPath); rerr == nil {
+		if eb, rerr := (acfs.Host{}).ReadFile(ctx, filepath.Join(folderPath, envName)); rerr == nil {
 			envPtr = new(string(eb))
 			break
 		}
@@ -147,8 +146,8 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 	return dir, composePath, envPath, nil
 }
 
-func WriteTemplateFiles(composePath, envPath, composeContent, envContent string) (*string, error) {
-	if err := WriteTemplateFile(composePath, composeContent); err != nil {
+func WriteTemplateFiles(ctx context.Context, composePath, envPath, composeContent, envContent string) (*string, error) {
+	if err := WriteTemplateFile(ctx, composePath, composeContent); err != nil {
 		return nil, err
 	}
 
@@ -157,7 +156,7 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 		return nil, nil
 	}
 
-	if err := WriteTemplateFile(envPath, envContent); err != nil {
+	if err := WriteTemplateFile(ctx, envPath, envContent); err != nil {
 		return nil, err
 	}
 	return &envContent, nil
@@ -321,17 +320,16 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 		return []string{}
 	}
 
-	// System temp scratch: no acfs root exists for it.
-	tmpDir, err := os.MkdirTemp("", "arcane-compose-parse-*")
+	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-compose-parse-*")
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
 		return []string{}
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer func() { _ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir) }()
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, "", fs.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(ctx, envPath, "", fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", writeFileWithPermErr)
 	}
 
@@ -364,16 +362,15 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 		return nil
 	}
 
-	// System temp scratch: no acfs root exists for it.
-	tmpDir, err := os.MkdirTemp("", "arcane-template-icon-*")
+	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-template-icon-*")
 	if err != nil {
 		slog.WarnContext(ctx, "failed to create temp dir for template icon parsing", "error", err)
 		return nil
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	defer func() { _ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir) }()
 
 	envPath := filepath.Join(tmpDir, ".env")
-	if writeFileWithPermErr := WriteFileWithPerm(envPath, envContent, fs.FilePerm); writeFileWithPermErr != nil {
+	if writeFileWithPermErr := WriteFileWithPerm(ctx, envPath, envContent, fs.FilePerm); writeFileWithPermErr != nil {
 		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", writeFileWithPermErr)
 	}
 

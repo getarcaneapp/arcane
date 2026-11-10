@@ -15,6 +15,8 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/workspace"
@@ -43,53 +45,49 @@ var (
 	}
 )
 
-func IsProjectDirectoryEntry(entry os.DirEntry, path string, followSymlinks bool) bool {
-	if entry == nil {
-		return false
-	}
-
-	if entry.IsDir() {
+func IsProjectDirectoryEntry(ctx context.Context, entry types.Entry, followSymlinks bool) bool {
+	if entry.IsDirectory {
 		return true
 	}
 
-	if !followSymlinks || entry.Type()&os.ModeSymlink == 0 {
+	if !followSymlinks || !entry.IsSymlink {
 		return false
 	}
 
-	info, err := os.Stat(path)
+	resolved, err := acfs.Host{}.Stat(ctx, entry.Path, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return false
 	}
 
-	return info.IsDir()
+	return resolved.IsDirectory
 }
 
-func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
-	info, err := os.Lstat(path)
+func IsProjectDirectoryPath(ctx context.Context, path string, followSymlinks bool) (bool, error) {
+	info, err := acfs.Host{}.Stat(ctx, path, types.StatOptions{})
 	if err != nil {
 		return false, err
 	}
 
-	if info.IsDir() {
+	if info.IsDirectory {
 		return true, nil
 	}
 
-	if !followSymlinks || info.Mode()&os.ModeSymlink == 0 {
+	if !followSymlinks || !info.IsSymlink {
 		return false, nil
 	}
 
-	resolvedInfo, err := os.Stat(path)
+	resolved, err := acfs.Host{}.Stat(ctx, path, types.StatOptions{FollowFinal: true})
 	if err != nil {
 		return false, err
 	}
 
-	return resolvedInfo.IsDir(), nil
+	return resolved.IsDirectory, nil
 }
 
 func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int, skipDirectories string) ([]DiscoveredProjectDir, error) {
 	root = filepath.Clean(root)
 
-	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
+	isDir, err := IsProjectDirectoryPath(ctx, root, followSymlinks)
 	if err == nil && !isDir {
 		return nil, fmt.Errorf("project root is not a directory: %s", root)
 	}
@@ -176,7 +174,7 @@ func walkProjectDirectories(ctx context.Context,
 		return nil
 	}
 
-	entries, err := os.ReadDir(path)
+	entries, err := acfs.Host{}.List(ctx, path)
 	if err != nil {
 		if !isRoot && errors.Is(err, os.ErrPermission) {
 			slog.WarnContext(ctx, "Skipping unreadable project directory during discovery", "path", path, "error", err)
@@ -186,8 +184,8 @@ func walkProjectDirectories(ctx context.Context,
 	}
 
 	for _, entry := range entries {
-		childPath := filepath.Join(path, entry.Name())
-		if !IsProjectDirectoryEntry(entry, childPath, followSymlinks) {
+		childPath := entry.Path
+		if !IsProjectDirectoryEntry(ctx, entry, followSymlinks) {
 			continue
 		}
 

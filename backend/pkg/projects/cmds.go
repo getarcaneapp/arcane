@@ -80,7 +80,7 @@ func ComposeUp(ctx context.Context, opts types.ComposeUpOptions) error {
 	waitTimeout := kit.Ternary(opts.WaitTimeout > 0, opts.WaitTimeout, timeouts.DefaultDeployWait)
 
 	// Selection errors were already surfaced at load, so parse best-effort here.
-	envOpts, _ := ParseComposeEnvOptions(selected.WorkingDir, EnvMap(selected.Environment))
+	envOpts, _ := ParseComposeEnvOptions(ctx, selected.WorkingDir, EnvMap(selected.Environment))
 
 	composeCtx, c, done, err := openCompose(ctx, ClientConfig{
 		AuthConfigs:    opts.AuthConfigs,

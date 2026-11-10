@@ -26,6 +26,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
@@ -386,12 +387,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		if err != nil {
 			return fieldErr("projectsDirectory", fmt.Errorf("cannot use projects directory %q: %w", projectsDir, err))
 		}
-		f, err := os.Open(resolved)
-		if err == nil {
-			err = f.Close()
-		}
-		if err != nil {
-			return fieldErr("projectsDirectory", fmt.Errorf("cannot read projects directory %q: %w", resolved, err))
+		if _, listErr := (acfs.Host{}).List(ctx, resolved); listErr != nil {
+			return fieldErr("projectsDirectory", fmt.Errorf("cannot read projects directory %q: %w", resolved, listErr))
 		}
 	}
 

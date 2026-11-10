@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/fs/atomic"
 )
 
@@ -50,14 +51,18 @@ func (w *LogWriter) Write(p []byte) (int, error) {
 
 func (w *LogWriter) Name() string { return w.path }
 
-func SetupMessageOnlyLogFile(dataDir, filePrefix string, minLevel slog.Level) (*LogWriter, error) {
+func SetupMessageOnlyLogFile(ctx context.Context, dataDir, filePrefix string, minLevel slog.Level) (*LogWriter, error) {
 	if strings.TrimSpace(dataDir) == "" {
 		return nil, errors.New("dataDir is required")
 	}
 	if strings.TrimSpace(filePrefix) == "" {
 		filePrefix = "arcane-upgrade"
 	}
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	absDataDir, absErr := filepath.Abs(dataDir)
+	if absErr != nil {
+		return nil, fmt.Errorf("create data directory: %w", absErr)
+	}
+	if err := (acfs.Host{}).MkdirAll(ctx, absDataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
 

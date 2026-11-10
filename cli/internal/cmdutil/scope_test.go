@@ -86,7 +86,7 @@ func TestRunScopedMerged(t *testing.T) {
 			cfg := config.DefaultConfig()
 			cfg.ServerURL, cfg.APIKey = server.URL, "test-key"
 			require.NoError(t, config.Save(t.Context(), cfg))
-			app, appErr := runtime.New(runtime.Options{})
+			app, appErr := runtime.New(t.Context(), runtime.Options{})
 			require.NoError(t, appErr)
 
 			var stdout, stderr bytes.Buffer
@@ -144,7 +144,7 @@ func TestRunScopedRefusals(t *testing.T) {
 				ServerURL: server.URL,
 				APIKey:    "test-key",
 			}))
-			app, appErr := runtime.New(runtime.Options{OutputMode: runtime.OutputModeJSON})
+			app, appErr := runtime.New(t.Context(), runtime.Options{OutputMode: runtime.OutputModeJSON})
 			require.NoError(t, appErr)
 			cmd := &cobra.Command{Use: "list", Short: "List rows"}
 			if tt.scope != "" {

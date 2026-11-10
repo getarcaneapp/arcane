@@ -3924,7 +3924,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 		require.ErrorIs(t, statErr, os.ErrNotExist)
 	}
 
-	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(projectPath, ".env"), nil)
+	effectiveEnv, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(projectPath, ".env"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", effectiveEnv["CLOUDFLARE_CLIENT_SECRET"])
 	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", effectiveEnv["QUOTED_SECRET"])

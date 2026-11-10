@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,6 +17,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 	updaterlabels "kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -75,7 +76,7 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	workdir := filepath.Dir(composeFilePath)
 	var envMap map[string]string
 	if strings.TrimSpace(projectsDirectory) == "" {
-		envMap = loadComposeEnvironment(workdir)
+		envMap = loadComposeEnvironment(ctx, workdir)
 	} else {
 		envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 		loaded, _, err := envLoader.LoadEnvironment(ctx)
@@ -124,7 +125,7 @@ func parseArcaneComposeMetadataFromFile(ctx context.Context, composeFilePath str
 	visited[absPath] = struct{}{}
 
 	workdir := filepath.Dir(absPath)
-	mergedEnv, siblingEnv := mergeEnvFromDotEnv(envMap, workdir)
+	mergedEnv, siblingEnv := mergeEnvFromDotEnv(ctx, envMap, workdir)
 
 	project, err := loadComposeProjectForMetadataFromFile(ctx, absPath, mergedEnv)
 	if err != nil {
@@ -140,7 +141,7 @@ func parseArcaneComposeMetadataFromFile(ctx context.Context, composeFilePath str
 	meta.EnvFiles = append([]string{filepath.Join(workdir, EffectiveEnvFileName)}, resolveComposeEnvFiles(workdir, siblingEnv)...)
 
 	// Resolve include paths with the environment the loader interpolated, including COMPOSE_ENV_FILES.
-	includes, err := ParseIncludes(absPath, project.Environment, false)
+	includes, err := ParseIncludes(ctx, absPath, project.Environment, false)
 	if err != nil {
 		return meta, err
 	}
@@ -325,7 +326,7 @@ func loadComposeProjectForMetadataFromFile(ctx context.Context, composeFilePath 
 	})
 }
 
-func loadComposeEnvironment(workdir string) map[string]string {
+func loadComposeEnvironment(ctx context.Context, workdir string) map[string]string {
 	envMap := allowedProcessEnv()
 	if workdir == "" {
 		return envMap
@@ -338,14 +339,12 @@ func loadComposeEnvironment(workdir string) map[string]string {
 	}
 
 	envPath := filepath.Join(workdir, ".env")
-	// os.Stat rather than acfs: .env may be a symlink resolving outside any
-	// confinement root (a supported setup).
-	info, err := os.Stat(envPath)
-	if err != nil || info.IsDir() {
+	info, err := acfs.Host{}.Stat(ctx, envPath, acfstypes.StatOptions{FollowFinal: true})
+	if err != nil || info.IsDirectory {
 		return envMap
 	}
 
-	fileEnv, err := ParseProjectEnvFile(envPath, envMap)
+	fileEnv, err := ParseProjectEnvFile(ctx, envPath, envMap)
 	if err != nil {
 		return envMap
 	}
@@ -359,7 +358,7 @@ func loadComposeEnvironment(workdir string) map[string]string {
 	return envMap
 }
 
-func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]string, EnvMap) {
+func mergeEnvFromDotEnv(ctx context.Context, envMap map[string]string, workdir string) (map[string]string, EnvMap) {
 	merged := make(map[string]string, len(envMap)+1)
 	maps.Copy(merged, envMap)
 	if workdir == "" {
@@ -373,14 +372,12 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]st
 	}
 
 	envPath := filepath.Join(workdir, ".env")
-	// os.Stat rather than acfs: .env may be a symlink resolving outside any
-	// confinement root (a supported setup).
-	info, err := os.Stat(envPath)
-	if err != nil || info.IsDir() {
+	info, err := acfs.Host{}.Stat(ctx, envPath, acfstypes.StatOptions{FollowFinal: true})
+	if err != nil || info.IsDirectory {
 		return merged, nil
 	}
 
-	fileEnv, err := ParseProjectEnvFile(envPath, merged)
+	fileEnv, err := ParseProjectEnvFile(ctx, envPath, merged)
 	if err != nil {
 		return merged, nil
 	}

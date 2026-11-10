@@ -3,6 +3,7 @@ package images
 import (
 	"bufio"
 	"cmp"
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -10,7 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -208,7 +210,16 @@ func newExportCmd() *cobra.Command {
 				return fmt.Errorf("failed to export image: %w", ensureSuccessStatusErr)
 			}
 
-			file, err := os.Create(outputFile)
+			outputPath, err := filepath.Abs(outputFile)
+			if err != nil {
+				return fmt.Errorf("failed to create output file: %w", err)
+			}
+			file, err := acfs.Host{Special: true}.OpenFile(cmd.Context(), outputPath, acfs.OpenOptions{
+				Mode:     0o666,
+				Write:    true,
+				Create:   true,
+				Truncate: true,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create output file: %w", err)
 			}
@@ -222,7 +233,7 @@ func newExportCmd() *cobra.Command {
 				err = closeErr
 			}
 			if err != nil {
-				_ = os.Remove(outputFile)
+				_ = acfs.Host{}.Remove(context.WithoutCancel(cmd.Context()), outputPath)
 				return fmt.Errorf("failed to write image archive: %w", err)
 			}
 
@@ -365,7 +376,11 @@ func newBuildCmd() *cobra.Command {
 				Pull: opts.pull, Push: opts.push, Load: opts.load,
 			}
 			if opts.inlineFile != "" {
-				content, readFileErr := os.ReadFile(opts.inlineFile)
+				inlinePath, absErr := filepath.Abs(opts.inlineFile)
+				if absErr != nil {
+					return fmt.Errorf("failed to read Dockerfile: %w", absErr)
+				}
+				content, readFileErr := acfs.Host{Special: true}.ReadFile(cmd.Context(), inlinePath)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read Dockerfile: %w", readFileErr)
 				}

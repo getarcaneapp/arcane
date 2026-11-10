@@ -27,7 +27,7 @@ var configSchemaCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		doc, err := schema.GenerateWithSourceRoot(sourceRoot)
+		doc, err := schema.GenerateWithSourceRoot(cmd.Context(), sourceRoot)
 		if err != nil {
 			cmd.PrintErrf("Error generating config schema: %v\n", err)
 			os.Exit(1)
