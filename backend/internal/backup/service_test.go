@@ -113,6 +113,18 @@ func TestRecoveryKeyValidation(t *testing.T) {
 	require.NoError(t, ValidateRecoveryKey(key))
 }
 
+func TestEnvironmentRecoveryKey(t *testing.T) {
+	const managerKey = "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
+	first := EnvironmentRecoveryKey(managerKey, "env-1")
+	require.NoError(t, ValidateRecoveryKey(first))
+	require.Equal(t, first, EnvironmentRecoveryKey(" "+managerKey+" ", "env-1"))
+	require.NotEqual(t, managerKey, first)
+	require.NotEqual(t, first, EnvironmentRecoveryKey(managerKey, "env-2"))
+	rotated, err := GenerateRecoveryKey()
+	require.NoError(t, err)
+	require.NotEqual(t, first, EnvironmentRecoveryKey(rotated, "env-1"))
+}
+
 func TestSnapshotCommand(t *testing.T) {
 	single, err := snapshotCommand("volume", RootSnapshotInput(mount.Mount{Type: mount.TypeVolume, Source: "data", Target: "/volume"}))
 	require.NoError(t, err)

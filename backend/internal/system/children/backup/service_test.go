@@ -44,6 +44,7 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 	service := NewService(Dependencies{
 		S3Destinations: s3.NewS3DestinationService(store, func(context.Context, string) error { return nil }),
 		Settings:       settingsService,
+		Config:         &config.Config{},
 		Store: Store{
 			ListHistory: func(context.Context, pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 				return []types.SystemVolumeBackupHistoryEntry{
@@ -65,7 +66,7 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 
 func TestBackupWorkflowDefinitions(t *testing.T) {
 	harness := flowtest.New(t, nil)
-	require.NoError(t, NewService(Dependencies{}).RegisterWorkflows(harness.Engine))
+	require.NoError(t, NewService(Dependencies{}).RegisterWorkflows(harness.Engine, nil))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
 }

@@ -82,27 +82,49 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.post('/backups', input));
 	}
 
-	async restore(id: string, recoveryKey: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/backups/${id}`, { recoveryKey }, { params: { action: 'restore' } }));
-	}
-
-	async browseFiles(id: string, recoveryKey: string, request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>> {
-		const response = await this.api.post(`/backups/${id}/files/browse`, { recoveryKey }, { params: request });
-		return response.data;
-	}
-
-	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<MessageResponse> {
-		return this.handleResponse(
-			this.api.post(`/backups/${id}`, { recoveryKey, ...selection }, { params: { action: 'restorefiles' } })
+	async restore(environmentId: string, id: string, recoveryKey: string): Promise<void> {
+		await this.handleResponse(
+			this.api.post(`/environments/${environmentId}/backups/${id}`, { recoveryKey }, { params: { action: 'restore' } })
 		);
 	}
 
-	async upload(id: string, s3DestinationId: string, recoveryKey: string): Promise<SystemBackupRun> {
-		return this.handleResponse(this.api.post(`/backups/${id}/upload`, { s3DestinationId, recoveryKey }));
+	async browseFiles(
+		environmentId: string,
+		id: string,
+		recoveryKey: string,
+		request: BackupFileBrowseRequest
+	): Promise<Paginated<BackupFileEntry>> {
+		const response = await this.api.post(
+			`/environments/${environmentId}/backups/${id}/files/browse`,
+			{ recoveryKey },
+			{ params: request }
+		);
+		return response.data;
 	}
 
-	async delete(id: string, recoveryKey: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/backups/${id}`, { data: { recoveryKey } }));
+	async restoreFiles(
+		environmentId: string,
+		id: string,
+		recoveryKey: string,
+		selection: BackupRestoreSelection
+	): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(
+				`/environments/${environmentId}/backups/${id}`,
+				{ recoveryKey, ...selection },
+				{ params: { action: 'restorefiles' } }
+			)
+		);
+	}
+
+	async upload(environmentId: string, id: string, s3DestinationId: string, recoveryKey: string): Promise<SystemBackupRun> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/backups/${id}/upload`, { s3DestinationId, recoveryKey })
+		);
+	}
+
+	async delete(environmentId: string, id: string, recoveryKey: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/backups/${id}`, { data: { recoveryKey } }));
 	}
 
 	async discover(s3DestinationId: string, recoveryKey: string): Promise<number> {

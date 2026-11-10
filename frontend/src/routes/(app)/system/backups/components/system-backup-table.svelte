@@ -16,6 +16,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
@@ -94,9 +95,11 @@
 	<RowActionsMenu name={item.resourceName}>
 		{#if item.resourceType === 'system'}
 			{#if canRestoreBackups}
-				<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
-					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
-				>
+				{#if item.environmentId === LOCAL_DOCKER_ENVIRONMENT_ID}
+					<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
+						><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
+					>
+				{/if}
 				<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
 					><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
 				>

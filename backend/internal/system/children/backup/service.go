@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -43,6 +44,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -138,6 +140,7 @@ type (
 		jobs                  *entityjobs.Registry
 		snapshots             *snapshots.Service
 		volumes               *volumes.Service
+		environments          *environment.EnvironmentService
 		flow                  *flow.Engine
 		backupWorkflow        *flow.Workflow
 		policyWorkflow        *flow.Workflow
@@ -291,9 +294,9 @@ func (s *Service) acquireRun(ctx context.Context) (*runs.Lease, error) {
 	return lease, nil
 }
 
-func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
+func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService) error {
 	var err error
-	s.flow = engine
+	s.flow, s.environments = engine, environments
 	s.backupWorkflow, err = engine.Define(flow.Definition{
 		Name:        "system-backup",
 		Version:     1,
@@ -383,8 +386,10 @@ func (s *Service) remoteRepository(ctx context.Context, destinationID string) (b
 		return backup.Repository{}, errors.New("the selected S3 backup destination is not configured")
 	}
 	return backup.Repository{
-		ID:          "system:s3:" + destinationID,
-		Environment: configuration.RusticEnvironment("arcane-system-recovery"),
+		ID: "system:s3:" + destinationID,
+		Environment: configuration.RusticEnvironment(
+			kit.Ternary(s.config.AgentEnabled, path.Join(backup.EnvironmentSystemRoot, s.settingsService.GetSettingsConfig().InstanceID.Value), "arcane-system-recovery"),
+		),
 	}, nil
 }
 
@@ -515,6 +520,11 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	defer func() {
 		finish(err, attribute.String("arcane.backup.target", string(run.Destination)), attribute.Int64("arcane.backup.size_bytes", run.Size),
 			attribute.String("arcane.backup.s3_destination_id", run.S3DestinationID))
+	}()
+	defer func() {
+		if err == nil && !s.config.AgentEnabled {
+			s.backUpRemoteEnvironments(ctx, run, key)
+		}
 	}()
 	defer func() {
 		err = cmp.Or(err, ctx.Err())
@@ -655,6 +665,35 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	return run, progress("remote", types.RunStatusSucceeded, snapshot.ID)
 }
 
+func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.SystemBackupRun, recoveryKey string) {
+	remotes, err := s.environments.ListActiveRemoteEnvironments(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to list remote environments for the system backup", "backupId", run.ID, "error", err)
+		return
+	}
+	for _, remote := range remotes {
+		body, startErr := json.Marshal(types.CreateSystemBackupRequest{
+			Destination:     run.Destination,
+			S3DestinationID: run.S3DestinationID,
+			RecoveryKey:     backup.EnvironmentRecoveryKey(recoveryKey, remote.ID),
+		})
+		if startErr == nil {
+			startErr = s.environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodPost, "/api/backups", body, nil)
+		}
+		if startErr != nil {
+			slog.WarnContext(ctx, "Failed to start the system backup on a remote environment", "backupId", run.ID, "environmentId", remote.ID, "error", startErr)
+		}
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
+			ResourceType: "environment",
+			ID:           remote.ID,
+			Status:       kit.Ternary(startErr != nil, types.RunStatusFailed, types.RunStatusSucceeded),
+			Message:      kit.Ternary(startErr != nil, fmt.Sprint(startErr), ""),
+		}); progressErr != nil {
+			slog.WarnContext(ctx, "Failed to record a remote environment system backup", "backupId", run.ID, "environmentId", remote.ID, "error", progressErr)
+		}
+	}
+}
+
 func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error) {
 	result, response, err := s.store.ListRuns(ctx, params)
 	if err != nil {
@@ -665,7 +704,11 @@ func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams
 	decorated := make([]types.SystemBackupRun, 0, len(result))
 	for _, run := range result {
 		decorated = append(decorated, types.SystemBackupRun{ //exhaustruct:enforce
-			RemoteAvailable:   remoteAvailable(run.S3DestinationID, "arcane-system-recovery", run.RemoteSnapshotID),
+			RemoteAvailable: remoteAvailable(
+				run.S3DestinationID,
+				kit.Ternary(s.config.AgentEnabled, path.Join(backup.EnvironmentSystemRoot, s.settingsService.GetSettingsConfig().InstanceID.Value), "arcane-system-recovery"),
+				run.RemoteSnapshotID,
+			),
 			ActivityID:        run.ActivityID,
 			ID:                run.ID,
 			Size:              run.Size,
@@ -820,7 +863,12 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBack
 		}
 		repository, repoErr := s.remoteRepository(ctx, destinationID)
 		if repoErr == nil {
-			observation, checkErr := backup.CheckRemoteRepository(ctx, s.s3Destinations, destinationID, "arcane-system-recovery")
+			observation, checkErr := backup.CheckRemoteRepository(
+				ctx,
+				s.s3Destinations,
+				destinationID,
+				kit.Ternary(s.config.AgentEnabled, path.Join(backup.EnvironmentSystemRoot, s.settingsService.GetSettingsConfig().InstanceID.Value), "arcane-system-recovery"),
+			)
 			switch {
 			case checkErr != nil:
 				repoErr = checkErr
@@ -1595,6 +1643,11 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
 	}
+	if s.config.AgentEnabled && request.RecoveryKey != "" {
+		if _, adoptErr := s.SetRecoveryKey(ctx, request.RecoveryKey); adoptErr != nil {
+			return nil, adoptErr
+		}
+	}
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return nil, err
@@ -2044,6 +2097,8 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {
+			case entry.ResourceType != "volume" && s.config.AgentEnabled:
+				return path.Join(backup.EnvironmentSystemRoot, instanceID)
 			case entry.ResourceType != "volume":
 				return "arcane-system-recovery"
 			case owner == "":

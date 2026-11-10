@@ -3,7 +3,9 @@ package backup
 import (
 	"cmp"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json/jsontext"
@@ -142,6 +144,7 @@ const (
 	RecoveryKeyConfigID            = "system-recovery"
 	RunKeyPrefix                   = "run:"
 	VolumeRoot                     = "arcane-volume-backups"
+	EnvironmentSystemRoot          = "arcane-environment-recovery"
 	rusticRepositoryMissingMessage = "No repository config file found"
 	DeletionBatchSize              = 500
 
@@ -669,12 +672,22 @@ func GenerateRecoveryKey() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("failed to generate recovery key: %w", err)
 	}
+	return formatRecoveryKey(raw), nil
+}
+
+func EnvironmentRecoveryKey(recoveryKey, environmentID string) string {
+	mac := hmac.New(sha256.New, []byte(strings.TrimSpace(recoveryKey)))
+	mac.Write([]byte("arcane-environment-recovery:" + environmentID))
+	return formatRecoveryKey(mac.Sum(nil)[:30])
+}
+
+func formatRecoveryKey(raw []byte) string {
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
 	groups := make([]string, 0, len(encoded)/6)
 	for i := 0; i < len(encoded); i += 6 {
 		groups = append(groups, encoded[i:i+6])
 	}
-	return strings.Join(groups, "-"), nil
+	return strings.Join(groups, "-")
 }
 
 func NewRecoveryKeyStore(db *database.DB) *RecoveryKeyStore {

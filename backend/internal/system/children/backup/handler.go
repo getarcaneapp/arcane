@@ -81,28 +81,32 @@ type (
 
 	SystemBackupOutput       struct{ Body types.SystemBackupRun }
 	RestoreSystemBackupInput struct {
-		ID     string `path:"id"`
-		Action string `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
-		Body   types.RestoreSystemBackupFilesRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ID            string `path:"backupId"`
+		Action        string `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
+		Body          types.RestoreSystemBackupFilesRequest
 	}
 
 	BrowseSystemBackupFilesInput struct {
-		ID     string `path:"id"`
-		Path   string `query:"path" doc:"Folder path relative to the backup root"`
-		Search string `query:"search" doc:"Case-insensitive full-path search"`
-		Body   types.SystemBackupRecoveryKey
-		Start  int `query:"start" default:"0" doc:"Start index for the page"`
-		Limit  int `query:"limit" default:"20" doc:"Requested page size"`
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ID            string `path:"backupId"`
+		Path          string `query:"path" doc:"Folder path relative to the backup root"`
+		Search        string `query:"search" doc:"Case-insensitive full-path search"`
+		Body          types.SystemBackupRecoveryKey
+		Start         int `query:"start" default:"0" doc:"Start index for the page"`
+		Limit         int `query:"limit" default:"20" doc:"Requested page size"`
 	}
 
 	UploadSystemBackupInput struct {
-		ID   string `path:"id"`
-		Body types.UploadSystemBackupRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ID            string `path:"backupId"`
+		Body          types.UploadSystemBackupRequest
 	}
 
 	DeleteSystemBackupInput struct {
-		ID   string `path:"id"`
-		Body types.DeleteSystemBackupRequest
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ID            string `path:"backupId"`
+		Body          types.DeleteSystemBackupRequest
 	}
 
 	DiscoverSystemBackupsInput struct {
