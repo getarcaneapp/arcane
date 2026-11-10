@@ -29,9 +29,13 @@ const (
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"
 	muxEventsPath     = "/api/tunnel/events"
 
-	muxMaxFrameSize    = 1 << 20
-	muxMaxPendingWrite = 1 << 20
-	muxWriteTimeout    = 30 * time.Second
+	muxCompressMinSize    = 1 << 10
+	muxMaxFrameSize       = 1 << 20
+	muxMaxPendingWrite    = 1 << 20
+	muxMinPendingWrite    = 4 << 10
+	muxPendingDrainTarget = 50 * time.Millisecond
+	muxPendingRateWindow  = 1 << 20
+	muxWriteTimeout       = 30 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
 	muxDialTimeout = 30 * time.Second
 	// ProxyResponseHeaderTimeout is generous because proxied operations such as deploys can run for minutes before responding.
@@ -122,8 +126,11 @@ func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error
 func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTransport func() error) *muxConn {
 	c := &muxConn{recv: recv, closeTransport: closeTransport}
 	c.cond.L = &c.mu
+	c.pendingLimit.Store(muxMinPendingWrite)
 	go func() {
 		var spare []byte
+		var sentBytes int64
+		var sendTime time.Duration
 		for {
 			c.mu.Lock()
 			for c.err == nil && len(c.pending) == 0 {
@@ -136,11 +143,19 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 			if err != nil {
 				return
 			}
+			started := time.Now()
 			for frame := range slices.Chunk(batch, muxMaxFrameSize) {
 				if sendErr := send(frame); sendErr != nil {
 					c.fail(sendErr)
 					return
 				}
+			}
+			sentBytes += int64(len(batch))
+			sendTime += time.Since(started)
+			if sendTime >= muxPendingDrainTarget || sentBytes >= muxPendingRateWindow {
+				drained := sentBytes * int64(muxPendingDrainTarget) / int64(max(sendTime, time.Microsecond))
+				c.pendingLimit.Store(min(max(drained, muxMinPendingWrite), muxMaxPendingWrite))
+				sentBytes, sendTime = 0, 0
 			}
 			spare = batch
 		}
@@ -151,15 +166,21 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 func (c *muxConn) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for c.err == nil && len(c.pending) >= muxMaxPendingWrite {
-		c.cond.Wait()
+	for written := 0; written < len(p); {
+		limit := int(c.pendingLimit.Load())
+		if c.err == nil && len(c.pending) >= limit {
+			c.cond.Wait()
+			continue
+		}
+		if c.err != nil {
+			return written, c.err
+		}
+		n := min(len(p)-written, limit-len(c.pending))
+		c.pending = append(c.pending, p[written:written+n]...)
+		written += n
+		c.cond.Broadcast()
+		c.tx.Add(int64(n))
 	}
-	if c.err != nil {
-		return 0, c.err
-	}
-	c.pending = append(c.pending, p...)
-	c.cond.Broadcast()
-	c.tx.Add(int64(len(p)))
 	return len(p), nil
 }
 

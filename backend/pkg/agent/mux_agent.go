@@ -1,20 +1,32 @@
 package agent
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/klauspost/compress/gzhttp"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
-func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteCloser, streamWindowMiB int) error {
+func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamWindowMiB int) error {
+	compress, err := gzhttp.NewWrapper(
+		gzhttp.MinSize(muxCompressMinSize),
+		gzhttp.CompressionLevel(gzip.BestSpeed),
+		gzhttp.ContentTypes([]string{"application/json", "application/problem+json", "text/plain"}),
+	)
+	if err != nil {
+		_ = rw.Close()
+		return fmt.Errorf("configure agent tunnel compression: %w", err)
+	}
+	compressed := compress(c.handler)
+
 	session, err := yamux.Client(rw, newMuxConfig(true, streamWindowMiB))
 	if err != nil {
 		_ = rw.Close()
@@ -32,7 +44,11 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteClose
 				_, _ = w.Write([]byte(`{"success":false,"error":"unsupported agent command"}`))
 				return
 			}
-			c.handler.ServeHTTP(w, r)
+			if stream || rw.pendingLimit.Load() >= muxMaxPendingWrite {
+				c.handler.ServeHTTP(w, r)
+				return
+			}
+			compressed.ServeHTTP(w, r)
 		}),
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       180 * time.Second,

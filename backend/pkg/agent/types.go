@@ -318,9 +318,10 @@ type (
 		pending   []byte
 		closeOnce sync.Once
 
-		rx atomic.Int64
-		tx atomic.Int64
-		mu sync.Mutex
+		pendingLimit atomic.Int64
+		rx           atomic.Int64
+		tx           atomic.Int64
+		mu           sync.Mutex
 	}
 
 	cancelableGRPCManagerStream struct {
