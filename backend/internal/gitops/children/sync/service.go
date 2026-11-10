@@ -235,7 +235,8 @@ func (s *Service) syncTarget(
 			Files:            swarmFiles,
 			Prune:            true,
 			WithRegistryAuth: true,
-			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
+			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath))),
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
