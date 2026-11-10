@@ -4533,5 +4533,11 @@
   "choose_folder": "选择文件夹",
   "build_choose_context_description": "选择要作为构建上下文的工作区文件夹。",
   "build_edit_files_hint": "在“文件”选项卡中编辑文件。",
-  "no_file_open": "未打开任何文件"
+  "no_file_open": "未打开任何文件",
+  "git_provider": "Git 提供商",
+  "git_provider_description": "设置文件和提交的链接格式。",
+  "detect_from_url": "根据URL检测",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
