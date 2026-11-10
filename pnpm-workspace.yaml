@@ -34,7 +34,7 @@ overrides:
   uuid: '>=11.1.1'
   fast-uri: '>=3.1.5'
   ws: '>=8.20.1'
-  '@sveltejs/kit': ^3.0.0
+  '@sveltejs/kit': ^3.2.0
   '@sveltejs/adapter-static': ^4.0.0
   dompurify: '>=3.4.11'
   ts-deepmerge: '>=8.0.0'
@@ -47,8 +47,8 @@ allowBuilds:
   sharp: true
 
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.5.0
-  vite-plus: 1.5.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.1
+  vite-plus: 1.5.1
 
 peerDependencyRules:
   allowAny:
@@ -58,19 +58,4 @@ peerDependencyRules:
     'formsnap@2.0.1>sveltekit-superforms': ^3.0.0
 
 minimumReleaseAgeExclude:
-  - '@opentelemetry/api@1.10.0'
-  - '@opentelemetry/core@3.0.0'
-  - '@opentelemetry/exporter-logs-otlp-http@0.300.0'
-  - '@opentelemetry/exporter-metrics-otlp-http@0.300.0'
-  - '@opentelemetry/exporter-trace-otlp-http@0.300.0'
-  - '@opentelemetry/instrumentation-document-load@0.69.0'
-  - '@opentelemetry/instrumentation-fetch@0.300.0'
-  - '@opentelemetry/instrumentation@0.300.0'
-  - '@opentelemetry/opentelemetry-browser-detector@0.300.0'
-  - '@opentelemetry/otlp-exporter-base@0.300.0'
-  - '@opentelemetry/otlp-transformer@0.300.0'
-  - '@opentelemetry/resources@3.0.0'
-  - '@opentelemetry/sdk-logs@3.0.0'
-  - '@opentelemetry/sdk-metrics@3.0.0'
-  - '@opentelemetry/sdk-trace@3.0.0'
-  - '@opentelemetry/web-common@0.300.0'
+  - '@sveltejs/kit@3.2.0'
