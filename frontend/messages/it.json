@@ -4533,5 +4533,11 @@
   "choose_folder": "Scegli una cartella",
   "build_choose_context_description": "Seleziona la cartella dell'area di lavoro da utilizzare come contesto di compilazione.",
   "build_edit_files_hint": "Modifica i file nella scheda \"File\".",
-  "no_file_open": "Nessun file aperto"
+  "no_file_open": "Nessun file aperto",
+  "git_provider": "Provider Git",
+  "git_provider_description": "Imposta il formato dei link per i file e i commit.",
+  "detect_from_url": "Rileva dall'URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
