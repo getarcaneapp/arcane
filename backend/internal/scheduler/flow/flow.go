@@ -455,7 +455,11 @@ func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.Targe
 	if err := jobcontext.Progress(ctx, target); err != nil {
 		slog.WarnContext(ctx, "Failed to retire workflow instance", "instanceId", target.ID, "error", err)
 	}
-	if _, err := wf.svc.GetStatus(ctx, target.ID); err == nil {
+	_, err := wf.svc.GetStatus(ctx, target.ID)
+	for attempt := 0; err != nil && !errors.Is(err, workflow.ErrInstanceNotFound) && pollBackoff.Sleep(ctx, attempt) == nil; attempt++ {
+		_, err = wf.svc.GetStatus(ctx, target.ID)
+	}
+	if err == nil {
 		if cancelErr := wf.svc.Cancel(ctx, target.ID, reason); cancelErr != nil && !errors.Is(cancelErr, workflow.ErrInstanceTerminated) {
 			slog.DebugContext(ctx, "Failed to cancel superseded workflow instance", "instanceId", target.ID, "error", cancelErr)
 		}
