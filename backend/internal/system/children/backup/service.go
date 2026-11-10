@@ -1532,12 +1532,28 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.Sche
 		}
 		return outcome, err
 	}
-	latest, latestErr := s.store.LatestPolicyRun(ctx, policyID)
-	if latestErr != nil {
-		return outcome, latestErr
+	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+		return target.ID == policyID && len(target.RecoveryData) > 0
+	})
+	if index >= 0 {
+		var checkpoint systemBackupRecovery
+		if decodeErr := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &checkpoint); decodeErr != nil {
+			return outcome, decodeErr
+		}
+		run, runErr := s.store.Run(ctx, checkpoint.BackupID)
+		if runErr != nil {
+			return outcome, runErr
+		}
+		s.backUpRemoteEnvironments(ctx, run, "")
 	}
-	if latest != nil {
-		s.backUpRemoteEnvironments(ctx, latest, "")
+	outcome = types.SchedulerOutcome{
+		Status:     outcome.Status,
+		Message:    outcome.Message,
+		ActivityID: outcome.ActivityID,
+		Targets: slices.DeleteFunc(slices.Clone(outcome.Targets), func(target types.TargetOutcome) bool {
+			return target.ResourceType == "environment"
+		}),
+		Steps: outcome.Steps,
 	}
 	if current != nil && current.RetentionCount > 0 {
 		if applyRetentionErr := s.applyRetention(ctx, current.ID, current.RetentionCount, current.S3Enabled); applyRetentionErr != nil {
