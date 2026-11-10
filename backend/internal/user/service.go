@@ -25,6 +25,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -553,8 +554,8 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 			}
 			password := cmp.Or(opts.Password, rand.Text())
 			if opts.Password == "" {
-				if err := (acfs.Root{Path: opts.DataDirectory}).Write(ctx, "/"+InitialAdminPasswordFile, []byte(password+"\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
-					return fmt.Errorf("failed to write the generated default admin password: %w", err)
+				if err := writeInitialAdminPassword(ctx, opts.DataDirectory, password); err != nil {
+					return err
 				}
 			}
 			hashedPassword, err := s.HashPassword(ctx, password)
@@ -605,6 +606,20 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 		return nil
 	}
 	return s.grantDefaultAdminRole(ctx, adminUserID)
+}
+
+func writeInitialAdminPassword(ctx context.Context, dataDirectory, password string) error {
+	absolute, err := filepath.Abs(dataDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to resolve the data directory: %w", err)
+	}
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, absolute, kitfs.DirPerm); mkdirAllErr != nil {
+		return fmt.Errorf("failed to create the data directory: %w", mkdirAllErr)
+	}
+	if writeErr := (acfs.Root{Path: absolute}).Write(ctx, "/"+InitialAdminPasswordFile, []byte(password+"\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+		return fmt.Errorf("failed to write the generated default admin password: %w", writeErr)
+	}
+	return nil
 }
 
 func (s *UserService) grantDefaultAdminRole(ctx context.Context, adminUserID string) error {

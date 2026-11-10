@@ -807,7 +807,7 @@ func TestCreateDefaultAdminGeneratesRandomPasswordWhenUnset(t *testing.T) {
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
-	dataDirectory := t.TempDir()
+	dataDirectory := filepath.Join(t.TempDir(), "data")
 
 	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
 		Username:      "arcane",
