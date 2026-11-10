@@ -49,6 +49,15 @@ const (
 	globalAdminGuardLockKey        int64 = 0x617263616e65
 )
 
+var PermissionsManifestETag = sync.OnceValue(func() string {
+	encoded, err := json.Marshal(BuildPermissionsManifest())
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:8])
+})
+
 func NewRoleService(db *database.DB) *RoleService {
 	return &RoleService{
 		db: db,
@@ -980,15 +989,6 @@ func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []s
 	}
 	return nil
 }
-
-var permissionsManifestETag = sync.OnceValue(func() string {
-	encoded, err := json.Marshal(BuildPermissionsManifest())
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:8])
-})
 
 func BuildPermissionsManifest() types.PermissionsManifest {
 	catalog := authz.PermissionCatalog()

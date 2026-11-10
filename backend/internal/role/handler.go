@@ -162,7 +162,7 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 }
 
 func (h *RoleHandler) GetPermissionsManifest(_ context.Context, input *GetPermissionsManifestInput) (*GetPermissionsManifestOutput, error) {
-	etag := permissionsManifestETag()
+	etag := PermissionsManifestETag()
 	if notModified := input.PreconditionFailed(etag, time.Time{}); notModified != nil {
 		return nil, notModified
 	}

@@ -106,7 +106,11 @@ func TestServeMuxSessionCompressesJSONUntilLinkIsFast(t *testing.T) {
 	body := []byte(`{"items":["` + strings.Repeat("arcane", 4<<10) + `"]}`)
 	server, tunnel := setupMockAgentServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", kit.Ternary(r.URL.RawQuery == "json", "application/json", "application/octet-stream"))
-		_, _ = w.Write(kit.Ternary(r.URL.RawQuery == "json", body, make([]byte, 2*muxPendingRateWindow)))
+		if r.URL.RawQuery == "json" {
+			_, _ = w.Write(body)
+		} else {
+			_, _ = w.Write(make([]byte, 2*muxPendingRateWindow))
+		}
 	})
 	defer server.Close()
 	defer func() { _ = tunnel.CloseWithReason("") }()
