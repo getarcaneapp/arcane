@@ -455,7 +455,7 @@ func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.Targe
 	if err := jobcontext.Progress(ctx, target); err != nil {
 		slog.WarnContext(ctx, "Failed to retire workflow instance", "instanceId", target.ID, "error", err)
 	}
-	if _, err := wf.svc.GetStatus(ctx, target.ID); !errors.Is(err, workflow.ErrInstanceNotFound) {
+	if _, err := wf.svc.GetStatus(ctx, target.ID); err == nil {
 		if cancelErr := wf.svc.Cancel(ctx, target.ID, reason); cancelErr != nil && !errors.Is(cancelErr, workflow.ErrInstanceTerminated) {
 			slog.DebugContext(ctx, "Failed to cancel superseded workflow instance", "instanceId", target.ID, "error", cancelErr)
 		}

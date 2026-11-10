@@ -201,6 +201,9 @@ func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) erro
 		r.finish(err)
 		return err
 	}
+	if cleanupErr := removeOrphanedCancels(ctx, r.storeURL, r.workflows); cleanupErr != nil {
+		slog.WarnContext(ctx, "Failed to remove orphaned workflow cancel jobs", "error", cleanupErr)
+	}
 	startupCtx, startupCancel := context.WithTimeout(ctx, 120*time.Second)
 	defer startupCancel()
 	bindRetries := 0
