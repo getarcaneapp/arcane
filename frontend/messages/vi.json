@@ -4533,5 +4533,11 @@
   "choose_folder": "Chọn thư mục",
   "build_choose_context_description": "Chọn thư mục không gian làm việc để sử dụng làm bối cảnh xây dựng.",
   "build_edit_files_hint": "Chỉnh sửa các tệp trong tab “Tệp”.",
-  "no_file_open": "Không có tệp nào đang mở"
+  "no_file_open": "Không có tệp nào đang mở",
+  "git_provider": "Nhà cung cấp Git",
+  "git_provider_description": "Đặt định dạng liên kết cho các tệp và các lần cam kết.",
+  "detect_from_url": "Phát hiện từ URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
