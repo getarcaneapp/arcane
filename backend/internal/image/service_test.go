@@ -239,6 +239,54 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	assert.Equal(t, []string{pinnedRef}, detail.PinnedReferences)
 }
 
+func TestImageService_GetImageDetail_IncludesUpdateInfo(t *testing.T) {
+	db := setupImageProjectTestDB(t)
+	const testID = "sha256:test-detail-update"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			_ = json.MarshalWrite(w, []image.Summary{
+				{ID: testID, Size: 1024},
+			})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			_ = json.MarshalWrite(w, image.InspectResponse{
+				ID:       testID,
+				RepoTags: []string{"nginx:latest"},
+				Size:     1024,
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
+		ID:             testID,
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		CheckTime:      time.Now().UTC(),
+	}).Error)
+
+	imageSvc := NewImageService(ImageServiceParams{
+		DB:            db,
+		DockerService: newImageTestDockerService(t, server),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
+	})
+
+	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
+	require.NoError(t, err)
+	require.NotNil(t, detail.UpdateInfo)
+	assert.True(t, detail.UpdateInfo.HasUpdate)
+	assert.Equal(t, "digest", detail.UpdateInfo.UpdateType)
+}
+
 func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *testing.T) {
 	db := setupImageProjectTestDB(t)
 	const testID = "sha256:test-detail-resilient"

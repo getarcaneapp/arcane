@@ -325,7 +325,13 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 		return nil, waitErr
 	}
 
+	updateInfo, updateInfoErr := s.GetUpdateInfoByImageIDs(ctx, []string{inspect.ID})
+	if updateInfoErr != nil {
+		return nil, updateInfoErr
+	}
+
 	out := types.NewImageDetailSummary(&inspect)
+	out.UpdateInfo = updateInfo[inspect.ID] // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 	if listSize > 0 {
 		out.Size = listSize            // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 		out.Descriptor.Size = listSize // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary

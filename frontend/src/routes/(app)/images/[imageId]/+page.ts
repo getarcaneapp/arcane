@@ -12,7 +12,7 @@ import type { PageLoad } from './$types';
 type ImageDetailData = {
 	envId: string;
 	imageId: string;
-	image: ImageDetailSummary;
+	image: ImageDetailSummary & { repo: string; tag: string };
 	error?: string;
 };
 

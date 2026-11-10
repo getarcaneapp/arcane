@@ -152,6 +152,7 @@ export interface ImageDetailSummary {
 	repoDigests: string[];
 	pinnedReferences?: string[];
 	hardened?: HardenedImageInfo;
+	updateInfo?: ImageUpdateInfo;
 	comment: string;
 	created: string;
 	author: string;

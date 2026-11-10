@@ -9,6 +9,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
+	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -77,6 +78,7 @@
 	const canScanImage = $derived(vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId));
 	const canPatchImage = $derived(hasPermission('images:patch', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
+	const canPullImage = $derived(hasPermission('images:pull', currentEnvId));
 	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
 	const canReadReleaseNotes = $derived(hasPermission('image-updates:read', currentEnvId));
 
@@ -251,6 +253,37 @@
 		});
 	}
 
+	const pullableTags = $derived(repoTags.filter((tag) => tag !== '<none>:<none>'));
+	const pullableTag = $derived(pullableTags.find((tag) => !tag.includes('@')) ?? pullableTags[0]);
+
+	async function handlePullImage() {
+		if (!pullableTag || isLoading.pulling) return;
+		const repoTag = pullableTag;
+		const environmentId = currentEnvId;
+		const pulledFromId = image.id;
+		isLoading.pulling = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(imageService.pullImage(repoTag, undefined, undefined, environmentId)),
+			message: m.images_pull_failed(),
+			setLoadingState: (value) => (isLoading.pulling = value),
+			onSuccess: async (data) => {
+				toast.success(m.images_pull_success({ repoTag }), activityToastOptions(extractActivityId(data)));
+				const { data: matches } = await tryCatch(
+					imageService.getImagesForEnvironment(environmentId, {
+						search: parseImageRef(repoTag).repo,
+						pagination: { page: 1, limit: 100 }
+					})
+				);
+				const pulled = matches?.data.find((candidate) => candidate.repoTags?.includes(repoTag));
+				if (pulled && pulled.id !== pulledFromId) {
+					await goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(environmentId)}`, { imageId: pulled.id }));
+					return;
+				}
+				await queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(environmentId, pulledFromId) });
+			}
+		});
+	}
+
 	async function handleExportImage(id: string) {
 		isLoading.exporting = true;
 		try {
@@ -270,6 +303,16 @@
 				placement: 'secondary',
 				label: m.images_tag_image(),
 				onclick: () => (tagDialogOpen = true)
+			});
+		}
+		if (canPullImage && pullableTag) {
+			list.push({
+				id: 'pull',
+				action: 'pull',
+				label: m.pull(),
+				loading: isLoading.pulling,
+				disabled: isLoading.pulling,
+				onclick: handlePullImage
 			});
 		}
 		if (canReadImage) {
@@ -350,7 +393,20 @@
 								{ icon: ClockIcon, value: createdDate },
 								{ icon: CpuIcon, value: `${architecture} · ${osName}` }
 							]}
-						/>
+						>
+							{#if hasTags}
+								<ImageUpdateItem
+									updateInfo={image.updateInfo}
+									imageId={image.id}
+									environmentId={currentEnvId}
+									repo={image.repo}
+									tag={image.tag}
+									isLocal={(image.repoDigests?.length ?? 0) === 0}
+									onUpdated={() =>
+										queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(currentEnvId, data.imageId) })}
+								/>
+							{/if}
+						</DetailMetaStrip>
 
 						{#if hasPinnedRefs}
 							<div class="space-y-2">
