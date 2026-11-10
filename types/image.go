@@ -199,6 +199,7 @@ type (
 		RepoDigests      []string           `json:"repoDigests"`
 		PinnedReferences []string           `json:"pinnedReferences,omitempty"`
 		Hardened         *HardenedImageInfo `json:"hardened,omitempty"`
+		UpdateInfo       *ImageUpdateInfo   `json:"updateInfo,omitempty"`
 		Config           struct {
 			ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
 			Volumes      map[string]struct{} `json:"volumes,omitempty"`
