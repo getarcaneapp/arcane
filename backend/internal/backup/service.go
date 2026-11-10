@@ -1006,7 +1006,7 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		}
 		query := tx.Table(table).
 			Where("status <> ?", "running").
-			Where(tx.Where("trigger = ? AND created_at < ?", "safety", cutoff).Or("orphaned_at < ?", cutoff))
+			Where(tx.Where("trigger IN ? AND created_at < ?", []string{types.SystemBackupTriggerSafety, types.SystemBackupTriggerManager}, cutoff).Or("orphaned_at < ?", cutoff))
 		if len(sweep.Within) > 0 {
 			query = query.Where("id IN ?", sweep.Within)
 		}

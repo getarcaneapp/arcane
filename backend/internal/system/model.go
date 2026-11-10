@@ -49,6 +49,7 @@ const (
 	SystemBackupTriggerManual    SystemBackupTrigger = types.SystemBackupTriggerManual
 	SystemBackupTriggerScheduled SystemBackupTrigger = types.SystemBackupTriggerScheduled
 	SystemBackupTriggerSafety    SystemBackupTrigger = types.SystemBackupTriggerSafety
+	SystemBackupTriggerManager   SystemBackupTrigger = types.SystemBackupTriggerManager
 )
 
 func (SystemBackupRun) TableName() string { return "system_backup_runs" }

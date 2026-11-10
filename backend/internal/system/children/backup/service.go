@@ -522,11 +522,6 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 			attribute.String("arcane.backup.s3_destination_id", run.S3DestinationID))
 	}()
 	defer func() {
-		if err == nil && !s.config.AgentEnabled {
-			s.backUpRemoteEnvironments(ctx, run, key)
-		}
-	}()
-	defer func() {
 		err = cmp.Or(err, ctx.Err())
 		*run = types.SystemBackupRun{ //exhaustruct:enforce
 			RemoteAvailable:   run.RemoteAvailable,
@@ -665,13 +660,27 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	return run, progress("remote", types.RunStatusSucceeded, snapshot.ID)
 }
 
-func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.SystemBackupRun, recoveryKey string) {
+func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.SystemBackupRun, suppliedKey string) {
+	if s.config.AgentEnabled {
+		return
+	}
+	recoveryKey, err := s.recoveryKey(ctx, suppliedKey)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to load the recovery key for remote environment system backups", "backupId", run.ID, "error", err)
+		return
+	}
 	remotes, err := s.environments.ListActiveRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for the system backup", "backupId", run.ID, "error", err)
 		return
 	}
+	previous, _ := jobcontext.Run(ctx)
 	for _, remote := range remotes {
+		if slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+			return target.ID == "environment:"+remote.ID && target.Status == types.RunStatusSucceeded
+		}) {
+			continue
+		}
 		body, startErr := json.Marshal(types.CreateSystemBackupRequest{
 			Destination:     run.Destination,
 			S3DestinationID: run.S3DestinationID,
@@ -685,7 +694,7 @@ func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.Syste
 		}
 		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: "environment",
-			ID:           remote.ID,
+			ID:           "environment:" + remote.ID,
 			Status:       kit.Ternary(startErr != nil, types.RunStatusFailed, types.RunStatusSucceeded),
 			Message:      kit.Ternary(startErr != nil, fmt.Sprint(startErr), ""),
 		}); progressErr != nil {
@@ -1492,6 +1501,7 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 		}
 		return types.SchedulerOutcome{}, runErr
 	}
+	s.backUpRemoteEnvironments(ctx, run, "")
 	if policy.RetentionCount > 0 {
 		if retentionErr := s.applyRetention(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); retentionErr != nil {
 			slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
@@ -1521,6 +1531,13 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.Sche
 			}
 		}
 		return outcome, err
+	}
+	latest, latestErr := s.store.LatestPolicyRun(ctx, policyID)
+	if latestErr != nil {
+		return outcome, latestErr
+	}
+	if latest != nil {
+		s.backUpRemoteEnvironments(ctx, latest, "")
 	}
 	if current != nil && current.RetentionCount > 0 {
 		if applyRetentionErr := s.applyRetention(ctx, current.ID, current.RetentionCount, current.S3Enabled); applyRetentionErr != nil {
@@ -1652,7 +1669,7 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := s.prepareBackup(ctx, types.SystemBackupTriggerManual, request)
+	prepared, err := s.prepareBackup(ctx, kit.Ternary(s.config.AgentEnabled, types.SystemBackupTriggerManager, types.SystemBackupTriggerManual), request)
 	if err != nil {
 		lease.Release(ctx)
 		return nil, err
@@ -1958,9 +1975,6 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if err != nil {
 		return nil, err
 	}
-	if run.Status == types.SystemBackupStatusSucceeded {
-		return succeeded, nil
-	}
 	supplied, err := s.recoveryKeys.Get(ctx, backup.RunKeyPrefix+runID)
 	if err != nil && !errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return nil, err
@@ -1968,6 +1982,10 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	key, err := s.recoveryKey(ctx, supplied)
 	if err != nil {
 		return nil, err
+	}
+	if run.Status == types.SystemBackupStatusSucceeded {
+		s.backUpRemoteEnvironments(ctx, run, key)
+		return succeeded, nil
 	}
 	if resuming {
 		outcome, reconcileErr := s.reconcileBackup(ctx, previous, runID, key)
@@ -1977,6 +1995,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		if outcome.Status != types.RunStatusSucceeded {
 			return nil, errors.New(outcome.Message)
 		}
+		s.backUpRemoteEnvironments(ctx, run, key)
 		return succeeded, nil
 	}
 	checkpoint, err := json.Marshal(input.Checkpoint)
@@ -1999,6 +2018,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	}); executeErr != nil {
 		return nil, executeErr
 	}
+	s.backUpRemoteEnvironments(ctx, run, key)
 	return succeeded, nil
 }
 

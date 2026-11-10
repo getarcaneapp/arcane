@@ -206,7 +206,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete backup %s?", args[0]),
-				Path:           clitypes.Backup(c.EnvID(), args[0]),
+				Path:           clitypes.Backup(args[0]),
 				Body:           types.DeleteSystemBackupRequest{RecoveryKey: opts.recoveryKey},
 				FailureMessage: "failed to delete backup",
 				SuccessMessage: fmt.Sprintf("Backup %s deleted successfully", args[0]),
@@ -256,7 +256,7 @@ func newRestoreCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.BackupAction(c.EnvID(), args[0], "restore"),
+				Path:           clitypes.BackupAction(args[0], "restore"),
 				Body:           types.RestoreSystemBackupFilesRequest{RecoveryKey: key},
 				FailureMessage: "failed to restore backup",
 				Render: func(data types.MessageResponse) error {
@@ -298,7 +298,7 @@ func newUploadCmd() *cobra.Command {
 				RecoveryKey:     opts.recoveryKey,
 			}
 
-			run, err := c.DoJSON[types.SystemBackupRun](cmd.Context(), http.MethodPost, clitypes.BackupUpload(c.EnvID(), args[0]), req)
+			run, err := c.DoJSON[types.SystemBackupRun](cmd.Context(), http.MethodPost, clitypes.BackupUpload(args[0]), req)
 			if err != nil {
 				return fmt.Errorf("failed to upload backup: %w", err)
 			}

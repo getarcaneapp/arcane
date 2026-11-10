@@ -31,6 +31,7 @@ export function backupStatusVariant(status: BackupStatus): 'green' | 'red' | 'bl
 export function backupTriggerLabel(trigger: BackupTrigger): string {
 	if (trigger === 'scheduled') return m.backups_trigger_scheduled();
 	if (trigger === 'safety') return m.backups_trigger_safety();
+	if (trigger === 'manager') return m.manager();
 	return m.backups_trigger_manual();
 }
 

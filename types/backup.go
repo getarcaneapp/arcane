@@ -262,6 +262,7 @@ const (
 	SystemBackupTriggerManual    = "manual"
 	SystemBackupTriggerScheduled = "scheduled"
 	SystemBackupTriggerSafety    = "safety"
+	SystemBackupTriggerManager   = "manager"
 
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
