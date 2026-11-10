@@ -248,7 +248,7 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 			})
 			if denied {
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",
-					"method", method, "path", suffix, "kind", segments[1], "environmentId", envID)
+					"method", method, "path", strings.ReplaceAll(strings.ReplaceAll(suffix, "\n", ""), "\r", ""), "environmentId", envID)
 			}
 			return !denied
 		}
