@@ -185,27 +185,40 @@ export function toGitWebUrl(raw: string): string | null {
 	return path ? `https://${host}/${path}` : null;
 }
 
-// Only hostnames that name their product are recognized; a self-hosted forge on a neutral domain gets no deep link.
-function gitRouteSegment(hostname: string, route: GitRoute): string | null {
+// Only hostnames that name their product are recognized; a self-hosted forge on a neutral domain needs the repository's provider set.
+function detectGitProvider(hostname: string): string {
 	const host = hostname.toLowerCase();
-	if (host.includes('gitlab')) return `/-/${route}/`;
-	// Bitbucket has no dedicated edit route; /src/ opens the file with its own edit action.
-	if (host.includes('bitbucket')) return route === 'commit' ? '/commits/' : '/src/';
-	if (host.includes('gitea') || host.includes('forgejo') || host.includes('codeberg')) {
-		if (route === 'edit') return '/_edit/';
-		return route === 'commit' ? '/commit/' : '/src/branch/';
-	}
-	if (host.includes('github') || route === 'commit') return `/${route}/`;
-	return null;
+	if (host.includes('gitlab')) return 'gitlab';
+	if (host.includes('bitbucket')) return 'bitbucket';
+	if (host.includes('gitea') || host.includes('forgejo') || host.includes('codeberg')) return 'gitea';
+	if (host.includes('github')) return 'github';
+	return '';
 }
 
-export function toGitRouteUrl(repositoryUrl: string, route: GitRoute, ref: string, path = ''): string | null {
+function gitRouteSegment(provider: string, route: GitRoute): string | null {
+	switch (provider) {
+		case 'gitlab':
+			return `/-/${route}/`;
+		case 'bitbucket':
+			// Bitbucket has no dedicated edit route; /src/ opens the file with its own edit action.
+			return route === 'commit' ? '/commits/' : '/src/';
+		case 'gitea':
+			if (route === 'edit') return '/_edit/';
+			return route === 'commit' ? '/commit/' : '/src/branch/';
+		case 'github':
+			return `/${route}/`;
+		default:
+			return route === 'commit' ? '/commit/' : null;
+	}
+}
+
+export function toGitRouteUrl(repositoryUrl: string, route: GitRoute, ref: string, path = '', provider = ''): string | null {
 	const base = toGitWebUrl(repositoryUrl);
 	const encodedRef = encodePathSegments(ref.trim());
 	if (!base || !encodedRef) return null;
 
 	try {
-		const segment = gitRouteSegment(new URL(base).hostname, route);
+		const segment = gitRouteSegment(provider || detectGitProvider(new URL(base).hostname), route);
 		if (!segment) return null;
 		const encodedPath = encodePathSegments(path);
 		return `${base}${segment}${encodedRef}${encodedPath ? `/${encodedPath}` : ''}`;

@@ -2418,7 +2418,7 @@
 
 			{#if project.lastSyncCommit}
 				{@const commitUrl = project.gitRepositoryURL
-					? toGitRouteUrl(project.gitRepositoryURL, 'commit', project.lastSyncCommit)
+					? toGitRouteUrl(project.gitRepositoryURL, 'commit', project.lastSyncCommit, '', lifecycleSync?.repository?.provider)
 					: null}
 				<div class="mt-1 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
 					<div class="flex items-center gap-1.5">

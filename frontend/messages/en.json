@@ -4533,5 +4533,11 @@
   "choose_folder": "Choose folder",
   "build_choose_context_description": "Pick the workspace folder to use as the build context.",
   "build_edit_files_hint": "Edit files in the Files tab.",
-  "no_file_open": "No file open"
+  "no_file_open": "No file open",
+  "git_provider": "Git Provider",
+  "git_provider_description": "Sets the link format for files and commits.",
+  "detect_from_url": "Detect from URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }

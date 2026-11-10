@@ -10,6 +10,7 @@ type (
 
 		Name                   string `json:"name" sortable:"true" search:"git,repository,repo,source,version,control,github,gitlab,bitbucket"`
 		URL                    string `json:"url" sortable:"true" search:"url,git,clone,remote,https,ssh"`
+		Provider               string `json:"provider" sortable:"true" search:"provider,forge,github,gitlab,gitea,forgejo,bitbucket"`
 		AuthType               string `json:"authType" sortable:"true" search:"auth,authentication,credentials,token,ssh,http"` // none, http, ssh
 		Username               string `json:"username" sortable:"true" search:"username,user,login,account"`
 		Token                  string `json:"token" search:"token,password,credentials,secret,auth"` // encrypted

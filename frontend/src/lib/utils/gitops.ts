@@ -18,16 +18,25 @@ export function syncedPaths(sync: GitOpsSync): string[] {
 // Unknown forges still get a link to the repository itself.
 export function gitOpsProjectUrl(sync: GitOpsSync | undefined | null): string | null {
 	if (!sync?.repository?.url) return null;
-	return toGitRouteUrl(sync.repository.url, 'tree', sync.branch, composeDirectory(sync)) ?? toGitWebUrl(sync.repository.url);
+	return (
+		toGitRouteUrl(sync.repository.url, 'tree', sync.branch, composeDirectory(sync), sync.repository.provider) ??
+		toGitWebUrl(sync.repository.url)
+	);
 }
 
 export function gitOpsComposeEditUrl(sync: GitOpsSync | undefined | null): string | null {
 	if (!sync?.repository?.url) return null;
-	return toGitRouteUrl(sync.repository.url, 'edit', sync.branch, sync.composePath);
+	return toGitRouteUrl(sync.repository.url, 'edit', sync.branch, sync.composePath, sync.repository.provider);
 }
 
 export function gitOpsFileEditUrl(sync: GitOpsSync | undefined | null, relativePath: string): string | null {
 	if (!sync?.repository?.url || !syncedPaths(sync).includes(relativePath)) return null;
 	const directory = composeDirectory(sync);
-	return toGitRouteUrl(sync.repository.url, 'edit', sync.branch, directory ? `${directory}/${relativePath}` : relativePath);
+	return toGitRouteUrl(
+		sync.repository.url,
+		'edit',
+		sync.branch,
+		directory ? `${directory}/${relativePath}` : relativePath,
+		sync.repository.provider
+	);
 }

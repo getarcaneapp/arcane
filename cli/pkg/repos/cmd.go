@@ -104,6 +104,7 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		name             string
 		url              string
+		provider         string
 		authType         string
 		token            string
 		username         string
@@ -155,6 +156,7 @@ func newCreateCmd() *cobra.Command {
 			req := types.GitRepository{
 				Name:                   opts.name,
 				URL:                    opts.url,
+				Provider:               opts.provider,
 				AuthType:               opts.authType,
 				Token:                  opts.token,
 				Username:               opts.username,
@@ -187,6 +189,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Repository name")
 	cmd.Flags().StringVar(&opts.url, "url", "", "Repository URL")
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.provider, "provider", "", "", "Git provider used for web links; empty detects it from the URL", "", "github", "gitlab", "gitea", "bitbucket")
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.authType, "auth-type", "", "", "Authentication type", "none", "http", "ssh")
 	cmd.Flags().StringVar(&opts.token, "token", "", "Token for HTTP authentication")
 	cmd.Flags().StringVar(&opts.username, "username", "", "Username for HTTP authentication")
@@ -229,6 +232,9 @@ func newGetCmd() *cobra.Command {
 			output.KeyValue("ID", resolved.ID)
 			output.KeyValue("Name", resolved.Name)
 			output.KeyValue("URL", resolved.URL)
+			if resolved.Provider != "" {
+				output.KeyValue("Provider", resolved.Provider)
+			}
 			output.KeyValue("Auth Type", resolved.AuthType)
 			if resolved.Username != "" {
 				output.KeyValue("Username", resolved.Username)
@@ -255,6 +261,7 @@ func newUpdateCmd() *cobra.Command {
 	var opts struct {
 		name             string
 		url              string
+		provider         string
 		authType         string
 		token            string
 		username         string
@@ -316,6 +323,7 @@ func newUpdateCmd() *cobra.Command {
 			}{
 				{flag: "name", key: "name", value: opts.name},
 				{flag: "url", key: "url", value: opts.url},
+				{flag: "provider", key: "provider", value: opts.provider},
 				{flag: "auth-type", key: "authType", value: opts.authType},
 				{flag: "token", key: "token", value: opts.token},
 				{flag: "username", key: "username", value: opts.username},
@@ -352,6 +360,7 @@ func newUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Repository name")
 	cmd.Flags().StringVar(&opts.url, "url", "", "Repository URL")
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.provider, "provider", "", "", "Git provider used for web links; empty detects it from the URL", "", "github", "gitlab", "gitea", "bitbucket")
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.authType, "auth-type", "", "", "Authentication type", "none", "http", "ssh")
 	cmd.Flags().StringVar(&opts.token, "token", "", "Token for HTTP authentication")
 	cmd.Flags().StringVar(&opts.username, "username", "", "Username for HTTP authentication")

@@ -12,6 +12,7 @@ type (
 		ID                     string    `json:"id" readOnly:"true"`
 		Name                   string    `json:"name" required:"false" unorm:"nfc" trim:"true"`
 		URL                    string    `json:"url" required:"false"`
+		Provider               string    `json:"provider,omitempty" doc:"Forge used to build web links; empty detects it from the URL host" enum:",github,gitlab,gitea,bitbucket"`
 		AuthType               string    `json:"authType" required:"false"`
 		Username               string    `json:"username,omitempty"`
 		SSHHostKeyVerification string    `json:"sshHostKeyVerification,omitempty"`
@@ -150,6 +151,7 @@ type (
 		ID                     string    `json:"id" binding:"required"`
 		Name                   string    `json:"name" binding:"required" unorm:"nfc" trim:"true"`
 		URL                    string    `json:"url" binding:"required"`
+		Provider               string    `json:"provider,omitempty"`
 		AuthType               string    `json:"authType" binding:"required"`
 		Username               string    `json:"username,omitempty"`
 		Token                  string    `json:"token,omitempty"`
