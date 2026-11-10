@@ -20,6 +20,7 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/git/repositories/sync", CommandName: "git_repository.sync"},
 		{Method: http.MethodPost, PathPattern: "/api/backups/s3/sync", CommandName: "s3_destination.sync"},
 		{Method: http.MethodGet, PathPattern: "/api/backups/s3/{id}/usage", CommandName: "s3_destination.in_use"},
+		{Method: http.MethodPost, PathPattern: "/api/backups", CommandName: "system.backup.create"},
 
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers", CommandName: "container.list"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers/counts", CommandName: "container.counts"},
@@ -150,6 +151,10 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/upload", CommandName: "volume.backup.import"},
 		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/discover", CommandName: "volume.backup.discover"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/backups/history", CommandName: "backup.history.list"},
+		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/backups/{backupId}", CommandName: "system.backup.action"},
+		{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/backups/{backupId}", CommandName: "system.backup.delete"},
+		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/backups/{backupId}/files/browse", CommandName: "system.backup.files_browse"},
+		{Method: http.MethodPost, PathPattern: "/api/environments/{id}/backups/{backupId}/upload", CommandName: "system.backup.upload"},
 
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/workspace", CommandName: "build_workspace.list"},
 		{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/workspace/file", CommandName: "build_workspace.read_file"},

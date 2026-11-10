@@ -290,7 +290,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		Admission:      gate,
 	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
-	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
+	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine, nil))
 	harness.Start(t)
 
 	status, err := service.backup.SetRecoveryKey(t.Context(), "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN")

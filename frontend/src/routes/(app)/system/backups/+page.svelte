@@ -29,6 +29,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		SystemVolumeBackupHistoryEntry,
 		SystemBackupDestination,
@@ -75,7 +76,7 @@
 	let importingKey = $state(false);
 	let actionOpen = $state(false);
 	let action = $state<'create' | 'restore' | 'upload' | 'delete' | 'discover'>('create');
-	let selected = $state<SystemVolumeBackupHistoryEntry | null>(null);
+	let selected = $state<EnvironmentRow<SystemVolumeBackupHistoryEntry> | null>(null);
 	let backupType = $state<'system' | 'volume'>('system');
 	let backupConfiguration = $state('custom');
 	let destination = $state<SystemBackupDestination>('local');
@@ -91,7 +92,7 @@
 	let loading = $state(false);
 	let generatingKey = $state(false);
 	let restoreFilesOpen = $state(false);
-	let restoreFilesTarget = $state<SystemVolumeBackupHistoryEntry | null>(null);
+	let restoreFilesTarget = $state<EnvironmentRow<SystemVolumeBackupHistoryEntry> | null>(null);
 	let restoreFilesRecoveryKey = $state('');
 	let restoreFilesProvider = $state<BackupFileProvider | null>(null);
 	let restoreFilesSelectedPaths = $state<string[]>([]);
@@ -127,10 +128,17 @@
 	// they accept a typed (previously generated) key. Everything else only
 	// ever uses this instance's stored key.
 	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
-	const restoreFilesKeyInvalid = $derived(!policyCollection.recoveryKeyStored && !restoreFilesRecoveryKey.trim());
+	const selectedRemote = $derived(selected !== null && selected.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID);
+	const restoreFilesRemote = $derived(
+		restoreFilesTarget !== null && restoreFilesTarget.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID
+	);
+	const restoreFilesKeyInvalid = $derived(
+		!restoreFilesRemote && !policyCollection.recoveryKeyStored && !restoreFilesRecoveryKey.trim()
+	);
 	const importKeyInvalid = $derived(!importKeyInput.trim());
 	const actionKeyInvalid = $derived.by(() => {
 		if (action === 'create' && backupType === 'volume') return false;
+		if (selectedRemote) return false;
 		if (actionNeedsTypedKey) return !policyCollection.recoveryKeyStored && !recoveryKey.trim();
 		// Deleting is always allowed; the backend only asks for the key when
 		// the run still has snapshots to forget.
@@ -228,7 +236,7 @@
 		}
 	}
 
-	function openAction(next: typeof action, backup: SystemVolumeBackupHistoryEntry | null = null) {
+	function openAction(next: typeof action, backup: EnvironmentRow<SystemVolumeBackupHistoryEntry> | null = null) {
 		action = next;
 		selected = backup;
 		backupType = 'system';
@@ -257,12 +265,12 @@
 		restoreFilesSearch = '';
 	}
 
-	async function openRestoreFiles(backup: SystemVolumeBackupHistoryEntry) {
+	async function openRestoreFiles(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
 		resetRestoreFilesPicker();
 		restoreFilesOpen = true;
-		if (policyCollection.recoveryKeyStored) loadRestoreFiles();
+		if (policyCollection.recoveryKeyStored || backup.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID) loadRestoreFiles();
 	}
 
 	function closeRestoreFiles() {
@@ -278,10 +286,11 @@
 	function loadRestoreFiles() {
 		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
 		resetRestoreFilesPicker();
+		const environmentID = restoreFilesTarget.environmentId;
 		const backupID = restoreFilesTarget.id;
 		const recoveryKey = restoreFilesRecoveryKey.trim();
 		restoreFilesProvider = {
-			browse: (request) => systemBackupService.browseFiles(backupID, recoveryKey, request)
+			browse: (request) => systemBackupService.browseFiles(environmentID, backupID, recoveryKey, request)
 		};
 	}
 
@@ -301,12 +310,17 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await systemBackupService.restoreFiles(restoreFilesTarget.id, restoreFilesRecoveryKey.trim(), {
-						paths: restoreFilesSelectedPaths,
-						selectAll: restoreFilesSelectAll,
-						search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
-					});
-					const projectQueryKey = queryKeys.projects.environment('0');
+					const result = await systemBackupService.restoreFiles(
+						restoreFilesTarget.environmentId,
+						restoreFilesTarget.id,
+						restoreFilesRecoveryKey.trim(),
+						{
+							paths: restoreFilesSelectedPaths,
+							selectAll: restoreFilesSelectAll,
+							search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
+						}
+					);
+					const projectQueryKey = queryKeys.projects.environment(restoreFilesTarget.environmentId);
 					await queryClient.cancelQueries({ queryKey: projectQueryKey });
 					queryClient.removeQueries({ queryKey: projectQueryKey });
 					toast.success(m.system_backups_restore_selection_success(), activityToastOptions(extractActivityId(result)));
@@ -493,14 +507,14 @@
 							});
 						});
 					} else if (action === 'restore' && selected) {
-						await systemBackupService.restore(selected.id, recoveryKey);
+						await systemBackupService.restore(selected.environmentId, selected.id, recoveryKey);
 						toast.success(m.system_backups_restore_started());
 					} else if (action === 'upload' && selected) {
-						await systemBackupService.upload(selected.id, s3DestinationId, recoveryKey);
+						await systemBackupService.upload(selected.environmentId, selected.id, s3DestinationId, recoveryKey);
 						toast.success(m.backups_upload_s3_success());
 						await refresh();
 					} else if (action === 'delete' && selected) {
-						await systemBackupService.delete(selected.id, recoveryKey);
+						await systemBackupService.delete(selected.environmentId, selected.id, recoveryKey);
 						toast.success(m.system_backups_deleted());
 						await refresh();
 					} else if (action === 'discover') {
@@ -767,7 +781,7 @@
 					type="password"
 					autocomplete="current-password"
 				/>
-			{:else if action !== 'delete' && !(action === 'create' && backupType === 'volume') && !policyCollection.recoveryKeyStored}
+			{:else if action !== 'delete' && !selectedRemote && !(action === 'create' && backupType === 'volume') && !policyCollection.recoveryKeyStored}
 				<div class="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
 					<p class="text-sm text-muted-foreground">{m.system_backups_recovery_key_needed()}</p>
 					<ArcaneButton
@@ -814,26 +828,28 @@
 				</Alert.Description>
 			</Alert.Root>
 
-			<div class="flex items-end gap-2">
-				<div class="min-w-0 flex-1">
-					<TextInputWithLabel
-						value={restoreFilesRecoveryKey}
-						onChange={updateRestoreFilesRecoveryKey}
-						label={m.system_backups_recovery_key()}
-						description={policyCollection.recoveryKeyStored
-							? m.system_backups_recovery_key_saved_description()
-							: m.system_backups_recovery_key_enter_description()}
-						type="password"
-						autocomplete="current-password"
+			{#if !restoreFilesRemote}
+				<div class="flex items-end gap-2">
+					<div class="min-w-0 flex-1">
+						<TextInputWithLabel
+							value={restoreFilesRecoveryKey}
+							onChange={updateRestoreFilesRecoveryKey}
+							label={m.system_backups_recovery_key()}
+							description={policyCollection.recoveryKeyStored
+								? m.system_backups_recovery_key_saved_description()
+								: m.system_backups_recovery_key_enter_description()}
+							type="password"
+							autocomplete="current-password"
+						/>
+					</div>
+					<ArcaneButton
+						action="inspect"
+						customLabel={m.system_backups_load_files()}
+						onclick={loadRestoreFiles}
+						disabled={restoreFilesKeyInvalid}
 					/>
 				</div>
-				<ArcaneButton
-					action="inspect"
-					customLabel={m.system_backups_load_files()}
-					onclick={loadRestoreFiles}
-					disabled={restoreFilesKeyInvalid}
-				/>
-			</div>
+			{/if}
 
 			{#if restoreFilesProvider}
 				{#key restoreFilesProvider}

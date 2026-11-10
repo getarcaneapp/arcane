@@ -115,6 +115,7 @@ type (
 	}
 
 	CreateSystemBackupRequest struct {
+		ID              string                  `json:"id,omitempty"`
 		Destination     SystemBackupDestination `json:"destination,omitempty"`
 		S3DestinationID string                  `json:"s3DestinationId,omitempty"`
 		RecoveryKey     string                  `json:"recoveryKey,omitempty"`
@@ -262,6 +263,7 @@ const (
 	SystemBackupTriggerManual    = "manual"
 	SystemBackupTriggerScheduled = "scheduled"
 	SystemBackupTriggerSafety    = "safety"
+	SystemBackupTriggerManager   = "manager"
 
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"

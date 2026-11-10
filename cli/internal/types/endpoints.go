@@ -426,7 +426,9 @@ func VariablesSync() string { return "/api/variables/sync" }
 
 func Backups() string { return "/api/backups" }
 
-func Backup(id string) string { return pathf("/api/backups/%s", id) }
+func Backup(id string) string {
+	return pathf("/api/environments/0/backups/%s", id)
+}
 
 func BackupsPolicies() string { return "/api/backups/policies" }
 
@@ -436,7 +438,9 @@ func BackupsRecoveryKeyGenerate() string { return "/api/backups/recovery/key?act
 
 func BackupsDiscover() string { return "/api/backups/discover" }
 
-func BackupUpload(id string) string { return pathf("/api/backups/%s/upload", id) }
+func BackupUpload(id string) string {
+	return pathf("/api/environments/0/backups/%s/upload", id)
+}
 
 func BackupAction(id, action string) string {
 	return Backup(id) + "?" + url.Values{"action": {action}}.Encode()

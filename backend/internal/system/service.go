@@ -180,7 +180,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 }
 
 func (s *SystemService) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService, roles *role.RoleService) error {
-	return errors.Join(s.backup.RegisterWorkflows(engine), s.upgrade.RegisterWorkflows(engine, environments, roles))
+	return errors.Join(s.backup.RegisterWorkflows(engine, environments), s.upgrade.RegisterWorkflows(engine, environments, roles))
 }
 
 func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
