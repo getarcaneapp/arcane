@@ -3299,9 +3299,14 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	// Deploys only merge an override beside a standard base name, so a custom base would silently drop it.
 	if gitOverrideContent != nil {
 		if basePath, detectErr := projects.DetectComposeFile(ctx, projectsDirectory, proj.Path); detectErr == nil && !slices.Contains(projects.ComposeFileCandidates, filepath.Base(basePath)) {
-			return nil, false, common.Classify(common.ErrValidation, fmt.Errorf(
-				"project compose file %q has a custom name, so the synced override would not be applied; rename it to %s",
-				filepath.Base(basePath), projects.DefaultComposeFileName))
+			return nil, false, common.Classify(
+				common.ErrValidation,
+				fmt.Errorf(
+					"project compose file %q has a custom name, so the synced override would not be applied; rename it to %s",
+					filepath.Base(basePath),
+					projects.DefaultComposeFileName,
+				),
+			)
 		}
 	}
 
