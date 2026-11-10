@@ -4533,5 +4533,11 @@
   "choose_folder": "Elektu dosierujon",
   "build_choose_context_description": "Elektu la laborspacan dosierujon por uzi kiel la konstruan kuntekston.",
   "build_edit_files_hint": "Redaktu dosierojn en la langeto Dosieroj.",
-  "no_file_open": "Neniu dosiero malfermita"
+  "no_file_open": "Neniu dosiero malfermita",
+  "git_provider": "Git-provizanto",
+  "git_provider_description": "Agordas la formaton de ligiloj por dosieroj kaj komitoj.",
+  "detect_from_url": "Detekti el URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forĝejo",
+  "bitbucket": "Bitbucket"
 }
