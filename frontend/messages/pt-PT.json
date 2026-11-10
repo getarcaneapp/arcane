@@ -4533,5 +4533,11 @@
   "choose_folder": "Escolher pasta",
   "build_choose_context_description": "Selecione a pasta do espaço de trabalho a utilizar como contexto de compilação.",
   "build_edit_files_hint": "Edite os ficheiros no separador «Ficheiros».",
-  "no_file_open": "Não há nenhum ficheiro aberto"
+  "no_file_open": "Não há nenhum ficheiro aberto",
+  "git_provider": "Provedor Git",
+  "git_provider_description": "Define o formato dos links para ficheiros e confirmações.",
+  "detect_from_url": "Detetar a partir do URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
