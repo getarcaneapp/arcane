@@ -352,7 +352,8 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 		return source, s.failSync(ctx, result, sync, actor, "Failed to read compose override file", err)
 	}
 
-	if strings.TrimSpace(kit.FromPtr(sync.EnvContent)) != "" {
+	// A non-nil empty value means the variables were cleared; it still replaces the git layer so their old values go.
+	if sync.EnvContent != nil {
 		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(source.envContent), *sync.EnvContent)
 		if mergeErr != nil {
 			return source, s.failSync(ctx, result, sync, actor, "Failed to merge sync environment variables", mergeErr)
@@ -561,7 +562,7 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 			slog.WarnContext(ctx, "dropping reserved Arcane env file from git payload; will be re-derived from override merge", "path", file.RelativePath)
 		}
 	}
-	if strings.TrimSpace(kit.FromPtr(sync.EnvContent)) != "" {
+	if sync.EnvContent != nil {
 		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(stage.gitEnvContent), *sync.EnvContent)
 		if mergeErr != nil {
 			return nil, nil, false, false, fmt.Errorf("failed to merge sync environment variables: %w", mergeErr)

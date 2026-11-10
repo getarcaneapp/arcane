@@ -750,6 +750,12 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		}
 	}
 
+	// A cleared value is kept as "" rather than NULL so the next sync removes the variables it applied before.
+	envContent := nullableTrimmedString(change.Request.EnvContent)
+	if envContent == nil && syncRecord.EnvContent != nil {
+		envContent = new("")
+	}
+
 	updates := make(map[string]any)
 	for field, update := range map[string]struct {
 		value  any
@@ -760,7 +766,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		"branch":              {column: "branch", value: change.Request.Branch},
 		"composePath":         {column: "compose_path", value: change.Request.ComposePath},
 		"composeOverridePath": {column: "compose_override_path", value: strings.TrimSpace(change.Request.ComposeOverridePath)},
-		"envContent":          {column: "env_content", value: nullableTrimmedString(change.Request.EnvContent)},
+		"envContent":          {column: "env_content", value: envContent},
 		"targetType":          {column: "target_type", value: change.Request.TargetType},
 		"projectName":         {column: "project_name", value: change.Request.ProjectName},
 		"autoSync":            {column: "auto_sync", value: change.Request.AutoSync},

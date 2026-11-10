@@ -1837,6 +1837,43 @@ func TestGitOpsDeploy_ComposeOverrideAndEnv(t *testing.T) {
 	}
 }
 
+func TestGitOpsDeploy_ClearedSyncEnvIsRemoved(t *testing.T) {
+	env := setupGitOpsBackupTestService(t)
+	pushRemoteCommit(t, env.remote, env.repoURL, "seed", map[string]string{
+		"apps/demo/compose.yaml": "services:\n  app:\n    image: nginx:alpine\n",
+	})
+	writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=keep-me\n")
+
+	created, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+		Request: types.GitOpsSync{
+			Name:         "deploy-env",
+			RepositoryID: "repo-backup",
+			Branch:       "main",
+			ComposePath:  "apps/demo/compose.yaml",
+			EnvContent:   new("SYNC_ONLY=mine\n"),
+			ProjectID:    &env.project.ID,
+		},
+		Actor: types.Actor{ID: "user-1", Username: "tester"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "success", kit.FromPtr(created.LastSyncStatus), kit.FromPtr(created.LastSyncError))
+
+	_, err = env.service.UpdateSync(t.Context(), "0", created.ID, SyncUpdate{
+		Request:   types.GitOpsSync{EnvContent: new("")},
+		Submitted: map[string]bool{"envContent": true},
+		Actor:     types.SystemUser,
+	})
+	require.NoError(t, err)
+
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{EnvironmentID: "0", SyncID: created.ID, Actor: types.SystemUser})
+	require.NoError(t, err)
+	require.True(t, result.Success, result.Message)
+
+	effective, err := projects.ParseProjectEnvFile(t.Context(), filepath.Join(env.projectPath, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"TOKEN": "keep-me"}, effective)
+}
+
 func TestGitOpsDeploy_ComposeOverrideAndEnvValidation(t *testing.T) {
 	tests := []struct {
 		name    string
