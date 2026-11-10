@@ -456,7 +456,7 @@ func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.Targe
 		slog.WarnContext(ctx, "Failed to retire workflow instance", "instanceId", target.ID, "error", err)
 	}
 	_, err := wf.svc.GetStatus(ctx, target.ID)
-	for attempt := 0; err != nil && !errors.Is(err, workflow.ErrInstanceNotFound) && pollBackoff.Sleep(ctx, attempt) == nil; attempt++ {
+	for attempt := 0; attempt < 4 && err != nil && !errors.Is(err, workflow.ErrInstanceNotFound) && pollBackoff.Sleep(ctx, attempt) == nil; attempt++ {
 		_, err = wf.svc.GetStatus(ctx, target.ID)
 	}
 	if err == nil {
