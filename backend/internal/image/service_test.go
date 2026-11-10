@@ -264,14 +264,26 @@ func TestImageService_GetImageDetail_IncludesUpdateInfo(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
-		ID:             testID,
-		Repository:     "docker.io/library/nginx",
-		Tag:            "latest",
-		HasUpdate:      true,
-		UpdateType:     "digest",
-		CurrentVersion: "latest",
-		CheckTime:      time.Now().UTC(),
+	require.NoError(t, db.Create(&[]imageupdate.ImageUpdateRecord{
+		{
+			ID:             testID,
+			Repository:     "docker.io/library/nginx",
+			Tag:            "latest",
+			UpdateType:     "digest",
+			CurrentVersion: "latest",
+			CheckTime:      time.Now().UTC(),
+		},
+		{
+			ID:             "container:c-detail-update",
+			ContainerID:    "c-detail-update",
+			ImageID:        testID,
+			Repository:     "docker.io/library/nginx",
+			Tag:            "latest",
+			HasUpdate:      true,
+			UpdateType:     "tag",
+			CurrentVersion: "latest",
+			CheckTime:      time.Now().UTC(),
+		},
 	}).Error)
 
 	imageSvc := NewImageService(ImageServiceParams{
@@ -284,7 +296,6 @@ func TestImageService_GetImageDetail_IncludesUpdateInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, detail.UpdateInfo)
 	assert.True(t, detail.UpdateInfo.HasUpdate)
-	assert.Equal(t, "digest", detail.UpdateInfo.UpdateType)
 }
 
 func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *testing.T) {

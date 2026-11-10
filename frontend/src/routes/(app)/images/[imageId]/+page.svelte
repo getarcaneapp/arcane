@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -260,28 +261,34 @@
 		if (!pullableTag || isLoading.pulling) return;
 		const repoTag = pullableTag;
 		const environmentId = currentEnvId;
+		const routeImageId = data.imageId;
 		const pulledFromId = image.id;
 		isLoading.pulling = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(imageService.pullImage(repoTag, undefined, undefined, environmentId)),
-			message: m.images_pull_failed(),
-			setLoadingState: (value) => (isLoading.pulling = value),
-			onSuccess: async (data) => {
-				toast.success(m.images_pull_success({ repoTag }), activityToastOptions(extractActivityId(data)));
-				const { data: matches } = await tryCatch(
-					imageService.getImagesForEnvironment(environmentId, {
-						search: parseImageRef(repoTag).repo,
-						pagination: { page: 1, limit: 100 }
-					})
-				);
-				const pulled = matches?.data.find((candidate) => candidate.repoTags?.includes(repoTag));
-				if (pulled && pulled.id !== pulledFromId) {
-					await goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(environmentId)}`, { imageId: pulled.id }));
-					return;
-				}
-				await queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(environmentId, pulledFromId) });
-			}
-		});
+		const result = await imageService.pullImageStream(repoTag, undefined, environmentId);
+		isLoading.pulling = false;
+		if (result.cancelled) return;
+		if (!result.success) {
+			toast.error(m.images_pull_failed(), { description: result.error });
+			return;
+		}
+
+		toast.success(m.images_pull_success({ repoTag }));
+		const { data: matches } = await tryCatch(
+			imageService.getImagesForEnvironment(environmentId, {
+				search: parseImageRef(repoTag).repo,
+				pagination: { page: 1, limit: 100 }
+			})
+		);
+		const pulled = matches?.data.find((candidate) => candidate.repoTags?.includes(repoTag));
+		const stillOnImage =
+			page.route.id === '/(app)/images/[imageId]' &&
+			page.params.imageId === routeImageId &&
+			page.url.searchParams.get('env') === environmentId;
+		if (pulled && pulled.id !== pulledFromId && stillOnImage) {
+			await goto(resolve(`/(app)/images/[imageId]?env=${encodeURIComponent(environmentId)}`, { imageId: pulled.id }));
+			return;
+		}
+		await queryClient.invalidateQueries({ queryKey: queryKeys.images.detail(environmentId, routeImageId) });
 	}
 
 	async function handleExportImage(id: string) {

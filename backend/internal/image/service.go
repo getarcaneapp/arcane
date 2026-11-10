@@ -325,13 +325,15 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 		return nil, waitErr
 	}
 
-	updateInfo, updateInfoErr := s.GetUpdateInfoByImageIDs(ctx, []string{inspect.ID})
-	if updateInfoErr != nil {
-		return nil, updateInfoErr
+	var updateRecords []imageupdate.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).Where("id = ? OR image_id = ?", inspect.ID, inspect.ID).Find(&updateRecords).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch image update records: %w", err)
 	}
 
 	out := types.NewImageDetailSummary(&inspect)
-	out.UpdateInfo = updateInfo[inspect.ID] // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
+	if updateRecord := buildUpdateMap(updateRecords)[inspect.ID]; updateRecord != nil {
+		out.UpdateInfo = updateRecord.UpdateInfo() // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
+	}
 	if listSize > 0 {
 		out.Size = listSize            // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 		out.Descriptor.Size = listSize // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
