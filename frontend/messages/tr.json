@@ -4533,5 +4533,11 @@
   "choose_folder": "Klasör seçin",
   "build_choose_context_description": "Derleme bağlamı olarak kullanılacak çalışma alanı klasörünü seçin.",
   "build_edit_files_hint": "Dosyalar sekmesinden dosyaları düzenleyin.",
-  "no_file_open": "Açık dosya yok"
+  "no_file_open": "Açık dosya yok",
+  "git_provider": "Git Sağlayıcısı",
+  "git_provider_description": "Dosyalar ve commit'ler için bağlantı biçimini belirler.",
+  "detect_from_url": "URL'den algılama",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
