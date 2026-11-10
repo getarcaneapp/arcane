@@ -1,27 +1,25 @@
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, type Page } from '@playwright/test';
 import { readApiData } from './fetch.util';
 import { waitForDialogReady } from './playwright.util';
+import { reportDirectory } from './report';
 
 const TEST_PASSWORD = 'Test-password-123';
-const GENERATED_PASSWORD_MARKER = 'generatedPassword=';
-const GENERATED_PASSWORD_LENGTH = 26;
+const GENERATED_PASSWORD_FILE = 'initial-admin-password';
 
 function generatedAdminPassword(): string {
 	const composeFile = process.env.ARCANE_E2E_COMPOSE_FILE;
 	if (!composeFile) throw new Error('ARCANE_E2E_COMPOSE_FILE is not set');
-	const logs = execFileSync(
+	const target = path.join(reportDirectory, GENERATED_PASSWORD_FILE);
+	fs.mkdirSync(reportDirectory, { recursive: true });
+	execFileSync(
 		'docker',
-		['compose', '-f', composeFile, 'logs', '--no-color', 'arcane'],
-		{
-			encoding: 'utf8',
-			maxBuffer: 32 * 1024 * 1024
-		}
+		['compose', '-f', composeFile, 'cp', `arcane:/app/data/${GENERATED_PASSWORD_FILE}`, target],
+		{ stdio: 'pipe' }
 	);
-	const start = logs.lastIndexOf(GENERATED_PASSWORD_MARKER);
-	if (start === -1) throw new Error('Generated admin password not found in Arcane logs');
-	const from = start + GENERATED_PASSWORD_MARKER.length;
-	return logs.slice(from, from + GENERATED_PASSWORD_LENGTH);
+	return fs.readFileSync(target, 'utf8').trim();
 }
 
 async function login(page: Page): Promise<string> {

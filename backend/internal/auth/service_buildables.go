@@ -37,7 +37,7 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginC
 	}
 
 	return &types.AutoLoginConfig{
-		Enabled:  true,
+		Enabled:  s.GetAutoLoginPassword() != "",
 		Username: s.config.AutoLoginUsername,
 	}, nil
 }

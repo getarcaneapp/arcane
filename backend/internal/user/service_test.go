@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -805,12 +807,21 @@ func TestCreateDefaultAdminGeneratesRandomPasswordWhenUnset(t *testing.T) {
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
-	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{Username: "arcane"}))
+	dataDirectory := t.TempDir()
+
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
+		Username:      "arcane",
+		DataDirectory: dataDirectory,
+	}))
 
 	admin, err := userSvc.GetUserByUsername(ctx, "arcane")
 	require.NoError(t, err)
 	require.True(t, admin.RequiresPasswordChange)
 	require.Error(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, "arcane-admin"))
+
+	generated, err := os.ReadFile(filepath.Join(dataDirectory, userdomain.InitialAdminPasswordFile))
+	require.NoError(t, err)
+	require.NoError(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, strings.TrimSpace(string(generated))))
 }
 
 func TestCreateDefaultAdminRejectsPasswordFailingPolicy(t *testing.T) {

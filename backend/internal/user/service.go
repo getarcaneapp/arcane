@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -57,10 +59,14 @@ type (
 		Username       string
 		Password       string
 		PasswordPolicy string
+		DataDirectory  string
 	}
 )
 
-const BackdropMaxBytes = 10 << 20
+const (
+	BackdropMaxBytes         = 10 << 20
+	InitialAdminPasswordFile = "initial-admin-password"
+)
 
 var (
 	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
@@ -546,6 +552,11 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 				}
 			}
 			password := cmp.Or(opts.Password, rand.Text())
+			if opts.Password == "" {
+				if err := (acfs.Root{Path: opts.DataDirectory}).Write(ctx, "/"+InitialAdminPasswordFile, []byte(password+"\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
+					return fmt.Errorf("failed to write the generated default admin password: %w", err)
+				}
+			}
 			hashedPassword, err := s.HashPassword(ctx, password)
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)
@@ -566,7 +577,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 			slog.InfoContext(ctx, "👑 Default admin user created!")
 			slog.InfoContext(ctx, "🔑 Default admin username", "username", opts.Username)
 			if opts.Password == "" {
-				slog.InfoContext(ctx, "🔑 Default admin password", "generatedPassword", password)
+				slog.InfoContext(ctx, "🔑 Default admin password was generated and written to a file", "file", filepath.Join(opts.DataDirectory, InitialAdminPasswordFile))
 				slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
 			}
 			return nil

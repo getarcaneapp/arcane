@@ -405,6 +405,7 @@ func initializeStartupState(p initializeStartupStateParams) error {
 				Username:       p.Config.DefaultAdminUsername,
 				Password:       p.Config.DefaultAdminPassword,
 				PasswordPolicy: p.Settings.GetStringSetting(ctx, "authPasswordPolicy"),
+				DataDirectory:  "data",
 			})
 		},
 		func(ctx context.Context) error {
