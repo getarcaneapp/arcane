@@ -4533,5 +4533,11 @@
   "choose_folder": "選擇資料夾",
   "build_choose_context_description": "選擇要用作建置上下文的工作區資料夾。",
   "build_edit_files_hint": "請在「檔案」分頁中編輯檔案。",
-  "no_file_open": "沒有開啟任何檔案"
+  "no_file_open": "沒有開啟任何檔案",
+  "git_provider": "Git 服務供應商",
+  "git_provider_description": "設定檔案與提交的連結格式。",
+  "detect_from_url": "從 URL 偵測",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
