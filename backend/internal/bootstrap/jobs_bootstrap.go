@@ -147,7 +147,7 @@ func startJobScheduler(p startJobSchedulerParams) {
 			}
 			p.Coordinator.Activate()
 			if _, submitErr := p.Coordinator.Submit(ctx, types.SchedulerRequest{JobID: p.Analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
-				return fmt.Errorf("submit startup job %q: %w", p.Analytics.Name(), submitErr)
+				slog.WarnContext(ctx, "Failed to submit startup job", "job", p.Analytics.Name(), "error", submitErr)
 			}
 			// Standalone tasks wait until upgrade job recovery has read its job, so a resumed step's new checkpoint
 			// is never mistaken for one the previous process left.

@@ -192,7 +192,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 		}
 	}
 	if pruneErr := q.prune(ctx, states); pruneErr != nil {
-		return fmt.Errorf("prune startup job history: %w", pruneErr)
+		slog.WarnContext(ctx, "Startup job retention failed; the dispatcher will retry", "error", pruneErr)
 	}
 	if errErr := ctx.Err(); errErr != nil {
 		return fmt.Errorf("initialize job coordinator: %w", errErr)

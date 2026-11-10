@@ -20,6 +20,7 @@ type (
 	Admission struct {
 		service *actor.Service
 		pending map[string]map[string]types.SchedulerAdmissionCommand
+		held    map[string]string
 		epoch   string
 		mu      sync.Mutex
 	}
@@ -42,7 +43,12 @@ const (
 )
 
 func NewAdmission(service *actor.Service, epoch string) *Admission {
-	return &Admission{service: service, epoch: epoch, pending: make(map[string]map[string]types.SchedulerAdmissionCommand)}
+	return &Admission{
+		service: service,
+		epoch:   epoch,
+		pending: make(map[string]map[string]types.SchedulerAdmissionCommand),
+		held:    make(map[string]string),
+	}
 }
 
 func (a *Admission) Register(runtime *francis.Runtime) error {
@@ -60,21 +66,21 @@ func (a *Admission) TryAcquire(ctx context.Context, key types.SchedulerAdmission
 	if err := a.retryReleases(ctx, id); err != nil {
 		return nil, false, err
 	}
+	a.mu.Lock()
+	_, busy := a.held[id]
+	if !busy {
+		a.held[id] = token
+	}
+	a.mu.Unlock()
+	if busy {
+		return nil, false, nil
+	}
 	// Finish admission after submission so cancellation cannot orphan a lease.
 	invokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	envelope, err := a.service.Invoke(invokeCtx, admissionType, id, "acquire", types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
-	if err != nil {
+	if _, err := a.service.Invoke(invokeCtx, admissionType, id, "acquire", types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token}); err != nil {
 		a.release(ctx, id, types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
 		return nil, false, err
-	}
-	var acquired bool
-	if decodeErr := envelope.Decode(&acquired); decodeErr != nil {
-		a.release(ctx, id, types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
-		return nil, false, decodeErr
-	}
-	if !acquired {
-		return nil, false, nil
 	}
 	return &Lease{admission: a, id: id, token: token}, true, nil
 }
@@ -106,6 +112,9 @@ func (l *Lease) Release(ctx context.Context) {
 
 func (a *Admission) release(ctx context.Context, id string, command types.SchedulerAdmissionCommand) {
 	a.mu.Lock()
+	if a.held[id] == command.Token {
+		delete(a.held, id)
+	}
 	if a.pending[id] == nil {
 		a.pending[id] = make(map[string]types.SchedulerAdmissionCommand)
 	}
@@ -152,7 +161,7 @@ func (a *admissionActor) Invoke(ctx context.Context, method string, data actor.E
 	switch method {
 	case "acquire":
 		if state.Epoch == command.Epoch && state.Token != "" {
-			return false, nil
+			slog.WarnContext(ctx, "Replacing stale resource admission", "resource", a.id, "acquiredAt", state.AcquiredAt)
 		}
 		state = types.SchedulerAdmissionState{Epoch: command.Epoch, Token: command.Token, AcquiredAt: time.Now().UTC()}
 	case "release":
