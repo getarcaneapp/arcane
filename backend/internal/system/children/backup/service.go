@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -145,6 +146,7 @@ type (
 		backupWorkflow        *flow.Workflow
 		policyWorkflow        *flow.Workflow
 		operations            metric.Int64Counter
+		managerStarts         sync.Mutex
 	}
 
 	manualBackupInput struct {
@@ -1681,6 +1683,8 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 		if _, parseErr := uuid.Parse(strings.TrimPrefix(request.ID, "system-")); parseErr != nil {
 			return nil, common.Classify(common.ErrValidation, errors.New("invalid system backup id"))
 		}
+		s.managerStarts.Lock()
+		defer s.managerStarts.Unlock()
 		standalone, listErr := s.flow.Standalone(ctx)
 		if listErr != nil {
 			return nil, listErr
