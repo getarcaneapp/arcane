@@ -4533,5 +4533,11 @@
   "choose_folder": "Επιλογή φακέλου",
   "build_choose_context_description": "Επιλέξτε τον φάκελο του χώρου εργασίας που θα χρησιμοποιηθεί ως πλαίσιο κατασκευής.",
   "build_edit_files_hint": "Επεξεργαστείτε τα αρχεία στην καρτέλα «Αρχεία».",
-  "no_file_open": "Δεν υπάρχει ανοιχτό αρχείο"
+  "no_file_open": "Δεν υπάρχει ανοιχτό αρχείο",
+  "git_provider": "Πάροχος Git",
+  "git_provider_description": "Ορίζει τη μορφή των συνδέσμων για τα αρχεία και τις υποβολές.",
+  "detect_from_url": "Ανίχνευση από τη διεύθυνση URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
