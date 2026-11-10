@@ -4533,5 +4533,11 @@
   "choose_folder": "フォルダを選択してください",
   "build_choose_context_description": "ビルドコンテキストとして使用するワークスペースフォルダを選択してください。",
   "build_edit_files_hint": "[ファイル] タブでファイルを編集します。",
-  "no_file_open": "開いているファイルはありません"
+  "no_file_open": "開いているファイルはありません",
+  "git_provider": "Git プロバイダー",
+  "git_provider_description": "ファイルおよびコミットのリンク形式を設定します。",
+  "detect_from_url": "URLから検出する",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
