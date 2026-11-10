@@ -4533,5 +4533,11 @@
   "choose_folder": "Ordner auswählen",
   "build_choose_context_description": "Wählen Sie den Arbeitsbereichsordner aus, der als Build-Kontext verwendet werden soll.",
   "build_edit_files_hint": "Bearbeiten Sie Dateien auf der Registerkarte „Dateien“.",
-  "no_file_open": "Es ist keine Datei geöffnet"
+  "no_file_open": "Es ist keine Datei geöffnet",
+  "git_provider": "Git-Anbieter",
+  "git_provider_description": "Legt das Link-Format für Dateien und Commits fest.",
+  "detect_from_url": "Aus der URL erkennen",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
