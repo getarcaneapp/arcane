@@ -418,7 +418,7 @@ test.describe('Workspace restore', () => {
 			await route.fulfill({ json: response({ policies: [], recoveryKeyStored: true }) });
 		});
 		await page.route(
-			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/files/browse(?:\\?.*)?$`),
+			new RegExp(`/api/environments/0/backups/${SYSTEM_BACKUP_ID}/files/browse(?:\\?.*)?$`),
 			async (route) => {
 				const url = new URL(route.request().url());
 				await browse(
@@ -434,7 +434,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
+			new RegExp(`/api/environments/0/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
 			async (route) => {
 				await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 			}

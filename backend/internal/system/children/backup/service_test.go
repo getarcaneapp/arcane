@@ -2,6 +2,8 @@ package backup
 
 import (
 	"context"
+	"encoding/json/v2"
+	"errors"
 	"testing"
 
 	"github.com/libtnb/sqlite"
@@ -16,8 +18,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/volume"
@@ -25,6 +29,14 @@ import (
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
+
+type recordingTransport struct {
+	environment.RemoteTransport
+
+	failing string
+	calls   map[string]types.CreateSystemBackupRequest
+	paths   []string
+}
 
 func TestHistoryDestinationDecoration(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -88,13 +100,13 @@ func TestRecoveryEnvironmentIncludesRuntimeSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	environment := NewService(Dependencies{
+	recovered := NewService(Dependencies{
 		Config:   cfg,
 		Settings: settingsService,
 	}).recoveryEnvironment(t.Context())
-	require.Equal(t, "encryption-secret", environment["ARCANE_ENCRYPTION_KEY"])
-	require.Equal(t, "admin-key", environment["ARCANE_ADMIN_STATIC_API_KEY"])
-	require.Equal(t, "0640", environment["ARCANE_FILE_PERM"])
+	require.Equal(t, "encryption-secret", recovered["ARCANE_ENCRYPTION_KEY"])
+	require.Equal(t, "admin-key", recovered["ARCANE_ADMIN_STATIC_API_KEY"])
+	require.Equal(t, "0640", recovered["ARCANE_FILE_PERM"])
 }
 
 func TestRecoveryEnvironmentIncludesEnvSourcedSettings(t *testing.T) {
@@ -114,15 +126,15 @@ func TestRecoveryEnvironmentIncludesEnvSourcedSettings(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	environment := NewService(Dependencies{
+	recovered := NewService(Dependencies{
 		Config:      &config.Config{},
 		Settings:    settingsService,
 		SettingsEnv: settingsEnv,
 	}).recoveryEnvironment(t.Context())
-	require.Equal(t, "oidc-secret", environment["ARCANE_OIDC_CLIENT_SECRET"])
-	require.Equal(t, "tcp://docker:2375", environment["DOCKER_HOST"])
-	require.Equal(t, "/srv/projects", environment["ARCANE_PROJECTS_DIRECTORY"])
-	require.NotContains(t, environment, "PROJECTS_DIRECTORY")
+	require.Equal(t, "oidc-secret", recovered["ARCANE_OIDC_CLIENT_SECRET"])
+	require.Equal(t, "tcp://docker:2375", recovered["DOCKER_HOST"])
+	require.Equal(t, "/srv/projects", recovered["ARCANE_PROJECTS_DIRECTORY"])
+	require.NotContains(t, recovered, "PROJECTS_DIRECTORY")
 }
 
 func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
@@ -186,4 +198,96 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
+func (t *recordingTransport) ProxyJSONRequestForEnvironment(_ context.Context, env environment.Environment, method, path string, body []byte, _ any) error {
+	var request types.CreateSystemBackupRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		return err
+	}
+	t.calls[env.ID] = request
+	t.paths = append(t.paths, method+" "+path)
+	if env.ID == t.failing {
+		return errors.New("agent is not connected")
+	}
+	return nil
+}
+
+func TestBackUpRemoteEnvironments(t *testing.T) {
+	const managerKey = "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&backupengine.SystemBackupRecoveryConfig{}, &environment.Environment{}))
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-fanout-test-key-32byte", Environment: "test"})
+	db := &database.DB{DB: gormDB}
+	recoveryKeys := backupengine.NewRecoveryKeyStore(db)
+	require.NoError(t, recoveryKeys.Set(t.Context(), backupengine.RecoveryKeyConfigID, managerKey))
+	for _, id := range []string{"env-new", "env-offline", "env-done"} {
+		require.NoError(t, gormDB.Create(&environment.Environment{
+			BaseModel: database.BaseModel{ID: id},
+			Name:      id,
+			ApiUrl:    "http://" + id,
+			Enabled:   true,
+		}).Error)
+	}
+	require.NoError(t, gormDB.Create(&environment.Environment{
+		BaseModel: database.BaseModel{ID: "env-disabled"},
+		Name:      "env-disabled",
+		ApiUrl:    "http://env-disabled",
+	}).Error)
+	run := &types.SystemBackupRun{
+		ID:              "system-run",
+		Destination:     types.SystemBackupDestinationLocalS3,
+		S3DestinationID: "offsite",
+	}
+	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
+		{ResourceType: "environment", ID: "environment:env-done", Status: types.RunStatusSucceeded},
+		{ResourceType: "environment", ID: "environment:env-offline", Status: types.RunStatusFailed},
+	}}}
+
+	transport := &recordingTransport{failing: "env-offline", calls: map[string]types.CreateSystemBackupRequest{}}
+	service := NewService(Dependencies{
+		Config:       &config.Config{},
+		RecoveryKeys: recoveryKeys,
+	})
+	service.environments = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB:              db,
+		RemoteTransport: transport,
+	})
+	recorded := map[string]types.TargetOutcome{}
+	ctx := jobcontext.WithExecution(t.Context(), previous, func(target types.TargetOutcome) error {
+		recorded[target.ID] = target
+		return nil
+	})
+	service.backUpRemoteEnvironments(ctx, run, "")
+
+	require.Equal(t, []string{"POST /api/backups", "POST /api/backups"}, transport.paths)
+	require.Equal(t, map[string]types.CreateSystemBackupRequest{
+		"env-new": {
+			Destination:     types.SystemBackupDestinationLocalS3,
+			S3DestinationID: "offsite",
+			RecoveryKey:     backupengine.EnvironmentRecoveryKey(managerKey, "env-new"),
+		},
+		"env-offline": {
+			Destination:     types.SystemBackupDestinationLocalS3,
+			S3DestinationID: "offsite",
+			RecoveryKey:     backupengine.EnvironmentRecoveryKey(managerKey, "env-offline"),
+		},
+	}, transport.calls)
+	require.Equal(t, map[string]types.TargetOutcome{
+		"environment:env-new":     {ResourceType: "environment", ID: "environment:env-new", Status: types.RunStatusSucceeded},
+		"environment:env-offline": {ResourceType: "environment", ID: "environment:env-offline", Status: types.RunStatusFailed, Message: "agent is not connected"},
+	}, recorded)
+
+	agentTransport := &recordingTransport{calls: map[string]types.CreateSystemBackupRequest{}}
+	agentService := NewService(Dependencies{
+		Config:       &config.Config{AgentEnabled: true},
+		RecoveryKeys: recoveryKeys,
+	})
+	agentService.environments = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB:              db,
+		RemoteTransport: agentTransport,
+	})
+	agentService.backUpRemoteEnvironments(t.Context(), run, "")
+	require.Empty(t, agentTransport.calls)
 }
