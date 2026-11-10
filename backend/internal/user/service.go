@@ -1,6 +1,7 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -510,7 +511,13 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 	return out, nil
 }
 
-func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
+type DefaultAdminOptions struct {
+	Username       string
+	Password       string
+	PasswordPolicy string
+}
+
+func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminOptions) error {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
 		return fmt.Errorf("failed to count users: %w", err)
@@ -533,35 +540,42 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		}
 
 		if userCount == 0 {
-			hashedPassword, err := s.HashPassword(ctx, "arcane-admin")
+			if opts.Password != "" {
+				if err := validation.ValidatePasswordPolicy(opts.Password, opts.PasswordPolicy); err != nil {
+					return fmt.Errorf("invalid ARCANE_DEFAULT_ADMIN_PASSWORD: %w", err)
+				}
+			}
+			hashedPassword, err := s.HashPassword(ctx, cmp.Or(opts.Password, "arcane-admin"))
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)
 			}
 			email := "admin@localhost"
 			displayName := "Arcane Admin"
 			userModel := &User{
-				Username:               "arcane",
+				Username:               opts.Username,
 				Email:                  new(email),
 				DisplayName:            new(displayName),
 				PasswordHash:           hashedPassword,
-				RequiresPasswordChange: true,
+				RequiresPasswordChange: opts.Password == "",
 			}
 			if createAdminUserErr := tx.Create(userModel).Error; createAdminUserErr != nil {
 				return fmt.Errorf("failed to create default admin user: %w", createAdminUserErr)
 			}
 			adminUserID = userModel.ID
 			slog.InfoContext(ctx, "👑 Default admin user created!")
-			slog.InfoContext(ctx, "🔑 Username: arcane")
-			slog.InfoContext(ctx, "🔑 Password: arcane-admin")
-			slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+			slog.InfoContext(ctx, "🔑 Username: "+opts.Username)
+			if opts.Password == "" {
+				slog.InfoContext(ctx, "🔑 Password: arcane-admin")
+				slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+			}
 			return nil
 		}
 
 		// Users exist but no global admin does (recovery only — the early
-		// return above skips this path on healthy installs). See if `arcane`
-		// is present; if not, leave the install alone.
+		// return above skips this path on healthy installs). See if the default
+		// admin is present; if not, leave the install alone.
 		var existing User
-		err := tx.Where("username = ?", "arcane").First(&existing).Error
+		err := tx.Where("username = ?", opts.Username).First(&existing).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil

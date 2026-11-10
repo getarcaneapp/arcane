@@ -46,6 +46,9 @@ type (
 
 		OidcRoleMappings string `env:"ARCANE_OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
+		DefaultAdminUsername string `env:"ARCANE_DEFAULT_ADMIN_USERNAME" default:"arcane"`
+		DefaultAdminPassword string `env:"ARCANE_DEFAULT_ADMIN_PASSWORD" default:"" options:"file"`
+
 		PUID                string `env:"PUID" default:""`
 		PGID                string `env:"PGID" default:""`
 		DockerConfig        string `env:"DOCKER_CONFIG" default:""`
@@ -74,6 +77,7 @@ type (
 		AllowDowngrade          bool          `env:"ARCANE_ALLOW_DOWNGRADE" default:"false"`
 		AllowCLIPasswordReset   bool          `env:"ARCANE_ALLOW_CLI_PASSWORD_RESET" default:"false"`
 		AllowCLIMFAReset        bool          `env:"ARCANE_ALLOW_CLI_MFA_RESET" default:"false"`
+		DefaultAdminDisabled    bool          `env:"ARCANE_DEFAULT_ADMIN_DISABLED" default:"false"`
 		TLSEnabled              bool          `env:"ARCANE_TLS_ENABLED" default:"false"`
 		InContainer             bool          `env:"ARCANE_IN_CONTAINER" default:"false"`
 		LogJson                 bool          `env:"ARCANE_LOG_JSON" default:"false"`

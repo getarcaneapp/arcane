@@ -124,7 +124,7 @@ func createDefaultAdminUser(t *testing.T, ctx context.Context, service *ApiKeySe
 
 	localUser := &user.User{
 		ID:       "default-admin-user",
-		Username: defaultAdminUsername,
+		Username: "arcane",
 	}
 
 	created, err := userService.CreateUser(ctx, localUser)
@@ -230,7 +230,7 @@ func TestReconcileDefaultAdminAPIKeyCreatesManagedKey(t *testing.T) {
 	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	rawKey := "arc_bootstrapcreate1234567890"
-	err := service.ReconcileDefaultAdminAPIKey(ctx, rawKey)
+	err := service.ReconcileDefaultAdminAPIKey(ctx, "arcane", rawKey)
 	require.NoError(t, err)
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
@@ -427,11 +427,11 @@ func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
 	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
 	rawKey := "arc_bootstrapstable1234567890"
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", rawKey))
 	first := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, first, 1)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", rawKey))
 	second := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, second, 1)
 	require.Equal(t, first[0].ID, second[0].ID)
@@ -444,11 +444,11 @@ func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
 
 	oldKey := "arc_bootstrapoldvalue1234567890"
 	newKey := "arc_bootstrapnewvalue1234567890"
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, oldKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", oldKey))
 	first := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, first, 1)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, newKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", newKey))
 	second := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, second, 1)
 	require.NotEqual(t, first[0].ID, second[0].ID)
@@ -468,7 +468,7 @@ func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) 
 
 	oldKey := "arc_bootstraprotateold1234567890"
 	newKey := "arc_bootstraprotatenew1234567890"
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, oldKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", oldKey))
 	oldRow := listAPIKeysForUser(t, db, adminUser.ID)[0]
 
 	published := false
@@ -480,7 +480,7 @@ func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) 
 		service.storeValidatedKey(service.cacheGen.Load(), service.hashRawAPIKey(oldKey), oldRow)
 	}))
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, newKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", newKey))
 	require.True(t, published)
 
 	_, err := service.ValidateApiKey(ctx, oldKey)
@@ -496,10 +496,10 @@ func TestReconcileDefaultAdminAPIKeyDeletesManagedKeyWhenUnset(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapdelete1234567890"))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", "arc_bootstrapdelete1234567890"))
 	require.Len(t, listAPIKeysForUser(t, db, adminUser.ID), 1)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, ""))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", ""))
 	require.Empty(t, listAPIKeysForUser(t, db, adminUser.ID))
 }
 
@@ -514,7 +514,7 @@ func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmanualsafe1234567890"))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", "arc_bootstrapmanualsafe1234567890"))
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 2)
@@ -547,7 +547,7 @@ func TestReconcileDefaultAdminAPIKeyDeletesDuplicateManagedKeys(t *testing.T) {
 	_, err = service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, rawKey)
 	require.NoError(t, err)
 
-	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
+	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arcane", rawKey))
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 1)
@@ -558,7 +558,7 @@ func TestReconcileDefaultAdminAPIKeySkipsWhenDefaultAdminMissing(t *testing.T) {
 	ctx := t.Context()
 	service, db, _ := setupAPIKeyService(t)
 
-	err := service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmissing1234567890")
+	err := service.ReconcileDefaultAdminAPIKey(ctx, "arcane", "arc_bootstrapmissing1234567890")
 	require.NoError(t, err)
 
 	var count int64
@@ -572,7 +572,7 @@ func TestReconcileDefaultAdminAPIKeyRejectsInvalidKey(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	adminUser := createDefaultAdminUser(t, ctx, service, userService)
 
-	err := service.ReconcileDefaultAdminAPIKey(ctx, "invalid-key")
+	err := service.ReconcileDefaultAdminAPIKey(ctx, "arcane", "invalid-key")
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
 	require.Empty(t, listAPIKeysForUser(t, db, adminUser.ID))
 }

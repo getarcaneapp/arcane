@@ -60,7 +60,6 @@ const (
 	apiKeyLastUsedWriteWindow = 5 * time.Minute
 	apiKeySHA256HashPrefix    = "sha256$"
 	managedByAdminBootstrap   = "admin_account_default_api_key"
-	defaultAdminUsername      = "arcane"
 	defaultAdminAPIKeyName    = "Static Admin API Key"
 )
 
@@ -514,11 +513,11 @@ func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, ra
 	}, new(managedByAdminBootstrap), nil, ApiKeyKindScoped)
 }
 
-func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*user.User, error) {
-	adminUser, err := s.userService.GetUserByUsername(ctx, defaultAdminUsername)
+func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context, username string) (*user.User, error) {
+	adminUser, err := s.userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			slog.WarnContext(ctx, "Default admin user not found, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+			slog.WarnContext(ctx, "Default admin user not found, skipping default admin API key reconciliation", "username", username)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to load default admin user: %w", err)
@@ -531,7 +530,7 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*user.User, er
 		return nil, fmt.Errorf("failed to resolve default admin permissions: %w", resolvePermissionsErr)
 	}
 	if !perms.IsGlobalAdmin() {
-		slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+		slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", username)
 		return nil, nil
 	}
 
@@ -654,10 +653,10 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, tx *gorm.DB
 	return deleteIDs, s.createManagedDefaultAdminAPIKey(ctx, tx, userID, rawKey)
 }
 
-func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
+func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, username, rawKey string) error {
 	rawKey = strings.TrimSpace(rawKey)
 
-	adminUser, err := s.getDefaultAdminUser(ctx)
+	adminUser, err := s.getDefaultAdminUser(ctx, username)
 	if err != nil || adminUser == nil {
 		return err
 	}
