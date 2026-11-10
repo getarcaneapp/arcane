@@ -1754,10 +1754,10 @@ func TestGitOpsDeploy_ComposeOverrideAndEnv(t *testing.T) {
 	baseCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
 	tests := []struct {
 		files        map[string]string
-		request      types.GitOpsSync
+		wantEnv      map[string]string
 		name         string
 		wantOverride string
-		wantEnv      map[string]string
+		request      types.GitOpsSync
 	}{
 		{
 			name: "auto-detects yaml override beside a custom compose name",
@@ -1831,7 +1831,7 @@ func TestGitOpsDeploy_ComposeOverrideAndEnv(t *testing.T) {
 			if tt.wantEnv != nil {
 				effective, parseErr := projects.ParseProjectEnvFile(t.Context(), filepath.Join(env.projectPath, ".env"), nil)
 				require.NoError(t, parseErr)
-				assert.Equal(t, projects.EnvMap(tt.wantEnv), effective)
+				assert.Equal(t, tt.wantEnv, effective)
 			}
 		})
 	}

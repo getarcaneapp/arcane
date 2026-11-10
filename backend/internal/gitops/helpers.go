@@ -32,7 +32,7 @@ func validateDeploySource(sync projectpkg.GitOpsSync) error {
 	case cleanedOverride == path.Clean(filepath.ToSlash(sync.ComposePath)):
 		return invalid("composeOverridePath", "Override file must differ from the compose file.")
 	case sync.TargetType != "swarm_stack" && sync.SyncDirectory:
-		return invalid("composeOverridePath", "A custom override file is not supported with \"Sync entire directory\" for projects; name it compose.override.yaml beside the compose file or list it in COMPOSE_FILE.")
+		return invalid("composeOverridePath", "Project directory syncs only merge compose.override.yaml beside the compose file; rename it or list it in COMPOSE_FILE.")
 	}
 	if _, err := projects.ParseProjectEnvContent(kit.FromPtr(sync.EnvContent), nil); err != nil {
 		return invalid("envContent", err.Error())
