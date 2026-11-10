@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
 
+	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/italypaleale/francis/components"
 	"github.com/italypaleale/francis/components/postgres"
 	"github.com/italypaleale/francis/components/sqlite"
@@ -86,6 +88,94 @@ func openProvider(ctx context.Context, storeURL string) (components.ActorProvide
 		return nil, errors.Join(fmt.Errorf("initialize actor provider: %w", err), provider.Close())
 	}
 	return provider, nil
+}
+
+func removeOrphanedCancels(ctx context.Context, storeURL string, workflows []*workflow.Workflow) (err error) {
+	if len(workflows) == 0 {
+		return nil
+	}
+	provider, err := openProvider(ctx, storeURL)
+	if err != nil {
+		return fmt.Errorf("open actor storage: %w", err)
+	}
+	defer func() {
+		if closeErr := provider.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close actor provider: %w", closeErr))
+		}
+	}()
+	for _, wf := range workflows {
+		actorType := workflow.ActorTypePrefix + wf.Name()
+		cancels, listErr := unfinishedCancels(ctx, provider, actorType)
+		if listErr != nil {
+			return listErr
+		}
+		if len(cancels) == 0 {
+			continue
+		}
+		started, listErr := startedInstances(ctx, provider, actorType)
+		if listErr != nil {
+			return listErr
+		}
+		for _, job := range cancels {
+			if _, ok := started[job.ActorID]; ok {
+				continue
+			}
+			deleteErr := provider.DeleteJob(ctx, actorType, job.ActorID, job.JobID, components.DeleteJobReq{})
+			if deleteErr != nil && !errors.Is(deleteErr, components.ErrNoJob) {
+				return fmt.Errorf("remove orphaned %s cancel job: %w", wf.Name(), deleteErr)
+			}
+			slog.InfoContext(ctx, "Removed orphaned workflow cancel job", "workflow", wf.Name(), "instanceId", job.ActorID, "jobId", job.JobID)
+		}
+	}
+	return nil
+}
+
+func unfinishedCancels(ctx context.Context, provider components.ActorProvider, actorType string) ([]components.JobInfo, error) {
+	var cancels []components.JobInfo
+	var after components.UUIDCursor
+	for {
+		page, err := provider.QueryJobs(ctx, components.QueryJobsReq{
+			ActorType: actorType,
+			After:     after,
+			Limit:     components.MaxManagementListLimit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list %s jobs: %w", actorType, err)
+		}
+		for _, job := range page.Jobs {
+			if job.Method == "cancel" && job.Status != components.JobStatusCompleted {
+				cancels = append(cancels, job)
+			}
+		}
+		if !page.HasMore || len(page.Jobs) == 0 {
+			return cancels, nil
+		}
+		if after, err = uuid.Parse(page.Jobs[len(page.Jobs)-1].JobID); err != nil {
+			return nil, fmt.Errorf("page %s jobs: %w", actorType, err)
+		}
+	}
+}
+
+func startedInstances(ctx context.Context, provider components.ActorProvider, actorType string) (map[string]struct{}, error) {
+	started := map[string]struct{}{}
+	after := ""
+	for {
+		page, err := provider.ListStates(ctx, components.ListStatesReq{
+			ActorType: actorType,
+			After:     after,
+			Limit:     components.MaxListStatesLimit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list %s instances: %w", actorType, err)
+		}
+		for _, state := range page.States {
+			started[state.ActorID] = struct{}{}
+		}
+		if !page.HasMore || len(page.States) == 0 {
+			return started, nil
+		}
+		after = page.States[len(page.States)-1].ActorID
+	}
 }
 
 func ClearRestoredHosts(ctx context.Context, databaseURL string) (err error) {
