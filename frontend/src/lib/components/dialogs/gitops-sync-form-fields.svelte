@@ -105,7 +105,7 @@
 		type="textarea"
 		label={m.common_environment_variables()}
 		placeholder={m.git_sync_pre_deploy_env_placeholder()}
-		helpText={m.git_sync_env_content_help()}
+		helpText={m.env_merge_help()}
 		bind:input={inputs.envContent}
 		class="[&_textarea]:font-mono [&_textarea]:text-xs"
 	/>
