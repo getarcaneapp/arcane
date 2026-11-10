@@ -398,10 +398,18 @@ func initializeStartupState(p initializeStartupStateParams) error {
 			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
 			}
-			return p.User.CreateDefaultAdmin(ctx)
+			if p.Config.DefaultAdminDisabled {
+				return nil
+			}
+			return p.User.CreateDefaultAdmin(ctx, user.DefaultAdminOptions{
+				Username:       p.Config.DefaultAdminUsername,
+				Password:       p.Config.DefaultAdminPassword,
+				PasswordPolicy: p.Settings.GetStringSetting(ctx, "authPasswordPolicy"),
+				DataDirectory:  "data",
+			})
 		},
 		func(ctx context.Context) error {
-			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, p.Config.AdminStaticAPIKey)
+			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, p.Config.DefaultAdminUsername, p.Config.AdminStaticAPIKey)
 		},
 		func(ctx context.Context) error {
 			startup.InitializeAutoLogin(ctx, p.Config.AutoLoginUsername)

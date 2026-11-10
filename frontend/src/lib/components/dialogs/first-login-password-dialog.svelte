@@ -22,7 +22,7 @@
 		onSuccess?: () => void;
 	} = $props();
 
-	let currentPassword = $state('arcane-admin');
+	let currentPassword = $state('');
 	let newPassword = $state('');
 	let confirmPassword = $state('');
 	let error = $state('');

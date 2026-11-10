@@ -1,6 +1,7 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -13,6 +14,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -22,6 +24,8 @@ import (
 	"gorm.io/gorm/clause"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -51,9 +55,19 @@ type (
 		argon2Slots          chan struct{}
 		revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
 	}
+
+	DefaultAdminOptions struct {
+		Username       string
+		Password       string
+		PasswordPolicy string
+		DataDirectory  string
+	}
 )
 
-const BackdropMaxBytes = 10 << 20
+const (
+	BackdropMaxBytes         = 10 << 20
+	InitialAdminPasswordFile = "initial-admin-password"
+)
 
 var (
 	ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
@@ -510,7 +524,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 	return out, nil
 }
 
-func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
+func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminOptions) error {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
 		return fmt.Errorf("failed to count users: %w", err)
@@ -533,35 +547,48 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		}
 
 		if userCount == 0 {
-			hashedPassword, err := s.HashPassword(ctx, "arcane-admin")
+			if opts.Password != "" {
+				if err := validation.ValidatePasswordPolicy(opts.Password, opts.PasswordPolicy); err != nil {
+					return fmt.Errorf("invalid ARCANE_DEFAULT_ADMIN_PASSWORD: %w", err)
+				}
+			}
+			password := cmp.Or(opts.Password, rand.Text())
+			if opts.Password == "" {
+				if err := writeInitialAdminPassword(ctx, opts.DataDirectory, password); err != nil {
+					return err
+				}
+			}
+			hashedPassword, err := s.HashPassword(ctx, password)
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)
 			}
 			email := "admin@localhost"
 			displayName := "Arcane Admin"
 			userModel := &User{
-				Username:               "arcane",
+				Username:               opts.Username,
 				Email:                  new(email),
 				DisplayName:            new(displayName),
 				PasswordHash:           hashedPassword,
-				RequiresPasswordChange: true,
+				RequiresPasswordChange: opts.Password == "",
 			}
 			if createAdminUserErr := tx.Create(userModel).Error; createAdminUserErr != nil {
 				return fmt.Errorf("failed to create default admin user: %w", createAdminUserErr)
 			}
 			adminUserID = userModel.ID
 			slog.InfoContext(ctx, "👑 Default admin user created!")
-			slog.InfoContext(ctx, "🔑 Username: arcane")
-			slog.InfoContext(ctx, "🔑 Password: arcane-admin")
-			slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+			slog.InfoContext(ctx, "🔑 Default admin username", "username", opts.Username)
+			if opts.Password == "" {
+				slog.InfoContext(ctx, "🔑 Default admin password was generated and written to a file", "file", filepath.Join(opts.DataDirectory, InitialAdminPasswordFile))
+				slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
+			}
 			return nil
 		}
 
 		// Users exist but no global admin does (recovery only — the early
-		// return above skips this path on healthy installs). See if `arcane`
-		// is present; if not, leave the install alone.
+		// return above skips this path on healthy installs). See if the default
+		// admin is present; if not, leave the install alone.
 		var existing User
-		err := tx.Where("username = ?", "arcane").First(&existing).Error
+		err := tx.Where("username = ?", opts.Username).First(&existing).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
@@ -579,6 +606,20 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		return nil
 	}
 	return s.grantDefaultAdminRole(ctx, adminUserID)
+}
+
+func writeInitialAdminPassword(ctx context.Context, dataDirectory, password string) error {
+	absolute, err := filepath.Abs(dataDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to resolve the data directory: %w", err)
+	}
+	if mkdirAllErr := (acfs.Host{}).MkdirAll(ctx, absolute, kitfs.DirPerm); mkdirAllErr != nil {
+		return fmt.Errorf("failed to create the data directory: %w", mkdirAllErr)
+	}
+	if writeErr := (acfs.Root{Path: absolute}).Write(ctx, "/"+InitialAdminPasswordFile, []byte(password+"\n"), acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+		return fmt.Errorf("failed to write the generated default admin password: %w", writeErr)
+	}
+	return nil
 }
 
 func (s *UserService) grantDefaultAdminRole(ctx context.Context, adminUserID string) error {

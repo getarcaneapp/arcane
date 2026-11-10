@@ -60,7 +60,6 @@ const (
 	apiKeyLastUsedWriteWindow = 5 * time.Minute
 	apiKeySHA256HashPrefix    = "sha256$"
 	managedByAdminBootstrap   = "admin_account_default_api_key"
-	defaultAdminUsername      = "arcane"
 	defaultAdminAPIKeyName    = "Static Admin API Key"
 )
 
@@ -514,11 +513,11 @@ func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, ra
 	}, new(managedByAdminBootstrap), nil, ApiKeyKindScoped)
 }
 
-func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*user.User, error) {
-	adminUser, err := s.userService.GetUserByUsername(ctx, defaultAdminUsername)
+func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context, username string) (*user.User, error) {
+	adminUser, err := s.userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			slog.WarnContext(ctx, "Default admin user not found, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+			slog.WarnContext(ctx, "Default admin user not found, skipping default admin API key reconciliation", "username", username)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to load default admin user: %w", err)
@@ -531,7 +530,7 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*user.User, er
 		return nil, fmt.Errorf("failed to resolve default admin permissions: %w", resolvePermissionsErr)
 	}
 	if !perms.IsGlobalAdmin() {
-		slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
+		slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", username)
 		return nil, nil
 	}
 
@@ -654,18 +653,30 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, tx *gorm.DB
 	return deleteIDs, s.createManagedDefaultAdminAPIKey(ctx, tx, userID, rawKey)
 }
 
-func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
+func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, username, rawKey string) error {
 	rawKey = strings.TrimSpace(rawKey)
 
-	adminUser, err := s.getDefaultAdminUser(ctx)
-	if err != nil || adminUser == nil {
+	adminUser, err := s.getDefaultAdminUser(ctx, username)
+	if err != nil {
 		return err
 	}
 
 	var affectedIDs []string
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		affectedIDs, err = s.reconcileManagedAPIKeys(ctx, tx, adminUser.ID, rawKey)
-		return err
+		if pluckErr := tx.Model(&ApiKey{}).
+			Where("managed_by = ? AND user_id <> ?", managedByAdminBootstrap, kit.FromPtr(adminUser).ID).
+			Pluck("id", &affectedIDs).Error; pluckErr != nil {
+			return fmt.Errorf("failed to load managed API keys of previous owners: %w", pluckErr)
+		}
+		if deleteErr := s.deleteManagedAPIKeysByIDs(tx, affectedIDs); deleteErr != nil {
+			return deleteErr
+		}
+		if adminUser == nil {
+			return nil
+		}
+		reconciledIDs, reconcileErr := s.reconcileManagedAPIKeys(ctx, tx, adminUser.ID, rawKey)
+		affectedIDs = append(affectedIDs, reconciledIDs...)
+		return reconcileErr
 	}); transactionErr != nil {
 		// Rolled back: the DB is unchanged, so cached entries are still valid.
 		return transactionErr

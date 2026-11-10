@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -759,7 +761,7 @@ func TestCreateDefaultAdminDoesNotPromoteRenamedArcaneUser(t *testing.T) {
 	grantGlobalAdmin(t, roleSvc, admin.ID)
 	imposter := createTestUser(t, userSvc, "user-2", "arcane")
 
-	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{Username: "arcane"}))
 
 	assignments, err := roleSvc.ListUserAssignments(ctx, imposter.ID)
 	require.NoError(t, err)
@@ -772,13 +774,69 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 
 	orphan := createTestUser(t, userSvc, "user-1", "arcane")
 
-	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{Username: "arcane"}))
 
 	assignments, err := roleSvc.ListUserAssignments(ctx, orphan.ID)
 	require.NoError(t, err)
 	require.Len(t, assignments, 1)
 	require.Equal(t, authz.BuiltInRoleAdmin, assignments[0].RoleID)
 	require.Nil(t, assignments[0].EnvironmentID)
+}
+
+func TestCreateDefaultAdminUsesConfiguredCredentials(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
+		Username:       "ops-admin",
+		Password:       "Sup3r-Secret-Pass!",
+		PasswordPolicy: "strong",
+	}))
+
+	admin, err := userSvc.GetUserByUsername(ctx, "ops-admin")
+	require.NoError(t, err)
+	require.False(t, admin.RequiresPasswordChange)
+	require.NoError(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, "Sup3r-Secret-Pass!"))
+
+	perms, err := roleSvc.ResolvePermissions(ctx, admin.ID)
+	require.NoError(t, err)
+	require.True(t, perms.IsGlobalAdmin())
+}
+
+func TestCreateDefaultAdminGeneratesRandomPasswordWhenUnset(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+
+	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
+		Username:      "arcane",
+		DataDirectory: dataDirectory,
+	}))
+
+	admin, err := userSvc.GetUserByUsername(ctx, "arcane")
+	require.NoError(t, err)
+	require.True(t, admin.RequiresPasswordChange)
+	require.Error(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, "arcane-admin"))
+
+	generated, err := os.ReadFile(filepath.Join(dataDirectory, userdomain.InitialAdminPasswordFile))
+	require.NoError(t, err)
+	require.NoError(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, strings.TrimSpace(string(generated))))
+}
+
+func TestCreateDefaultAdminRejectsPasswordFailingPolicy(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	err := userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
+		Username:       "ops-admin",
+		Password:       "short",
+		PasswordPolicy: "strong",
+	})
+	require.ErrorContains(t, err, "ARCANE_DEFAULT_ADMIN_PASSWORD")
+
+	_, err = userSvc.GetUserByUsername(ctx, "ops-admin")
+	require.ErrorIs(t, err, common.ErrUserNotFound)
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {

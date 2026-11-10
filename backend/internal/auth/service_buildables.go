@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 
@@ -36,7 +37,7 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginC
 	}
 
 	return &types.AutoLoginConfig{
-		Enabled:  true,
+		Enabled:  s.GetAutoLoginPassword() != "",
 		Username: s.config.AutoLoginUsername,
 	}, nil
 }
@@ -45,5 +46,5 @@ func (s *AuthService) GetAutoLoginPassword() string {
 	if !buildables.HasBuildFeature("autologin") {
 		return ""
 	}
-	return s.config.AutoLoginPassword
+	return cmp.Or(s.config.AutoLoginPassword, s.config.DefaultAdminPassword)
 }
