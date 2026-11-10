@@ -4533,5 +4533,11 @@
   "choose_folder": "Selecciona una carpeta",
   "build_choose_context_description": "Selecciona la carpeta del espacio de trabajo que quieras utilizar como contexto de compilación.",
   "build_edit_files_hint": "Edita los archivos en la pestaña «Archivos».",
-  "no_file_open": "No hay ningún archivo abierto"
+  "no_file_open": "No hay ningún archivo abierto",
+  "git_provider": "Proveedor de Git",
+  "git_provider_description": "Establece el formato de los enlaces para los archivos y las confirmaciones.",
+  "detect_from_url": "Detectar a partir de la URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
