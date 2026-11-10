@@ -4533,5 +4533,11 @@
   "choose_folder": "Mappa kiválasztása",
   "build_choose_context_description": "Válassza ki azt a munkaterületi mappát, amelyet építési kontextusként szeretne használni.",
   "build_edit_files_hint": "A fájlok szerkesztése a „Fájlok” fülön történik.",
-  "no_file_open": "Nincs megnyitott fájl"
+  "no_file_open": "Nincs megnyitott fájl",
+  "git_provider": "Git-szolgáltató",
+  "git_provider_description": "Beállítja a fájlok és a commitok hivatkozási formátumát.",
+  "detect_from_url": "Az URL-ből történő felismerés",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
