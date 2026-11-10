@@ -4533,5 +4533,11 @@
   "choose_folder": "Välj mapp",
   "build_choose_context_description": "Välj den arbetsmapp som ska användas som byggkontext.",
   "build_edit_files_hint": "Redigera filer på fliken ”Filer”.",
-  "no_file_open": "Ingen fil är öppen"
+  "no_file_open": "Ingen fil är öppen",
+  "git_provider": "Git-leverantör",
+  "git_provider_description": "Ställer in länkformatet för filer och inlägg.",
+  "detect_from_url": "Identifiera utifrån URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
