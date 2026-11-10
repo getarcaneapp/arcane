@@ -4533,5 +4533,11 @@
   "choose_folder": "폴더 선택",
   "build_choose_context_description": "빌드 컨텍스트로 사용할 작업 공간 폴더를 선택하십시오.",
   "build_edit_files_hint": "'파일' 탭에서 파일을 편집하세요.",
-  "no_file_open": "열린 파일이 없습니다"
+  "no_file_open": "열린 파일이 없습니다",
+  "git_provider": "Git 제공업체",
+  "git_provider_description": "파일 및 커밋에 대한 링크 형식을 설정합니다.",
+  "detect_from_url": "URL에서 감지",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
