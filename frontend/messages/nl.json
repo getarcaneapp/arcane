@@ -4533,5 +4533,11 @@
   "choose_folder": "Kies een map",
   "build_choose_context_description": "Kies de map met de werkruimte die je als buildcontext wilt gebruiken.",
   "build_edit_files_hint": "Bewerk bestanden op het tabblad ‘Bestanden’.",
-  "no_file_open": "Er is geen bestand geopend"
+  "no_file_open": "Er is geen bestand geopend",
+  "git_provider": "Git-provider",
+  "git_provider_description": "Stelt de linkindeling voor bestanden en commits in.",
+  "detect_from_url": "Detecteren op basis van URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
