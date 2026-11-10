@@ -164,23 +164,24 @@ type (
 		ArchivedAt         *time.Time                 `json:"archivedAt,omitempty" readOnly:"true"`
 		ConfigurationError *ProjectConfigurationError `json:"configurationError,omitempty" readOnly:"true"`
 		EnvironmentTag
-		Status           string       `json:"status" readOnly:"true"`
-		DirName          string       `json:"dirName,omitempty" readOnly:"true"`
-		ComposeContent   string       `json:"composeContent,omitempty"`
-		ComposeFileName  string       `json:"composeFileName,omitempty" readOnly:"true"`
-		EnvContent       string       `json:"envContent,omitempty"`
-		OverrideContent  string       `json:"overrideContent,omitempty"`
-		OverrideFileName string       `json:"overrideFileName,omitempty" readOnly:"true"`
-		Name             string       `json:"name" required:"false"`
-		GitRepositoryURL string       `json:"gitRepositoryURL,omitempty" readOnly:"true"`
-		IconLightURL     string       `json:"iconLightUrl,omitempty" readOnly:"true"`
-		RelativePath     string       `json:"relativePath,omitempty" readOnly:"true"`
-		ID               string       `json:"id" readOnly:"true"`
-		IconDarkURL      string       `json:"iconDarkUrl,omitempty" readOnly:"true"`
-		Path             string       `json:"path" readOnly:"true"`
-		UpdatedAt        string       `json:"updatedAt" readOnly:"true"`
-		CreatedAt        string       `json:"createdAt" readOnly:"true"`
-		Tags             []ProjectTag `json:"tags" readOnly:"true"`
+		Status                string       `json:"status" readOnly:"true"`
+		DirName               string       `json:"dirName,omitempty" readOnly:"true"`
+		ComposeContent        string       `json:"composeContent,omitempty"`
+		ComposeFileName       string       `json:"composeFileName,omitempty" readOnly:"true"`
+		EnvContent            string       `json:"envContent,omitempty"`
+		OverrideContent       string       `json:"overrideContent,omitempty"`
+		OverrideFileName      string       `json:"overrideFileName,omitempty" readOnly:"true"`
+		Name                  string       `json:"name" required:"false"`
+		GitRepositoryURL      string       `json:"gitRepositoryURL,omitempty" readOnly:"true"`
+		GitRepositoryProvider string       `json:"gitRepositoryProvider,omitempty" readOnly:"true"`
+		IconLightURL          string       `json:"iconLightUrl,omitempty" readOnly:"true"`
+		RelativePath          string       `json:"relativePath,omitempty" readOnly:"true"`
+		ID                    string       `json:"id" readOnly:"true"`
+		IconDarkURL           string       `json:"iconDarkUrl,omitempty" readOnly:"true"`
+		Path                  string       `json:"path" readOnly:"true"`
+		UpdatedAt             string       `json:"updatedAt" readOnly:"true"`
+		CreatedAt             string       `json:"createdAt" readOnly:"true"`
+		Tags                  []ProjectTag `json:"tags" readOnly:"true"`
 
 		ComposeFiles    []string                     `json:"composeFiles,omitempty" readOnly:"true"`
 		RuntimeServices []ProjectRuntimeService      `json:"runtimeServices,omitempty" readOnly:"true"`
