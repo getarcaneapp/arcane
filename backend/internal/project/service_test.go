@@ -4177,6 +4177,16 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 
 	_, statErr := os.Stat(filepath.Join(projectPath, "compose.override.yaml"))
 	assert.True(t, os.IsNotExist(statErr))
+
+	// A custom base name would not load the override at deploy, so the sync is refused.
+	require.NoError(t, os.Rename(filepath.Join(projectPath, "compose.yaml"), filepath.Join(projectPath, "stack.yml")))
+	_, _, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", types.Actor{
+		ID:       "u1",
+		Username: "tester",
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	_, statErr = os.Stat(filepath.Join(projectPath, "compose.override.yaml"))
+	assert.True(t, os.IsNotExist(statErr))
 }
 
 func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValidation(t *testing.T) {
