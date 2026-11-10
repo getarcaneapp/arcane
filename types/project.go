@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -431,45 +432,53 @@ const (
 	ProjectRenameJournalPhaseProjectStateRolledBack = "project_state_rolled_back"
 )
 
-var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UnitBytes) error {
-	token, err := decoder.ReadToken()
-	if err != nil {
-		return err
-	}
+var composeUnmarshalers = json.JoinUnmarshalers(
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UnitBytes) error {
+		token, err := decoder.ReadToken()
+		if err != nil {
+			return err
+		}
 
-	switch token.Kind() {
-	case jsontext.KindNull:
-		return nil
-	case jsontext.KindString:
-		parsed, parseMemoryErr := units.RAMInBytes(strings.TrimSpace(token.String()))
-		if parseMemoryErr != nil {
-			return parseMemoryErr
-		}
-		*value = composetypes.UnitBytes(parsed)
-		return nil
-	case jsontext.KindNumber:
-		raw := token.String()
-		parsed, parseIntErr := strconv.ParseInt(raw, 10, 64)
-		if parseIntErr != nil {
-			floatValue, parseErr := strconv.ParseFloat(raw, 64)
-			if parseErr != nil {
-				return parseErr
+		switch token.Kind() {
+		case jsontext.KindNull:
+			return nil
+		case jsontext.KindString:
+			parsed, parseMemoryErr := units.RAMInBytes(strings.TrimSpace(token.String()))
+			if parseMemoryErr != nil {
+				return parseMemoryErr
 			}
-			parsed = int64(floatValue)
-			if floatValue != float64(parsed) {
-				return fmt.Errorf("invalid UnitBytes value %q", raw)
+			*value = composetypes.UnitBytes(parsed)
+			return nil
+		case jsontext.KindNumber:
+			raw := token.String()
+			parsed, parseIntErr := strconv.ParseInt(raw, 10, 64)
+			if parseIntErr != nil {
+				floatValue, parseErr := strconv.ParseFloat(raw, 64)
+				if parseErr != nil {
+					return parseErr
+				}
+				parsed = int64(floatValue)
+				if floatValue != float64(parsed) {
+					return fmt.Errorf("invalid UnitBytes value %q", raw)
+				}
 			}
+			*value = composetypes.UnitBytes(parsed)
+			return nil
+		case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
+			jsontext.KindBeginObject, jsontext.KindEndObject,
+			jsontext.KindBeginArray, jsontext.KindEndArray:
+			return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 		}
-		*value = composetypes.UnitBytes(parsed)
-		return nil
-	case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
-		jsontext.KindBeginObject, jsontext.KindEndObject,
-		jsontext.KindBeginArray, jsontext.KindEndArray:
+
 		return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
-	}
-
-	return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
-})
+	}),
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UlimitsConfig) error {
+		if decoder.PeekKind() != jsontext.KindNumber {
+			return errors.ErrUnsupported
+		}
+		return json.UnmarshalDecode(decoder, &value.Single)
+	}),
+)
 
 func AllProjectDetails() ProjectDetailsOptions {
 	return ProjectDetailsOptions{
@@ -483,9 +492,9 @@ func AllProjectDetails() ProjectDetailsOptions {
 }
 
 func (r *ProjectRuntimeService) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, (*runtimeServiceAlias)(r), json.WithUnmarshalers(unitBytesUnmarshalers))
+	return json.Unmarshal(data, (*runtimeServiceAlias)(r), json.WithUnmarshalers(composeUnmarshalers))
 }
 
 func (d *Project) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, (*projectAlias)(d), json.WithUnmarshalers(unitBytesUnmarshalers))
+	return json.Unmarshal(data, (*projectAlias)(d), json.WithUnmarshalers(composeUnmarshalers))
 }
