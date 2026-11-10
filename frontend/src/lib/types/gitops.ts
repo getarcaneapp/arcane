@@ -2,6 +2,7 @@ export interface GitRepository {
 	id: string;
 	name: string;
 	url: string;
+	provider?: string;
 	authType: string;
 	hasToken: boolean;
 	hasSshKey: boolean;

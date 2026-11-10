@@ -682,6 +682,22 @@ func TestMigration108_AddsBackupOrphanedAtAndKeepsExistingBackups(t *testing.T) 
 	assert.Empty(t, retentionSettings(existing))
 }
 
+func TestMigration109_AddsGitRepositoryProvider(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-git-repository-provider.db")
+	providerColumns := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('git_repositories') WHERE name = 'provider'`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 109))
+	assert.Equal(t, 1, providerColumns())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 108))
+	assert.Zero(t, providerColumns())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

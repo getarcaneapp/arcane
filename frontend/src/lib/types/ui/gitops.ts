@@ -4,6 +4,7 @@ import type { CreateRequest, UpdateRequest } from './pagination';
 export type GitRepositoryWritable =
 	| 'name'
 	| 'url'
+	| 'provider'
 	| 'authType'
 	| 'username'
 	| 'sshHostKeyVerification'

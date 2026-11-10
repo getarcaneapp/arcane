@@ -34,11 +34,22 @@
 		isLoading
 	}: GitRepositoryFormProps = $props();
 
+	type GitProvider = '' | 'github' | 'gitlab' | 'gitea' | 'bitbucket';
+
+	const providerLabels: Record<GitProvider, string> = {
+		'': m.detect_from_url(),
+		github: m.common_github(),
+		gitlab: m.gitlab(),
+		gitea: m.gitea_forgejo(),
+		bitbucket: m.bitbucket()
+	};
+
 	let isEditMode = $derived(!!repositoryToEdit);
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_name_required()),
 		url: z.string().min(1, m.common_url_required()),
+		provider: z.enum(['', 'github', 'gitlab', 'gitea', 'bitbucket']).default(''),
 		authType: z.enum(['none', 'http', 'ssh']),
 		username: z.string().optional(),
 		token: z.string().optional(),
@@ -55,6 +66,7 @@
 	const formData = untrack(() => ({
 		name: repositoryToEdit?.name ?? '',
 		url: repositoryToEdit?.url ?? '',
+		provider: (repositoryToEdit?.provider ?? '') as GitProvider,
 		authType: (repositoryToEdit?.authType ?? 'http') as 'none' | 'http' | 'ssh',
 		username: repositoryToEdit?.username || '',
 		token: '',
@@ -123,6 +135,7 @@
 		return {
 			name: values.name,
 			url: values.url,
+			provider: values.provider,
 			authType,
 			username: authType === 'http' ? values.username : undefined,
 			sshHostKeyVerification: authType === 'ssh' ? sshHostKeyVerification : undefined,
@@ -184,6 +197,21 @@
 			oninput={clearCredentialErrors}
 			bind:input={inputs.url}
 		/>
+
+		<div class="space-y-2">
+			<Label for="provider">{m.git_provider()}</Label>
+			<Select.Root type="single" bind:value={inputs.provider.value}>
+				<Select.Trigger id="provider" class="w-full">
+					<span>{providerLabels[inputs.provider.value]}</span>
+				</Select.Trigger>
+				<Select.Content>
+					{#each Object.entries(providerLabels) as [value, label] (value)}
+						<Select.Item {value}>{label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			<p class="text-xs text-muted-foreground">{m.git_provider_description()}</p>
+		</div>
 
 		<div class="space-y-2">
 			<Label for="authType">{m.git_repository_auth_type()}</Label>

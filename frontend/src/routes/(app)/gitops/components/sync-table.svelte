@@ -315,7 +315,8 @@
 {#snippet PathCell({ item }: { item: SyncRow })}
 	{@const path = isBackup(item) ? (item.backupDirectory ?? '') : item.composePath}
 	{@const route = isBackup(item) ? 'tree' : 'blob'}
-	{@const fileUrl = item.repository?.url && path ? toGitRouteUrl(item.repository.url, route, item.branch, path) : null}
+	{@const fileUrl =
+		item.repository?.url && path ? toGitRouteUrl(item.repository.url, route, item.branch, path, item.repository.provider) : null}
 	<div class="flex min-w-0 items-center gap-1.5">
 		<FolderIcon class="size-3.5 shrink-0 text-muted-foreground" />
 		{#if !path}
@@ -356,7 +357,9 @@
 
 {#snippet CommitCell({ item }: { item: SyncRow })}
 	{#if item.lastSyncCommit}
-		{@const commitUrl = item.repository?.url ? toGitRouteUrl(item.repository.url, 'commit', item.lastSyncCommit) : null}
+		{@const commitUrl = item.repository?.url
+			? toGitRouteUrl(item.repository.url, 'commit', item.lastSyncCommit, '', item.repository.provider)
+			: null}
 		<div class="flex min-w-0 items-center gap-1.5">
 			<HashIcon class="size-3.5 shrink-0 text-muted-foreground" />
 			{#if commitUrl}

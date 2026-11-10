@@ -141,6 +141,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 	repository := GitRepository{
 		Name:                   req.Name,
 		URL:                    req.URL,
+		Provider:               req.Provider,
 		AuthType:               req.AuthType,
 		Username:               req.Username,
 		SSHHostKeyVerification: cmp.Or(req.SSHHostKeyVerification, "accept_new"),
@@ -227,6 +228,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	}{
 		"name":                   {column: "name", value: change.Request.Name},
 		"url":                    {column: "url", value: change.Request.URL},
+		"provider":               {column: "provider", value: change.Request.Provider},
 		"authType":               {column: "auth_type", value: change.Request.AuthType},
 		"username":               {column: "username", value: change.Request.Username},
 		"description":            {column: "description", value: change.Request.Description},
@@ -595,6 +597,7 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item types.GitRepositorySync, existing *GitRepository) (bool, error) {
 	needsUpdate := update.ApplyChanged(&existing.Name, mo.Some(item.Name))
 	needsUpdate = update.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
+	needsUpdate = update.ApplyChanged(&existing.Provider, mo.Some(item.Provider)) || needsUpdate
 	needsUpdate = update.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
 	needsUpdate = update.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
 	needsUpdate = update.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
@@ -658,6 +661,7 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item typ
 	repo := GitRepository{
 		Name:                   item.Name,
 		URL:                    item.URL,
+		Provider:               item.Provider,
 		AuthType:               item.AuthType,
 		Username:               item.Username,
 		Token:                  encryptedToken,

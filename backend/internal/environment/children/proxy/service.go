@@ -331,6 +331,7 @@ func (s *Service) SyncRepositoriesToEnvironment(ctx context.Context, envID strin
 				ID:                     repo.ID,
 				Name:                   repo.Name,
 				URL:                    repo.URL,
+				Provider:               repo.Provider,
 				AuthType:               repo.AuthType,
 				Username:               repo.Username,
 				Token:                  token,

@@ -263,3 +263,21 @@ func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialRes
 	require.NoError(t, decryptErr)
 	assert.Equal(t, "ghp_old_token", decryptedToken)
 }
+
+func TestGitRepositoryService_UpdateRepository_SetsAndClearsProvider(t *testing.T) {
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
+		Name:     "forge-repo",
+		URL:      "https://git.example.com/acme/stacks.git",
+		Provider: "gitea",
+		AuthType: "none",
+	})
+	assert.Equal(t, "gitea", repo.Provider)
+
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+		Submitted: map[string]bool{"provider": true},
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, updated.Provider)
+}

@@ -126,6 +126,7 @@ export interface Project {
 	gitOpsManagedBy?: string;
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
+	gitRepositoryProvider?: string;
 	hasBuildDirective?: boolean;
 	redeployDisabled?: boolean;
 	activityId?: string;
