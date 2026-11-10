@@ -115,4 +115,15 @@
 			{@render browseButton('compose')}
 		</div>
 	</div>
+
+	<div class="space-y-2">
+		<Label for="composeOverridePath">{m.compose_override_file()}</Label>
+		<div class="flex gap-2">
+			<div class="flex-1">
+				<FormInput type="text" placeholder="compose.override.yaml" bind:input={inputs.composeOverridePath} />
+			</div>
+			{@render browseButton('override')}
+		</div>
+		<p class="text-xs text-muted-foreground">{m.compose_override_file_help()}</p>
+	</div>
 {/if}

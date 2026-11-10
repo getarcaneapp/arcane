@@ -2,11 +2,43 @@ package gitops
 
 import (
 	"errors"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"kit.getarcane.app"
+
+	"getarcane.dev/arcane/v3/internal/common"
+	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
+
+func validateDeploySource(sync projectpkg.GitOpsSync) error {
+	invalid := func(field, message string) error {
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: field, Err: errors.New(message)})
+	}
+	overridePath := strings.TrimSpace(sync.ComposeOverridePath)
+	cleanedOverride := path.Clean(filepath.ToSlash(overridePath))
+	switch {
+	case overridePath == "":
+	case len(overridePath) > 512:
+		return invalid("composeOverridePath", "Override path must be 512 characters or fewer.")
+	case path.IsAbs(cleanedOverride) || cleanedOverride == ".." || strings.HasPrefix(cleanedOverride, "../"):
+		return invalid("composeOverridePath", "Override path must be relative to the repository root.")
+	case !slices.Contains([]string{".yml", ".yaml"}, strings.ToLower(path.Ext(cleanedOverride))):
+		return invalid("composeOverridePath", "Override file must be a .yml or .yaml file.")
+	case cleanedOverride == path.Clean(filepath.ToSlash(sync.ComposePath)):
+		return invalid("composeOverridePath", "Override file must differ from the compose file.")
+	case sync.TargetType != "swarm_stack" && sync.SyncDirectory:
+		return invalid("composeOverridePath", "A custom override file is not supported with \"Sync entire directory\" for projects; name it compose.override.yaml beside the compose file or list it in COMPOSE_FILE.")
+	}
+	if _, err := projects.ParseProjectEnvContent(kit.FromPtr(sync.EnvContent), nil); err != nil {
+		return invalid("envContent", err.Error())
+	}
+	return nil
+}
 
 func normalizeSyncLimitSetting(value, defaultValue int) int {
 	return kit.Ternary(value < 0, defaultValue, value)

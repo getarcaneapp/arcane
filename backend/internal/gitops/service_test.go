@@ -1750,6 +1750,162 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrConflict)
 }
 
+func TestGitOpsDeploy_ComposeOverrideAndEnv(t *testing.T) {
+	baseCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
+	tests := []struct {
+		files        map[string]string
+		request      types.GitOpsSync
+		name         string
+		wantOverride string
+		wantEnv      map[string]string
+	}{
+		{
+			name: "auto-detects yaml override beside a custom compose name",
+			files: map[string]string{
+				"apps/demo/swarm-stack.yml":       baseCompose,
+				"apps/demo/compose.override.yaml": "services:\n  app:\n    environment:\n      FROM: auto\n",
+			},
+			request:      types.GitOpsSync{ComposePath: "apps/demo/swarm-stack.yml"},
+			wantOverride: "services:\n  app:\n    environment:\n      FROM: auto\n",
+		},
+		{
+			name: "auto-detects yml override beside a standard compose name",
+			files: map[string]string{
+				"apps/demo/compose.yaml":         baseCompose,
+				"apps/demo/compose.override.yml": "services:\n  app:\n    environment:\n      FROM: yml\n",
+			},
+			request:      types.GitOpsSync{ComposePath: "apps/demo/compose.yaml"},
+			wantOverride: "services:\n  app:\n    environment:\n      FROM: yml\n",
+		},
+		{
+			name: "selected override path wins over a detected one",
+			files: map[string]string{
+				"apps/demo/compose.yaml":          baseCompose,
+				"apps/demo/compose.override.yaml": "services:\n  app:\n    environment:\n      FROM: sibling\n",
+				"overrides/prod.yml":              "services:\n  app:\n    environment:\n      FROM: selected\n",
+			},
+			request:      types.GitOpsSync{ComposePath: "apps/demo/compose.yaml", ComposeOverridePath: "overrides/prod.yml"},
+			wantOverride: "services:\n  app:\n    environment:\n      FROM: selected\n",
+		},
+		{
+			name: "sync env is merged over the repository env",
+			files: map[string]string{
+				"apps/demo/compose.yaml": baseCompose,
+				"apps/demo/.env":         "SHARED=git\nGIT_ONLY=git\n",
+			},
+			request: types.GitOpsSync{ComposePath: "apps/demo/compose.yaml", EnvContent: new("SHARED=mine\nSYNC_ONLY=mine\n")},
+			wantEnv: map[string]string{"SHARED": "mine", "GIT_ONLY": "git", "SYNC_ONLY": "mine", "TOKEN": "keep-me"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			pushRemoteCommit(t, env.remote, env.repoURL, "seed", tt.files)
+			writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=keep-me\n")
+
+			created, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+				Request: types.GitOpsSync{
+					Name:                "deploy-override",
+					RepositoryID:        "repo-backup",
+					Branch:              "main",
+					ComposePath:         tt.request.ComposePath,
+					ComposeOverridePath: tt.request.ComposeOverridePath,
+					EnvContent:          tt.request.EnvContent,
+					ProjectID:           &env.project.ID,
+				},
+				Actor: types.Actor{ID: "user-1", Username: "tester"},
+			})
+			require.NoError(t, err)
+			require.Equal(t, "success", kit.FromPtr(created.LastSyncStatus), kit.FromPtr(created.LastSyncError))
+
+			overridePath := projects.DetectComposeOverrideFile(t.Context(), env.projectPath)
+			if tt.wantOverride == "" {
+				assert.Empty(t, overridePath)
+			} else {
+				override, readErr := os.ReadFile(overridePath)
+				require.NoError(t, readErr)
+				assert.Equal(t, tt.wantOverride, string(override))
+			}
+
+			if tt.wantEnv != nil {
+				effective, parseErr := projects.ParseProjectEnvFile(t.Context(), filepath.Join(env.projectPath, ".env"), nil)
+				require.NoError(t, parseErr)
+				assert.Equal(t, projects.EnvMap(tt.wantEnv), effective)
+			}
+		})
+	}
+}
+
+func TestGitOpsDeploy_ComposeOverrideAndEnvValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   string
+		request types.GitOpsSync
+	}{
+		{
+			name:    "override path escaping the repository",
+			field:   "composeOverridePath",
+			request: types.GitOpsSync{ComposeOverridePath: "../outside.yml"},
+		},
+		{
+			name:    "override path that is not yaml",
+			field:   "composeOverridePath",
+			request: types.GitOpsSync{ComposeOverridePath: "apps/demo/override.txt"},
+		},
+		{
+			name:    "override path equal to the compose path",
+			field:   "composeOverridePath",
+			request: types.GitOpsSync{ComposeOverridePath: "apps/demo/compose.yaml"},
+		},
+		{
+			name:    "custom override with project directory sync",
+			field:   "composeOverridePath",
+			request: types.GitOpsSync{ComposeOverridePath: "overrides/prod.yml", SyncDirectory: true},
+		},
+		{
+			name:    "malformed env content",
+			field:   "envContent",
+			request: types.GitOpsSync{EnvContent: new("BROKEN='unterminated\n")},
+		},
+		{
+			name:    "override path on a backup sync",
+			field:   "mode",
+			request: types.GitOpsSync{Mode: types.GitOpsSyncModeBackup, ComposeOverridePath: "overrides/prod.yml"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			submitted := map[string]bool{
+				"composeOverridePath": tt.request.ComposeOverridePath != "",
+				"envContent":          tt.request.EnvContent != nil,
+			}
+			_, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+				Request: types.GitOpsSync{
+					Name:                "invalid",
+					RepositoryID:        "repo-backup",
+					Branch:              "main",
+					Mode:                tt.request.Mode,
+					ComposePath:         "apps/demo/compose.yaml",
+					ComposeOverridePath: tt.request.ComposeOverridePath,
+					EnvContent:          tt.request.EnvContent,
+					SyncDirectory:       tt.request.SyncDirectory,
+					ProjectID:           &env.project.ID,
+					BackupDirectory:     kit.Ternary(tt.request.Mode == types.GitOpsSyncModeBackup, "backups/demo", ""),
+				},
+				Submitted: submitted,
+				Actor:     types.Actor{ID: "user-1", Username: "tester"},
+			})
+			require.ErrorIs(t, err, common.ErrValidation)
+			var fieldErr *types.FieldError
+			require.ErrorAs(t, err, &fieldErr)
+			assert.Equal(t, tt.field, fieldErr.Field)
+		})
+	}
+}
+
 func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
 	env := setupGitOpsBackupTestService(t)
 	ctx := t.Context()

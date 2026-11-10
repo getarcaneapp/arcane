@@ -526,6 +526,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	case mode == types.GitOpsSyncModeBackup &&
 		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
 			change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync ||
+			change.Submitted["composeOverridePath"] || change.Submitted["envContent"] ||
 			hasPreDeployConfig(change.Submitted)):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
 	case mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(change.Request.ComposePath) == "":
@@ -566,6 +567,8 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		RepositoryID:         change.Request.RepositoryID,
 		Branch:               change.Request.Branch,
 		ComposePath:          change.Request.ComposePath,
+		ComposeOverridePath:  strings.TrimSpace(change.Request.ComposeOverridePath),
+		EnvContent:           nullableTrimmedString(change.Request.EnvContent),
 		TargetType:           change.Request.TargetType,
 		ProjectName:          cmp.Or(change.Request.ProjectName, change.Request.Name),
 		Mode:                 mode,
@@ -584,6 +587,11 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		PreDeployExtraMounts: nullableTrimmedString(change.Request.PreDeployExtraMounts),
 		PreDeployTimeoutSec:  kit.Ternary(change.Submitted["preDeployTimeoutSec"], change.Request.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec),
 		PreDeployNetworkMode: cmp.Or(strings.TrimSpace(change.Request.PreDeployNetworkMode), "none"),
+	}
+	if mode == types.GitOpsSyncModeDeploy {
+		if sourceErr := validateDeploySource(syncRecord); sourceErr != nil {
+			return nil, sourceErr
+		}
 	}
 
 	adoptedProject, err := s.insertSyncRecord(ctx, &syncRecord, change.Request, change.Submitted, mode)
@@ -698,6 +706,8 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	case syncRecord.Mode == types.GitOpsSyncModeBackup &&
 		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
 			change.Submitted["composePath"] ||
+			change.Submitted["composeOverridePath"] ||
+			change.Submitted["envContent"] ||
 			change.Submitted["projectName"] ||
 			change.Request.SyncDirectory ||
 			change.Request.PullImageAfterSync ||
@@ -728,26 +738,39 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	if limitsErr := validateSyncLimits(&change.Request.MaxSyncFiles, &change.Request.MaxSyncTotalSize, &change.Request.MaxSyncBinarySize); limitsErr != nil {
 		return nil, limitsErr
 	}
+	if syncRecord.Mode != types.GitOpsSyncModeBackup {
+		if sourceErr := validateDeploySource(projectpkg.GitOpsSync{
+			ComposePath:         kit.Ternary(change.Submitted["composePath"], change.Request.ComposePath, syncRecord.ComposePath),
+			ComposeOverridePath: kit.Ternary(change.Submitted["composeOverridePath"], change.Request.ComposeOverridePath, syncRecord.ComposeOverridePath),
+			EnvContent:          kit.Ternary(change.Submitted["envContent"], change.Request.EnvContent, syncRecord.EnvContent),
+			TargetType:          kit.Ternary(change.Submitted["targetType"], change.Request.TargetType, syncRecord.TargetType),
+			SyncDirectory:       kit.Ternary(change.Submitted["syncDirectory"], change.Request.SyncDirectory, syncRecord.SyncDirectory),
+		}); sourceErr != nil {
+			return nil, sourceErr
+		}
+	}
 
 	updates := make(map[string]any)
 	for field, update := range map[string]struct {
 		value  any
 		column string
 	}{
-		"name":               {column: "name", value: change.Request.Name},
-		"repositoryId":       {column: "repository_id", value: change.Request.RepositoryID},
-		"branch":             {column: "branch", value: change.Request.Branch},
-		"composePath":        {column: "compose_path", value: change.Request.ComposePath},
-		"targetType":         {column: "target_type", value: change.Request.TargetType},
-		"projectName":        {column: "project_name", value: change.Request.ProjectName},
-		"autoSync":           {column: "auto_sync", value: change.Request.AutoSync},
-		"syncInterval":       {column: "sync_interval", value: change.Request.SyncInterval},
-		"syncDirectory":      {column: "sync_directory", value: change.Request.SyncDirectory},
-		"pullImageAfterSync": {column: "pull_image_after_sync", value: change.Request.PullImageAfterSync},
-		"redeployAfterSync":  {column: "redeploy_after_sync", value: change.Request.RedeployAfterSync},
-		"maxSyncFiles":       {column: "max_sync_files", value: change.Request.MaxSyncFiles},
-		"maxSyncTotalSize":   {column: "max_sync_total_size", value: change.Request.MaxSyncTotalSize},
-		"maxSyncBinarySize":  {column: "max_sync_binary_size", value: change.Request.MaxSyncBinarySize},
+		"name":                {column: "name", value: change.Request.Name},
+		"repositoryId":        {column: "repository_id", value: change.Request.RepositoryID},
+		"branch":              {column: "branch", value: change.Request.Branch},
+		"composePath":         {column: "compose_path", value: change.Request.ComposePath},
+		"composeOverridePath": {column: "compose_override_path", value: strings.TrimSpace(change.Request.ComposeOverridePath)},
+		"envContent":          {column: "env_content", value: nullableTrimmedString(change.Request.EnvContent)},
+		"targetType":          {column: "target_type", value: change.Request.TargetType},
+		"projectName":         {column: "project_name", value: change.Request.ProjectName},
+		"autoSync":            {column: "auto_sync", value: change.Request.AutoSync},
+		"syncInterval":        {column: "sync_interval", value: change.Request.SyncInterval},
+		"syncDirectory":       {column: "sync_directory", value: change.Request.SyncDirectory},
+		"pullImageAfterSync":  {column: "pull_image_after_sync", value: change.Request.PullImageAfterSync},
+		"redeployAfterSync":   {column: "redeploy_after_sync", value: change.Request.RedeployAfterSync},
+		"maxSyncFiles":        {column: "max_sync_files", value: change.Request.MaxSyncFiles},
+		"maxSyncTotalSize":    {column: "max_sync_total_size", value: change.Request.MaxSyncTotalSize},
+		"maxSyncBinarySize":   {column: "max_sync_binary_size", value: change.Request.MaxSyncBinarySize},
 	} {
 		if change.Submitted[field] {
 			updates[update.column] = update.value

@@ -34,6 +34,7 @@ type (
 		UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
 
 		PreDeployEnv           *string        `json:"preDeployEnv,omitempty"`
+		EnvContent             *string        `json:"envContent,omitempty" doc:"KEY=VALUE lines merged over the repository .env on every deploy sync"`
 		PreDeployLastRunOutput *string        `json:"preDeployLastRunOutput,omitempty" readOnly:"true"`
 		Repository             *GitRepository `json:"repository,omitempty" readOnly:"true"`
 		PreDeployLastRunStatus *string        `json:"preDeployLastRunStatus,omitempty" readOnly:"true"`
@@ -69,6 +70,8 @@ type (
 		BackupDirectory string   `json:"backupDirectory,omitempty"`
 		BackupState     string   `json:"backupState,omitempty" readOnly:"true"`
 		BackupPaths     []string `json:"backupPaths,omitempty"`
+
+		ComposeOverridePath string `json:"composeOverridePath,omitempty" required:"false" doc:"Repository path of a compose override file; empty auto-detects one beside the compose file"`
 
 		PreDeployTimeoutSec int `json:"preDeployTimeoutSec" required:"false"`
 

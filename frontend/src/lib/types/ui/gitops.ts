@@ -26,6 +26,8 @@ export type GitOpsSyncWritable =
 	| 'repositoryId'
 	| 'branch'
 	| 'composePath'
+	| 'composeOverridePath'
+	| 'envContent'
 	| 'targetType'
 	| 'mode'
 	| 'projectId'

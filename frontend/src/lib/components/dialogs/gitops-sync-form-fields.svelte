@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { ArrowRightIcon, CodeIcon, InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import type { GitOpsSyncBrowseTarget, GitOpsSyncFormState, GitOpsSyncTargetType } from './gitops-sync-form.svelte';
 	import GitOpsSyncScheduleFields from './gitops-sync-schedule-fields.svelte';
@@ -44,6 +47,23 @@
 	}: Props = $props();
 
 	const inputs = $derived(form.inputs);
+
+	let envFileInput = $state<HTMLInputElement>();
+
+	async function loadEnvFile(event: Event & { currentTarget: HTMLInputElement }) {
+		const input = event.currentTarget;
+		const file = input.files?.[0];
+		if (!file) return;
+		try {
+			const content = (await file.text()).trimEnd();
+			const existing = inputs.envContent.value.trimEnd();
+			inputs.envContent.value = existing ? `${existing}\n${content}` : content;
+		} catch (error) {
+			toast.error(m.failed_to_load_file(), { description: extractApiErrorMessage(error) });
+		} finally {
+			input.value = '';
+		}
+	}
 
 	const targetTypeOptions = [
 		{ value: 'project', label: m.project() },
@@ -79,6 +99,21 @@
 {/if}
 
 {@render source(true)}
+
+<div class="space-y-2">
+	<FormInput
+		type="textarea"
+		label={m.common_environment_variables()}
+		placeholder={m.git_sync_pre_deploy_env_placeholder()}
+		helpText={m.git_sync_env_content_help()}
+		bind:input={inputs.envContent}
+		class="[&_textarea]:font-mono [&_textarea]:text-xs"
+	/>
+	<Button type="button" variant="outline" size="sm" onclick={() => envFileInput?.click()}>
+		{m.load_env_file()}
+	</Button>
+	<input bind:this={envFileInput} type="file" accept=".env,text/plain" class="hidden" onchange={loadEnvFile} />
+</div>
 
 <div class="divide-y divide-border/50 border-y border-border/50">
 	<GitOpsSyncScheduleFields
