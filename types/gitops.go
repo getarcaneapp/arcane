@@ -60,6 +60,8 @@ type (
 		Name                 string `json:"name" required:"false"`
 		EnvironmentID        string `json:"environmentId" readOnly:"true"`
 
+		ComposeOverridePath string `json:"composeOverridePath,omitempty" required:"false" doc:"Repository path of a compose override file; empty auto-detects one beside the compose file"`
+
 		EnvironmentName string   `json:"environmentName,omitempty" readOnly:"true" doc:"Display name of the environment the sync belongs to"`
 		RepositoryID    string   `json:"repositoryId" required:"false"`
 		Branch          string   `json:"branch" required:"false"`
@@ -70,8 +72,6 @@ type (
 		BackupDirectory string   `json:"backupDirectory,omitempty"`
 		BackupState     string   `json:"backupState,omitempty" readOnly:"true"`
 		BackupPaths     []string `json:"backupPaths,omitempty"`
-
-		ComposeOverridePath string `json:"composeOverridePath,omitempty" required:"false" doc:"Repository path of a compose override file; empty auto-detects one beside the compose file"`
 
 		PreDeployTimeoutSec int `json:"preDeployTimeoutSec" required:"false"`
 
