@@ -4533,5 +4533,11 @@
   "choose_folder": "Виберіть папку",
   "build_choose_context_description": "Виберіть папку робочого простору, яку потрібно використовувати як контекст збірки.",
   "build_edit_files_hint": "Редагуйте файли на вкладці «Файли».",
-  "no_file_open": "Файл не відкрито"
+  "no_file_open": "Файл не відкрито",
+  "git_provider": "Постачальник Git",
+  "git_provider_description": "Встановлює формат посилань для файлів та комітів.",
+  "detect_from_url": "Визначити за URL-адресою",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
