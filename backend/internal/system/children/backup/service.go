@@ -1681,12 +1681,24 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 		if _, parseErr := uuid.Parse(strings.TrimPrefix(request.ID, "system-")); parseErr != nil {
 			return nil, common.Classify(common.ErrValidation, errors.New("invalid system backup id"))
 		}
+		standalone, listErr := s.flow.Standalone(ctx)
+		if listErr != nil {
+			return nil, listErr
+		}
 		accepted, lookupErr := s.store.RunsByID(ctx, []string{request.ID})
 		if lookupErr != nil {
 			return nil, lookupErr
 		}
 		if len(accepted) > 0 {
-			return accepted[0], nil
+			if accepted[0].Status == types.SystemBackupStatusSucceeded || slices.ContainsFunc(standalone, func(run types.SchedulerRun) bool {
+				return run.JobID == s.backupWorkflow.Francis().Name() && backup.AcceptedBackupID(run) == request.ID
+			}) {
+				return accepted[0], nil
+			}
+			if accepted[0].Status == types.SystemBackupStatusRunning {
+				return nil, errors.Join(errors.New("system backup was not started"), s.store.FailRun(ctx, request.ID, "Backup did not run"))
+			}
+			return nil, fmt.Errorf("system backup failed: %s", accepted[0].Error)
 		}
 	}
 	if s.config.AgentEnabled && request.RecoveryKey != "" {
