@@ -4533,5 +4533,11 @@
   "choose_folder": "Vælg mappe",
   "build_choose_context_description": "Vælg den arbejdsmappemappe, der skal bruges som build-kontekst.",
   "build_edit_files_hint": "Rediger filer under fanen »Filer«.",
-  "no_file_open": "Der er ingen åbne filer"
+  "no_file_open": "Der er ingen åbne filer",
+  "git_provider": "Git-udbyder",
+  "git_provider_description": "Indstiller linkformatet for filer og commits.",
+  "detect_from_url": "Registrer ud fra URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
