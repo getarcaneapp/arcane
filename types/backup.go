@@ -115,6 +115,7 @@ type (
 	}
 
 	CreateSystemBackupRequest struct {
+		ID              string                  `json:"id,omitempty"`
 		Destination     SystemBackupDestination `json:"destination,omitempty"`
 		S3DestinationID string                  `json:"s3DestinationId,omitempty"`
 		RecoveryKey     string                  `json:"recoveryKey,omitempty"`

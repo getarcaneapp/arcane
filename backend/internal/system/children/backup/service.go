@@ -470,7 +470,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the system backup"))
 	}
 	run := &types.SystemBackupRun{
-		ID:        "system-" + uuid.New().String(),
+		ID:        cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
 		CreatedAt: time.Now().UTC(),
 		Status:    types.SystemBackupStatusRunning,
 		Trigger:   trigger,
@@ -682,6 +682,7 @@ func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.Syste
 			continue
 		}
 		body, startErr := json.Marshal(types.CreateSystemBackupRequest{
+			ID:              run.ID,
 			Destination:     run.Destination,
 			S3DestinationID: run.S3DestinationID,
 			RecoveryKey:     backup.EnvironmentRecoveryKey(recoveryKey, remote.ID),
@@ -1675,6 +1676,18 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
+	}
+	if s.config.AgentEnabled && request.ID != "" {
+		if _, parseErr := uuid.Parse(strings.TrimPrefix(request.ID, "system-")); parseErr != nil {
+			return nil, common.Classify(common.ErrValidation, errors.New("invalid system backup id"))
+		}
+		accepted, lookupErr := s.store.RunsByID(ctx, []string{request.ID})
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if len(accepted) > 0 {
+			return accepted[0], nil
+		}
 	}
 	if s.config.AgentEnabled && request.RecoveryKey != "" {
 		if _, adoptErr := s.SetRecoveryKey(ctx, request.RecoveryKey); adoptErr != nil {

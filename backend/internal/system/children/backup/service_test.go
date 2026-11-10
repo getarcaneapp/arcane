@@ -264,11 +264,13 @@ func TestBackUpRemoteEnvironments(t *testing.T) {
 	require.Equal(t, []string{"POST /api/backups", "POST /api/backups"}, transport.paths)
 	require.Equal(t, map[string]types.CreateSystemBackupRequest{
 		"env-new": {
+			ID:              "system-run",
 			Destination:     types.SystemBackupDestinationLocalS3,
 			S3DestinationID: "offsite",
 			RecoveryKey:     backupengine.EnvironmentRecoveryKey(managerKey, "env-new"),
 		},
 		"env-offline": {
+			ID:              "system-run",
 			Destination:     types.SystemBackupDestinationLocalS3,
 			S3DestinationID: "offsite",
 			RecoveryKey:     backupengine.EnvironmentRecoveryKey(managerKey, "env-offline"),
