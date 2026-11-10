@@ -23,6 +23,7 @@ const (
 	tunnelCapabilityMuxGrant = "mux-grant-v1"
 
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
+	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
 	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
 
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
@@ -182,6 +183,26 @@ func (c *muxConn) Write(p []byte) (int, error) {
 		c.tx.Add(int64(n))
 	}
 	return len(p), nil
+}
+
+func (s *muxStream) Write(p []byte) (int, error) {
+	written := 0
+	for chunk := range slices.Chunk(p, int(s.conn.pendingLimit.Load())) {
+		n, err := s.Conn.Write(chunk)
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
+}
+
+func (l muxListener) Accept() (net.Conn, error) {
+	stream, err := l.Session.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &muxStream{Conn: stream, conn: l.conn}, nil
 }
 
 func (c *muxConn) Read(p []byte) (int, error) {

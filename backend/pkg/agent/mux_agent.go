@@ -67,7 +67,7 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 	defer activeAgentEvents.CompareAndSwap(eventsClient, nil)
 
 	serveDone := make(chan error, 1)
-	go func() { serveDone <- srv.Serve(session) }()
+	go func() { serveDone <- srv.Serve(muxListener{Session: session, conn: rw}) }()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

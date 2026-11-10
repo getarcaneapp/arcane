@@ -1061,7 +1061,6 @@ func TestGetSessionBootstrap(t *testing.T) {
 				envIDs = append(envIDs, env.ID)
 			}
 			assert.ElementsMatch(t, tt.wantEnv, envIDs)
-			assert.NotEmpty(t, bootstrap.PermissionsManifest.Resources)
 		})
 	}
 

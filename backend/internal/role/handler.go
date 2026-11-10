@@ -3,8 +3,10 @@ package role
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/conditional"
 
 	"kit.getarcane.app"
 
@@ -51,6 +53,16 @@ type (
 	SetUserRoleAssignmentsInput struct {
 		UserID string `path:"userId" doc:"User ID"`
 		Body   types.SetUserRoleAssignments
+	}
+
+	GetPermissionsManifestInput struct {
+		conditional.Params
+	}
+
+	GetPermissionsManifestOutput struct {
+		ETag         string `header:"ETag"`
+		CacheControl string `header:"Cache-Control"`
+		Body         types.ApiResponse[types.PermissionsManifest]
 	}
 )
 
@@ -149,9 +161,15 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 	return handlerutil.MessageOutput("role deleted", ""), nil
 }
 
-func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*handlerutil.Out[types.PermissionsManifest], error) {
-	return &handlerutil.Out[types.PermissionsManifest]{
-		Body: types.ApiResponse[types.PermissionsManifest]{Success: true, Data: BuildPermissionsManifest()},
+func (h *RoleHandler) GetPermissionsManifest(_ context.Context, input *GetPermissionsManifestInput) (*GetPermissionsManifestOutput, error) {
+	etag := permissionsManifestETag()
+	if notModified := input.PreconditionFailed(etag, time.Time{}); notModified != nil {
+		return nil, notModified
+	}
+	return &GetPermissionsManifestOutput{
+		ETag:         `"` + etag + `"`,
+		CacheControl: "private, no-cache",
+		Body:         types.ApiResponse[types.PermissionsManifest]{Success: true, Data: BuildPermissionsManifest()},
 	}, nil
 }
 

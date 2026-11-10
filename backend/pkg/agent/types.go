@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -322,6 +323,18 @@ type (
 		rx           atomic.Int64
 		tx           atomic.Int64
 		mu           sync.Mutex
+	}
+
+	muxStream struct {
+		net.Conn
+
+		conn *muxConn
+	}
+
+	muxListener struct {
+		*yamux.Session
+
+		conn *muxConn
 	}
 
 	cancelableGRPCManagerStream struct {

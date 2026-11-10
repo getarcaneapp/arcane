@@ -2,6 +2,8 @@ package role
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -978,6 +980,15 @@ func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []s
 	}
 	return nil
 }
+
+var permissionsManifestETag = sync.OnceValue(func() string {
+	encoded, err := json.Marshal(BuildPermissionsManifest())
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:8])
+})
 
 func BuildPermissionsManifest() types.PermissionsManifest {
 	catalog := authz.PermissionCatalog()

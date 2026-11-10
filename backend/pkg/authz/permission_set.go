@@ -17,6 +17,7 @@ type (
 	ForwardedPermissions struct {
 		Global      []string `json:"global"`
 		Environment []string `json:"environment"`
+		GlobalAdmin bool     `json:"globalAdmin,omitzero"`
 	}
 )
 
@@ -123,7 +124,11 @@ func (ps *PermissionSet) ForwardedPermissions(envID string) ForwardedPermissions
 
 func (f ForwardedPermissions) PermissionSet(envID string) *PermissionSet {
 	ps := NewPermissionSet()
-	for _, perm := range f.Global {
+	global := f.Global
+	if f.GlobalAdmin {
+		global = AllPermissions()
+	}
+	for _, perm := range global {
 		if IsKnownPermission(perm) {
 			ps.AddGlobal(perm)
 		}

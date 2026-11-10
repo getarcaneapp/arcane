@@ -286,7 +286,12 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
-		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions, tunnelCapabilityMuxWindowPrefix + strconv.Itoa(streamWindowMiB)},
+		Capabilities: []string{
+			tunnelCapabilityMux,
+			TunnelCapabilityForwardedPermissions,
+			TunnelCapabilityForwardedGlobalAdmin,
+			tunnelCapabilityMuxWindowPrefix + strconv.Itoa(streamWindowMiB),
+		},
 		ResumeSession: sessionID,
 		Host:          &c.cfg.HostInfo,
 	}); err != nil {
