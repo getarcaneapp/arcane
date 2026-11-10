@@ -63,6 +63,38 @@ export default defineConfig(() => ({
 		rolldownOptions: {
 			checks: {
 				pluginTimings: false
+			},
+			output: {
+				codeSplitting: {
+					groups: [
+						{
+							name: 'payload',
+							test: (id: string) => id.includes('@sveltejs/kit/src/runtime/client/payload.js'),
+							priority: 1
+						},
+						{
+							name: 'preload',
+							test: (id: string) => id.includes('vite/preload-helper'),
+							priority: 1
+						},
+						{
+							name: 'root',
+							test: (id: string) => id.includes('/src/routes/+layout.')
+						},
+						{
+							name: 'auth',
+							test: (id: string) => id.includes('/src/routes/(auth)/')
+						},
+						{
+							name: 'app',
+							test: (id: string) => id.includes('/src/routes/(app)/+layout.')
+						},
+						{
+							name: 'common',
+							minShareCount: 10
+						}
+					]
+				}
 			}
 		}
 	},
