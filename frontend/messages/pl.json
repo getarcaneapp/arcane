@@ -4533,5 +4533,11 @@
   "choose_folder": "Wybierz folder",
   "build_choose_context_description": "Wybierz folder obszaru roboczego, który ma służyć jako kontekst kompilacji.",
   "build_edit_files_hint": "Edytuj pliki w zakładce „Pliki”.",
-  "no_file_open": "Nie ma otwartego pliku"
+  "no_file_open": "Nie ma otwartego pliku",
+  "git_provider": "Dostawca Git",
+  "git_provider_description": "Ustawia format linków dla plików i zatwierdzeń.",
+  "detect_from_url": "Wykrywanie na podstawie adresu URL",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
