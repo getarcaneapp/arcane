@@ -801,7 +801,7 @@ func TestCreateDefaultAdminUsesConfiguredCredentials(t *testing.T) {
 	require.True(t, perms.IsGlobalAdmin())
 }
 
-func TestCreateDefaultAdminFallsBackToDefaultPassword(t *testing.T) {
+func TestCreateDefaultAdminGeneratesRandomPasswordWhenUnset(t *testing.T) {
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
@@ -810,7 +810,7 @@ func TestCreateDefaultAdminFallsBackToDefaultPassword(t *testing.T) {
 	admin, err := userSvc.GetUserByUsername(ctx, "arcane")
 	require.NoError(t, err)
 	require.True(t, admin.RequiresPasswordChange)
-	require.NoError(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, "arcane-admin"))
+	require.Error(t, userSvc.ValidatePassword(ctx, admin.PasswordHash, "arcane-admin"))
 }
 
 func TestCreateDefaultAdminRejectsPasswordFailingPolicy(t *testing.T) {

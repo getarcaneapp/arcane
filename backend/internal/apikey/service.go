@@ -657,14 +657,26 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, usernam
 	rawKey = strings.TrimSpace(rawKey)
 
 	adminUser, err := s.getDefaultAdminUser(ctx, username)
-	if err != nil || adminUser == nil {
+	if err != nil {
 		return err
 	}
 
 	var affectedIDs []string
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		affectedIDs, err = s.reconcileManagedAPIKeys(ctx, tx, adminUser.ID, rawKey)
-		return err
+		if pluckErr := tx.Model(&ApiKey{}).
+			Where("managed_by = ? AND user_id <> ?", managedByAdminBootstrap, kit.FromPtr(adminUser).ID).
+			Pluck("id", &affectedIDs).Error; pluckErr != nil {
+			return fmt.Errorf("failed to load managed API keys of previous owners: %w", pluckErr)
+		}
+		if deleteErr := s.deleteManagedAPIKeysByIDs(tx, affectedIDs); deleteErr != nil {
+			return deleteErr
+		}
+		if adminUser == nil {
+			return nil
+		}
+		reconciledIDs, reconcileErr := s.reconcileManagedAPIKeys(ctx, tx, adminUser.ID, rawKey)
+		affectedIDs = append(affectedIDs, reconciledIDs...)
+		return reconcileErr
 	}); transactionErr != nil {
 		// Rolled back: the DB is unchanged, so cached entries are still valid.
 		return transactionErr

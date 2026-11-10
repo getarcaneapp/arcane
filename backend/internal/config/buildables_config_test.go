@@ -24,7 +24,7 @@ func TestConfig_AutoLoginCredentials(t *testing.T) {
 
 		cfg := mustLoad(t)
 		assert.Equal(t, "arcane", cfg.BuildablesConfig.AutoLoginUsername, "AutoLoginUsername should default to 'arcane'")
-		assert.Equal(t, "arcane-admin", cfg.BuildablesConfig.AutoLoginPassword, "AutoLoginPassword should default to 'arcane-admin'")
+		assert.Empty(t, cfg.BuildablesConfig.AutoLoginPassword, "AutoLoginPassword should default to empty")
 	})
 
 	t.Run("Auto-login credentials from env", func(t *testing.T) {

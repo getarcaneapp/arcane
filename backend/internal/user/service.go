@@ -52,6 +52,12 @@ type (
 		argon2Slots          chan struct{}
 		revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
 	}
+
+	DefaultAdminOptions struct {
+		Username       string
+		Password       string
+		PasswordPolicy string
+	}
 )
 
 const BackdropMaxBytes = 10 << 20
@@ -511,12 +517,6 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 	return out, nil
 }
 
-type DefaultAdminOptions struct {
-	Username       string
-	Password       string
-	PasswordPolicy string
-}
-
 func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminOptions) error {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
@@ -545,7 +545,8 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 					return fmt.Errorf("invalid ARCANE_DEFAULT_ADMIN_PASSWORD: %w", err)
 				}
 			}
-			hashedPassword, err := s.HashPassword(ctx, cmp.Or(opts.Password, "arcane-admin"))
+			password := cmp.Or(opts.Password, rand.Text())
+			hashedPassword, err := s.HashPassword(ctx, password)
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)
 			}
@@ -563,9 +564,9 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 			}
 			adminUserID = userModel.ID
 			slog.InfoContext(ctx, "👑 Default admin user created!")
-			slog.InfoContext(ctx, "🔑 Username: "+opts.Username)
+			slog.InfoContext(ctx, "🔑 Default admin username", "username", opts.Username)
 			if opts.Password == "" {
-				slog.InfoContext(ctx, "🔑 Password: arcane-admin")
+				slog.InfoContext(ctx, "🔑 Default admin password", "generatedPassword", password)
 				slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
 			}
 			return nil
