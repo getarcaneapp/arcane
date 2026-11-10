@@ -196,6 +196,10 @@ func TestForwardedPermissionsKeepGlobalAdminWithoutSudo(t *testing.T) {
 	require.True(t, agent.IsGlobalAdmin())
 	require.False(t, agent.Sudo)
 
+	flagged := ForwardedPermissions{GlobalAdmin: true}.PermissionSet("0")
+	require.True(t, flagged.IsGlobalAdmin())
+	require.False(t, flagged.Sudo)
+
 	envAdmin := NewPermissionSet()
 	envAdmin.AddEnv("env-A", AllPermissions()...)
 	envAgent := envAdmin.ForwardedPermissions("env-A").PermissionSet("0")

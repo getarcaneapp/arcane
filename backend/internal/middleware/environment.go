@@ -127,15 +127,6 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 	}
 
-	req.Header.Del(HeaderForwardedPermissions)
-	if !kit.FromPtr(perms).Sudo {
-		forwarded, marshalErr := json.Marshal(perms.ForwardedPermissions(envID))
-		if marshalErr != nil {
-			return writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
-		}
-		req.Header.Set(HeaderForwardedPermissions, string(forwarded))
-	}
-
 	accessToken, enabled, err := m.resolver(ctx, envID)
 	if err != nil {
 		return writeProxyError(c, http.StatusNotFound, "Environment not found")
@@ -153,9 +144,23 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
 		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 	}
-	if !kit.FromPtr(perms).Sudo && !slices.Contains(tunnel.MetadataSnapshot().Capabilities, agent.TunnelCapabilityForwardedPermissions) {
+	capabilities := tunnel.MetadataSnapshot().Capabilities
+	if !kit.FromPtr(perms).Sudo && !slices.Contains(capabilities, agent.TunnelCapabilityForwardedPermissions) {
 		slog.WarnContext(ctx, "Refusing to proxy to agent without forwarded permissions support", "environmentId", envID)
 		return writeProxyError(c, http.StatusBadGateway, "Agent must be upgraded to use this environment")
+	}
+
+	req.Header.Del(HeaderForwardedPermissions)
+	if !kit.FromPtr(perms).Sudo {
+		forwardedPermissions := authz.ForwardedPermissions{GlobalAdmin: true}
+		if !perms.IsGlobalAdmin() || !slices.Contains(capabilities, agent.TunnelCapabilityForwardedGlobalAdmin) {
+			forwardedPermissions = perms.ForwardedPermissions(envID)
+		}
+		forwarded, marshalErr := json.Marshal(forwardedPermissions)
+		if marshalErr != nil {
+			return writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
+		}
+		req.Header.Set(HeaderForwardedPermissions, string(forwarded))
 	}
 
 	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)

@@ -1,6 +1,7 @@
 package role_test
 
 import (
+	"encoding/hex"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -487,4 +488,12 @@ func TestPermissionsManifestExposesTransitiveRequirements(t *testing.T) {
 	require.ElementsMatch(t, []string{authz.PermImagesList, authz.PermImagesRead, authz.PermVulnsList, authz.PermActivitiesList, authz.PermActivitiesRead}, requires[authz.PermImagesPatch])
 	require.Empty(t, requires[authz.PermContainersList])
 	require.NotEmpty(t, descriptions[authz.PermContainersList])
+}
+
+func TestPermissionsManifestETagIsStableHex(t *testing.T) {
+	etag := role.PermissionsManifestETag()
+	decoded, err := hex.DecodeString(etag)
+	require.NoError(t, err)
+	require.Len(t, decoded, 8)
+	require.Equal(t, etag, role.PermissionsManifestETag())
 }

@@ -34,7 +34,7 @@ func (m *muxSession) dial(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	m.opened.Add(1)
-	return conn, nil
+	return &muxStream{Conn: conn, conn: m.conn.Load()}, nil
 }
 
 func (m *muxSession) close() {

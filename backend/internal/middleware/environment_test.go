@@ -282,12 +282,15 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 	caller.AddGlobal(authz.PermUsersList, authz.PermContainersStart)
 	caller.AddEnv("env-remote", authz.PermContainersUpdate)
 	caller.AddEnv("env-other", authz.PermContainersDelete)
+	admin := authz.NewPermissionSet()
+	admin.AddGlobal(authz.AllPermissions()...)
 
 	tests := []struct {
 		catalog        *string
 		perms          *authz.PermissionSet
 		name           string
 		clientSupplied string
+		wantForwarded  string
 		wantHeader     string
 		userID         string
 		userName       string
@@ -296,6 +299,14 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons", userID: "user-1", userName: "operator", wantInitiator: "user-1"},
 		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
 		{name: "forwards a non-sudo caller's permissions", userID: "user-2", userName: "limited", wantInitiator: "user-2", perms: caller},
+		{
+			name:          "forwards a global admin as a flag",
+			userID:        "user-3",
+			userName:      "admin",
+			wantInitiator: "user-3",
+			perms:         admin,
+			wantForwarded: `{"global":[],"environment":[],"globalAdmin":true}`,
+		},
 	}
 
 	updateMatcher := authz.NewPermissionMatcher()
@@ -385,6 +396,10 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			assert.Equal(t, tt.userName, forwardedName)
 			if tt.perms == nil {
 				assert.Empty(t, forwardedPermissions)
+				return
+			}
+			if tt.wantForwarded != "" {
+				assert.Equal(t, tt.wantForwarded, forwardedPermissions)
 				return
 			}
 			var decoded authz.ForwardedPermissions

@@ -105,7 +105,7 @@ var (
 
 	ErrPasswordChangeRequired = common.Classify(common.ErrForbidden, errors.New("password change required"))
 
-	passwordChangeAllowedOperations = []string{"get-current-user", "get-session-bootstrap", "change-password", "logout"}
+	passwordChangeAllowedOperations = []string{"get-current-user", "get-session-bootstrap", "get-permissions-manifest", "change-password", "logout"}
 )
 
 func (p *TokenPair) CookieHeaders(secure bool) []string {
@@ -184,10 +184,9 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 		return nil, err
 	}
 	return &types.SessionBootstrap{
-		User:                currentUser,
-		Version:             *versionInfo,
-		Environments:        environments,
-		PermissionsManifest: role.BuildPermissionsManifest(),
+		User:         currentUser,
+		Version:      *versionInfo,
+		Environments: environments,
 	}, nil
 }
 

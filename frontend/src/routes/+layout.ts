@@ -171,7 +171,6 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		queryClient.setQueryData(queryKeys.auth.currentUser(), bootstrap.user);
 		queryClient.setQueryData(queryKeys.system.appVersion(), bootstrap.version);
 		queryClient.setQueryData(queryKeys.environments.list(ENVIRONMENT_LIST_OPTIONS), bootstrap.environments);
-		queryClient.setQueryData(queryKeys.roles.permissionsManifest(), bootstrap.permissionsManifest);
 	}
 	seededBootstrap = bootstrap ?? undefined;
 
@@ -191,13 +190,12 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 					})
 		);
 		const permissionsManifestRequest = dataOrNull(
-			bootstrap
-				? Promise.resolve(bootstrap.permissionsManifest)
-				: queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.roles.permissionsManifest(),
-						queryFn: () => roleService.getPermissionsManifest()
-					})
+			queryClient.query({
+				retry: false,
+				staleTime: Infinity,
+				queryKey: queryKeys.roles.permissionsManifest(),
+				queryFn: () => roleService.getPermissionsManifest()
+			})
 		);
 		const environments = await environmentsRequest;
 		if (!environments.error) {

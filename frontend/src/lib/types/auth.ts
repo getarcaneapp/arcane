@@ -1,7 +1,6 @@
 import type { Environment } from '#lib/types/environment.js';
 
 import type { Paginated } from './base';
-import type { PermissionsManifest } from './role';
 import type { User } from './user';
 import type { VersionInfo } from './version';
 
@@ -99,5 +98,4 @@ export type SessionBootstrap = {
 	user: User;
 	version: VersionInfo;
 	environments: Paginated<Environment>;
-	permissionsManifest: PermissionsManifest;
 };

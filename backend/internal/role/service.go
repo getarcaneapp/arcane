@@ -2,6 +2,8 @@ package role
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -46,6 +48,15 @@ const (
 	legacyRoleBackfillCompletedKey       = "migration.legacy_user_roles.v1.completed"
 	globalAdminGuardLockKey        int64 = 0x617263616e65
 )
+
+var PermissionsManifestETag = sync.OnceValue(func() string {
+	encoded, err := json.Marshal(BuildPermissionsManifest())
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:8])
+})
 
 func NewRoleService(db *database.DB) *RoleService {
 	return &RoleService{
