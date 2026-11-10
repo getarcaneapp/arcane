@@ -4533,5 +4533,11 @@
   "choose_folder": "Vyberte složku",
   "build_choose_context_description": "Vyberte složku pracovního prostoru, která se má použít jako kontext sestavení.",
   "build_edit_files_hint": "Soubory upravujte na kartě „Soubory“.",
-  "no_file_open": "Žádný soubor není otevřený"
+  "no_file_open": "Žádný soubor není otevřený",
+  "git_provider": "Poskytovatel služby Git",
+  "git_provider_description": "Nastaví formát odkazů na soubory a potvrzení změn.",
+  "detect_from_url": "Zjistit z URL adresy",
+  "gitlab": "GitLab",
+  "gitea_forgejo": "Gitea / Forgejo",
+  "bitbucket": "Bitbucket"
 }
