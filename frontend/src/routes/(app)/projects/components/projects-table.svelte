@@ -74,6 +74,7 @@
 		showArchived = false,
 		onToggleArchived,
 		onRetry,
+		refreshError,
 		availableTags = [],
 		emptyState
 	}: {
@@ -84,6 +85,7 @@
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 		availableTags?: ProjectTagOption[];
 		emptyState?: Snippet;
 	} = $props();
@@ -180,6 +182,7 @@
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
+	const isBulkActionRunning = $derived(Object.values(isBulkLoading).some(Boolean));
 	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(rowKey(project))));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
@@ -499,12 +502,12 @@
 	{@const status = actionStatus[rowKey(item)]}
 	{@const envId = item.environmentId}
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
-	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
+	{@const lifecycleDisabled = item.isArchived || isBulkActionRunning || !!status || configurationBlocked}
 	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
 	<RowActionsMenu name={item.name}>
 		<DropdownMenu.Item
 			onclick={() => goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(envId)}`, { projectId: item.id }))}
-			disabled={isAnyLoading}
+			disabled={isBulkActionRunning || !!status}
 		>
 			<EditIcon class="size-4" />
 			{m.common_edit()}
@@ -513,7 +516,7 @@
 		{#if item.gitOpsManagedBy && hasPermission('projects:update', envId)}
 			<ActionMenuItem
 				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!, envId)}
-				disabled={isAnyLoading}
+				disabled={isBulkActionRunning || !!status}
 				icon={RefreshIcon}
 				label={m.git_sync_from_git()}
 				loading={status === 'syncing'}
@@ -581,7 +584,7 @@
 			{#if item.isArchived}
 				<ActionMenuItem
 					onclick={() => performProjectAction('unarchive', item.id, envId)}
-					disabled={isAnyLoading}
+					disabled={isBulkActionRunning || !!status}
 					icon={ContainersIcon}
 					label={m.projects_unarchive()}
 					loading={status === 'unarchiving'}
@@ -589,7 +592,7 @@
 			{:else}
 				<ActionMenuItem
 					onclick={() => performProjectAction('archive', item.id, envId)}
-					disabled={isProjectArchiveBlocked(item) || isAnyLoading}
+					disabled={isProjectArchiveBlocked(item) || isBulkActionRunning || !!status}
 					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
 					icon={ContainersIcon}
 					label={m.projects_archive()}
@@ -602,7 +605,7 @@
 			<ActionMenuItem
 				destructive
 				onclick={() => handleDestroyProject(item.id, envId)}
-				disabled={isAnyLoading}
+				disabled={isBulkActionRunning || !!status}
 				icon={TrashIcon}
 				label={m.compose_destroy()}
 				loading={status === 'destroying'}
@@ -637,6 +640,7 @@
 	bind:mobileFieldVisibility
 	{withoutFilters}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	{bulkActions}

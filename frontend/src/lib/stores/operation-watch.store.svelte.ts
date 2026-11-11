@@ -55,7 +55,7 @@ function createOperationWatchStore() {
 		},
 
 		append(line: string) {
-			_lines = [..._lines, line];
+			_lines.push(line);
 		},
 
 		onLine(data: unknown) {
@@ -64,7 +64,7 @@ function createOperationWatchStore() {
 			}
 			const frame = data as { log?: unknown };
 			if (typeof frame.log === 'string') {
-				_lines = [..._lines, frame.log];
+				_lines.push(frame.log);
 			}
 		},
 

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { watch } from 'runed';
 	import { onMount, tick } from 'svelte';
@@ -34,9 +34,12 @@
 	import { EditIcon, ProjectsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerDetailQuery } from '#lib/query/containers.js';
+	import { projectDetailQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { containerService } from '#lib/services/container-service.js';
+	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
@@ -65,14 +68,20 @@
 	import ContainerNetwork from '../components/container-network.svelte';
 	import ContainerOverview from '../components/container-overview.svelte';
 	import ContainerProcesses from '../components/container-processes.svelte';
-	import ContainerShell from '../components/container-shell.svelte';
 	import ContainerStats from '../components/container-stats.svelte';
 	import ContainerStorage from '../components/container-storage.svelte';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { getContainerStatusLabel, getStateBadgeVariant } from '../container-table.helpers';
 	let { data } = $props();
 	const queryClient = useQueryClient();
-	let container = $derived(data?.container as ContainerDetails);
+	const containerQuery = createQuery(() => ({
+		...containerDetailQuery(data.envId, data.container.id),
+		initialData: data.container,
+		refetchOnMount: (query) => query.state.isInvalidated
+	}));
+	const container = $derived(
+		containerQuery.error instanceof APIError && containerQuery.error.status === 404 ? undefined : containerQuery.data
+	);
 	let stats = $state(null as ContainerStatsType | null);
 
 	let autoScrollLogs = $state(true);
@@ -86,11 +95,15 @@
 	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
 
 	async function refreshContainerDetails() {
-		await Promise.all([
+		const [, result] = await Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(currentEnvId, container.id) })
+			containerQuery.refetch()
 		]);
-		await refreshAll();
+		if (result.error) {
+			toast.error(m.common_refresh_failed({ resource: m.containers() }), {
+				description: extractApiErrorMessage(result.error)
+			});
+		}
 	}
 
 	const containerDisplayName = $derived(container?.name || m.common_not_found_title({ resource: m.containers() }));
@@ -136,10 +149,6 @@
 	};
 
 	const primaryIpAddress = $derived(getPrimaryIpAddress(container?.networkSettings));
-
-	async function refreshData() {
-		await refreshAll();
-	}
 
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
@@ -191,13 +200,7 @@
 		() => {
 			void refreshAfterUpdate();
 		},
-		() => container.id
-	);
-	watch(
-		() => data.projectError,
-		(error) => {
-			if (error) toast.error(m.common_load_failed({ resource: m.resource_project() }), { description: error });
-		}
+		() => data.container.id
 	);
 
 	onMount(() => {
@@ -211,16 +214,16 @@
 
 	async function refreshAfterUpdate() {
 		const environmentId = currentEnvId;
-		const containerId = container.id;
+		const containerId = data.container.id;
 		const result = await tryCatch(containerService.getContainerForEnvironment(environmentId, containerId));
-		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== data.container.id) return;
 		if (result.error instanceof APIError && result.error.status === 404) {
 			await Promise.all(
 				listScopes([environmentId]).map((scope) =>
 					queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) })
 				)
 			);
-			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== data.container.id) return;
 			await goto(resolve('/(app)/containers'));
 			return;
 		}
@@ -238,7 +241,6 @@
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(environmentId) })
 		]);
-		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();
 	}
 
 	function handleUpdateContainer() {
@@ -288,8 +290,45 @@
 		!!(container?.config?.healthcheck?.test && container.config.healthcheck.test.length > 0) || !!container?.state?.health
 	);
 
-	const project = $derived(data?.project ?? null);
 	const composeInfo = $derived(container?.composeInfo ?? null);
+	const composeProjectName = $derived(composeInfo?.projectName ?? '');
+	const projectNameRequest = $derived({ filters: { name: composeProjectName }, pagination: { page: 1, limit: 1 } });
+	const projectSearchRequest = $derived({ search: composeProjectName, pagination: { page: 1, limit: 100 } });
+	const projectNameQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.list(currentEnvId, projectNameRequest),
+		queryFn: () => projectService.getProjectsForEnvironment(currentEnvId, projectNameRequest),
+		enabled: !!composeProjectName
+	}));
+	const projectSearchQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.list(currentEnvId, projectSearchRequest),
+		queryFn: () => projectService.getProjectsForEnvironment(currentEnvId, projectSearchRequest),
+		enabled: projectNameQuery.isSuccess && !projectNameQuery.data.data.some((p) => p.name === composeProjectName)
+	}));
+	const matchedProjectId = $derived(
+		[...(projectNameQuery.data?.data ?? []), ...(projectSearchQuery.data?.data ?? [])].find((p) => p.name === composeProjectName)
+			?.id ?? ''
+	);
+	const projectQuery = createQuery(() => ({
+		...projectDetailQuery(currentEnvId, matchedProjectId),
+		enabled: !!matchedProjectId
+	}));
+	const project = $derived(projectQuery.data ?? null);
+	const projectPending = $derived(
+		!!composeProjectName &&
+			(projectNameQuery.isPending ||
+				(projectSearchQuery.isEnabled && projectSearchQuery.isPending) ||
+				(!!matchedProjectId && projectQuery.isPending))
+	);
+	watch(
+		() => projectNameQuery.error ?? projectSearchQuery.error ?? projectQuery.error,
+		(error) => {
+			if (error) {
+				toast.error(m.common_load_failed({ resource: m.resource_project() }), {
+					description: extractApiErrorMessage(error)
+				});
+			}
+		}
+	);
 	const quadletHref = $derived(quadletUnitHref(container?.labels, currentEnvId));
 	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
 	const rootComposeFilename = $derived.by(() => {
@@ -311,17 +350,19 @@
 	};
 
 	async function resolveServiceComposeSource(
-		proj: typeof project,
+		projectId: string,
+		composeContent: string | undefined,
+		includeFiles: ProjectIncludeFile[] | undefined,
 		svcName: string,
 		info: typeof composeInfo
 	): Promise<{ includeFile: ProjectIncludeFile | null } | null> {
-		if (!proj || !svcName || !info) return null;
+		if (!projectId || !svcName || !info) return null;
 
-		if (proj.composeContent && hasServiceInContent(proj.composeContent, svcName)) {
+		if (composeContent && hasServiceInContent(composeContent, svcName)) {
 			return { includeFile: null };
 		}
 
-		const includes = proj.includeFiles ?? [];
+		const includes = includeFiles ?? [];
 		if (includes.length === 0) return null;
 
 		const envId = currentEnvId;
@@ -332,7 +373,7 @@
 			}
 			const sourceResult = await tryCatch(
 				(async () => {
-					const loaded = await projectWorkspaceService.getWorkspaceFile(proj.id, f.relativePath, envId);
+					const loaded = await projectWorkspaceService.getWorkspaceFile(projectId, f.relativePath, envId);
 					if (loaded?.content && hasServiceInContent(loaded.content, svcName)) {
 						return { includeFile: { ...f, content: loaded.content } };
 					}
@@ -343,11 +384,17 @@
 		return null;
 	}
 
-	const serviceComposeSourcePromise = $derived(resolveServiceComposeSource(project, composeServiceName, composeInfo));
+	const projectId = $derived(project?.id ?? '');
+	const projectComposeContent = $derived(project?.composeContent);
+	const projectIncludeFiles = $derived(project?.includeFiles);
+	const serviceComposeSourcePromise = $derived(
+		resolveServiceComposeSource(projectId, projectComposeContent, projectIncludeFiles, composeServiceName, composeInfo)
+	);
 
 	const showComposeTab = $derived(!!composeInfo && !!project);
 
 	const urlTab = useUrlTab({
+		ready: () => !projectPending,
 		tabs: () => [
 			{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 			{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon, visible: showStats },
@@ -609,12 +656,14 @@
 	{#if showShell}
 		<Tabs.Content value="shell" class="h-full">
 			{#if activeTab === 'shell'}
-				<ContainerShell
-					containerId={container?.id}
-					environmentId={currentEnvId}
-					labels={container?.labels}
-					name={container?.name}
-				/>
+				{#await import('../components/container-shell.svelte') then { default: ContainerShell }}
+					<ContainerShell
+						containerId={container?.id}
+						environmentId={currentEnvId}
+						labels={container?.labels}
+						name={container?.name}
+					/>
+				{/await}
 			{/if}
 		</Tabs.Content>
 	{/if}
@@ -710,5 +759,10 @@
 		/>
 	{/if}
 {:else}
-	<ResourceNotFound resource={m.container()} resourceListTitle={m.containers()} backHref="/containers" onRetry={refreshData} />
+	<ResourceNotFound
+		resource={m.container()}
+		resourceListTitle={m.containers()}
+		backHref="/containers"
+		onRetry={refreshContainerDetails}
+	/>
 {/if}

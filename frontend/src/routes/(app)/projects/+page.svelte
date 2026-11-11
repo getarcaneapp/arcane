@@ -305,6 +305,7 @@
 				availableTags={projectTags}
 				onToggleArchived={toggleArchived}
 				onRetry={() => Promise.all([projectsQuery.refetch(), statusCountsQuery.refetch(), refetchFailedTags()])}
+				refreshError={projectsQuery.error}
 			/>
 		{/if}
 	{/snippet}

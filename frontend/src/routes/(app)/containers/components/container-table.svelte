@@ -90,7 +90,9 @@
 		requestOptions = $bindable(),
 		groupByProject = $bindable(false),
 		withoutFilters = false,
-		onRetry
+		loading = false,
+		onRetry,
+		refreshError
 	}: {
 		/** Shown-environments scope the rows were loaded for. */
 		scope: string;
@@ -99,7 +101,9 @@
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
 		withoutFilters?: boolean;
+		loading?: boolean;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const actionStatus = $state<Record<string, ActionStatus>>({});
@@ -211,6 +215,7 @@
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
+	const isBulkActionRunning = $derived(Object.values(isBulkLoading).some(Boolean));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let tablePreferences = $state<{
@@ -835,7 +840,7 @@
 					size="icon"
 					class="size-7 text-success! hover:bg-success/10"
 					onclick={() => performContainerAction('start', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
+					disabled={!resourcesCurrent || isBulkActionRunning}
 					icon={PlayIcon}
 					title={m.common_start()}
 				/>
@@ -846,7 +851,7 @@
 					size="icon"
 					class="size-7 text-muted-foreground! hover:bg-destructive/10 hover:text-destructive!"
 					onclick={() => performContainerAction('stop', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
+					disabled={!resourcesCurrent || isBulkActionRunning}
 					title={m.common_stop()}
 					icon={StopIcon}
 				/>
@@ -862,7 +867,7 @@
 					size="icon"
 					class="size-7"
 					onclick={() => handleUpdateContainer(item)}
-					disabled={!resourcesCurrent || isAnyLoading}
+					disabled={!resourcesCurrent || isBulkActionRunning}
 					title={m.update_container()}
 					icon={UpdateIcon}
 				/>
@@ -1035,7 +1040,7 @@
 			<DropdownMenu.Item
 				onclick={() =>
 					goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
-				disabled={isAnyLoading}
+				disabled={isBulkActionRunning || !!status}
 			>
 				<InspectIcon class="size-4" />
 				{m.common_inspect()}
@@ -1045,7 +1050,7 @@
 				<DropdownMenu.Item
 					onclick={() =>
 						goto(resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
-					disabled={isAnyLoading}
+					disabled={isBulkActionRunning || !!status}
 				>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
@@ -1055,7 +1060,7 @@
 			{#if canConvertToCompose && hasPermission('projects:create', envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
 					onclick={() => goto(resolve(`/(app)/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`))}
-					disabled={isAnyLoading}
+					disabled={isBulkActionRunning || !!status}
 				>
 					<ProjectsIcon class="size-4" />
 					{m.compose_convert_action()}
@@ -1067,7 +1072,7 @@
 			{#if !inlineStateActions && item.updateInfo?.hasUpdate && hasPermission('image-updates:apply', envId)}
 				<ActionMenuItem
 					onclick={() => handleUpdateContainer(item)}
-					disabled={isAnyLoading}
+					disabled={isBulkActionRunning || !!status}
 					icon={UpdateIcon}
 					label={status === 'updating' ? '' : m.common_update()}
 					loading={status === 'updating'}
@@ -1077,7 +1082,7 @@
 				<IfPermitted perm="containers:pause" {envId}>
 					<ActionMenuItem
 						onclick={() => performContainerAction('unpause', item.id, envId)}
-						disabled={isAnyLoading}
+						disabled={isBulkActionRunning || !!status}
 						icon={PlayIcon}
 						label={m.common_unpause()}
 						loading={status === 'unpausing'}
@@ -1087,7 +1092,7 @@
 				{#if !inlineStateActions && hasPermission('containers:start', envId)}
 					<ActionMenuItem
 						onclick={() => performContainerAction('start', item.id, envId)}
-						disabled={isAnyLoading}
+						disabled={isBulkActionRunning || !!status}
 						icon={PlayIcon}
 						label={m.common_start()}
 						loading={status === 'starting'}
@@ -1101,7 +1106,7 @@
 							label={m.common_stop()}
 							onclick={() => performContainerAction('stop', item.id, envId)}
 							loading={status === 'stopping'}
-							disabled={isAnyLoading}
+							disabled={isBulkActionRunning || !!status}
 						/>
 					</IfPermitted>
 				{/if}
@@ -1112,14 +1117,14 @@
 						label={m.common_restart()}
 						onclick={() => performContainerAction('restart', item.id, envId)}
 						loading={status === 'restarting'}
-						disabled={isAnyLoading}
+						disabled={isBulkActionRunning || !!status}
 					/>
 				</IfPermitted>
 
 				<IfPermitted perm="containers:pause" {envId}>
 					<ActionMenuItem
 						onclick={() => performContainerAction('pause', item.id, envId)}
-						disabled={isAnyLoading}
+						disabled={isBulkActionRunning || !!status}
 						icon={PauseIcon}
 						label={m.common_pause()}
 						loading={status === 'pausing'}
@@ -1128,7 +1133,7 @@
 			{/if}
 
 			{#if (item.state === 'running' || item.state === 'paused') && hasPermission('containers:kill', envId)}
-				<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
+				<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isBulkActionRunning || !!status}>
 					<ZapIcon class="size-4" />
 					{m.common_kill()}
 				</DropdownMenu.Item>
@@ -1143,7 +1148,7 @@
 				{:else}
 					<ActionMenuItem
 						onclick={() => handleRedeployContainer(item)}
-						disabled={isAnyLoading}
+						disabled={isBulkActionRunning || !!status}
 						icon={RedeployIcon}
 						label={m.common_redeploy()}
 						loading={status === 'redeploying'}
@@ -1159,7 +1164,7 @@
 					label={m.common_remove()}
 					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item), envId)}
 					loading={status === 'removing'}
-					disabled={isAnyLoading}
+					disabled={isBulkActionRunning || !!status}
 					destructive
 				/>
 			</IfPermitted>
@@ -1192,7 +1197,9 @@
 	bind:columnVisibility
 	bind:viewMode
 	{withoutFilters}
+	{loading}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	{bulkActions}

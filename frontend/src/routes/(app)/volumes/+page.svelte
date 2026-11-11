@@ -127,6 +127,7 @@
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}
 					onRetry={() => volumesQuery.refetch()}
+					refreshError={volumesQuery.error}
 				/>
 			{/key}
 		{/if}

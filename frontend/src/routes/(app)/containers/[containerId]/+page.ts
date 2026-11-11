@@ -1,11 +1,7 @@
 import { error } from '@sveltejs/kit';
 
 import { containerDetailQuery } from '#lib/query/containers.js';
-import { projectDetailQuery } from '#lib/query/projects.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { projectService } from '#lib/services/project-service.js';
-import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -25,40 +21,8 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		error(404, 'Container not found');
 	}
 
-	let project = null;
-	let projectError: string | null = null;
-	const composeProjectName = container.composeInfo?.projectName;
-	if (composeProjectName) {
-		const operationResult = await tryCatch(
-			(async () => {
-				const findByName = async (options: SearchPaginationSortRequest) => {
-					const projectsResult = await queryClient.query({
-						queryKey: queryKeys.projects.list(envId, options),
-						queryFn: () => projectService.getProjectsForEnvironment(envId, options)
-					});
-					return projectsResult.data.find((p) => p.name === composeProjectName);
-				};
-				// Agents without the name filter ignore it, so fall back to the searched lookup.
-				const matched =
-					(await findByName({ filters: { name: composeProjectName }, pagination: { page: 1, limit: 1 } })) ??
-					(await findByName({ search: composeProjectName, pagination: { page: 1, limit: 100 } }));
-				if (matched) {
-					return await queryClient.query(projectDetailQuery(envId, matched.id));
-				}
-				return null;
-			})()
-		);
-		if (operationResult.error !== null) {
-			projectError = extractApiErrorMessage(operationResult.error);
-		} else {
-			project = operationResult.data;
-		}
-	}
-
 	return {
 		envId,
-		container,
-		project,
-		projectError
+		container
 	};
 };

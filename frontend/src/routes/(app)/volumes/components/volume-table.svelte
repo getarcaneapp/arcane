@@ -55,12 +55,14 @@
 		volumes,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRetry
+		onRetry,
+		refreshError
 	}: {
 		volumes: EnvironmentPage<VolumesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const isLoading = $state({
@@ -439,6 +441,7 @@
 	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
 	onRetry={retryFailedEnvironments}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

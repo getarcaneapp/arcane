@@ -36,11 +36,12 @@ export const load: PageLoad = async ({ parent, url }) => {
 
 	const operationResult = await tryCatch(
 		Promise.all([
-			queryClient.query(projectListQuery(scope, environments, projectRequestOptions)),
-			queryClient.query(projectStatusCountsQuery(scope, environments)),
-			queryClient.query({
+			queryClient.ensureQueryData({ ...projectListQuery(scope, environments, projectRequestOptions), revalidateIfStale: true }),
+			queryClient.ensureQueryData({ ...projectStatusCountsQuery(scope, environments), revalidateIfStale: true }),
+			queryClient.ensureQueryData({
 				queryKey: queryKeys.projects.tags(scope),
-				queryFn: () => fetchProjectTags(environments)
+				queryFn: () => fetchProjectTags(environments),
+				revalidateIfStale: true
 			})
 		])
 	);
