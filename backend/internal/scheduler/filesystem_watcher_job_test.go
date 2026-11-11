@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -35,12 +36,13 @@ func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.
 	job.mu.Lock()
 	earlyWatcher := job.projectsWatcher
 	job.mu.Unlock()
-	require.NotNil(t, earlyWatcher)
+	require.Len(t, earlyWatcher, 1)
 	require.NoError(t, job.Start(t.Context()))
 	job.mu.Lock()
 	startedWatcher := job.projectsWatcher
 	job.mu.Unlock()
-	require.NotSame(t, earlyWatcher, startedWatcher)
+	require.Len(t, startedWatcher, 1)
+	require.NotSame(t, earlyWatcher[0], startedWatcher[0])
 
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -54,16 +56,19 @@ func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- job.Supervise(superviseCtx) }()
 
-	currentWatcher := func() *tripwire.Watcher[string] {
+	currentWatcher := func() []*tripwire.Watcher[string] {
 		job.mu.Lock()
 		defer job.mu.Unlock()
 		return job.projectsWatcher
 	}
-	require.Eventually(t, func() bool { return currentWatcher() != nil }, 5*time.Second, 10*time.Millisecond)
-	firstWatcher := currentWatcher()
+	require.Eventually(t, func() bool { return len(currentWatcher()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	firstWatcher := currentWatcher()[0]
 
 	job.RequestRestart()
-	require.Eventually(t, func() bool { return currentWatcher() != firstWatcher }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		watchers := currentWatcher()
+		return len(watchers) == 1 && watchers[0] != firstWatcher
+	}, 5*time.Second, 10*time.Millisecond)
 
 	cancelSupervise()
 	require.NoError(t, <-done)
@@ -93,4 +98,23 @@ func newFilesystemWatcherTestJob(t *testing.T) *FilesystemWatcherJob {
 	)
 	require.NoError(t, err)
 	return job
+}
+
+func TestFilesystemWatcherJob_WatchesEachEnabledProjectsDirectory(t *testing.T) {
+	job := newFilesystemWatcherTestJob(t)
+	extra, disabled := t.TempDir(), t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	require.NoError(t, job.settingsService.UpdateSetting(t.Context(), "projectsDirectories",
+		`[{"path":"`+extra+`","enabled":true},{"path":"`+disabled+`","enabled":false},{"path":"`+missing+`","enabled":true}]`))
+
+	require.NoError(t, job.RestartProjectsWatcher(t.Context()))
+	job.mu.Lock()
+	watchers := len(job.projectsWatcher)
+	job.mu.Unlock()
+	require.Equal(t, 2, watchers)
+	require.NoDirExists(t, missing)
+
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, job.Stop(stopCtx))
 }

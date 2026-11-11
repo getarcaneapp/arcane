@@ -207,6 +207,20 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *type
 	}, nil
 }
 
+func (h *ProjectHandler) ListProjectsDirectories(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectsDirectoryStatus], error) {
+	directories, err := h.projectService.ListProjectsDirectories(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to list projects directories: " + err.Error())
+	}
+
+	return &handlerutil.Out[[]types.ProjectsDirectoryStatus]{
+		Body: types.ApiResponse[[]types.ProjectsDirectoryStatus]{
+			Success: true,
+			Data:    directories,
+		},
+	}, nil
+}
+
 func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectTagOption], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjectTags(ctx)
@@ -484,17 +498,17 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Metadata:       database.JSON{"action": "create_project"},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
-		proj, createErr = h.projectService.CreateProject(
-			runtimeCtx,
-			projectInput.Name,
-			projectInput.ComposeContent,
-			projectInput.EnvContent,
-			manifest,
-			uploads,
-			projectInput.Tags,
-			projectInput.TagColors,
-			*user,
-		)
+		proj, createErr = h.projectService.CreateProject(runtimeCtx, CreateProjectOptions{
+			EnvContent:     projectInput.EnvContent,
+			Uploads:        uploads,
+			TagColors:      projectInput.TagColors,
+			Actor:          *user,
+			Manifest:       manifest,
+			Name:           projectInput.Name,
+			ComposeContent: projectInput.ComposeContent,
+			Directory:      projectInput.Directory,
+			Tags:           projectInput.Tags,
+		})
 		return createErr
 	})
 	if err != nil {
@@ -690,6 +704,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 				GitRepositoryProvider: details.GitRepositoryProvider,
 				IconLightURL:          details.IconLightURL,
 				RelativePath:          details.RelativePath,
+				ProjectsRoot:          details.ProjectsRoot,
 				ID:                    details.ID,
 				IconDarkURL:           details.IconDarkURL,
 				Path:                  details.Path,

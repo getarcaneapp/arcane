@@ -53,6 +53,7 @@ type (
 	//nolint:lll // Reflection metadata must remain in single struct-tag literals.
 	Settings struct {
 		ProjectsDirectory                     SettingVariable `key:"projectsDirectory" default:"/app/data/projects" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=storage;description=Configure where project files are stored" catmeta:"id=storage;title=Storage & Limits;icon=volumes;url=/settings/storage;description=Configure storage paths, upload limits, and Git sync file limits"`
+		ProjectsDirectories                   SettingVariable `key:"projectsDirectories" default:"[]" meta:"label=Additional Projects Directories;type=json;keywords=projects,directories,directory,paths,roots,folders,locations,storage,compose,docker-compose;category=storage;description=Additional directories scanned recursively for Compose projects"`
 		TemplatesDirectory                    SettingVariable `key:"templatesDirectory" default:"/app/data/templates" meta:"label=Templates Directory;type=text;keywords=templates,directory,path,folder,location,storage,compose,docker-compose;category=storage;description=Configure where local compose template folders are discovered"`
 		FollowProjectSymlinks                 SettingVariable `key:"followProjectSymlinks" default:"false" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=storage;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
 		SwarmStackSourcesDirectory            SettingVariable `key:"swarmStackSourcesDirectory" default:"/app/data/swarm/sources" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=storage;description=Configure where swarm stack source files are stored"`
@@ -334,6 +335,13 @@ func validateValue(meta settingFieldMeta, value string) error {
 	number, numberErr := strconv.ParseFloat(value, 64)
 	_, integerErr := strconv.Atoi(value)
 	_, cronErr := cron.ParseStandard(value)
+
+	if meta.key == "projectsDirectories" {
+		if _, err := projectsDirectoryContainerPaths(value); err != nil {
+			return invalid("%w", err)
+		}
+		return nil
+	}
 
 	switch {
 	case meta.valueType == "boolean" && value != "true" && value != "false":

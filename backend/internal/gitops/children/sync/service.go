@@ -67,7 +67,6 @@ type (
 		stagePath     string
 		// stageLogical is stagePath relative to the projects directory, the root every staging mutation is confined to.
 		stageLogical    string
-		projectsDir     string
 		composeFileName string
 		syncFiles       []projects.SyncFile
 		syncedFiles     []string
@@ -390,7 +389,13 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 	}
 
 	// The non-suffixing create: a name collision means the binding is broken, never a "-N" duplicate.
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, source.composeContent, source.envContent, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
+	project, err := s.projectService.CreateProject(ctx, projectpkg.CreateProjectOptions{
+		EnvContent:     source.envContent,
+		Actor:          actor,
+		Name:           sync.ProjectName,
+		ComposeContent: source.composeContent,
+		ExactName:      true,
+	})
 	if errors.Is(err, projects.ErrProjectDirExists) || errors.Is(err, common.ErrProjectWorkspaceConflict) {
 		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a project or directory with that name "+
 			"already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)))
@@ -499,7 +504,6 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 	stage := &stagedDirectorySync{
 		stagePath:       filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(stageLogical, "/"))),
 		stageLogical:    stageLogical,
-		projectsDir:     projectsDir,
 		composeFileName: filepath.Base(sync.ComposePath),
 		// Older syncs may still track .env, which cleanup would delete from the stage before the env merge reads it.
 		oldSyncedFiles:  slices.DeleteFunc(sync.SyncedFileList(), func(path string) bool { return slices.Contains(reservedRootEnvFiles, path) }),
@@ -759,8 +763,12 @@ func (s *Service) walkAndParseSyncDirectory(ctx context.Context, sync *projectpk
 }
 
 func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, stage *stagedDirectorySync) (string, string, error) {
+	projectRoot, rootErr := s.projectService.ProjectRootDirectory(ctx, targetPath)
+	if rootErr != nil {
+		return "", "", fmt.Errorf("failed to get projects directory: %w", rootErr)
+	}
 	if len(stage.oldSyncedFiles) > 0 {
-		if err := projects.CleanupRemovedFiles(ctx, stage.projectsDir, targetPath, stage.oldSyncedFiles, stage.syncedFiles); err != nil {
+		if err := projects.CleanupRemovedFiles(ctx, projectRoot, targetPath, stage.oldSyncedFiles, stage.syncedFiles); err != nil {
 			return "", "", fmt.Errorf("failed to clean removed synced files: %w", err)
 		}
 	}
@@ -769,11 +777,11 @@ func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, sta
 		return "", "", fmt.Errorf("failed to remove stale compose files: %w", err)
 	}
 
-	if _, err := projects.WriteSyncedDirectory(ctx, stage.projectsDir, targetPath, stage.syncFiles); err != nil {
+	if _, err := projects.WriteSyncedDirectory(ctx, projectRoot, targetPath, stage.syncFiles); err != nil {
 		return "", "", fmt.Errorf("failed to write staged sync files: %w", err)
 	}
 
-	return s.projectService.ApplyGitSyncEnvToDirectory(ctx, targetPath, stage.projectsDir, stage.gitEnvContent)
+	return s.projectService.ApplyGitSyncEnvToDirectory(ctx, targetPath, projectRoot, stage.gitEnvContent)
 }
 
 func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor types.Actor) (*projectpkg.Project, error) {
@@ -844,6 +852,10 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
 	existed := true
+	projectRoot, rootErr := s.projectService.ProjectRootDirectory(ctx, projectPath)
+	if rootErr != nil {
+		return nil, fmt.Errorf("failed to get projects directory: %w", rootErr)
+	}
 
 	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, acfstypes.StatOptions{FollowFinal: true}); err == nil {
 		if !entry.IsDirectory {
@@ -869,7 +881,7 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	if existed {
 		var removeBackup func()
 		var err error
-		backup, removeBackup, err = projects.BackupProjectDirectory(ctx, stage.projectsDir, projectPath, ".gitops-backup-*", stage.backupScope)
+		backup, removeBackup, err = projects.BackupProjectDirectory(ctx, projectRoot, projectPath, ".gitops-backup-*", stage.backupScope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to back up current project directory: %w", err)
 		}
@@ -883,7 +895,7 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	restore := func(cause error) error {
 		var restoreErr error
 		if existed {
-			restoreErr = projects.RestoreProjectDirectoryBackup(cleanupCtx, stage.projectsDir, projectPath, backup)
+			restoreErr = projects.RestoreProjectDirectoryBackup(cleanupCtx, projectRoot, projectPath, backup)
 		} else {
 			restoreErr = acfs.Root{Path: filepath.Dir(projectPath)}.RemoveAll(cleanupCtx, "/"+filepath.Base(projectPath))
 		}

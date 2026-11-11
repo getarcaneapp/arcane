@@ -1,7 +1,13 @@
 export type UpdateCheckRegistry = 'auto' | 'ghcr.io' | 'docker.io' | 'public.ecr.aws';
 
+export type ProjectsDirectoryEntry = {
+	path: string;
+	enabled: boolean;
+};
+
 export type Settings = {
 	projectsDirectory: string;
+	projectsDirectories: ProjectsDirectoryEntry[];
 	templatesDirectory: string;
 	followProjectSymlinks: boolean;
 	swarmStackSourcesDirectory: string;

@@ -669,7 +669,6 @@ func TestGitOpsSyncService_CreateDirectorySyncProject_RollsBackProjectOnUpdateFa
 	stage := &stagedDirectorySync{
 		stagePath:       stagePath,
 		stageLogical:    "/.gitops-sync-stage-test",
-		projectsDir:     projectsDir,
 		composeFileName: "docker-compose.yaml",
 		serviceCount:    1,
 	}

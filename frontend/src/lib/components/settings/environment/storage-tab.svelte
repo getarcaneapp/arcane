@@ -1,14 +1,28 @@
 <script lang="ts">
+	import { createQuery } from '@tanstack/svelte-query';
+
+	import RowListEditor from '#lib/components/form/row-list-editor.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectDirectoriesQuery } from '#lib/query/projects.js';
 
 	import type { StorageTabProps } from './tab-props';
 
-	let { formInputs = $bindable(), settings, mixed }: StorageTabProps = $props();
+	let { formInputs = $bindable(), settings, mixed, lock, environmentId }: StorageTabProps = $props();
 
+	const directoriesQuery = createQuery(() => ({
+		...projectDirectoriesQuery(environmentId ?? ''),
+		enabled: !!environmentId,
+		staleTime: 0
+	}));
+	const missingPaths = $derived(
+		new Set((directoriesQuery.data ?? []).filter((status) => !status.exists).map((status) => status.path))
+	);
+
+	const supportsAdditionalProjectDirectories = $derived(settings.values.projectsDirectories !== undefined);
 	const supportsUnmanagedBackupRetention = $derived(settings.values.unmanagedBackupRetentionDays !== undefined);
 </script>
 
@@ -32,6 +46,40 @@
 				/>
 			{/snippet}
 		</SettingsRow>
+		{#if supportsAdditionalProjectDirectories}
+			<SettingsRow
+				label={m.additional_project_directories()}
+				description={m.additional_project_directories_description()}
+				error={formInputs.projectsDirectories.error}
+				lock={lock('projectsDirectories')}
+				mixed={mixed('projectsDirectories')}
+			>
+				{#snippet children()}
+					<RowListEditor
+						bind:rows={formInputs.projectsDirectories.value}
+						createRow={() => ({ path: '', enabled: true })}
+						addLabel={m.add_directory()}
+					>
+						{#snippet children(row)}
+							<div class="min-w-0 flex-1">
+								<Input
+									type="text"
+									bind:value={row.path}
+									aria-label={m.general_projects_directory_label()}
+									aria-invalid={!!formInputs.projectsDirectories.error}
+									placeholder={mixed('projectsDirectories') ? m.mixed() : undefined}
+									mono
+								/>
+								{#if missingPaths.has(row.path.trim())}
+									<p class="mt-1.5 text-xs text-warning">{m.directory_not_found_in_container()}</p>
+								{/if}
+							</div>
+							<Switch bind:checked={row.enabled} aria-label={m.common_enabled()} />
+						{/snippet}
+					</RowListEditor>
+				{/snippet}
+			</SettingsRow>
+		{/if}
 		<SettingsRow
 			for="templates-directory"
 			label={m.general_templates_directory_label()}

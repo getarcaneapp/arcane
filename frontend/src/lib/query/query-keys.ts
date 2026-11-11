@@ -224,6 +224,7 @@ export const queryKeys = {
 			['project', environmentId, projectId, 'check-updates'] as const,
 		statusCounts: (environmentId: string) => ['projects', environmentId, 'status-counts'] as const,
 		tags: (environmentId: string) => ['projects', environmentId, 'tags'] as const,
+		directories: (environmentId: string) => ['projects', environmentId, 'directories'] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
 		workspaceFolder: (environmentId: string, projectId: string, path: string) =>

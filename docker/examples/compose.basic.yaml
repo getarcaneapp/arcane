@@ -12,6 +12,8 @@ services:
     environment:
       - ARCANE_ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
       - ARCANE_PROJECTS_DIRECTORY=/host/path/to/projects
+      # Optional: extra directories scanned for Compose projects. Mount each one into the container too.
+      # - 'ARCANE_PROJECTS_DIRECTORIES=[{"path":"/host/path/to/more-projects","enabled":true}]'
       # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
       # When using the mounted Docker socket, Arcane will map the socket group automatically.
       # - PUID=1000

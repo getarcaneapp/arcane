@@ -17,6 +17,7 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
+	import ProjectDirectorySelect from '#lib/components/form/project-directory-select.svelte';
 	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
@@ -2367,6 +2368,7 @@
 			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 				<div class="flex min-w-0 items-center">
 					<EnvironmentDestinationSelect value={envId} variant="prefix" readonly />
+					<ProjectDirectorySelect value={project.projectsRoot} environmentId={envId} readonly />
 					<EditableName
 						bind:value={inputs.name.value}
 						displayValue={effectiveName}

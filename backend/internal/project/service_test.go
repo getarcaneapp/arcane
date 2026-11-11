@@ -1676,7 +1676,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	require.NoError(t, db.Create(project).Error)
 
 	projectForUpdate := *project
-	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, nil, nil, nil, migration, nil)
+	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, projectsDir, nil, nil, nil, migration, nil)
 	require.NoError(t, err)
 
 	assert.True(t, migration.applyCalled)
@@ -1762,7 +1762,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: fixed-data\n"
 
-		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, projectsDir, &newCompose, nil, nil)
 
 		require.NoError(t, prepareErr)
 		require.Nil(t, migration)
@@ -1775,7 +1775,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans unchanged auto-managed volume from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, projectsDir, &newCompose, nil, nil)
 
 		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
@@ -1792,7 +1792,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans auto-managed volume when pending compose name renames project", func(t *testing.T) {
 		newCompose := "name: web\nservices:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, projectsDir, &newCompose, nil, nil)
 
 		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
@@ -1809,7 +1809,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans interpolated explicit name from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: ${DATA_VOLUME:-nginx_data}\n"
 
-		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, projectsDir, &newCompose, nil, nil)
 
 		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
@@ -1871,7 +1871,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	require.NoError(t, db.Create(project).Error)
 
 	projectForUpdate := *project
-	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, nil, nil, nil, migration, nil)
+	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, projectsDir, nil, nil, nil, migration, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "forced project save failure")
 	assert.True(t, migration.applyCalled)
@@ -1922,7 +1922,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	require.NoError(t, db.Create(project).Error)
 
 	projectForUpdate := *project
-	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, nil, nil, nil, migration, nil)
+	err = svc.applyProjectUpdate(ctx, &projectForUpdate, "bar", projectsDir, projectsDir, nil, nil, nil, migration, nil)
 	require.NoError(t, err)
 	require.True(t, migration.applyCalled)
 	require.True(t, migration.commitCalled)
@@ -2965,9 +2965,13 @@ services:
     image: nginx:alpine
 `
 
-	project, err := svc.CreateProject(ctx, "with-external-include", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, types.Actor{
-		ID:       "u1",
-		Username: "tester",
+	project, err := svc.CreateProject(ctx, CreateProjectOptions{
+		Actor: types.Actor{
+			ID:       "u1",
+			Username: "tester",
+		},
+		Name:           "with-external-include",
+		ComposeContent: compose,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, project)
@@ -3061,17 +3065,14 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 		Operation: types.FileOpCreateFile, RelativePath: "config/app.txt", UploadIndex: &uploadIndex,
 	}}}
 
-	created, err := svc.CreateProject(
-		ctx,
-		"atomic-workspace",
-		"services:\n  app:\n    image: nginx:alpine\n",
-		new("VALUE=one\n"),
-		manifest,
-		map[int][]byte{0: []byte("workspace content\n")},
-		nil,
-		nil,
-		types.Actor{ID: "u1", Username: "tester"},
-	)
+	created, err := svc.CreateProject(ctx, CreateProjectOptions{
+		EnvContent:     new("VALUE=one\n"),
+		Uploads:        map[int][]byte{0: []byte("workspace content\n")},
+		Actor:          types.Actor{ID: "u1", Username: "tester"},
+		Manifest:       manifest,
+		Name:           "atomic-workspace",
+		ComposeContent: "services:\n  app:\n    image: nginx:alpine\n",
+	})
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	require.FileExists(t, filepath.Join(created.Path, projects.DefaultComposeFileName))
@@ -3083,9 +3084,18 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 
 	compose := "services:\n  app:\n    image: nginx:alpine\n"
 	user := types.Actor{ID: "u1", Username: "tester"}
-	_, err = svc.CreateProject(ctx, "Atomic-Workspace", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	_, err = svc.CreateProject(ctx, CreateProjectOptions{
+		Actor:          user,
+		Name:           "Atomic-Workspace",
+		ComposeContent: compose,
+	})
 	require.ErrorIs(t, err, common.ErrConflict)
-	_, err = svc.CreateProject(ctx, "atomic-workspace", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user, false)
+	_, err = svc.CreateProject(ctx, CreateProjectOptions{
+		Actor:          user,
+		Name:           "atomic-workspace",
+		ComposeContent: compose,
+		ExactName:      true,
+	})
 	require.ErrorIs(t, err, common.ErrConflict)
 	var count int64
 	require.NoError(t, db.WithContext(ctx).Model(&Project{}).Count(&count).Error)
@@ -3119,17 +3129,12 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 		Operation: types.FileOpDelete, RelativePath: "missing.txt",
 	}}}
 
-	created, err := svc.CreateProject(
-		ctx,
-		"invalid-workspace",
-		"services:\n  app:\n    image: nginx:alpine\n",
-		nil,
-		manifest,
-		nil,
-		nil,
-		nil,
-		types.Actor{ID: "u1", Username: "tester"},
-	)
+	created, err := svc.CreateProject(ctx, CreateProjectOptions{
+		Actor:          types.Actor{ID: "u1", Username: "tester"},
+		Manifest:       manifest,
+		Name:           "invalid-workspace",
+		ComposeContent: "services:\n  app:\n    image: nginx:alpine\n",
+	})
 	require.Error(t, err)
 	require.Nil(t, created)
 	require.NoDirExists(t, filepath.Join(projectsDir, "invalid-workspace"))
@@ -6952,7 +6957,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	require.Equal(t, oldDir, *fromDB.DirName)
 
 	newName := "web"
-	require.NoError(t, svc.applyProjectUpdate(t.Context(), &fromDB, newName, projectsDir, nil, nil, nil, nil, nil))
+	require.NoError(t, svc.applyProjectUpdate(t.Context(), &fromDB, newName, projectsDir, projectsDir, nil, nil, nil, nil, nil))
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 	require.DirExists(t, newPath)
@@ -10748,4 +10753,231 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
+func newMultiRootProjectService(t *testing.T, extras []types.ProjectsDirectoryEntry) (*ProjectService, *database.DB, string) {
+	t.Helper()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
+	require.NoError(t, err)
+	primary := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectory", primary))
+	extrasJSON, err := json.Marshal(extras)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "projectsDirectories", string(extrasJSON)))
+	return NewProjectService(ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ImageService: image.NewImageService(image.ImageServiceParams{
+			DB: db,
+		}),
+		DockerService:               newUnreachableDockerService(t),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	}), db, primary
+}
+
+func TestProjectService_MultipleProjectsDirectories_SyncAndList(t *testing.T) {
+	ctx := t.Context()
+	extra, disabled := t.TempDir(), t.TempDir()
+	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
+		{Path: extra, Enabled: true},
+		{Path: disabled, Enabled: false},
+	})
+	primaryProject := createComposeProjectDir(t, primary, "alpha")
+	extraProject := createComposeProjectDir(t, extra, filepath.Join("group", "beta"))
+	disabledProject := createComposeProjectDir(t, disabled, "gamma")
+	require.NoError(t, db.Create(&Project{
+		Name:   "gamma",
+		Path:   disabledProject,
+		Status: ProjectStatusStopped,
+	}).Error)
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, _, err := svc.ListProjects(ctx, pagination.QueryParams{
+		Sort:  "path",
+		Order: pagination.SortAsc,
+		Limit: -1,
+	})
+	require.NoError(t, err)
+	got := make(map[string]types.Project, len(items))
+	for _, item := range items {
+		got[item.Path] = item
+	}
+	require.Len(t, got, 2)
+	assert.NotContains(t, got, disabledProject)
+
+	tests := []struct {
+		path         string
+		relativePath string
+		root         string
+	}{
+		{path: primaryProject, relativePath: "alpha", root: primary},
+		{path: extraProject, relativePath: "group/beta", root: extra},
+	}
+	for _, tt := range tests {
+		require.Contains(t, got, tt.path)
+		assert.Equal(t, tt.relativePath, got[tt.path].RelativePath)
+		assert.Equal(t, tt.root, got[tt.path].ProjectsRoot)
+	}
+	assert.DirExists(t, disabledProject)
+}
+
+func TestProjectService_MultipleProjectsDirectories_SyncKeepsUnavailableRootRecords(t *testing.T) {
+	ctx := t.Context()
+	missing := filepath.Join(t.TempDir(), "unmounted")
+	svc, db, _ := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{{Path: missing, Enabled: true}})
+	require.NoError(t, db.Create(&Project{
+		Name:   "offline",
+		Path:   filepath.Join(missing, "offline"),
+		Status: ProjectStatusStopped,
+	}).Error)
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var count int64
+	require.NoError(t, db.Model(&Project{}).Where("name = ?", "offline").Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+	assert.NoDirExists(t, missing)
+}
+
+func TestProjectService_EnsureProjectPathUnderRoot_MultipleRoots(t *testing.T) {
+	extra, disabled, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
+		{Path: extra, Enabled: true},
+		{Path: disabled, Enabled: false},
+	})
+
+	tests := []struct {
+		name     string
+		path     string
+		wantPath string
+	}{
+		{name: "extra root", path: filepath.Join(extra, "nested", "app"), wantPath: filepath.Join(extra, "nested", "app")},
+		{name: "disabled root", path: filepath.Join(disabled, "app"), wantPath: filepath.Join(disabled, "app")},
+		{name: "outside every root", path: filepath.Join(outside, "app"), wantPath: filepath.Join(primary, "app")},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			proj := &Project{
+				BaseModel: database.BaseModel{ID: fmt.Sprintf("root-%d", i)},
+				Name:      "app",
+				DirName:   new("app"),
+				Path:      tt.path,
+				Status:    ProjectStatusStopped,
+			}
+			require.NoError(t, db.Create(&Project{
+				BaseModel: database.BaseModel{ID: proj.ID},
+				Name:      fmt.Sprintf("app-%d", i),
+				Path:      tt.path,
+				Status:    ProjectStatusStopped,
+			}).Error)
+
+			require.NoError(t, svc.EnsureProjectPathUnderRoot(t.Context(), proj, true))
+			assert.Equal(t, tt.wantPath, proj.Path)
+
+			var stored Project
+			require.NoError(t, db.First(&stored, "id = ?", proj.ID).Error)
+			assert.Equal(t, tt.wantPath, stored.Path)
+		})
+	}
+}
+
+func TestProjectService_CreateProject_ChoosesProjectsDirectory(t *testing.T) {
+	extra, disabled := t.TempDir(), t.TempDir()
+	svc, _, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
+		{Path: extra, Enabled: true},
+		{Path: disabled, Enabled: false},
+	})
+	compose := "services:\n  app:\n    image: nginx:alpine\n"
+
+	tests := []struct {
+		wantErr   error
+		name      string
+		directory string
+		wantRoot  string
+	}{
+		{name: "primary-default", wantRoot: primary},
+		{name: "extra-root", directory: extra, wantRoot: extra},
+		{name: "extra-root-unclean", directory: extra + "/./", wantRoot: extra},
+		{name: "disabled-root", directory: disabled, wantErr: common.ErrValidation},
+		{name: "unknown-root", directory: filepath.Join(primary, "elsewhere"), wantErr: common.ErrValidation},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			created, err := svc.CreateProject(t.Context(), CreateProjectOptions{
+				Actor:          types.Actor{ID: "u1", Username: "tester"},
+				Name:           tt.name,
+				ComposeContent: compose,
+				Directory:      tt.directory,
+			})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.NoDirExists(t, filepath.Join(disabled, tt.name))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, filepath.Join(tt.wantRoot, tt.name), created.Path)
+			assert.FileExists(t, filepath.Join(created.Path, projects.DefaultComposeFileName))
+			assert.Equal(t, tt.name, svc.GetProjectRelativePath(t.Context(), created.Path))
+		})
+	}
+}
+
+func TestProjectService_RenameStaysInProjectsDirectory(t *testing.T) {
+	extra := t.TempDir()
+	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{{Path: extra, Enabled: true}})
+	projectPath := createComposeProjectDir(t, extra, "nginx")
+	proj := &Project{
+		Name:    "nginx",
+		DirName: new("nginx"),
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(proj).Error)
+
+	projectRoot, err := svc.ProjectRootDirectory(t.Context(), proj.Path)
+	require.NoError(t, err)
+	require.Equal(t, extra, projectRoot)
+	require.NoError(t, svc.applyProjectUpdate(t.Context(), proj, "web", primary, projectRoot, nil, nil, nil, nil, nil))
+
+	assert.Equal(t, filepath.Join(extra, "web"), proj.Path)
+	assert.DirExists(t, filepath.Join(extra, "web"))
+	assert.NoDirExists(t, filepath.Join(primary, "web"))
+	var stored Project
+	require.NoError(t, db.First(&stored, "id = ?", proj.ID).Error)
+	assert.Equal(t, filepath.Join(extra, "web"), stored.Path)
+}
+
+func TestProjectService_ListProjectsDirectories(t *testing.T) {
+	extra, disabled := t.TempDir(), t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	svc, _, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
+		{Path: extra + ":/srv/host-projects", Enabled: true},
+		{Path: missing, Enabled: true},
+		{Path: disabled, Enabled: false},
+	})
+
+	statuses, err := svc.ListProjectsDirectories(t.Context())
+	require.NoError(t, err)
+	require.Len(t, statuses, 4)
+	for i, statusErr := range []bool{false, false, true, false} {
+		assert.Equal(t, statusErr, statuses[i].Error != "", statuses[i].ContainerPath)
+	}
+	assert.Equal(t, []types.ProjectsDirectoryStatus{
+		{Path: primary, ContainerPath: primary, Primary: true, Enabled: true, Exists: true},
+		{Path: extra + ":/srv/host-projects", ContainerPath: extra, Enabled: true, Exists: true},
+		{Path: missing, ContainerPath: missing, Error: statuses[2].Error, Enabled: true},
+		{Path: disabled, ContainerPath: disabled, Exists: true},
+	}, statuses)
+	assert.NoDirExists(t, missing)
+
+	enabled, err := svc.EnabledProjectsRoots(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []string{primary, extra, missing}, enabled)
 }

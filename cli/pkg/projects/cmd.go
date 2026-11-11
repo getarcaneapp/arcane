@@ -67,7 +67,7 @@ var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
 			strings.Contains(strings.ToLower(item.Path), identifierLower)
 	},
 	Label: func(match types.Project) string {
-		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status)
+		return fmt.Sprintf("%s (%s, %s, %s)", match.Name, match.ID, match.Status, match.Path)
 	},
 	Promote: func(match types.Project) *types.Project { return &match },
 }
@@ -391,9 +391,10 @@ func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectSt
 
 func newCreateCmd() *cobra.Command {
 	var opts struct {
-		createName    string
-		createFile    string
-		createEnvFile string
+		createName      string
+		createFile      string
+		createEnvFile   string
+		createDirectory string
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -418,6 +419,7 @@ func newCreateCmd() *cobra.Command {
 			body := types.CreateProject{
 				Name:           opts.createName,
 				ComposeContent: string(composeBytes),
+				Directory:      opts.createDirectory,
 			}
 
 			if opts.createEnvFile != "" {
@@ -488,6 +490,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.createName, "name", "", "Project name")
 	cmd.Flags().StringVarP(&opts.createFile, "file", "f", "", "Docker Compose file")
 	cmd.Flags().StringVar(&opts.createEnvFile, "env-file", "", "Environment file")
+	cmd.Flags().StringVar(&opts.createDirectory, "directory", "", "Container path of the projects directory to create the project in (defaults to the primary projects directory)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("file")
 	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)

@@ -47,7 +47,7 @@ export class UseSettingsForm<
 		return keys.some((key) => {
 			const input = currentFormValues[key];
 			if (input && 'value' in input) {
-				return input.value !== settingsToCompare[key as string];
+				return JSON.stringify(input.value) !== JSON.stringify(settingsToCompare[key as string]);
 			}
 			return false;
 		});

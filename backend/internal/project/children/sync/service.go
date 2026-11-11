@@ -19,6 +19,16 @@ import (
 )
 
 type (
+	ProjectFilesUpdate struct {
+		ComposeContent    *string
+		EnvContent        *string
+		OverrideContent   *string
+		ProjectPath       string
+		ProjectName       string
+		ProjectsDirectory string
+		ProjectRoot       string
+	}
+
 	GitSyncEnvUpdate struct {
 		gitEnvContent *string
 		// EffectiveContent is the merged .env content, or nil when none is kept.
@@ -140,31 +150,31 @@ func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory 
 	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 }
 
-func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, projectsDirectory string, composeContent, envContent, overrideContent *string) error {
-	if composeContent == nil && overrideContent == nil {
-		if envContent != nil {
-			return PersistEffectiveEnvContent(ctx, projectPath, projectsDirectory, *envContent)
+func PersistUpdatedProjectFiles(ctx context.Context, req ProjectFilesUpdate) error {
+	if req.ComposeContent == nil && req.OverrideContent == nil {
+		if req.EnvContent != nil {
+			return PersistEffectiveEnvContent(ctx, req.ProjectPath, req.ProjectRoot, *req.EnvContent)
 		}
 		return nil
 	}
 
-	baseContent, _, err := kit.Ternary(composeContent != nil, func() (string, string, error) {
-		return *composeContent, "", nil
+	baseContent, _, err := kit.Ternary(req.ComposeContent != nil, func() (string, string, error) {
+		return *req.ComposeContent, "", nil
 	}, func() (string, string, error) {
-		return projects.ReadProjectFiles(ctx, projectPath, "")
+		return projects.ReadProjectFiles(ctx, req.ProjectPath, "")
 	})()
 	if err != nil {
 		return fmt.Errorf("failed to read project files: %w", err)
 	}
-	effectiveEnvContent, err := effectiveEnvContentForUpdate(ctx, projectPath, envContent)
+	effectiveEnvContent, err := effectiveEnvContentForUpdate(ctx, req.ProjectPath, req.EnvContent)
 	if err != nil {
 		return fmt.Errorf("invalid compose file: %w", err)
 	}
-	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(ctx, projectPath, overrideContent)
+	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(ctx, req.ProjectPath, req.OverrideContent)
 	if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
-		ProjectsDirectory: projectsDirectory,
-		ProjectPath:       projectPath,
-		ProjectName:       projectName,
+		ProjectsDirectory: req.ProjectsDirectory,
+		ProjectPath:       req.ProjectPath,
+		ProjectName:       req.ProjectName,
 		ComposeContent:    baseContent,
 		EnvContent:        effectiveEnvContent,
 		OverrideContent:   valOverride,
@@ -176,21 +186,21 @@ func PersistUpdatedProjectFiles(ctx context.Context, projectPath, projectName, p
 	// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE
 	// base the updated .env selects. A non-nil composeContent is an explicit
 	// submission and is always written.
-	if envContent != nil {
-		if persistErr := PersistEffectiveEnvContent(ctx, projectPath, projectsDirectory, *envContent); persistErr != nil {
+	if req.EnvContent != nil {
+		if persistErr := PersistEffectiveEnvContent(ctx, req.ProjectPath, req.ProjectRoot, *req.EnvContent); persistErr != nil {
 			return fmt.Errorf("failed to save project files: %w", persistErr)
 		}
-	} else if composeContent != nil {
-		if ensureErr := ensureEffectiveEnvFile(ctx, projectPath, projectsDirectory); ensureErr != nil {
+	} else if req.ComposeContent != nil {
+		if ensureErr := ensureEffectiveEnvFile(ctx, req.ProjectPath, req.ProjectRoot); ensureErr != nil {
 			return fmt.Errorf("failed to save project files: %w", ensureErr)
 		}
 	}
-	if composeContent != nil {
-		if writeErr := projects.WriteComposeFile(ctx, projectsDirectory, projectPath, *composeContent); writeErr != nil {
+	if req.ComposeContent != nil {
+		if writeErr := projects.WriteComposeFile(ctx, req.ProjectRoot, req.ProjectPath, *req.ComposeContent); writeErr != nil {
 			return fmt.Errorf("failed to save project files: %w", writeErr)
 		}
 	}
-	if overrideErr := projects.ApplyOverrideFileChange(ctx, projectsDirectory, projectPath, overrideContent); overrideErr != nil {
+	if overrideErr := projects.ApplyOverrideFileChange(ctx, req.ProjectRoot, req.ProjectPath, req.OverrideContent); overrideErr != nil {
 		return fmt.Errorf("failed to save project files: %w", overrideErr)
 	}
 	return nil

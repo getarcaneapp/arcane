@@ -1362,3 +1362,46 @@ func TestSettingsServiceEncryptsStoredSensitiveSettingsOnlyOnce(t *testing.T) {
 	require.NoError(t, db.WithContext(ctx).Where("key = ?", "depotToken").First(&stored).Error)
 	require.Equal(t, foreignCiphertext, stored.Value)
 }
+
+func TestSettingsServiceUpdateSettingsValidatesProjectsDirectories(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+	primary, templates, extra := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "not-created")
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", primary))
+	require.NoError(t, svc.UpdateSetting(ctx, "templatesDirectory", templates))
+
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{name: "inside primary", value: `[{"path":"` + filepath.Join(primary, "nested") + `","enabled":true}]`, wantErr: true},
+		{name: "contains primary", value: `[{"path":"` + filepath.Dir(primary) + `","enabled":false}]`, wantErr: true},
+		{name: "inside templates", value: `[{"path":"` + filepath.Join(templates, "nested") + `","enabled":true}]`, wantErr: true},
+		{name: "not json", value: `nope`, wantErr: true},
+		{name: "disjoint missing directory", value: `[{"path":"` + extra + `","enabled":true}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updateErr := svc.UpdateSettings(ctx, types.SettingsUpdate{"projectsDirectories": tt.value})
+			if !tt.wantErr {
+				require.NoError(t, updateErr)
+				return
+			}
+			require.ErrorIs(t, updateErr, common.ErrValidation)
+			var fieldErr *types.FieldError
+			require.ErrorAs(t, updateErr, &fieldErr)
+			require.Equal(t, "projectsDirectories", fieldErr.Field)
+		})
+	}
+
+	entries, err := svc.ProjectsDirectories()
+	require.NoError(t, err)
+	require.Equal(t, []types.ProjectsDirectoryEntry{{Path: extra, Enabled: true}}, entries)
+	require.NoDirExists(t, extra)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"projectsDirectory": filepath.Join(extra, "primary")})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.NoDirExists(t, extra)
+}

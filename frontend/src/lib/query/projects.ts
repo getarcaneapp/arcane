@@ -33,6 +33,13 @@ export function projectDetailQuery(environmentId: string, projectId: string) {
 	});
 }
 
+export function projectDirectoriesQuery(environmentId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.directories(environmentId),
+		queryFn: () => projectService.getProjectDirectories(environmentId)
+	});
+}
+
 export function projectWorkspaceFolderQuery(environmentId: string, projectId: string, path: string) {
 	return queryOptions({
 		queryKey: queryKeys.projects.workspaceFolder(environmentId, projectId, path),

@@ -160,7 +160,7 @@ func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.labels[api.WorkingDirLabel] = projectPath
-			details := row(filepath.Dir(projectPath), iconcatalog.DefaultCatalog, proj, Snapshot{ContainerIndex: IndexComposeContainers([]container.Summary{
+			details := row([]types.ProjectsDirectoryStatus{{ContainerPath: filepath.Dir(projectPath)}}, iconcatalog.DefaultCatalog, proj, Snapshot{ContainerIndex: IndexComposeContainers([]container.Summary{
 				{
 					ID:     tt.containerID,
 					Image:  "ghcr.io/getarcaneapp/arcane:latest",
@@ -204,7 +204,7 @@ func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := types.ProjectRecord{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
-			assert.Equal(t, tt.want, row(projectsDirectory, iconcatalog.DefaultCatalog, p, Snapshot{}, nil).HasBuildDirective)
+			assert.Equal(t, tt.want, row([]types.ProjectsDirectoryStatus{{ContainerPath: projectsDirectory}}, iconcatalog.DefaultCatalog, p, Snapshot{}, nil).HasBuildDirective)
 		})
 	}
 }
@@ -247,6 +247,38 @@ func TestServiceCounts(t *testing.T) {
 			total, running := ServiceCounts(tt.services)
 			assert.Equal(t, tt.wantTotal, total)
 			assert.Equal(t, tt.wantRunning, running)
+		})
+	}
+}
+
+func TestRows_ResolvesProjectsRootPerProject(t *testing.T) {
+	roots := []types.ProjectsDirectoryStatus{
+		{ContainerPath: "/app/data/projects", Primary: true, Enabled: true},
+		{ContainerPath: "/srv/compose", Enabled: true},
+		{ContainerPath: "/srv/compose/team", Enabled: false},
+	}
+	tests := []struct {
+		name         string
+		path         string
+		relativePath string
+		root         string
+	}{
+		{name: "primary", path: "/app/data/projects/web", relativePath: "web", root: "/app/data/projects"},
+		{name: "extra nested", path: "/srv/compose/apps/api", relativePath: "apps/api", root: "/srv/compose"},
+		{name: "longest root wins", path: "/srv/compose/team/db", relativePath: "db", root: "/srv/compose/team"},
+		{name: "outside every root", path: "/opt/other/app"},
+		{name: "root itself", path: "/srv/compose", root: "/srv/compose"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows, _ := Rows(roots, iconcatalog.DefaultCatalog, []types.ProjectRecord{{
+				ID:        tt.name,
+				Path:      tt.path,
+				UpdatedAt: new(time.Now()),
+			}}, Snapshot{}, nil)
+			require.Len(t, rows, 1)
+			assert.Equal(t, tt.relativePath, rows[0].RelativePath)
+			assert.Equal(t, tt.root, rows[0].ProjectsRoot)
 		})
 	}
 }
