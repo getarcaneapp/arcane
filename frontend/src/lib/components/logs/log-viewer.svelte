@@ -193,9 +193,9 @@
 		return containerId;
 	});
 	const logWsBasePath = $derived.by(() => {
-		if (type === 'project') return `/api/environments/${environmentId}/ws/projects/${projectId}/logs`;
-		if (type === 'service') return `/api/environments/${environmentId}/ws/swarm/services/${serviceId}/logs`;
-		return `/api/environments/${environmentId}/ws/containers/${containerId}/logs`;
+		if (type === 'project') return `/api/agents/${environmentId}/ws/projects/${projectId}/logs`;
+		if (type === 'service') return `/api/agents/${environmentId}/ws/swarm/services/${serviceId}/logs`;
+		return `/api/agents/${environmentId}/ws/containers/${containerId}/logs`;
 	});
 	const fillParent = $derived(height === '100%');
 	const minHeight = $derived(height === '100%' ? '0' : '300px');

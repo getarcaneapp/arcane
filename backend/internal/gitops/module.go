@@ -39,7 +39,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	h := &GitOpsSyncHandler{syncService: syncService}
 
-	const basePath = "/environments/{id}/gitops/syncs"
+	const basePath = "/agents/{id}/gitops/syncs"
 	const syncPath = basePath + "/{syncId}"
 
 	handlerutil.RegisterSecured(

@@ -53,7 +53,7 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/projects" {
+		if r.URL.Path != "/api/agents/0/projects" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -113,7 +113,7 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/projects" {
+		if r.URL.Path != "/api/agents/0/projects" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return

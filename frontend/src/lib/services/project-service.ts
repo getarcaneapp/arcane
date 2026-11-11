@@ -25,7 +25,7 @@ class ProjectService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<Project>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/projects`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/projects`, { ...config, params });
 		return res.data;
 	}
 
@@ -54,7 +54,7 @@ class ProjectService extends BaseAPIService {
 			? (optionsOrEnvironmentId as ProjectDeployOptions | undefined)
 			: (onLineOrOptions as ProjectDeployOptions);
 		const environmentId = (onLine ? maybeEnvironmentId : optionsOrEnvironmentId) as string;
-		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
+		const url = `/api/agents/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -67,7 +67,7 @@ class ProjectService extends BaseAPIService {
 
 	async downProject(projectName: string, environmentId: string): Promise<Project> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/projects/${projectName}`, undefined, { params: { action: 'down' } })
+			this.api.post(`/agents/${environmentId}/projects/${projectName}`, undefined, { params: { action: 'down' } })
 		);
 	}
 
@@ -99,17 +99,17 @@ class ProjectService extends BaseAPIService {
 		);
 		form.append('manifest', JSON.stringify({ fileChanges }));
 		for (const file of uploads) form.append('files', file, file.name);
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/projects`, form));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects`, form));
 	}
 
 	async checkUpdates(projectId: string, environmentId: string): Promise<ProjectUpdateInfo> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/updater/projects/${encodeURIComponent(projectId)}/check`, {})
+			this.api.post(`/agents/${environmentId}/updater/projects/${encodeURIComponent(projectId)}/check`, {})
 		);
 	}
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
-		const basePath = `/environments/${environmentId}/projects/${projectId}`;
+		const basePath = `/agents/${environmentId}/projects/${projectId}`;
 		const [summary, compose, runtime, updates] = await Promise.all([
 			this.getProjectSection(basePath),
 			this.getProjectSection(`${basePath}/compose`),
@@ -172,12 +172,12 @@ class ProjectService extends BaseAPIService {
 	}
 
 	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
-		const res = await this.api.get(`/environments/${environmentId}/projects/counts`, config);
+		const res = await this.api.get(`/agents/${environmentId}/projects/counts`, config);
 		return res.data.data;
 	}
 
 	async getProjectTagsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectTagOption[]> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/projects/tags`, config));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/tags`, config));
 	}
 
 	async updateProjectTag(
@@ -187,13 +187,11 @@ class ProjectService extends BaseAPIService {
 		color: ProjectTagColor | undefined,
 		environmentId: string
 	): Promise<{ tags: ProjectTag[]; activityId?: string }> {
-		return this.handleResponse(
-			this.api.patch(`/environments/${environmentId}/projects/${projectId}/tags`, { name, attached, color })
-		);
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/projects/${projectId}/tags`, { name, attached, color }));
 	}
 
 	async updateProject(projectId: string, project: ProjectUpdate, environmentId: string): Promise<Project> {
-		return this.handleResponse(this.api.patch(`/environments/${environmentId}/projects/${projectId}`, project));
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/projects/${projectId}`, project));
 	}
 
 	async restartProject(projectId: string, services: string[] | undefined, environmentId: string): Promise<MessageResponse> {
@@ -201,23 +199,23 @@ class ProjectService extends BaseAPIService {
 		for (const service of services ?? []) {
 			params.append('services', service);
 		}
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/projects/${projectId}`, undefined, { params }));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}`, undefined, { params }));
 	}
 
 	async archiveProject(projectId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/projects/${projectId}`, undefined, { params: { action: 'archive' } })
+			this.api.post(`/agents/${environmentId}/projects/${projectId}`, undefined, { params: { action: 'archive' } })
 		);
 	}
 
 	async unarchiveProject(projectId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/projects/${projectId}`, undefined, { params: { action: 'unarchive' } })
+			this.api.post(`/agents/${environmentId}/projects/${projectId}`, undefined, { params: { action: 'unarchive' } })
 		);
 	}
 
 	async pullProjectImages(projectId: string, onLine: (data: unknown) => void, environmentId: string): Promise<void> {
-		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=pull`;
+		const url = `/api/agents/${environmentId}/projects/${projectId}/deploy?action=pull`;
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
 		if (!res.ok || !res.body) {
@@ -233,7 +231,7 @@ class ProjectService extends BaseAPIService {
 		onLine: ((data: unknown) => void) | undefined,
 		environmentId: string
 	): Promise<void> {
-		const url = `/api/environments/${environmentId}/projects/${projectId}/build`;
+		const url = `/api/agents/${environmentId}/projects/${projectId}/build`;
 
 		await this.postProjectStream(url, options || {}, onLine, {
 			startFailed: (status) => `Failed to start project build (${status})`,
@@ -243,7 +241,7 @@ class ProjectService extends BaseAPIService {
 
 	async destroyProject(projectName: string, removeVolumes = false, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.delete(`/environments/${environmentId}/projects/${projectName}`, {
+			this.api.delete(`/agents/${environmentId}/projects/${projectName}`, {
 				data: {
 					removeVolumes
 				}

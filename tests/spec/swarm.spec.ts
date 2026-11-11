@@ -8,12 +8,12 @@ test.describe('Swarm UI', () => {
 		await page.waitForLoadState('load');
 		await expect(page.getByRole('heading', { name: 'Cluster', level: 1 })).toBeVisible();
 
-		const environmentResponse = await page.request.get('/api/environments/0');
+		const environmentResponse = await page.request.get('/api/agents/0');
 		expect(environmentResponse.ok()).toBeTruthy();
 		const { data: environment }: { data: { name: string } } = await environmentResponse.json();
 		await expect(page.locator('main').getByText(environment.name, { exact: true })).toBeVisible();
 
-		const swarmInfoResponsePromise = page.waitForResponse('**/api/environments/0/swarm/info');
+		const swarmInfoResponsePromise = page.waitForResponse('**/api/agents/0/swarm/info');
 		await page
 			.locator('main')
 			.getByRole('button', { name: 'Inspect', exact: true })

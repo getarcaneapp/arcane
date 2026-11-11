@@ -7,7 +7,7 @@ export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: n
 	const client = new ReconnectingWebSocket<string>({
 		buildUrl: async () => {
 			const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-			return `${protocol}://${window.location.host}/api/environments/${environmentId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`;
+			return `${protocol}://${window.location.host}/api/agents/${environmentId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`;
 		},
 		parseMessage: (evt) => {
 			if (typeof evt.data !== 'string') return null;

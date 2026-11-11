@@ -25,7 +25,7 @@ const (
 
 	MetaAccess = "arcane:access"
 
-	envPathPrefix = "/environments/{id}"
+	envPathPrefix = "/agents/{id}"
 )
 
 func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {

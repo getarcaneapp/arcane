@@ -20,11 +20,11 @@ import (
 func TestContainerStartSurfacesServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/containers/abc123":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/0/containers/abc123":
 			// Resolution succeeds so the action POST below is reached.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"abc123","name":"nginx"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/containers/abc123" && r.URL.Query().Get("action") == "start":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/agents/0/containers/abc123" && r.URL.Query().Get("action") == "start":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 		default:
@@ -69,7 +69,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			var mutations []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/api/environments" {
+				if r.URL.Path == "/api/agents" {
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"0","name":"Local","enabled":true},{"id":"remote","name":"Remote","enabled":true}]}`))
 					return
 				}
@@ -121,7 +121,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			if tc.search || tc.prefix {
 				resourceID = "abcd1234"
 			}
-			require.Equal(t, []string{"/api/environments/remote/containers/" + resourceID + "?action=start"}, paths)
+			require.Equal(t, []string{"/api/agents/remote/containers/" + resourceID + "?action=start"}, paths)
 			var result map[string]any
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.NotContains(t, result, "environments")
@@ -141,7 +141,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 			queries := make(map[string]string)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/api/environments" {
+				if r.URL.Path == "/api/agents" {
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"0","name":"Local","enabled":true},{"id":"remote","name":"Remote","enabled":true}]}`))
 					return
 				}
@@ -168,7 +168,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 			if tc.all {
 				wantQuery = "limit=-1"
 			}
-			require.Equal(t, map[string]string{kit.Ternary(tc.single, "/api/environments/0/containers", "/api/environments/0,remote/containers"): wantQuery}, queries)
+			require.Equal(t, map[string]string{kit.Ternary(tc.single, "/api/agents/0/containers", "/api/agents/0,remote/containers"): wantQuery}, queries)
 			require.True(t, jsontext.Value([]byte(out)).IsValid())
 			require.Contains(t, out, "pagination")
 		})
@@ -209,8 +209,8 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	require.Equal(t, "/api/environments/0/containers", gotPath,
-		"path = %q, want %q", gotPath, "/api/environments/0/containers")
+	require.Equal(t, "/api/agents/0/containers", gotPath,
+		"path = %q, want %q", gotPath, "/api/agents/0/containers")
 
 	require.True(t, strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20"),
 		"query = %q, want start=0 and limit=20", gotQuery)
@@ -239,14 +239,14 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
-				case r.URL.Path == "/api/environments":
+				case r.URL.Path == "/api/agents":
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote","name":"Remote","enabled":true},{"id":"0","name":"Local","enabled":true}]}`))
 				case tc.empty:
 					_, _ = w.Write([]byte(`{"success":true,"data":[],"pagination":{"totalItems":0}}`))
-				case r.URL.Path == "/api/environments/0,remote/containers" && tc.unavailable:
+				case r.URL.Path == "/api/agents/0,remote/containers" && tc.unavailable:
 					_, _ = w.Write([]byte(`{"success":true,"data":[` + localRow + `],"pagination":{"totalItems":26},` +
 						`"failedEnvironments":[{"environment":{"id":"remote","name":"remote"},"message":"resource denied"}]}`))
-				case r.URL.Path == "/api/environments/0,remote/containers":
+				case r.URL.Path == "/api/agents/0,remote/containers":
 					remoteRow := strings.Replace(localRow, `"0","environmentName":"Local"`, `"remote","environmentName":"Remote"`, 1)
 					_, _ = w.Write([]byte(`{"success":true,"data":[` + localRow + `,` + remoteRow + `],"pagination":{"totalItems":52}}`))
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
@@ -337,8 +337,8 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	require.Equal(t, "/api/environments/0/containers", gotPath,
-		"path = %q, want %q", gotPath, "/api/environments/0/containers")
+	require.Equal(t, "/api/agents/0/containers", gotPath,
+		"path = %q, want %q", gotPath, "/api/agents/0/containers")
 
 	require.Equal(t, "limit=-1", gotQuery,
 		"query = %q, want %q", gotQuery, "limit=-1")
@@ -346,7 +346,7 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 
 func TestContainersListJSONContract(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/environments/0/containers") {
+		if !strings.HasPrefix(r.URL.Path, "/api/agents/0/containers") {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -410,14 +410,14 @@ func TestContainersListJSONContract(t *testing.T) {
 				mu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
 				switch {
-				case r.URL.Path == "/api/environments" && tc.discoveryFailure:
+				case r.URL.Path == "/api/agents" && tc.discoveryFailure:
 					w.WriteHeader(http.StatusForbidden)
 					_, _ = w.Write([]byte(`{"success":false,"error":"discovery denied"}`))
 					return
-				case r.URL.Path == "/api/environments" && tc.empty:
+				case r.URL.Path == "/api/agents" && tc.empty:
 					_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
 					return
-				case r.URL.Path == "/api/environments":
+				case r.URL.Path == "/api/agents":
 					assert.Equal(t, "-1", r.URL.Query().Get("limit"))
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote","name":"Remote","enabled":true},{"id":"disabled","name":"Disabled","enabled":false},{"id":"0","name":"Local","enabled":true}]}`))
 					return
@@ -425,7 +425,7 @@ func TestContainersListJSONContract(t *testing.T) {
 					w.WriteHeader(http.StatusForbidden)
 					_, _ = w.Write([]byte(`{"success":false,"error":"resource denied"}`))
 					return
-				case r.URL.Path == "/api/environments/0,remote/containers" && tc.unavailable:
+				case r.URL.Path == "/api/agents/0,remote/containers" && tc.unavailable:
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"environmentId":"0","environmentName":"Local","id":"same-id"}],"pagination":{"totalItems":1},` +
 						`"failedEnvironments":[{"environment":{"id":"remote","name":"remote"},"message":"resource denied"}]}`))
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
@@ -461,7 +461,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			paths := append([]string(nil), requested...)
 			mu.Unlock()
 			if tc.args == nil && !tc.explicit && !tc.empty {
-				require.Equal(t, []string{"/api/environments", "/api/environments/0,remote/containers"}, paths)
+				require.Equal(t, []string{"/api/agents", "/api/agents/0,remote/containers"}, paths)
 				require.True(t, jsontext.Value([]byte(out)).IsValid(), out)
 				if tc.unavailable {
 					require.ErrorContains(t, runErr, "Remote (remote): resource denied")
@@ -482,7 +482,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			if tc.explicit {
-				require.NotContains(t, paths, "/api/environments")
+				require.NotContains(t, paths, "/api/agents")
 				require.Empty(t, result.Environments)
 				require.Contains(t, out, "counts")
 				return
@@ -506,7 +506,7 @@ func TestContainersListUpdatesJSONContract(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/containers" {
+		if r.URL.Path != "/api/agents/0/containers" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -563,7 +563,7 @@ func TestContainersUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/containers" {
+		if r.URL.Path != "/api/agents/0/containers" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return

@@ -541,7 +541,7 @@
 			placement: 'primary',
 			iconOnly: true,
 			label: m.common_view_details(),
-			onclick: () => void goto(resolve('/(app)/environments/[id]', { id: item.environment.id })),
+			onclick: () => void goto(resolve('/(app)/agents/[id]', { id: item.environment.id })),
 			icon: InspectIcon
 		});
 

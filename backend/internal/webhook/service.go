@@ -91,8 +91,8 @@ var (
 	ErrWebhookMissingTarget      = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
 	ErrWebhookForbidden          = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
 	remoteWebhookTargetListPaths = map[string]string{
-		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
-		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
+		WebhookTargetTypeProject: "/api/agents/" + types.LocalDockerEnvironmentID + "/projects/references",
+		WebhookTargetTypeGitOps:  "/api/agents/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
 	}
 
 	webhookActionPermissions = map[string]map[string]string{
@@ -654,7 +654,7 @@ func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, 
 }
 
 func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, wantResult bool, err error) {
-	apiPrefix := "/api/environments/" + types.LocalDockerEnvironmentID
+	apiPrefix := "/api/agents/" + types.LocalDockerEnvironmentID
 
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:

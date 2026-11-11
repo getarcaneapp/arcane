@@ -214,12 +214,12 @@ func TestForwardedPermissionsKeepGlobalAdminWithoutSudo(t *testing.T) {
 
 func TestEnvIDFromPath(t *testing.T) {
 	cases := map[string]string{
-		"/environments/abc-123/containers":     "abc-123",
-		"/environments/abc-123/containers/foo": "abc-123",
-		"/api/environments/abc-123/projects":   "abc-123",
-		"/environments/abc-123":                "",
-		"/users":                               "",
-		"":                                     "",
+		"/agents/abc-123/containers":     "abc-123",
+		"/agents/abc-123/containers/foo": "abc-123",
+		"/api/agents/abc-123/projects":   "abc-123",
+		"/agents/abc-123":                "",
+		"/users":                         "",
+		"":                               "",
 	}
 	for input, want := range cases {
 		{

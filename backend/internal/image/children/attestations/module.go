@@ -14,7 +14,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-attestations",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/{name}/attestations",
+		Path:        "/agents/{id}/images/{name}/attestations",
 		Summary:     "Get image attestations",
 		Description: "Get in-toto attestation statements attached to a Docker image",
 		Tags:        []string{"Images"},

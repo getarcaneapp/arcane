@@ -17,10 +17,10 @@ func TestEnvironmentsCreatePrintsEnrollmentTokenAndInstallCommands(t *testing.T)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/agents":
 			assert.NoError(t, json.UnmarshalRead(r.Body, &createBody))
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"env-1","name":"Agent One","apiUrl":"agent://agent-one","status":"pending","enabled":true}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/env-1/deployment":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/agents/env-1/deployment":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"enrollmentToken":"arc_etkn_secret","dockerRun":"docker run arcane-agent","dockerCompose":"services:\n  arcane-agent: {}"}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -41,7 +41,7 @@ func TestEnvironmentsCreatePrintsEnrollmentTokenAndInstallCommands(t *testing.T)
 func TestEnvironmentsTunnelRestartPrintsSession(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodPost || r.URL.Path != "/api/environments/env-1/tunnel/restart" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/agents/env-1/tunnel/restart" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return

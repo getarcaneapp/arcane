@@ -47,7 +47,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-activities",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/activities",
+		Path:        "/agents/{id}/activities",
 		Summary:     "List background activities",
 		Description: "Get current and recent background activities for an environment",
 		Tags:        []string{"Activities"},
@@ -58,7 +58,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-activity",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/activities/{activityId}",
+		Path:        "/agents/{id}/activities/{activityId}",
 		Summary:     "Get background activity",
 		Description: "Get a background activity with its recent output messages",
 		Tags:        []string{"Activities"},
@@ -68,7 +68,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "activity-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/activities/{activityId}",
+		Path:        "/agents/{id}/activities/{activityId}",
 		Summary:     "Cancel a background activity",
 		Description: "Request cancellation of a running or queued background activity",
 		Tags:        []string{"Activities"},
@@ -80,7 +80,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "clear-activity-history",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/activities/history",
+		Path:        "/agents/{id}/activities/history",
 		Summary:     "Clear background activity history",
 		Description: "Delete completed background activity history for an environment",
 		Tags:        []string{"Activities"},

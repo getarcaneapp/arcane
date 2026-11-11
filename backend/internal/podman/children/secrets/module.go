@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	secretsPath = "/environments/{id}/podman/secrets"
+	secretsPath = "/agents/{id}/podman/secrets"
 	secretsTag  = "Podman"
 )
 

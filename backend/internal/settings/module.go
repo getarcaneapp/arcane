@@ -65,7 +65,7 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-public-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/settings/public",
+		Path:        "/agents/{id}/settings/public",
 		Summary:     "Get public settings",
 		Description: "Get the settings the UI needs for an environment. Anonymous callers receive public settings; signed-in callers of any role also receive the non-admin settings",
 		Tags:        []string{"Settings"},
@@ -75,7 +75,7 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-environment-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/settings",
+		Path:        "/agents/{id}/settings",
 		Summary:     "Get environment settings",
 		Description: "Get the environment-scoped settings for an environment",
 		Tags:        []string{"Settings"},
@@ -85,7 +85,7 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-environment-settings",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/settings",
+		Path:        "/agents/{id}/settings",
 		Summary:     "Update environment settings",
 		Description: "Update the environment-scoped settings for an environment. App-wide and authentication settings are rejected",
 		Tags:        []string{"Settings"},

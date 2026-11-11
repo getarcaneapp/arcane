@@ -45,7 +45,7 @@ func NewHandler(service *Service, activityService *activity.ActivityService, env
 
 func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
 	if input.EnvironmentID != "0" {
-		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
+		remotePath := fmt.Sprintf("/api/agents/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(
 			h.environmentService.ProxyJSONRequest,
 		).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
@@ -105,7 +105,7 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 				}
 				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environmentId", input.EnvironmentID, "error", syncErr)
 			}
-			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
+			remotePath := fmt.Sprintf("/api/agents/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 			var proxyErr error
 			remoteResponse, proxyErr = handlerutil.RemoteJSONProxy(
 				h.environmentService.ProxyJSONRequest,

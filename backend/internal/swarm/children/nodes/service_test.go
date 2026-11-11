@@ -271,7 +271,7 @@ func nodesScopeContext(t *testing.T, target string, bodies map[string]any) conte
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -286,7 +286,7 @@ func nodesScopeContext(t *testing.T, target string, bodies map[string]any) conte
 }
 
 func TestAggregateMergesEnvironments(t *testing.T) {
-	ctx := nodesScopeContext(t, "/api/environments/a,b,c/swarm/nodes", map[string]any{
+	ctx := nodesScopeContext(t, "/api/agents/a,b,c/swarm/nodes", map[string]any{
 		"a": types.Paginated[types.SwarmNode]{
 			Success: true,
 			Data:    []types.SwarmNode{{ID: "n1", Hostname: "one"}},
@@ -343,7 +343,7 @@ func TestService_EnrollNodeAgent(t *testing.T) {
 		"workernode3":  `{"success":true,"data":{"id":"workernode3","hostname":"worker-3","role":"worker","agent":{"state":"none"}}}`,
 	}
 	startSwarmTestAgent(t, tunnels, "parent", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, ok := parentNodes[strings.TrimPrefix(r.URL.Path, "/api/environments/0/swarm/nodes/")]
+		body, ok := parentNodes[strings.TrimPrefix(r.URL.Path, "/api/agents/0/swarm/nodes/")]
 		if !ok {
 			http.NotFound(w, r)
 			return

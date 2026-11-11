@@ -51,7 +51,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService, appCtx handl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-webhooks",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/webhooks",
+		Path:        "/agents/{id}/webhooks",
 		Summary:     "List webhooks",
 		Description: "List all webhooks configured for this environment",
 		Tags:        []string{"Webhooks"},
@@ -62,7 +62,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService, appCtx handl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-webhook",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/webhooks",
+		Path:        "/agents/{id}/webhooks",
 		Summary:     "Create webhook",
 		Description: "Create a webhook that triggers a container or stack update. The token is only returned once.",
 		Tags:        []string{"Webhooks"},
@@ -72,7 +72,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService, appCtx handl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-webhook",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/webhooks/{webhookId}",
+		Path:        "/agents/{id}/webhooks/{webhookId}",
 		Summary:     "Update webhook",
 		Description: "Update a webhook's enabled state",
 		Tags:        []string{"Webhooks"},
@@ -82,7 +82,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService, appCtx handl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-webhook",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/webhooks/{webhookId}",
+		Path:        "/agents/{id}/webhooks/{webhookId}",
 		Summary:     "Delete webhook",
 		Description: "Delete a webhook by ID",
 		Tags:        []string{"Webhooks"},

@@ -25,7 +25,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volume-backups",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups",
+		Path:        "/agents/{id}/volumes/{volumeName}/backups",
 		Summary:     "List volume backups",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -35,7 +35,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		OperationID:   "create-volume-backup",
 		DefaultStatus: http.StatusAccepted,
 		Method:        http.MethodPost,
-		Path:          "/environments/{id}/volumes/{volumeName}/backups",
+		Path:          "/agents/{id}/volumes/{volumeName}/backups",
 		Summary:       "Create volume backup",
 		Tags:          []string{"Volume Backup"},
 		Security:      handlerutil.DefaultOperationSecurity(),
@@ -46,7 +46,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-backup",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/volumes/backups/{backupId}",
+		Path:        "/agents/{id}/volumes/backups/{backupId}",
 		Summary:     "Delete volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -55,7 +55,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "discover-volume-backups",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/backups/discover",
+		Path:        "/agents/{id}/volumes/backups/discover",
 		Summary:     "Discover volume backups on an S3 destination",
 		Description: "Import existing volume backups stored on the destination by this or other Arcane instances",
 		Tags:        []string{"Volume Backup"},
@@ -65,7 +65,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-retained-volume-backup-to-s3",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/upload",
+		Path:        "/agents/{id}/volumes/backups/{backupId}/upload",
 		Summary:     "Upload volume backup",
 		Description: "Upload an existing local volume backup to the selected S3 destination",
 		Tags:        []string{"Volume Backup"},
@@ -75,7 +75,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-volume-backup",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/download",
+		Path:        "/agents/{id}/volumes/backups/{backupId}/download",
 		Summary:     "Download volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),

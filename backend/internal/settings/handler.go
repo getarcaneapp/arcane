@@ -91,7 +91,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.Enviro
 
 func (h *SettingsHandler) GetEnvironmentSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	if input.EnvironmentID != "0" {
-		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/agents/0/settings", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +105,7 @@ func (h *SettingsHandler) UpdateEnvironmentSettings(ctx context.Context, input *
 		return nil, handlerutil.APIError(err)
 	}
 	if input.EnvironmentID != "0" {
-		if _, err := h.proxyRemoteJSON.JSON[struct{}](ctx, input.EnvironmentID, http.MethodPatch, "/api/environments/0/settings", input.Body); err != nil {
+		if _, err := h.proxyRemoteJSON.JSON[struct{}](ctx, input.EnvironmentID, http.MethodPatch, "/api/agents/0/settings", input.Body); err != nil {
 			return nil, err
 		}
 		return h.GetEnvironmentSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})

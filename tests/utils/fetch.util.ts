@@ -104,7 +104,7 @@ export async function fetchVolumesWithRetry(
 		async () =>
 			(
 				await readList<Record<string, unknown>>(
-					await page.request.get('/api/environments/0/volumes'),
+					await page.request.get('/api/agents/0/volumes'),
 					'List volumes'
 				)
 			).data,
@@ -115,12 +115,8 @@ export async function fetchVolumesWithRetry(
 export async function fetchProjectsWithRetry(page: Page, maxRetries = 3): Promise<Project[]> {
 	return retry(
 		async () =>
-			(
-				await readList<Project>(
-					await page.request.get('/api/environments/0/projects'),
-					'List projects'
-				)
-			).data,
+			(await readList<Project>(await page.request.get('/api/agents/0/projects'), 'List projects'))
+				.data,
 		maxRetries
 	);
 }
@@ -133,7 +129,7 @@ export async function fetchNetworksWithRetry(
 		async () =>
 			(
 				await readList<NetworkSummary>(
-					await page.request.get('/api/environments/0/networks'),
+					await page.request.get('/api/agents/0/networks'),
 					'List networks'
 				)
 			).data,
@@ -144,12 +140,8 @@ export async function fetchNetworksWithRetry(
 export async function fetchImagesWithRetry(page: Page, maxRetries = 3): Promise<ImageSummary[]> {
 	return retry(
 		async () =>
-			(
-				await readList<ImageSummary>(
-					await page.request.get('/api/environments/0/images'),
-					'List images'
-				)
-			).data,
+			(await readList<ImageSummary>(await page.request.get('/api/agents/0/images'), 'List images'))
+				.data,
 		maxRetries
 	);
 }
@@ -161,7 +153,7 @@ export async function fetchVolumeCountsWithRetry(
 	return retry(
 		async () =>
 			readCounts<VolumeUsageCounts>(
-				await page.request.get('/api/environments/0/volumes/counts'),
+				await page.request.get('/api/agents/0/volumes/counts'),
 				'Get volumes counts',
 				['inuse', 'unused', 'total']
 			),
@@ -177,7 +169,7 @@ export async function fetchProjectCountsWithRetry(
 	return retry(
 		async () =>
 			readCounts<ProjectStatusCounts>(
-				await page.request.get('/api/environments/0/projects/counts'),
+				await page.request.get('/api/agents/0/projects/counts'),
 				'Get projects counts',
 				['runningProjects', 'stoppedProjects', 'totalProjects', 'archivedProjects']
 			),
@@ -193,7 +185,7 @@ export async function fetchNetworksCountsWithRetry(
 	return retry(
 		async () =>
 			readCounts<NetworkUsageCounts>(
-				await page.request.get('/api/environments/0/networks/counts'),
+				await page.request.get('/api/agents/0/networks/counts'),
 				'Get networks counts',
 				['inuse', 'unused', 'total']
 			),
@@ -209,7 +201,7 @@ export async function fetchImageCountsWithRetry(
 	return retry(
 		async () =>
 			readCounts<ImageUsageCounts>(
-				await page.request.get('/api/environments/0/images/counts'),
+				await page.request.get('/api/agents/0/images/counts'),
 				'Get images counts',
 				['imagesInuse', 'imagesUnused', 'totalImages', 'totalImageSize']
 			),
@@ -225,7 +217,7 @@ export async function fetchContainersWithRetry(
 	return retry(
 		async () =>
 			readList<ContainerSummary>(
-				await page.request.get('/api/environments/0/containers'),
+				await page.request.get('/api/agents/0/containers'),
 				'List containers'
 			),
 		maxRetries
@@ -250,10 +242,7 @@ export async function removeApiResource(
 	try {
 		const resourcePath = path.split('?')[0];
 		const asynchronous = /\/(projects|containers)\/[^/]+$/.test(resourcePath);
-		if (
-			asynchronous ||
-			/\/environments\/[^/]+\/(images|networks|volumes)\/[^/]+$/.test(resourcePath)
-		) {
+		if (asynchronous || /\/agents\/[^/]+\/(images|networks|volumes)\/[^/]+$/.test(resourcePath)) {
 			const existing = await page.request.get(resourcePath);
 			if (existing.status() === 404) return;
 			if (!existing.ok())
@@ -297,7 +286,7 @@ export async function removeCreatedEnvironments(
 ) {
 	// Find the resource by name if the test timed out before receiving its ID.
 	if (environmentIds.size === 0) {
-		const response = await page.request.get('/api/environments?start=0&limit=1000', {
+		const response = await page.request.get('/api/agents?start=0&limit=1000', {
 			timeout: 5_000
 		});
 		expect(response.ok(), 'Find environments left by interrupted creation').toBe(true);
@@ -305,11 +294,10 @@ export async function removeCreatedEnvironments(
 		for (const env of data) if (env.name.startsWith(environmentName)) environmentIds.add(env.id);
 	}
 	for (const id of environmentIds) {
-		await removeApiResource(page, `/api/environments/${id}`, { timeout: 5_000 });
+		await removeApiResource(page, `/api/agents/${id}`, { timeout: 5_000 });
 		await expect
 			.poll(
-				async () =>
-					(await page.request.get(`/api/environments/${id}`, { timeout: 5_000 })).status(),
+				async () => (await page.request.get(`/api/agents/${id}`, { timeout: 5_000 })).status(),
 				{
 					message: `Environment ${id} must be removed`,
 					timeout: 10_000

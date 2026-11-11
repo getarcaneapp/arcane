@@ -955,7 +955,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 			return nil, nil
 		}
 		triggerCtx, cancel := context.WithTimeout(ctx, upgradeJobAgentRequestTimeout)
-		resp, triggerErr := s.environments.ExecuteRemoteRequest(triggerCtx, remote.ID, http.MethodPost, "/api/environments/0/system/upgrade", triggerBody)
+		resp, triggerErr := s.environments.ExecuteRemoteRequest(triggerCtx, remote.ID, http.MethodPost, "/api/agents/0/system/upgrade", triggerBody)
 		cancel()
 		if triggerErr == nil {
 			triggerErr = resp.RequireSuccess()
@@ -1431,7 +1431,7 @@ func (s *Service) StreamProgress(ctx context.Context, deliver func(types.Upgrade
 }
 
 func (s *Service) followAgentProgress(ctx context.Context, envID string, sink *progressSink) (string, bool, error) {
-	resp, err := s.environments.OpenRemoteStream(ctx, envID, "/api/environments/0/system/upgrade/progress")
+	resp, err := s.environments.OpenRemoteStream(ctx, envID, "/api/agents/0/system/upgrade/progress")
 	if err != nil {
 		return "", false, err
 	}

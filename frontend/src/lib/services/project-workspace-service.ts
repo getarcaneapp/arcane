@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class ProjectWorkspaceService extends BaseAPIService {
 	async getWorkspace(projectId: string, path: string, environmentId: string): Promise<Workspace> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/projects/${projectId}/workspace`, {
+			this.api.get(`/agents/${environmentId}/projects/${projectId}/workspace`, {
 				cache: 'no-store',
 				params: { path }
 			})
@@ -18,7 +18,7 @@ class ProjectWorkspaceService extends BaseAPIService {
 
 	async getWorkspaceFile(projectId: string, relativePath: string, environmentId: string): Promise<WorkspaceFileContent> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/projects/${projectId}/workspace/file`, {
+			this.api.get(`/agents/${environmentId}/projects/${projectId}/workspace/file`, {
 				cache: 'no-store',
 				params: { relativePath }
 			})
@@ -32,11 +32,11 @@ class ProjectWorkspaceService extends BaseAPIService {
 		environmentId: string
 	): Promise<MessageResponse> {
 		const form = createWorkspaceFormData(manifest, files);
-		return this.handleResponse(this.api.patch(`/environments/${environmentId}/projects/${projectId}/workspace`, form));
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/projects/${projectId}/workspace`, form));
 	}
 
 	async downloadWorkspaceFile(projectId: string, relativePath: string, environmentId: string): Promise<void> {
-		const response = await this.api.get(`/environments/${environmentId}/projects/${projectId}/workspace/file/download`, {
+		const response = await this.api.get(`/agents/${environmentId}/projects/${projectId}/workspace/file/download`, {
 			params: { relativePath },
 			responseType: 'blob'
 		});

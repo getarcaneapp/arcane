@@ -674,7 +674,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		const suffix = `${Date.now()}`.slice(-6);
 
-		const envResponse = await adminFetch('/api/environments', {
+		const envResponse = await adminFetch('/api/agents', {
 			method: 'POST',
 			body: JSON.stringify({
 				name: `cli-rbac-${suffix}`,
@@ -728,7 +728,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		}
 		if (remoteEnvId) {
 			try {
-				const response = await adminFetch(`/api/environments/${remoteEnvId}`, { method: 'DELETE' });
+				const response = await adminFetch(`/api/agents/${remoteEnvId}`, { method: 'DELETE' });
 				expect
 					.soft(
 						response.ok || response.status === 404,

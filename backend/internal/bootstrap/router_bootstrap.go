@@ -48,12 +48,12 @@ type (
 )
 
 var loggerSkipPatterns = []string{
-	"GET /api/environments/*/ws/containers/stats",
-	"GET /api/environments/*/ws/containers/*/logs",
-	"GET /api/environments/*/ws/containers/*/stats",
-	"GET /api/environments/*/ws/containers/*/terminal",
-	"GET /api/environments/*/ws/projects/*/logs",
-	"GET /api/environments/*/ws/system/stats",
+	"GET /api/agents/*/ws/containers/stats",
+	"GET /api/agents/*/ws/containers/*/logs",
+	"GET /api/agents/*/ws/containers/*/stats",
+	"GET /api/agents/*/ws/containers/*/terminal",
+	"GET /api/agents/*/ws/projects/*/logs",
+	"GET /api/agents/*/ws/system/stats",
 	"GET /api/stream",
 	"POST /api/telemetry/*",
 	"GET /_app/*",
@@ -61,7 +61,7 @@ var loggerSkipPatterns = []string{
 	"GET /api/health",
 	"HEAD /api/health",
 	"GET /api/app/images/*",
-	"PUT /api/environments/*/uploads/*/*/chunks/*",
+	"PUT /api/agents/*/uploads/*/*/chunks/*",
 }
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {

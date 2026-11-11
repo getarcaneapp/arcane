@@ -87,7 +87,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-usage-counts",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/counts",
+		Path:        "/agents/{id}/volumes/counts",
 		Summary:     "Get volume usage counts",
 		Description: "Get counts of volumes in use, unused, and total",
 		Tags:        []string{"Volumes"},
@@ -98,7 +98,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volumes",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes",
+		Path:        "/agents/{id}/volumes",
 		Summary:     "List volumes",
 		Description: "Get a paginated list of Docker volumes",
 		Tags:        []string{"Volumes"},
@@ -109,7 +109,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}",
+		Path:        "/agents/{id}/volumes/{volumeName}",
 		Summary:     "Get volume by name",
 		Description: "Get a Docker volume by its name",
 		Tags:        []string{"Volumes"},
@@ -119,7 +119,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes",
+		Path:        "/agents/{id}/volumes",
 		Summary:     "Create a volume",
 		Description: "Create a new Docker volume",
 		Tags:        []string{"Volumes"},
@@ -129,7 +129,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-volume",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/volumes/{volumeName}",
+		Path:        "/agents/{id}/volumes/{volumeName}",
 		Summary:     "Remove a volume",
 		Description: "Remove a Docker volume by name",
 		Tags:        []string{"Volumes"},
@@ -139,7 +139,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "rename-volume",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/rename",
+		Path:        "/agents/{id}/volumes/{volumeName}/rename",
 		Summary:     "Rename a volume",
 		Description: "Copy an unused Docker volume to a new name and remove the source",
 		Tags:        []string{"Volumes"},
@@ -149,7 +149,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-volumes",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/prune",
+		Path:        "/agents/{id}/volumes/prune",
 		Summary:     "Prune unused volumes",
 		Description: "Remove all unused Docker volumes",
 		Tags:        []string{"Volumes"},
@@ -159,7 +159,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-usage",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/usage",
+		Path:        "/agents/{id}/volumes/{volumeName}/usage",
 		Summary:     "Get volume usage",
 		Description: "Get containers using a specific volume",
 		Tags:        []string{"Volumes"},
@@ -169,7 +169,7 @@ func RegisterVolumes(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-sizes",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/sizes",
+		Path:        "/agents/{id}/volumes/sizes",
 		Summary:     "Get volume sizes",
 		Description: "Get disk usage sizes for all volumes (slow operation)",
 		Tags:        []string{"Volumes"},

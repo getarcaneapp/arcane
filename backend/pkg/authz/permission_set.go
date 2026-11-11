@@ -177,13 +177,13 @@ func (ps *PermissionSet) AddEnv(envID string, perms ...string) {
 
 func EnvIDFromPath(path string) string {
 	path = strings.TrimPrefix(path, "/api")
-	if !strings.HasPrefix(path, "/environments/") {
+	if !strings.HasPrefix(path, "/agents/") {
 		return ""
 	}
-	rest := path[len("/environments/"):]
+	rest := path[len("/agents/"):]
 	before, _, ok := strings.Cut(rest, "/")
 	if !ok {
-		// Path is just /environments/<id> (no trailing segment) — this is
+		// Path is just /agents/<id> (no trailing segment) — this is
 		// not an env-scoped operation, it's the env detail endpoint itself,
 		// which is org-level.
 		return ""

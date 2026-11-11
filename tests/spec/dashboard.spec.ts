@@ -22,7 +22,7 @@ async function mockDashboardStatsWebSocket(
 	{ delaySample = false, failConnections = false, closeAfterMessage = false } = {}
 ) {
 	const pendingSockets: WebSocketRoute[] = [];
-	await page.routeWebSocket(/\/api\/environments\/[^/]+\/ws\/system\/stats(?:\?.*)?$/, (socket) => {
+	await page.routeWebSocket(/\/api\/agents\/[^/]+\/ws\/system\/stats(?:\?.*)?$/, (socket) => {
 		if (failConnections) {
 			void socket.close({ code: 1011, reason: 'Stats unavailable' });
 			return;
@@ -62,7 +62,7 @@ const mockedCounts: Record<string, Record<string, number>> = {
 async function mockDashboardCounts(page: Page) {
 	const requested: string[] = [];
 	await page.route(
-		/\/api\/environments\/[^/]+\/(containers|images|projects)\/counts(?:\?.*)?$/,
+		/\/api\/agents\/[^/]+\/(containers|images|projects)\/counts(?:\?.*)?$/,
 		async (route) => {
 			const [, , , scope, domain] = new URL(route.request().url()).pathname.split('/');
 			const environmentIds = decodeURIComponent(scope).split(',');
@@ -98,7 +98,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('7 CPUs', { exact: true })).toBeVisible();
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
-		const environmentResponse = await page.request.get('/api/environments/0');
+		const environmentResponse = await page.request.get('/api/agents/0');
 		expect(environmentResponse.ok()).toBeTruthy();
 		const { data: environment }: { data: { name: string } } = await environmentResponse.json();
 		await expect(
@@ -162,10 +162,10 @@ test.describe('Dashboard system stats websocket', () => {
 	});
 
 	test('shows Docker engine information on the environment engine tab', async ({ page }) => {
-		const info = await page.request.get('/api/environments/0/system/docker/info');
+		const info = await page.request.get('/api/agents/0/system/docker/info');
 		expect(info.ok()).toBe(true);
 		const data = await info.json();
-		await page.goto('/environments/0?tab=engine');
+		await page.goto('/agents/0?tab=engine');
 		await expect(
 			page.locator('main').getByText(data.ServerVersion, { exact: true }).first()
 		).toBeVisible();
@@ -177,7 +177,7 @@ test.describe('Dashboard counts', () => {
 		const requested = await mockDashboardCounts(page);
 		const snapshotRequests: string[] = [];
 		page.on('request', (request) => {
-			if (/\/api\/environments\/[^/]+\/dashboard(?:\?.*)?$/.test(request.url()))
+			if (/\/api\/agents\/[^/]+\/dashboard(?:\?.*)?$/.test(request.url()))
 				snapshotRequests.push(request.url());
 		});
 		await mockDashboardStatsWebSocket(page);
@@ -211,7 +211,7 @@ test.describe('Dashboard environment actions', () => {
 			.getByRole('button', { name: 'View Details', exact: true })
 			.first()
 			.click();
-		await expect(page).toHaveURL(/\/environments\/0(?:\?.*)?$/);
+		await expect(page).toHaveURL(/\/agents\/0(?:\?.*)?$/);
 	});
 
 	test('keeps the environment actions keyboard reachable', async ({ page }) => {
@@ -230,6 +230,6 @@ test.describe('Dashboard environment actions', () => {
 		await expect(detailsButton).toBeFocused();
 
 		await page.keyboard.press('Enter');
-		await expect(page).toHaveURL(/\/environments\/0(?:\?.*)?$/);
+		await expect(page).toHaveURL(/\/agents\/0(?:\?.*)?$/);
 	});
 });

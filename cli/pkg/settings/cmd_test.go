@@ -37,7 +37,7 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Equal(t, "/api/environments/0/settings", gotPath)
+	require.Equal(t, "/api/agents/0/settings", gotPath)
 	require.Equal(t, map[string]string{"dockerApiTimeout": "60"}, gotUpdate)
 }
 
@@ -47,7 +47,7 @@ func TestSettingsSetRoutesScopeToEndpoint(t *testing.T) {
 		wantPath string
 		args     []string
 	}{
-		{name: "environment", args: []string{"--env", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/environments/3/settings"},
+		{name: "environment", args: []string{"--env", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/agents/3/settings"},
 		{name: "manager", args: []string{"--env", "3", "settings", "set", "--scope", "manager", "analyticsEnabled", "false"}, wantPath: "/api/settings"},
 		{name: "authentication", args: []string{"--env", "0", "settings", "set", "--scope", "authentication", "authSessionTimeout", "60"}, wantPath: "/api/settings/authentication"},
 	}

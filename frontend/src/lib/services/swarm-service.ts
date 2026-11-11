@@ -55,16 +55,16 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/services`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/services`, { ...config, params });
 		return res.data;
 	}
 
 	async getService(serviceId: string, environmentId: string): Promise<SwarmServiceInspect> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/services/${serviceId}`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/services/${serviceId}`));
 	}
 
 	async createService(request: SwarmServiceCreateRequest, environmentId: string): Promise<SwarmServiceCreateResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/services`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/services`, request));
 	}
 
 	async updateService(
@@ -72,7 +72,7 @@ class SwarmService extends BaseAPIService {
 		request: SwarmServiceUpdateRequest,
 		environmentId: string
 	): Promise<SwarmServiceUpdateResponse> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/services/${serviceId}`, request));
+		return this.handleResponse(this.api.put(`/agents/${environmentId}/swarm/services/${serviceId}`, request));
 	}
 
 	async getServiceTasks(
@@ -81,13 +81,13 @@ class SwarmService extends BaseAPIService {
 		environmentId: string
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/services/${serviceId}/tasks`, { params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/services/${serviceId}/tasks`, { params });
 		return res.data;
 	}
 
 	async rollbackService(serviceId: string, environmentId: string): Promise<SwarmServiceUpdateResponse> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/swarm/services/${serviceId}`, undefined, { params: { action: 'rollback' } })
+			this.api.post(`/agents/${environmentId}/swarm/services/${serviceId}`, undefined, { params: { action: 'rollback' } })
 		);
 	}
 
@@ -96,11 +96,11 @@ class SwarmService extends BaseAPIService {
 		request: SwarmServiceScaleRequest,
 		environmentId: string
 	): Promise<SwarmServiceUpdateResponse> {
-		return this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/services/${serviceId}`, request));
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/swarm/services/${serviceId}`, request));
 	}
 
 	async removeService(serviceId: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/services/${serviceId}`));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/services/${serviceId}`));
 	}
 
 	async getNodes(
@@ -109,47 +109,47 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmNodesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/nodes`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/nodes`, { ...config, params });
 		return res.data;
 	}
 
 	async createNodeAgentDeployment(nodeId: string, environmentId: string): Promise<SwarmNodeAgentDeployment> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
 	async reconcileNodeAgents(environmentId: string): Promise<NodeAgentReconcileResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/reconcile`, {}));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/nodes/agents/reconcile`, {}));
 	}
 
 	async bindNodeAgent(nodeId: string, request: NodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/binding`, request));
+		return this.handleResponse(this.api.put(`/agents/${environmentId}/swarm/nodes/${nodeId}/agent/binding`, request));
 	}
 
 	async detachNodeAgent(nodeId: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/binding`));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/nodes/${nodeId}/agent/binding`));
 	}
 
 	async removeNodeAgentDeployment(nodeId: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
 	async updateNode(nodeId: string, request: SwarmNodeUpdate, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/nodes/${nodeId}`, request));
+		await this.handleResponse(this.api.patch(`/agents/${environmentId}/swarm/nodes/${nodeId}`, request));
 	}
 
 	async removeNode(nodeId: string, force = false, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}`, { params: { force } }));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/nodes/${nodeId}`, { params: { force } }));
 	}
 
 	async promoteNode(nodeId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'promote' } })
+			this.api.post(`/agents/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'promote' } })
 		);
 	}
 
 	async demoteNode(nodeId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'demote' } })
+			this.api.post(`/agents/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'demote' } })
 		);
 	}
 
@@ -160,7 +160,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/nodes/${nodeId}/tasks`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/nodes/${nodeId}/tasks`, { ...config, params });
 		return res.data;
 	}
 
@@ -170,7 +170,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/tasks`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/tasks`, { ...config, params });
 		return res.data;
 	}
 
@@ -180,36 +180,36 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmStacksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks`, { ...config, params });
 		return res.data;
 	}
 
 	async deployStack(request: SwarmStackDeployRequest, environmentId: string): Promise<SwarmStackDeployResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/stacks`, request));
 	}
 
 	async getStack(name: string, environmentId: string): Promise<SwarmStackInspect> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/stacks/${name}`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/stacks/${name}`));
 	}
 
 	async getStackSource(name: string, environmentId: string): Promise<SwarmStackSource> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/source`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/stacks/${name}/source`));
 	}
 
 	async updateStackSource(name: string, request: SwarmStackSourceUpdate, environmentId: string): Promise<SwarmStackSource> {
-		return this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/stacks/${name}/source`, request));
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/swarm/stacks/${name}/source`, request));
 	}
 
 	async removeStack(name: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/stacks/${name}`));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/stacks/${name}`));
 	}
 
 	async upStack(name: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks/${name}/up`));
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/stacks/${name}/up`));
 	}
 
 	async downStack(name: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks/${name}/down`));
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/stacks/${name}/down`));
 	}
 
 	async getStackServices(
@@ -219,7 +219,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/services`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks/${name}/services`, { ...config, params });
 		return res.data;
 	}
 
@@ -230,7 +230,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/tasks`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks/${name}/tasks`, { ...config, params });
 		return res.data;
 	}
 
@@ -238,57 +238,57 @@ class SwarmService extends BaseAPIService {
 		request: SwarmStackRenderConfigRequest,
 		environmentId: string
 	): Promise<SwarmStackRenderConfigResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks/config/render`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/stacks/config/render`, request));
 	}
 
 	async getSwarmInfo(environmentId: string): Promise<SwarmInfo> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/info`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/info`));
 	}
 
 	async getSwarmStatus(environmentId: string, config?: APIRequestConfig): Promise<SwarmRuntimeStatus> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/status`, config));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/status`, config));
 	}
 
 	async initSwarm(request: SwarmInitRequest, environmentId: string): Promise<SwarmInitResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/init`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/init`, request));
 	}
 
 	async joinSwarm(request: SwarmJoinRequest, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/join`, request));
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/join`, request));
 	}
 
 	async getSwarmJoinCandidates(environmentId: string, config?: APIRequestConfig): Promise<SwarmJoinCandidate[]> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/join/candidates`, config));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/join/candidates`, config));
 	}
 
 	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId: string): Promise<SwarmJoinEnvironmentsResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/join/environments`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/join/agents`, request));
 	}
 
 	async leaveSwarm(request: SwarmLeaveRequest, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/leave`, request));
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/leave`, request));
 	}
 
 	async unlockSwarm(request: SwarmUnlockRequest, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/unlock`, request));
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/unlock`, request));
 	}
 
 	async getSwarmUnlockKey(environmentId: string): Promise<SwarmUnlockKeyResponse> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/unlock/key`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/unlock/key`));
 	}
 
 	async getSwarmJoinTokens(environmentId: string): Promise<SwarmJoinTokensResponse> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/join/tokens`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/join/tokens`));
 	}
 
 	async rotateSwarmJoinTokens(request: SwarmRotateJoinTokensRequest = {}, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/swarm/join/tokens`, request, { params: { action: 'rotate' } })
+			this.api.post(`/agents/${environmentId}/swarm/join/tokens`, request, { params: { action: 'rotate' } })
 		);
 	}
 
 	async updateSwarmSpec(request: SwarmUpdateRequest, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/spec`, request));
+		await this.handleResponse(this.api.put(`/agents/${environmentId}/swarm/spec`, request));
 	}
 
 	async getKvItems(
@@ -297,7 +297,7 @@ class SwarmService extends BaseAPIService {
 		environmentId: string,
 		config?: APIRequestConfig
 	): Promise<Paginated<SwarmKvSummary>> {
-		const res = await this.api.get(`/environments/${environmentId}/swarm/${kind}`, {
+		const res = await this.api.get(`/agents/${environmentId}/swarm/${kind}`, {
 			...config,
 			params: transformPaginationParams(options)
 		});
@@ -305,11 +305,11 @@ class SwarmService extends BaseAPIService {
 	}
 
 	async getKvItem(kind: SwarmKvKind, id: string, environmentId: string): Promise<SwarmKvSummary> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
 	}
 
 	async createKvItem(kind: SwarmKvKind, request: SwarmKvCreateRequest, environmentId: string): Promise<SwarmKvSummary> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/${kind}`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/${kind}`, request));
 	}
 
 	async updateKvItem(
@@ -318,11 +318,11 @@ class SwarmService extends BaseAPIService {
 		request: SwarmKvUpdateRequest,
 		environmentId: string
 	): Promise<SwarmKvSummary> {
-		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`, request));
+		return this.handleResponse(this.api.put(`/agents/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`, request));
 	}
 
 	async removeKvItem(kind: SwarmKvKind, id: string, environmentId: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
 	}
 }
 

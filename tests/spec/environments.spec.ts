@@ -20,7 +20,7 @@ test.describe('Settings', () => {
 	const NAME_PLACEHOLDER = 'My Lab Server';
 
 	async function openEnvironment(page: Page, environmentId: string) {
-		await page.goto(`/environments/${environmentId}`);
+		await page.goto(`/agents/${environmentId}`);
 		await page.waitForLoadState('load');
 		await expect(environmentTitleButton(page)).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
@@ -44,7 +44,7 @@ test.describe('Settings', () => {
 		environmentName: string,
 		environmentIds: Set<string>
 	) {
-		await page.goto('/environments');
+		await page.goto('/agents');
 		await page.waitForLoadState('load');
 
 		await page.getByRole('button', { name: 'Add Environment', exact: true }).click();
@@ -55,13 +55,12 @@ test.describe('Settings', () => {
 		await dialog.getByPlaceholder('Remote Docker Host').fill(environmentName);
 		const createResponsePromise = page.waitForResponse(
 			(response) =>
-				response.request().method() === 'POST' &&
-				new URL(response.url()).pathname === '/api/environments'
+				response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/agents'
 		);
 		const deploymentResponsePromise = page.waitForResponse(
 			(response) =>
 				response.request().method() === 'POST' &&
-				new URL(response.url()).pathname.startsWith('/api/environments/') &&
+				new URL(response.url()).pathname.startsWith('/api/agents/') &&
 				new URL(response.url()).pathname.endsWith('/deployment')
 		);
 		await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
@@ -75,7 +74,7 @@ test.describe('Settings', () => {
 
 		const deploymentResponse = await deploymentResponsePromise;
 		expect(new URL(deploymentResponse.url()).pathname).toBe(
-			`/api/environments/${created.data.id}/deployment`
+			`/api/agents/${created.data.id}/deployment`
 		);
 		expect(deploymentResponse.ok(), 'Generate deployment snippets').toBeTruthy();
 		const deployment = await readApiData<DeploymentSnippet>(
@@ -144,7 +143,7 @@ test.describe('Settings', () => {
 		let originalSettings: Record<string, string> = {};
 		test.beforeEach(async ({ page }) => {
 			originalSettings = {};
-			const response = await page.request.get(`/api/environments/${LOCAL_ENV_ID}/settings`);
+			const response = await page.request.get(`/api/agents/${LOCAL_ENV_ID}/settings`);
 			expect(response.ok(), 'Read original environment settings').toBe(true);
 			const { settings }: { settings: Array<{ key: string; value: string }> } =
 				await response.json();
@@ -158,9 +157,7 @@ test.describe('Settings', () => {
 		test.afterEach(async ({ page }) => {
 			if (Object.keys(originalSettings).length === 0) return;
 			try {
-				const currentResponse = await page.request.get(
-					`/api/environments/${LOCAL_ENV_ID}/settings`
-				);
+				const currentResponse = await page.request.get(`/api/agents/${LOCAL_ENV_ID}/settings`);
 				expect(currentResponse.ok()).toBe(true);
 				const { settings: current }: { settings: Array<{ key: string; value: string }> } =
 					await currentResponse.json();
@@ -170,16 +167,14 @@ test.describe('Settings', () => {
 					)
 				);
 				if (Object.keys(changed).length === 0) return;
-				const response = await page.request.patch(`/api/environments/${LOCAL_ENV_ID}/settings`, {
+				const response = await page.request.patch(`/api/agents/${LOCAL_ENV_ID}/settings`, {
 					data: changed
 				});
 				expect(
 					response.ok(),
 					`Restore environment settings: ${response.status()} ${await response.text()}`
 				).toBe(true);
-				const restoredResponse = await page.request.get(
-					`/api/environments/${LOCAL_ENV_ID}/settings`
-				);
+				const restoredResponse = await page.request.get(`/api/agents/${LOCAL_ENV_ID}/settings`);
 				expect(restoredResponse.ok()).toBe(true);
 				const { settings: restored }: { settings: Array<{ key: string; value: string }> } =
 					await restoredResponse.json();
@@ -196,7 +191,7 @@ test.describe('Settings', () => {
 		});
 
 		test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
-			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=engine`);
+			await page.goto(`/agents/${LOCAL_ENV_ID}?tab=engine`);
 			await page.waitForLoadState('load');
 
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('engine');
@@ -211,7 +206,7 @@ test.describe('Settings', () => {
 			await page.reload();
 			await expect(featuresTab).toHaveAttribute('data-state', 'active');
 
-			await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
+			await page.goto(`/agents/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('features');
 			const canonicalUrl = new URL(page.url());
 			expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
@@ -227,7 +222,7 @@ test.describe('Settings', () => {
 		});
 
 		test('should show job run history on the History tab', async ({ page }) => {
-			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=history&job=event-cleanup`);
+			await page.goto(`/agents/${LOCAL_ENV_ID}?tab=history&job=event-cleanup`);
 			await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute(
 				'data-state',
 				'active'
@@ -243,7 +238,7 @@ test.describe('Settings', () => {
 			const activityStatuses = new Map<string, number>();
 			page.on('response', (response) => {
 				const match = new URL(response.url()).pathname.match(
-					/^\/api\/environments\/([^/]+)\/activities$/
+					/^\/api\/agents\/([^/]+)\/activities$/
 				);
 				if (match) activityStatuses.set(match[1], response.status());
 			});
@@ -255,12 +250,12 @@ test.describe('Settings', () => {
 				envName,
 				environmentIds
 			);
-			const environmentPath = `/api/environments/${environmentId}`;
+			const environmentPath = `/api/agents/${environmentId}`;
 			await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
 			expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
-			await expect(page).toHaveURL('/environments?tab=environments');
+			await expect(page).toHaveURL('/agents?tab=environments');
 			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
+			await expect(page).toHaveURL(/\/agents\/[^/?]+\?tab=[a-z]+$/);
 			await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
 
 			await renameEnvironmentInHeader(page, updatedName);
@@ -321,7 +316,7 @@ test.describe('Settings', () => {
 			try {
 				await baseServerUrlInput.fill(updatedBaseServerUrl);
 				await expect(baseServerUrlInput).toHaveValue(updatedBaseServerUrl);
-				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
 				await expect(page.locator('#base-server-url')).toHaveValue(updatedBaseServerUrl, {
@@ -332,7 +327,7 @@ test.describe('Settings', () => {
 					const currentValue = await page.locator('#base-server-url').inputValue();
 					if (currentValue !== originalBaseServerUrl) {
 						await page.locator('#base-server-url').fill(originalBaseServerUrl);
-						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -364,7 +359,7 @@ test.describe('Settings', () => {
 					const request = response.request();
 					if (request.method() !== 'PATCH') return false;
 					const url = new URL(response.url());
-					return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
+					return url.pathname === `/api/agents/${LOCAL_ENV_ID}/settings`;
 				});
 
 				await saveButton.click();
@@ -383,7 +378,7 @@ test.describe('Settings', () => {
 						'true';
 					if (currentChecked !== originalChecked) {
 						await page.locator('#follow-project-symlinks').click();
-						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -413,10 +408,10 @@ test.describe('Settings', () => {
 			await renameEnvironmentInHeader(page, `${envName}-discarded`);
 			await expect(saveButton).toBeEnabled();
 			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
-			await expect(page).toHaveURL('/environments?tab=environments');
+			await expect(page).toHaveURL('/agents?tab=environments');
 			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(new RegExp(`/environments/${environmentId}(?:\\?|$)`));
+			await expect(page).toHaveURL(new RegExp(`/agents/${environmentId}(?:\\?|$)`));
 			await expect(environmentTitleButton(page)).toHaveText(envName);
 		});
 
@@ -434,7 +429,7 @@ test.describe('Settings', () => {
 			try {
 				await selectSettingOption(page, pullPolicyTrigger, updatedValue);
 				await expect(pullPolicyTrigger).toContainText(updatedValue);
-				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
 				await expect(page.locator('#defaultDeployPullPolicy')).toContainText(updatedValue, {
@@ -451,7 +446,7 @@ test.describe('Settings', () => {
 							page.locator('#defaultDeployPullPolicy'),
 							originalValue
 						);
-						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -459,7 +454,7 @@ test.describe('Settings', () => {
 
 		test('should save decimal trivy CPU limits and reject negative values', async ({ page }) => {
 			test.setTimeout(120_000);
-			const settingsPath = `/api/environments/${LOCAL_ENV_ID}/settings`;
+			const settingsPath = `/api/agents/${LOCAL_ENV_ID}/settings`;
 			const settingsResponse = await page.request.get(settingsPath);
 			expect(settingsResponse.ok()).toBeTruthy();
 			const { settings } = (await settingsResponse.json()) as {
@@ -546,7 +541,7 @@ test.describe('Settings', () => {
 					const request = response.request();
 					if (request.method() !== 'PATCH') return false;
 					const url = new URL(response.url());
-					return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
+					return url.pathname === `/api/agents/${LOCAL_ENV_ID}/settings`;
 				});
 
 				await saveButton.click();
@@ -560,7 +555,7 @@ test.describe('Settings', () => {
 					const currentValue = ((await page.locator('#trivyNetwork').textContent()) || '').trim();
 					if (!currentValue.includes(originalValue)) {
 						await selectSettingOption(page, page.locator('#trivyNetwork'), originalValue);
-						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/agents/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -649,7 +644,7 @@ test.describe('Environment filter', () => {
 		await page.addInitScript(() => {
 			localStorage.removeItem('arcane-container-table');
 		});
-		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
+		await page.context().route(/\/api\/agents(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -692,7 +687,7 @@ test.describe('Environment filter', () => {
 		});
 		await page
 			.context()
-			.route(/\/api\/environments\/(?:0|remote-switch-test)\/settings$/, async (route) => {
+			.route(/\/api\/agents\/(?:0|remote-switch-test)\/settings$/, async (route) => {
 				if (route.request().method() !== 'GET') {
 					await route.continue();
 					return;
@@ -728,9 +723,9 @@ test.describe('Environment filter', () => {
 			await mockEnvironmentCatalog(page);
 			await page
 				.context()
-				.route(/\/api\/environments\/[^/]+\/containers(?:\?.*)?$/, async (route: Route) => {
+				.route(/\/api\/agents\/[^/]+\/containers(?:\?.*)?$/, async (route: Route) => {
 					const pathname = new URL(route.request().url()).pathname;
-					if (pathname === '/api/environments/remote-switch-test/containers') {
+					if (pathname === '/api/agents/remote-switch-test/containers') {
 						if (!remoteMarked) {
 							remoteMarked = true;
 							markRemoteStarted();
@@ -766,7 +761,7 @@ test.describe('Environment filter', () => {
 				).toHaveCount(0);
 				await page.waitForTimeout(200);
 				expect(websocketPaths).not.toContain(
-					'/api/environments/remote-switch-test/ws/containers/local-a-id/stats'
+					'/api/agents/remote-switch-test/ws/containers/local-a-id/stats'
 				);
 			} finally {
 				releaseRemote();
@@ -788,9 +783,9 @@ test.describe('Environment filter', () => {
 			await mockEnvironmentCatalog(page);
 			await page
 				.context()
-				.route(/\/api\/environments\/[^/]+\/containers(?:\?.*)?$/, async (route: Route) => {
+				.route(/\/api\/agents\/[^/]+\/containers(?:\?.*)?$/, async (route: Route) => {
 					const pathname = new URL(route.request().url()).pathname;
-					if (pathname === '/api/environments/remote-switch-test/containers') {
+					if (pathname === '/api/agents/remote-switch-test/containers') {
 						await route.fulfill({
 							status: 503,
 							contentType: 'application/json',
@@ -811,7 +806,7 @@ test.describe('Environment filter', () => {
 			).toBeVisible();
 			const failedRemoteRequest = page.waitForResponse((response) => {
 				return (
-					new URL(response.url()).pathname === '/api/environments/remote-switch-test/containers' &&
+					new URL(response.url()).pathname === '/api/agents/remote-switch-test/containers' &&
 					response.status() === 503
 				);
 			});
@@ -831,14 +826,14 @@ test.describe('Environment filter', () => {
 				'route-redeployed': containerDetails('route-redeployed', 'Redeployed Container')
 			};
 
-			await page.context().route(/\/api\/environments\/0\/settings$/, async (route) => {
+			await page.context().route(/\/api\/agents\/0\/settings$/, async (route) => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
 					body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
 				});
 			});
-			await page.context().route(/\/api\/environments\/0\/containers\/([^/?]+)$/, async (route) => {
+			await page.context().route(/\/api\/agents\/0\/containers\/([^/?]+)$/, async (route) => {
 				const id = decodeURIComponent(
 					new URL(route.request().url()).pathname.split('/').pop() ?? ''
 				);
@@ -853,7 +848,7 @@ test.describe('Environment filter', () => {
 			});
 			await page
 				.context()
-				.route(/\/api\/environments\/0\/containers\/route-b\/redeploy$/, async (route) => {
+				.route(/\/api\/agents\/0\/containers\/route-b\/redeploy$/, async (route) => {
 					await route.fulfill({
 						status: 200,
 						contentType: 'application/json',
@@ -906,7 +901,7 @@ test.describe('Environment filter', () => {
 
 test.describe('Agents', () => {
 	const ROUTES = {
-		environments: '/environments'
+		environments: '/agents'
 	};
 
 	async function openNewEnvironmentSheet(page: Page) {
@@ -926,7 +921,7 @@ test.describe('Agents', () => {
 			await openNewEnvironmentSheet(page);
 			let createRequests = 0;
 
-			await page.route('**/api/environments', async (route) => {
+			await page.route('**/api/agents', async (route) => {
 				if (route.request().method() === 'POST') {
 					createRequests += 1;
 				}
@@ -950,14 +945,14 @@ test.describe('Agents', () => {
 				if (!createdEnvironmentId) return;
 				const pathname = new URL(request.url()).pathname;
 				if (
-					pathname === `/api/environments/${createdEnvironmentId}/settings` ||
-					pathname === `/api/environments/${createdEnvironmentId}/settings/public`
+					pathname === `/api/agents/${createdEnvironmentId}/settings` ||
+					pathname === `/api/agents/${createdEnvironmentId}/settings/public`
 				) {
 					agentSettingsRequests.push(pathname);
 				}
 			});
 
-			await page.route('**/api/environments', async (route) => {
+			await page.route('**/api/agents', async (route) => {
 				if (route.request().method() === 'POST') {
 					const response = await route.fetch();
 					const environment = await readApiData<{ id: string }>(
@@ -1009,7 +1004,7 @@ test.describe('Agents', () => {
 
 			await page.getByRole('button', { name: environmentName, exact: true }).click();
 			if (createdEnvironmentId) {
-				await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
+				await expect(page).toHaveURL(new RegExp(`/agents/${createdEnvironmentId}`));
 			}
 
 			await expect(page.getByText(/^agent:\/\/agent-/).first()).toBeVisible();

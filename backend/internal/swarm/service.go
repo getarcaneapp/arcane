@@ -178,7 +178,7 @@ func (s *SwarmService) FindClusterManagerEnvironment(ctx context.Context, cluste
 			probeCtx, cancel := context.WithTimeout(ctx, clusterProbeTimeout)
 			defer cancel()
 			var remote types.ApiResponse[types.SwarmRuntimeStatus]
-			probeErr := s.environmentService.ProxyJSONRequest(probeCtx, env.ID, http.MethodGet, "/api/environments/0/swarm/status", nil, &remote)
+			probeErr := s.environmentService.ProxyJSONRequest(probeCtx, env.ID, http.MethodGet, "/api/agents/0/swarm/status", nil, &remote)
 			statusErr, rejected := errors.AsType[*agent.StatusError](probeErr)
 			probeErrs[index] = kit.Ternary(rejected && statusErr.StatusCode < http.StatusInternalServerError, nil, probeErr)
 			clusterIDs[index] = remote.Data.ClusterID

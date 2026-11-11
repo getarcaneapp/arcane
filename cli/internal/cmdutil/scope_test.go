@@ -39,29 +39,29 @@ func TestRunScopedMerged(t *testing.T) {
 	}{
 		{
 			name: "table names rows from their tags", environments: `[{"id":"b","name":"Beta","enabled":true},{"id":"0","name":"Alpha","enabled":true}]`,
-			body: tagged, scope: "/api/environments/0,b/rows",
+			body: tagged, scope: "/api/agents/0,b/rows",
 			wantOut: []string{"ENVIRONMENT", "Alpha", "web", "Beta", "db", "Showing: 2/7 rows"},
 		},
 		{
 			name: "single environment names untagged rows from the scope", environments: `[{"id":"0","name":"Alpha","enabled":true}]`,
-			body: `{"success":true,"data":[{"name":"web"}],"pagination":{"totalItems":1}}`, scope: "/api/environments/0/rows",
+			body: `{"success":true,"data":[{"name":"web"}],"pagination":{"totalItems":1}}`, scope: "/api/agents/0/rows",
 			wantOut: []string{"ENVIRONMENT", "Alpha", "web"},
 		},
 		{
 			name: "failed environments are named and returned", environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]`,
 			body: `{"success":true,"data":[{"environmentId":"0","environmentName":"Alpha","name":"web"}],"pagination":{"totalItems":1},` +
 				`"failedEnvironments":[{"environment":{"id":"b","name":"b"},"message":"offline"}]}`,
-			scope: "/api/environments/0,b/rows", wantErr: "Beta (b): offline", wantOut: []string{"Alpha", "web"},
+			scope: "/api/agents/0,b/rows", wantErr: "Beta (b): offline", wantOut: []string{"Alpha", "web"},
 		},
 		{
 			name:         "environments beyond the limit are reported and not sent",
 			environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true},{"id":"c","name":"Gamma","enabled":true}]`,
-			body:         tagged, scope: "/api/environments/0,b/rows", limit: "2",
+			body:         tagged, scope: "/api/agents/0,b/rows", limit: "2",
 			wantErr: "Gamma (c): not included: more than 2 environments are shown at once", wantOut: []string{"Alpha", "web", "Beta", "db"},
 		},
 		{
 			name: "JSON passes the merged response through", environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]`,
-			body: tagged, scope: "/api/environments/0,b/rows", json: true,
+			body: tagged, scope: "/api/agents/0,b/rows", json: true,
 			wantOut: []string{`"environmentName": "Beta"`, `"totalItems": 7`},
 		},
 	} {

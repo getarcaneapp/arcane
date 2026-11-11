@@ -29,7 +29,7 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 	huma.Register(api, huma.Operation{
 		OperationID: "guarded-start",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{cid}/start",
+		Path:        "/agents/{id}/containers/{cid}/start",
 		Middlewares: RequirePermission(api, authz.PermContainersStart),
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
@@ -40,7 +40,7 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 		return nil, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/containers/c/start", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/env-1/containers/c/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -67,7 +67,7 @@ func TestRequirePermission_AllowsCallerWithPermissionOnEnv(t *testing.T) {
 	huma.Register(api, huma.Operation{
 		OperationID: "guarded-start-allow",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{cid}/start",
+		Path:        "/agents/{id}/containers/{cid}/start",
 		Middlewares: RequirePermission(api, authz.PermContainersStart),
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
@@ -80,7 +80,7 @@ func TestRequirePermission_AllowsCallerWithPermissionOnEnv(t *testing.T) {
 		}{Success: true}}, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/containers/c/start", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/env-1/containers/c/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -102,7 +102,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 	huma.Register(api, huma.Operation{
 		OperationID: "guarded-start-other-env",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{cid}/start",
+		Path:        "/agents/{id}/containers/{cid}/start",
 		Middlewares: RequirePermission(api, authz.PermContainersStart),
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
@@ -113,7 +113,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 		return nil, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-2/containers/c/start", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/env-2/containers/c/start", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -204,7 +204,7 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 			op := RequireSudo(api, huma.Operation{
 				OperationID: "materialized-variables-" + tt.name,
 				Method:      http.MethodGet,
-				Path:        "/environments/{id}/templates/variables",
+				Path:        "/agents/{id}/templates/variables",
 			})
 			require.Equal(t, true, op.Metadata[authz.MetaRequireSudo])
 			huma.Register(api, op, func(_ context.Context, _ *struct {
@@ -215,7 +215,7 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 				return &struct{}{}, nil
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/templates/variables", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/api/agents/0/templates/variables", http.NoBody)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
@@ -247,7 +247,7 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 			huma.Register(api, huma.Operation{
 				OperationID: "scoped-list",
 				Method:      http.MethodGet,
-				Path:        "/environments/{id}/containers",
+				Path:        "/agents/{id}/containers",
 				Middlewares: RequirePermission(api, authz.PermContainersList),
 			}, func(_ context.Context, _ *struct {
 				ID string `path:"id"`
@@ -257,7 +257,7 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 			})
 
 			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/environments/"+strings.Join(tt.ids, ",")+"/containers", http.NoBody))
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/agents/"+strings.Join(tt.ids, ",")+"/containers", http.NoBody))
 
 			if tt.allowed {
 				require.Less(t, rec.Code, http.StatusMultipleChoices)
@@ -282,7 +282,7 @@ func TestRequireActionPermission(t *testing.T) {
 	RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{cid}",
+		Path:        "/agents/{id}/containers/{cid}",
 	}, "action", map[string]string{
 		"start": authz.PermContainersStart,
 		"kill":  authz.PermContainersKill,
@@ -310,7 +310,7 @@ func TestRequireActionPermission(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handlerRan = false
-			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/containers/c"+tt.query, http.NoBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/agents/env-1/containers/c"+tt.query, http.NoBody)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
@@ -319,7 +319,7 @@ func TestRequireActionPermission(t *testing.T) {
 		})
 	}
 
-	op := api.OpenAPI().Paths["/environments/{id}/containers/{cid}"].Post
+	op := api.OpenAPI().Paths["/agents/{id}/containers/{cid}"].Post
 	require.Equal(t, "action", op.Metadata[authz.MetaActionParam])
 	require.NotContains(t, op.Metadata, authz.MetaRequiredPermission)
 }
@@ -331,7 +331,7 @@ func TestRegisterEchoRoutesEnforcesDeclaredPermission(t *testing.T) {
 	RegisterEchoRoutes(router.Group("/api"), []EchoRoute{
 		{
 			Method:     http.MethodGet,
-			Path:       "/environments/:id/ws/containers/:containerId/logs",
+			Path:       "/agents/:id/ws/containers/:containerId/logs",
 			Permission: authz.PermContainersLogs,
 			Handler: func(c *echo.Context) error {
 				return c.NoContent(http.StatusNoContent)
@@ -361,10 +361,10 @@ func TestRegisterEchoRoutesEnforcesDeclaredPermission(t *testing.T) {
 	})
 
 	for path, want := range map[string]int{
-		"/api/environments/env-1/ws/containers/c/logs": http.StatusNoContent,
-		"/api/environments/env-2/ws/containers/c/logs": http.StatusForbidden,
-		"/api/diagnostics/stream":                      http.StatusForbidden,
-		"/api/docs":                                    http.StatusNoContent,
+		"/api/agents/env-1/ws/containers/c/logs": http.StatusNoContent,
+		"/api/agents/env-2/ws/containers/c/logs": http.StatusForbidden,
+		"/api/diagnostics/stream":                http.StatusForbidden,
+		"/api/docs":                              http.StatusNoContent,
 	} {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))

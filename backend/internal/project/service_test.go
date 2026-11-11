@@ -10608,7 +10608,7 @@ func projectScopeContext(t *testing.T, target string, bodies map[string]any) (co
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -10644,7 +10644,7 @@ func TestAggregateProjectsMergesEnvironments(t *testing.T) {
 	svc := &ProjectService{}
 
 	t.Run("sorts by name across environments and pages", func(t *testing.T) {
-		ctx, queries := projectScopeContext(t, "/api/environments/a,b,c/projects?start=0&limit=2&sort=name&order=asc", bodies)
+		ctx, queries := projectScopeContext(t, "/api/agents/a,b,c/projects?start=0&limit=2&sort=name&order=asc", bodies)
 		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
 		require.NoError(t, err)
 
@@ -10666,14 +10666,14 @@ func TestAggregateProjectsMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by service count descending", func(t *testing.T) {
-		ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects", bodies)
+		ctx, _ := projectScopeContext(t, "/api/agents/a,b,c/projects", bodies)
 		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "serviceCount", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"b/cache", "a/web", "a/db"}, rowLabels(body.Data))
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, queries := projectScopeContext(t, "/api/environments/a,b,c/projects?sort=environment&order=desc", bodies)
+		ctx, queries := projectScopeContext(t, "/api/agents/a,b,c/projects?sort=environment&order=desc", bodies)
 		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"b/cache", "a/web", "a/db"}, rowLabels(body.Data))
@@ -10682,7 +10682,7 @@ func TestAggregateProjectsMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects", map[string]any{})
+		ctx, _ := projectScopeContext(t, "/api/agents/a,b,c/projects", map[string]any{})
 		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		assert.Empty(t, body.Data)
@@ -10691,7 +10691,7 @@ func TestAggregateProjectsMergesEnvironments(t *testing.T) {
 }
 
 func TestAggregateProjectCountsSumsEnvironments(t *testing.T) {
-	ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects/counts", map[string]any{
+	ctx, _ := projectScopeContext(t, "/api/agents/a,b,c/projects/counts", map[string]any{
 		"a": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 2, StoppedProjects: 1, TotalProjects: 4, ArchivedProjects: 1, UpdatesAvailable: 1}},
 		"b": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 1, StoppedProjects: 3, TotalProjects: 4, UpdatesAvailable: 2}},
 	})
@@ -10709,7 +10709,7 @@ func TestAggregateProjectCountsSumsEnvironments(t *testing.T) {
 }
 
 func TestAggregateProjectTagsUnionsByName(t *testing.T) {
-	ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects/tags", map[string]any{
+	ctx, _ := projectScopeContext(t, "/api/agents/a,b,c/projects/tags", map[string]any{
 		"a": types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: []types.ProjectTagOption{{Name: "prod", Color: "red"}, {Name: "web", Color: "blue"}}},
 		"b": types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: []types.ProjectTagOption{{Name: "api", Color: "green"}, {Name: "prod", Color: "gray"}}},
 	})

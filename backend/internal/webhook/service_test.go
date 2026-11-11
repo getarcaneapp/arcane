@@ -713,7 +713,7 @@ func TestRemoteWebhookRequest(t *testing.T) {
 			wh:         Webhook{TargetType: WebhookTargetTypeContainer, TargetID: "abc123", TargetRef: "my-app"},
 			actionType: WebhookActionTypeUpdate,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/containers/my-app/update",
+			wantPath:   "/api/agents/0/containers/my-app/update",
 			wantResult: true,
 		},
 		{
@@ -721,28 +721,28 @@ func TestRemoteWebhookRequest(t *testing.T) {
 			wh:         Webhook{TargetType: WebhookTargetTypeContainer, TargetID: "abc123"},
 			actionType: WebhookActionTypeStart,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/containers/abc123?action=start",
+			wantPath:   "/api/agents/0/containers/abc123?action=start",
 		},
 		{
 			name:       "project update maps to updateservices action",
 			wh:         Webhook{TargetType: WebhookTargetTypeProject, TargetID: "p1"},
 			actionType: WebhookActionTypeUpdate,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/projects/p1?action=updateservices",
+			wantPath:   "/api/agents/0/projects/p1?action=updateservices",
 		},
 		{
 			name:       "gitops sync",
 			wh:         Webhook{TargetType: WebhookTargetTypeGitOps, TargetID: "sync-1"},
 			actionType: WebhookActionTypeSync,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/gitops/syncs/sync-1?action=sync",
+			wantPath:   "/api/agents/0/gitops/syncs/sync-1?action=sync",
 		},
 		{
 			name:       "updater run carries result",
 			wh:         Webhook{TargetType: WebhookTargetTypeUpdater},
 			actionType: WebhookActionTypeRun,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/updater/run?automatic=true",
+			wantPath:   "/api/agents/0/updater/run?automatic=true",
 			wantResult: true,
 		},
 		{
@@ -774,7 +774,7 @@ func webhookScopeContext(t *testing.T, target string, bodies map[string]any) con
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -790,7 +790,7 @@ func webhookScopeContext(t *testing.T, target string, bodies map[string]any) con
 
 func TestAggregateWebhookSummariesMergesEnvironments(t *testing.T) {
 	now := time.Now()
-	ctx := webhookScopeContext(t, "/api/environments/a,b,c/webhooks", map[string]any{
+	ctx := webhookScopeContext(t, "/api/agents/a,b,c/webhooks", map[string]any{
 		"a": types.ApiResponse[[]types.Webhook]{
 			Success: true,
 			Data:    []types.Webhook{{ID: "old", CreatedAt: now.Add(-time.Hour)}},

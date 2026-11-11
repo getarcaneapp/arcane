@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	kubePath = "/environments/{id}/podman/kube"
+	kubePath = "/agents/{id}/podman/kube"
 	kubeTag  = "Podman"
 )
 

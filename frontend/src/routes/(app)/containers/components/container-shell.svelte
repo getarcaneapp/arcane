@@ -42,7 +42,7 @@
 		if (!containerId || !selectedShell) return '';
 		let protocol = 'ws:';
 		if (page.url.protocol === 'https:') protocol = 'wss:';
-		return `${protocol}//${page.url.host}/api/environments/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
+		return `${protocol}//${page.url.host}/api/agents/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
 	});
 
 	function handleShellChange(shell: string) {

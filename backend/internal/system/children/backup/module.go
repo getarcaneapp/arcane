@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-environment-backup-history",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/backups/history",
+			Path:        "/agents/{id}/backups/history",
 			Summary:     "List an environment's backup history",
 			Tags: []string{
 				"System Backups",
@@ -151,7 +151,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		middleware.RequireGlobalAdmin(api, huma.Operation{
 			OperationID: "system-backup-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/backups/{backupId}",
+			Path:        "/agents/{id}/backups/{backupId}",
 			Summary:     "Restore Arcane system backup",
 			Description: "Restore a full Arcane system backup, or selected project files with action restorefiles",
 			Tags: []string{
@@ -170,7 +170,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "browse-system-backup-files",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/backups/{backupId}/files/browse",
+			Path:        "/agents/{id}/backups/{backupId}/files/browse",
 			Summary:     "Browse project files in an Arcane system backup",
 			Tags: []string{
 				"System Backups",
@@ -184,7 +184,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "upload-system-backup",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/backups/{backupId}/upload",
+			Path:        "/agents/{id}/backups/{backupId}/upload",
 			Summary:     "Upload Arcane system backup",
 			Tags: []string{
 				"System Backups",
@@ -198,7 +198,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-system-backup",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/backups/{backupId}",
+			Path:        "/agents/{id}/backups/{backupId}",
 			Summary:     "Delete Arcane system backup",
 			Tags: []string{
 				"System Backups",

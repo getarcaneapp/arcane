@@ -30,7 +30,7 @@ func TestRoutesDeclareDiagnosticsPermissions(t *testing.T) {
 	}
 
 	require.Equal(t, authz.PermDiagnosticsRead, perms["GET /diagnostics/logs/stream"])
-	require.Equal(t, authz.PermProjectsLogs, perms["GET /environments/:id/ws/projects/:projectId/logs"])
+	require.Equal(t, authz.PermProjectsLogs, perms["GET /agents/:id/ws/projects/:projectId/logs"])
 	require.Equal(t, []string{authz.PermDiagnosticsProfile}, streamConditions.Required("type", "dump"))
 	require.Empty(t, streamConditions.Required("type", "leakScan"))
 }

@@ -17,7 +17,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-upgrade",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/system/upgrade/check",
+		Path:        "/agents/{id}/system/upgrade/check",
 		Summary:     "Check for system upgrade",
 		Description: "Check if a system upgrade is available",
 		Tags:        []string{"System"},
@@ -27,7 +27,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-upgrade",
 		Method:        http.MethodPost,
-		Path:          "/environments/{id}/system/upgrade",
+		Path:          "/agents/{id}/system/upgrade",
 		Summary:       "Trigger system upgrade",
 		Description:   "Trigger a system upgrade",
 		DefaultStatus: http.StatusAccepted,
@@ -38,7 +38,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "start-upgrade-job",
 		Method:        http.MethodPost,
-		Path:          "/environments/{id}/system/upgrade/jobs",
+		Path:          "/agents/{id}/system/upgrade/jobs",
 		Summary:       "Start upgrade job",
 		Description:   "Upgrade the requested environments, or every enabled environment when none are given, with the manager last",
 		DefaultStatus: http.StatusAccepted,
@@ -49,7 +49,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-current-upgrade-job",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/system/upgrade/jobs/current",
+		Path:        "/agents/{id}/system/upgrade/jobs/current",
 		Summary:     "Get current upgrade job",
 		Description: "Get the latest upgrade job",
 		Tags:        []string{"System"},
@@ -59,7 +59,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	sse.Register(api, huma.Operation{
 		OperationID: "stream-upgrade-progress",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/system/upgrade/progress",
+		Path:        "/agents/{id}/system/upgrade/progress",
 		Summary:     "Stream upgrade progress",
 		Description: "Stream this instance's self-upgrade progress, replaying the latest upgrade log once it has restarted",
 		Tags:        []string{"System"},

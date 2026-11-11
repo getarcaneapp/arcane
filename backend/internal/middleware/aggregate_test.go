@@ -41,9 +41,9 @@ func newScopeTestRouter(t *testing.T, limit int) (*echo.Echo, *[]*httpx.Environm
 		return &struct{}{}, nil
 	}
 	aggregate := map[string]any{authz.MetaEnvironmentAggregate: true}
-	huma.Register(api, huma.Operation{OperationID: "list-containers", Method: http.MethodGet, Path: "/environments/{id}/containers", Metadata: aggregate}, handler)
-	huma.Register(api, huma.Operation{OperationID: "create-container", Method: http.MethodPost, Path: "/environments/{id}/containers", Metadata: aggregate}, handler)
-	huma.Register(api, huma.Operation{OperationID: "list-images", Method: http.MethodGet, Path: "/environments/{id}/images"}, handler)
+	huma.Register(api, huma.Operation{OperationID: "list-containers", Method: http.MethodGet, Path: "/agents/{id}/containers", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "create-container", Method: http.MethodPost, Path: "/agents/{id}/containers", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "list-images", Method: http.MethodGet, Path: "/agents/{id}/images"}, handler)
 	matcher.CollectFromHumaAPI(api)
 	return router, &handled
 }
@@ -57,7 +57,7 @@ func serveScopeTestRequest(router *echo.Echo, method, target string) *httptest.R
 func TestEnvironmentScopeMiddlewarePassesSingleEnvironmentThrough(t *testing.T) {
 	router, handled := newScopeTestRouter(t, 64)
 
-	recorder := serveScopeTestRequest(router, http.MethodGet, "/api/environments/env-1/containers")
+	recorder := serveScopeTestRequest(router, http.MethodGet, "/api/agents/env-1/containers")
 
 	require.Less(t, recorder.Code, http.StatusBadRequest)
 	require.Equal(t, []*httpx.EnvironmentScope{nil}, *handled)
@@ -66,7 +66,7 @@ func TestEnvironmentScopeMiddlewarePassesSingleEnvironmentThrough(t *testing.T) 
 func TestEnvironmentScopeMiddlewareAttachesDeduplicatedScope(t *testing.T) {
 	router, handled := newScopeTestRouter(t, 64)
 
-	recorder := serveScopeTestRequest(router, http.MethodGet, "/api/environments/0,env-a,0,env-b/containers?search=web")
+	recorder := serveScopeTestRequest(router, http.MethodGet, "/api/agents/0,env-a,0,env-b/containers?search=web")
 
 	require.Less(t, recorder.Code, http.StatusBadRequest)
 	require.Len(t, *handled, 1)
@@ -75,7 +75,7 @@ func TestEnvironmentScopeMiddlewareAttachesDeduplicatedScope(t *testing.T) {
 	require.Equal(t, []string{"0", "env-a", "env-b"}, scope.IDs)
 	require.Same(t, router, scope.Handler)
 	require.NotNil(t, scope.Resolve)
-	require.Equal(t, "/api/environments/0,env-a,0,env-b/containers", scope.Request.URL.Path)
+	require.Equal(t, "/api/agents/0,env-a,0,env-b/containers", scope.Request.URL.Path)
 	_, captured := httpx.EnvironmentScopeFromContext(scope.Request.Context())
 	require.False(t, captured, "the captured request must not carry the scope")
 }
@@ -90,10 +90,10 @@ func TestEnvironmentScopeMiddlewareRejectsInvalidScopes(t *testing.T) {
 		method string
 		target string
 	}{
-		{name: "unsupported route", method: http.MethodGet, target: "/api/environments/a,b/images"},
-		{name: "non-GET method", method: http.MethodPost, target: "/api/environments/a,b/containers"},
-		{name: "empty component", method: http.MethodGet, target: "/api/environments/a,,b/containers"},
-		{name: "too many environments", method: http.MethodGet, target: "/api/environments/" + strings.Join(tooMany, ",") + "/containers"},
+		{name: "unsupported route", method: http.MethodGet, target: "/api/agents/a,b/images"},
+		{name: "non-GET method", method: http.MethodPost, target: "/api/agents/a,b/containers"},
+		{name: "empty component", method: http.MethodGet, target: "/api/agents/a,,b/containers"},
+		{name: "too many environments", method: http.MethodGet, target: "/api/agents/" + strings.Join(tooMany, ",") + "/containers"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,8 +111,8 @@ func TestEnvironmentScopeMiddlewareRejectsInvalidScopes(t *testing.T) {
 func TestEnvironmentScopeMiddlewareEnforcesConfiguredLimit(t *testing.T) {
 	router, handled := newScopeTestRouter(t, 3)
 
-	rejected := serveScopeTestRequest(router, http.MethodGet, "/api/environments/a,b,c,d/containers")
-	accepted := serveScopeTestRequest(router, http.MethodGet, "/api/environments/a,b,c,a/containers")
+	rejected := serveScopeTestRequest(router, http.MethodGet, "/api/agents/a,b,c,d/containers")
+	accepted := serveScopeTestRequest(router, http.MethodGet, "/api/agents/a,b,c,a/containers")
 
 	require.Equal(t, http.StatusBadRequest, rejected.Code)
 	require.Contains(t, rejected.Body.String(), "limited to 3 environments")

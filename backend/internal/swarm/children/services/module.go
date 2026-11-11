@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-services",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/services",
+			Path:        "/agents/{id}/swarm/services",
 			Summary:     "List swarm services",
 			Tags: []string{
 				"Swarm",
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-service",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/services/{serviceId}",
+			Path:        "/agents/{id}/swarm/services/{serviceId}",
 			Summary:     "Get swarm service",
 			Tags: []string{
 				"Swarm",
@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "create-swarm-service",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services",
+			Path:        "/agents/{id}/swarm/services",
 			Summary:     "Create swarm service",
 			Tags: []string{
 				"Swarm",
@@ -62,7 +62,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "update-swarm-service",
 			Method:      http.MethodPut,
-			Path:        "/environments/{id}/swarm/services/{serviceId}",
+			Path:        "/agents/{id}/swarm/services/{serviceId}",
 			Summary:     "Update swarm service",
 			Tags: []string{
 				"Swarm",
@@ -77,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-service",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/services/{serviceId}",
+			Path:        "/agents/{id}/swarm/services/{serviceId}",
 			Summary:     "Delete swarm service",
 			Tags: []string{
 				"Swarm",
@@ -92,7 +92,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-service-tasks",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/services/{serviceId}/tasks",
+			Path:        "/agents/{id}/swarm/services/{serviceId}/tasks",
 			Summary:     "List tasks for a swarm service",
 			Tags: []string{
 				"Swarm",
@@ -107,7 +107,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "swarm-service-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services/{serviceId}",
+			Path:        "/agents/{id}/swarm/services/{serviceId}",
 			Summary:     "Rollback a swarm service",
 			Tags: []string{
 				"Swarm",
@@ -125,7 +125,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "scale-swarm-service",
 			Method:      http.MethodPatch,
-			Path:        "/environments/{id}/swarm/services/{serviceId}",
+			Path:        "/agents/{id}/swarm/services/{serviceId}",
 			Summary:     "Scale a swarm service",
 			Tags: []string{
 				"Swarm",

@@ -46,7 +46,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-job-schedules",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/jobs/schedules",
+		Path:        "/agents/{id}/jobs/schedules",
 		Summary:     "Get job schedules",
 		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
@@ -56,7 +56,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-job-schedules",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/jobs/schedules",
+		Path:        "/agents/{id}/jobs/schedules",
 		Summary:     "Update job schedules",
 		Description: "Update background job cron schedules and reschedule running jobs",
 		Tags:        []string{"JobSchedules"},
@@ -66,7 +66,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-jobs",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/jobs",
+		Path:        "/agents/{id}/jobs",
 		Summary:     "List all background jobs",
 		Description: "Get status, schedule, and metadata for all background jobs",
 		Tags:        []string{"JobSchedules"},
@@ -77,7 +77,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 		OperationID:   "job-action",
 		DefaultStatus: http.StatusAccepted,
 		Method:        http.MethodPost,
-		Path:          "/environments/{id}/jobs/{jobId}",
+		Path:          "/agents/{id}/jobs/{jobId}",
 		Summary:       "Run a job action",
 		Description:   "Trigger a background job to run immediately or restart a continuous job worker",
 		Tags:          []string{"JobSchedules"},
@@ -87,7 +87,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 		"restart": authz.PermJobsRestart,
 	}, h.RunJobAction)
 
-	basePath := "/environments/{id}/jobs/{jobId}"
+	basePath := "/agents/{id}/jobs/{jobId}"
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{

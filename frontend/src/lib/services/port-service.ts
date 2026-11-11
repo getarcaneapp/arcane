@@ -11,7 +11,7 @@ class PortService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<PortsPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/ports`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/ports`, { ...config, params });
 		return res.data;
 	}
 }

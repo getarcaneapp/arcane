@@ -141,10 +141,7 @@
 				<tr class="border-b border-border/40 transition-colors last:border-0 hover:bg-muted/30">
 					<td class={bodyCell}>
 						<div class="flex min-w-0 items-center gap-2">
-							<a
-								class="truncate font-medium hover:underline"
-								href={resolve('/(app)/environments/[id]', { id: row.environment.id })}
-							>
+							<a class="truncate font-medium hover:underline" href={resolve('/(app)/agents/[id]', { id: row.environment.id })}>
 								{row.environment.name}
 							</a>
 							{#if row.podCount !== null}

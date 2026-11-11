@@ -341,7 +341,7 @@ func (h *EnvironmentHandler) runRemoteChangePoller(ctx context.Context, environm
 		}
 		var out types.ApiResponse[types.EnvironmentChanges]
 		err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet,
-			"/api/environments/0/events/changes?"+url.Values{
+			"/api/agents/0/events/changes?"+url.Values{
 				"epoch": {previous.Epoch},
 				"since": {strconv.FormatUint(since, 10)},
 				"wait":  {strconv.Itoa(max(int((timeouts.GetDuration(h.settingsService.GetSettingsConfig().ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest) - remoteChangeWaitMargin).Seconds()), 1))},
@@ -645,7 +645,7 @@ func (h *EnvironmentHandler) CreateDeploymentSnippets(ctx context.Context, input
 						files = append(files, types.DeploymentSnippetFile{
 							Name:          file.Name,
 							Content:       kit.Ternary(isSensitiveMTLSAssetName(file.Name), "", file.Content),
-							DownloadURL:   fmt.Sprintf("/api/environments/%s/deployment/mtls/%s", input.ID, file.Name),
+							DownloadURL:   fmt.Sprintf("/api/agents/%s/deployment/mtls/%s", input.ID, file.Name),
 							Sensitive:     isSensitiveMTLSAssetName(file.Name),
 							ContainerPath: file.ContainerPath,
 							Permissions:   file.Permissions,

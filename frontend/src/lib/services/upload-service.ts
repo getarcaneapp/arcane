@@ -9,23 +9,23 @@ const chunkRetryDelayMs = 1000;
 
 class UploadService extends BaseAPIService {
 	async createSession(envId: string, kind: UploadKind, file: File): Promise<UploadSession> {
-		return this.handleResponse(this.api.post(`/environments/${envId}/uploads/${kind}`, { filename: file.name, size: file.size }));
+		return this.handleResponse(this.api.post(`/agents/${envId}/uploads/${kind}`, { filename: file.name, size: file.size }));
 	}
 
 	async putChunk(envId: string, kind: UploadKind, uploadId: string, index: number, chunk: Blob): Promise<UploadSession> {
 		return this.handleResponse(
-			this.api.put(`/environments/${envId}/uploads/${kind}/${uploadId}/chunks/${index}`, chunk, {
+			this.api.put(`/agents/${envId}/uploads/${kind}/${uploadId}/chunks/${index}`, chunk, {
 				headers: { 'Content-Type': 'application/octet-stream' }
 			})
 		);
 	}
 
 	async getSession(envId: string, kind: UploadKind, uploadId: string): Promise<UploadSession> {
-		return this.handleResponse(this.api.get(`/environments/${envId}/uploads/${kind}/${uploadId}`));
+		return this.handleResponse(this.api.get(`/agents/${envId}/uploads/${kind}/${uploadId}`));
 	}
 
 	async deleteSession(envId: string, kind: UploadKind, uploadId: string): Promise<void> {
-		await this.api.delete(`/environments/${envId}/uploads/${kind}/${uploadId}`);
+		await this.api.delete(`/agents/${envId}/uploads/${kind}/${uploadId}`);
 	}
 
 	// Uploads a file as sequential chunks with per-chunk retry, so it passes

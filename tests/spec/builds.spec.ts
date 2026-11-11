@@ -104,7 +104,7 @@ function injectDepotSettings(payload: SettingsSnapshot): SettingsSnapshot {
 }
 
 async function mockDepotConfiguredSettings(page: Page) {
-	await page.route('**/api/environments/0/settings', async (route) => {
+	await page.route('**/api/agents/0/settings', async (route) => {
 		if (route.request().method() !== 'GET') {
 			await route.continue();
 			return;
@@ -215,7 +215,7 @@ test.describe('Build workspace provider flows', () => {
 		await setRequiredBuildInputs(page, `e2e/remote:${Date.now()}`);
 
 		const buildRequest = { payload: null as Record<string, unknown> | null };
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
@@ -249,7 +249,7 @@ test.describe('Build workspace provider flows', () => {
 
 		const buildRequest = { payload: null as Record<string, unknown> | null };
 
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
@@ -291,7 +291,7 @@ test.describe('Build workspace provider flows', () => {
 		);
 
 		let buildRequests = 0;
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequests += 1;
 			await route.abort();
 		});
@@ -319,7 +319,7 @@ test.describe('Build workspace provider flows', () => {
 
 		const buildRequest = { payload: null as Record<string, unknown> | null };
 
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
@@ -364,7 +364,7 @@ test.describe('Build workspace provider flows', () => {
 		await ensureSwitchState(page.locator('#build-load'), true);
 
 		let buildPayload: Record<string, unknown> | null = null;
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
@@ -429,7 +429,7 @@ test.describe('Build workspace provider flows', () => {
 		await ensureSwitchState(page.locator('#build-push'), false);
 
 		let buildPayload: Record<string, unknown> | null = null;
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
@@ -479,7 +479,7 @@ test.describe('Build workspace provider flows', () => {
 		await ensureSwitchState(page.locator('#privileged-build'), true);
 
 		let buildRequests = 0;
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequests += 1;
 			await route.abort();
 		});
@@ -516,7 +516,7 @@ test.describe('Build workspace provider flows', () => {
 		await selectBuildPushReference(page);
 
 		let buildRequests = 0;
-		await page.route('**/api/environments/*/images/build', async (route) => {
+		await page.route('**/api/agents/*/images/build', async (route) => {
 			buildRequests += 1;
 			await route.abort();
 		});

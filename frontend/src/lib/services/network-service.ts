@@ -19,12 +19,12 @@ class NetworkService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<NetworksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/networks`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/networks`, { ...config, params });
 		return res.data;
 	}
 
 	async getNetworkUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<NetworkUsageCounts> {
-		const res = await this.api.get(`/environments/${environmentId}/networks/counts`, config);
+		const res = await this.api.get(`/agents/${environmentId}/networks/counts`, config);
 		return res.data.data;
 	}
 
@@ -34,11 +34,11 @@ class NetworkService extends BaseAPIService {
 		options?: SearchPaginationSortRequest
 	): Promise<NetworkInspect> {
 		const params = transformPaginationParams(options);
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/${networkId}`, { params }));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/networks/${networkId}`, { params }));
 	}
 
 	async getNetworkTopology(environmentId: string, config?: APIRequestConfig): Promise<NetworkTopology> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/topology`, config));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/networks/topology`, config));
 	}
 
 	async createNetwork(name: string, options: NetworkCreateOptions, environmentId: string): Promise<NetworkCreateResponse> {
@@ -46,11 +46,11 @@ class NetworkService extends BaseAPIService {
 			name,
 			options
 		};
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/networks`, request));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/networks`, request));
 	}
 
 	async deleteNetwork(networkId: string, environmentId: string): Promise<MessageResponse> {
-		return this.handleResponse(this.api.delete(`/environments/${environmentId}/networks/${networkId}`));
+		return this.handleResponse(this.api.delete(`/agents/${environmentId}/networks/${networkId}`));
 	}
 
 	async connectContainer(
@@ -59,7 +59,7 @@ class NetworkService extends BaseAPIService {
 		environmentId: string
 	): Promise<MessageResponse> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/networks/${networkId}`, request, { params: { action: 'connect' } })
+			this.api.post(`/agents/${environmentId}/networks/${networkId}`, request, { params: { action: 'connect' } })
 		);
 	}
 
@@ -69,7 +69,7 @@ class NetworkService extends BaseAPIService {
 		environmentId: string
 	): Promise<MessageResponse> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/networks/${networkId}`, request, { params: { action: 'disconnect' } })
+			this.api.post(`/agents/${environmentId}/networks/${networkId}`, request, { params: { action: 'disconnect' } })
 		);
 	}
 }

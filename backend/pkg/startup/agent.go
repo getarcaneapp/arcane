@@ -118,7 +118,7 @@ func PairAgent(ctx context.Context, cfg *agent.Config) error {
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpx.ManagerBaseURL(cfg.MTLS.ManagerURL)+"/api/environments/pair", http.NoBody)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpx.ManagerBaseURL(cfg.MTLS.ManagerURL)+"/api/agents/pair", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to create pairing request: %w", err)
 	}

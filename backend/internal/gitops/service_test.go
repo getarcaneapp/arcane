@@ -1809,7 +1809,7 @@ func gitopsScopeContext(t *testing.T, target string, bodies map[string]any) cont
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -1824,7 +1824,7 @@ func gitopsScopeContext(t *testing.T, target string, bodies map[string]any) cont
 }
 
 func TestAggregateSyncsSumsCounts(t *testing.T) {
-	ctx := gitopsScopeContext(t, "/api/environments/a,b,c/gitops/syncs", map[string]any{
+	ctx := gitopsScopeContext(t, "/api/agents/a,b,c/gitops/syncs", map[string]any{
 		"a": types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{
 			Success: true,
 			Data:    []types.GitOpsSync{{ID: "s1", Name: "web"}},

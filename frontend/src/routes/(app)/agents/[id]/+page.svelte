@@ -567,7 +567,7 @@
 
 <!-- The compact header stays sticky; the floating pill would leave an empty band in its place. -->
 <TabbedPageLayout
-	backUrl="/environments"
+	backUrl="/agents"
 	backLabel={m.common_back()}
 	{tabItems}
 	selectedTab={activeTab}

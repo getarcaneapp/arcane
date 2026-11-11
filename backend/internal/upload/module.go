@@ -41,7 +41,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-upload-session",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/uploads/{kind}",
+		Path:        "/agents/{id}/uploads/{kind}",
 		Summary:     "Create an upload session",
 		Description: "Start a chunked upload session; the file arrives as independently retryable chunks",
 		Tags:        []string{"Uploads"},
@@ -52,7 +52,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	huma.Register(api, huma.Operation{
 		OperationID:  "upload-chunk",
 		Method:       http.MethodPut,
-		Path:         "/environments/{id}/uploads/{kind}/{uploadId}/chunks/{index}",
+		Path:         "/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}",
 		Summary:      "Upload a chunk",
 		Description:  "Upload one chunk of an upload session; re-sending a chunk is idempotent",
 		Tags:         []string{"Uploads"},
@@ -64,7 +64,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-upload-session",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/uploads/{kind}/{uploadId}",
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}",
 		Summary:     "Get an upload session",
 		Description: "Inspect an upload session to resume by re-sending only the missing chunks",
 		Tags:        []string{"Uploads"},
@@ -75,7 +75,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-upload-session",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/uploads/{kind}/{uploadId}",
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}",
 		Summary:     "Delete an upload session",
 		Description: "Abort an upload session and discard its received chunks",
 		Tags:        []string{"Uploads"},

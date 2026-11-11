@@ -10,7 +10,7 @@ import (
 )
 
 func RegisterRoutes(api huma.API, h *Handler) {
-	basePath := "/environments/{id}/volumes/{volumeName}/workspace"
+	basePath := "/agents/{id}/volumes/{volumeName}/workspace"
 	tag := "Volume Workspace"
 	handlerutil.RegisterSecured(api, handlerutil.Operation("get-volume-workspace", http.MethodGet, basePath, "Get volume workspace", "", tag), authz.PermVolumesRead, h.GetVolumeWorkspace)
 	handlerutil.RegisterSecured(

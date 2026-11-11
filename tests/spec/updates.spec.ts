@@ -3,8 +3,8 @@ import { openRowActionsMenu } from '../utils/table-actions.util';
 
 test.describe('Container updates', () => {
 	const UPDATES_ROUTE = '/updates';
-	const CONTAINER_UPDATE_ROUTE = /\/api\/environments\/0\/containers\/[^/]+\/update\?async=true$/;
-	const CONTAINER_LIST_ROUTE = /\/api\/environments\/0\/containers(?:\?.*)?$/;
+	const CONTAINER_UPDATE_ROUTE = /\/api\/agents\/0\/containers\/[^/]+\/update\?async=true$/;
+	const CONTAINER_LIST_ROUTE = /\/api\/agents\/0\/containers(?:\?.*)?$/;
 
 	const CONTAINERS = [
 		{
@@ -68,7 +68,7 @@ test.describe('Container updates', () => {
 	/** Serves one project whose tag moved to a new version while the tag's digest stayed the same. */
 	async function stubProjectWithTagUpdate(page: Page) {
 		const checkTime = new Date().toISOString();
-		await page.route(/\/api\/environments\/0\/projects(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/projects(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -330,7 +330,7 @@ test.describe('Container updates', () => {
 			await stubContainersWithUpdates(page);
 
 			let runs = 0;
-			await page.route(/\/api\/environments\/0\/updater\/run$/, async (route) => {
+			await page.route(/\/api\/agents\/0\/updater\/run$/, async (route) => {
 				runs++;
 				await route.fulfill({
 					status: 200,
@@ -364,8 +364,8 @@ test.describe('Arcane upgrades', () => {
 	const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 	const REFRESH_COOKIE = 'arcane_refresh_test=complete';
 	const UPGRADE_CHANNEL = 'arcane-upgrade';
-	const START_ROUTE = /\/api\/environments\/0\/system\/upgrade\/jobs$/;
-	const CURRENT_ROUTE = /\/api\/environments\/0\/system\/upgrade\/jobs\/current$/;
+	const START_ROUTE = /\/api\/agents\/0\/system\/upgrade\/jobs$/;
+	const CURRENT_ROUTE = /\/api\/agents\/0\/system\/upgrade\/jobs\/current$/;
 	const STREAM_ROUTE = /\/api\/stream(?:\?.*)?$/;
 	const reloadCounts = new WeakMap<Page, number>();
 
@@ -542,7 +542,7 @@ test.describe('Arcane upgrades', () => {
 				await fulfillProblem(route, 500, 'Failed to initiate upgrade: pull access denied');
 			});
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			const toast = page
@@ -563,7 +563,7 @@ test.describe('Arcane upgrades', () => {
 				await fulfillProblem(route, 409, CONFLICT_DETAIL);
 			});
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			const dialog = page.getByRole('dialog');
@@ -592,7 +592,7 @@ test.describe('Arcane upgrades', () => {
 			});
 			server.job = upgradeJob('completed', 'updated');
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			const toast = page
@@ -617,7 +617,7 @@ test.describe('Arcane upgrades', () => {
 				await fulfillJob(route, current.job);
 			});
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			await expect.poll(() => server.startCalls).toBe(1);
@@ -641,7 +641,7 @@ test.describe('Arcane upgrades', () => {
 			registerReloadCounter(page);
 			await routeUpgradeJobs(page, startAndRun(upgradeJob('completed', 'updated')));
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			// The finished result stays on screen instead of the page being yanked away.
@@ -657,14 +657,14 @@ test.describe('Arcane upgrades', () => {
 			await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
 			await expect(dialog).toBeHidden();
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
-			await expect(page).toHaveURL('/environments?tab=environments');
+			await expect(page).toHaveURL('/agents?tab=environments');
 		});
 
 		test('Update All leaves failed manager results visible without reloading', async ({ page }) => {
 			registerReloadCounter(page);
 			await routeUpgradeJobs(page, startAndRun(upgradeJob('failed', 'failed')));
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 
 			await expect(page.getByRole('heading', { name: 'Update all failed' })).toBeVisible({
@@ -677,14 +677,14 @@ test.describe('Arcane upgrades', () => {
 		test('the single-manager flow reloads once the new build is announced', async ({ page }) => {
 			registerReloadCounter(page);
 
-			await page.route(/\/api\/environments\/0\/version(?:\?.*)?$/, async (route) => {
+			await page.route(/\/api\/agents\/0\/version(?:\?.*)?$/, async (route) => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
 					body: JSON.stringify({ success: true, data: versionInfo('1.0.0') })
 				});
 			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/check$/, async (route) => {
+			await page.route(/\/api\/agents\/0\/system\/upgrade\/check$/, async (route) => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
@@ -700,7 +700,7 @@ test.describe('Arcane upgrades', () => {
 
 			const dashboardUpgradeCheck = page.waitForResponse((response) => {
 				return (
-					new URL(response.url()).pathname === '/api/environments/0/system/upgrade/check' &&
+					new URL(response.url()).pathname === '/api/agents/0/system/upgrade/check' &&
 					response.status() === 200
 				);
 			});
@@ -770,7 +770,7 @@ test.describe('Arcane upgrades', () => {
 			});
 
 			try {
-				await page.goto('/environments');
+				await page.goto('/agents');
 				await openAndConfirmUpdateAll(page);
 
 				await expect.poll(() => refreshCalls, { timeout: 15_000 }).toBe(2);
@@ -778,11 +778,11 @@ test.describe('Arcane upgrades', () => {
 					await page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY)
 				).not.toBeNull();
 				expect(currentReloadCount(page)).toBe(1);
-				await expect(page).toHaveURL('/environments?tab=environments');
+				await expect(page).toHaveURL('/agents?tab=environments');
 				releaseRefresh();
 
 				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-				await expect(page).toHaveURL('/environments?tab=environments');
+				await expect(page).toHaveURL('/agents?tab=environments');
 			} finally {
 				releaseRefresh();
 			}
@@ -825,7 +825,7 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 			await expect.poll(() => server.startCalls).toBe(1);
 
@@ -865,7 +865,7 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 
-			await page.goto('/environments');
+			await page.goto('/agents');
 			await openAndConfirmUpdateAll(page);
 			await expect.poll(() => server.startCalls).toBe(1);
 

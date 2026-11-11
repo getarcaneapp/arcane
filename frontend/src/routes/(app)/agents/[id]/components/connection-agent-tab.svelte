@@ -23,9 +23,9 @@
 		onGenerateEnrollmentToken: () => void;
 	} = $props();
 
-	let mtlsBundleDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/bundle`);
-	let mtlsCertificateDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.crt`);
-	let mtlsKeyDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.key`);
+	let mtlsBundleDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/bundle`);
+	let mtlsCertificateDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/agent.crt`);
+	let mtlsKeyDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/agent.key`);
 
 	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
 		const cert = environment.agentMTLSCertificate;

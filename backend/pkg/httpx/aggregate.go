@@ -57,7 +57,7 @@ type (
 )
 
 const (
-	environmentsPathPrefix    = "/api/environments/"
+	environmentsPathPrefix    = "/api/agents/"
 	environmentRequestTimeout = 20 * time.Second
 	environmentResponseLimit  = 64 << 20
 	EnvironmentConcurrency    = 8

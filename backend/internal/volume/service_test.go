@@ -500,7 +500,7 @@ func volumeScopeContext(t *testing.T, target string, bodies map[string]any) (con
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -536,7 +536,7 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 	svc := &VolumeService{}
 
 	t.Run("sorts by name across environments and pages", func(t *testing.T) {
-		ctx, queries := volumeScopeContext(t, "/api/environments/a,b,c/volumes?start=0&limit=2&sort=name&order=asc", bodies)
+		ctx, queries := volumeScopeContext(t, "/api/agents/a,b,c/volumes?start=0&limit=2&sort=name&order=asc", bodies)
 		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
 		require.NoError(t, err)
 
@@ -557,7 +557,7 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by size reported by each environment", func(t *testing.T) {
-		ctx, queries := volumeScopeContext(t, "/api/environments/a,b,c/volumes?sort=size&order=desc", bodies)
+		ctx, queries := volumeScopeContext(t, "/api/agents/a,b,c/volumes?sort=size&order=desc", bodies)
 		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "size", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		require.Equal(t, []string{"a/data", "b/cache", "a/logs"}, rowLabels(body.Data))
@@ -566,14 +566,14 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes?sort=environment&order=desc", bodies)
+		ctx, _ := volumeScopeContext(t, "/api/agents/a,b,c/volumes?sort=environment&order=desc", bodies)
 		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		require.Equal(t, []string{"b/cache", "a/data", "a/logs"}, rowLabels(body.Data))
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes", map[string]any{})
+		ctx, _ := volumeScopeContext(t, "/api/agents/a,b,c/volumes", map[string]any{})
 		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		require.Empty(t, body.Data)
@@ -582,7 +582,7 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 }
 
 func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
-	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/sizes", map[string]any{
+	ctx, _ := volumeScopeContext(t, "/api/agents/a,b,c/volumes/sizes", map[string]any{
 		"a": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
 		"b": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
 	})
@@ -601,7 +601,7 @@ func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 }
 
 func TestAggregateVolumeCountsSumsEnvironments(t *testing.T) {
-	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/counts", map[string]any{
+	ctx, _ := volumeScopeContext(t, "/api/agents/a,b,c/volumes/counts", map[string]any{
 		"a": types.ApiResponse[VolumeUsageCountsData]{
 			Success: true,
 			Data: VolumeUsageCountsData{

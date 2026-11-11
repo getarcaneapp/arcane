@@ -60,7 +60,7 @@ const PROTECTED_PREFIXES = [
 	'/dashboard',
 	'/containers',
 	'/events',
-	'/environments',
+	'/agents',
 	'/gitops',
 	'/images',
 	'/projects',

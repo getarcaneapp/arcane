@@ -114,7 +114,7 @@ func RegisterMaterializedVariables(api huma.API, variableService *VariableServic
 	huma.Register(api, middleware.RequireSudo(api, huma.Operation{
 		OperationID: "getGlobalVariables",
 		Method:      "GET",
-		Path:        "/environments/{id}/templates/variables",
+		Path:        "/agents/{id}/templates/variables",
 		Summary:     "Get materialized variables",
 		Description: "Get the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},
@@ -124,7 +124,7 @@ func RegisterMaterializedVariables(api huma.API, variableService *VariableServic
 	huma.Register(api, middleware.RequireSudo(api, huma.Operation{
 		OperationID: "updateGlobalVariables",
 		Method:      "PUT",
-		Path:        "/environments/{id}/templates/variables",
+		Path:        "/agents/{id}/templates/variables",
 		Summary:     "Update materialized variables",
 		Description: "Replace the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},

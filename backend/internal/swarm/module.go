@@ -72,7 +72,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "list-swarm-tasks",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/tasks",
+			Path:        "/agents/{id}/swarm/tasks",
 			Summary:     "List swarm tasks",
 			Tags: []string{
 				"Swarm",
@@ -89,7 +89,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-status",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/status",
+			Path:        "/agents/{id}/swarm/status",
 			Summary:     "Get swarm status",
 			Tags: []string{
 				"Swarm",
@@ -105,7 +105,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-info",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/info",
+			Path:        "/agents/{id}/swarm/info",
 			Summary:     "Get swarm info",
 			Tags: []string{
 				"Swarm",
@@ -120,7 +120,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "init-swarm",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/init",
+			Path:        "/agents/{id}/swarm/init",
 			Summary:     "Initialize swarm",
 			Tags: []string{
 				"Swarm",
@@ -135,7 +135,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "join-swarm",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join",
+			Path:        "/agents/{id}/swarm/join",
 			Summary:     "Join swarm",
 			Tags: []string{
 				"Swarm",
@@ -150,7 +150,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "leave-swarm",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/leave",
+			Path:        "/agents/{id}/swarm/leave",
 			Summary:     "Leave swarm",
 			Tags: []string{
 				"Swarm",
@@ -165,7 +165,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "unlock-swarm",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/unlock",
+			Path:        "/agents/{id}/swarm/unlock",
 			Summary:     "Unlock swarm",
 			Tags: []string{
 				"Swarm",
@@ -180,7 +180,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-unlock-key",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/unlock/key",
+			Path:        "/agents/{id}/swarm/unlock/key",
 			Summary:     "Get swarm unlock key",
 			Tags: []string{
 				"Swarm",
@@ -195,7 +195,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-join-tokens",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/join/tokens",
+			Path:        "/agents/{id}/swarm/join/tokens",
 			Summary:     "Get swarm join tokens",
 			Tags: []string{
 				"Swarm",
@@ -210,7 +210,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "swarm-join-tokens-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join/tokens",
+			Path:        "/agents/{id}/swarm/join/tokens",
 			Summary:     "Rotate swarm join tokens",
 			Tags: []string{
 				"Swarm",
@@ -228,7 +228,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "update-swarm-spec",
 			Method:      http.MethodPut,
-			Path:        "/environments/{id}/swarm/spec",
+			Path:        "/agents/{id}/swarm/spec",
 			Summary:     "Update swarm spec",
 			Tags: []string{
 				"Swarm",

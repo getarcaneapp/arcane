@@ -48,7 +48,7 @@ func SpanEnvironment(environmentName func(ctx context.Context, id string) string
 			ctx := c.Request().Context()
 			span := trace.SpanFromContext(ctx)
 			id := c.Param("id")
-			if id == "" || !strings.HasPrefix(c.Path(), "/api/environments/:id") || !span.IsRecording() {
+			if id == "" || !strings.HasPrefix(c.Path(), "/api/agents/:id") || !span.IsRecording() {
 				return next(c)
 			}
 			if strings.Contains(id, ",") {

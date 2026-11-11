@@ -92,7 +92,7 @@ func RegisterEvents(api huma.API, eventService *EventService, resolveEnvironment
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "waitForEnvironmentChanges",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/events/changes",
+		Path:        "/agents/{id}/events/changes",
 		Summary:     "Wait for environment changes",
 		Description: "Long-poll the latest revision of each changed resource kind in an environment",
 		Tags:        []string{"Events"},

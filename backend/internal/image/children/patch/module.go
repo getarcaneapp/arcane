@@ -16,12 +16,12 @@ func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil
 	}
 
 	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("list-image-patches", http.MethodGet, "/environments/{id}/images/patches", "List image patches", "Retrieves the paginated image patch history for the environment", "Images"),
+		handlerutil.Operation("list-image-patches", http.MethodGet, "/agents/{id}/images/patches", "List image patches", "Retrieves the paginated image patch history for the environment", "Images"),
 		authz.PermImagesList, h.ListImagePatches)
 	handlerutil.RegisterSecured(api, huma.Operation{
 		OperationID: "list-image-patch-targets",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/patches/targets",
+		Path:        "/agents/{id}/images/patches/targets",
 		Summary:     "List image patch targets",
 		Description: "Retrieves scanned images with fixable vulnerability counts and their latest patch run",
 		Tags:        []string{"Images"},
@@ -31,7 +31,7 @@ func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil
 		handlerutil.Operation(
 			"patch-image",
 			http.MethodPost,
-			"/environments/{id}/images/{imageId}/patch",
+			"/agents/{id}/images/{imageId}/patch",
 			"Patch image",
 			"Patches OS package vulnerabilities in the image using Copacetic, producing a new patched tag",
 			"Images",

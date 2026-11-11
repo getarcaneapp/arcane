@@ -68,28 +68,28 @@ func FederatedCredentials() string { return "/api/federated/credentials" }
 
 func FederatedCredential(id string) string { return pathf("/api/federated/credentials/%s", id) }
 
-func Environments() string { return "/api/environments" }
+func Environments() string { return "/api/agents" }
 
-func Environment(id string) string { return pathf("/api/environments/%s", id) }
+func Environment(id string) string { return pathf("/api/agents/%s", id) }
 
-func EnvironmentTest(envID string) string { return pathf("/api/environments/%s/test", envID) }
+func EnvironmentTest(envID string) string { return pathf("/api/agents/%s/test", envID) }
 
 func EnvironmentTunnelRestart(envID string) string {
-	return pathf("/api/environments/%s/tunnel/restart", envID)
+	return pathf("/api/agents/%s/tunnel/restart", envID)
 }
 
 func EnvironmentDeployment(envID string) string {
-	return pathf("/api/environments/%s/deployment", envID)
+	return pathf("/api/agents/%s/deployment", envID)
 }
 
 func EnvironmentVersion(envID string) string {
-	return pathf("/api/environments/%s/version", envID)
+	return pathf("/api/agents/%s/version", envID)
 }
 
-func Containers(envID string) string { return pathf("/api/environments/%s/containers", envID) }
+func Containers(envID string) string { return pathf("/api/agents/%s/containers", envID) }
 
 func Container(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s", envID, containerID)
 }
 
 func ContainerAction(envID, containerID, action string) string {
@@ -97,195 +97,195 @@ func ContainerAction(envID, containerID, action string) string {
 }
 
 func ContainerCommit(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s/commit", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s/commit", envID, containerID)
 }
 
 func ContainerUpdate(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s/update", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s/update", envID, containerID)
 }
 
 func ContainerRedeploy(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s/redeploy", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s/redeploy", envID, containerID)
 }
 
 func ContainerConfig(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s/config", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s/config", envID, containerID)
 }
 
 func ContainerAutoUpdate(envID, containerID string) string {
-	return pathf("/api/environments/%s/containers/%s/autoupdate", envID, containerID)
+	return pathf("/api/agents/%s/containers/%s/autoupdate", envID, containerID)
 }
 
 func ContainersCounts(envID string) string {
-	return pathf("/api/environments/%s/containers/counts", envID)
+	return pathf("/api/agents/%s/containers/counts", envID)
 }
 
-func Images(envID string) string { return pathf("/api/environments/%s/images", envID) }
+func Images(envID string) string { return pathf("/api/agents/%s/images", envID) }
 
 func Image(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/%s", envID, imageID)
+	return pathf("/api/agents/%s/images/%s", envID, imageID)
 }
 
-func ImagesPull(envID string) string { return pathf("/api/environments/%s/images/pull", envID) }
+func ImagesPull(envID string) string { return pathf("/api/agents/%s/images/pull", envID) }
 
-func ImagesPrune(envID string) string { return pathf("/api/environments/%s/images/prune", envID) }
+func ImagesPrune(envID string) string { return pathf("/api/agents/%s/images/prune", envID) }
 
-func ImagesCounts(envID string) string { return pathf("/api/environments/%s/images/counts", envID) }
+func ImagesCounts(envID string) string { return pathf("/api/agents/%s/images/counts", envID) }
 
-func ImagesUpload(envID string) string { return pathf("/api/environments/%s/images/upload", envID) }
+func ImagesUpload(envID string) string { return pathf("/api/agents/%s/images/upload", envID) }
 
-func ImagesSearch(envID string) string { return pathf("/api/environments/%s/images/search", envID) }
+func ImagesSearch(envID string) string { return pathf("/api/agents/%s/images/search", envID) }
 
 func ImageHistory(envID, name string) string {
-	return pathf("/api/environments/%s/images/%s/history", envID, name)
+	return pathf("/api/agents/%s/images/%s/history", envID, name)
 }
 
 func ImageTag(envID, name string) string {
-	return pathf("/api/environments/%s/images/%s/tag", envID, name)
+	return pathf("/api/agents/%s/images/%s/tag", envID, name)
 }
 
 func ImageExport(envID, name string) string {
-	return pathf("/api/environments/%s/images/%s/export", envID, name)
+	return pathf("/api/agents/%s/images/%s/export", envID, name)
 }
 
 func ImageAttestations(envID, name string) string {
-	return pathf("/api/environments/%s/images/%s/attestations", envID, name)
+	return pathf("/api/agents/%s/images/%s/attestations", envID, name)
 }
 
-func ImagesBuild(envID string) string { return pathf("/api/environments/%s/images/build", envID) }
+func ImagesBuild(envID string) string { return pathf("/api/agents/%s/images/build", envID) }
 
-func ImageBuilds(envID string) string { return pathf("/api/environments/%s/images/builds", envID) }
+func ImageBuilds(envID string) string { return pathf("/api/agents/%s/images/builds", envID) }
 
 func ImageBuild(envID, buildID string) string {
-	return pathf("/api/environments/%s/images/builds/%s", envID, buildID)
+	return pathf("/api/agents/%s/images/builds/%s", envID, buildID)
 }
 
 func UploadSessions(envID, kind string) string {
-	return pathf("/api/environments/%s/uploads/%s", envID, kind)
+	return pathf("/api/agents/%s/uploads/%s", envID, kind)
 }
 
 func UploadSession(envID, kind, uploadID string) string {
-	return pathf("/api/environments/%s/uploads/%s/%s", envID, kind, uploadID)
+	return pathf("/api/agents/%s/uploads/%s/%s", envID, kind, uploadID)
 }
 
 func UploadSessionChunk(envID, kind, uploadID string, index int) string {
-	return pathf("/api/environments/%s/uploads/%s/%s/chunks/%d", envID, kind, uploadID, index)
+	return pathf("/api/agents/%s/uploads/%s/%s/chunks/%d", envID, kind, uploadID, index)
 }
 
 func ImageUpdatesCheck(envID, imageRef string) string {
-	return pathf("/api/environments/%s/images/updates/check", envID) + "?" + url.Values{"imageRef": {imageRef}}.Encode()
+	return pathf("/api/agents/%s/images/updates/check", envID) + "?" + url.Values{"imageRef": {imageRef}}.Encode()
 }
 
 func ImageUpdatesCheckAction(envID, action string) string {
-	return pathf("/api/environments/%s/images/updates/check", envID) + "?" + url.Values{"action": {action}}.Encode()
+	return pathf("/api/agents/%s/images/updates/check", envID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 func ImageUpdatesCheckById(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/updates/check/%s", envID, imageID)
+	return pathf("/api/agents/%s/images/updates/check/%s", envID, imageID)
 }
 
 func ImageUpdatesSummary(envID string) string {
-	return pathf("/api/environments/%s/images/updates/summary", envID)
+	return pathf("/api/agents/%s/images/updates/summary", envID)
 }
 
-func Networks(envID string) string { return pathf("/api/environments/%s/networks", envID) }
+func Networks(envID string) string { return pathf("/api/agents/%s/networks", envID) }
 
 func Network(envID, networkID string) string {
-	return pathf("/api/environments/%s/networks/%s", envID, networkID)
+	return pathf("/api/agents/%s/networks/%s", envID, networkID)
 }
 
 func NetworksCounts(envID string) string {
-	return pathf("/api/environments/%s/networks/counts", envID)
+	return pathf("/api/agents/%s/networks/counts", envID)
 }
 
-func NetworksPrune(envID string) string { return pathf("/api/environments/%s/networks/prune", envID) }
+func NetworksPrune(envID string) string { return pathf("/api/agents/%s/networks/prune", envID) }
 
 func NetworksTopology(envID string) string {
-	return pathf("/api/environments/%s/networks/topology", envID)
+	return pathf("/api/agents/%s/networks/topology", envID)
 }
 
 func NetworkAction(envID, networkID, action string) string {
 	return Network(envID, networkID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
-func Volumes(envID string) string { return pathf("/api/environments/%s/volumes", envID) }
+func Volumes(envID string) string { return pathf("/api/agents/%s/volumes", envID) }
 
 func Volume(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s", envID, volumeName)
 }
 
-func VolumesCounts(envID string) string { return pathf("/api/environments/%s/volumes/counts", envID) }
+func VolumesCounts(envID string) string { return pathf("/api/agents/%s/volumes/counts", envID) }
 
-func VolumesPrune(envID string) string { return pathf("/api/environments/%s/volumes/prune", envID) }
+func VolumesPrune(envID string) string { return pathf("/api/agents/%s/volumes/prune", envID) }
 
-func VolumesSizes(envID string) string { return pathf("/api/environments/%s/volumes/sizes", envID) }
+func VolumesSizes(envID string) string { return pathf("/api/agents/%s/volumes/sizes", envID) }
 
 func VolumeUsage(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/usage", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/usage", envID, volumeName)
 }
 
 func VolumeRename(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/rename", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/rename", envID, volumeName)
 }
 
 func VolumeBackupPolicy(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/backups/policy", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/backups/policy", envID, volumeName)
 }
 
 func VolumeBackups(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/backups", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/backups", envID, volumeName)
 }
 
 func VolumeBackup(envID, backupID string) string {
-	return pathf("/api/environments/%s/volumes/backups/%s", envID, backupID)
+	return pathf("/api/agents/%s/volumes/backups/%s", envID, backupID)
 }
 
 func VolumeBackupAction(envID, volumeName, backupID, action string) string {
-	return pathf("/api/environments/%s/volumes/%s/backups/%s", envID, volumeName, backupID) + "?" + url.Values{"action": {action}}.Encode()
+	return pathf("/api/agents/%s/volumes/%s/backups/%s", envID, volumeName, backupID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 func VolumeBackupUpload(envID, backupID string) string {
-	return pathf("/api/environments/%s/volumes/backups/%s/upload", envID, backupID)
+	return pathf("/api/agents/%s/volumes/backups/%s/upload", envID, backupID)
 }
 
 func VolumeBackupDownload(envID, backupID string) string {
-	return pathf("/api/environments/%s/volumes/backups/%s/download", envID, backupID)
+	return pathf("/api/agents/%s/volumes/backups/%s/download", envID, backupID)
 }
 
 func VolumeBackupFiles(envID, backupID string) string {
-	return pathf("/api/environments/%s/volumes/backups/%s/files", envID, backupID)
+	return pathf("/api/agents/%s/volumes/backups/%s/files", envID, backupID)
 }
 
 func VolumeBackupUploadRestore(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/backups/upload", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/backups/upload", envID, volumeName)
 }
 
 func VolumeWorkspace(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/workspace", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/workspace", envID, volumeName)
 }
 
 func VolumeWorkspaceFile(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/workspace/file", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/workspace/file", envID, volumeName)
 }
 
 func VolumeWorkspaceFileDownload(envID, volumeName string) string {
-	return pathf("/api/environments/%s/volumes/%s/workspace/file/download", envID, volumeName)
+	return pathf("/api/agents/%s/volumes/%s/workspace/file/download", envID, volumeName)
 }
 
-func Projects(envID string) string { return pathf("/api/environments/%s/projects", envID) }
+func Projects(envID string) string { return pathf("/api/agents/%s/projects", envID) }
 
 func Project(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s", envID, projectID)
 }
 
 func ProjectsCounts(envID string) string {
-	return pathf("/api/environments/%s/projects/counts", envID)
+	return pathf("/api/agents/%s/projects/counts", envID)
 }
 
-func ProjectsTags(envID string) string { return pathf("/api/environments/%s/projects/tags", envID) }
+func ProjectsTags(envID string) string { return pathf("/api/agents/%s/projects/tags", envID) }
 
 func ProjectTags(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s/tags", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s/tags", envID, projectID)
 }
 
 func ProjectAction(envID, projectID, action string, services []string) string {
@@ -293,75 +293,75 @@ func ProjectAction(envID, projectID, action string, services []string) string {
 }
 
 func ProjectDeploy(envID, projectID, action string) string {
-	return pathf("/api/environments/%s/projects/%s/deploy", envID, projectID) + "?" + url.Values{"action": {action}}.Encode()
+	return pathf("/api/agents/%s/projects/%s/deploy", envID, projectID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 func ProjectBuild(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s/build", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s/build", envID, projectID)
 }
 
 func ProjectWorkspace(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s/workspace", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s/workspace", envID, projectID)
 }
 
 func ProjectWorkspaceFile(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s/workspace/file", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s/workspace/file", envID, projectID)
 }
 
 func ProjectWorkspaceFileDownload(envID, projectID string) string {
-	return pathf("/api/environments/%s/projects/%s/workspace/file/download", envID, projectID)
+	return pathf("/api/agents/%s/projects/%s/workspace/file/download", envID, projectID)
 }
 
-func SystemPrune(envID string) string { return pathf("/api/environments/%s/system/prune", envID) }
+func SystemPrune(envID string) string { return pathf("/api/agents/%s/system/prune", envID) }
 
 func SystemDockerInfo(envID string) string {
-	return pathf("/api/environments/%s/system/docker/info", envID)
+	return pathf("/api/agents/%s/system/docker/info", envID)
 }
 
 func SystemContainersAction(envID, action string) string {
-	return pathf("/api/environments/%s/system/containers", envID) + "?" + url.Values{"action": {action}}.Encode()
+	return pathf("/api/agents/%s/system/containers", envID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
-func SystemConvert(envID string) string { return pathf("/api/environments/%s/system/convert", envID) }
+func SystemConvert(envID string) string { return pathf("/api/agents/%s/system/convert", envID) }
 
-func SystemUpgrade(envID string) string { return pathf("/api/environments/%s/system/upgrade", envID) }
+func SystemUpgrade(envID string) string { return pathf("/api/agents/%s/system/upgrade", envID) }
 
 func SystemUpgradeCheck(envID string) string {
-	return pathf("/api/environments/%s/system/upgrade/check", envID)
+	return pathf("/api/agents/%s/system/upgrade/check", envID)
 }
 
 func SystemUpgradeJobs(envID string) string {
-	return pathf("/api/environments/%s/system/upgrade/jobs", envID)
+	return pathf("/api/agents/%s/system/upgrade/jobs", envID)
 }
 
 func SystemUpgradeJobCurrent(envID string) string {
-	return pathf("/api/environments/%s/system/upgrade/jobs/current", envID)
+	return pathf("/api/agents/%s/system/upgrade/jobs/current", envID)
 }
 
-func UpdaterStatus(envID string) string { return pathf("/api/environments/%s/updater/status", envID) }
+func UpdaterStatus(envID string) string { return pathf("/api/agents/%s/updater/status", envID) }
 
-func UpdaterRun(envID string) string { return pathf("/api/environments/%s/updater/run", envID) }
+func UpdaterRun(envID string) string { return pathf("/api/agents/%s/updater/run", envID) }
 
 func UpdaterHistory(envID string) string {
-	return pathf("/api/environments/%s/updater/history", envID)
+	return pathf("/api/agents/%s/updater/history", envID)
 }
 
-func JobSchedules(envID string) string { return pathf("/api/environments/%s/jobs/schedules", envID) }
+func JobSchedules(envID string) string { return pathf("/api/agents/%s/jobs/schedules", envID) }
 
-func Jobs(envID string) string { return pathf("/api/environments/%s/jobs", envID) }
+func Jobs(envID string) string { return pathf("/api/agents/%s/jobs", envID) }
 
 func JobAction(envID, jobID, action string) string {
-	return pathf("/api/environments/%s/jobs/%s", envID, jobID) + "?" + url.Values{"action": {action}}.Encode()
+	return pathf("/api/agents/%s/jobs/%s", envID, jobID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
-func Settings(envID string) string { return pathf("/api/environments/%s/settings", envID) }
+func Settings(envID string) string { return pathf("/api/agents/%s/settings", envID) }
 
 func ManagerSettings() string { return "/api/settings" }
 
 func AuthenticationSettings() string { return "/api/settings/authentication" }
 
 func SettingsPublic(envID string) string {
-	return pathf("/api/environments/%s/settings/public", envID)
+	return pathf("/api/agents/%s/settings/public", envID)
 }
 
 func NotificationsSettings() string {
@@ -427,7 +427,7 @@ func VariablesSync() string { return "/api/variables/sync" }
 func Backups() string { return "/api/backups" }
 
 func Backup(id string) string {
-	return pathf("/api/environments/0/backups/%s", id)
+	return pathf("/api/agents/0/backups/%s", id)
 }
 
 func BackupsPolicies() string { return "/api/backups/policies" }
@@ -439,7 +439,7 @@ func BackupsRecoveryKeyGenerate() string { return "/api/backups/recovery/key?act
 func BackupsDiscover() string { return "/api/backups/discover" }
 
 func BackupUpload(id string) string {
-	return pathf("/api/environments/0/backups/%s/upload", id)
+	return pathf("/api/agents/0/backups/%s/upload", id)
 }
 
 func BackupAction(id, action string) string {
@@ -465,49 +465,49 @@ func BackupsS3DestinationInUse(id string) string {
 }
 
 func ImageVulnerabilitiesScan(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/%s/vulnerabilities/scan", envID, imageID)
+	return pathf("/api/agents/%s/images/%s/vulnerabilities/scan", envID, imageID)
 }
 
 func ImageVulnerabilities(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/%s/vulnerabilities", envID, imageID)
+	return pathf("/api/agents/%s/images/%s/vulnerabilities", envID, imageID)
 }
 
 func ImageVulnerabilitiesSummary(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/%s/vulnerabilities/summary", envID, imageID)
+	return pathf("/api/agents/%s/images/%s/vulnerabilities/summary", envID, imageID)
 }
 
 func ImageVulnerabilitiesList(envID, imageID string) string {
-	return pathf("/api/environments/%s/images/%s/vulnerabilities/list", envID, imageID)
+	return pathf("/api/agents/%s/images/%s/vulnerabilities/list", envID, imageID)
 }
 
 func ImagesVulnerabilitiesSummaries(envID string) string {
-	return pathf("/api/environments/%s/images/vulnerabilities/summaries", envID)
+	return pathf("/api/agents/%s/images/vulnerabilities/summaries", envID)
 }
 
 func VulnerabilitiesScannerStatus(envID string) string {
-	return pathf("/api/environments/%s/vulnerabilities/scanner", envID)
+	return pathf("/api/agents/%s/vulnerabilities/scanner", envID)
 }
 
 func VulnerabilitiesSummary(envID string) string {
-	return pathf("/api/environments/%s/vulnerabilities/summary", envID)
+	return pathf("/api/agents/%s/vulnerabilities/summary", envID)
 }
 
 func VulnerabilitiesAll(envID string) string {
-	return pathf("/api/environments/%s/vulnerabilities/all", envID)
+	return pathf("/api/agents/%s/vulnerabilities/all", envID)
 }
 
 func VulnerabilitiesIgnored(envID string) string {
-	return pathf("/api/environments/%s/vulnerabilities/ignored", envID)
+	return pathf("/api/agents/%s/vulnerabilities/ignored", envID)
 }
 
 func VulnerabilityIgnored(envID, ignoreID string) string {
-	return pathf("/api/environments/%s/vulnerabilities/ignored/%s", envID, ignoreID)
+	return pathf("/api/agents/%s/vulnerabilities/ignored/%s", envID, ignoreID)
 }
 
-func Activities(envID string) string { return pathf("/api/environments/%s/activities", envID) }
+func Activities(envID string) string { return pathf("/api/agents/%s/activities", envID) }
 
 func Activity(envID, activityID string) string {
-	return pathf("/api/environments/%s/activities/%s", envID, activityID)
+	return pathf("/api/agents/%s/activities/%s", envID, activityID)
 }
 
 func ActivityAction(envID, activityID, action string) string {
@@ -515,27 +515,27 @@ func ActivityAction(envID, activityID, action string) string {
 }
 
 func ActivitiesHistory(envID string) string {
-	return pathf("/api/environments/%s/activities/history", envID)
+	return pathf("/api/agents/%s/activities/history", envID)
 }
 
-func Webhooks(envID string) string { return pathf("/api/environments/%s/webhooks", envID) }
+func Webhooks(envID string) string { return pathf("/api/agents/%s/webhooks", envID) }
 
 func Webhook(envID, webhookID string) string {
-	return pathf("/api/environments/%s/webhooks/%s", envID, webhookID)
+	return pathf("/api/agents/%s/webhooks/%s", envID, webhookID)
 }
 
 func WebhookTrigger(token string) string { return pathf("/api/webhooks/trigger/%s", token) }
 
-func PodmanStatus(envID string) string { return pathf("/api/environments/%s/podman/status", envID) }
+func PodmanStatus(envID string) string { return pathf("/api/agents/%s/podman/status", envID) }
 
 func PodmanAutoUpdate(envID string) string {
-	return pathf("/api/environments/%s/podman/autoupdate", envID)
+	return pathf("/api/agents/%s/podman/autoupdate", envID)
 }
 
-func PodmanPods(envID string) string { return pathf("/api/environments/%s/podman/pods", envID) }
+func PodmanPods(envID string) string { return pathf("/api/agents/%s/podman/pods", envID) }
 
 func PodmanPod(envID, podID string) string {
-	return pathf("/api/environments/%s/podman/pods/%s", envID, podID)
+	return pathf("/api/agents/%s/podman/pods/%s", envID, podID)
 }
 
 func PodmanPodAction(envID, podID, action string) string {
@@ -543,11 +543,11 @@ func PodmanPodAction(envID, podID, action string) string {
 }
 
 func PodmanQuadlets(envID string) string {
-	return pathf("/api/environments/%s/podman/quadlets", envID)
+	return pathf("/api/agents/%s/podman/quadlets", envID)
 }
 
 func PodmanQuadlet(envID, name string) string {
-	return pathf("/api/environments/%s/podman/quadlets/%s", envID, name)
+	return pathf("/api/agents/%s/podman/quadlets/%s", envID, name)
 }
 
 func PodmanQuadletAction(envID, name, action string) string {
@@ -555,23 +555,23 @@ func PodmanQuadletAction(envID, name, action string) string {
 }
 
 func PodmanKube(envID, action string) string {
-	return pathf("/api/environments/%s/podman/kube/%s", envID, action)
+	return pathf("/api/agents/%s/podman/kube/%s", envID, action)
 }
 
-func PodmanSecrets(envID string) string { return pathf("/api/environments/%s/podman/secrets", envID) }
+func PodmanSecrets(envID string) string { return pathf("/api/agents/%s/podman/secrets", envID) }
 
 func PodmanSecret(envID, secretID string) string {
-	return pathf("/api/environments/%s/podman/secrets/%s", envID, secretID)
+	return pathf("/api/agents/%s/podman/secrets/%s", envID, secretID)
 }
 
-func GitOpsSyncs(envID string) string { return pathf("/api/environments/%s/gitops/syncs", envID) }
+func GitOpsSyncs(envID string) string { return pathf("/api/agents/%s/gitops/syncs", envID) }
 
 func GitOpsSync(envID, syncID string) string {
-	return pathf("/api/environments/%s/gitops/syncs/%s", envID, syncID)
+	return pathf("/api/agents/%s/gitops/syncs/%s", envID, syncID)
 }
 
 func GitOpsSyncStatus(envID, syncID string) string {
-	return pathf("/api/environments/%s/gitops/syncs/%s/status", envID, syncID)
+	return pathf("/api/agents/%s/gitops/syncs/%s/status", envID, syncID)
 }
 
 func GitOpsSyncAction(envID, syncID, action string) string {
@@ -579,11 +579,11 @@ func GitOpsSyncAction(envID, syncID, action string) string {
 }
 
 func GitOpsSyncFiles(envID, syncID string) string {
-	return pathf("/api/environments/%s/gitops/syncs/%s/files", envID, syncID)
+	return pathf("/api/agents/%s/gitops/syncs/%s/files", envID, syncID)
 }
 
 func GitOpsSyncsImport(envID string) string {
-	return pathf("/api/environments/%s/gitops/syncs/import", envID)
+	return pathf("/api/agents/%s/gitops/syncs/import", envID)
 }
 
 func GitRepositories() string { return "/api/gitops/repositories" }

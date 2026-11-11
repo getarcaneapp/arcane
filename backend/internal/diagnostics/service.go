@@ -366,7 +366,7 @@ func (s *DiagnosticsService) CollectAllActors(ctx context.Context) []types.Actor
 	for i, env := range remotes {
 		wg.Go(func() {
 			var d types.ActorDiagnostics
-			if proxyErr := s.environments.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/environments/0/diagnostics/actors", nil, &d); proxyErr != nil {
+			if proxyErr := s.environments.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/agents/0/diagnostics/actors", nil, &d); proxyErr != nil {
 				d = types.ActorDiagnostics{Error: proxyErr.Error(), CheckedAt: time.Now().UTC()}
 			}
 			d.EnvironmentID, d.EnvironmentName = env.ID, env.Name

@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-configs",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/configs",
+			Path:        "/agents/{id}/swarm/configs",
 			Summary:     "List swarm configs",
 			Tags: []string{
 				"Swarm",
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-config",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/configs/{configId}",
+			Path:        "/agents/{id}/swarm/configs/{configId}",
 			Summary:     "Get swarm config",
 			Tags: []string{
 				"Swarm",
@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "create-swarm-config",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/configs",
+			Path:        "/agents/{id}/swarm/configs",
 			Summary:     "Create swarm config",
 			Tags: []string{
 				"Swarm",
@@ -62,7 +62,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "update-swarm-config",
 			Method:      http.MethodPut,
-			Path:        "/environments/{id}/swarm/configs/{configId}",
+			Path:        "/agents/{id}/swarm/configs/{configId}",
 			Summary:     "Update swarm config labels",
 			Tags: []string{
 				"Swarm",
@@ -77,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-config",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/configs/{configId}",
+			Path:        "/agents/{id}/swarm/configs/{configId}",
 			Summary:     "Delete swarm config",
 			Tags: []string{
 				"Swarm",

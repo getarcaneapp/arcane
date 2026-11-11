@@ -14,7 +14,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-release-notes",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/updates/releasenotes",
+		Path:        "/agents/{id}/images/updates/releasenotes",
 		Summary:     "Get image release notes",
 		Description: "Get release notes for the target version of an image update",
 		Tags:        []string{"Image Updates"},

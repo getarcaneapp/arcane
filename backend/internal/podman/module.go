@@ -22,7 +22,7 @@ type (
 )
 
 const (
-	podmanPath = "/environments/{id}/podman"
+	podmanPath = "/agents/{id}/podman"
 	podmanTag  = "Podman"
 )
 
