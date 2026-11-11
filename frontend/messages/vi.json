@@ -4538,5 +4538,7 @@
   "gitlab": "GitLab",
   "gitea_forgejo": "Gitea / Forgejo",
   "bitbucket": "Bitbucket",
-  "environment": "Environment"
+  "environment": "Environment",
+  "podman_features_unavailable": "Podman features are unavailable",
+  "podman_libpod_unreachable_description": "Arcane reached the engine's Docker-compatible API but not Podman's libpod API, so a socket proxy in front of Podman must allow /libpod paths."
 }
