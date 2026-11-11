@@ -112,6 +112,21 @@ func pingMuxSession(ctx context.Context, session *yamux.Session, timeout time.Du
 	}
 }
 
+func keepaliveMuxSession(ctx context.Context, session *yamux.Session, rw *muxConn) (time.Duration, error) {
+	deadline := time.Now().Add(muxWriteTimeout)
+	for {
+		received := rw.rx.Load()
+		rtt, err := pingMuxSession(ctx, session, muxPingTimeout)
+		if !errors.Is(err, errMuxPingTimeout) {
+			return rtt, err
+		}
+		writesQueued := rw.tx.Load() != rw.sent.Load()
+		if rw.rx.Load() == received && (!writesQueued || !time.Now().Before(deadline)) {
+			return 0, err
+		}
+	}
+}
+
 func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -171,6 +186,7 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 					c.fail(sendErr)
 					return
 				}
+				c.sent.Add(int64(len(frame)))
 			}
 			sentBytes += int64(len(batch))
 			sendTime += time.Since(started)

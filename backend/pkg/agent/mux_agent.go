@@ -89,7 +89,7 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 		case serveErr := <-serveDone:
 			return serveErr
 		case <-ticker.C:
-			if _, pingErr := pingMuxSession(ctx, session, muxPingTimeout); pingErr != nil && ctx.Err() == nil {
+			if _, pingErr := keepaliveMuxSession(ctx, session, rw); pingErr != nil && ctx.Err() == nil {
 				return fmt.Errorf("agent tunnel keepalive failed: %w", pingErr)
 			}
 		}

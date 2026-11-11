@@ -128,7 +128,7 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 		case <-tunnel.done:
 			return nil
 		case <-ticker.C:
-			rtt, pingErr := pingMuxSession(ctx, session, muxPingTimeout)
+			rtt, pingErr := keepaliveMuxSession(ctx, session, rw)
 			if pingErr != nil && ctx.Err() != nil {
 				return nil
 			}

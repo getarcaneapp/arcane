@@ -65,7 +65,6 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 	defer cancel()
 
 	var lost *AgentTunnel
-	var resp *http.Response
 	for {
 		tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, WaitForActiveOptions{
 			Except:  lost,
@@ -79,28 +78,28 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 			return nil, &TransportError{Err: fmt.Errorf("create agent tunnel request: %w", err)}
 		}
 		maps.Copy(httpReq.Header, req.Headers.Clone())
-		resp, err = tunnel.HTTPClient.Do(httpReq)
+		failure := "tunnel request failed"
+		resp, err := tunnel.HTTPClient.Do(httpReq)
+		var body []byte
 		if err == nil {
-			break
+			failure = "read agent tunnel response"
+			body, err = io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+		}
+		if err == nil {
+			return &RemoteResponse{
+				Headers:    flattenResponseHeaders(resp.Header),
+				Body:       body,
+				StatusCode: resp.StatusCode,
+			}, nil
 		}
 		if lost == nil && tunnel.RetryAfterLoss(httpReq, err) {
 			lost = tunnel
 			continue
 		}
-		return nil, &TransportError{Err: fmt.Errorf("tunnel request failed: %w",
+		return nil, &TransportError{Err: fmt.Errorf("%s: %w", failure,
 			kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), errors.Join(ErrEnvironmentUnavailable, err), err))}
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("read agent tunnel response: %w",
-			kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), errors.Join(ErrEnvironmentUnavailable, err), err))}
-	}
-	return &RemoteResponse{
-		Headers:    flattenResponseHeaders(resp.Header),
-		Body:       body,
-		StatusCode: resp.StatusCode,
-	}, nil
 }
 
 func ExtractBearerToken(headerValue string) string {
