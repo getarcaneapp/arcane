@@ -16,6 +16,7 @@ import (
 
 	"kit.getarcane.app"
 
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 )
 
@@ -93,7 +94,7 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 				StatusCode: resp.StatusCode,
 			}, nil
 		}
-		if lost == nil && tunnel.RetryAfterLoss(httpReq, err) {
+		if lost == nil && !httpx.IsEnvironmentFanOutRequest(ctx) && tunnel.RetryAfterLoss(httpReq, err) {
 			lost = tunnel
 			continue
 		}
