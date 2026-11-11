@@ -1,5 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
 import { podmanPodListQuery } from '#lib/query/podman.js';
+import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -10,7 +11,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const [{ queryClient, podmanStatuses }] = await Promise.all([parent(), environmentStore.ready]);
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready, environmentStatusStore.runtimeReady()]);
 	const scope = environmentStore.shownKey;
 
 	const requestOptions = resolveInitialTableRequest('arcane-podman-pods-table', {
@@ -25,7 +26,13 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const pods = await tryCatch(
-		queryClient.query(podmanPodListQuery(scope, shownPodmanEnvironments(podmanStatuses, 'podman-pods:list'), requestOptions))
+		queryClient.query(
+			podmanPodListQuery(
+				scope,
+				shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-pods:list'),
+				requestOptions
+			)
+		)
 	);
 	if (pods.error !== null) {
 		throwPageLoadError(pods.error, m.common_load_failed({ resource: m.podman_pods_title() }));

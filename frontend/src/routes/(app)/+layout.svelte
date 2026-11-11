@@ -28,8 +28,8 @@
 	const versionInformation = $derived(versionStore.current ?? data.versionInformation);
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
-	const swarmEnabled = $derived(data.swarmEnabled);
-	const podmanStatuses = $derived(data.podmanStatuses);
+	const swarmEnabled = $derived(environmentStatusStore.swarmEnabled);
+	const podmanStatuses = $derived(environmentStatusStore.podmanStatuses);
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:list'));
 
 	const isMobile = new IsMobile();

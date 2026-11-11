@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { m } from '#lib/paraglide/messages.js';
 import { podmanQuadletListQuery } from '#lib/query/podman.js';
 import { podmanService } from '#lib/services/podman-service.js';
+import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -14,7 +15,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, parent }) => {
-	const [{ queryClient, podmanStatuses }] = await Promise.all([parent(), environmentStore.ready]);
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready, environmentStatusStore.runtimeReady()]);
 	const scope = environmentStore.shownKey;
 
 	const unit = url.searchParams.get('unit');
@@ -40,7 +41,11 @@ export const load: PageLoad = async ({ url, parent }) => {
 		queryClient.query(
 			podmanQuadletListQuery(
 				scope,
-				shownPodmanEnvironments(podmanStatuses, 'podman-quadlets:list', (status) => status.quadletsSupported),
+				shownPodmanEnvironments(
+					environmentStatusStore.podmanStatuses,
+					'podman-quadlets:list',
+					(status) => status.quadletsSupported
+				),
 				requestOptions
 			)
 		)

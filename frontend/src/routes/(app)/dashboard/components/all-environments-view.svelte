@@ -15,37 +15,30 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AddIcon, AlertIcon, InspectIcon, LayoutGridIcon, LayoutListIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { APIRequestConfig } from '#lib/services/api-service.js';
-	import { containerService } from '#lib/services/container-service.js';
-	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import { dashboardService } from '#lib/services/dashboard-service.js';
 	import { eventService } from '#lib/services/event-service.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
-	import { podmanService } from '#lib/services/podman-service.js';
-	import { projectService } from '#lib/services/project-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
-	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/container.js';
+	import type { DashboardSectionId, DashboardSummary } from '#lib/types/dashboard.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { ImageUsageCounts } from '#lib/types/image.js';
-	import type { PodmanStatus } from '#lib/types/podman.js';
-	import type { ProjectStatusCounts } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { PruneAllRequest } from '#lib/types/system.js';
 	import type { DashboardEnvironmentCardState, DashboardEnvironmentOverview } from '#lib/types/ui/dashboard.js';
 	import type { PruneType } from '#lib/types/ui/system.js';
 	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import type { EnvironmentVulnerabilitySummary } from '#lib/types/vulnerability.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -61,6 +54,7 @@
 	} from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import {
+		environmentRows,
 		limitEnvironments,
 		readableEnvironments,
 		sumAcrossEnvironments,
@@ -69,7 +63,6 @@
 	import { parseInstant, withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
-	import { fetchRiskOverview } from '#lib/utils/vulnerability.js';
 
 	import { canLoadLiveStats, DashboardLiveStats } from '../live-stats.svelte';
 	import {
@@ -142,10 +135,7 @@
 		sort: { column: 'timestamp', direction: 'desc' as const },
 		filters: { type: ['container.start', 'container.restart'] }
 	};
-	const TOP_MEMORY_REQUEST = {
-		pagination: { page: 1, limit: 5 },
-		sort: { column: 'memoryUsage', direction: 'desc' as const }
-	};
+	const ALWAYS_LOADED_SECTIONS: DashboardSectionId[] = ['containers', 'projects', 'images', 'vulnerabilities', 'version'];
 	const ATTENTION_WIDGETS: BuiltinDashboardWidgetType[] = ['attention', 'attentionCount', 'environments'];
 	const API_KEY_EXPIRY_WINDOW_HOURS = 14 * 24;
 	const PRUNE_SETTING_GROUPS: (keyof Settings)[][] = [
@@ -207,15 +197,7 @@
 		return readableEnvironments(permission).filter((environment) => loadableEnvironmentIds.has(environment.id));
 	}
 
-	function dashboardQueryKey(domain: string, name: string, environments: EnvironmentRef[]) {
-		return [domain, environments.map((environment) => environment.id).join(','), 'dashboard', name];
-	}
-
-	function byEnvironmentId<C>(result: { byEnvironment: { environment: EnvironmentRef; data: C }[] } | undefined): Map<string, C> {
-		return new Map((result?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]));
-	}
-
-	function isVersionInformation(value: Partial<VersionInfo> | undefined): value is VersionInfo {
+	function isVersionInformation(value: Partial<VersionInfo> | null | undefined): value is VersionInfo {
 		return value?.currentVersion !== undefined;
 	}
 
@@ -244,86 +226,23 @@
 		};
 	}
 
-	const containersQuery = createQuery(() => {
-		const environments = loadableEnvironments('containers:list');
-		return {
-			queryKey: dashboardQueryKey('containers', 'status-counts', environments),
-			queryFn: () =>
-				sumAcrossEnvironments(
-					environments,
-					(scope, config) => containerService.getContainerStatusCountsForEnvironment(scope, config),
-					EMPTY_CONTAINER_COUNTS
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const summaryEnvironments = $derived(loadableEnvironments('containers:list'));
+	const summarySections = $derived<DashboardSectionId[]>([
+		...ALWAYS_LOADED_SECTIONS,
+		...(anyWidgetVisible(['risk', ...ATTENTION_WIDGETS]) ? (['risk'] as const) : []),
+		...(anyWidgetVisible(['reclaimable', 'reclaimableTotal', 'environments']) ? (['diskUsage'] as const) : []),
+		...(anyWidgetVisible(['memory']) ? (['topMemory'] as const) : [])
+	]);
 
-	const projectsQuery = createQuery(() => {
-		const environments = loadableEnvironments('projects:list');
+	const summaryQuery = createQuery(() => {
+		const environments = summaryEnvironments;
+		const sections = summarySections;
 		return {
-			queryKey: dashboardQueryKey('projects', 'status-counts', environments),
+			queryKey: queryKeys.dashboard.summary(environments.map((environment) => environment.id).join(','), sections),
 			queryFn: () =>
-				sumAcrossEnvironments<Pick<ProjectStatusCounts, 'updatesAvailable'>>(
+				sumAcrossEnvironments<DashboardSummary>(
 					environments,
-					(scope, config) => projectService.getProjectStatusCountsForEnvironment(scope, config),
-					{ updatesAvailable: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
-
-	const imagesQuery = createQuery(() => {
-		const environments = loadableEnvironments('images:list');
-		return {
-			queryKey: dashboardQueryKey('images', 'usage-counts', environments),
-			queryFn: () =>
-				sumAcrossEnvironments(
-					environments,
-					(scope, config) => imageService.getImageUsageCountsForEnvironment(scope, config),
-					EMPTY_IMAGE_COUNTS
-				),
-			placeholderData: keepPreviousData
-		};
-	});
-
-	const vulnerabilitiesQuery = createQuery(() => {
-		const environments = loadableEnvironments('vulnerabilities:list').filter((environment) =>
-			featureStore.isEnabled('vulnerabilityManagement', environment.id)
-		);
-		return {
-			queryKey: dashboardQueryKey('vulnerabilities', 'summary', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<EnvironmentVulnerabilitySummary, 'actionableCount'>>(
-					environments,
-					(scope, config) => vulnerabilityService.getEnvironmentSummary(scope, config),
-					{ actionableCount: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
-
-	const podmanQuery = createQuery(() => {
-		const environments = loadableEnvironments('podman:read');
-		return {
-			queryKey: dashboardQueryKey('podman', 'status', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<PodmanStatus, 'detected' | 'podCount'>>(
-					environments,
-					(scope, config) => podmanService.getStatus(scope, config),
-					{ detected: false, podCount: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
-
-	const versionsQuery = createQuery(() => {
-		const environments = loadableEnvironments('environments:read');
-		return {
-			queryKey: dashboardQueryKey('environments', 'versions', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Partial<VersionInfo>>(
-					environments,
-					(scope, config) => environmentManagementService.getVersion(scope, config),
+					(scope, config) => dashboardService.getSummary(scope, sections, config),
 					{}
 				),
 			placeholderData: keepPreviousData
@@ -335,16 +254,6 @@
 			featureStore.isEnabled('vulnerabilityManagement', environment.id)
 		)
 	);
-
-	const riskQuery = createQuery(() => {
-		const environments = riskEnvironments;
-		return {
-			queryKey: dashboardQueryKey('vulnerabilities', 'risk', environments),
-			queryFn: () => fetchRiskOverview(environments),
-			enabled: environments.length > 0 && anyWidgetVisible(['risk', ...ATTENTION_WIDGETS]),
-			placeholderData: keepPreviousData
-		};
-	});
 
 	const eventsQuery = createQueries(() => {
 		const environments = limitEnvironments(userStore.hasPermission('events:list') ? loadableEnvironments('events:list') : []);
@@ -378,73 +287,58 @@
 		};
 	});
 
-	const diskUsageQuery = createQueries(() => {
-		const environments = limitEnvironments(loadableEnvironments('system:read'));
-		const enabled = anyWidgetVisible(['reclaimable', 'reclaimableTotal', 'environments']);
-		return {
-			queries: environments.included.map((environment) => ({
-				queryKey: queryKeys.system.diskUsage(environment.id),
-				queryFn: () => systemService.getDiskUsage(environment.id, DASHBOARD_REQUEST_CONFIG),
-				enabled
-			})),
-			combine: (results) => combineByEnvironment(environments, results)
-		};
-	});
-
-	const topMemoryQuery = createQueries(() => {
-		const environments = limitEnvironments(loadableEnvironments('containers:read'));
-		const enabled = anyWidgetVisible(['memory']);
-		return {
-			queries: environments.included.map((environment) => ({
-				...containerListQuery(environment.id, [environment], TOP_MEMORY_REQUEST),
-				enabled
-			})),
-			combine: (results) => combineByEnvironment(environments, results)
-		};
-	});
-
 	const apiKeysQuery = createQuery(() => ({
 		queryKey: queryKeys.apiKeys.list(ALL_API_KEYS),
 		queryFn: () => apiKeyService.getApiKeys(ALL_API_KEYS),
 		enabled: userStore.hasPermission('apikeys:list')
 	}));
 
-	const environmentQueries = [
-		containersQuery,
-		projectsQuery,
-		imagesQuery,
-		vulnerabilitiesQuery,
-		podmanQuery,
-		versionsQuery,
-		riskQuery,
-		eventsQuery,
-		jobsQuery,
-		diskUsageQuery,
-		topMemoryQuery
-	];
+	const environmentQueries = [summaryQuery, eventsQuery, jobsQuery];
 
-	const containersByEnvironment = $derived(byEnvironmentId(containersQuery.data));
-	const projectsByEnvironment = $derived(byEnvironmentId(projectsQuery.data));
-	const imagesByEnvironment = $derived(byEnvironmentId(imagesQuery.data));
-	const vulnerabilitiesByEnvironment = $derived(byEnvironmentId(vulnerabilitiesQuery.data));
-	const podmanByEnvironment = $derived(byEnvironmentId(podmanQuery.data));
-	const versionsByEnvironment = $derived(byEnvironmentId(versionsQuery.data));
-	const riskByEnvironment = $derived(byEnvironmentId(riskQuery.data));
-	const diskUsageByEnvironment = $derived(byEnvironmentId(diskUsageQuery.data));
+	const summaryEntries = $derived(summaryQuery.data?.byEnvironment ?? []);
 
-	const failedEnvironments = $derived.by((): EnvironmentFailure[] => {
-		const failures = environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []);
-		return failures.filter(
-			(failure, index) => failures.findIndex((other) => other.environment.id === failure.environment.id) === index
+	function sectionByEnvironment<K extends DashboardSectionId>(section: K): Map<string, NonNullable<DashboardSummary[K]>['data']> {
+		return new Map(
+			summaryEntries.flatMap(({ environment, data }) => {
+				const entry = data[section];
+				return entry && entry.error === undefined ? [[environment.id, entry.data] as const] : [];
+			})
 		);
-	});
+	}
+
+	function sectionFailed(section: DashboardSectionId): boolean {
+		const entries = summaryEntries.flatMap(({ data }) => data[section] ?? []);
+		return summaryQuery.isError || (entries.length > 0 && entries.every((entry) => entry.error !== undefined));
+	}
+
+	const containersByEnvironment = $derived(sectionByEnvironment('containers'));
+	const projectsByEnvironment = $derived(sectionByEnvironment('projects'));
+	const imagesByEnvironment = $derived(sectionByEnvironment('images'));
+	const vulnerabilitiesByEnvironment = $derived(sectionByEnvironment('vulnerabilities'));
+	const versionsByEnvironment = $derived(sectionByEnvironment('version'));
+	const riskByEnvironment = $derived(sectionByEnvironment('risk'));
+	const diskUsageByEnvironment = $derived(sectionByEnvironment('diskUsage'));
+	const topMemoryByEnvironment = $derived(sectionByEnvironment('topMemory'));
+	const containerCounts = $derived([...containersByEnvironment.values()]);
+	const mergedRisk = $derived(summaryQuery.data?.risk?.data ?? null);
+
+	const environmentFailures = $derived([
+		...environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []),
+		...summaryEntries.flatMap(({ environment, data }) =>
+			Object.values(data).flatMap((entry): EnvironmentFailure[] =>
+				entry?.error === undefined ? [] : [{ environment, message: entry.error }]
+			)
+		)
+	]);
+	const failedEnvironments = $derived(
+		environmentFailures.filter(
+			(failure, index) => environmentFailures.findIndex((other) => other.environment.id === failure.environment.id) === index
+		)
+	);
 	const failedEnvironmentMessages = $derived(
 		new Map(
 			Array.from(
-				Map.groupBy(
-					environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []),
-					(failure) => failure.environment.id
-				),
+				Map.groupBy(environmentFailures, (failure) => failure.environment.id),
 				([environmentId, failures]): [string, string[]] => [environmentId, failures.map((failure) => failure.message)]
 			)
 		)
@@ -468,7 +362,6 @@
 		const containers = containersByEnvironment.get(environment.id) ?? EMPTY_CONTAINER_COUNTS;
 		const updates = containers.updatesAvailable + (projectsByEnvironment.get(environment.id)?.updatesAvailable ?? 0);
 		const vulnerabilities = vulnerabilitiesByEnvironment.get(environment.id)?.actionableCount ?? 0;
-		const podman = podmanByEnvironment.get(environment.id);
 		const versionInfo = versionsByEnvironment.get(environment.id);
 
 		return {
@@ -478,7 +371,7 @@
 			updates,
 			vulnerabilities,
 			versionInfo: isVersionInformation(versionInfo) ? versionInfo : undefined,
-			podCount: podman?.detected ? podman.podCount : undefined,
+			podCount: environmentStatusStore.podmanStatuses[environment.id]?.podCount,
 			error: failedEnvironmentMessages.get(environment.id)?.join('; ')
 		};
 	}
@@ -488,10 +381,10 @@
 	);
 
 	function isEnvironmentCountsLoading(environmentId: string): boolean {
-		return loadableEnvironmentIds.has(environmentId) && !containersByEnvironment.has(environmentId) && containersQuery.isFetching;
+		return loadableEnvironmentIds.has(environmentId) && !containersByEnvironment.has(environmentId) && summaryQuery.isFetching;
 	}
 
-	const boardSummaryLoading = $derived(loadableEnvironmentIds.size > 0 && containersQuery.isPending);
+	const boardSummaryLoading = $derived(loadableEnvironmentIds.size > 0 && summaryQuery.isPending);
 
 	$effect(() => {
 		const environmentsToLoad = loadableEnvironmentCards.map(({ environment }) => environment);
@@ -592,7 +485,7 @@
 			events: eventsQuery.data.byEnvironment.flatMap(({ environment, data }) =>
 				data.data.map((event) => ({ environmentId: environment.id, event }))
 			),
-			findings: riskQuery.data?.riskiestFindings ?? [],
+			findings: environmentRows(mergedRisk?.riskiestFindings ?? [], summaryEnvironments),
 			disk: liveStats.diskPressureByEnvironment,
 			jobs: environmentJobs,
 			activityGroups,
@@ -612,7 +505,8 @@
 		return activityGroups.filter((group) => !shown.has(group.key));
 	});
 	const attentionFailed = $derived(
-		[containersQuery, eventsQuery, riskQuery, jobsQuery, versionsQuery].some((query) => query.isError)
+		[eventsQuery, jobsQuery].some((query) => query.isError) ||
+			(['containers', 'risk', 'version'] as const).some((section) => sectionFailed(section))
 	);
 	const attentionCountByEnvironment = $derived(
 		attentionItems.reduce(
@@ -653,15 +547,28 @@
 	});
 
 	const updatesOverview = $derived({
-		pending: (containersQuery.data?.updatesAvailable ?? 0) + (projectsQuery.data?.updatesAvailable ?? 0),
-		upToDate: Math.max(0, (containersQuery.data?.totalContainers ?? 0) - (containersQuery.data?.updatesAvailable ?? 0)),
-		checking: loadableEnvironmentIds.size > 0 && (containersQuery.isPending || projectsQuery.isPending)
+		pending:
+			containerCounts.reduce((sum, counts) => sum + counts.updatesAvailable, 0) +
+			[...projectsByEnvironment.values()].reduce((sum, counts) => sum + counts.updatesAvailable, 0),
+		upToDate: Math.max(
+			0,
+			containerCounts.reduce((sum, counts) => sum + counts.totalContainers - counts.updatesAvailable, 0)
+		),
+		checking: loadableEnvironmentIds.size > 0 && summaryQuery.isPending
 	});
 
 	const offlineEnvironments = $derived(
 		environmentCards.filter(({ environment }) => !isEnvironmentOnline(environment)).map(({ environment }) => environment)
 	);
-	const diskUsage = $derived(diskUsageQuery.data.byEnvironment);
+	const diskUsage = $derived(
+		summaryEntries.flatMap(({ environment }) => {
+			const usage = diskUsageByEnvironment.get(environment.id);
+			return usage ? [{ environment, data: usage }] : [];
+		})
+	);
+	const topMemoryContainers = $derived(
+		summaryEntries.flatMap(({ environment }) => environmentRows(topMemoryByEnvironment.get(environment.id) ?? [], [environment]))
+	);
 
 	function handleAttentionAction(item: AttentionItem) {
 		if (item.target.kind === 'upgrade') {
@@ -765,7 +672,7 @@
 						...activityToastOptions(extractActivityId(data)),
 						description: target.environment.name
 					});
-					void diskUsageQuery.refetch();
+					void summaryQuery.refetch();
 				}
 			});
 			return;
@@ -778,7 +685,7 @@
 		isPruneDialogOpen = false;
 		pruneTargetId = null;
 		pruneDefaults = null;
-		void diskUsageQuery.refetch();
+		void summaryQuery.refetch();
 
 		const failures = targets.flatMap((target, index) => {
 			const error = results[index]?.error;
@@ -983,15 +890,17 @@
 					}}
 					updates={updatesOverview}
 					risk={{
-						score: riskQuery.data && riskQuery.data.scoreStatus !== 'unavailable' ? riskQuery.data.riskScore : null,
-						delta: riskQuery.data?.delta7d,
-						knownExploited: riskQuery.data?.drivers.knownExploited ?? 0,
-						loading: riskEnvironments.length > 0 && riskQuery.isPending
+						score: mergedRisk && mergedRisk.scoreStatus !== 'unavailable' ? mergedRisk.riskScore : null,
+						delta: mergedRisk?.delta7d,
+						knownExploited: mergedRisk?.drivers.knownExploited ?? 0,
+						loading: riskEnvironments.length > 0 && summaryQuery.isPending
 					}}
 					reclaimable={{
-						bytes: diskUsageQuery.isError ? null : diskUsage.reduce((sum, entry) => sum + totalReclaimableBytes(entry.data), 0),
+						bytes: sectionFailed('diskUsage')
+							? null
+							: diskUsage.reduce((sum, entry) => sum + totalReclaimableBytes(entry.data), 0),
 						environments: diskUsage.length,
-						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending
+						loading: loadableEnvironmentIds.size > 0 && summaryQuery.isPending
 					}}
 				/>
 			{:else if item.type === 'environments'}
@@ -1053,15 +962,15 @@
 			{:else if item.type === 'reclaimable'}
 				<ReclaimableSpace
 					usage={diskUsage}
-					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
-					failed={diskUsageQuery.isError}
+					loading={summaryQuery.isPending && loadableEnvironmentIds.size > 0}
+					failed={sectionFailed('diskUsage')}
 					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}
 				/>
 			{:else if item.type === 'memory'}
 				<TopMemory
-					containers={topMemoryQuery.data.byEnvironment.flatMap(({ data }) => data.data)}
-					loading={topMemoryQuery.isPending && loadableEnvironmentIds.size > 0}
-					failed={topMemoryQuery.isError}
+					containers={topMemoryContainers}
+					loading={summaryQuery.isPending && loadableEnvironmentIds.size > 0}
+					failed={sectionFailed('topMemory')}
 				/>
 			{:else}
 				<CustomWidget widget={item} {environmentCard} />

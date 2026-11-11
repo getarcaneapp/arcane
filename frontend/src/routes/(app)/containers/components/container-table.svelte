@@ -42,7 +42,6 @@
 		RedeployIcon,
 		PauseIcon,
 		ZapIcon,
-		AlertIcon,
 		InfoIcon,
 		HealthIcon
 	} from '#lib/icons/index.js';
@@ -51,7 +50,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ContainerPaginatedResponse, ContainerSummary } from '#lib/types/container.js';
+	import type { ContainerPaginatedResponse, ContainerResourceSample, ContainerSummary } from '#lib/types/container.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
@@ -73,7 +72,6 @@
 		getContainerStatusLabel,
 		type ActionStatus
 	} from '../container-table.helpers';
-	import { ContainerResourcePoller } from './container-resource-poller.svelte';
 	import ContainerStatsCell from './container-stats-cell.svelte';
 	import { ContainerStatsManager } from './container-stats-manager.svelte';
 	import ContainerStatsSync from './container-stats-sync.svelte';
@@ -140,8 +138,6 @@
 		return isResourceSort(requestOptions?.sort);
 	});
 
-	const resourceRefreshIntervalMs = 5000;
-	const resourcePoller = new ContainerResourcePoller(resourceRefreshIntervalMs);
 	const defaultSort: SortState = { column: 'created', direction: 'desc' };
 
 	function isResourceSort(sort: SearchPaginationSortRequest['sort']): boolean {
@@ -242,12 +238,12 @@
 	);
 
 	const shouldConnect = $derived.by(() => {
-		if (!resourcesCurrent || resourceSortActive) {
+		if (!resourcesCurrent) {
 			return new Set<string>();
 		}
 		const cpuVisible = columnVisibility['cpuUsage'] !== false;
 		const memoryVisible = columnVisibility['memoryUsage'] !== false;
-		const statsVisible = cpuVisible || memoryVisible || viewMode === 'grid';
+		const statsVisible = cpuVisible || memoryVisible || viewMode === 'grid' || resourceSortActive;
 
 		if (!statsVisible) {
 			return new Set<string>();
@@ -265,12 +261,30 @@
 		return actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '');
 	}
 
-	$effect(() => {
-		if (!resourceSortActive || !resourcesCurrent) return;
-		resourcePoller.start(() =>
-			queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }, { throwOnError: true })
-		);
-		return () => resourcePoller.stop();
+	function liveSample(item: ContainerSummary): ContainerResourceSample | undefined {
+		const key = rowKey(item);
+		if (statsManager.hasError(key)) return undefined;
+		return statsManager.getSample(key) ?? item.resourceSample;
+	}
+
+	const tableItems = $derived.by((): ContainerPage => {
+		const sort = requestOptions?.sort;
+		if (!resourceSortActive || !sort) return containers;
+		const value = (item: ContainerRow) => {
+			const sample = liveSample(item);
+			if (!sample) return undefined;
+			return sort.column === 'cpuUsage' ? sample.cpuPercent : sample.memoryUsageBytes;
+		};
+		const direction = sort.direction === 'desc' ? -1 : 1;
+		return {
+			...containers,
+			data: containers.data?.toSorted((a, b) => {
+				const valueA = value(a);
+				const valueB = value(b);
+				if (valueA === undefined || valueB === undefined) return Number(valueA === undefined) - Number(valueB === undefined);
+				return (valueA - valueB) * direction;
+			})
+		};
 	});
 	const canUpdateContainers = $derived(hasShownPermission('image-updates:apply'));
 	const canStartContainers = $derived(hasShownPermission('containers:start'));
@@ -642,24 +656,18 @@
 {/snippet}
 
 {#snippet CPUCell({ item, view }: { item: ContainerSummary; view: TableViewMode })}
+	{@const sample = liveSample(item)}
 	{#if view === 'grid'}
 		{@render UsageTile({
 			item,
 			title: m.cpu_usage(),
-			percent: resourceSortActive ? item.resourceSample?.cpuPercent : statsManager.getCPUPercent(rowKey(item)),
-			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+			percent: sample?.cpuPercent,
+			unavailable: statsManager.hasError(rowKey(item))
 		})}
-	{:else if resourceSortActive}
-		<ContainerStatsCell
-			value={item.resourceSample?.cpuPercent}
-			unavailable={!item.resourceSample}
-			stopped={item.state !== 'running'}
-			type="cpu"
-		/>
 	{:else}
 		<ContainerStatsCell
-			value={statsManager.getCPUPercent(rowKey(item))}
-			loading={statsManager.isLoading(rowKey(item)) ?? false}
+			value={sample?.cpuPercent}
+			loading={statsManager.isLoading(rowKey(item)) && !sample}
 			unavailable={statsManager.hasError(rowKey(item))}
 			stopped={item.state !== 'running'}
 			type="cpu"
@@ -668,29 +676,18 @@
 {/snippet}
 
 {#snippet MemoryCell({ item, view }: { item: ContainerSummary; view: TableViewMode })}
+	{@const sample = liveSample(item)}
 	{#if view === 'grid'}
-		{@const memoryData = resourceSortActive
-			? { usage: item.resourceSample?.memoryUsageBytes, limit: item.resourceSample?.memoryLimitBytes }
-			: statsManager.getMemoryUsage(rowKey(item))}
 		{@render UsageTile({
 			item,
 			title: m.memory_usage(),
-			percent: memoryData?.usage !== undefined && memoryData.limit ? (memoryData.usage / memoryData.limit) * 100 : undefined,
-			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+			percent: sample?.memoryLimitBytes ? (sample.memoryUsageBytes / sample.memoryLimitBytes) * 100 : undefined,
+			unavailable: statsManager.hasError(rowKey(item))
 		})}
-	{:else if resourceSortActive}
-		<ContainerStatsCell
-			value={item.resourceSample?.memoryUsageBytes}
-			limit={item.resourceSample?.memoryLimitBytes}
-			unavailable={!item.resourceSample}
-			stopped={item.state !== 'running'}
-			type="memory"
-		/>
 	{:else}
-		{@const memoryData = statsManager.getMemoryUsage(rowKey(item))}
 		<ContainerStatsCell
-			value={memoryData?.usage}
-			limit={memoryData?.limit}
+			value={sample?.memoryUsageBytes}
+			limit={sample?.memoryLimitBytes}
 			unavailable={statsManager.hasError(rowKey(item))}
 			stopped={item.state !== 'running'}
 			type="memory"
@@ -986,11 +983,7 @@
 				label: m.cpu_usage(),
 				getValue: (item: ContainerSummary) => {
 					if (item.state !== 'running') return m.common_na();
-					if (resourceSortActive) {
-						const cpu = item.resourceSample?.cpuPercent;
-						return cpu === undefined ? m.common_unavailable() : `${cpu.toFixed(1)}%`;
-					}
-					const cpu = statsManager.getCPUPercent(rowKey(item));
+					const cpu = liveSample(item)?.cpuPercent;
 					if (cpu === undefined) return statsManager.hasError(rowKey(item)) ? m.common_unavailable() : '...';
 					return `${cpu.toFixed(1)}%`;
 				},
@@ -1002,13 +995,9 @@
 				label: m.memory_usage(),
 				getValue: (item: ContainerSummary) => {
 					if (item.state !== 'running') return m.common_na();
-					if (resourceSortActive) {
-						const usage = item.resourceSample?.memoryUsageBytes;
-						return usage === undefined ? m.common_unavailable() : `${(usage / 1024 / 1024).toFixed(0)} MB`;
-					}
-					const memData = statsManager.getMemoryUsage(rowKey(item));
-					if (!memData?.usage) return statsManager.hasError(rowKey(item)) ? m.common_unavailable() : '...';
-					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
+					const usage = liveSample(item)?.memoryUsageBytes;
+					if (!usage) return statsManager.hasError(rowKey(item)) ? m.common_unavailable() : '...';
+					return `${(usage / 1024 / 1024).toFixed(0)} MB`;
 				},
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
@@ -1179,17 +1168,10 @@
 	</Alert.Root>
 {/if}
 
-{#if resourceSortActive && resourcePoller.error}
-	<Alert.Root variant="destructive" class="mb-4">
-		<AlertIcon class="size-4" />
-		<Alert.Title>{m.containers_resource_refresh_failed({ message: resourcePoller.error })}</Alert.Title>
-	</Alert.Root>
-{/if}
-
 <ArcaneTable
 	bind:this={tablePreferences}
 	persistKey="arcane-container-table"
-	items={containers}
+	items={tableItems}
 	bind:requestOptions={() => tableRequestOptions, (next) => (requestOptions = withSupportedSort(next))}
 	bind:selectedIds
 	bind:mobileFieldVisibility

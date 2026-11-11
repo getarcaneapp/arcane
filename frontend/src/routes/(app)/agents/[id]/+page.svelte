@@ -25,6 +25,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { DeploymentSnippet, Environment } from '#lib/types/environment.js';
@@ -51,11 +52,11 @@
 
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
-	const swarmActive = $derived(data.swarmActive === true);
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	const environmentQuery = createQuery(() => environmentDetailQuery(loadedEnvironment.id));
 	const environment = $derived(environmentQuery.data ?? loadedEnvironment);
+	const swarmActive = $derived(environmentStatusStore.swarmStatus(environment.id)?.enabled === true);
 	const liveEnvironment = $derived(
 		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
 	);
@@ -98,9 +99,11 @@
 	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('environment-settings:read', environment.id));
 	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
 	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:list', environment.id));
-	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
+	const podmanStatus = $derived(
+		hasPermission('podman:read', environment.id) ? environmentStatusStore.podmanStatuses[environment.id] : undefined
+	);
 	const podmanUnavailableReason = $derived(
-		hasPermission('podman:read', environment.id) ? data.podmanUnavailableReasons?.[environment.id] : undefined
+		hasPermission('podman:read', environment.id) ? environmentStatusStore.podmanUnavailableReasons[environment.id] : undefined
 	);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));

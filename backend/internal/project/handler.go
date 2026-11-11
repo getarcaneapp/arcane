@@ -535,15 +535,11 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 }
 
 func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.Project], error) {
-	return h.getProjectDetailsWithOptions(ctx, input, types.ProjectDetailsOptions{})
-}
-
-func (h *ProjectHandler) getProjectDetailsWithOptions(ctx context.Context, input *GetProjectInput, opts types.ProjectDetailsOptions) (*handlerutil.Out[types.Project], error) {
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
-	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, opts)
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, types.AllProjectDetails())
 	if err != nil {
 		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
@@ -557,28 +553,6 @@ func (h *ProjectHandler) getProjectDetailsWithOptions(ctx context.Context, input
 			Data:    details,
 		},
 	}, nil
-}
-
-func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.Project], error) {
-	return h.getProjectDetailsWithOptions(ctx, input, types.ProjectDetailsOptions{
-		IncludeComposeContent: true,
-		IncludeEnvState:       true,
-		IncludeIncludeFiles:   true,
-		IncludeServiceConfigs: true,
-	})
-}
-
-func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.Project], error) {
-	return h.getProjectDetailsWithOptions(ctx, input, types.ProjectDetailsOptions{
-		IncludeRuntimeServices: true,
-	})
-}
-
-func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.Project], error) {
-	return h.getProjectDetailsWithOptions(ctx, input, types.ProjectDetailsOptions{
-		IncludeServiceConfigs: true,
-		IncludeUpdateInfo:     true,
-	})
 }
 
 func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*handlerutil.Out[types.MessageResponse], error) {

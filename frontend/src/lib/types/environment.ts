@@ -1,3 +1,6 @@
+import type { PodmanStatus } from './podman';
+import type { SwarmRuntimeStatus } from './swarm';
+
 export type EnvironmentStatus = 'online' | 'offline' | 'error' | 'pending';
 
 export type AgentMTLSCertificate = {
@@ -55,9 +58,16 @@ export type Environment = {
 	agentTunnelStats?: AgentTunnelStats;
 };
 
+export type EnvironmentRuntimeStatus = {
+	environmentId: string;
+	swarm?: SwarmRuntimeStatus;
+	podman?: PodmanStatus;
+};
+
 export type EnvironmentStreamEvent = {
 	type: string;
 	environments?: Environment[];
+	runtime?: EnvironmentRuntimeStatus[];
 };
 
 export interface DeploymentSnippetFile {

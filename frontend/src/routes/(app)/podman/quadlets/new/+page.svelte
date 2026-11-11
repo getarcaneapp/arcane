@@ -14,6 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { PODMAN_QUADLET_TYPES, type QuadletType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -27,7 +28,6 @@
 		quadletWorkspaceFiles
 	} from '../components/quadlet-workspace-editor.svelte';
 
-	let { data } = $props();
 	const queryClient = useQueryClient();
 
 	const templates: Record<QuadletType, string> = {
@@ -41,14 +41,14 @@
 		artifact: '[Artifact]\nArtifact=\n'
 	};
 
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:create'));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-quadlets:create'));
 	const quadletEnvironments = $derived(
-		shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:create', (status) => status.quadletsSupported)
+		shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-quadlets:create', (status) => status.quadletsSupported)
 	);
 	const installEnvironments = $derived(quadletEnvironments.filter((env) => hasPermission('podman-quadlets:create', env.id)));
 	let picked = $state('');
 	const environmentId = $derived(destinationEnvironmentId(picked, 'podman-quadlets:create', installEnvironments));
-	const status = $derived(data.podmanStatuses[environmentId]);
+	const status = $derived(environmentStatusStore.podmanStatuses[environmentId]);
 	const appsSupported = $derived(status?.quadletAppsSupported === true);
 
 	let baseName = $state('');

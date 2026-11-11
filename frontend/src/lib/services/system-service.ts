@@ -1,7 +1,7 @@
 import type { DockerInfo } from '#lib/types/dockerinfo.js';
-import type { PruneAllRequest, SystemDiskUsage } from '#lib/types/system.js';
+import type { PruneAllRequest } from '#lib/types/system.js';
 
-import BaseAPIService, { type APIRequestConfig } from './api-service';
+import BaseAPIService from './api-service';
 
 type ConvertedDockerRun = {
 	dockerCompose: string;
@@ -28,10 +28,6 @@ class SystemService extends BaseAPIService {
 
 	async getDockerInfoForEnvironment(environmentId: string): Promise<DockerInfo> {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/system/docker/info`));
-	}
-
-	async getDiskUsage(environmentId: string, config?: APIRequestConfig): Promise<SystemDiskUsage> {
-		return this.handleResponse(this.api.get(`/agents/${environmentId}/system/df`, config));
 	}
 
 	async convert(dockerRunCommand: string, environmentId: string): Promise<ConvertedDockerRun> {

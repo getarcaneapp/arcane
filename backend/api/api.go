@@ -21,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/enrollment"
@@ -43,6 +44,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/runtimestatus"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
@@ -82,6 +84,8 @@ type (
 		S3Destination     *s3.Module
 		Network           *network.NetworkService
 		Port              *port.PortService
+		Dashboard         *dashboard.DashboardService
+		RuntimeStatus     *runtimestatus.RuntimeStatusService
 		Swarm             *swarm.Module
 		Podman            *podman.Module
 		ImageUpdate       *imageupdate.Module
@@ -232,6 +236,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.Volume.RegisterRoutes(api, p.AppContext)
 	p.Deps.Container.RegisterRoutes(api, p.AppContext)
 	port.RegisterPorts(api, p.Deps.Port)
+	dashboard.RegisterDashboard(api, p.Deps.Dashboard)
 	network.RegisterNetworks(api, p.Deps.Network, p.Deps.Docker, p.Deps.Activity.Service(), p.AppContext)
 	p.Deps.Swarm.RegisterRoutes(api)
 	p.Deps.Podman.RegisterRoutes(api)
@@ -244,7 +249,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.GitOpsSync.RegisterRoutes(api)
 	p.Deps.Webhook.RegisterRoutes(api, p.AppContext)
 	p.Deps.Vulnerability.RegisterRoutes(api, p.AppContext)
-	handlers.RegisterStream(api, p.Deps.Activity.Handler(), p.Deps.Environment.Handler(), p.Deps.Event.Service(), p.Deps.Version, p.Deps.System.Service())
+	handlers.RegisterStream(api, p.Deps.Activity.Handler(), p.Deps.Environment.Handler(), p.Deps.RuntimeStatus, p.Deps.Event.Service(), p.Deps.Version, p.Deps.System.Service())
 
 	if !p.Config.AgentEnabled {
 		telemetry.RegisterRoutes(api, telemetry.NewService())

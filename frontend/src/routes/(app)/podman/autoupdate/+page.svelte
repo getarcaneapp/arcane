@@ -11,6 +11,7 @@
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanAutoUpdateMode, PodmanAutoUpdateResult } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -19,9 +20,7 @@
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let { data } = $props();
-
-	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman:autoupdate'));
+	const podmanEnvs = $derived(shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman:autoupdate'));
 	const runnableEnvs = $derived(
 		actionEnvironments('podman:autoupdate').filter(
 			(env) => podmanEnvs.some((podmanEnv) => podmanEnv.id === env.id) && modeOf(env.id) !== 'unavailable'
@@ -35,7 +34,7 @@
 	let results = $state.raw<{ environment: EnvironmentRef; value: PodmanAutoUpdateResult }[]>([]);
 
 	function modeOf(environmentId: string): PodmanAutoUpdateMode {
-		return data.podmanStatuses[environmentId]?.autoUpdateMode ?? 'unavailable';
+		return environmentStatusStore.podmanStatuses[environmentId]?.autoUpdateMode ?? 'unavailable';
 	}
 
 	function modeLabel(mode: PodmanAutoUpdateMode): string {
@@ -93,7 +92,7 @@
 						</Table.Header>
 						<Table.Body>
 							{#each podmanEnvs as env (env.id)}
-								{@const status = data.podmanStatuses[env.id]}
+								{@const status = environmentStatusStore.podmanStatuses[env.id]}
 								{@const mode = modeOf(env.id)}
 								<Table.Row>
 									<Table.Cell>{env.name}</Table.Cell>

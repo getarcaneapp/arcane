@@ -78,9 +78,16 @@ type (
 	}
 
 	EnvironmentStreamEvent struct {
-		Timestamp    time.Time     `json:"timestamp"`
-		Type         string        `json:"type"`
-		Environments []Environment `json:"environments,omitempty"`
+		Timestamp    time.Time                  `json:"timestamp"`
+		Type         string                     `json:"type"`
+		Environments []Environment              `json:"environments,omitempty"`
+		Runtime      []EnvironmentRuntimeStatus `json:"runtime,omitempty"`
+	}
+
+	EnvironmentRuntimeStatus struct {
+		Swarm         *SwarmRuntimeStatus `json:"swarm,omitempty"`
+		Podman        *PodmanStatus       `json:"podman,omitempty"`
+		EnvironmentID string              `json:"environmentId"`
 	}
 
 	SwarmBindingCandidate struct {

@@ -1,5 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
 import { podmanSecretListQuery } from '#lib/query/podman.js';
+import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -10,7 +11,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const [{ queryClient, podmanStatuses }] = await Promise.all([parent(), environmentStore.ready]);
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready, environmentStatusStore.runtimeReady()]);
 	const scope = environmentStore.shownKey;
 
 	const requestOptions = resolveInitialTableRequest('arcane-podman-secrets-table', {
@@ -26,7 +27,11 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const secrets = await tryCatch(
 		queryClient.query(
-			podmanSecretListQuery(scope, shownPodmanEnvironments(podmanStatuses, 'podman-secrets:list'), requestOptions)
+			podmanSecretListQuery(
+				scope,
+				shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-secrets:list'),
+				requestOptions
+			)
 		)
 	);
 	if (secrets.error !== null) {

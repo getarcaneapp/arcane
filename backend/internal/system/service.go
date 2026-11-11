@@ -206,6 +206,10 @@ func (s *SystemService) PruneScheduled(ctx context.Context, environmentID string
 	return s.prune.PruneScheduled(ctx, environmentID, req)
 }
 
+func (s *SystemService) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, error) {
+	return s.prune.GetDiskUsage(ctx)
+}
+
 func (s *SystemService) ReconcileScheduledPrune(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return s.prune.ReconcileScheduledPrune(ctx, previous)
 }

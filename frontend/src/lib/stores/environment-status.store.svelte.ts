@@ -4,8 +4,13 @@ import { STREAM_CHANNEL_ENVIRONMENTS } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
-import type { EnvironmentStreamEvent } from '#lib/types/environment.js';
+import type { EnvironmentRuntimeStatus, EnvironmentStreamEvent } from '#lib/types/environment.js';
+import type { PodmanStatus } from '#lib/types/podman.js';
+import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
+
+const RUNTIME_WAIT_LIMIT = 1_500;
 
 /**
  * Keeps environmentStore's records live for as long as the app shell is mounted.
@@ -17,6 +22,15 @@ import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
  */
 function createEnvironmentStatusStoreInternal() {
 	const lifecycle = createAbortLifecycle();
+	let runtime = $state.raw<Record<string, EnvironmentRuntimeStatus>>({});
+	let runtimeReceived = $state(false);
+	const runtimeArrival = Promise.withResolvers<void>();
+
+	function applyRuntime(statuses: EnvironmentRuntimeStatus[]) {
+		runtime = Object.fromEntries(statuses.map((status) => [status.environmentId, status]));
+		runtimeReceived = true;
+		runtimeArrival.resolve();
+	}
 
 	return {
 		get streamConnected(): boolean {
@@ -24,6 +38,37 @@ function createEnvironmentStatusStoreInternal() {
 		},
 		get streamFailed(): boolean {
 			return clientStream.streamFailed;
+		},
+		get runtimeReceived(): boolean {
+			return runtimeReceived;
+		},
+		get podmanStatuses(): Record<string, PodmanStatus> {
+			return Object.fromEntries(
+				Object.values(runtime).flatMap(({ environmentId, podman }) =>
+					podman?.detected ? [[environmentId, podman] as const] : []
+				)
+			);
+		},
+		get podmanUnavailableReasons(): Record<string, string> {
+			return Object.fromEntries(
+				Object.values(runtime).flatMap(({ environmentId, podman }) =>
+					podman && !podman.detected && podman.reason ? [[environmentId, podman.reason] as const] : []
+				)
+			);
+		},
+		get swarmEnabled(): boolean | undefined {
+			const statuses = readableEnvironments('swarm:read').flatMap((env) => runtime[env.id]?.swarm ?? []);
+			return statuses.length === 0 ? undefined : statuses.some((status) => status.enabled);
+		},
+		swarmStatus(environmentId: string): SwarmRuntimeStatus | undefined {
+			return runtime[environmentId]?.swarm;
+		},
+		runtimeReady(): Promise<void> {
+			let timeout: ReturnType<typeof setTimeout> | undefined;
+			return Promise.race([
+				runtimeArrival.promise,
+				new Promise<void>((resolve) => (timeout = setTimeout(resolve, RUNTIME_WAIT_LIMIT)))
+			]).finally(() => clearTimeout(timeout));
 		},
 		start() {
 			if (!browser || lifecycle.active) {
@@ -38,6 +83,10 @@ function createEnvironmentStatusStoreInternal() {
 						clientStream.subscribe(STREAM_CHANNEL_ENVIRONMENTS, {
 							onEvent: (payload) => {
 								const event = payload as EnvironmentStreamEvent;
+								if (event.type === 'runtime') {
+									applyRuntime(event.runtime ?? []);
+									return;
+								}
 								if (event.type !== 'snapshot' || !event.environments) {
 									return;
 								}

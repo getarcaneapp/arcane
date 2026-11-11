@@ -194,40 +194,10 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/projects/{projectId}",
 		Summary:     "Get a project",
-		Description: "Get a Docker Compose project by ID",
+		Description: "Get a Docker Compose project by ID with its compose content, service configs, runtime services, and update info",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsRead, h.GetProject)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-project-compose",
-		Method:      http.MethodGet,
-		Path:        "/agents/{id}/projects/{projectId}/compose",
-		Summary:     "Get project compose details",
-		Description: "Get compose content, includes, and service configs for a project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.GetProjectCompose)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-project-runtime",
-		Method:      http.MethodGet,
-		Path:        "/agents/{id}/projects/{projectId}/runtime",
-		Summary:     "Get project runtime",
-		Description: "Get runtime service state for a project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.GetProjectRuntime)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "get-project-updates",
-		Method:      http.MethodGet,
-		Path:        "/agents/{id}/projects/{projectId}/updates",
-		Summary:     "Get project updates",
-		Description: "Get image update summary for a project",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.GetProjectUpdates)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "destroy-project",

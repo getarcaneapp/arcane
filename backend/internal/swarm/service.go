@@ -31,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -52,6 +53,7 @@ type (
 		dockerService      *docker.DockerClientService
 		kvService          *kv.KVService
 		environmentService *environment.EnvironmentService
+		eventService       *event.EventService
 		tunnels            *agent.TunnelRegistry
 
 		services *services.Service
@@ -75,6 +77,7 @@ type (
 		KVService          *kv.KVService
 		RegistryService    *registry.ContainerRegistryService
 		EnvironmentService *environment.EnvironmentService
+		EventService       *event.EventService
 		Tunnels            *agent.TunnelRegistry
 	}
 )
@@ -112,6 +115,7 @@ func NewSwarmService(p SwarmServiceParams) *SwarmService {
 		dockerService:      p.DockerService,
 		kvService:          p.KVService,
 		environmentService: p.EnvironmentService,
+		eventService:       p.EventService,
 		tunnels:            p.Tunnels,
 	}
 
@@ -616,6 +620,7 @@ func (s *SwarmService) persistSwarmEnabledState(ctx context.Context, enabled boo
 	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
 		slog.WarnContext(ctx, "Failed to persist swarm enabled state", "enabled", enabled, "error", err)
 	}
+	s.eventService.PublishChange(environment.LocalEnvironmentID, "swarm")
 }
 
 func (s *SwarmService) ObserveMetrics(meter metric.Meter) error {

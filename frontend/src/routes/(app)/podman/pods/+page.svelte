@@ -11,6 +11,7 @@
 	import { podmanPodListQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodCreateRequest } from '#lib/types/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -26,7 +27,7 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-pods:list'));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-pods:list'));
 	const createEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:create', env.id)));
 	const pruneEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:prune', env.id)));
 

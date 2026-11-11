@@ -7,6 +7,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanQuadletListQuery } from '#lib/query/podman.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
@@ -17,7 +18,7 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const quadletEnvironments = $derived(
-		shownPodmanEnvironments(data.podmanStatuses, 'podman-quadlets:list', (status) => status.quadletsSupported)
+		shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-quadlets:list', (status) => status.quadletsSupported)
 	);
 	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman-quadlets:create', env.id)));
 
@@ -85,7 +86,7 @@
 					<QuadletsTable
 						{quadlets}
 						bind:requestOptions={pageState.requestOptions}
-						podmanStatuses={data.podmanStatuses}
+						podmanStatuses={environmentStatusStore.podmanStatuses}
 						onRetry={() => quadletsQuery.refetch()}
 					/>
 				{/key}

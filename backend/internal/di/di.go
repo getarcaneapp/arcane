@@ -20,6 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/dashboard"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -43,6 +44,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/runtimestatus"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/session"
@@ -115,6 +117,8 @@ var (
 			container.NewContainerService,
 			network.NewNetworkService,
 			port.NewPortService,
+			dashboard.NewDashboardService,
+			runtimestatus.NewRuntimeStatusService,
 			swarm.NewSwarmService,
 			enrollment.NewEnrollmentService,
 			template.NewTemplateService,

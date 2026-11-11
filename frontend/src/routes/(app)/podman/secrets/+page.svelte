@@ -9,6 +9,7 @@
 	import { podmanSecretListQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -23,7 +24,7 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
-	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-secrets:list'));
+	const podmanEnvironments = $derived(shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-secrets:list'));
 	const canCreate = $derived(podmanEnvironments.some((env) => hasPermission('podman-secrets:create', env.id)));
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);

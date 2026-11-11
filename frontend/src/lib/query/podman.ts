@@ -8,7 +8,7 @@ import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 
 export function podmanPodListQuery(scope: string, environments: EnvironmentRef[], requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({
-		queryKey: queryKeys.podman.pods(scope, requestOptions),
+		queryKey: queryKeys.podman.pods(scope, requestOptions, environments.map((env) => env.id).join(',')),
 		queryFn: () =>
 			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) => podmanService.getPods(id, request, config))
 	});
@@ -20,7 +20,7 @@ export function podmanQuadletListQuery(
 	requestOptions: SearchPaginationSortRequest
 ) {
 	return queryOptions({
-		queryKey: queryKeys.podman.quadlets(scope, requestOptions),
+		queryKey: queryKeys.podman.quadlets(scope, requestOptions, environments.map((env) => env.id).join(',')),
 		queryFn: () =>
 			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
 				podmanService.getQuadlets(id, request, config)
@@ -34,7 +34,7 @@ export function podmanSecretListQuery(
 	requestOptions: SearchPaginationSortRequest
 ) {
 	return queryOptions({
-		queryKey: queryKeys.podman.secrets(scope, requestOptions),
+		queryKey: queryKeys.podman.secrets(scope, requestOptions, environments.map((env) => env.id).join(',')),
 		queryFn: () =>
 			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
 				podmanService.getSecrets(id, request, config)

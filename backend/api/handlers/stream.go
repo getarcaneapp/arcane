@@ -23,6 +23,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/runtimestatus"
 	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/internal/version"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -34,11 +35,12 @@ import (
 
 type (
 	StreamHandler struct {
-		events      *event.EventService
-		activity    *activity.ActivityHandler
-		environment *environment.EnvironmentHandler
-		version     *version.VersionService
-		system      *system.SystemService
+		events        *event.EventService
+		activity      *activity.ActivityHandler
+		environment   *environment.EnvironmentHandler
+		runtimeStatus *runtimestatus.RuntimeStatusService
+		version       *version.VersionService
+		system        *system.SystemService
 	}
 
 	StreamClientInput struct {
@@ -73,16 +75,18 @@ func RegisterStream(
 	api huma.API,
 	activityHandler *activity.ActivityHandler,
 	environmentHandler *environment.EnvironmentHandler,
+	runtimeStatusService *runtimestatus.RuntimeStatusService,
 	eventService *event.EventService,
 	versionService *version.VersionService,
 	systemService *system.SystemService,
 ) {
 	h := &StreamHandler{
-		events:      eventService,
-		activity:    activityHandler,
-		environment: environmentHandler,
-		version:     versionService,
-		system:      systemService,
+		events:        eventService,
+		activity:      activityHandler,
+		environment:   environmentHandler,
+		runtimeStatus: runtimeStatusService,
+		version:       versionService,
+		system:        systemService,
 	}
 
 	meter := otel.Meter(logging.InstrumentationName)
@@ -147,16 +151,24 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 	producers := make([]agg.Producer[types.StreamEvent], 0, 6)
 
 	if requested[types.StreamChannelEnvironments] {
+		wrapEnvironment := func(channel string, event types.EnvironmentStreamEvent) types.StreamEvent {
+			return types.StreamEvent{Channel: channel, Environment: &event, Timestamp: event.Timestamp}
+		}
 		// Ungated like listEnvironments; the producer filters to the caller's accessible environments.
-		producers = append(producers, forwardStreamChannel(
-			types.StreamChannelEnvironments,
-			func(channel string, event types.EnvironmentStreamEvent) types.StreamEvent {
-				return types.StreamEvent{Channel: channel, Environment: &event, Timestamp: event.Timestamp}
-			},
-			func(producerCtx context.Context, events chan<- types.EnvironmentStreamEvent) {
-				h.environment.RunStreamProducer(producerCtx, ps, events)
-			},
-		))
+		producers = append(producers,
+			forwardStreamChannel(
+				types.StreamChannelEnvironments, wrapEnvironment,
+				func(producerCtx context.Context, events chan<- types.EnvironmentStreamEvent) {
+					h.environment.RunStreamProducer(producerCtx, ps, events)
+				},
+			),
+			forwardStreamChannel(
+				types.StreamChannelEnvironments, wrapEnvironment,
+				func(producerCtx context.Context, events chan<- types.EnvironmentStreamEvent) {
+					h.runtimeStatus.RunStreamProducer(producerCtx, ps, events)
+				},
+			),
+		)
 	}
 
 	if requested[types.StreamChannelActivities] {

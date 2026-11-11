@@ -1,3 +1,4 @@
+import type { DashboardSectionId } from '#lib/types/dashboard.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { User } from '#lib/types/user.js';
 
@@ -17,7 +18,8 @@ export const queryKeys = {
 	swarm: {
 		info: (environmentId: string) => ['swarm', environmentId, 'info'] as const,
 		status: (environmentId: string) => ['swarm', environmentId, 'status'] as const,
-		environments: (scope: string, permission: string) => ['swarm', scope, 'environments', permission] as const,
+		environments: (scope: string, permission: string, statuses: string) =>
+			['swarm', scope, 'environments', permission, statuses] as const,
 		joinTokens: (environmentId: string) => ['swarm', environmentId, 'join-tokens'] as const,
 		unlockKey: (environmentId: string) => ['swarm', environmentId, 'unlock-key'] as const,
 		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>
@@ -44,18 +46,18 @@ export const queryKeys = {
 	},
 	podman: {
 		environment: (environmentId: string) => ['podman', environmentId] as const,
-		status: (environmentId: string) => ['podman', environmentId, 'status'] as const,
 		info: (environmentId: string) => ['podman', environmentId, 'info'] as const,
 		podsAll: ['podman-pods'] as const,
 		podsPrefix: (scope: string) => ['podman-pods', scope] as const,
-		pods: (scope: string, options: SearchPaginationSortRequest) => ['podman-pods', scope, stableSerialize(options)] as const,
+		pods: (scope: string, options: SearchPaginationSortRequest, environments: string) =>
+			['podman-pods', scope, stableSerialize(options), environments] as const,
 		quadletsAll: ['podman-quadlets'] as const,
 		quadletsPrefix: (scope: string) => ['podman-quadlets', scope] as const,
-		quadlets: (scope: string, options: SearchPaginationSortRequest) =>
-			['podman-quadlets', scope, stableSerialize(options)] as const,
+		quadlets: (scope: string, options: SearchPaginationSortRequest, environments: string) =>
+			['podman-quadlets', scope, stableSerialize(options), environments] as const,
 		secretsPrefix: (scope: string) => ['podman-secrets', scope] as const,
-		secrets: (scope: string, options: SearchPaginationSortRequest) =>
-			['podman-secrets', scope, stableSerialize(options)] as const,
+		secrets: (scope: string, options: SearchPaginationSortRequest, environments: string) =>
+			['podman-secrets', scope, stableSerialize(options), environments] as const,
 		pod: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId] as const,
 		podTop: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId, 'top'] as const,
 		quadlet: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name] as const,
@@ -176,8 +178,10 @@ export const queryKeys = {
 		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
 		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
 		versionInfo: (environmentId: string) => ['system', environmentId, 'version-info'] as const,
-		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const,
-		diskUsage: (environmentId: string) => ['system', environmentId, 'disk-usage'] as const
+		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const
+	},
+	dashboard: {
+		summary: (scope: string, sections: DashboardSectionId[]) => ['dashboard', scope, 'summary', ...sections] as const
 	},
 	containers: {
 		all: ['containers'] as const,

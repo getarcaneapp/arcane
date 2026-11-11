@@ -1187,7 +1187,7 @@ test.describe('Project Detail Page', () => {
 		const projectName = `test-project-update-check-${Date.now()}`;
 		const projectID = await createProjectViaUI(page, projectName);
 		const project = await readApiData<Project>(
-			await page.request.get(`/api/agents/0/projects/${projectID}/updates`),
+			await page.request.get(`/api/agents/0/projects/${projectID}`),
 			`Get project ${projectID} update metadata`
 		);
 		expect(

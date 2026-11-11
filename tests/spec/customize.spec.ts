@@ -320,7 +320,7 @@ test.describe('Templates', () => {
 				.poll(
 					async () => {
 						const runtime = await readApiData<Project>(
-							await page.request.get(`/api/agents/0/projects/${project.id}/runtime`),
+							await page.request.get(`/api/agents/0/projects/${project.id}`),
 							`Get runtime services for ${project.id}`
 						);
 						containerId =

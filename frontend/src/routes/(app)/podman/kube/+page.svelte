@@ -23,6 +23,7 @@
 	import { networkService } from '#lib/services/network-service.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { type KubeGenerateType, PODMAN_KUBE_GENERATE_TYPES } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
@@ -32,10 +33,9 @@
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses, 'podman-kube:create'));
+	const podmanEnvs = $derived(shownPodmanEnvironments(environmentStatusStore.podmanStatuses, 'podman-kube:create'));
 	let picked = $state('');
 	const environmentId = $derived(destinationEnvironmentId(picked, 'podman-kube:create', podmanEnvs));
 

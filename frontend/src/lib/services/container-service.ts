@@ -2,7 +2,6 @@ import type { Activity } from '#lib/types/activity.js';
 import type { MessageResponse } from '#lib/types/base.js';
 import type {
 	ContainerPaginatedResponse,
-	ContainerStatusCounts,
 	ContainerCreated,
 	ContainerDetails,
 	ContainerCommitRequest,
@@ -35,11 +34,6 @@ class ContainerService extends BaseAPIService {
 		}
 		const res = await this.api.get(`/agents/${environmentId}/containers`, { ...config, params });
 		return res.data;
-	}
-
-	async getContainerStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ContainerStatusCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/containers/counts`, config);
-		return res.data.data;
 	}
 
 	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<ContainerDetails> {

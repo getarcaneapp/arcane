@@ -21,6 +21,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import type { PodmanQuadletAction } from '#lib/types/ui/podman.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -45,7 +46,7 @@
 
 	const queryClient = useQueryClient();
 	const envId = $derived(data.envId);
-	const status = $derived(data.podmanStatuses[data.envId]);
+	const status = $derived(environmentStatusStore.podmanStatuses[data.envId]);
 	const systemdAvailable = $derived(status?.systemdAvailable === true);
 
 	const quadletQuery = createQuery(() => ({

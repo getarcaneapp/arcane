@@ -1,11 +1,9 @@
-import { invalidate } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { STREAM_CHANNEL_EVENTS, streamService } from '#lib/services/stream-service.js';
 import { createSSEStream } from '#lib/stores/sse-stream.svelte.js';
 import type { EnvironmentChanges } from '#lib/types/event.js';
-import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/ui/podman.js';
 
 type StreamEnvelope = {
 	type?: string;
@@ -23,31 +21,41 @@ type ChannelSubscriber = {
 	onConnected?(): void;
 };
 
-const CONTAINER_DOMAINS = ['containers', 'container', 'ports', 'projects', 'project'];
-const IMAGE_DOMAINS = ['images', 'image', 'image-update', 'vulnerabilities'];
-const VOLUME_DOMAINS = ['volumes', 'volume', 'volume-sizes', 'volume-backup-names', 'volume-backups'];
-const NETWORK_DOMAINS = ['networks', 'network'];
+const DASHBOARD_DOMAIN = 'dashboard';
+const CONTAINER_DOMAINS = ['containers', 'container', 'ports', 'projects', 'project', DASHBOARD_DOMAIN];
+const IMAGE_DOMAINS = ['images', 'image', 'image-update', 'vulnerabilities', DASHBOARD_DOMAIN];
+const VOLUME_DOMAINS = ['volumes', 'volume', 'volume-sizes', 'volume-backup-names', 'volume-backups', DASHBOARD_DOMAIN];
+const NETWORK_DOMAINS = ['networks', 'network', DASHBOARD_DOMAIN];
 const MANAGER_GLOBAL_DOMAINS = new Set(['users', 'roles', 'federated-credentials', 'api-keys']);
 
 export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
 	container: [...CONTAINER_DOMAINS, 'images', 'image', 'volumes', 'volume', ...NETWORK_DOMAINS, 'system', 'podman'],
 	image: [...IMAGE_DOMAINS, 'system'],
-	project: ['projects', 'project', 'containers', 'container', 'gitops-syncs'],
+	project: ['projects', 'project', 'containers', 'container', 'gitops-syncs', DASHBOARD_DOMAIN],
 	volume: [...VOLUME_DOMAINS, 'system'],
 	network: [...NETWORK_DOMAINS, 'containers', 'container'],
 	system: ['system', ...CONTAINER_DOMAINS, ...IMAGE_DOMAINS, ...VOLUME_DOMAINS, ...NETWORK_DOMAINS, 'build-workspace'],
 	user: ['users', 'roles'],
 	federated: ['federated-credentials'],
-	environment: ['environments', 'environment', 'environment-settings', 'settings', 'environment-jobs', 'job-runs', 'job-run'],
+	environment: [
+		'environments',
+		'environment',
+		'environment-settings',
+		'settings',
+		'environment-jobs',
+		'job-runs',
+		'job-run',
+		DASHBOARD_DOMAIN
+	],
 	webhook: ['webhooks'],
-	lifecycle: ['system', 'environments', 'environment'],
+	lifecycle: ['system', 'environments', 'environment', DASHBOARD_DOMAIN],
 	podman: ['podman', 'podman-pods', 'podman-quadlets', 'podman-secrets', ...CONTAINER_DOMAINS],
 	swarm: ['swarm'],
-	gitops: ['gitops-syncs', 'projects', 'project'],
+	gitops: ['gitops-syncs', 'projects', 'project', DASHBOARD_DOMAIN],
 	event: [],
 	activity: ['backup-activities', 'volume-backups', 'environment-jobs', 'job-runs', 'job-run'],
-	build: ['images', 'image', 'build-workspace', 'system'],
-	vulnerability: ['vulnerabilities', 'images', 'image'],
+	build: ['images', 'image', 'build-workspace', 'system', DASHBOARD_DOMAIN],
+	vulnerability: ['vulnerabilities', 'images', 'image', DASHBOARD_DOMAIN],
 	image_update: ['containers', 'container', 'projects', 'project', 'images', 'image', 'image-update', 'vulnerabilities']
 };
 
@@ -82,14 +90,12 @@ function createChangeInvalidator() {
 		const now = Date.now();
 		const due = new Map<string, Set<string>>();
 		const dueGlobal = new Set<string>();
-		let rediscover = false;
 		let eventsDue = false;
 		for (const [key, at] of pending) {
 			if (at > now) continue;
 			pending.delete(key);
 			lastRun.set(key, now);
 			const [environmentId = '', kind = ''] = key.split(KEY_SEPARATOR);
-			rediscover ||= kind === ALL_KIND;
 			const domains = kindDomains(kind);
 			eventsDue ||= domains.includes(EVENTS_DOMAIN);
 			due.set(environmentId, new Set([...(due.get(environmentId) ?? []), ...domains]));
@@ -109,7 +115,6 @@ function createChangeInvalidator() {
 				void queryClient.invalidateQueries({ queryKey: [domain], refetchType: 'active' });
 			}
 			if (eventsDue) void queryClient.invalidateQueries({ queryKey: queryKeys.events.global, refetchType: 'active' });
-			if (rediscover) void invalidate(PODMAN_STATUS_DEPENDENCY);
 		}
 		schedule();
 	}

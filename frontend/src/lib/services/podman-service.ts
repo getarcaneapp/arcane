@@ -20,7 +20,6 @@ import type {
 	PodmanSecretCreateRequest,
 	PodmanSecretCreateResponse,
 	PodmanSecretUpdateRequest,
-	PodmanStatus,
 	PodmanUnitStatus,
 	QuadletDetail,
 	QuadletFile,
@@ -36,10 +35,6 @@ import { transformPaginationParams } from '#lib/utils/tables.js';
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class PodmanService extends BaseAPIService {
-	async getStatus(environmentId: string, config?: APIRequestConfig): Promise<PodmanStatus> {
-		return this.handleResponse(this.api.get(`/agents/${environmentId}/podman/status`, config));
-	}
-
 	async getInfo(environmentId: string, config?: APIRequestConfig): Promise<PodmanInfo> {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/podman/info`, config));
 	}
