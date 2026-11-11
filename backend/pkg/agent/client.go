@@ -26,10 +26,10 @@ import (
 )
 
 const (
-	maxReconnectInterval         = 60 * time.Second
+	maxReconnectInterval         = 10 * time.Second
 	healthyTunnelSessionDuration = 60 * time.Second
 
-	DefaultHeartbeatInterval = 30 * time.Second
+	DefaultHeartbeatInterval = 10 * time.Second
 	DefaultWriteTimeout      = 10 * time.Second
 	// DefaultGRPCRegistrationTimeout bounds how long the agent waits for the
 	// manager to acknowledge tunnel registration on any transport.

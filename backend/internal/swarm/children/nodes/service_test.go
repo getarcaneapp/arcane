@@ -101,7 +101,7 @@ func startSwarmTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID stri
 		Handler: handler,
 	}).Start(agentCtx)
 	require.NoError(t, startErr)
-	require.True(t, tunnels.WaitForActive(t.Context(), envID, 5*time.Second).IsPresent())
+	require.True(t, tunnels.WaitForActive(t.Context(), envID, agent.WaitForActiveOptions{Timeout: 5 * time.Second}).IsPresent())
 }
 
 func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, status string, accessToken *string) {

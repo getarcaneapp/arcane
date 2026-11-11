@@ -322,6 +322,7 @@ type (
 		pendingLimit atomic.Int64
 		rx           atomic.Int64
 		tx           atomic.Int64
+		sent         atomic.Int64
 		mu           sync.Mutex
 	}
 

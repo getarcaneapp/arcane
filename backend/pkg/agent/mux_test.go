@@ -150,11 +150,9 @@ func TestNewMuxConfigStreamWindow(t *testing.T) {
 		name            string
 		streamWindowMiB int
 		want            uint32
-		keepAlive       bool
 	}{
 		{
 			name:            "agent minimum",
-			keepAlive:       true,
 			streamWindowMiB: 1,
 			want:            1 << 20,
 		},
@@ -165,16 +163,14 @@ func TestNewMuxConfigStreamWindow(t *testing.T) {
 		},
 		{
 			name:            "agent maximum",
-			keepAlive:       true,
 			streamWindowMiB: 64,
 			want:            64 << 20,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := newMuxConfig(tt.keepAlive, tt.streamWindowMiB)
+			cfg := newMuxConfig(tt.streamWindowMiB)
 			assert.Equal(t, tt.want, cfg.MaxStreamWindowSize)
-			assert.Equal(t, tt.keepAlive, cfg.EnableKeepAlive)
 			require.NoError(t, yamux.VerifyConfig(cfg))
 		})
 	}

@@ -951,7 +951,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 				Handler: agentHandler,
 			}).Start(agentCtx)
 			require.NoError(t, startErr)
-			require.True(t, tunnels.WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
+			require.True(t, tunnels.WaitForActive(t.Context(), "remote", agent.WaitForActiveOptions{Timeout: 5 * time.Second}).IsPresent())
 			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "agent://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
 			service := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
 				DB:              db,

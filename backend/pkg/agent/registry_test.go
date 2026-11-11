@@ -334,7 +334,7 @@ func BenchmarkWaitForActive(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if !r.WaitForActive(b.Context(), "env-1", DefaultTunnelAcquireTimeout).IsPresent() {
+		if !r.WaitForActive(b.Context(), "env-1", WaitForActiveOptions{Timeout: DefaultTunnelAcquireTimeout}).IsPresent() {
 			b.Fatal("tunnel not active")
 		}
 	}
@@ -358,7 +358,7 @@ func BenchmarkWaitForActiveReconnect(b *testing.B) {
 		time.AfterFunc(time.Millisecond, func() {
 			_, _ = r.RegisterSession(b.Context(), tunnel)
 		})
-		if !r.WaitForActive(b.Context(), "env-1", DefaultTunnelAcquireTimeout).IsPresent() {
+		if !r.WaitForActive(b.Context(), "env-1", WaitForActiveOptions{Timeout: DefaultTunnelAcquireTimeout}).IsPresent() {
 			b.Fatal("tunnel not active")
 		}
 	}

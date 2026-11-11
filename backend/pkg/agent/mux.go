@@ -37,6 +37,7 @@ const (
 	muxPendingDrainTarget = 50 * time.Millisecond
 	muxPendingRateWindow  = 1 << 20
 	muxWriteTimeout       = 30 * time.Second
+	muxPingTimeout        = 10 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
 	muxDialTimeout = 30 * time.Second
 	// ProxyResponseHeaderTimeout is generous because proxied operations such as deploys can run for minutes before responding.
@@ -47,12 +48,12 @@ var (
 	errTunnelMuxActive    = errors.New("agent tunnel connection carries a multiplexed session")
 	errAgentMuxRequired   = errors.New("agent does not support the multiplexed data plane; upgrade the agent")
 	errManagerMuxRequired = errors.New("manager did not grant the multiplexed data plane; upgrade the manager")
+	errMuxPingTimeout     = errors.New("agent tunnel ping timed out")
 )
 
-func newMuxConfig(keepAlive bool, streamWindowMiB int) *yamux.Config {
+func newMuxConfig(streamWindowMiB int) *yamux.Config {
 	return &yamux.Config{
 		AcceptBacklog:          256,
-		EnableKeepAlive:        keepAlive,
 		KeepAliveInterval:      DefaultHeartbeatInterval,
 		ConnectionWriteTimeout: muxWriteTimeout,
 		MaxStreamWindowSize:    uint32(streamWindowMiB) << 20,
@@ -89,6 +90,41 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 		DisableProxy:          true,
 		Instrument:            true,
 	})
+}
+
+func pingMuxSession(ctx context.Context, session *yamux.Session, timeout time.Duration) (time.Duration, error) {
+	type pingResult struct {
+		err error
+		rtt time.Duration
+	}
+	pinged := make(chan pingResult, 1)
+	go func() {
+		rtt, err := session.Ping()
+		pinged <- pingResult{err: err, rtt: rtt}
+	}()
+	select {
+	case result := <-pinged:
+		return result.rtt, result.err
+	case <-time.After(timeout):
+		return 0, errMuxPingTimeout
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func keepaliveMuxSession(ctx context.Context, session *yamux.Session, rw *muxConn) (time.Duration, error) {
+	deadline := time.Now().Add(muxWriteTimeout)
+	for {
+		received := rw.rx.Load()
+		rtt, err := pingMuxSession(ctx, session, muxPingTimeout)
+		if !errors.Is(err, errMuxPingTimeout) {
+			return rtt, err
+		}
+		writesQueued := rw.tx.Load() != rw.sent.Load()
+		if rw.rx.Load() == received && (!writesQueued || !time.Now().Before(deadline)) {
+			return 0, err
+		}
+	}
 }
 
 func openMuxStream(ctx context.Context, session *yamux.Session) (net.Conn, error) {
@@ -150,6 +186,7 @@ func newMuxConn(send func([]byte) error, recv func() ([]byte, error), closeTrans
 					c.fail(sendErr)
 					return
 				}
+				c.sent.Add(int64(len(frame)))
 			}
 			sentBytes += int64(len(batch))
 			sendTime += time.Since(started)

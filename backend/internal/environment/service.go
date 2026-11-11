@@ -1150,7 +1150,7 @@ func (s *EnvironmentService) RestartTunnel(ctx context.Context, id string, userI
 	s.createEnvironmentEvent(ctx, id, envRecord.Name, event.EventTypeEnvironmentTunnelRestarted,
 		"Agent Tunnel Restarted", fmt.Sprintf("Agent tunnel for environment '%s' was restarted", envRecord.Name), event.EventSeverityInfo, userID, username)
 
-	replacement, reconnected := s.tunnels.WaitForActive(ctx, id, tunnelReconnectTimeout).Get()
+	replacement, reconnected := s.tunnels.WaitForActive(ctx, id, agent.WaitForActiveOptions{Timeout: tunnelReconnectTimeout}).Get()
 	return types.EnvironmentTunnelRestart{
 		SessionID:   replacement.MetadataSnapshot().SessionID,
 		Reconnected: reconnected,

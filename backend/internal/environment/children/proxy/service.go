@@ -184,18 +184,30 @@ func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*ht
 	if err != nil {
 		return nil, err
 	}
-	tunnel, ok := s.tunnels.WaitForActive(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
-	if !ok {
-		return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agent.MuxAgentBaseURL+path, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("create stream request: %w", err)
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	agent.SetAgentToken(req.Header, kit.FromPtr(target.accessToken))
-	resp, err := tunnel.HTTPClient.Do(req)
-	if err != nil {
+	var lost *agent.AgentTunnel
+	var resp *http.Response
+	for {
+		tunnel, ok := s.tunnels.WaitForActive(ctx, target.id, agent.WaitForActiveOptions{
+			Except:  lost,
+			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, agent.DefaultTunnelAcquireTimeout),
+		}).Get()
+		if !ok {
+			return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
+		}
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, agent.MuxAgentBaseURL+path, http.NoBody)
+		if reqErr != nil {
+			return nil, fmt.Errorf("create stream request: %w", reqErr)
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		agent.SetAgentToken(req.Header, kit.FromPtr(target.accessToken))
+		resp, err = tunnel.HTTPClient.Do(req)
+		if err == nil {
+			break
+		}
+		if lost == nil && tunnel.RetryAfterLoss(req, err) {
+			lost = tunnel
+			continue
+		}
 		return nil, &agent.TransportError{Err: err}
 	}
 	if resp.StatusCode != http.StatusOK {

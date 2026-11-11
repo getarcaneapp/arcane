@@ -49,26 +49,6 @@ func (m *muxSession) close() {
 	})
 }
 
-func (m *muxSession) alive(ctx context.Context, timeout time.Duration) bool {
-	session := m.session.Load()
-	if session == nil {
-		return true
-	}
-	pinged := make(chan error, 1)
-	go func() {
-		_, err := session.Ping()
-		pinged <- err
-	}()
-	select {
-	case err := <-pinged:
-		return err == nil
-	case <-time.After(timeout):
-		return false
-	case <-ctx.Done():
-		return true
-	}
-}
-
 func (m *muxSession) recordRTT(rtt time.Duration) {
 	ns := int64(rtt)
 	m.rtt.Store(ns)
@@ -112,7 +92,7 @@ func (m *muxSession) start(session *yamux.Session, conn *muxConn) bool {
 
 func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, rw *muxConn) error {
 	defer tunnel.mux.close()
-	session, err := yamux.Server(rw, newMuxConfig(false, muxStreamWindowMiB(tunnel.Capabilities, s.streamWindowMiB())))
+	session, err := yamux.Server(rw, newMuxConfig(muxStreamWindowMiB(tunnel.Capabilities, s.streamWindowMiB())))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)
@@ -148,7 +128,10 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 		case <-tunnel.done:
 			return nil
 		case <-ticker.C:
-			rtt, pingErr := session.Ping()
+			rtt, pingErr := keepaliveMuxSession(ctx, session, rw)
+			if pingErr != nil && ctx.Err() != nil {
+				return nil
+			}
 			if pingErr != nil {
 				_ = tunnel.CloseWithReason("agent tunnel keepalive failed")
 				return fmt.Errorf("agent tunnel keepalive failed: %w", pingErr)
