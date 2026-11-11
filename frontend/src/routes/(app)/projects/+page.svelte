@@ -261,7 +261,7 @@
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: m.compose_total(),
+			title: m.common_total(),
 			value: totalCompose,
 			icon: ProjectsIcon,
 			iconColor: 'text-warning'
@@ -279,7 +279,7 @@
 			iconColor: 'text-destructive'
 		},
 		{
-			title: m.projects_archived_count(),
+			title: m.projects_archived_badge(),
 			value: archivedCompose,
 			icon: ContainersIcon,
 			iconColor: 'text-muted-foreground'
