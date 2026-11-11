@@ -404,7 +404,7 @@ func (s *VariableService) syncEnvironments(ctx context.Context, targets []string
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target != environment.LocalEnvironmentID && s.tunnels.WaitForActive(syncCtx, target, agent.DefaultTunnelAcquireTimeout).IsAbsent() {
+			if target != environment.LocalEnvironmentID && s.tunnels.WaitForActive(syncCtx, target, agent.WaitForActiveOptions{Timeout: agent.DefaultTunnelAcquireTimeout}).IsAbsent() {
 				s.recordSyncPending(target)
 				return
 			}

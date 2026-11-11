@@ -384,31 +384,28 @@ test.describe('Workspace restore', () => {
 		openPage = true
 	) {
 		await mockAppShell(page);
-		await page.route(
-			/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/,
-			async (route) => {
-				await route.fulfill({
-					json: {
-						success: true,
-						data: [
-							{
-								id: SYSTEM_BACKUP_ID,
-								size: 2048,
-								createdAt: new Date().toISOString(),
-								status: 'succeeded',
-								trigger: 'manual',
-								destination: 'local',
-								localSnapshotId: 'system-snapshot',
-								type: 'system',
-								resourceType: 'system',
-								resourceName: 'Arcane system'
-							}
-						],
-						pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 20 }
-					}
-				});
-			}
-		);
+		await page.route(/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/, async (route) => {
+			await route.fulfill({
+				json: {
+					success: true,
+					data: [
+						{
+							id: SYSTEM_BACKUP_ID,
+							size: 2048,
+							createdAt: new Date().toISOString(),
+							status: 'succeeded',
+							trigger: 'manual',
+							destination: 'local',
+							localSnapshotId: 'system-snapshot',
+							type: 'system',
+							resourceType: 'system',
+							resourceName: 'Arcane system'
+						}
+					],
+					pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 20 }
+				}
+			});
+		});
 		await page.route(/\/api\/backups\/policies$/, async (route) => {
 			await route.fulfill({ json: response({ policies: [], recoveryKeyStored: true }) });
 		});

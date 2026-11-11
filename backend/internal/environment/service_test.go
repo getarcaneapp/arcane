@@ -239,7 +239,7 @@ func startTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID string, h
 		Handler: handler,
 	}).Start(agentCtx)
 	require.NoError(t, startErr)
-	require.True(t, tunnels.WaitForActive(t.Context(), envID, 5*time.Second).IsPresent())
+	require.True(t, tunnels.WaitForActive(t.Context(), envID, agent.WaitForActiveOptions{Timeout: 5 * time.Second}).IsPresent())
 
 	return "agent://" + envID
 }

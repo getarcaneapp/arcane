@@ -40,6 +40,14 @@ type (
 		paramName   string
 	}
 
+	proxyRoute struct {
+		perms       *authz.PermissionSet
+		accessToken *string
+		envID       string
+		suffix      string
+		canRetry    bool
+	}
+
 	EnvironmentProxyConfig struct {
 		Resolver      EnvResolver
 		AuthValidator AuthValidator
@@ -139,44 +147,67 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
 	}
 
-	tunnel, connected := m.registry.WaitForActive(ctx, envID, kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)).Get()
-	if !connected {
-		slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
-		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
+	acquireTimeout := kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)
+	var lost *agent.AgentTunnel
+	for {
+		tunnel, connected := m.registry.WaitForActive(ctx, envID, agent.WaitForActiveOptions{
+			Except:  lost,
+			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, acquireTimeout),
+		}).Get()
+		if !connected {
+			slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
+			return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
+		}
+		retry, forwardErr := m.forward(c, tunnel, proxyRoute{
+			perms:       perms,
+			accessToken: accessToken,
+			envID:       envID,
+			suffix:      suffix,
+			canRetry:    lost == nil && acquireTimeout > 0,
+		})
+		if !retry {
+			return forwardErr
+		}
+		lost = tunnel
 	}
+}
+
+func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunnel, route proxyRoute) (bool, error) {
+	req := c.Request()
+	ctx := req.Context()
 	capabilities := tunnel.MetadataSnapshot().Capabilities
-	if !kit.FromPtr(perms).Sudo && !slices.Contains(capabilities, agent.TunnelCapabilityForwardedPermissions) {
-		slog.WarnContext(ctx, "Refusing to proxy to agent without forwarded permissions support", "environmentId", envID)
-		return writeProxyError(c, http.StatusBadGateway, "Agent must be upgraded to use this environment")
+	if !kit.FromPtr(route.perms).Sudo && !slices.Contains(capabilities, agent.TunnelCapabilityForwardedPermissions) {
+		slog.WarnContext(ctx, "Refusing to proxy to agent without forwarded permissions support", "environmentId", route.envID)
+		return false, writeProxyError(c, http.StatusBadGateway, "Agent must be upgraded to use this environment")
 	}
 
 	req.Header.Del(HeaderForwardedPermissions)
-	if !kit.FromPtr(perms).Sudo {
+	if !kit.FromPtr(route.perms).Sudo {
 		forwardedPermissions := authz.ForwardedPermissions{GlobalAdmin: true}
-		if !perms.IsGlobalAdmin() || !slices.Contains(capabilities, agent.TunnelCapabilityForwardedGlobalAdmin) {
-			forwardedPermissions = perms.ForwardedPermissions(envID)
+		if !route.perms.IsGlobalAdmin() || !slices.Contains(capabilities, agent.TunnelCapabilityForwardedGlobalAdmin) {
+			forwardedPermissions = route.perms.ForwardedPermissions(route.envID)
 		}
 		forwarded, marshalErr := json.Marshal(forwardedPermissions)
 		if marshalErr != nil {
-			return writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
+			return false, writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
 		}
 		req.Header.Set(HeaderForwardedPermissions, string(forwarded))
 	}
 
-	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
-	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
+	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", route.envID, "path", req.URL.Path)
+	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + route.suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
 	if httpx.IsWebSocketUpgradeRequest(req) {
 		wsHeaders := http.Header{HeaderForwardedPermissions: req.Header.Values(HeaderForwardedPermissions)}
-		agent.SetAgentToken(wsHeaders, kit.FromPtr(accessToken))
+		agent.SetAgentToken(wsHeaders, kit.FromPtr(route.accessToken))
 		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), wsHeaders, m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
-		return nil
+		return false, nil
 	}
 
 	targetURL, err := httpx.ValidateOutboundHTTPURL(target)
 	if err != nil {
-		return writeProxyError(c, http.StatusInternalServerError, "Invalid proxy target URL: "+err.Error())
+		return false, writeProxyError(c, http.StatusInternalServerError, "Invalid proxy target URL: "+err.Error())
 	}
 
 	// Stream the body unbuffered (uploads reach gigabytes); ContentLength 0 means no body, -1 means chunked.
@@ -197,7 +228,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}).WithContext(ctx)
 
 	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
-	agent.SetAgentToken(proxyReq.Header, kit.FromPtr(accessToken))
+	agent.SetAgentToken(proxyReq.Header, kit.FromPtr(route.accessToken))
 	proxyReq.Header.Set("X-Forwarded-For", c.RealIP())
 	proxyReq.Header.Set("X-Forwarded-Host", req.Host)
 
@@ -208,28 +239,32 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	resp, err := tunnel.HTTPClient.Do(proxyReq)
+	if err != nil && route.canRetry && tunnel.RetryAfterLoss(proxyReq, err) {
+		slog.InfoContext(ctx, "Agent tunnel dropped mid-request; retrying on the next session", "environmentId", route.envID, "error", err)
+		return true, nil
+	}
 	if err != nil {
 		netErr, isNetErr := errors.AsType[net.Error](err)
-		return writeProxyError(c, kit.Ternary(isNetErr && netErr.Timeout(), http.StatusGatewayTimeout, http.StatusBadGateway), "Proxy request failed: "+err.Error())
+		return false, writeProxyError(c, kit.Ternary(isNetErr && netErr.Timeout(), http.StatusGatewayTimeout, http.StatusBadGateway), "Proxy request failed: "+err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// An upstream 401 means the agent rejected the manager's credentials; a 502 keeps browsers from dropping the session.
 	if resp.StatusCode == http.StatusUnauthorized {
 		slog.WarnContext(ctx, "Remote environment rejected the manager's credentials", "target", resp.Request.URL.Host)
-		return writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
+		return false, writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
 	}
 	w := c.Response()
 	agent.CopyResponseHeaders(resp.Header, w.Header())
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
 		if copyErr := agent.CopyResponseBody(w, resp); copyErr != nil {
-			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", envID, "error", copyErr)
+			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", route.envID, "error", copyErr)
 			// Headers are already sent, so abort the connection instead of ending a truncated response as complete.
 			panic(http.ErrAbortHandler)
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) bool {

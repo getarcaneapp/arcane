@@ -41,6 +41,11 @@ type (
 		Capabilities  []string
 	}
 
+	WaitForActiveOptions struct {
+		Except  *AgentTunnel
+		Timeout time.Duration
+	}
+
 	RegisterResult struct {
 		Reason        string
 		Accepted      bool
@@ -144,9 +149,9 @@ func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
 	return mo.None[*AgentTunnel]()
 }
 
-func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
-	if tunnel := r.Active(envID); tunnel.IsPresent() {
-		return tunnel
+func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, opts WaitForActiveOptions) mo.Option[*AgentTunnel] {
+	if tunnel, ok := r.Active(envID).Get(); ok && tunnel != opts.Except {
+		return mo.Some(tunnel)
 	}
 	registered := make(chan struct{}, 1)
 	unsubscribe := r.registered.Subscribe(func(id string) {
@@ -159,11 +164,11 @@ func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeou
 		}
 	})
 	defer unsubscribe()
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 	for {
-		if tunnel := r.Active(envID); tunnel.IsPresent() {
-			return tunnel
+		if tunnel, ok := r.Active(envID).Get(); ok && tunnel != opts.Except {
+			return mo.Some(tunnel)
 		}
 		select {
 		case <-waitCtx.Done():
@@ -251,9 +256,13 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	if envID == "" {
 		return RegisterResult{Reason: "environment ID is required"}, nil
 	}
-	if existing, ok := r.Active(envID).Get(); ok && existing != tunnel && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
-		slog.InfoContext(ctx, "Existing agent tunnel session failed a liveness ping; replacing it", "environmentId", envID)
-		_ = existing.CloseWithReason("agent tunnel liveness ping failed")
+	if existing, ok := r.Active(envID).Get(); ok && existing != tunnel {
+		if session := existing.mux.session.Load(); session != nil {
+			if _, pingErr := pingMuxSession(ctx, session, muxRegistrationPingTimeout); pingErr != nil && ctx.Err() == nil {
+				slog.InfoContext(ctx, "Existing agent tunnel session failed a liveness ping; replacing it", "environmentId", envID)
+				_ = existing.CloseWithReason("agent tunnel liveness ping failed")
+			}
+		}
 	}
 
 	result, err := r.tunnels.ApplyTyped(ctx, "register agent tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResult, bool, error) {

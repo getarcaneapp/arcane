@@ -353,7 +353,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 				}),
 			}).Start(agentCtx)
 			require.NoError(t, startErr)
-			require.True(t, registry.WaitForActive(t.Context(), "env-remote", 5*time.Second).IsPresent())
+			require.True(t, registry.WaitForActive(t.Context(), "env-remote", agent.WaitForActiveOptions{Timeout: 5 * time.Second}).IsPresent())
 
 			mw := &EnvironmentMiddleware{
 				localID:   "0",

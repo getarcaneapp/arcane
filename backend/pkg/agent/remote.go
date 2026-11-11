@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/yamux"
+
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -46,25 +48,45 @@ type (
 	}
 )
 
-const DefaultTunnelAcquireTimeout = 4 * time.Second
+const (
+	DefaultTunnelAcquireTimeout   = 4 * time.Second
+	DefaultTunnelReconnectTimeout = 10 * time.Second
+)
 
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
+
+func (t *AgentTunnel) RetryAfterLoss(req *http.Request, err error) bool {
+	return (req.Method == http.MethodGet || req.Method == http.MethodHead) && req.ContentLength == 0 && req.Context().Err() == nil &&
+		(errors.Is(err, ErrTunnelConnectionClosed) || errors.Is(err, yamux.ErrSessionShutdown) || t.Conn.IsClosed())
+}
 
 func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResponse, error) {
 	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultAgentProxy)
 	defer cancel()
 
-	tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, DefaultTunnelAcquireTimeout).Get()
-	if !ok {
-		return nil, &TransportError{Err: ErrEnvironmentUnavailable}
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, MuxAgentBaseURL+req.Path, bytes.NewReader(req.Body))
-	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("create agent tunnel request: %w", err)}
-	}
-	maps.Copy(httpReq.Header, req.Headers.Clone())
-	resp, err := tunnel.HTTPClient.Do(httpReq)
-	if err != nil {
+	var lost *AgentTunnel
+	var resp *http.Response
+	for {
+		tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, WaitForActiveOptions{
+			Except:  lost,
+			Timeout: kit.Ternary(lost != nil, DefaultTunnelReconnectTimeout, DefaultTunnelAcquireTimeout),
+		}).Get()
+		if !ok {
+			return nil, &TransportError{Err: ErrEnvironmentUnavailable}
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, req.Method, MuxAgentBaseURL+req.Path, bytes.NewReader(req.Body))
+		if err != nil {
+			return nil, &TransportError{Err: fmt.Errorf("create agent tunnel request: %w", err)}
+		}
+		maps.Copy(httpReq.Header, req.Headers.Clone())
+		resp, err = tunnel.HTTPClient.Do(httpReq)
+		if err == nil {
+			break
+		}
+		if lost == nil && tunnel.RetryAfterLoss(httpReq, err) {
+			lost = tunnel
+			continue
+		}
 		return nil, &TransportError{Err: fmt.Errorf("tunnel request failed: %w",
 			kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), errors.Join(ErrEnvironmentUnavailable, err), err))}
 	}

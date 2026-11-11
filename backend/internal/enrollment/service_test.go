@@ -214,7 +214,7 @@ func startEnrollmentTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID
 		Handler: handler,
 	}).Start(agentCtx)
 	require.NoError(t, startErr)
-	require.True(t, tunnels.WaitForActive(t.Context(), envID, 5*time.Second).IsPresent())
+	require.True(t, tunnels.WaitForActive(t.Context(), envID, agent.WaitForActiveOptions{Timeout: 5 * time.Second}).IsPresent())
 }
 
 func TestEnrollmentService_EnrollPlainAgent(t *testing.T) {

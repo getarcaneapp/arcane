@@ -31,7 +31,7 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 	}
 	compressed := compress(c.handler)
 
-	session, err := yamux.Client(rw, newMuxConfig(true, streamWindowMiB))
+	session, err := yamux.Client(rw, newMuxConfig(streamWindowMiB))
 	if err != nil {
 		_ = rw.Close()
 		return fmt.Errorf("start agent tunnel session: %w", err)
@@ -78,12 +78,20 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- srv.Serve(muxListener{Session: session, conn: rw}) }()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-session.CloseChan():
-		return ErrTunnelConnectionClosed
-	case serveErr := <-serveDone:
-		return serveErr
+	ticker := time.NewTicker(DefaultHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-session.CloseChan():
+			return ErrTunnelConnectionClosed
+		case serveErr := <-serveDone:
+			return serveErr
+		case <-ticker.C:
+			if _, pingErr := pingMuxSession(ctx, session, muxPingTimeout); pingErr != nil && ctx.Err() == nil {
+				return fmt.Errorf("agent tunnel keepalive failed: %w", pingErr)
+			}
+		}
 	}
 }
