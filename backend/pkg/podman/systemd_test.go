@@ -1,6 +1,9 @@
 package podman
 
 import (
+	"os"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,11 +14,14 @@ import (
 )
 
 func TestNewSystemd(t *testing.T) {
+	uidBus := "/run/user/" + strconv.Itoa(os.Getuid()) + "/bus"
 	tests := []struct {
 		env      map[string]string
 		want     *dbusSystemd
 		name     string
 		host     string
+		buses    []string
+		statted  []string
 		rootless bool
 	}{
 		{
@@ -71,20 +77,61 @@ func TestNewSystemd(t *testing.T) {
 				scope:   types.PodmanSystemdScopeUser,
 			},
 		},
+		{
+			name:     "rootless prefers runtime dir bus",
+			rootless: true,
+			env:      map[string]string{"XDG_RUNTIME_DIR": "/run/xdg"},
+			buses:    []string{"/run/xdg/bus", uidBus},
+			statted:  []string{"/run/xdg/bus"},
+			want: &dbusSystemd{
+				address: "unix:path=/run/xdg/bus",
+				scope:   types.PodmanSystemdScopeUser,
+			},
+		},
+		{
+			name:     "rootless falls back to uid bus",
+			rootless: true,
+			env:      map[string]string{"XDG_RUNTIME_DIR": "/run/xdg"},
+			buses:    []string{uidBus},
+			statted:  []string{"/run/xdg/bus", uidBus},
+			want: &dbusSystemd{
+				address: "unix:path=" + uidBus,
+				scope:   types.PodmanSystemdScopeUser,
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, NewSystemd(tt.host, tt.rootless, func(key string) string {
-				return tt.env[key]
+			var statted []string
+			assert.Equal(t, tt.want, NewSystemd(SystemdConfig{
+				Getenv: func(key string) string {
+					return tt.env[key]
+				},
+				Stat: func(name string) (os.FileInfo, error) {
+					statted = append(statted, name)
+					if !slices.Contains(tt.buses, name) {
+						return nil, os.ErrNotExist
+					}
+					return nil, nil
+				},
+				Host:     tt.host,
+				Rootless: tt.rootless,
 			}))
+			assert.Equal(t, tt.statted, statted)
 		})
 	}
 }
 
 func TestSystemdRootlessWithoutSessionBus(t *testing.T) {
-	systemd := NewSystemd("", true, func(string) string {
-		return ""
+	systemd := NewSystemd(SystemdConfig{
+		Getenv: func(string) string {
+			return ""
+		},
+		Stat: func(string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+		Rootless: true,
 	})
 
 	availability := systemd.Availability(t.Context())

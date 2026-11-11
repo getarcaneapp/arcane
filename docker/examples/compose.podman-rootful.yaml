@@ -1,4 +1,5 @@
 # Arcane runs as root (PUID/PGID=0) so the host system bus lets it manage Quadlet units and podman-auto-update.
+# Run `sudo systemctl enable --now podman.socket` first; Arcane talks to Podman through that socket.
 services:
   arcane:
     image: getarcaneapp/manager:latest

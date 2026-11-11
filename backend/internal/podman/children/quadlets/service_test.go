@@ -48,6 +48,10 @@ func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUn
 	}, nil
 }
 
+func (f *fakeSystemd) UnitByPID(context.Context, uint32) (string, error) {
+	return "", nil
+}
+
 func newTestService(t *testing.T, appsSupported bool, handler http.HandlerFunc) (*Service, *fakeSystemd) {
 	t.Helper()
 	server := httptest.NewServer(handler)

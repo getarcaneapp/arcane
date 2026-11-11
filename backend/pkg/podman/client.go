@@ -59,6 +59,12 @@ type (
 		Ports []PodPortMapping `json:"Ports"`
 		types.PodmanContainer
 	}
+
+	containerInspectResponse struct {
+		State struct {
+			ConmonPid uint32 `json:"ConmonPid"`
+		} `json:"State"`
+	}
 )
 
 const (
@@ -98,13 +104,13 @@ func NewClient(host string) (*Client, error) {
 }
 
 func DetectFeatures(version string, systemdAvailable bool) Features {
-	v := kit.EnsurePrefix(strings.TrimSpace(version), "v")
+	v := semver.MajorMinor(kit.EnsurePrefix(strings.TrimSpace(version), "v"))
 	return Features{
-		QuadletsSupported:    semver.Compare(v, "v5.8.0") >= 0,
-		QuadletAppsSupported: semver.Compare(v, "v6.1.0") >= 0,
+		QuadletsSupported:    semver.Compare(v, "v5.8") >= 0,
+		QuadletAppsSupported: semver.Compare(v, "v6.1") >= 0,
 		AutoUpdateMode: func() types.PodmanAutoUpdateMode {
 			switch {
-			case semver.Compare(v, "v6.2.0") >= 0:
+			case semver.Compare(v, "v6.2") >= 0:
 				return types.PodmanAutoUpdateModeREST
 			case systemdAvailable:
 				return types.PodmanAutoUpdateModeSystemd
@@ -166,6 +172,11 @@ func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]ty
 		})
 	}
 	return containers, nil
+}
+
+func (c *Client) ContainerConmonPID(ctx context.Context, nameOrID string) (uint32, error) {
+	inspect, err := c.doJSON[containerInspectResponse](ctx, request{method: http.MethodGet, path: "/containers/" + url.PathEscape(nameOrID) + "/json"})
+	return inspect.State.ConmonPid, err
 }
 
 func (c *Client) doJSON[T any](ctx context.Context, req request) (T, error) {

@@ -24,8 +24,7 @@ type (
 		Sort          string   `query:"sort" doc:"Column to sort by"`
 		Order         string   `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 		Name          []string `query:"name,explode" doc:"Filter by quadlet name"`
-		Pod           []string `query:"pod,explode" doc:"Filter by pod (Podman 6.0+)"`
-		Status        []string `query:"status,explode" doc:"Filter by status (Podman 6.0+)"`
+		Status        []string `query:"status,explode" doc:"Filter by status"`
 		Start         int      `query:"start" default:"0" doc:"Start index for pagination"`
 		Limit         int      `query:"limit" default:"20" doc:"Number of items per page"`
 	}
@@ -69,7 +68,6 @@ func (h *Handler) List(ctx context.Context, input *ListQuadletsInput) (*handleru
 
 	items, page, err := h.service.ListPaginated(ctx, map[string][]string{
 		"name":   input.Name,
-		"pod":    input.Pod,
 		"status": input.Status,
 	}, params)
 	if err != nil {

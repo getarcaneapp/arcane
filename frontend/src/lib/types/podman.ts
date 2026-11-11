@@ -29,6 +29,7 @@ export interface PodmanStatus {
 	systemdAvailable: boolean;
 	systemdScope?: PodmanSystemdScope;
 	systemdReason?: string;
+	reason?: string;
 }
 
 export interface PodmanInfoIDMap {

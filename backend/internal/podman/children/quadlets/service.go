@@ -94,14 +94,20 @@ func (s *Service) List(ctx context.Context, filters map[string][]string) ([]type
 		return nil, err
 	}
 
-	entries, err := rt.Client.QuadletList(ctx, filters)
+	entries, err := rt.Client.QuadletList(ctx, map[string][]string{"name": filters["name"]})
 	if err != nil {
 		return nil, err
 	}
 
 	out := make([]types.QuadletDetail, 0, len(entries))
 	for _, entry := range entries {
-		out = append(out, describe(entry))
+		detail := describe(entry)
+		if len(filters["status"]) > 0 && !slices.ContainsFunc(filters["status"], func(status string) bool {
+			return strings.EqualFold(status, detail.Status)
+		}) {
+			continue
+		}
+		out = append(out, detail)
 	}
 	return out, nil
 }
@@ -154,6 +160,12 @@ func (s *Service) Get(ctx context.Context, name string) (types.QuadletDetail, er
 	containers, err := rt.Client.ContainerList(ctx, []string{types.PodmanSystemdUnitLabel + "=" + detail.UnitName}, nil)
 	if err != nil {
 		return types.QuadletDetail{}, err
+	}
+	if detail.Type == types.QuadletTypePod && len(containers) > 0 && containers[0].PodName != "" {
+		containers, err = rt.Client.ContainerList(ctx, nil, []string{containers[0].PodName})
+		if err != nil {
+			return types.QuadletDetail{}, err
+		}
 	}
 	unitStatus, unitErr := rt.Systemd.UnitStatus(ctx, detail.UnitName)
 	if unitErr != nil {
@@ -269,7 +281,11 @@ func (s *Service) Lifecycle(ctx context.Context, name string, action func(podman
 	if detail.Template {
 		return types.PodmanUnitStatus{}, common.Classify(common.ErrConflict, fmt.Errorf("quadlet %s is a template and has no lifecycle actions", name))
 	}
-	if actionErr := action(rt.Systemd, ctx, detail.UnitName); actionErr != nil {
+	actionErr := action(rt.Systemd, ctx, detail.UnitName)
+	if errors.Is(actionErr, common.ErrNotFound) {
+		return types.PodmanUnitStatus{}, common.Classify(common.ErrConflict, fmt.Errorf("quadlet %s has no systemd unit %s; systemd skips quadlet files it cannot parse", name, detail.UnitName))
+	}
+	if actionErr != nil {
 		return types.PodmanUnitStatus{}, actionErr
 	}
 	return rt.Systemd.UnitStatus(ctx, detail.UnitName)

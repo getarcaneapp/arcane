@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/moby/moby/client"
 	"go.uber.org/fx"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apikey"
@@ -203,9 +206,23 @@ var (
 			func(localDocker *docker.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
 				return podman.NewService(podman.Config{
 					Engine: localDocker.Engine,
-					Host:   localDocker.DockerHost,
+					ContainerLabels: func(ctx context.Context, containerRef string) (map[string]string, error) {
+						inspect, err := localDocker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+							return dockerClient.ContainerInspect(ctx, containerRef, client.ContainerInspectOptions{})
+						})
+						if err != nil {
+							return nil, err
+						}
+						return kit.FromPtr(inspect.Container.Config).Labels, nil
+					},
+					Host: localDocker.DockerHost,
 					NewSystemd: func(rootless bool) libpodman.Systemd {
-						return libpodman.NewSystemd(localDocker.DockerHost(), rootless, os.Getenv)
+						return libpodman.NewSystemd(libpodman.SystemdConfig{
+							Getenv:   os.Getenv,
+							Stat:     os.Stat,
+							Host:     localDocker.DockerHost(),
+							Rootless: rootless,
+						})
 					},
 					NotifyUpdates: notificationService.SendBatchContainerUpdateNotification,
 				})

@@ -30,10 +30,11 @@ import (
 
 type (
 	Config struct {
-		Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
-		NewSystemd    func(rootless bool) libpodman.Systemd
-		NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
-		Host          func() string
+		Engine          func(context.Context) (compat.EngineCompatibilityInfo, error)
+		ContainerLabels func(ctx context.Context, containerRef string) (map[string]string, error)
+		NewSystemd      func(rootless bool) libpodman.Systemd
+		NotifyUpdates   func(context.Context, []notifications.ContainerUpdateBatchEntry) error
+		Host            func() string
 	}
 
 	Service struct {
@@ -81,10 +82,17 @@ func NewService(cfg Config) *Service {
 
 func (s *Service) Status(ctx context.Context) types.PodmanStatus {
 	rt, err := s.detect(ctx)
-	if err != nil {
-		if !errors.Is(err, common.ErrPodmanNotDetected) {
-			slog.DebugContext(ctx, "Podman detection failed", "error", err)
+	switch {
+	case errors.Is(err, common.ErrPodmanAPIUnavailable):
+		slog.WarnContext(ctx, "Podman engine detected but its libpod API is unreachable", "error", err)
+		return types.PodmanStatus{
+			AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+			Reason:         err.Error(),
 		}
+	case errors.Is(err, common.ErrPodmanNotDetected):
+		return types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}
+	case err != nil:
+		slog.DebugContext(ctx, "Podman detection failed", "error", err)
 		return types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}
 	}
 
@@ -141,17 +149,16 @@ func (s *Service) PodCount(ctx context.Context) mo.Option[int] {
 
 func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, action func(libpodman.Systemd, context.Context, string) error) (bool, error) {
 	rt, err := s.detect(ctx)
-	if err != nil || containerRef == "" {
-		return false, nil
+	if errors.Is(err, common.ErrPodmanAPIUnavailable) && containerRef != "" {
+		return s.unverifiedUnitAction(ctx, containerRef, err)
 	}
-	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported || !rt.Systemd.Availability(ctx).Available {
+	if err != nil || containerRef == "" {
 		return false, nil
 	}
 
 	containers, err := rt.Client.ContainerList(ctx, nil, nil)
 	if err != nil {
-		slog.WarnContext(ctx, "Could not list containers", "container", containerRef, "error", err)
-		return false, nil
+		return s.unverifiedUnitAction(ctx, containerRef, err)
 	}
 
 	match, found := resolveContainer(containers, containerRef)
@@ -163,14 +170,39 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	if unit == "" {
 		return false, nil
 	}
-	managed, err := s.quadletManaged(ctx, rt, unit)
+	availability := rt.Systemd.Availability(ctx)
+	managed, err := s.quadletManaged(ctx, rt, unit, availability)
 	if err != nil {
 		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
 	if !managed {
 		return false, nil
 	}
+	if !availability.Available {
+		return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is managed by systemd unit %s, but Arcane cannot reach systemd: %s", containerRef, unit, availability.Reason))
+	}
+
+	conmonPID, err := rt.Client.ContainerConmonPID(ctx, match.ID)
+	if err != nil {
+		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
+	}
+	owner, err := rt.Systemd.UnitByPID(ctx, conmonPID)
+	if errors.Is(err, common.ErrNotFound) || (err == nil && owner != unit) {
+		return false, nil
+	}
+	if err != nil {
+		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
+	}
 	return true, action(rt.Systemd, ctx, unit)
+}
+
+func (s *Service) unverifiedUnitAction(ctx context.Context, containerRef string, cause error) (bool, error) {
+	labels, err := s.config.ContainerLabels(ctx, containerRef)
+	unit := types.QuadletUnit(labels)
+	if err != nil || unit == "" {
+		return false, nil
+	}
+	return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is labelled with systemd unit %s, but Arcane cannot verify it: %w", containerRef, unit, cause))
 }
 
 func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]string) error {
@@ -187,7 +219,7 @@ func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]str
 		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
 	}
 
-	managed, err := s.quadletManaged(ctx, rt, unit)
+	managed, err := s.quadletManaged(ctx, rt, unit, rt.Systemd.Availability(ctx))
 	if err != nil {
 		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
 	}
@@ -197,7 +229,17 @@ func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]str
 	return nil
 }
 
-func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit string) (bool, error) {
+func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit string, availability types.PodmanSystemdAvailability) (bool, error) {
+	if availability.Available {
+		status, err := rt.Systemd.UnitStatus(ctx, unit)
+		if errors.Is(err, common.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return status.LoadState == "loaded", nil
+	}
 	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported {
 		return true, nil
 	}
@@ -322,16 +364,16 @@ func (s *detector) detect(ctx context.Context) (libpodman.Runtime, error) {
 	conn := s.conn
 	s.mu.Unlock()
 	if conn.err != nil {
-		return libpodman.Runtime{}, conn.err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, conn.err)
 	}
 
 	version, err := conn.client.Version(ctx)
 	if err != nil {
-		return libpodman.Runtime{}, err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, err)
 	}
 	info, err := conn.client.Info(ctx)
 	if err != nil {
-		return libpodman.Runtime{}, err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, err)
 	}
 
 	rt := libpodman.Runtime{

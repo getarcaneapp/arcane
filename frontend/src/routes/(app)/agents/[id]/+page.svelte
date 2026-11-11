@@ -99,6 +99,9 @@
 	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
 	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:list', environment.id));
 	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
+	const podmanUnavailableReason = $derived(
+		hasPermission('podman:read', environment.id) ? data.podmanUnavailableReasons?.[environment.id] : undefined
+	);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
@@ -655,7 +658,7 @@
 		{#if showEngineTab}
 			<Tabs.Content value="engine">
 				{#if isCurrentlyOnline}
-					<EngineInfoTab environmentId={environment.id} {podmanStatus} />
+					<EngineInfoTab environmentId={environment.id} {podmanStatus} {podmanUnavailableReason} />
 				{:else}
 					{@render settingsOffline()}
 				{/if}

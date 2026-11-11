@@ -102,7 +102,8 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			versionInformation: versionStore.current ?? toAppVersionInformation({}),
 			queryClient,
 			swarmEnabled: undefined,
-			podmanStatuses: {}
+			podmanStatuses: {},
+			podmanUnavailableReasons: {}
 		};
 	}
 
@@ -177,6 +178,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	let settings = null;
 	let swarmEnabled: boolean | undefined;
 	let podmanStatuses: Record<string, PodmanStatus> = {};
+	let podmanUnavailableReasons: Record<string, string> = {};
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
@@ -264,7 +266,9 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 				: Promise.resolve(null)
 		).then((loaded) =>
 			Object.fromEntries(
-				(loaded?.byEnvironment ?? []).flatMap(({ environment, data }) => (data.detected ? [[environment.id, data] as const] : []))
+				(loaded?.byEnvironment ?? []).flatMap(({ environment, data }) =>
+					data.detected || data.reason ? [[environment.id, data] as const] : []
+				)
 			)
 		);
 		const podmanStatusDiscovery = Promise.race([podmanStatusRequest, afterDiscoveryTimeout()]);
@@ -292,8 +296,13 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			));
 		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled;
-		podmanStatuses = discoveredPodmanStatuses ?? knownPodmanStatuses;
-		knownPodmanStatuses = podmanStatuses;
+		knownPodmanStatuses = discoveredPodmanStatuses ?? knownPodmanStatuses;
+		podmanStatuses = Object.fromEntries(Object.entries(knownPodmanStatuses).filter(([, status]) => status.detected));
+		podmanUnavailableReasons = Object.fromEntries(
+			Object.entries(knownPodmanStatuses).flatMap(([id, status]) =>
+				!status.detected && status.reason ? [[id, status.reason] as const] : []
+			)
+		);
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
@@ -354,6 +363,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		versionInformation,
 		queryClient,
 		swarmEnabled,
-		podmanStatuses
+		podmanStatuses,
+		podmanUnavailableReasons
 	};
 };

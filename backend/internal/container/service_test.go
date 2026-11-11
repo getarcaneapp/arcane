@@ -1866,7 +1866,15 @@ func (f *quadletTestSystemd) Restart(_ context.Context, unit string) error {
 }
 
 func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
-	return types.PodmanUnitStatus{Name: unit, ActiveState: "active"}, nil
+	return types.PodmanUnitStatus{
+		Name:        unit,
+		LoadState:   "loaded",
+		ActiveState: "active",
+	}, nil
+}
+
+func (f *quadletTestSystemd) UnitByPID(context.Context, uint32) (string, error) {
+	return "web.service", nil
 }
 
 func (f *quadletTestSystemd) record(call string) error {
@@ -1912,6 +1920,8 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 			_, _ = w.Write([]byte(`{"host":{"security":{"rootless":false}}}`))
 		case "/v4.0.0/libpod/containers/json":
 			_, _ = w.Write([]byte(`[{"Id":"quadlet-id","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
+		case "/v4.0.0/libpod/containers/quadlet-id/json":
+			_, _ = w.Write([]byte(`{"State":{"ConmonPid":101}}`))
 		case "/v4.0.0/libpod/quadlets/json":
 			_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
 		default:
