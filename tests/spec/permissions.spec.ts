@@ -111,9 +111,7 @@ async function selectUserAssignment(
 	environmentName: string,
 	roleName: string
 ) {
-	const environmentSelect = dialog
-		.getByRole('combobox', { name: 'Environment', exact: true })
-		.nth(index);
+	const environmentSelect = dialog.getByRole('combobox', { name: 'Agent', exact: true }).nth(index);
 	await environmentSelect.click();
 	await page.getByRole('option', { name: environmentName, exact: true }).click();
 

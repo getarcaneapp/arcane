@@ -127,8 +127,11 @@ func Load(ctx context.Context) (*types.Config, error) {
 		cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	}
 	normalized := cfg.Clone()
-	if normalized.Pagination.Resources == nil {
-		normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig)
+	normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig, len(cfg.Pagination.Resources))
+	for resource, rc := range cfg.Pagination.Resources {
+		if rc.Limit > 0 {
+			normalized.SetResourceLimit(resource, rc.Limit)
+		}
 	}
 
 	configCache.Set(cache.Entry[string, *types.Config]{

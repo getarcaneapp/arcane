@@ -147,7 +147,7 @@ test.describe('Templates', () => {
 			await bulkDialog
 				.getByLabel('Paste .env content', { exact: true })
 				.fill(`${bulkKeyOne}=first\n${bulkKeyTwo}=second`);
-			await bulkDialog.getByRole('radio', { name: /Specific Environments/ }).click();
+			await bulkDialog.getByRole('radio', { name: /Specific Agents/ }).click();
 			const environmentOption = bulkDialog
 				.locator('label')
 				.filter({ hasText: localEnvironment.name });

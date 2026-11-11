@@ -88,7 +88,7 @@ func TestSettingsListRejectsUnknownScope(t *testing.T) {
 
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--agent", "0", "settings", "list", "--scope", "global"})
-	require.EqualError(t, err, `invalid scope "global": must be environment, manager, or authentication`)
+	require.EqualError(t, err, `invalid scope "global": must be agent, manager, or authentication`)
 }
 
 func TestSettingsSetReturnsFieldErrorMessage(t *testing.T) {

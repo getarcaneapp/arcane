@@ -524,7 +524,7 @@ test.describe('Arcane upgrades', () => {
 	async function openAndConfirmUpdateAll(page: Page) {
 		await page.getByRole('button', { name: 'Update All', exact: true }).first().click();
 		const dialog = page.getByRole('dialog');
-		await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+		await expect(dialog.getByRole('heading', { name: 'Update all agents' })).toBeVisible();
 		await dialog.getByRole('button', { name: 'Update All', exact: true }).click();
 	}
 
@@ -552,7 +552,7 @@ test.describe('Arcane upgrades', () => {
 			await expect(toast).toContainText('pull access denied');
 
 			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+			await expect(dialog.getByRole('heading', { name: 'Update all agents' })).toBeVisible();
 			await expect(dialog.getByRole('button', { name: 'Update All', exact: true })).toBeVisible();
 			expect(server.startCalls).toBe(1);
 		});
@@ -567,17 +567,15 @@ test.describe('Arcane upgrades', () => {
 			await openAndConfirmUpdateAll(page);
 
 			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible({
+			await expect(dialog.getByRole('heading', { name: 'Updating agents…' })).toBeVisible({
 				timeout: 10_000
 			});
 			await expect(dialog.getByText('0 of 1', { exact: true })).toBeVisible({ timeout: 10_000 });
 			server.job = upgradeJob('completed', 'updated');
 
-			await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible(
-				{
-					timeout: 10_000
-				}
-			);
+			await expect(dialog.getByRole('heading', { name: 'All agents processed' })).toBeVisible({
+				timeout: 10_000
+			});
 			await expect(dialog.getByText('1 of 1', { exact: true })).toBeVisible();
 			await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
 			// The conflict is never retried; the existing job is tracked instead.
@@ -602,7 +600,7 @@ test.describe('Arcane upgrades', () => {
 			await expect(toast).toContainText(CONFLICT_DETAIL);
 
 			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+			await expect(dialog.getByRole('heading', { name: 'Update all agents' })).toBeVisible();
 			expect(server.startCalls).toBe(1);
 		});
 
@@ -622,7 +620,7 @@ test.describe('Arcane upgrades', () => {
 
 			await expect.poll(() => server.startCalls).toBe(1);
 			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible();
+			await expect(dialog.getByRole('heading', { name: 'Updating agents…' })).toBeVisible();
 			await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
 			await expect(dialog).toBeHidden();
 
@@ -646,11 +644,9 @@ test.describe('Arcane upgrades', () => {
 
 			// The finished result stays on screen instead of the page being yanked away.
 			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible(
-				{
-					timeout: 10_000
-				}
-			);
+			await expect(dialog.getByRole('heading', { name: 'All agents processed' })).toBeVisible({
+				timeout: 10_000
+			});
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
 
 			// Closing refreshes through SvelteKit, which reloads data but not the document.

@@ -47,8 +47,8 @@ test.describe('Settings', () => {
 		await page.goto('/agents');
 		await page.waitForLoadState('load');
 
-		await page.getByRole('button', { name: 'Add Environment', exact: true }).click();
-		await expect(page.getByText('Create New Agent Environment')).toBeVisible();
+		await page.getByRole('button', { name: 'Add Agent', exact: true }).click();
+		await expect(page.getByText('Create New Agent')).toBeVisible();
 
 		const dialog = page.getByRole('dialog');
 		await waitForDialogReady(dialog);
@@ -86,7 +86,7 @@ test.describe('Settings', () => {
 		expect(deployment.dockerCompose).toContain(`ARCANE_AGENT_TOKEN=${deployment.enrollmentToken}`);
 
 		await expect(
-			page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
+			page.getByRole('heading', { name: 'Agent Created Successfully', exact: true })
 		).toBeVisible();
 		await expect(dialog.getByText(deployment.enrollmentToken, { exact: true })).toBeVisible();
 		await expect(
@@ -409,7 +409,7 @@ test.describe('Settings', () => {
 			await expect(saveButton).toBeEnabled();
 			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
 			await expect(page).toHaveURL('/agents?tab=environments');
-			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Agents', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(new RegExp(`/agents/${environmentId}(?:\\?|$)`));
 			await expect(environmentTitleButton(page)).toHaveText(envName);
@@ -908,11 +908,11 @@ test.describe('Agents', () => {
 		await page.goto(ROUTES.environments);
 		await page.waitForLoadState('load');
 
-		const addButton = page.getByRole('button', { name: 'Add Environment', exact: true });
+		const addButton = page.getByRole('button', { name: 'Add Agent', exact: true });
 		await expect(addButton).toBeVisible();
 		await addButton.click();
 
-		await expect(page.getByText('Create New Agent Environment')).toBeVisible();
+		await expect(page.getByText('Create New Agent')).toBeVisible();
 		await expect(page.getByText('Agent connects outbound to the manager.')).toBeVisible();
 	}
 
@@ -978,7 +978,7 @@ test.describe('Agents', () => {
 			await submitButton.click();
 
 			const sheetTitle = page.locator('[data-slot="sheet-title"]');
-			await expect(sheetTitle).toContainText('Environment Created');
+			await expect(sheetTitle).toContainText('Agent Created');
 			await expect(
 				page.getByText('Arcane Agent - connects outbound to manager', { exact: true })
 			).toBeVisible();

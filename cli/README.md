@@ -49,7 +49,7 @@ Set the Arcane server URL:
 ## Useful Global Flags
 
 - `--output text|json` for output mode (`--json` is an alias for `--output json`)
-- `--env <id>` to override the configured default environment for one command
+- `--agent <id>` to limit one command to a single agent
 - `--yes` to auto-confirm destructive prompts
 - `--no-color` to disable ANSI color output
 - `--request-timeout <duration>` to override HTTP timeout per command

@@ -167,9 +167,7 @@ test.describe('All environments', () => {
 
 		await page.goto('/containers');
 
-		await expect(
-			page.getByRole('button', { name: 'Sort by Environment', exact: true })
-		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Sort by Agent', exact: true })).toBeVisible();
 		const remoteRow = page.getByRole('row').filter({ hasText: 'remote-preview-web' });
 		await expect(remoteRow).toContainText(remoteEnvironment.name);
 		await expect(remoteRow.getByRole('link', { name: 'remote-preview-web' })).toHaveAttribute(
@@ -223,7 +221,7 @@ test.describe('All environments', () => {
 		await page.getByRole('button', { name: 'Update Projects', exact: true }).click();
 
 		const dialog = page.getByRole('dialog');
-		await expect(dialog).toContainText('This runs on all 2 environments.');
+		await expect(dialog).toContainText('This runs on all 2 agents.');
 		await expect(dialog).not.toContainText(remoteEnvironment.name);
 		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 	});
@@ -238,7 +236,7 @@ test.describe('All environments', () => {
 
 		await page.goto('/containers');
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
-		await sortByColumn(page, 'Environment', 'desc');
+		await sortByColumn(page, 'Agent', 'desc');
 
 		await expect(page.getByRole('row').nth(1)).toContainText(remoteEnvironment.name);
 		expect(

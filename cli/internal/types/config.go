@@ -69,7 +69,7 @@ func NormalizePaginatedResource(resource string) string {
 		return "networks"
 	case "project":
 		return "projects"
-	case "agent":
+	case "agent", "environment", "environments":
 		return "agents"
 	case "registry", "registries":
 		return "registries"

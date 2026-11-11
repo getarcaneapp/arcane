@@ -1481,7 +1481,7 @@ test.describe('Resource sorting', () => {
 		await installContainersMock(page, scenario);
 		await openContainers(page);
 
-		await expect(page.getByText('needs a newer agent for this environment')).toBeVisible();
+		await expect(page.getByText('needs a newer version of this agent')).toBeVisible();
 		await expect(
 			page.getByRole('columnheader', { name: 'Memory Usage', exact: true })
 		).toBeVisible();
