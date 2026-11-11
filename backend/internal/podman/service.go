@@ -81,10 +81,17 @@ func NewService(cfg Config) *Service {
 
 func (s *Service) Status(ctx context.Context) types.PodmanStatus {
 	rt, err := s.detect(ctx)
-	if err != nil {
-		if !errors.Is(err, common.ErrPodmanNotDetected) {
-			slog.DebugContext(ctx, "Podman detection failed", "error", err)
+	switch {
+	case errors.Is(err, common.ErrPodmanAPIUnavailable):
+		slog.WarnContext(ctx, "Podman engine detected but its libpod API is unreachable", "error", err)
+		return types.PodmanStatus{
+			AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+			Reason:         err.Error(),
 		}
+	case errors.Is(err, common.ErrPodmanNotDetected):
+		return types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}
+	case err != nil:
+		slog.DebugContext(ctx, "Podman detection failed", "error", err)
 		return types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}
 	}
 
@@ -144,9 +151,6 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	if err != nil || containerRef == "" {
 		return false, nil
 	}
-	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported || !rt.Systemd.Availability(ctx).Available {
-		return false, nil
-	}
 
 	containers, err := rt.Client.ContainerList(ctx, nil, nil)
 	if err != nil {
@@ -163,12 +167,16 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	if unit == "" {
 		return false, nil
 	}
-	managed, err := s.quadletManaged(ctx, rt, unit)
+	availability := rt.Systemd.Availability(ctx)
+	managed, err := s.quadletManaged(ctx, rt, unit, availability)
 	if err != nil {
 		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
 	if !managed {
 		return false, nil
+	}
+	if !availability.Available {
+		return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is managed by systemd unit %s, but Arcane cannot reach systemd: %s", containerRef, unit, availability.Reason))
 	}
 	return true, action(rt.Systemd, ctx, unit)
 }
@@ -187,7 +195,7 @@ func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]str
 		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
 	}
 
-	managed, err := s.quadletManaged(ctx, rt, unit)
+	managed, err := s.quadletManaged(ctx, rt, unit, rt.Systemd.Availability(ctx))
 	if err != nil {
 		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
 	}
@@ -197,7 +205,17 @@ func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]str
 	return nil
 }
 
-func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit string) (bool, error) {
+func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit string, availability types.PodmanSystemdAvailability) (bool, error) {
+	if availability.Available {
+		status, err := rt.Systemd.UnitStatus(ctx, unit)
+		if errors.Is(err, common.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return status.LoadState == "loaded", nil
+	}
 	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported {
 		return true, nil
 	}
@@ -322,16 +340,16 @@ func (s *detector) detect(ctx context.Context) (libpodman.Runtime, error) {
 	conn := s.conn
 	s.mu.Unlock()
 	if conn.err != nil {
-		return libpodman.Runtime{}, conn.err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, conn.err)
 	}
 
 	version, err := conn.client.Version(ctx)
 	if err != nil {
-		return libpodman.Runtime{}, err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, err)
 	}
 	info, err := conn.client.Info(ctx)
 	if err != nil {
-		return libpodman.Runtime{}, err
+		return libpodman.Runtime{}, fmt.Errorf("%w: %w", common.ErrPodmanAPIUnavailable, err)
 	}
 
 	rt := libpodman.Runtime{

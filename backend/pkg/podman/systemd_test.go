@@ -1,6 +1,7 @@
 package podman
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,16 +76,29 @@ func TestNewSystemd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, NewSystemd(tt.host, tt.rootless, func(key string) string {
-				return tt.env[key]
+			assert.Equal(t, tt.want, NewSystemd(SystemdConfig{
+				Getenv: func(key string) string {
+					return tt.env[key]
+				},
+				Stat: func(string) (os.FileInfo, error) {
+					return nil, os.ErrNotExist
+				},
+				Host:     tt.host,
+				Rootless: tt.rootless,
 			}))
 		})
 	}
 }
 
 func TestSystemdRootlessWithoutSessionBus(t *testing.T) {
-	systemd := NewSystemd("", true, func(string) string {
-		return ""
+	systemd := NewSystemd(SystemdConfig{
+		Getenv: func(string) string {
+			return ""
+		},
+		Stat: func(string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+		Rootless: true,
 	})
 
 	availability := systemd.Availability(t.Context())

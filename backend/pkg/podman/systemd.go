@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,13 @@ type (
 		UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error)
 	}
 
+	SystemdConfig struct {
+		Getenv   func(string) string
+		Stat     func(string) (os.FileInfo, error)
+		Host     string
+		Rootless bool
+	}
+
 	dbusSystemd struct {
 		address string
 		scope   types.PodmanSystemdScope
@@ -38,22 +46,24 @@ const (
 	defaultSystemBusAddress = "unix:path=/run/dbus/system_bus_socket"
 )
 
-func NewSystemd(host string, rootless bool, getenv func(string) string) Systemd {
-	scope := kit.Ternary(rootless, types.PodmanSystemdScopeUser, types.PodmanSystemdScopeSystem)
-	busVariable := kit.Ternary(rootless, "DBUS_SESSION_BUS_ADDRESS", "DBUS_SYSTEM_BUS_ADDRESS")
-	address := getenv(busVariable)
-	scheme, _, _ := strings.Cut(host, "://")
+func NewSystemd(cfg SystemdConfig) Systemd {
+	scope := kit.Ternary(cfg.Rootless, types.PodmanSystemdScopeUser, types.PodmanSystemdScopeSystem)
+	busVariable := kit.Ternary(cfg.Rootless, "DBUS_SESSION_BUS_ADDRESS", "DBUS_SYSTEM_BUS_ADDRESS")
+	address := cfg.Getenv(busVariable)
+	scheme, _, _ := strings.Cut(cfg.Host, "://")
 
 	switch {
-	case address == "" && host != "" && scheme != "unix" && scheme != "npipe":
+	case address == "" && cfg.Host != "" && scheme != "unix" && scheme != "npipe":
 		return &dbusSystemd{
 			scope:  scope,
-			reason: fmt.Sprintf("the Podman engine at %s is remote; set %s to that host's bus to manage its systemd units", host, busVariable),
+			reason: fmt.Sprintf("the Podman engine at %s is remote; set %s to that host's bus to manage its systemd units", cfg.Host, busVariable),
 		}
-	case address == "" && rootless:
+	case address == "" && cfg.Rootless:
+		sessionBus := defaultSessionBus(cfg)
 		return &dbusSystemd{
-			scope:  scope,
-			reason: "DBUS_SESSION_BUS_ADDRESS is not set; rootless Podman needs the user's session bus mounted and the variable set",
+			address: sessionBus,
+			scope:   scope,
+			reason:  kit.Ternary(sessionBus == "", "DBUS_SESSION_BUS_ADDRESS is not set; rootless Podman needs the user's session bus mounted and the variable set", ""),
 		}
 	default:
 		return &dbusSystemd{
@@ -61,6 +71,18 @@ func NewSystemd(host string, rootless bool, getenv func(string) string) Systemd 
 			scope:   scope,
 		}
 	}
+}
+
+func defaultSessionBus(cfg SystemdConfig) string {
+	for _, dir := range []string{cfg.Getenv("XDG_RUNTIME_DIR"), "/run/user/" + strconv.Itoa(os.Getuid())} {
+		if dir == "" {
+			continue
+		}
+		if _, err := cfg.Stat(filepath.Join(dir, "bus")); err == nil {
+			return "unix:path=" + filepath.Join(dir, "bus")
+		}
+	}
+	return ""
 }
 
 func (s *dbusSystemd) Availability(ctx context.Context) types.PodmanSystemdAvailability {
@@ -108,7 +130,7 @@ func (s *dbusSystemd) UnitStatus(ctx context.Context, unit string) (types.Podman
 	if err != nil {
 		return types.PodmanUnitStatus{}, fmt.Errorf("read systemd unit %s: %w", unit, err)
 	}
-	if len(units) == 0 {
+	if len(units) == 0 || units[0].LoadState == "not-found" {
 		return types.PodmanUnitStatus{}, common.Classify(common.ErrNotFound, fmt.Errorf("systemd unit %s not found", unit))
 	}
 
@@ -156,6 +178,10 @@ func (s *dbusSystemd) runJob(ctx context.Context, unit, action string, start fun
 
 	done := make(chan string, 1)
 	if _, startErr := start(conn, done); startErr != nil {
+		var dbusErr godbus.Error
+		if errors.As(startErr, &dbusErr) && dbusErr.Name == "org.freedesktop.systemd1.NoSuchUnit" {
+			return common.Classify(common.ErrNotFound, fmt.Errorf("%s systemd unit %s: %w", action, unit, startErr))
+		}
 		return fmt.Errorf("%s systemd unit %s: %w", action, unit, startErr)
 	}
 

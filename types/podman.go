@@ -436,6 +436,7 @@ type (
 		AutoUpdateMode       PodmanAutoUpdateMode `json:"autoUpdateMode"`
 		SystemdScope         PodmanSystemdScope   `json:"systemdScope,omitempty"`
 		SystemdReason        string               `json:"systemdReason,omitempty"`
+		Reason               string               `json:"reason,omitempty"`
 		PodCount             int                  `json:"podCount" doc:"Number of Podman pods"`
 		Detected             bool                 `json:"detected"`
 		Rootless             bool                 `json:"rootless"`

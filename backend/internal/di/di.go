@@ -205,7 +205,12 @@ var (
 					Engine: localDocker.Engine,
 					Host:   localDocker.DockerHost,
 					NewSystemd: func(rootless bool) libpodman.Systemd {
-						return libpodman.NewSystemd(localDocker.DockerHost(), rootless, os.Getenv)
+						return libpodman.NewSystemd(libpodman.SystemdConfig{
+							Getenv:   os.Getenv,
+							Stat:     os.Stat,
+							Host:     localDocker.DockerHost(),
+							Rootless: rootless,
+						})
 					},
 					NotifyUpdates: notificationService.SendBatchContainerUpdateNotification,
 				})

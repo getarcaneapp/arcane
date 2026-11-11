@@ -70,6 +70,7 @@ var (
 	ErrInvalidBackupSelection                  = Classify(ErrBadRequest, errors.New("invalid backup file selection"))
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.New("Swarm mode is not enabled"))
 	ErrPodmanNotDetected                       = Classify(ErrBadRequest, errors.New("Podman was not detected on this environment"))
+	ErrPodmanAPIUnavailable                    = Classify(ErrUnavailable, errors.New("the Podman libpod API is unreachable"))
 	ErrSwarmManagerRequired                    = Classify(ErrForbidden, errors.New("Swarm manager access required"))
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.New("Role not found"))
 	ErrRoleBuiltIn                             = Classify(ErrForbidden, errors.New("Built-in role cannot be modified"))

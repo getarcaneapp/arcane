@@ -1,0 +1,39 @@
+# Rootless Podman. Save as ~/.config/containers/systemd/arcane.container, then run
+# `systemctl --user daemon-reload` and `systemctl --user start arcane`.
+# Run `loginctl enable-linger <user>` so Arcane, the Podman socket, and the session bus survive logout.
+# keep-id maps your uid into the container unchanged. Arcane starts as root, then switches to PUID/PGID,
+# so it reaches the Podman socket and the session bus as their owner.
+[Unit]
+Description=Arcane
+Requires=podman.socket
+After=podman.socket
+
+[Container]
+Image=docker.io/getarcaneapp/manager:latest
+ContainerName=arcane
+AutoUpdate=registry
+PublishPort=3552:3552
+User=0:0
+UserNS=keep-id
+Volume=%t/podman/podman.sock:/var/run/docker.sock
+Volume=%t/bus:%t/bus
+Volume=arcane-data:/app/data
+Environment=ARCANE_ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+Environment=PUID=%U
+Environment=PGID=%G
+Environment=TZ=UTC
+SecurityLabelDisable=true
+PodmanArgs=--cgroupns=host
+HealthCmd=["./arcane", "health", "--timeout", "2s"]
+HealthInterval=10s
+HealthTimeout=3s
+HealthRetries=5
+HealthStartPeriod=15s
+StopTimeout=15
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

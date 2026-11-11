@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,6 +28,7 @@ type (
 		startErr     error
 		availability types.PodmanSystemdAvailability
 		statuses     []types.PodmanUnitStatus
+		loaded       []string
 		calls        []string
 	}
 
@@ -60,6 +62,15 @@ func (f *fakeSystemd) Restart(_ context.Context, unit string) error {
 }
 
 func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
+	if len(f.statuses) == 0 {
+		if !slices.Contains(f.loaded, unit) {
+			return types.PodmanUnitStatus{}, common.Classify(common.ErrNotFound, errors.New(unit+" not found"))
+		}
+		return types.PodmanUnitStatus{
+			Name:      unit,
+			LoadState: "loaded",
+		}, nil
+	}
 	status := f.statuses[0]
 	if len(f.statuses) > 1 {
 		f.statuses = f.statuses[1:]
@@ -367,7 +378,10 @@ func TestServiceContainerUnitAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: true}}
+			systemd := &fakeSystemd{
+				availability: types.PodmanSystemdAvailability{Available: true},
+				loaded:       []string{"web.service", "worker@1.service", "solo@1.service"},
+			}
 			svc := newTestService(t, &testHost{
 				engine:  "podman",
 				version: "6.1.0",
@@ -401,19 +415,28 @@ func TestServiceContainerUnitAction(t *testing.T) {
 	}
 }
 
-func TestServiceContainerUnitActionFallsBackWithoutQuadletSupport(t *testing.T) {
+func TestServiceContainerUnitActionSystemdManaged(t *testing.T) {
 	tests := []struct {
+		wantErr   error
 		name      string
 		version   string
+		want      []string
 		available bool
 	}{
-		{name: "podman before 5.8", version: "5.4.0", available: true},
-		{name: "systemd unreachable", version: "6.1.0"},
+		{name: "podman before 5.8 with systemd", version: "5.4.0", available: true, want: []string{"stop web.service"}},
+		{name: "podman before 5.8 without systemd", version: "5.4.0", wantErr: common.ErrUnavailable},
+		{name: "systemd unreachable", version: "6.1.0", wantErr: common.ErrUnavailable},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: tt.available}}
+			systemd := &fakeSystemd{
+				availability: types.PodmanSystemdAvailability{
+					Available: tt.available,
+					Reason:    "bus not mounted",
+				},
+				loaded: []string{"web.service"},
+			}
 			svc := newTestService(t, &testHost{
 				engine:  "podman",
 				version: tt.version,
@@ -422,13 +445,21 @@ func TestServiceContainerUnitActionFallsBackWithoutQuadletSupport(t *testing.T) 
 					"/containers/json": func(w http.ResponseWriter, _ *http.Request) {
 						_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
 					},
+					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
+					},
 				},
 			})
 
 			handled, err := svc.ContainerUnitAction(t.Context(), "web", libpodman.Systemd.Stop)
+			assert.True(t, handled)
+			assert.Equal(t, tt.want, systemd.calls)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				require.ErrorContains(t, err, "bus not mounted")
+				return
+			}
 			require.NoError(t, err)
-			assert.False(t, handled)
-			assert.Empty(t, systemd.calls)
 		})
 	}
 }

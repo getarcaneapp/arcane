@@ -1866,7 +1866,11 @@ func (f *quadletTestSystemd) Restart(_ context.Context, unit string) error {
 }
 
 func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
-	return types.PodmanUnitStatus{Name: unit, ActiveState: "active"}, nil
+	return types.PodmanUnitStatus{
+		Name:        unit,
+		LoadState:   "loaded",
+		ActiveState: "active",
+	}, nil
 }
 
 func (f *quadletTestSystemd) record(call string) error {

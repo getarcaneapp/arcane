@@ -98,7 +98,6 @@ func newQuadletsCmd() *cobra.Command {
 func newQuadletListCmd() *cobra.Command {
 	var opts struct {
 		names    []string
-		pods     []string
 		statuses []string
 		limit    int
 		start    int
@@ -118,7 +117,6 @@ func newQuadletListCmd() *cobra.Command {
 
 			query := url.Values{
 				"name":   opts.names,
-				"pod":    opts.pods,
 				"status": opts.statuses,
 			}.Encode()
 			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.QuadletDetail]{
@@ -145,8 +143,7 @@ func newQuadletListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVar(&opts.names, "name", nil, "Filter by quadlet name")
-	cmd.Flags().StringArrayVar(&opts.pods, "pod", nil, "Filter by pod (Podman 6.0+)")
-	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by status (Podman 6.0+)")
+	cmd.Flags().StringArrayVar(&opts.statuses, "status", nil, "Filter by status")
 	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of quadlets to show")
 	cmd.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	cmd.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)

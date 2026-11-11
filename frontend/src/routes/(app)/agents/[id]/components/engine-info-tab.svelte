@@ -17,7 +17,11 @@
 
 	import { dockerEngineView, podmanEngineView, type EngineRow, type EngineView } from './engine-info';
 
-	let { environmentId, podmanStatus }: { environmentId: string; podmanStatus?: PodmanStatus } = $props();
+	let {
+		environmentId,
+		podmanStatus,
+		podmanUnavailableReason
+	}: { environmentId: string; podmanStatus?: PodmanStatus; podmanUnavailableReason?: string } = $props();
 
 	const dockerInfoQuery = createQuery(() => ({
 		queryKey: queryKeys.system.dockerInfo(environmentId),
@@ -78,6 +82,13 @@
 		</div>
 	{/if}
 {/snippet}
+
+{#if podmanUnavailableReason}
+	<Alert.Root variant="warning-subtle" icon={AlertIcon} heading={m.podman_features_unavailable()} class="mb-4">
+		<p class="text-sm">{m.podman_libpod_unreachable_description()}</p>
+		<p class="mt-1.5 font-mono text-xs wrap-anywhere text-muted-foreground">{podmanUnavailableReason}</p>
+	</Alert.Root>
+{/if}
 
 {#if activeQuery.error}
 	<EmptyState icon={AlertIcon} title={m.common_failed()} description={extractApiErrorMessage(activeQuery.error)} />
