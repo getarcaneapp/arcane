@@ -149,20 +149,16 @@ func (s *Service) PodCount(ctx context.Context) mo.Option[int] {
 
 func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, action func(libpodman.Systemd, context.Context, string) error) (bool, error) {
 	rt, err := s.detect(ctx)
-	if errors.Is(err, common.ErrPodmanNotDetected) || containerRef == "" {
+	if errors.Is(err, common.ErrPodmanAPIUnavailable) && containerRef != "" {
+		return s.unverifiedUnitAction(ctx, containerRef, err)
+	}
+	if err != nil || containerRef == "" {
 		return false, nil
 	}
 
-	var containers []types.PodmanContainer
-	if err == nil {
-		containers, err = rt.Client.ContainerList(ctx, nil, nil)
-	}
+	containers, err := rt.Client.ContainerList(ctx, nil, nil)
 	if err != nil {
-		labels, labelsErr := s.config.ContainerLabels(ctx, containerRef)
-		if unit := types.QuadletUnit(labels); labelsErr == nil && unit != "" {
-			return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is labelled with systemd unit %s, but Arcane cannot verify it: %w", containerRef, unit, err))
-		}
-		return false, nil
+		return s.unverifiedUnitAction(ctx, containerRef, err)
 	}
 
 	match, found := resolveContainer(containers, containerRef)
@@ -198,6 +194,15 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
 	return true, action(rt.Systemd, ctx, unit)
+}
+
+func (s *Service) unverifiedUnitAction(ctx context.Context, containerRef string, cause error) (bool, error) {
+	labels, err := s.config.ContainerLabels(ctx, containerRef)
+	unit := types.QuadletUnit(labels)
+	if err != nil || unit == "" {
+		return false, nil
+	}
+	return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is labelled with systemd unit %s, but Arcane cannot verify it: %w", containerRef, unit, cause))
 }
 
 func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]string) error {
