@@ -339,7 +339,7 @@ test.beforeEach(async ({ page, registerCleanup }) => {
 test.describe('Projects Page', () => {
 	test('should display summary cards with correct counts', async ({ page }) => {
 		await expect(
-			page.getByText(`${projectCounts.totalProjects} Total Projects`, {
+			page.getByText(`${projectCounts.totalProjects} Total`, {
 				exact: true
 			})
 		).toBeVisible();
@@ -354,7 +354,7 @@ test.describe('Projects Page', () => {
 			})
 		).toBeVisible();
 		await expect(
-			page.getByText(`${projectCounts.archivedProjects} Archived Projects`, {
+			page.getByText(`${projectCounts.archivedProjects} Archived`, {
 				exact: true
 			})
 		).toBeVisible();
