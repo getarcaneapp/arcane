@@ -17,9 +17,13 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const containers = await queryClient
-		.query(
-			containerListQuery(scope, readableEnvironments('containers:list'), { ...containerRequestOptions, groupByProject: false })
-		)
+		.ensureQueryData({
+			...containerListQuery(scope, readableEnvironments('containers:list'), {
+				...containerRequestOptions,
+				groupByProject: false
+			}),
+			revalidateIfStale: true
+		})
 		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load containers'));
 
 	return {

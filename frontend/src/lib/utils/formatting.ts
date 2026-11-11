@@ -1,5 +1,6 @@
 import Convert from 'ansi-to-html';
 import stripAnsi from 'strip-ansi';
+import { config } from 'zod/v4/core';
 
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
@@ -403,8 +404,8 @@ export function formatElapsedTime(value: InstantInput, options: RelativeTimeForm
 }
 
 export function setLocale(locale: Locale, reload = true) {
-	void Promise.all([import('zod/v4'), import(`../../../node_modules/zod/v4/locales/${locale}.js`)])
-		.then(([{ z }, zodLocale]) => z.config(zodLocale.default()))
+	void import(`../../../node_modules/zod/v4/locales/${locale}.js`)
+		.then((zodLocale) => config(zodLocale.default()))
 		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
 
 	void setParaglideLocale(locale, { reload });

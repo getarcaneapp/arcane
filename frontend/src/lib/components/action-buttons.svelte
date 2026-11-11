@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createMutation } from '@tanstack/svelte-query';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -11,6 +11,7 @@
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
@@ -85,6 +86,7 @@
 	} = $props();
 
 	const environmentSettings = useEnvironmentSettings(() => environmentId);
+	const queryClient = useQueryClient();
 
 	const isLoading = $state<LoadingStates>({
 		start: false,
@@ -268,7 +270,6 @@
 										activityToastOptions(activityId)
 									);
 								}
-								await refreshAll();
 								goto(type === 'project' ? resolve('/(app)/projects') : resolve('/(app)/containers'));
 							}
 						});
@@ -398,7 +399,6 @@
 					if (watch) {
 						enterInteractiveWatchInternal(operationStartedAt, target);
 					}
-					await refreshAll();
 					itemState = 'running';
 					onActionComplete('running');
 				})()
@@ -481,7 +481,6 @@
 						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
 						environmentId
 					);
-					await refreshAll();
 					onActionComplete(itemState);
 				})()
 			);
@@ -519,7 +518,7 @@
 						() => {},
 						environmentId
 					);
-					await refreshAll();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(environmentId, id) });
 				})()
 			);
 			if (operationResult3.error !== null) {

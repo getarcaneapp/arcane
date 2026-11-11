@@ -15,7 +15,10 @@ export const load: PageLoad = async ({ parent }) => {
 	});
 
 	const networks = await queryClient
-		.query(networkListQuery(scope, readableEnvironments('networks:list'), networkRequestOptions))
+		.ensureQueryData({
+			...networkListQuery(scope, readableEnvironments('networks:list'), networkRequestOptions),
+			revalidateIfStale: true
+		})
 		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load networks'));
 
 	return {

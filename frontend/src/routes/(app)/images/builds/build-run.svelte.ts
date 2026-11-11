@@ -36,7 +36,7 @@ export class BuildRun {
 
 	append(line: string) {
 		if (sanitizeLogText(line).trim() === '') return;
-		this.logLines = [...this.logLines, line];
+		this.logLines.push(line);
 	}
 
 	fail(message: string) {

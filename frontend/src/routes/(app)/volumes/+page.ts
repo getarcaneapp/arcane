@@ -25,7 +25,10 @@ export const load: PageLoad = async ({ parent }) => {
 		{ deferredSortColumns: ['size'] }
 	);
 
-	const volumes = await queryClient.query(volumeListQuery(scope, readableEnvironments('volumes:list'), volumeRequestOptions));
+	const volumes = await queryClient.ensureQueryData({
+		...volumeListQuery(scope, readableEnvironments('volumes:list'), volumeRequestOptions),
+		revalidateIfStale: true
+	});
 
 	return {
 		scope,

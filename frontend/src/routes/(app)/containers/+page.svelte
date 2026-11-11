@@ -149,6 +149,7 @@
 				bind:selectedIds={pageState.selectedIds}
 				bind:requestOptions={pageState.requestOptions}
 				bind:groupByProject
+				loading={containersQuery.isPlaceholderData}
 				onRetry={() => containersQuery.refetch()}
 			/>
 		{/if}

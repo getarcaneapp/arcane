@@ -83,7 +83,9 @@ export default defineConfig(() => ({
 						},
 						{
 							name: 'auth',
-							test: (id: string) => id.includes('/src/routes/(auth)/')
+							test: (id: string) => id.includes('/src/routes/(auth)/'),
+							entriesAware: true,
+							entriesAwareMergeThreshold: 20000
 						},
 						{
 							name: 'app',
@@ -91,7 +93,9 @@ export default defineConfig(() => ({
 						},
 						{
 							name: 'common',
-							minShareCount: 10
+							minShareCount: 10,
+							entriesAware: true,
+							entriesAwareMergeThreshold: 20000
 						}
 					]
 				}

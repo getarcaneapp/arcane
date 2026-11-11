@@ -19,8 +19,8 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const result = await tryCatch(
 		Promise.all([
-			queryClient.query(imageListQuery(scope, environments, imageRequestOptions)),
-			queryClient.query(imageUsageCountsQuery(scope, environments)),
+			queryClient.ensureQueryData({ ...imageListQuery(scope, environments, imageRequestOptions), revalidateIfStale: true }),
+			queryClient.ensureQueryData({ ...imageUsageCountsQuery(scope, environments), revalidateIfStale: true }),
 			...environments.map((env) => featureStore.load(env.id))
 		])
 	);
