@@ -45,8 +45,8 @@
 
 <div class={cn('space-y-5 md:space-y-7', className)}>
 	<header class="flex flex-wrap items-start justify-between gap-x-4">
-		<h1 class="min-w-0 flex-1 text-2xl font-bold sm:text-3xl">{title}</h1>
-		<div class="flex items-center gap-2">
+		<h1 class="text-2xl font-bold sm:text-3xl">{title}</h1>
+		<div class="min-w-0 flex-1">
 			<ActionButtonGroup buttons={actionButtons} />
 		</div>
 		{#if subtitle}
