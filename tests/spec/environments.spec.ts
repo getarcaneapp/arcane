@@ -701,8 +701,8 @@ test.describe('Environment filter', () => {
 	}
 
 	async function filterToRemoteEnvironment(page: Page) {
-		await page.getByTestId('facet-environment-trigger').click();
-		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.getByTestId('facet-agent-trigger').click();
+		await page.getByTestId(`facet-agent-option-${remoteEnvironment.id}`).click();
 	}
 
 	test.describe('Environment filter isolation', () => {

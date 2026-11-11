@@ -604,7 +604,7 @@ test.describe('Disabled vulnerability management', () => {
 			await page.goto(path);
 			await expect(
 				page.getByText(
-					'Vulnerability management is disabled for this environment. Saved reports and settings are retained.',
+					'Vulnerability management is disabled for this agent. Saved reports and settings are retained.',
 					{ exact: true }
 				)
 			).toBeVisible();

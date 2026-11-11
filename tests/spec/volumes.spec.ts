@@ -617,8 +617,8 @@ test.describe('Volumes shift-select', () => {
 		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();
 
 		await rowCheckbox(page, 2).click();
-		await page.getByTestId('facet-environment-trigger').click();
-		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.getByTestId('facet-agent-trigger').click();
+		await page.getByTestId(`facet-agent-option-${remoteEnvironment.id}`).click();
 		await page.keyboard.press('Escape');
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toHaveCount(0);
 		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();

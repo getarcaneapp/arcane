@@ -4537,5 +4537,6 @@
   "detect_from_url": "Detect from URL",
   "gitlab": "GitLab",
   "gitea_forgejo": "Gitea / Forgejo",
-  "bitbucket": "Bitbucket"
+  "bitbucket": "Bitbucket",
+  "environment": "Environment"
 }

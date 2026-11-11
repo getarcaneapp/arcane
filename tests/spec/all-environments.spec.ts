@@ -187,8 +187,8 @@ test.describe('All environments', () => {
 			if (/\/api\/agents\/[^/]+\/containers(?:\?.*)?$/.test(request.url()))
 				listRequests.push(request.url());
 		});
-		await page.getByTestId('facet-environment-trigger').click();
-		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.getByTestId('facet-agent-trigger').click();
+		await page.getByTestId(`facet-agent-option-${remoteEnvironment.id}`).click();
 
 		await expect.poll(() => listRequests.length).toBeGreaterThan(0);
 		expect(listRequests.every((url) => url.includes(`/api/agents/${remoteEnvironment.id}/`))).toBe(

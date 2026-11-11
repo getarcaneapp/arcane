@@ -385,7 +385,7 @@ test.describe('Workspace restore', () => {
 	) {
 		await mockAppShell(page);
 		await page.route(
-			/\/api\/(?:environments\/[^/]+\/)?backups\/history(?:\?.*)?$/,
+			/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/,
 			async (route) => {
 				await route.fulfill({
 					json: {
@@ -1429,7 +1429,7 @@ test.describe('System and volume restore', () => {
 			activities.push(activity);
 			return route.fulfill({ status: 202, json: { activityId: activity.id, status: 'running' } });
 		});
-		await page.route(/\/api\/(?:environments\/[^/]+\/)?backups\/history(?:\?.*)?$/, (route) => {
+		await page.route(/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/, (route) => {
 			const type = new URL(route.request().url()).searchParams.get('type');
 			const rows =
 				type === 'system' || type === 'volume'

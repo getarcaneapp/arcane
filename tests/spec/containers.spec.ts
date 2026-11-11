@@ -1466,12 +1466,12 @@ test.describe('Resource sorting', () => {
 		await expect.poll(() => scenario.requests.length, { timeout: 10000 }).toBeGreaterThan(frozen);
 
 		scenario.failList = true;
-		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeVisible({
+		await expect(page.getByRole('heading', { name: /^Automatic refresh failed: .*daemon exploded$/ })).toBeVisible({
 			timeout: 15000
 		});
 
 		scenario.failList = false;
-		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeHidden({
+		await expect(page.getByRole('heading', { name: /^Automatic refresh failed: .*daemon exploded$/ })).toBeHidden({
 			timeout: 15000
 		});
 	});
