@@ -10,16 +10,16 @@ UPDATE users SET preferences = json_set(preferences, '$.defaultLandingPage', '/a
 WHERE CASE WHEN json_valid(preferences) THEN json_extract(preferences, '$.defaultLandingPage') = '/environments' ELSE 0 END;
 `
 	v110PostgresUp = `
-UPDATE users SET preferences = jsonb_set(preferences::jsonb, '{defaultLandingPage}', '"/agents"')::text
-WHERE CASE WHEN preferences LIKE '%"/environments"%' THEN preferences::jsonb->>'defaultLandingPage' = '/environments' ELSE false END;
+UPDATE users SET preferences = regexp_replace(preferences, '([{,]\s*)"defaultLandingPage"\s*:\s*"/environments"', '\1"defaultLandingPage":"/agents"')
+WHERE preferences ~ '[{,]\s*"defaultLandingPage"\s*:\s*"/environments"';
 `
 	v110SQLiteDown = `
 UPDATE users SET preferences = json_set(preferences, '$.defaultLandingPage', '/environments')
 WHERE CASE WHEN json_valid(preferences) THEN json_extract(preferences, '$.defaultLandingPage') = '/agents' ELSE 0 END;
 `
 	v110PostgresDown = `
-UPDATE users SET preferences = jsonb_set(preferences::jsonb, '{defaultLandingPage}', '"/environments"')::text
-WHERE CASE WHEN preferences LIKE '%"/agents"%' THEN preferences::jsonb->>'defaultLandingPage' = '/agents' ELSE false END;
+UPDATE users SET preferences = regexp_replace(preferences, '([{,]\s*)"defaultLandingPage"\s*:\s*"/agents"', '\1"defaultLandingPage":"/environments"')
+WHERE preferences ~ '[{,]\s*"defaultLandingPage"\s*:\s*"/agents"';
 `
 )
 

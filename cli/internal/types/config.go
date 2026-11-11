@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"maps"
+	"slices"
 	"strings"
 )
 
@@ -88,6 +89,20 @@ func NormalizePaginatedResource(resource string) string {
 	default:
 		return r
 	}
+}
+
+func NormalizePaginatedResources(resources map[string]PaginationResourceConfig) map[string]PaginationResourceConfig {
+	keys := slices.Sorted(maps.Keys(resources))
+	out := make(map[string]PaginationResourceConfig, len(resources))
+	for _, canonical := range []bool{false, true} {
+		for _, key := range keys {
+			resource := NormalizePaginatedResource(key)
+			if resource != "" && resources[key].Limit > 0 && (key == resource) == canonical {
+				out[resource] = PaginationResourceConfig{Limit: resources[key].Limit}
+			}
+		}
+	}
+	return out
 }
 
 func (c *Config) HasAuth() bool {
