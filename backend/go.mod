@@ -1,6 +1,6 @@
 module getarcane.dev/arcane/v3
 
-go 1.27.3
+go 1.27.4
 
 replace (
 	getarcane.dev/cli/v3 => ../cli
@@ -28,7 +28,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.9.3+incompatible
-	github.com/docker/compose/v5 v5.7.0
+	github.com/docker/compose/v5 v5.7.1
 	github.com/docker/go-units v0.5.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
@@ -37,7 +37,7 @@ require (
 	github.com/gofrs/flock v0.13.2
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/yamux v0.1.2
-	github.com/italypaleale/francis v0.2.1
+	github.com/italypaleale/francis v0.2.2
 	github.com/jwx-go/jwkfetch/v4 v4.0.4
 	github.com/klauspost/compress v1.20.4
 	github.com/labstack/echo-otel/v5 v5.0.0
@@ -184,8 +184,8 @@ require (
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf // indirect
-	github.com/italypaleale/go-kit v1.6.0 // indirect
-	github.com/italypaleale/go-sql-utils v0.3.12 // indirect
+	github.com/italypaleale/go-kit v1.7.3 // indirect
+	github.com/italypaleale/go-sql-utils v0.3.13 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -299,12 +299,12 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
+	k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab // indirect
 	mellium.im/reader v0.1.0 // indirect
 	mellium.im/sasl v0.3.2 // indirect
 	mellium.im/xmlstream v0.15.4 // indirect
 	mellium.im/xmpp v0.23.0 // indirect
-	modernc.org/libc v1.80.2 // indirect
+	modernc.org/libc v1.81.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.1 // indirect

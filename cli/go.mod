@@ -1,6 +1,6 @@
 module getarcane.dev/cli/v3
 
-go 1.27.3
+go 1.27.4
 
 replace getarcane.dev/types/v3 => ../types
 
