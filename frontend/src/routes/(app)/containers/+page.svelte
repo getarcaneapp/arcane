@@ -151,6 +151,7 @@
 				bind:groupByProject
 				loading={containersQuery.isPlaceholderData}
 				onRetry={() => containersQuery.refetch()}
+				refreshError={containersQuery.error}
 			/>
 		{/if}
 	{/snippet}

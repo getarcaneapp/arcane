@@ -18,7 +18,7 @@
 	import type { Paginated } from '#lib/types/base.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { cn } from '#lib/utils.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { trackOverflow, type ScrollOverflow } from '#lib/utils/overflow.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -69,6 +69,7 @@
 		loading = false,
 		unstyled = false,
 		onRetry,
+		refreshError,
 		onPageSizeChangeRequest,
 		columns,
 		rowActions,
@@ -105,6 +106,7 @@
 		loading?: boolean;
 		unstyled?: boolean;
 		onRetry?: () => Promise<unknown>;
+		refreshError?: unknown;
 		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
 		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData; view: TableViewMode }]>;
@@ -751,6 +753,14 @@
 	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0');
 </script>
 
+{#snippet RetryButton(retry: () => Promise<unknown>)}
+	<ArcaneButton
+		action="refresh"
+		customLabel={m.common_retry()}
+		onClickPromise={async () => handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
+	/>
+{/snippet}
+
 {#snippet PaginationSnippet()}
 	<ArcaneTablePagination
 		shown={items.data.length}
@@ -837,13 +847,22 @@
 							})}
 						</Alert.Description>
 						{#if onRetry}
-							{@const retry = onRetry}
-							<ArcaneButton
-								action="refresh"
-								customLabel={m.common_retry()}
-								onClickPromise={async () =>
-									handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
-							/>
+							{@render RetryButton(onRetry)}
+						{/if}
+					</div>
+				</Alert.Root>
+			</div>
+		{/if}
+
+		{#if refreshError}
+			<div class="shrink-0 px-3 pt-3">
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<Alert.Description>
+							{m.containers_resource_refresh_failed({ message: extractApiErrorMessage(refreshError) })}
+						</Alert.Description>
+						{#if onRetry}
+							{@render RetryButton(onRetry)}
 						{/if}
 					</div>
 				</Alert.Root>

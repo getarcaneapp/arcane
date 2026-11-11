@@ -312,7 +312,7 @@
 		...projectDetailQuery(currentEnvId, matchedProjectId),
 		enabled: !!matchedProjectId
 	}));
-	const project = $derived(projectQuery.isError ? null : (projectQuery.data ?? null));
+	const project = $derived(projectQuery.data ?? null);
 	const projectPending = $derived(
 		!!composeProjectName &&
 			(projectNameQuery.isPending ||

@@ -123,6 +123,7 @@
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}
 					onRetry={() => networksQuery.refetch()}
+					refreshError={networksQuery.error}
 				/>
 			{/key}
 		{/if}

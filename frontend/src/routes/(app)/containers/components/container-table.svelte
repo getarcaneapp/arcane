@@ -91,7 +91,8 @@
 		groupByProject = $bindable(false),
 		withoutFilters = false,
 		loading = false,
-		onRetry
+		onRetry,
+		refreshError
 	}: {
 		/** Shown-environments scope the rows were loaded for. */
 		scope: string;
@@ -102,6 +103,7 @@
 		withoutFilters?: boolean;
 		loading?: boolean;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const actionStatus = $state<Record<string, ActionStatus>>({});
@@ -1197,6 +1199,7 @@
 	{withoutFilters}
 	{loading}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	{bulkActions}

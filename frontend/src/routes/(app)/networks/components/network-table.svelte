@@ -47,12 +47,14 @@
 		networks,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRetry
+		onRetry,
+		refreshError
 	}: {
 		networks: NetworkPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -325,6 +327,7 @@
 	{bulkActions}
 	selectionDisabled={!canDeleteNetwork}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

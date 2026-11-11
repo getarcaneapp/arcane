@@ -61,12 +61,14 @@
 		images,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRetry
+		onRetry,
+		refreshError
 	}: {
 		images: EnvironmentPage<ImageListResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -648,6 +650,7 @@
 	bind:mobileFieldVisibility
 	{bulkActions}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

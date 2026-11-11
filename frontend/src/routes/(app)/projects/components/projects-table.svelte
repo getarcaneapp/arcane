@@ -74,6 +74,7 @@
 		showArchived = false,
 		onToggleArchived,
 		onRetry,
+		refreshError,
 		availableTags = [],
 		emptyState
 	}: {
@@ -84,6 +85,7 @@
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 		availableTags?: ProjectTagOption[];
 		emptyState?: Snippet;
 	} = $props();
@@ -638,6 +640,7 @@
 	bind:mobileFieldVisibility
 	{withoutFilters}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	{bulkActions}

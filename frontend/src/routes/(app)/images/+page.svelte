@@ -328,6 +328,7 @@
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}
 					onRetry={refresh}
+					refreshError={imagesQuery.error}
 				/>
 			{/key}
 		{/if}
