@@ -5,6 +5,8 @@ import { EditorView, ViewPlugin } from '@codemirror/view';
 // Undo page scrolls briefly after a tap focuses the editor, then reveal the caret.
 const tapFocusWindowMs = 1000;
 const restoreWindowMs = 600;
+// Anywhere on the page, these mean the user took over.
+const userInputEvents = ['touchstart', 'pointerdown', 'wheel', 'keydown'] as const;
 
 type ScrollPosition = { element: Element; top: number; left: number };
 
@@ -33,16 +35,20 @@ class FocusScrollGuard {
 		for (let element = this.view.dom.parentElement; element; element = element.parentElement) {
 			this.positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
 		}
-		this.view.dom.ownerDocument.addEventListener('scroll', this.restore, { capture: true, passive: true });
+		const doc = this.view.dom.ownerDocument;
+		doc.addEventListener('scroll', this.restore, { capture: true, passive: true });
+		for (const type of userInputEvents) doc.addEventListener(type, this.release, { capture: true, passive: true });
 		this.timer = setTimeout(this.finish, restoreWindowMs);
 	}
 
-	release() {
+	release = () => {
 		clearTimeout(this.timer);
-		this.view.dom.ownerDocument.removeEventListener('scroll', this.restore, { capture: true });
+		const doc = this.view.dom.ownerDocument;
+		doc.removeEventListener('scroll', this.restore, { capture: true });
+		for (const type of userInputEvents) doc.removeEventListener(type, this.release, { capture: true });
 		this.positions = [];
 		this.restored = false;
-	}
+	};
 
 	private restore = () => {
 		for (const { element, top, left } of this.positions) {
@@ -68,14 +74,7 @@ export const focusScrollGuard = ViewPlugin.fromClass(FocusScrollGuard, {
 		focus() {
 			this.focused();
 		},
-		// The user took over; let their scrolling and typing move the page.
-		touchstart() {
-			this.release();
-		},
-		wheel() {
-			this.release();
-		},
-		keydown() {
+		blur() {
 			this.release();
 		}
 	}
