@@ -172,6 +172,16 @@ func TestInstallSchedulesFrancisCronJob(t *testing.T) {
 	require.ErrorIs(t, err, actor.ErrJobNotFound)
 }
 
+func dispatchTick(t *testing.T, q *Coordinator, actorID string) {
+	t.Helper()
+	jobID, _, err := q.service.Dispatch(t.Context(), coordinatorType, actorID, "tick", nil)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		job, getErr := q.service.GetJob(t.Context(), jobID)
+		return errors.Is(getErr, actor.ErrJobNotFound) || (getErr == nil && job.Status == actor.JobStatusCompleted)
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestTickEnqueuesAndCoalescesRuns(t *testing.T) {
 	q := newTestCoordinator(t)
 	release := make(chan struct{})
@@ -201,9 +211,9 @@ func TestTickEnqueuesAndCoalescesRuns(t *testing.T) {
 		require.NoError(t, q.Stop(context.WithoutCancel(t.Context())))
 	})
 
-	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	dispatchTick(t, q, scheduleJob.ActorID)
 	require.Eventually(t, func() bool { return executed.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	dispatchTick(t, q, scheduleJob.ActorID)
 	history, err := q.List(t.Context(), "0", "tick", 1, 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, history.Total)
@@ -214,7 +224,7 @@ func TestTickEnqueuesAndCoalescesRuns(t *testing.T) {
 		stored, getErr := q.Get(t.Context(), "0", "tick", history.Runs[0].ID)
 		return getErr == nil && stored.Status == types.RunStatusSucceeded
 	}, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, coordinator.Job(t.Context(), "tick", nil))
+	dispatchTick(t, q, scheduleJob.ActorID)
 	history, err = q.List(t.Context(), "0", "tick", 1, 10)
 	require.NoError(t, err)
 	require.Equal(t, 2, history.Total)
