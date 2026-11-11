@@ -253,9 +253,9 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 	var queries sync.Map
 	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
 		IDs:     []string{"a", "b", "c"},
-		Request: httptest.NewRequest(http.MethodGet, "/api/environments/a,b,c/images/patches/targets?start=0&limit=20&order=desc", http.NoBody),
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/images/patches/targets?start=0&limit=20&order=desc", http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {

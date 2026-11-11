@@ -56,7 +56,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 	huma.Register(humaAPI, huma.Operation{
 		OperationID: "get-image",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/{imageId}",
+		Path:        "/agents/{id}/images/{imageId}",
 	}, func(_ context.Context, input *struct {
 		ID      string `path:"id"`
 		ImageID string `path:"imageId"`
@@ -69,7 +69,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 	// RFC 3986 §6.2.2.2: these are all the same URI and must resolve identically.
 	for _, segment := range []string{"sha256:abc", "sha256%3Aabc", "%73ha256:abc"} {
 		got = ""
-		req := httptest.NewRequest(http.MethodGet, "/api/environments/0/images/"+segment, http.NoBody)
+		req := httptest.NewRequest(http.MethodGet, "/api/agents/0/images/"+segment, http.NoBody)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
@@ -167,7 +167,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
 	for _, route := range router.Router().Routes() {
-		if strings.HasPrefix(route.Path, "/api/environments/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
+		if strings.HasPrefix(route.Path, "/api/agents/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
 			routes = append(routes, proxiedRoute{method: route.Method, path: strings.TrimPrefix(route.Path, "/api"), stream: true})
 		}
 	}
@@ -175,15 +175,15 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	concrete := strings.NewReplacer("{", "", "}", "", ":", "")
 	var missing []string
 	for _, route := range routes {
-		suffix, ok := strings.CutPrefix(route.path, "/environments/{id}")
+		suffix, ok := strings.CutPrefix(route.path, "/agents/{id}")
 		if !ok {
-			suffix, ok = strings.CutPrefix(route.path, "/environments/:id")
+			suffix, ok = strings.CutPrefix(route.path, "/agents/:id")
 		}
 		if !ok || suffix == "" || middleware.IsManagerLocalPath(route.method, suffix) {
 			continue
 		}
-		if agent.ResolveCommandName(route.method, "/api/environments/0"+concrete.Replace(suffix), route.stream).IsAbsent() {
-			missing = append(missing, route.method+" /api/environments/{id}"+suffix)
+		if agent.ResolveCommandName(route.method, "/api/agents/0"+concrete.Replace(suffix), route.stream).IsAbsent() {
+			missing = append(missing, route.method+" /api/agents/{id}"+suffix)
 		}
 	}
 

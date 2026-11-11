@@ -113,7 +113,7 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 			Data    []types.SwarmNode `json:"data"`
 			Success bool              `json:"success"`
 		}
-		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/nodes?limit=-1", nil, &remote); err != nil {
+		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/agents/0/swarm/nodes?limit=-1", nil, &remote); err != nil {
 			return nil, pagination.Response{}, fmt.Errorf("failed to list remote swarm nodes: %w", err)
 		}
 		if !remote.Success {
@@ -168,7 +168,7 @@ func (s *Service) inspectNode(ctx context.Context, environmentID, nodeID string)
 			Data    types.SwarmNode `json:"data"`
 			Success bool            `json:"success"`
 		}
-		remotePath := "/api/environments/0/swarm/nodes/" + nodeID
+		remotePath := "/api/agents/0/swarm/nodes/" + nodeID
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, remotePath, nil, &remote); err != nil {
 			return nil, fmt.Errorf("failed to inspect remote swarm node: %w", err)
 		}
@@ -570,7 +570,7 @@ func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environm
 		Data    types.SwarmJoinTokensResponse `json:"data"`
 		Success bool                          `json:"success"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join/tokens", nil, &response); err != nil {
+	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/agents/0/swarm/join/tokens", nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to get remote swarm join tokens: %w", err)
 	}
 	if !response.Success {
@@ -634,7 +634,7 @@ func (s *Service) joinEnvironment(
 	var joinResponse struct {
 		Success bool `json:"success"`
 	}
-	if proxyErr := s.environmentService.ProxyJSONRequest(ctx, target.EnvironmentID, http.MethodPost, "/api/environments/0/swarm/join", body, &joinResponse); proxyErr != nil {
+	if proxyErr := s.environmentService.ProxyJSONRequest(ctx, target.EnvironmentID, http.MethodPost, "/api/agents/0/swarm/join", body, &joinResponse); proxyErr != nil {
 		return failed(describeSwarmJoinFailure(proxyErr, joinToken))
 	}
 	if !joinResponse.Success {

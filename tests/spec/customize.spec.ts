@@ -81,7 +81,7 @@ test.describe('Templates', () => {
 
 	async function getProject(page: Page, projectId: string): Promise<Project> {
 		return readApiData<Project>(
-			await page.request.get(`/api/environments/0/projects/${projectId}`),
+			await page.request.get(`/api/agents/0/projects/${projectId}`),
 			`Get project ${projectId}`
 		);
 	}
@@ -122,7 +122,7 @@ test.describe('Templates', () => {
 
 		try {
 			const localEnvironment = await readApiData<{ id: string; name: string }>(
-				await page.request.get('/api/environments/0'),
+				await page.request.get('/api/agents/0'),
 				'Get local environment for variable scope'
 			);
 
@@ -147,7 +147,7 @@ test.describe('Templates', () => {
 			await bulkDialog
 				.getByLabel('Paste .env content', { exact: true })
 				.fill(`${bulkKeyOne}=first\n${bulkKeyTwo}=second`);
-			await bulkDialog.getByRole('radio', { name: /Specific Environments/ }).click();
+			await bulkDialog.getByRole('radio', { name: /Specific Agents/ }).click();
 			const environmentOption = bulkDialog
 				.locator('label')
 				.filter({ hasText: localEnvironment.name });
@@ -288,7 +288,7 @@ test.describe('Templates', () => {
 			const projectCreateResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/projects'
+					new URL(response.url()).pathname === '/api/agents/0/projects'
 			);
 			await createProjectButton.click();
 			const project = await readApiData<Project>(
@@ -301,8 +301,7 @@ test.describe('Templates', () => {
 			const deployResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname ===
-						`/api/environments/0/projects/${project.id}/deploy` &&
+					new URL(response.url()).pathname === `/api/agents/0/projects/${project.id}/deploy` &&
 					new URL(response.url()).searchParams.get('action') === 'up',
 				{ timeout: 30_000 }
 			);
@@ -321,7 +320,7 @@ test.describe('Templates', () => {
 				.poll(
 					async () => {
 						const runtime = await readApiData<Project>(
-							await page.request.get(`/api/environments/0/projects/${project.id}/runtime`),
+							await page.request.get(`/api/agents/0/projects/${project.id}/runtime`),
 							`Get runtime services for ${project.id}`
 						);
 						containerId =
@@ -333,12 +332,12 @@ test.describe('Templates', () => {
 				)
 				.not.toBe('');
 			const container = await readApiData<ContainerDetails>(
-				await page.request.get(`/api/environments/0/containers/${containerId}`),
+				await page.request.get(`/api/agents/0/containers/${containerId}`),
 				`Inspect substituted container ${containerId}`
 			);
 			expect(container.config.env).toContain(`${publicKey}=${publicValue}`);
 
-			await removeApiResource(page, `/api/environments/0/projects/${project.id}`, {
+			await removeApiResource(page, `/api/agents/0/projects/${project.id}`, {
 				data: { removeVolumes: false }
 			});
 			projectId = null;
@@ -360,7 +359,7 @@ test.describe('Templates', () => {
 			templateId = null;
 		} finally {
 			if (projectId) {
-				await removeApiResource(page, `/api/environments/0/projects/${projectId}`, {
+				await removeApiResource(page, `/api/agents/0/projects/${projectId}`, {
 					data: { removeVolumes: false }
 				});
 			}

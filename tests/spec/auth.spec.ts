@@ -156,7 +156,7 @@ test.describe('Token refresh behaviour', () => {
 	}) => {
 		await registerTokenSeeding(page);
 		const refreshCallCount = await mockRefreshSuccess(page);
-		await injectVersionMismatchUntilRefresh(page, /\/api\/environments\/[^/]+\/containers/);
+		await injectVersionMismatchUntilRefresh(page, /\/api\/agents\/[^/]+\/containers/);
 
 		await page.goto('/containers');
 		await page.waitForLoadState('load');
@@ -180,7 +180,7 @@ test.describe('Token refresh behaviour', () => {
 			});
 		});
 
-		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
+		await injectExpired401Always(page, /\/api\/agents\/[^/]+\/containers(?:\/.*)?$/);
 		// Keep /auth/bootstrap unauthenticated too so the login page does not immediately bounce back.
 		await injectExpired401Always(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
 

@@ -24,7 +24,7 @@ type (
 
 func aggregateContext(t *testing.T, handler http.Handler, ids ...string) context.Context {
 	t.Helper()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/environments/"+strings.Join(ids, ",")+"/containers?search=web&sort=environment&order=desc&drop=1", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/agents/"+strings.Join(ids, ",")+"/containers?search=web&sort=environment&order=desc&drop=1", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	request.Header.Set("Accept-Encoding", "gzip")
 	request.Header.Set("If-None-Match", `"etag"`)
@@ -73,7 +73,7 @@ func TestCollectEnvironmentsDispatchesEachEnvironmentInScopeOrder(t *testing.T) 
 	}
 
 	request := requests["a"]
-	require.Equal(t, "/api/environments/a/containers", request.URL.Path)
+	require.Equal(t, "/api/agents/a/containers", request.URL.Path)
 	require.Equal(t, url.Values{"search": {"web"}, "limit": {"-1"}}, request.URL.Query())
 	require.Equal(t, request.URL.RequestURI(), request.RequestURI)
 	require.Equal(t, "Bearer token", request.Header.Get("Authorization"))

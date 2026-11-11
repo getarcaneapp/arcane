@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "volume-backup-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}",
+		Path:        "/agents/{id}/volumes/{volumeName}/backups/{backupId}",
 		Summary:     "Restore volume backup",
 		Description: "Restore a full volume backup, or selected files with action restorefiles",
 		Tags:        []string{"Volume Backup"},
@@ -29,7 +29,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
+		Path:        "/agents/{id}/volumes/{volumeName}/backups/upload",
 		Summary:     "Upload and restore volume backup",
 		Description: "Restore a volume from a complete chunked upload session containing a tar.gz backup archive. " +
 			"multipart/form-data bodies are still accepted for backward compatibility; that form is deprecated " +

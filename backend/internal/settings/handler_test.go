@@ -99,7 +99,7 @@ func TestSettingsHandlerRemoteEnvironmentSettingsPassThrough(t *testing.T) {
 	}
 	proxy := func(_ context.Context, _, method, path string, _ []byte, output any) error {
 		require.Equal(t, http.MethodGet, method)
-		require.Equal(t, "/api/environments/0/settings", path)
+		require.Equal(t, "/api/agents/0/settings", path)
 		payload, err := json.Marshal(remoteSnapshot)
 		require.NoError(t, err)
 		return json.Unmarshal(payload, output)

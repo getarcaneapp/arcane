@@ -116,12 +116,12 @@ func TestPermissionMatcherCollectsEnvironmentAggregation(t *testing.T) {
 		return &struct{}{}, nil
 	}
 	aggregate := map[string]any{MetaRequiredPermission: "containers:list", MetaEnvironmentAggregate: true}
-	huma.Register(api, huma.Operation{OperationID: "list", Method: http.MethodGet, Path: "/environments/{id}/containers", Metadata: aggregate}, handler)
-	huma.Register(api, huma.Operation{OperationID: "create", Method: http.MethodPost, Path: "/environments/{id}/projects", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "list", Method: http.MethodGet, Path: "/agents/{id}/containers", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "create", Method: http.MethodPost, Path: "/agents/{id}/projects", Metadata: aggregate}, handler)
 	huma.Register(api, huma.Operation{
 		OperationID: "images",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images",
+		Path:        "/agents/{id}/images",
 		Metadata:    map[string]any{MetaRequiredPermission: "images:list"},
 	}, handler)
 
@@ -168,7 +168,7 @@ func TestPermissionMatcherActionPermissions(t *testing.T) {
 		huma.Register(api, huma.Operation{
 			OperationID: "container-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/containers/{containerId}",
+			Path:        "/agents/{id}/containers/{containerId}",
 			Metadata: map[string]any{
 				MetaActionParam:       "action",
 				MetaActionPermissions: perms,

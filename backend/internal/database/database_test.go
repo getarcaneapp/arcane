@@ -698,6 +698,32 @@ func TestMigration109_AddsGitRepositoryProvider(t *testing.T) {
 	assert.Zero(t, providerColumns())
 }
 
+func TestMigration110_RenamesEnvironmentsLandingPage(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-landing-page.db")
+	landingPage := func(id string) string {
+		var page stdsql.NullString
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT json_extract(preferences, '$.defaultLandingPage') FROM users WHERE id = ?`, id).Scan(&page))
+		return page.String
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 109))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO users (id, username, password_hash, roles, preferences) VALUES
+		('envs', 'envs', 'unused', '[]', '{"defaultLandingPage":"/environments","theme":"dark"}'),
+		('other', 'other', 'unused', '[]', '{"defaultLandingPage":"/containers"}'),
+		('none', 'none', 'unused', '[]', NULL)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 110))
+	assert.Equal(t, "/agents", landingPage("envs"))
+	assert.Equal(t, "/containers", landingPage("other"))
+	assert.Empty(t, landingPage("none"))
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 109))
+	assert.Equal(t, "/environments", landingPage("envs"))
+	assert.Equal(t, "/containers", landingPage("other"))
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

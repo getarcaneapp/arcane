@@ -2007,7 +2007,7 @@ func updaterScopeContext(t *testing.T, target string, bodies map[string]any) con
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -2023,7 +2023,7 @@ func updaterScopeContext(t *testing.T, target string, bodies map[string]any) con
 
 func TestAggregateHistoryMergesNewestFirst(t *testing.T) {
 	now := time.Now()
-	ctx := updaterScopeContext(t, "/api/environments/a,b,c/updater/history", map[string]any{
+	ctx := updaterScopeContext(t, "/api/agents/a,b,c/updater/history", map[string]any{
 		"a": types.ApiResponse[[]types.AutoUpdateRecord]{
 			Success: true,
 			Data: []types.AutoUpdateRecord{

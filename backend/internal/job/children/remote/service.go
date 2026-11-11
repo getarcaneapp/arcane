@@ -44,14 +44,14 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 	if !env.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Environment is disabled"}, nil
 	}
-	basePath := "/api/environments/0/jobs/" + url.PathEscape(run.JobID)
+	basePath := "/api/agents/0/jobs/" + url.PathEscape(run.JobID)
 	runPath := basePath + "/runs/" + url.PathEscape(run.ID)
 	// A previously confirmed terminal result needs only acknowledgement, never execution.
 	if !run.RemoteRetryRequested && run.RemoteAccepted && kit.FromPtr(run.RemoteOutcome).Status.Terminal() {
 		return s.acknowledgeRemote(ctx, run, runPath, *run.RemoteOutcome)
 	}
 	var catalog types.JobListResponse
-	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, "/api/environments/0/jobs", nil, &catalog); proxyJSONRequestErr != nil {
+	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, "/api/agents/0/jobs", nil, &catalog); proxyJSONRequestErr != nil {
 		return remoteFailure(proxyJSONRequestErr)
 	}
 	if !catalog.DurableRuns {
@@ -283,7 +283,7 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 	}
 	key := "jobs-catalog/" + kit.SHA256Hex(environmentID)
 	var catalog types.JobListResponse
-	remoteErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/jobs", nil, &catalog)
+	remoteErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/agents/0/jobs", nil, &catalog)
 	if remoteErr == nil {
 		observed := types.JobListResponse{ //exhaustruct:enforce
 			DurableRuns: catalog.DurableRuns,
@@ -387,7 +387,7 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 	}
 	merged := make(map[string]types.SchedulerRun)
 	for page := 1; ; page++ {
-		path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs?page=" + strconv.Itoa(page) + "&limit=100"
+		path := "/api/agents/0/jobs/" + url.PathEscape(jobID) + "/runs?page=" + strconv.Itoa(page) + "&limit=100"
 		var response types.SchedulerRunList
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &response); proxyJSONRequestErr != nil {
 			var status *agent.StatusError
@@ -440,7 +440,7 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]type
 
 func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	var run types.SchedulerRun
-	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
+	path := "/api/agents/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &run); proxyJSONRequestErr != nil {
 		return types.SchedulerRun{}, proxyJSONRequestErr
 	}
@@ -485,7 +485,7 @@ func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runI
 	if !targetEnvironment.Enabled {
 		return types.SchedulerRun{}, errors.New("environment is disabled")
 	}
-	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID) + "?action=" + action
+	path := "/api/agents/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID) + "?action=" + action
 	var run types.SchedulerRun
 	// This is an explicit operator action. Never replay a lost mutation response.
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path, nil, &run); proxyJSONRequestErr != nil {

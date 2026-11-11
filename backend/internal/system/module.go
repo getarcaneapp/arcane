@@ -55,7 +55,7 @@ func RegisterSystem(api huma.API, h *SystemHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "system-health",
 		Method:        http.MethodHead,
-		Path:          "/environments/{id}/system/health",
+		Path:          "/agents/{id}/system/health",
 		Summary:       "Check system health",
 		Description:   "Check if the Docker daemon is responsive",
 		Tags:          []string{"System"},
@@ -66,7 +66,7 @@ func RegisterSystem(api huma.API, h *SystemHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-docker-info",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/system/docker/info",
+		Path:        "/agents/{id}/system/docker/info",
 		Summary:     "Get Docker info",
 		Description: "Get Docker daemon version and system information",
 		Tags:        []string{"System"},
@@ -76,7 +76,7 @@ func RegisterSystem(api huma.API, h *SystemHandler) {
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "system-containers-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/system/containers",
+		Path:        "/agents/{id}/system/containers",
 		Summary:     "Run bulk container action",
 		Description: "Start all, start stopped, or stop all Docker containers",
 		Tags:        []string{"System"},
@@ -90,7 +90,7 @@ func RegisterSystem(api huma.API, h *SystemHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "convert-docker-run",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/system/convert",
+		Path:        "/agents/{id}/system/convert",
 		Summary:     "Convert docker run command",
 		Description: "Convert a docker run command to docker-compose format",
 		Tags:        []string{"System"},

@@ -114,7 +114,7 @@ func (h *JobSchedulesHandler) runJob(ctx context.Context, input *JobActionInput)
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
 	if input.ID != "0" {
-		cfg, err := h.proxyRemoteJSON.JSON[types.JobScheduleConfig](ctx, input.ID, http.MethodGet, "/api/environments/0/jobs/schedules", nil)
+		cfg, err := h.proxyRemoteJSON.JSON[types.JobScheduleConfig](ctx, input.ID, http.MethodGet, "/api/agents/0/jobs/schedules", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 
 func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*handlerutil.Out[types.JobScheduleConfig], error) {
 	if input.ID != "0" {
-		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.JobScheduleConfig]](ctx, input.ID, http.MethodPatch, "/api/environments/0/jobs/schedules", input.RawBody)
+		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.JobScheduleConfig]](ctx, input.ID, http.MethodPatch, "/api/agents/0/jobs/schedules", input.RawBody)
 		if err != nil {
 			return nil, err
 		}
@@ -230,7 +230,7 @@ func (h *JobSchedulesHandler) acknowledgeRun(ctx context.Context, environmentID,
 
 func (h *JobSchedulesHandler) restartWorker(ctx context.Context, input *JobActionInput) (*RunJobOutput, error) {
 	if input.ID != "0" {
-		result, err := h.proxyRemoteJSON.JSON[types.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"?action=restart", nil)
+		result, err := h.proxyRemoteJSON.JSON[types.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/agents/0/jobs/"+input.JobID+"?action=restart", nil)
 		if err != nil {
 			return nil, err
 		}

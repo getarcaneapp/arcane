@@ -199,7 +199,7 @@ const REPEATED_FAILURE_WINDOW_HOURS = 24;
 const FAILED_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(['failed', 'partial', 'needs_attention']);
 
 function environmentDetailHref(environmentId: string): string {
-	return resolve('/(app)/environments/[id]', { id: environmentId });
+	return resolve('/(app)/agents/[id]', { id: environmentId });
 }
 
 function failedJobHref(environmentId: string, jobId: string): string {
@@ -210,7 +210,7 @@ function failedJobHref(environmentId: string, jobId: string): string {
 			volumeName: target.join(':')
 		});
 	}
-	return resolve(`/(app)/environments/[id]?tab=history&job=${encodeURIComponent(jobId)}`, { id: environmentId });
+	return resolve(`/(app)/agents/[id]?tab=history&job=${encodeURIComponent(jobId)}`, { id: environmentId });
 }
 
 export function collapseActivities(activities: Activity[]): CollapsedActivity[] {
@@ -238,7 +238,7 @@ function failingActivityHref(activity: Activity, environmentId: string): string 
 		case 'image_patch':
 			return resolve('/(app)/security');
 		case 'job_run':
-			return resolve('/(app)/environments/[id]?tab=history', { id: environmentId });
+			return resolve('/(app)/agents/[id]?tab=history', { id: environmentId });
 	}
 	if (activity.resourceId && activity.type.startsWith('container_')) {
 		return resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(environmentId)}`, {

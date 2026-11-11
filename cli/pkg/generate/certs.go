@@ -60,7 +60,7 @@ func newMTLSCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.outDir, "out-dir", "./agent-mtls", "directory to write generated agent mTLS assets")
-	cmd.Flags().StringVar(&opts.envID, "env-id", "local-agent", "environment identifier to embed in the generated agent certificate")
+	cmd.Flags().StringVar(&opts.envID, "agent-id", "local-agent", "Agent ID to embed in the generated certificate")
 	cmd.Flags().StringVar(&opts.appURL, "app-url", "http://localhost:3552", "Arcane manager app URL to embed as the agent mTLS SPIFFE trust domain")
 	return cmd
 }

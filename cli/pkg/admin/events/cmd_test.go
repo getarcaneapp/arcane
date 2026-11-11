@@ -46,7 +46,7 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "admin", "events", "list", "--environment", "--json", "--limit", "3", "--start", "6"},
+		[]string{"--config", configPath, "--agent", "0", "admin", "events", "list", "--per-agent", "--json", "--limit", "3", "--start", "6"},
 	)
 
 	require.NoError(t, err,
@@ -55,8 +55,8 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	require.Equal(t, "/api/events/environment/0", gotPath,
-		"path = %q, want %q", gotPath, "/api/events/environment/0")
+	require.Equal(t, "/api/events/agent/0", gotPath,
+		"path = %q, want %q", gotPath, "/api/events/agent/0")
 
 	require.True(t, strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6"),
 		"query = %q, want limit=3 and start=6", gotQuery)

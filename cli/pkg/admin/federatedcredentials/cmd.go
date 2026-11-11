@@ -142,7 +142,7 @@ func newCreateCmd() *cobra.Command {
 					MatchType:       opts.matchType,
 					RoleID:          opts.roleID,
 					Description:     kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
-					EnvironmentID:   kit.Ternary(cmd.Flags().Changed("environment") && opts.environment != "", new(opts.environment), nil),
+					EnvironmentID:   kit.Ternary(cmd.Flags().Changed("agent") && opts.environment != "", new(opts.environment), nil),
 					TokenTTLSeconds: kit.Ternary(cmd.Flags().Changed("token-ttl"), opts.tokenTTL, 0),
 					ExpiresAt:       expiresAt,
 				},
@@ -164,7 +164,7 @@ func newCreateCmd() *cobra.Command {
 	cmdutil.EnumVarP(command, command.Flags(), &opts.matchType, "match-type", "", "", "Subject match strategy",
 		types.FederatedMatchTypeExact, types.FederatedMatchTypeGlob)
 	command.Flags().StringVar(&opts.roleID, "role", "", "Role ID to map exchanged tokens to (required)")
-	command.Flags().StringVar(&opts.environment, "environment", "", "Scope the role assignment to one environment (omit for global)")
+	command.Flags().StringVar(&opts.environment, "agent", "", "Scope the role assignment to one agent (omit for global)")
 	command.Flags().IntVar(&opts.tokenTTL, "token-ttl", 0, "Issued token lifetime in seconds (60-3600)")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Credential expiration (RFC3339 format)")
 	_ = command.MarkFlagRequired("name")
@@ -225,7 +225,7 @@ func newUpdateCmd() *cobra.Command {
 				{changed: cmd.Flags().Changed("subject-match"), key: "subjectMatch", value: opts.subjectMatch},
 				{changed: cmd.Flags().Changed("match-type"), key: "matchType", value: opts.matchType},
 				{changed: cmd.Flags().Changed("role"), key: "roleId", value: opts.roleID},
-				{changed: cmd.Flags().Changed("environment"), key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
+				{changed: cmd.Flags().Changed("agent"), key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
 				{changed: cmd.Flags().Changed("token-ttl"), key: "tokenTtlSeconds", value: opts.tokenTTL},
 				{changed: cmd.Flags().Changed("expires-at"), key: "expiresAt", value: expiresAt},
 			} {
@@ -257,7 +257,7 @@ func newUpdateCmd() *cobra.Command {
 	cmdutil.EnumVarP(command, command.Flags(), &opts.matchType, "match-type", "", "", "New match strategy",
 		types.FederatedMatchTypeExact, types.FederatedMatchTypeGlob)
 	command.Flags().StringVar(&opts.roleID, "role", "", "New role ID")
-	command.Flags().StringVar(&opts.environment, "environment", "", "New environment scope")
+	command.Flags().StringVar(&opts.environment, "agent", "", "New agent scope")
 	command.Flags().IntVar(&opts.tokenTTL, "token-ttl", 0, "New issued token lifetime in seconds (60-3600)")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "New credential expiration (RFC3339 format)")
 	return command

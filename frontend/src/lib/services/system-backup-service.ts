@@ -39,7 +39,7 @@ class SystemBackupService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
 	): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
-		const response = await this.api.get(`/environments/${environmentId}/backups/history`, {
+		const response = await this.api.get(`/agents/${environmentId}/backups/history`, {
 			...config,
 			params: transformPaginationParams(options)
 		});
@@ -84,7 +84,7 @@ class SystemBackupService extends BaseAPIService {
 
 	async restore(environmentId: string, id: string, recoveryKey: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${environmentId}/backups/${id}`, { recoveryKey }, { params: { action: 'restore' } })
+			this.api.post(`/agents/${environmentId}/backups/${id}`, { recoveryKey }, { params: { action: 'restore' } })
 		);
 	}
 
@@ -95,7 +95,7 @@ class SystemBackupService extends BaseAPIService {
 		request: BackupFileBrowseRequest
 	): Promise<Paginated<BackupFileEntry>> {
 		const response = await this.api.post(
-			`/environments/${environmentId}/backups/${id}/files/browse`,
+			`/agents/${environmentId}/backups/${id}/files/browse`,
 			{ recoveryKey },
 			{ params: request }
 		);
@@ -110,7 +110,7 @@ class SystemBackupService extends BaseAPIService {
 	): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(
-				`/environments/${environmentId}/backups/${id}`,
+				`/agents/${environmentId}/backups/${id}`,
 				{ recoveryKey, ...selection },
 				{ params: { action: 'restorefiles' } }
 			)
@@ -118,13 +118,11 @@ class SystemBackupService extends BaseAPIService {
 	}
 
 	async upload(environmentId: string, id: string, s3DestinationId: string, recoveryKey: string): Promise<SystemBackupRun> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/backups/${id}/upload`, { s3DestinationId, recoveryKey })
-		);
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/backups/${id}/upload`, { s3DestinationId, recoveryKey }));
 	}
 
 	async delete(environmentId: string, id: string, recoveryKey: string): Promise<void> {
-		await this.handleResponse(this.api.delete(`/environments/${environmentId}/backups/${id}`, { data: { recoveryKey } }));
+		await this.handleResponse(this.api.delete(`/agents/${environmentId}/backups/${id}`, { data: { recoveryKey } }));
 	}
 
 	async discover(s3DestinationId: string, recoveryKey: string): Promise<number> {

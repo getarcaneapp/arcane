@@ -36,7 +36,7 @@ func TestProjectsListAllIncludesArchived(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "projects", "list", "--json", "--all"},
+		[]string{"--config", configPath, "--agent", "0", "projects", "list", "--json", "--all"},
 	)
 
 	require.NoError(t, err,
@@ -53,7 +53,7 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/projects" {
+		if r.URL.Path != "/api/agents/0/projects" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -84,7 +84,7 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "projects", "list", "--updates", "has_update", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "projects", "list", "--updates", "has_update", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -113,7 +113,7 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	seenUpdatesFilter := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/environments/0/projects" {
+		if r.URL.Path != "/api/agents/0/projects" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -144,7 +144,7 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "--output", "text", "projects", "updates"},
+		[]string{"--config", configPath, "--agent", "0", "--output", "text", "projects", "updates"},
 	)
 
 	require.NoError(t, err,

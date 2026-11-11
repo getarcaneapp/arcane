@@ -34,19 +34,19 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPatch},
-		{path: "/environments/{id}/projects/{projectId}/workspace/file", method: http.MethodGet},
-		{path: "/environments/{id}/projects/{projectId}/workspace/file/download", method: http.MethodGet},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPatch},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
-		{path: "/environments/{id}/builds/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/builds/workspace", method: http.MethodPatch},
-		{path: "/environments/{id}/builds/workspace/file", method: http.MethodGet},
-		{path: "/environments/{id}/builds/workspace/file/download", method: http.MethodGet},
-		{path: "/environments/{id}/builds/workspace/upload", method: http.MethodPost},
+		{path: "/agents/{id}/projects/{projectId}/workspace", method: http.MethodGet},
+		{path: "/agents/{id}/projects/{projectId}/workspace", method: http.MethodPatch},
+		{path: "/agents/{id}/projects/{projectId}/workspace/file", method: http.MethodGet},
+		{path: "/agents/{id}/projects/{projectId}/workspace/file/download", method: http.MethodGet},
+		{path: "/agents/{id}/volumes/{volumeName}/workspace", method: http.MethodGet},
+		{path: "/agents/{id}/volumes/{volumeName}/workspace", method: http.MethodPatch},
+		{path: "/agents/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
+		{path: "/agents/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
+		{path: "/agents/{id}/builds/workspace", method: http.MethodGet},
+		{path: "/agents/{id}/builds/workspace", method: http.MethodPatch},
+		{path: "/agents/{id}/builds/workspace/file", method: http.MethodGet},
+		{path: "/agents/{id}/builds/workspace/file/download", method: http.MethodGet},
+		{path: "/agents/{id}/builds/workspace/upload", method: http.MethodPost},
 	}
 	for _, route := range canonical {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
@@ -64,21 +64,21 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 	}
 
 	legacy := []string{
-		"/environments/{id}/projects/{projectId}/files",
-		"/environments/{id}/projects/{projectId}/file",
-		"/environments/{id}/projects/{projectId}/includes",
-		"/environments/{id}/volumes/{volumeName}/files",
-		"/environments/{id}/volumes/{volumeName}/file",
-		"/environments/{id}/volumes/{volumeName}/browse",
-		"/environments/{id}/volumes/{volumeName}/browse/content",
-		"/environments/{id}/volumes/{volumeName}/browse/download",
-		"/environments/{id}/volumes/{volumeName}/browse/upload",
-		"/environments/{id}/volumes/{volumeName}/browse/mkdir",
-		"/environments/{id}/builds/browse",
-		"/environments/{id}/builds/browse/content",
-		"/environments/{id}/builds/browse/download",
-		"/environments/{id}/builds/browse/upload",
-		"/environments/{id}/builds/browse/mkdir",
+		"/agents/{id}/projects/{projectId}/files",
+		"/agents/{id}/projects/{projectId}/file",
+		"/agents/{id}/projects/{projectId}/includes",
+		"/agents/{id}/volumes/{volumeName}/files",
+		"/agents/{id}/volumes/{volumeName}/file",
+		"/agents/{id}/volumes/{volumeName}/browse",
+		"/agents/{id}/volumes/{volumeName}/browse/content",
+		"/agents/{id}/volumes/{volumeName}/browse/download",
+		"/agents/{id}/volumes/{volumeName}/browse/upload",
+		"/agents/{id}/volumes/{volumeName}/browse/mkdir",
+		"/agents/{id}/builds/browse",
+		"/agents/{id}/builds/browse/content",
+		"/agents/{id}/builds/browse/download",
+		"/agents/{id}/builds/browse/upload",
+		"/agents/{id}/builds/browse/mkdir",
 	}
 	for _, path := range legacy {
 		t.Run("absent "+path, func(t *testing.T) {
@@ -252,8 +252,8 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/oidc/callback", method: "POST"},
 		{path: "/oidc/device/code", method: "POST"},
 		{path: "/oidc/device/token", method: "POST"},
-		{path: "/environments/{id}/settings/public", method: "GET"},
-		{path: "/environments/pair", method: "POST"},
+		{path: "/agents/{id}/settings/public", method: "GET"},
+		{path: "/agents/pair", method: "POST"},
 		{path: "/agents/enroll", method: "POST"},
 		{path: "/version", method: "GET"},
 		{path: "/app/version", method: "GET"},
@@ -349,7 +349,7 @@ func TestSetupAPIForSpec_HiddenOperationsKeepAccess(t *testing.T) {
 func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 	managerAPI := SetupAPIForSpec()
 	require.NotNil(t, managerAPI.OpenAPI().Paths["/variables"])
-	require.Nil(t, managerAPI.OpenAPI().Paths["/environments/{id}/templates/variables"])
+	require.Nil(t, managerAPI.OpenAPI().Paths["/agents/{id}/templates/variables"])
 
 	managerMatcher := authz.NewPermissionMatcher()
 	managerMatcher.CollectFromHumaAPI(managerAPI)
@@ -367,7 +367,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 		Deps:       HandlerDeps{Health: health.New(&health.Service{})},
 	})
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])
-	materialized := agentAPI.OpenAPI().Paths["/environments/{id}/templates/variables"]
+	materialized := agentAPI.OpenAPI().Paths["/agents/{id}/templates/variables"]
 	require.NotNil(t, materialized)
 	require.NotNil(t, materialized.Get)
 	require.NotNil(t, materialized.Put)
@@ -379,8 +379,8 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/environments/{id}/swarm/join/candidates", method: "GET"},
-		{path: "/environments/{id}/swarm/join/environments", method: "POST"},
+		{path: "/agents/{id}/swarm/join/candidates", method: "GET"},
+		{path: "/agents/{id}/swarm/join/agents", method: "POST"},
 	}
 
 	matcher := authz.NewPermissionMatcher()
@@ -399,7 +399,7 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 			require.NotNil(t, operation)
 			require.Equal(t, authz.PermSwarmJoin, operation.Metadata[authz.MetaRequiredPermission])
 
-			suffix := strings.TrimPrefix(tt.path, "/environments/{id}")
+			suffix := strings.TrimPrefix(tt.path, "/agents/{id}")
 			permission, found := matcher.Lookup(tt.method, suffix, nil).Get()
 			require.True(t, found)
 			require.Equal(t, authz.PermSwarmJoin, permission)
@@ -416,11 +416,11 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 
 	var missing []string
 	for path, item := range oapi.Paths {
-		if !strings.HasPrefix(path, "/environments/{id}/") {
+		if !strings.HasPrefix(path, "/agents/{id}/") {
 			continue
 		}
 		// Upload-session routes derive their permission from the {kind} segment at request time.
-		if strings.HasPrefix(path, "/environments/{id}/uploads/{kind}") {
+		if strings.HasPrefix(path, "/agents/{id}/uploads/{kind}") {
 			continue
 		}
 		operations := map[string]*humav2.Operation{

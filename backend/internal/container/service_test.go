@@ -1735,7 +1735,7 @@ func containerScopeContext(t *testing.T, target string, bodies map[string]any) (
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -1777,7 +1777,7 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	svc := &ContainerService{}
 
 	t.Run("sorts by name across environments and pages", func(t *testing.T) {
-		ctx, queries := containerScopeContext(t, "/api/environments/a,b,c/containers?start=2&limit=2&sort=name&order=asc&groupBy=project", bodies)
+		ctx, queries := containerScopeContext(t, "/api/agents/a,b,c/containers?start=2&limit=2&sort=name&order=asc&groupBy=project", bodies)
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Start: 2, Limit: 2}}, "")
 		require.NoError(t, err)
 
@@ -1804,21 +1804,21 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by name descending ignoring case", func(t *testing.T) {
-		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers?sort=name&order=desc", bodies)
+		ctx, _ := containerScopeContext(t, "/api/agents/a,b,c/containers?sort=name&order=desc", bodies)
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortDesc}, Params: pagination.Params{Limit: 20}}, "")
 		require.NoError(t, err)
 		require.Equal(t, []string{"b/delta", "a/Delta", "b/bravo", "a/alpha"}, rowLabels(body.Data))
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers?sort=environment&order=asc", bodies)
+		ctx, _ := containerScopeContext(t, "/api/agents/a,b,c/containers?sort=environment&order=asc", bodies)
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 20}}, "")
 		require.NoError(t, err)
 		require.Equal(t, []string{"a/alpha", "a/Delta", "b/bravo", "b/delta"}, rowLabels(body.Data))
 	})
 
 	t.Run("project groups merge across environments and stay whole", func(t *testing.T) {
-		ctx, queries := containerScopeContext(t, "/api/environments/a,b,c/containers?start=0&limit=1&sort=name&order=asc&groupBy=project", bodies)
+		ctx, queries := containerScopeContext(t, "/api/agents/a,b,c/containers?start=0&limit=1&sort=name&order=asc&groupBy=project", bodies)
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 1}}, "project")
 		require.NoError(t, err)
 
@@ -1832,7 +1832,7 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("resource sort is supported only when every environment supports it", func(t *testing.T) {
-		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers", map[string]any{"a": bodies["a"]})
+		ctx, _ := containerScopeContext(t, "/api/agents/a,b,c/containers", map[string]any{"a": bodies["a"]})
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}}, "")
 		require.NoError(t, err)
 		require.True(t, body.ResourceSortSupported)
@@ -1840,7 +1840,7 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers", map[string]any{})
+		ctx, _ := containerScopeContext(t, "/api/agents/a,b,c/containers", map[string]any{})
 		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}}, "")
 		require.NoError(t, err)
 		require.True(t, body.Success)
@@ -2031,7 +2031,7 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 }
 
 func TestAggregateContainerCountsSumsEnvironments(t *testing.T) {
-	ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers/counts", map[string]any{
+	ctx, _ := containerScopeContext(t, "/api/agents/a,b,c/containers/counts", map[string]any{
 		"a": types.ApiResponse[types.ContainerStatusCounts]{
 			Success: true,
 			Data: types.ContainerStatusCounts{

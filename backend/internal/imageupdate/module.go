@@ -58,7 +58,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/updates/check",
+		Path:        "/agents/{id}/images/updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -67,7 +67,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/updates/check/{imageId}",
+		Path:        "/agents/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -76,7 +76,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id-post",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/updates/check/{imageId}",
+		Path:        "/agents/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -85,7 +85,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "check-images",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/updates/check",
+		Path:        "/agents/{id}/images/updates/check",
 		Summary:     "Check all or multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -97,7 +97,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-info-by-refs",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/updates/refs",
+		Path:        "/agents/{id}/images/updates/refs",
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -106,7 +106,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/updates/summary",
+		Path:        "/agents/{id}/images/updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),

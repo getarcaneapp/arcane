@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	podsPath = "/environments/{id}/podman/pods"
+	podsPath = "/agents/{id}/podman/pods"
 	podsTag  = "Podman"
 )
 

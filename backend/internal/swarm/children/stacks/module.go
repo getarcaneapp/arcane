@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-stacks",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/stacks",
+			Path:        "/agents/{id}/swarm/stacks",
 			Summary:     "List swarm stacks",
 			Tags: []string{
 				"Swarm",
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "deploy-swarm-stack",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/stacks",
+			Path:        "/agents/{id}/swarm/stacks",
 			Summary:     "Deploy swarm stack",
 			Tags: []string{
 				"Swarm",
@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-stack",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/stacks/{name}",
+			Path:        "/agents/{id}/swarm/stacks/{name}",
 			Summary:     "Get swarm stack",
 			Tags: []string{
 				"Swarm",
@@ -62,7 +62,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-stack-source",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/stacks/{name}/source",
+			Path:        "/agents/{id}/swarm/stacks/{name}/source",
 			Summary:     "Get swarm stack source",
 			Tags: []string{
 				"Swarm",
@@ -77,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "update-swarm-stack-source",
 			Method:      http.MethodPatch,
-			Path:        "/environments/{id}/swarm/stacks/{name}/source",
+			Path:        "/agents/{id}/swarm/stacks/{name}/source",
 			Summary:     "Update swarm stack source",
 			Tags: []string{
 				"Swarm",
@@ -92,7 +92,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-stack",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/stacks/{name}",
+			Path:        "/agents/{id}/swarm/stacks/{name}",
 			Summary:     "Delete swarm stack",
 			Tags: []string{
 				"Swarm",
@@ -107,7 +107,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "down-swarm-stack",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/stacks/{name}/down",
+			Path:        "/agents/{id}/swarm/stacks/{name}/down",
 			Summary:     "Bring down swarm stack",
 			Tags: []string{
 				"Swarm",
@@ -122,7 +122,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "up-swarm-stack",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/stacks/{name}/up",
+			Path:        "/agents/{id}/swarm/stacks/{name}/up",
 			Summary:     "Bring up swarm stack",
 			Tags: []string{
 				"Swarm",
@@ -137,7 +137,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-stack-services",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/stacks/{name}/services",
+			Path:        "/agents/{id}/swarm/stacks/{name}/services",
 			Summary:     "List swarm stack services",
 			Tags: []string{
 				"Swarm",
@@ -152,7 +152,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-stack-tasks",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/stacks/{name}/tasks",
+			Path:        "/agents/{id}/swarm/stacks/{name}/tasks",
 			Summary:     "List swarm stack tasks",
 			Tags: []string{
 				"Swarm",
@@ -167,7 +167,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "render-swarm-stack-config",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/stacks/config/render",
+			Path:        "/agents/{id}/swarm/stacks/config/render",
 			Summary:     "Render/validate swarm stack config",
 			Tags: []string{
 				"Swarm",

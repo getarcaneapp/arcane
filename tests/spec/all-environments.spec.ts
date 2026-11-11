@@ -73,24 +73,22 @@ async function withPreferences(
 // The merged request gets the real local rows plus the remote row, or a remote failure while `remote.failure` is set.
 async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) {
 	const remote: { failure?: string } = {};
-	const local = await page.request.get('/api/environments/0');
+	const local = await page.request.get('/api/agents/0');
 	const localEnvironment = (await local.json()).data;
 	await withPreferences(page, () => preferences, [localEnvironment, remoteEnvironment]);
 	await page.route(/\/api\/stream(?:\?.*)?$/, (route) => route.abort());
-	await page.route(/\/api\/environments(?:\?.*)?$/, (route) =>
+	await page.route(/\/api\/agents(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) })
 	);
 	await page.route(
-		new RegExp(`/api/environments/0(?:,|%2C)${remoteEnvironment.id}/containers(?:\\?.*)?$`),
+		new RegExp(`/api/agents/0(?:,|%2C)${remoteEnvironment.id}/containers(?:\\?.*)?$`),
 		async (route) => {
 			const url = new URL(route.request().url());
 			const query = new URLSearchParams(url.search);
 			const descending = query.get('sort') === 'environment' && query.get('order') === 'desc';
 			query.delete('sort');
 			query.delete('order');
-			const localPage = await (
-				await page.request.get(`/api/environments/0/containers?${query}`)
-			).json();
+			const localPage = await (await page.request.get(`/api/agents/0/containers?${query}`)).json();
 			const localRows = localPage.data.map((row: object) => ({
 				...row,
 				environmentId: localEnvironment.id,
@@ -122,7 +120,7 @@ async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) 
 		}
 	);
 	await page.route(
-		new RegExp(`/api/environments/${remoteEnvironment.id}/containers(?:\\?.*)?$`),
+		new RegExp(`/api/agents/${remoteEnvironment.id}/containers(?:\\?.*)?$`),
 		(route) =>
 			route.fulfill({
 				json: paginated([remoteContainer], {
@@ -169,9 +167,7 @@ test.describe('All environments', () => {
 
 		await page.goto('/containers');
 
-		await expect(
-			page.getByRole('button', { name: 'Sort by Environment', exact: true })
-		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Sort by Agent', exact: true })).toBeVisible();
 		const remoteRow = page.getByRole('row').filter({ hasText: 'remote-preview-web' });
 		await expect(remoteRow).toContainText(remoteEnvironment.name);
 		await expect(remoteRow.getByRole('link', { name: 'remote-preview-web' })).toHaveAttribute(
@@ -188,16 +184,16 @@ test.describe('All environments', () => {
 
 		const listRequests: string[] = [];
 		page.on('request', (request) => {
-			if (/\/api\/environments\/[^/]+\/containers(?:\?.*)?$/.test(request.url()))
+			if (/\/api\/agents\/[^/]+\/containers(?:\?.*)?$/.test(request.url()))
 				listRequests.push(request.url());
 		});
-		await page.getByTestId('facet-environment-trigger').click();
-		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.getByTestId('facet-agent-trigger').click();
+		await page.getByTestId(`facet-agent-option-${remoteEnvironment.id}`).click();
 
 		await expect.poll(() => listRequests.length).toBeGreaterThan(0);
-		expect(
-			listRequests.every((url) => url.includes(`/api/environments/${remoteEnvironment.id}/`))
-		).toBe(true);
+		expect(listRequests.every((url) => url.includes(`/api/agents/${remoteEnvironment.id}/`))).toBe(
+			true
+		);
 		expect(listRequests.some((url) => /[?&]environment=/.test(url))).toBe(false);
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
 	});
@@ -225,7 +221,7 @@ test.describe('All environments', () => {
 		await page.getByRole('button', { name: 'Update Projects', exact: true }).click();
 
 		const dialog = page.getByRole('dialog');
-		await expect(dialog).toContainText('This runs on all 2 environments.');
+		await expect(dialog).toContainText('This runs on all 2 agents.');
 		await expect(dialog).not.toContainText(remoteEnvironment.name);
 		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 	});
@@ -234,13 +230,13 @@ test.describe('All environments', () => {
 		await mockRemoteEnvironment(page);
 		const listRequests: string[] = [];
 		page.on('request', (request) => {
-			if (/\/api\/environments\/[^/]+\/containers(?:\?.*)?$/.test(request.url()))
+			if (/\/api\/agents\/[^/]+\/containers(?:\?.*)?$/.test(request.url()))
 				listRequests.push(request.url());
 		});
 
 		await page.goto('/containers');
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
-		await sortByColumn(page, 'Environment', 'desc');
+		await sortByColumn(page, 'Agent', 'desc');
 
 		await expect(page.getByRole('row').nth(1)).toContainText(remoteEnvironment.name);
 		expect(

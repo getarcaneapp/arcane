@@ -41,7 +41,7 @@ func TestConfirmOrCancel(t *testing.T) {
 		{name: "global yes", yes: true, confirmed: true},
 		{name: "global yes in JSON", yes: true, json: true, confirmed: true},
 		{name: "runtime yes", runtimeYes: true, confirmed: true},
-		{name: "all environments consent", all: true, confirmed: true},
+		{name: "all agents consent", all: true, confirmed: true},
 		{name: "JSON refuses prompt", json: true, wantErr: "confirmation required: re-run with --yes"},
 		{name: "piped yes is not consent", answer: "yes\n", wantErr: "confirmation required: re-run with --yes"},
 		{name: "terminal yes", terminal: true, answer: "yes\n", confirmed: true},

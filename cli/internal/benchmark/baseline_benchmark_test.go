@@ -47,7 +47,7 @@ func BenchmarkClientListMediumPayload(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, getErr := c.Request(b.Context(), http.MethodGet, "/api/environments/0/containers?limit=200", nil)
+		resp, getErr := c.Request(b.Context(), http.MethodGet, "/api/agents/0/containers?limit=200", nil)
 		if getErr != nil {
 			require.FailNowf(b, "benchmark request failed", "request: %v", getErr)
 		}

@@ -23,7 +23,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-networks",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/networks",
+		Path:        "/agents/{id}/networks",
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -33,7 +33,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "network-counts",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/networks/counts",
+		Path:        "/agents/{id}/networks/counts",
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -43,7 +43,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-network",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks",
+		Path:        "/agents/{id}/networks",
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -52,7 +52,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-network-topology",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/networks/topology",
+		Path:        "/agents/{id}/networks/topology",
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -62,7 +62,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-network",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/networks/{networkId}",
+		Path:        "/agents/{id}/networks/{networkId}",
 		Summary:     "Get network",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -71,7 +71,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-network",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/networks/{networkId}",
+		Path:        "/agents/{id}/networks/{networkId}",
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -80,7 +80,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-networks",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/prune",
+		Path:        "/agents/{id}/networks/prune",
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -89,7 +89,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "network-container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/{networkId}",
+		Path:        "/agents/{id}/networks/{networkId}",
 		Summary:     "Connect or disconnect a container",
 		Description: "Connect a container to the network or disconnect it. Aliases and static addresses apply to connect; force applies to disconnect.",
 		Tags:        []string{"Networks"},

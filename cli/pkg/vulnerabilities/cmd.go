@@ -81,7 +81,7 @@ func newSummaryCmd() *cobra.Command {
 	return &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
 		Use:          "summary",
-		Short:        "Show environment-wide vulnerability summary",
+		Short:        "Show agent-wide vulnerability summary",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

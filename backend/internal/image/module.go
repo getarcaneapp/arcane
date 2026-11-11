@@ -103,7 +103,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-images",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images",
+		Path:        "/agents/{id}/images",
 		Summary:     "List images",
 		Description: "Get a paginated list of Docker images",
 		Tags:        []string{"Images"},
@@ -114,7 +114,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-usage-counts",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/counts",
+		Path:        "/agents/{id}/images/counts",
 		Summary:     "Get image usage counts",
 		Description: "Get counts of images in use, unused, total, and total size",
 		Tags:        []string{"Images"},
@@ -125,7 +125,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "search-images",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/search",
+		Path:        "/agents/{id}/images/search",
 		Summary:     "Search images",
 		Description: "Search Docker Hub images",
 		Tags:        []string{"Images"},
@@ -135,7 +135,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "tag-image",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/{name}/tag",
+		Path:        "/agents/{id}/images/{name}/tag",
 		Summary:     "Tag image",
 		Description: "Add a repository tag to an image",
 		Tags:        []string{"Images"},
@@ -145,7 +145,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-history",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/{name}/history",
+		Path:        "/agents/{id}/images/{name}/history",
 		Summary:     "Get image history",
 		Description: "Get Docker image layer history",
 		Tags:        []string{"Images"},
@@ -155,7 +155,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-image",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/{name}/export",
+		Path:        "/agents/{id}/images/{name}/export",
 		Summary:     "Export image",
 		Description: "Download a Docker image as a tar archive",
 		Tags:        []string{"Images"},
@@ -165,7 +165,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/{imageId}",
+		Path:        "/agents/{id}/images/{imageId}",
 		Summary:     "Get image by ID",
 		Description: "Get a Docker image by its ID",
 		Tags:        []string{"Images"},
@@ -175,7 +175,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-image",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/images/{imageId}",
+		Path:        "/agents/{id}/images/{imageId}",
 		Summary:     "Remove an image",
 		Description: "Remove a Docker image by ID",
 		Tags:        []string{"Images"},
@@ -185,7 +185,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pull-image",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/pull",
+		Path:        "/agents/{id}/images/pull",
 		Summary:     "Pull an image",
 		Description: "Pull a Docker image from a registry with streaming progress output",
 		Tags:        []string{"Images"},
@@ -195,7 +195,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-image",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/build",
+		Path:        "/agents/{id}/images/build",
 		Summary:     "Build an image",
 		Description: "Build a Docker image using BuildKit with streaming progress output",
 		Tags:        []string{"Images"},
@@ -206,7 +206,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-image-builds",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/builds",
+		Path:        "/agents/{id}/images/builds",
 		Summary:     "List image builds",
 		Description: "Get a paginated list of image build history for an environment",
 		Tags:        []string{"Images"},
@@ -217,7 +217,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-build",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/images/builds/{buildId}",
+		Path:        "/agents/{id}/images/builds/{buildId}",
 		Summary:     "Get image build",
 		Description: "Get a single image build history entry with output",
 		Tags:        []string{"Images"},
@@ -227,7 +227,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-images",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/prune",
+		Path:        "/agents/{id}/images/prune",
 		Summary:     "Prune unused images",
 		Description: "Remove unused Docker images",
 		Tags:        []string{"Images"},
@@ -237,7 +237,7 @@ func RegisterImages(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-image",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/images/upload",
+		Path:        "/agents/{id}/images/upload",
 		Summary:     "Upload an image",
 		Description: "Load a Docker image tar archive from a complete chunked upload session. multipart/form-data bodies " +
 			"are still accepted for backward compatibility; that form is deprecated and will be removed in a " +

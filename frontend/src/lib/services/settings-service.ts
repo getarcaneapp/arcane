@@ -31,7 +31,7 @@ class SettingsService extends BaseAPIService {
 	}
 
 	async getSettingsForEnvironment(environmentId: string): Promise<ResolvedSettings> {
-		const res = await this.api.get<SettingsSnapshot>(`/environments/${environmentId}/settings`);
+		const res = await this.api.get<SettingsSnapshot>(`/agents/${environmentId}/settings`);
 		return this.normalize(res.data);
 	}
 
@@ -46,7 +46,7 @@ class SettingsService extends BaseAPIService {
 	}
 
 	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<ResolvedSettings> {
-		const res = await this.api.get<SettingsSnapshot>(`/environments/${environmentId}/settings/public`, { signal });
+		const res = await this.api.get<SettingsSnapshot>(`/agents/${environmentId}/settings/public`, { signal });
 		return this.normalize(res.data);
 	}
 
@@ -64,7 +64,7 @@ class SettingsService extends BaseAPIService {
 		const endpoints: Record<SettingState['scope'], string> = {
 			manager: '/settings',
 			authentication: '/settings/authentication',
-			environment: `/environments/${environmentId}/settings`
+			environment: `/agents/${environmentId}/settings`
 		};
 		const pending = (Object.keys(patches) as SettingState['scope'][]).filter((scope) => Object.keys(patches[scope]).length > 0);
 		if (pending.length === 0) return base;

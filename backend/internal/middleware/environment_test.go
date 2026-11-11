@@ -62,12 +62,12 @@ func TestEnvironmentMiddleware_ReturnsServiceUnavailableForAgentResourcesWithout
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c *echo.Context) error {
+	api.GET("/agents/:id/containers", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/env-agent/containers", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -83,12 +83,12 @@ func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t 
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/dashboard", func(c *echo.Context) error {
+	api.GET("/agents/:id/dashboard", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/dashboard", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/env-agent/dashboard", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -104,12 +104,12 @@ func TestEnvironmentMiddleware_KeepsAgentManagementEndpointsLocal(t *testing.T) 
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/settings", func(c *echo.Context) error {
+	api.GET("/agents/:id/settings", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/env-agent/settings", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -125,12 +125,12 @@ func TestEnvironmentMiddleware_KeepsAgentMTLSDownloadEndpointsLocal(t *testing.T
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/deployment/mtls/bundle", func(c *echo.Context) error {
+	api.GET("/agents/:id/deployment/mtls/bundle", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/deployment/mtls/bundle", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/env-agent/deployment/mtls/bundle", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -150,14 +150,14 @@ func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
 		{
 			name:   "list webhooks",
 			method: http.MethodGet,
-			route:  "/environments/:id/webhooks",
-			path:   "/api/environments/env-agent/webhooks",
+			route:  "/agents/:id/webhooks",
+			path:   "/api/agents/env-agent/webhooks",
 		},
 		{
 			name:   "delete webhook",
 			method: http.MethodDelete,
-			route:  "/environments/:id/webhooks/:webhookId",
-			path:   "/api/environments/env-agent/webhooks/wh-1",
+			route:  "/agents/:id/webhooks/:webhookId",
+			path:   "/api/agents/env-agent/webhooks/wh-1",
 		},
 	}
 
@@ -195,8 +195,8 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 		{
 			name:   "list activities",
 			method: http.MethodGet,
-			route:  "/environments/:id/activities",
-			path:   "/api/environments/env-agent/activities?limit=50",
+			route:  "/agents/:id/activities",
+			path:   "/api/agents/env-agent/activities?limit=50",
 		},
 	}
 
@@ -244,12 +244,12 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 	api := attachMiddleware(router, mw)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c *echo.Context) error {
+	api.GET("/agents/:id/containers", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/0/containers", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/0/containers", http.NoBody)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
@@ -263,12 +263,12 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.POST("/environments/:id/swarm/nodes/:nodeId/agent/deployment", func(c *echo.Context) error {
+	api.POST("/agents/:id/swarm/nodes/:nodeId/agent/deployment", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-agent/swarm/nodes/node-1/agent/deployment", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/env-agent/swarm/nodes/node-1/agent/deployment", http.NoBody)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
@@ -376,11 +376,11 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 
 			router := echo.New()
 			api := attachMiddleware(router, mw)
-			api.POST("/environments/:id/containers/:containerId/update", func(c *echo.Context) error {
+			api.POST("/agents/:id/containers/:containerId/update", func(c *echo.Context) error {
 				return c.JSON(http.StatusOK, map[string]any{"success": true})
 			})
 
-			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", http.NoBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/agents/env-remote/containers/container-1/update", http.NoBody)
 			req.Header.Set(HeaderUpdateInitiatorID, "spoofed")
 			req.Header.Set(HeaderUpdateInitiatorName, "spoofed")
 			req.Header.Set(HeaderForwardedPermissions, `{"global":["users:create"],"environment":[]}`)
@@ -496,12 +496,12 @@ func TestEnvironmentMiddleware_RequiresForwardedPermissionsCapability(t *testing
 				registry: registry,
 				matcher:  updateMatcher,
 			})
-			api.POST("/environments/:id/containers/:containerId/update", func(c *echo.Context) error {
+			api.POST("/agents/:id/containers/:containerId/update", func(c *echo.Context) error {
 				return c.JSON(http.StatusTeapot, map[string]any{"success": true})
 			})
 
 			recorder := httptest.NewRecorder()
-			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", http.NoBody))
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/agents/env-remote/containers/container-1/update", http.NoBody))
 
 			require.Equal(t, tt.wantStatus, recorder.Code)
 			if tt.wantStatus == http.StatusOK {
@@ -554,7 +554,7 @@ func TestProxyPermissionDeniedBlocksWriteForReadOnlyUser(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersList, authz.PermContainersRead)
 
-	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
+	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
 	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected restart to be denied for a read-only user")
@@ -565,7 +565,7 @@ func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersRestart)
 
-	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
+	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
 	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected restart to be allowed for a user with containers:restart")
@@ -576,7 +576,7 @@ func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersList)
 
-	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers")
+	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/containers")
 
 	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers"),
 		"expected list to be allowed for a user with containers:list")
@@ -588,7 +588,7 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv("other-env", authz.PermContainersRestart)
 
-	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
+	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
 	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
 		"expected denial: permission is scoped to a different environment")
@@ -596,7 +596,7 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 
 func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
-	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/containers/abc/restart")
+	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
 	require.True(t, m.proxyPermitted(c, authz.SudoPermissionSet(), proxyTestEnvID, "/containers/abc/restart"),
 		"expected sudo permission set to bypass the permission check")
@@ -607,7 +607,7 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersRestart, authz.PermContainersList)
 
-	c := newProxyRequestContext(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/unknown/resource")
+	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/unknown/resource")
 
 	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource"),
 		"expected an unmapped proxied route to be denied by default")
@@ -617,7 +617,7 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
 	ps := authz.NewPermissionSet()
 
-	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/settings/public")
+	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/settings/public")
 
 	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/settings/public"),
 		"expected an explicitly public route to be allowed for any authenticated caller")
@@ -633,7 +633,7 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 	ps := authz.NewPermissionSet()
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersRead, authz.PermContainersList)
 
-	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/ws/containers/abc/terminal")
+	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/ws/containers/abc/terminal")
 
 	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
 		"expected WS terminal to be denied without containers:exec")
@@ -656,13 +656,13 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	api := attachMiddleware(router, newTestEnvironmentMiddleware())
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c *echo.Context) error {
+	api.GET("/agents/:id/containers", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/agents/env-agent/containers", http.NoBody))
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.True(t, localHandlerHit)

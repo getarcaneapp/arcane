@@ -127,9 +127,7 @@ func Load(ctx context.Context) (*types.Config, error) {
 		cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	}
 	normalized := cfg.Clone()
-	if normalized.Pagination.Resources == nil {
-		normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig)
-	}
+	normalized.Pagination.Resources = types.NormalizePaginatedResources(cfg.Pagination.Resources)
 
 	configCache.Set(cache.Entry[string, *types.Config]{
 		Key:   path,
@@ -153,13 +151,7 @@ func Save(ctx context.Context, c *types.Config) error {
 		cfg = c.Clone()
 	}
 	cfg.Pagination.Default.Limit = max(0, cfg.Pagination.Default.Limit)
-	resources := cfg.Pagination.Resources
-	cfg.Pagination.Resources = make(map[string]types.PaginationResourceConfig, len(resources))
-	for resource, rc := range resources {
-		if rc.Limit > 0 {
-			cfg.SetResourceLimit(resource, rc.Limit)
-		}
-	}
+	cfg.Pagination.Resources = types.NormalizePaginatedResources(cfg.Pagination.Resources)
 
 	if writeErr := writeConfig(ctx, path, cfg, false); writeErr != nil {
 		return writeErr

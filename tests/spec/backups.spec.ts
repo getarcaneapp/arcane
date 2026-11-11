@@ -77,13 +77,13 @@ test.describe('Workspace restore', () => {
 		await page.route(/\/api\/auth\/autologin$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
-		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: environments });
 		});
-		await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/settings$/, async (route) => {
 			await route.fulfill({ json: { settings: [], runtime: {}, readOnly: false } });
 		});
-		await page.route(/\/api\/environments\/0\/swarm\/status$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/swarm\/status$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
 		await page.route(/\/api\/oidc\/status$/, async (route) => {
@@ -115,7 +115,7 @@ test.describe('Workspace restore', () => {
 	async function mockVolumeBackupPage(page: Page, browse: BrowseHandler) {
 		const encodedVolume = encodeURIComponent(VOLUME_NAME);
 		await mockAppShell(page);
-		await page.route(new RegExp(`/api/environments/0/volumes/${encodedVolume}$`), async (route) => {
+		await page.route(new RegExp(`/api/agents/0/volumes/${encodedVolume}$`), async (route) => {
 			await route.fulfill({
 				json: response({
 					id: VOLUME_NAME,
@@ -133,13 +133,13 @@ test.describe('Workspace restore', () => {
 			});
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/policy$`),
+			new RegExp(`/api/agents/0/volumes/${encodedVolume}/backups/policy$`),
 			async (route) => {
 				await route.fulfill({ json: response({ policies: [], s3Available: false }) });
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/volumes/${encodedVolume}/backups(?:\\?.*)?$`),
 			async (route) => {
 				await route.fulfill({
 					json: {
@@ -163,7 +163,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/backups/${BACKUP_ID}/files/browse(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/volumes/backups/${BACKUP_ID}/files/browse(?:\\?.*)?$`),
 			async (route) => {
 				const url = new URL(route.request().url());
 				await browse(
@@ -195,7 +195,7 @@ test.describe('Workspace restore', () => {
 	async function mockVolumeWorkspaceRestore(page: Page, state: VolumeWorkspaceRestoreState) {
 		const encodedVolume = encodeURIComponent(VOLUME_NAME);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/volumes/${encodedVolume}/workspace(?:\\?.*)?$`),
 			async (route) => {
 				state.workspaceRequests += 1;
 				await route.fulfill({
@@ -218,7 +218,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/workspace/file(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/volumes/${encodedVolume}/workspace/file(?:\\?.*)?$`),
 			async (route) => {
 				state.fileRequests += 1;
 				await route.fulfill({
@@ -236,7 +236,7 @@ test.describe('Workspace restore', () => {
 		);
 		await page.route(
 			new RegExp(
-				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restorefiles$`
+				`/api/agents/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restorefiles$`
 			),
 			async (route) => {
 				state.restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -249,21 +249,16 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(
-				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restore$`
-			),
+			new RegExp(`/api/agents/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restore$`),
 			async (route) => {
 				state.fullRestoreRequests += 1;
 				state.content = state.restoredContent;
 				await route.fulfill({ json: response({ message: 'restored' }) });
 			}
 		);
-		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/usage$`),
-			async (route) => {
-				await route.fulfill({ json: response({ inUse: false, containers: [] }) });
-			}
-		);
+		await page.route(new RegExp(`/api/agents/0/volumes/${encodedVolume}/usage$`), async (route) => {
+			await route.fulfill({ json: response({ inUse: false, containers: [] }) });
+		});
 	}
 
 	async function openVolumeRestoreFilesDialog(page: Page) {
@@ -299,11 +294,11 @@ test.describe('Workspace restore', () => {
 		await page.route(/\/api\/variables(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: response([]) });
 		});
-		await page.route(/\/api\/environments\/0\/projects\/tags$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/projects\/tags$/, async (route) => {
 			await route.fulfill({ json: response([]) });
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/projects/${encodedProject}/workspace(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/projects/${encodedProject}/workspace(?:\\?.*)?$`),
 			async (route) => {
 				const state = workspaceState();
 				await route.fulfill({
@@ -326,7 +321,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/projects/${encodedProject}/workspace/file(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/projects/${encodedProject}/workspace/file(?:\\?.*)?$`),
 			async (route) => {
 				const state = workspaceState();
 				await route.fulfill({
@@ -343,7 +338,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/projects/${encodedProject}(?:/(compose|runtime|updates))?$`),
+			new RegExp(`/api/agents/0/projects/${encodedProject}(?:/(compose|runtime|updates))?$`),
 			async (route) => {
 				const section = new URL(route.request().url()).pathname.split('/').at(-1);
 				const project = {
@@ -390,7 +385,7 @@ test.describe('Workspace restore', () => {
 	) {
 		await mockAppShell(page);
 		await page.route(
-			/\/api\/(?:environments\/[^/]+\/)?backups\/history(?:\?.*)?$/,
+			/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/,
 			async (route) => {
 				await route.fulfill({
 					json: {
@@ -418,7 +413,7 @@ test.describe('Workspace restore', () => {
 			await route.fulfill({ json: response({ policies: [], recoveryKeyStored: true }) });
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/backups/${SYSTEM_BACKUP_ID}/files/browse(?:\\?.*)?$`),
+			new RegExp(`/api/agents/0/backups/${SYSTEM_BACKUP_ID}/files/browse(?:\\?.*)?$`),
 			async (route) => {
 				const url = new URL(route.request().url());
 				await browse(
@@ -434,7 +429,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
+			new RegExp(`/api/agents/0/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
 			async (route) => {
 				await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 			}
@@ -775,7 +770,7 @@ test.describe('Workspace restore', () => {
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await page.route(
 				new RegExp(
-					`/api/environments/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}\\?action=restorefiles$`
+					`/api/agents/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}\\?action=restorefiles$`
 				),
 				async (route) => {
 					restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -953,7 +948,7 @@ test.describe('S3 storage', () => {
 	}
 
 	async function createVolumeViaApi(page: Page, volumeName: string) {
-		const response = await page.request.post('/api/environments/0/volumes', {
+		const response = await page.request.post('/api/agents/0/volumes', {
 			data: { name: volumeName, driver: 'local' }
 		});
 		if (!response.ok()) {
@@ -964,7 +959,7 @@ test.describe('S3 storage', () => {
 	async function removeVolumeViaApi(page: Page, volumeName: string) {
 		await removeApiResource(
 			page,
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
 		);
 	}
 
@@ -976,7 +971,7 @@ test.describe('S3 storage', () => {
 		operation: 'create_file' | 'update_file' = 'create_file'
 	) {
 		const response = await page.request.patch(
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
+			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
 			{
 				multipart: {
 					manifest: JSON.stringify({
@@ -996,7 +991,7 @@ test.describe('S3 storage', () => {
 	async function readVolumeFile(page: Page, volumeName: string, filePath: string) {
 		const relativePath = filePath.replace(/^\/+/, '');
 		const response = await page.request.get(
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace/file?relativePath=${encodeURIComponent(relativePath)}`
+			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/workspace/file?relativePath=${encodeURIComponent(relativePath)}`
 		);
 		const data = await readApiData<{ content: string }>(response, `Read volume file ${filePath}`);
 		expect(typeof data.content).toBe('string');
@@ -1005,9 +1000,7 @@ test.describe('S3 storage', () => {
 
 	async function listBackups(page: Page, volumeName: string): Promise<BackupEntry[]> {
 		const backups = await readApiData<BackupEntry[]>(
-			await page.request.get(
-				`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups`
-			),
+			await page.request.get(`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups`),
 			`List backups for ${volumeName}`
 		);
 		expect(Array.isArray(backups)).toBe(true);
@@ -1035,7 +1028,7 @@ test.describe('S3 storage', () => {
 	// references it, and is refused when one cannot be reached. Other specs create
 	// environments, so the release path depends on what is registered right now.
 	async function countRemoteEnvironments(page: Page) {
-		const response = await page.request.get('/api/environments');
+		const response = await page.request.get('/api/agents');
 		if (!response.ok()) {
 			return 0;
 		}
@@ -1050,7 +1043,7 @@ test.describe('S3 storage', () => {
 		data: Record<string, unknown>
 	): Promise<BackupEntry> {
 		const response = await page.request.post(
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups`,
+			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups`,
 			{ data, timeout: 180000 }
 		);
 		if (!response.ok()) {
@@ -1218,9 +1211,7 @@ test.describe('S3 storage', () => {
 
 				// Rustic can only list these paths by reading the repository back out
 				// of the bucket, so this proves the snapshot really landed in MinIO.
-				const files = await page.request.get(
-					`/api/environments/0/volumes/backups/${created.id}/files`
-				);
+				const files = await page.request.get(`/api/agents/0/volumes/backups/${created.id}/files`);
 				expect(files.status(), await files.text()).toBe(200);
 				expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
 
@@ -1229,14 +1220,14 @@ test.describe('S3 storage', () => {
 				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
 				const restore = await page.request.post(
-					`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
+					`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
 					{ data: {}, timeout: 180000 }
 				);
 				expect(restore.status(), await restore.text()).toBe(200);
 				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
 			} finally {
 				if (backupId) {
-					await removeApiResource(page, `/api/environments/0/volumes/backups/${backupId}`);
+					await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
 				}
 				await removeVolumeViaApi(page, volumeName);
 				await deleteDestinationViaApi(page, destination.id);
@@ -1264,9 +1255,7 @@ test.describe('S3 storage', () => {
 				const blocked = await page.request.delete(`/api/backups/s3/${destination.id}`);
 				expect(blocked.status()).toBe(409);
 
-				const removed = await page.request.delete(
-					`/api/environments/0/volumes/backups/${created.id}`
-				);
+				const removed = await page.request.delete(`/api/agents/0/volumes/backups/${created.id}`);
 				expect(removed.ok(), await removed.text()).toBe(true);
 				backupId = undefined;
 
@@ -1281,7 +1270,7 @@ test.describe('S3 storage', () => {
 				}
 			} finally {
 				if (backupId) {
-					await removeApiResource(page, `/api/environments/0/volumes/backups/${backupId}`);
+					await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
 				}
 				await removeVolumeViaApi(page, volumeName);
 				await deleteDestinationViaApi(page, destination.id);
@@ -1364,7 +1353,7 @@ test.describe('System and volume restore', () => {
 	}
 
 	async function createVolumeViaApi(page: Page, volumeName: string) {
-		const response = await page.request.post('/api/environments/0/volumes', {
+		const response = await page.request.post('/api/agents/0/volumes', {
 			data: { name: volumeName, driver: 'local' }
 		});
 		expect(response.ok(), await response.text()).toBeTruthy();
@@ -1373,7 +1362,7 @@ test.describe('System and volume restore', () => {
 	async function removeVolumeViaApi(page: Page, volumeName: string) {
 		await removeApiResource(
 			page,
-			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
 		);
 	}
 
@@ -1386,7 +1375,7 @@ test.describe('System and volume restore', () => {
 		let savedCollection = structuredClone(collection);
 		const runRequests: unknown[] = [];
 		const activities: Activity[] = [];
-		await page.route('**/api/environments/0/activities?**', (route) => {
+		await page.route('**/api/agents/0/activities?**', (route) => {
 			const status = new URL(route.request().url()).searchParams.get('status');
 			return route.fulfill({
 				json: paginated(activities.filter((activity) => !status || activity.status === status))
@@ -1440,7 +1429,7 @@ test.describe('System and volume restore', () => {
 			activities.push(activity);
 			return route.fulfill({ status: 202, json: { activityId: activity.id, status: 'running' } });
 		});
-		await page.route(/\/api\/(?:environments\/[^/]+\/)?backups\/history(?:\?.*)?$/, (route) => {
+		await page.route(/\/api\/(?:agents\/[^/]+\/)?backups\/history(?:\?.*)?$/, (route) => {
 			const type = new URL(route.request().url()).searchParams.get('type');
 			const rows =
 				type === 'system' || type === 'volume'

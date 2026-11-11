@@ -38,7 +38,7 @@ function waitForCreateNetworkResponse(page: Page) {
 		(response) => {
 			const request = response.request();
 			if (request.method() !== 'POST') return false;
-			return /\/api\/environments\/[^/]+\/networks$/.test(new URL(response.url()).pathname);
+			return /\/api\/agents\/[^/]+\/networks$/.test(new URL(response.url()).pathname);
 		},
 		{ timeout: 15000 }
 	);
@@ -73,7 +73,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 }
 
 async function createNetworkViaApi(page: Page, networkName: string) {
-	const response = await page.request.post('/api/environments/0/networks', {
+	const response = await page.request.post('/api/agents/0/networks', {
 		data: {
 			name: networkName,
 			options: {
@@ -111,7 +111,7 @@ test.describe('Networks Page', () => {
 		try {
 			const networkId = await createNetworkViaUI(page, networkName);
 			const response = await page.request.get(
-				`/api/environments/0/networks/${encodeURIComponent(networkId)}`
+				`/api/agents/0/networks/${encodeURIComponent(networkId)}`
 			);
 			expect(response.ok()).toBe(true);
 
@@ -124,16 +124,13 @@ test.describe('Networks Page', () => {
 			await expect
 				.poll(async () => {
 					const removed = await page.request.get(
-						`/api/environments/0/networks/${encodeURIComponent(networkId)}`
+						`/api/agents/0/networks/${encodeURIComponent(networkId)}`
 					);
 					return removed.status();
 				})
 				.toBe(404);
 		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(networkName)}`);
 		}
 	});
 
@@ -145,10 +142,7 @@ test.describe('Networks Page', () => {
 			await expect(page).toHaveURL(/\/networks\/.+/);
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(networkName)}`);
 		}
 	});
 
@@ -166,7 +160,7 @@ test.describe('Networks Page', () => {
 		await expect
 			.poll(async () => {
 				const response = await page.request.get(
-					`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+					`/api/agents/0/networks/${encodeURIComponent(networkName)}`
 				);
 				return response.status();
 			})
@@ -206,7 +200,7 @@ test.describe('Networks Page', () => {
 			await expect(dialog).toBeHidden();
 
 			const inspect = await page.request.get(
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+				`/api/agents/0/networks/${encodeURIComponent(networkName)}`
 			);
 			expect(inspect.ok()).toBe(true);
 			const inspected = await inspect.json();
@@ -216,10 +210,7 @@ test.describe('Networks Page', () => {
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 			await expect(page.getByText(ipRange, { exact: true })).toBeVisible();
 		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(networkName)}`);
 		}
 	});
 
@@ -264,13 +255,10 @@ test.describe('Networks Page', () => {
 			await dialog.getByLabel('Enable IPAM Configuration').check();
 			await expect(dialog.getByLabel('IP Range')).toHaveValue('');
 		} finally {
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(blankRangeName)}`);
 			await removeApiResource(
 				page,
-				`/api/environments/0/networks/${encodeURIComponent(blankRangeName)}`
-			);
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(disabledIpamName)}`
+				`/api/agents/0/networks/${encodeURIComponent(disabledIpamName)}`
 			);
 		}
 	});
@@ -302,10 +290,7 @@ test.describe('Networks Page', () => {
 			await expect(dialog).toBeVisible();
 			await expect(dialog.getByLabel('Network Name *')).toHaveValue(networkName);
 		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(networkName)}`);
 		}
 	});
 
@@ -318,10 +303,7 @@ test.describe('Networks Page', () => {
 
 			await expect(page.getByText('Unused').first()).toBeVisible();
 		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
+			await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(networkName)}`);
 		}
 	});
 });

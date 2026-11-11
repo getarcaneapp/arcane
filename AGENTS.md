@@ -257,7 +257,7 @@ Don't stop at `console.error`. Pick the matching path:
 ### Environment-scoped behavior
 
 - **Local Docker:** environment ID `"0"`.
-- **Paths:** `/environments/{id}/...`.
+- **Paths:** `/agents/{id}/...`.
 - **Before requests:** await `environmentStore.ready` or `getCurrentEnvironmentId()`.
 - **Switching:** redirect environment-specific detail pages when the environment changes.
 

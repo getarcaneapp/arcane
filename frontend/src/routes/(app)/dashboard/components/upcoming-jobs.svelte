@@ -61,7 +61,7 @@
 			{#each upcomingJobs as entry (`${entry.environmentId}:${entry.job.id}`)}
 				<li>
 					<a
-						href={resolve(`/(app)/environments/[id]?tab=history&job=${encodeURIComponent(entry.job.id)}`, {
+						href={resolve(`/(app)/agents/[id]?tab=history&job=${encodeURIComponent(entry.job.id)}`, {
 							id: entry.environmentId
 						})}
 						class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md hover-glow px-2 py-2.5"

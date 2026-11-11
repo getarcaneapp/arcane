@@ -92,7 +92,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listEnvironments",
 		Method:      "GET",
-		Path:        "/environments",
+		Path:        "/agents",
 		Summary:     "List environments",
 		Description: "Get a paginated list of Docker environments",
 		Tags:        []string{"Environments"},
@@ -102,7 +102,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createEnvironment",
 		Method:      "POST",
-		Path:        "/environments",
+		Path:        "/agents",
 		Summary:     "Create an environment",
 		Description: "Create a new Docker environment",
 		Tags:        []string{"Environments"},
@@ -112,7 +112,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEnvironment",
 		Method:      "GET",
-		Path:        "/environments/{id}",
+		Path:        "/agents/{id}",
 		Summary:     "Get an environment",
 		Description: "Get a Docker environment by ID",
 		Tags:        []string{"Environments"},
@@ -122,7 +122,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateEnvironment",
 		Method:      "PATCH",
-		Path:        "/environments/{id}",
+		Path:        "/agents/{id}",
 		Summary:     "Update an environment",
 		Description: "Update a Docker environment",
 		Tags:        []string{"Environments"},
@@ -132,7 +132,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteEnvironment",
 		Method:      "DELETE",
-		Path:        "/environments/{id}",
+		Path:        "/agents/{id}",
 		Summary:     "Delete an environment",
 		Description: "Delete a Arcane environment",
 		Tags:        []string{"Environments"},
@@ -142,7 +142,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "testConnection",
 		Method:      "POST",
-		Path:        "/environments/{id}/test",
+		Path:        "/agents/{id}/test",
 		Summary:     "Test environment connection",
 		Description: "Test connectivity to a Arcane environment",
 		Tags:        []string{"Environments"},
@@ -152,7 +152,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restartEnvironmentTunnel",
 		Method:      "POST",
-		Path:        "/environments/{id}/tunnel/restart",
+		Path:        "/agents/{id}/tunnel/restart",
 		Summary:     "Restart environment agent tunnel",
 		Description: "Close the active agent tunnel and wait for the agent to reconnect",
 		Tags:        []string{"Environments"},
@@ -162,7 +162,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncEnvironment",
 		Method:      "POST",
-		Path:        "/environments/{id}/sync",
+		Path:        "/agents/{id}/sync",
 		Summary:     "Sync environment",
 		Description: "Sync container registries, S3 destinations, and git repositories to a remote environment. Returns an error if any resource group fails; other groups may still sync successfully.",
 		Tags:        []string{"Environments"},
@@ -172,7 +172,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID:  "pairEnvironment",
 		Method:       "POST",
-		Path:         "/environments/pair",
+		Path:         "/agents/pair",
 		Summary:      "Pair agent with manager",
 		Description:  "Agent sends API key to complete environment pairing",
 		Tags:         []string{"Environments"},
@@ -183,7 +183,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getDeploymentSnippets",
 		Method:      "POST",
-		Path:        "/environments/{id}/deployment",
+		Path:        "/agents/{id}/deployment",
 		Summary:     "Create deployment snippets",
 		Description: "Mint a single-use enrollment token for the environment and return Docker run and compose snippets that use it",
 		Tags:        []string{"Environments"},
@@ -230,7 +230,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadEnvironmentMTLSBundle",
 		Method:      "GET",
-		Path:        "/environments/{id}/deployment/mtls/bundle",
+		Path:        "/agents/{id}/deployment/mtls/bundle",
 		Summary:     "Download environment mTLS bundle",
 		Description: "Download the generated mTLS client certificate bundle for an agent environment",
 		Tags:        []string{"Environments"},
@@ -240,7 +240,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadEnvironmentMTLSFile",
 		Method:      "GET",
-		Path:        "/environments/{id}/deployment/mtls/{fileName}",
+		Path:        "/agents/{id}/deployment/mtls/{fileName}",
 		Summary:     "Download environment mTLS asset",
 		Description: "Download an individual generated mTLS client certificate asset for an agent environment",
 		Tags:        []string{"Environments"},
@@ -250,7 +250,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEnvironmentVersion",
 		Method:      "GET",
-		Path:        "/environments/{id}/version",
+		Path:        "/agents/{id}/version",
 		Summary:     "Get environment version",
 		Description: "Get the version of a remote environment",
 		Tags:        []string{"Environments"},

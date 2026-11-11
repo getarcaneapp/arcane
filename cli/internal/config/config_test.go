@@ -354,7 +354,7 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		require.Contains(t, text, key,
 			"expected generated config to contain %q:\n%s", key, text)
 	}
-	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
+	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "agents", "registries", "templates", "users", "events", "apikeys"} {
 		require.Contains(t, text, resource+":",
 			"expected generated config to contain resource key %q:\n%s", resource, text)
 	}
@@ -367,7 +367,7 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	require.Equal(t, defaultPaginationInitLimit, cfg.Pagination.Default.Limit,
 		"Pagination.Default.Limit=%d, want %d", cfg.Pagination.Default.Limit, defaultPaginationInitLimit)
 
-	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
+	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "agents", "registries", "templates", "users", "events", "apikeys"} {
 		{
 			got := cfg.LimitFor(resource)
 			require.Equal(t, defaultPaginationInitLimit, got,

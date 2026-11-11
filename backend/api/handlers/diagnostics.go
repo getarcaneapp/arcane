@@ -35,7 +35,7 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-environment-actor-diagnostics",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/diagnostics/actors",
+		Path:        "/agents/{id}/diagnostics/actors",
 		Summary:     "Get actor diagnostics for an environment",
 		Description: "Returns Francis actor host, actor type, and run queue diagnostics for one environment.",
 		Tags:        []string{"Diagnostics"},
@@ -45,7 +45,7 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-environment-goroutine-diagnostics",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/diagnostics/goroutines",
+		Path:        "/agents/{id}/diagnostics/goroutines",
 		Summary:     "Get goroutine diagnostics for an environment",
 		Description: "Returns the live goroutines grouped by identical stack, largest group first.",
 		Tags:        []string{"Diagnostics"},

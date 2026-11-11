@@ -46,7 +46,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-workspace",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/workspace",
+		Path:        "/agents/{id}/projects/{projectId}/workspace",
 		Summary:     "Get project workspace",
 		Tags:        []string{"Project Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -55,7 +55,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-workspace-file",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/workspace/file",
+		Path:        "/agents/{id}/projects/{projectId}/workspace/file",
 		Summary:     "Get project workspace file",
 		Tags:        []string{"Project Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -64,7 +64,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-project-workspace-file",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/workspace/file/download",
+		Path:        "/agents/{id}/projects/{projectId}/workspace/file/download",
 		Summary:     "Download project workspace file",
 		Tags:        []string{"Project Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -73,7 +73,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-workspace",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/projects/{projectId}/workspace",
+		Path:        "/agents/{id}/projects/{projectId}/workspace",
 		Summary:     "Update project workspace",
 		Tags:        []string{"Project Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -83,7 +83,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-projects",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects",
+		Path:        "/agents/{id}/projects",
 		Summary:     "List projects",
 		Description: "Get a paginated list of Docker Compose projects",
 		Tags:        []string{"Projects"},
@@ -94,7 +94,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-status-counts",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/counts",
+		Path:        "/agents/{id}/projects/counts",
 		Summary:     "Get project status counts",
 		Description: "Get counts of running, stopped, and total projects",
 		Tags:        []string{"Projects"},
@@ -105,7 +105,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-project-tags",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/tags",
+		Path:        "/agents/{id}/projects/tags",
 		Summary:     "List project tags",
 		Description: "Get sorted, distinct project tag names",
 		Tags:        []string{"Projects"},
@@ -116,7 +116,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-project-references",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/references",
+		Path:        "/agents/{id}/projects/references",
 		Summary:     "List project references",
 		Description: "Get the ID and name of every project, including archived projects, without runtime state",
 		Tags:        []string{"Projects"},
@@ -126,7 +126,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-tag",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/projects/{projectId}/tags",
+		Path:        "/agents/{id}/projects/{projectId}/tags",
 		Summary:     "Update a project tag",
 		Description: "Attach or detach a UI-managed project tag",
 		Tags:        []string{"Projects"},
@@ -136,7 +136,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "deploy-project",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/deploy",
+		Path:        "/agents/{id}/projects/{projectId}/deploy",
 		Summary:     "Deploy, redeploy, or pull a project",
 		Description: "Stream a Docker Compose deploy action: up (docker compose up), redeploy (pull + down + up), or pull (pull all project images). " +
 			"The optional deploy options body applies to up and redeploy; pull ignores it.",
@@ -151,7 +151,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "project-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}",
+		Path:        "/agents/{id}/projects/{projectId}",
 		Summary:     "Run project action",
 		Description: "Bring down, restart, archive, unarchive, or update services of a Docker Compose project. Restart and updateservices accept an optional services list (empty targets all services).",
 		Tags:        []string{"Projects"},
@@ -167,7 +167,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-project",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects",
+		Path:        "/agents/{id}/projects",
 		Summary:     "Create a project",
 		Description: "Create a new Docker Compose project",
 		Tags:        []string{"Projects"},
@@ -192,7 +192,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}",
+		Path:        "/agents/{id}/projects/{projectId}",
 		Summary:     "Get a project",
 		Description: "Get a Docker Compose project by ID",
 		Tags:        []string{"Projects"},
@@ -202,7 +202,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-compose",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/compose",
+		Path:        "/agents/{id}/projects/{projectId}/compose",
 		Summary:     "Get project compose details",
 		Description: "Get compose content, includes, and service configs for a project",
 		Tags:        []string{"Projects"},
@@ -212,7 +212,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-runtime",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/runtime",
+		Path:        "/agents/{id}/projects/{projectId}/runtime",
 		Summary:     "Get project runtime",
 		Description: "Get runtime service state for a project",
 		Tags:        []string{"Projects"},
@@ -222,7 +222,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-updates",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/projects/{projectId}/updates",
+		Path:        "/agents/{id}/projects/{projectId}/updates",
 		Summary:     "Get project updates",
 		Description: "Get image update summary for a project",
 		Tags:        []string{"Projects"},
@@ -232,7 +232,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "destroy-project",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/projects/{projectId}",
+		Path:        "/agents/{id}/projects/{projectId}",
 		Summary:     "Destroy a project",
 		Description: "Destroy a Docker Compose project and optionally remove files/volumes",
 		Tags:        []string{"Projects"},
@@ -242,7 +242,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/projects/{projectId}",
+		Path:        "/agents/{id}/projects/{projectId}",
 		Summary:     "Update a project",
 		Description: "Update a Docker Compose project configuration",
 		Tags:        []string{"Projects"},
@@ -252,7 +252,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-project-images",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/projects/{projectId}/build",
+		Path:        "/agents/{id}/projects/{projectId}/build",
 		Summary:     "Build project images",
 		Description: "Build Docker Compose services with build directives using BuildKit",
 		Tags:        []string{"Projects"},

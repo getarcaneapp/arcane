@@ -97,7 +97,7 @@
 
 <QueryClientProvider client={data.queryClient}>
 	<div class="flex min-h-dvh flex-col bg-transparent">
-		{#if !data.settings && data.user && page.route.id !== '/(app)/environments/[id]'}
+		{#if !data.settings && data.user && page.route.id !== '/(app)/agents/[id]'}
 			<Error message={m.error_occurred()} showButton={true} />
 		{:else}
 			<Tooltip.Provider>

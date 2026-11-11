@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-nodes",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/nodes",
+			Path:        "/agents/{id}/swarm/nodes",
 			Summary:     "List swarm nodes",
 			Tags: []string{
 				"Swarm",
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-node",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}",
 			Summary:     "Get swarm node",
 			Tags: []string{
 				"Swarm",
@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-node-agent-deployment",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}/agent/deployment",
 			Summary:     "Get swarm node agent deployment snippets",
 			Tags: []string{
 				"Swarm",
@@ -62,7 +62,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "reconcile-swarm-node-agents",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/agents/reconcile",
+			Path:        "/agents/{id}/swarm/nodes/agents/reconcile",
 			Summary:     "Reconcile swarm node agent bindings",
 			Tags: []string{
 				"Swarm",
@@ -77,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "put-swarm-node-agent-binding",
 			Method:      http.MethodPut,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/agent/binding",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}/agent/binding",
 			Summary:     "Attach a visible environment to a swarm node",
 			Tags: []string{
 				"Swarm",
@@ -92,7 +92,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-node-agent-binding",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/agent/binding",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}/agent/binding",
 			Summary:     "Detach a visible environment from a swarm node",
 			Tags: []string{
 				"Swarm",
@@ -107,7 +107,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-node-agent-deployment",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}/agent/deployment",
 			Summary:     "Remove a dedicated swarm node agent registration",
 			Tags: []string{
 				"Swarm",
@@ -122,7 +122,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "update-swarm-node",
 			Method:      http.MethodPatch,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}",
 			Summary:     "Update swarm node",
 			Tags: []string{
 				"Swarm",
@@ -137,7 +137,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-node",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}",
 			Summary:     "Delete swarm node",
 			Tags: []string{
 				"Swarm",
@@ -152,7 +152,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "swarm-node-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}",
 			Summary:     "Promote or demote swarm node",
 			Tags: []string{
 				"Swarm",
@@ -171,7 +171,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-node-tasks",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/tasks",
+			Path:        "/agents/{id}/swarm/nodes/{nodeId}/tasks",
 			Summary:     "List tasks for a swarm node",
 			Tags: []string{
 				"Swarm",
@@ -202,7 +202,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-join-candidates",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/join/candidates",
+			Path:        "/agents/{id}/swarm/join/candidates",
 			Summary:     "List environments available for Easy Join",
 			Tags: []string{
 				"Swarm",
@@ -217,7 +217,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "join-swarm-environments",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join/environments",
+			Path:        "/agents/{id}/swarm/join/agents",
 			Summary:     "Join environments to a swarm",
 			Tags: []string{
 				"Swarm",

@@ -79,7 +79,7 @@ func newGetCmd() *cobra.Command {
 			}
 
 			output.Header("Job Schedules")
-			output.KeyValue("Environment health interval", cfg.EnvironmentHealthInterval)
+			output.KeyValue("Agent health interval", cfg.EnvironmentHealthInterval)
 			output.KeyValue("Event cleanup interval", cfg.EventCleanupInterval)
 			output.KeyValue("Expired sessions cleanup interval", cfg.ExpiredSessionsCleanupInterval)
 			return nil
@@ -107,7 +107,7 @@ func newUpdateCmd() *cobra.Command {
 				key   string
 				value string
 			}{
-				{flag: "environment-health-interval", key: "environmentHealthInterval", value: opts.environmentHealthInterval},
+				{flag: "agent-health-interval", key: "environmentHealthInterval", value: opts.environmentHealthInterval},
 				{flag: "event-cleanup-interval", key: "eventCleanupInterval", value: opts.eventCleanupInterval},
 				{flag: "expired-sessions-cleanup-interval", key: "expiredSessionsCleanupInterval", value: opts.expiredSessionsCleanupInterval},
 			} {
@@ -130,7 +130,7 @@ func newUpdateCmd() *cobra.Command {
 				FailureMessage: "failed to update job schedules",
 				Render: func(data types.JobScheduleConfig) error {
 					output.Success("Job schedules updated")
-					output.KeyValue("Environment health interval", data.EnvironmentHealthInterval)
+					output.KeyValue("Agent health interval", data.EnvironmentHealthInterval)
 					output.KeyValue("Event cleanup interval", data.EventCleanupInterval)
 					output.KeyValue("Expired sessions cleanup interval", data.ExpiredSessionsCleanupInterval)
 					return nil
@@ -139,7 +139,7 @@ func newUpdateCmd() *cobra.Command {
 		},
 	}
 	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
-	cmd.Flags().StringVar(&opts.environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")
+	cmd.Flags().StringVar(&opts.environmentHealthInterval, "agent-health-interval", "", "Agent health job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.expiredSessionsCleanupInterval, "expired-sessions-cleanup-interval", "", "Expired sessions cleanup job interval (cron expression)")
 	return cmd

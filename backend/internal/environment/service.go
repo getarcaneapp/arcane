@@ -1119,7 +1119,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (str
 
 	status, err := s.health.Probe(ctx, id,
 		func(probeCtx context.Context) (int, error) {
-			resp, executeErr := s.ExecuteRemoteRequest(probeCtx, envRecord.ID, http.MethodHead, "/api/environments/0/system/health", nil)
+			resp, executeErr := s.ExecuteRemoteRequest(probeCtx, envRecord.ID, http.MethodHead, "/api/agents/0/system/health", nil)
 			if executeErr != nil {
 				return 0, executeErr
 			}

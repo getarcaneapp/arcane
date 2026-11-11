@@ -87,7 +87,7 @@ func secretsScopeContext(t *testing.T, target string, bodies map[string]any) con
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -102,7 +102,7 @@ func secretsScopeContext(t *testing.T, target string, bodies map[string]any) con
 }
 
 func TestAggregateMergesEnvironments(t *testing.T) {
-	ctx := secretsScopeContext(t, "/api/environments/a,b,c/swarm/secrets", map[string]any{
+	ctx := secretsScopeContext(t, "/api/agents/a,b,c/swarm/secrets", map[string]any{
 		"a": types.Paginated[types.SwarmSecret]{
 			Success: true,
 			Data:    []types.SwarmSecret{{ID: "s1"}},

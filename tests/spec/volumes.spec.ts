@@ -43,7 +43,7 @@ async function createVolumeViaUI(page: Page, volumeName: string) {
 			const request = response.request();
 			return (
 				request.method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/volumes$/.test(new URL(response.url()).pathname)
+				/\/api\/agents\/[^/]+\/volumes$/.test(new URL(response.url()).pathname)
 			);
 		},
 		{ timeout: 15000 }
@@ -61,7 +61,7 @@ async function createVolumeViaUI(page: Page, volumeName: string) {
 }
 
 async function createVolumeViaApi(page: Page, volumeName: string) {
-	const response = await page.request.post('/api/environments/0/volumes', {
+	const response = await page.request.post('/api/agents/0/volumes', {
 		data: {
 			name: volumeName,
 			driver: 'local'
@@ -75,11 +75,11 @@ async function createVolumeViaApi(page: Page, volumeName: string) {
 }
 
 async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await removeApiResource(page, `/api/environments/0/volumes/${encodeURIComponent(volumeName)}`);
+	await removeApiResource(page, `/api/agents/0/volumes/${encodeURIComponent(volumeName)}`);
 }
 
 async function gotoVolumeDetail(page: Page, volumeName: string) {
-	const volumePath = `/api/environments/0/volumes/${encodeURIComponent(volumeName)}`;
+	const volumePath = `/api/agents/0/volumes/${encodeURIComponent(volumeName)}`;
 	const detailResponse = page.waitForResponse((response) => {
 		const request = response.request();
 		return request.method() === 'GET' && new URL(response.url()).pathname === volumePath;
@@ -107,12 +107,12 @@ test.describe('Volumes Page', () => {
 			releaseSizeSort = resolve;
 		});
 		let sizeSortRequests = 0;
-		await context.route('**/api/environments/*/volumes**', async (route) => {
+		await context.route('**/api/agents/*/volumes**', async (route) => {
 			const request = route.request();
 			const url = new URL(request.url());
 			if (
 				request.method() === 'GET' &&
-				/^\/api\/environments\/[^/]+\/volumes$/.test(url.pathname) &&
+				/^\/api\/agents\/[^/]+\/volumes$/.test(url.pathname) &&
 				url.searchParams.get('sort') === 'size'
 			) {
 				sizeSortRequests += 1;
@@ -152,7 +152,7 @@ test.describe('Volumes Page', () => {
 		});
 
 		let sizeRequests = 0;
-		await context.route('**/api/environments/*/volumes/sizes', async (route) => {
+		await context.route('**/api/agents/*/volumes/sizes', async (route) => {
 			sizeRequests += 1;
 			await route.continue();
 		});
@@ -210,7 +210,7 @@ test.describe('Volumes Page', () => {
 		try {
 			await createVolumeViaUI(page, volumeName);
 			const response = await page.request.get(
-				`/api/environments/0/volumes/${encodeURIComponent(volumeName)}`
+				`/api/agents/0/volumes/${encodeURIComponent(volumeName)}`
 			);
 			expect(response.ok()).toBe(true);
 		} finally {
@@ -255,14 +255,10 @@ test.describe('Volumes Page', () => {
 			await search.fill(targetName);
 			await expect(page.getByRole('link', { name: targetName, exact: true })).toBeVisible();
 			expect(
-				(
-					await page.request.get(`/api/environments/0/volumes/${encodeURIComponent(sourceName)}`)
-				).status()
+				(await page.request.get(`/api/agents/0/volumes/${encodeURIComponent(sourceName)}`)).status()
 			).toBe(404);
 			expect(
-				(
-					await page.request.get(`/api/environments/0/volumes/${encodeURIComponent(targetName)}`)
-				).ok()
+				(await page.request.get(`/api/agents/0/volumes/${encodeURIComponent(targetName)}`)).ok()
 			).toBe(true);
 		} finally {
 			await removeVolumeViaApi(page, sourceName);
@@ -345,7 +341,7 @@ function volumesPage(volumes: MockVolume[], url: URL) {
 }
 
 async function mockVolumeList(page: Page, volumesByEnv: Record<string, MockVolume[]>) {
-	await page.context().route(/\/api\/environments\/[^/]+\/volumes(?:\?.*)?$/, async (route) => {
+	await page.context().route(/\/api\/agents\/[^/]+\/volumes(?:\?.*)?$/, async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
 		const environmentIds = decodeURIComponent(url.pathname.split('/')[3]).split(',');
@@ -362,7 +358,7 @@ async function mockVolumeList(page: Page, volumesByEnv: Record<string, MockVolum
 			body: JSON.stringify(volumesPage(volumes, url))
 		});
 	});
-	await page.context().route(/\/api\/environments\/[^/]+\/volumes\/sizes$/, async (route) => {
+	await page.context().route(/\/api\/agents\/[^/]+\/volumes\/sizes$/, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -573,7 +569,7 @@ test.describe('Volumes shift-select', () => {
 				grandTotalItems: 2
 			}
 		};
-		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
+		await page.context().route(/\/api\/agents(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -600,15 +596,13 @@ test.describe('Volumes shift-select', () => {
 					: ''
 			});
 		});
-		await page
-			.context()
-			.route(/\/api\/environments\/remote-shift-test\/settings$/, async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
-				});
+		await page.context().route(/\/api\/agents\/remote-shift-test\/settings$/, async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
 			});
+		});
 		const remoteVolumes = Array.from({ length: 8 }, (_, index) => mockVolume(index + 101));
 		await page.addInitScript(() => {
 			localStorage.removeItem('arcane-volumes-table');
@@ -623,8 +617,8 @@ test.describe('Volumes shift-select', () => {
 		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();
 
 		await rowCheckbox(page, 2).click();
-		await page.getByTestId('facet-environment-trigger').click();
-		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.getByTestId('facet-agent-trigger').click();
+		await page.getByTestId(`facet-agent-option-${remoteEnvironment.id}`).click();
 		await page.keyboard.press('Escape');
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toHaveCount(0);
 		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();

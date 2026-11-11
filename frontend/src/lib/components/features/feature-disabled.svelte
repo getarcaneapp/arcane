@@ -22,7 +22,7 @@
 		<ArcaneButton
 			action="base"
 			customLabel={m.features_title()}
-			onclick={() => goto(resolve(`/(app)/environments/[id]?tab=features#features`, { id: environmentId }))}
+			onclick={() => goto(resolve(`/(app)/agents/[id]?tab=features#features`, { id: environmentId }))}
 		/>
 	{/if}
 </div>

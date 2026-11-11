@@ -20,7 +20,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-build-workspace",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/builds/workspace",
+		Path:        "/agents/{id}/builds/workspace",
 		Summary:     "Get build workspace",
 		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -29,7 +29,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-build-workspace-file",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/builds/workspace/file",
+		Path:        "/agents/{id}/builds/workspace/file",
 		Summary:     "Get build workspace file",
 		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -38,7 +38,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-build-workspace-file",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/builds/workspace/file/download",
+		Path:        "/agents/{id}/builds/workspace/file/download",
 		Summary:     "Download build workspace file",
 		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -47,7 +47,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-build-workspace",
 		Method:      http.MethodPatch,
-		Path:        "/environments/{id}/builds/workspace",
+		Path:        "/agents/{id}/builds/workspace",
 		Summary:     "Update build workspace",
 		Tags:        []string{"Build Workspace"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -58,7 +58,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-build-workspace-file",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/builds/workspace/upload",
+		Path:        "/agents/{id}/builds/workspace/upload",
 		Summary:     "Upload build workspace file",
 		Description: "Write a complete chunked upload session into a build workspace folder",
 		Tags:        []string{"Build Workspace"},

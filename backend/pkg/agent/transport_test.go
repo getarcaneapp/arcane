@@ -173,7 +173,7 @@ func runParallelProxyRequestBenchmark(b *testing.B, tunnels *TunnelRegistry, env
 		Headers:       http.Header{"Content-Type": {"application/octet-stream"}},
 		EnvironmentID: envID,
 		Method:        http.MethodPost,
-		Path:          "/api/environments/0/images/upload",
+		Path:          "/api/agents/0/images/upload",
 		Body:          make([]byte, payloadSize),
 	}
 
@@ -200,7 +200,7 @@ func runProxyRequestBenchmark(b *testing.B, tunnels *TunnelRegistry, envID strin
 		Headers:       http.Header{"Content-Type": {"application/octet-stream"}},
 		EnvironmentID: envID,
 		Method:        http.MethodPost,
-		Path:          "/api/environments/0/images/upload",
+		Path:          "/api/agents/0/images/upload",
 		Body:          make([]byte, payloadSize),
 	}
 

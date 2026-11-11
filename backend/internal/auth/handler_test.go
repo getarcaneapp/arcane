@@ -175,7 +175,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	huma.Register(api, huma.Operation{
 		OperationID: "loopback-start",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{cid}/start",
+		Path:        "/agents/{id}/containers/{cid}/start",
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
@@ -195,7 +195,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 		return resp, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/0/containers/c/start", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/0/containers/c/start", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	req.Header.Set("X-API-Key", envToken)
 	req.Header.Set("X-Arcane-Agent-Token", envToken)
@@ -826,7 +826,7 @@ func TestNewHumaMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
 			huma.Register(api, huma.Operation{
 				OperationID: "secure-agent-forwarded-permissions",
 				Method:      http.MethodGet,
-				Path:        "/environments/{id}/forwarded",
+				Path:        "/agents/{id}/forwarded",
 				Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 			}, func(ctx context.Context, _ *struct {
 				ID string `path:"id"`
@@ -836,7 +836,7 @@ func TestNewHumaMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
 				return &secureOutput{}, nil
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/forwarded", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/api/agents/0/forwarded", http.NoBody)
 			if tt.token != "" {
 				req.Header.Set(middleware.HeaderAgentToken, tt.token)
 			}
@@ -893,12 +893,12 @@ func TestAuthMiddleware_AgentAuthUsesForwardedPermissions(t *testing.T) {
 			router := echo.New()
 			router.Use(authMiddleware.Add())
 			var ps *authz.PermissionSet
-			router.GET("/api/environments/0/secure", func(c *echo.Context) error {
+			router.GET("/api/agents/0/secure", func(c *echo.Context) error {
 				ps, _ = c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 				return c.NoContent(http.StatusOK)
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/secure", http.NoBody)
+			req := httptest.NewRequest(http.MethodGet, "/api/agents/0/secure", http.NoBody)
 			if tt.token != "" {
 				req.Header.Set(middleware.HeaderApiKey, tt.token)
 			}

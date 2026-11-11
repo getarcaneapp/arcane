@@ -19,7 +19,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	receivedRawQuery := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/environments/0/images/updates/check" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/agents/0/images/updates/check" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"success":false,"error":"not found"}`))
 			return
@@ -45,7 +45,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check", imageRef, "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check", imageRef, "--json"},
 	)
 
 	require.NoError(t, err,
@@ -72,7 +72,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 }
 
 func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
-	outBuf, _, err := testutil.Execute(t, []string{"--env", "0", "images", "updates", "check"})
+	outBuf, _, err := testutil.Execute(t, []string{"--agent", "0", "images", "updates", "check"})
 
 	require.Error(t, err,
 		"expected missing image reference to fail, got output %q", outBuf)
@@ -85,15 +85,15 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents":
 			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"0","name":"Local","enabled":true},{"id":"remote","name":"Remote","enabled":true}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/images":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/0/images":
 			_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/remote/images":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/remote/images":
 			_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"image-prefix-123","repoTags":["nginx:latest"]}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/remote/images/updates/check/image-prefix-123":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/remote/images/updates/check/image-prefix-123":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"hasUpdate":false,"currentVersion":"remote-version"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/images/updates/check" && r.URL.Query().Get("action") == "all":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/agents/0/images/updates/check" && r.URL.Query().Get("action") == "all":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -107,7 +107,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 					}
 				}
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/images/updates/check/image-123":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/0/images/updates/check/image-123":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -118,7 +118,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 					"responseTimeMs": 9
 				}
 			}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/0/images/updates/summary":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agents/0/images/updates/summary":
 			_, _ = w.Write([]byte(`{
 				"success": true,
 				"data": {
@@ -138,7 +138,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-all", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check-all", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -156,7 +156,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-image", "image-123", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check-image", "image-123", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -174,7 +174,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "summary", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "summary", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -239,7 +239,7 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 			configPath := testutil.WriteConfig(t, srv.URL)
 			for _, command := range commands {
 				t.Run(command.name, func(t *testing.T) {
-					args := append([]string{"--config", configPath, "--env", "0"}, command.args...)
+					args := append([]string{"--config", configPath, "--agent", "0"}, command.args...)
 					outBuf, _, err := testutil.Execute(t, args)
 
 					require.Error(t, err,

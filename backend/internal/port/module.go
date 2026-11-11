@@ -16,7 +16,7 @@ func RegisterPorts(api huma.API, portSvc *PortService) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-ports",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/ports",
+		Path:        "/agents/{id}/ports",
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    handlerutil.DefaultOperationSecurity(),

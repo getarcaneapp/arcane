@@ -14,7 +14,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/files/exists",
+		Path:        "/agents/{id}/volumes/backups/{backupId}/files/exists",
 		Summary:     "Check if backup contains path",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -23,7 +23,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-backup-files",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/files",
+		Path:        "/agents/{id}/volumes/backups/{backupId}/files",
 		Summary:     "List files in a volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "browse-volume-backup-files",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/files/browse",
+		Path:        "/agents/{id}/volumes/backups/{backupId}/files/browse",
 		Summary:     "Browse files in a volume backup",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),

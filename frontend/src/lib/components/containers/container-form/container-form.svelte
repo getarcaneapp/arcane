@@ -56,7 +56,7 @@
 
 	const tabItems: TabItem[] = [
 		{ value: 'general', label: m.common_general(), icon: ContainersIcon },
-		{ value: 'environment', label: m.resource_environment_cap(), icon: VariableIcon },
+		{ value: 'environment', label: m.environment(), icon: VariableIcon },
 		{ value: 'ports', label: m.common_ports(), icon: NetworksIcon },
 		{ value: 'volumes', label: m.resource_volumes_cap(), icon: VolumesIcon },
 		{ value: 'networks', label: m.resource_networks_cap(), icon: NetworksIcon },

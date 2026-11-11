@@ -1012,7 +1012,7 @@ func activityScopeContext(t *testing.T, target string, bodies map[string]any) co
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -1028,7 +1028,7 @@ func activityScopeContext(t *testing.T, target string, bodies map[string]any) co
 
 func TestAggregateActivitiesKeepsActiveFirst(t *testing.T) {
 	now := time.Now()
-	ctx := activityScopeContext(t, "/api/environments/a,b,c/activities", map[string]any{
+	ctx := activityScopeContext(t, "/api/agents/a,b,c/activities", map[string]any{
 		"a": types.Paginated[types.Activity]{
 			Success: true,
 			Data: []types.Activity{{

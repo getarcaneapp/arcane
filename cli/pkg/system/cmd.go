@@ -266,7 +266,7 @@ func newUpgradeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip confirmation")
-	cmd.Flags().BoolVar(&opts.all, "all", false, "Update all environments with available updates")
+	cmd.Flags().BoolVar(&opts.all, "all", false, "Update all agents with available updates")
 	cmd.Flags().BoolVar(&opts.status, "status", false, "Show the status of the latest upgrade job (requires --all)")
 	cmd.Flags().BoolVar(&opts.check, "check", false, "Only check whether an upgrade is available")
 	cmdutil.SetScope(cmdutil.ScopeGlobal, cmd)
@@ -307,7 +307,7 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 			return discoveryErr
 		}
 		if len(environments) == 0 {
-			return errors.New("no enabled environments available")
+			return errors.New("no enabled agents available")
 		}
 		app.SelectEnvironment("0")
 		defer app.SelectEnvironment("")
@@ -327,7 +327,7 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 			},
 		})
 	}
-	confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to update all environments?", Force: force})
+	confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{Label: "Are you sure you want to update all agents?", Force: force})
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}
@@ -369,5 +369,5 @@ func renderUpgradeResults(job types.UpgradeJob) error {
 	if _, spacingErr := fmt.Fprintln(output.Stdout()); spacingErr != nil {
 		return fmt.Errorf("failed to print update status: %w", spacingErr)
 	}
-	return output.Table([]string{"ENVIRONMENT", "STATUS", "FROM", "TO", "ERROR"}, rows)
+	return output.Table([]string{"AGENT", "STATUS", "FROM", "TO", "ERROR"}, rows)
 }

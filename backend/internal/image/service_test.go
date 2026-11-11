@@ -921,7 +921,7 @@ func imageScopeContext(t *testing.T, target string, bodies map[string]any) (cont
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -979,7 +979,7 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 	svc := NewImageService(ImageServiceParams{})
 
 	t.Run("sorts by repo across environments and pages", func(t *testing.T) {
-		ctx, queries := imageScopeContext(t, "/api/environments/a,b,c/images?start=0&limit=2&sort=repo&order=asc", bodies)
+		ctx, queries := imageScopeContext(t, "/api/agents/a,b,c/images?start=0&limit=2&sort=repo&order=asc", bodies)
 		body, err := svc.AggregateImages(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "repo", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
 		require.NoError(t, err)
 
@@ -1002,14 +1002,14 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images?sort=environment&order=desc", bodies)
+		ctx, _ := imageScopeContext(t, "/api/agents/a,b,c/images?sort=environment&order=desc", bodies)
 		body, err := svc.AggregateImages(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"b/postgres", "a/nginx", "a/redis"}, rowLabels(body.Data))
 	})
 
 	t.Run("upload limit comes from the first answering environment", func(t *testing.T) {
-		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images", map[string]any{"b": bodies["b"]})
+		ctx, _ := imageScopeContext(t, "/api/agents/a,b,c/images", map[string]any{"b": bodies["b"]})
 		body, err := svc.AggregateImages(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		assert.Equal(t, 100, body.MaxImageUploadSize)
@@ -1017,7 +1017,7 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images", map[string]any{})
+		ctx, _ := imageScopeContext(t, "/api/agents/a,b,c/images", map[string]any{})
 		body, err := svc.AggregateImages(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		assert.Empty(t, body.Data)
@@ -1026,7 +1026,7 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 }
 
 func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
-	ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images/counts", map[string]any{
+	ctx, _ := imageScopeContext(t, "/api/agents/a,b,c/images/counts", map[string]any{
 		"a": types.ApiResponse[types.ImageUsageCounts]{
 			Success: true,
 			Data: types.ImageUsageCounts{

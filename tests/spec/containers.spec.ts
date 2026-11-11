@@ -28,7 +28,7 @@ test.describe('Management', () => {
 			localStorage.setItem('arcane_log_auto_start', 'false');
 		});
 		await page.routeWebSocket(
-			/\/api\/environments\/[^/]+\/ws\/containers\/[^/]+\/logs(?:\?.*)?$/,
+			/\/api\/agents\/[^/]+\/ws\/containers\/[^/]+\/logs(?:\?.*)?$/,
 			(socket) => socket.send(JSON.stringify(structuredContainerLog))
 		);
 	}
@@ -48,7 +48,7 @@ test.describe('Management', () => {
 			for (const state of ['running', 'exited']) {
 				const name = `e2e-list-${state}-${Date.now()}`;
 				const container = await readApiData<{ id: string }>(
-					await page.request.post('/api/environments/0/containers', {
+					await page.request.post('/api/agents/0/containers', {
 						data: {
 							name,
 							image: 'public.ecr.aws/docker/library/busybox:1.37',
@@ -63,7 +63,7 @@ test.describe('Management', () => {
 						async () =>
 							(
 								await readApiData<{ state: { status: string } }>(
-									await page.request.get(`/api/environments/0/containers/${container.id}`),
+									await page.request.get(`/api/agents/0/containers/${container.id}`),
 									'Read fixture state'
 								)
 							).state.status
@@ -76,10 +76,7 @@ test.describe('Management', () => {
 
 		test.afterEach(async ({ page }) => {
 			for (const id of fixtureContainerIds) {
-				await removeApiResource(
-					page,
-					`/api/environments/0/containers/${id}?force=true&volumes=false`
-				);
+				await removeApiResource(page, `/api/agents/0/containers/${id}?force=true&volumes=false`);
 			}
 			fixtureContainerIds.clear();
 		});
@@ -88,7 +85,7 @@ test.describe('Management', () => {
 			// Aggregate counts can exceed the current page and must not depend on other workers' containers.
 			const counts = { totalContainers: 37, runningContainers: 23, stoppedContainers: 14 };
 			await page.route(
-				(url) => /^\/api\/environments\/[^/]+\/containers$/.test(url.pathname),
+				(url) => /^\/api\/agents\/[^/]+\/containers$/.test(url.pathname),
 				async (route) => {
 					const response = await route.fetch();
 					const body = (await response.json()) as Record<string, unknown>;
@@ -272,14 +269,14 @@ test.describe('Management', () => {
 				localStorage.removeItem('arcane-container-table');
 			});
 
-			await context.route('**/api/environments/*/containers**', async (route) => {
+			await context.route('**/api/agents/*/containers**', async (route) => {
 				if (route.request().method() !== 'GET') {
 					await route.continue();
 					return;
 				}
 
 				const url = new URL(route.request().url());
-				if (!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)) {
+				if (!/^\/api\/agents\/[^/]+\/containers$/.test(url.pathname)) {
 					await route.continue();
 					return;
 				}
@@ -479,7 +476,7 @@ test.describe('Lifecycle', () => {
 
 	async function getContainer(page: Page, containerId: string): Promise<ContainerDetails> {
 		return readApiData<ContainerDetails>(
-			await page.request.get(`/api/environments/0/containers/${containerId}`),
+			await page.request.get(`/api/agents/0/containers/${containerId}`),
 			`Get container ${containerId}`
 		);
 	}
@@ -496,8 +493,7 @@ test.describe('Lifecycle', () => {
 	async function expectContainerMissing(page: Page, containerId: string) {
 		await expect
 			.poll(
-				async () =>
-					(await page.request.get(`/api/environments/0/containers/${containerId}`)).status(),
+				async () => (await page.request.get(`/api/agents/0/containers/${containerId}`)).status(),
 				{ message: `Expected container ${containerId} to be removed`, timeout: 20_000 }
 			)
 			.toBe(404);
@@ -508,7 +504,7 @@ test.describe('Lifecycle', () => {
 			.poll(
 				async () => {
 					const detail = await readApiData<ActivityDetail>(
-						await page.request.get(`/api/environments/0/activities/${activityId}`),
+						await page.request.get(`/api/agents/0/activities/${activityId}`),
 						`Get activity ${activityId}`
 					);
 					return detail.activity.status;
@@ -517,7 +513,7 @@ test.describe('Lifecycle', () => {
 			)
 			.toBe('success');
 		const detail = await readApiData<ActivityDetail>(
-			await page.request.get(`/api/environments/0/activities/${activityId}`),
+			await page.request.get(`/api/agents/0/activities/${activityId}`),
 			`Get completed activity ${activityId}`
 		);
 		expect(detail.activity.type).toBe(expectedType);
@@ -655,12 +651,12 @@ test.describe('Lifecycle', () => {
 			const requestPromise = page.waitForRequest(
 				(request) =>
 					request.method() === 'POST' &&
-					new URL(request.url()).pathname === '/api/environments/0/containers'
+					new URL(request.url()).pathname === '/api/agents/0/containers'
 			);
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/containers'
+					new URL(response.url()).pathname === '/api/agents/0/containers'
 			);
 			await page.getByRole('button', { name: 'Create Container', exact: true }).click();
 
@@ -736,7 +732,7 @@ test.describe('Lifecycle', () => {
 			const connectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					/\/api\/agents\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
 					new URL(response.url()).searchParams.get('action') === 'connect'
 			);
 			await connectSection.getByRole('button', { name: 'Connect', exact: true }).click();
@@ -756,7 +752,7 @@ test.describe('Lifecycle', () => {
 			const disconnectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					/\/api\/agents\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
 					new URL(response.url()).searchParams.get('action') === 'disconnect'
 			);
 			await page
@@ -800,13 +796,12 @@ test.describe('Lifecycle', () => {
 			const requestPromise = page.waitForRequest(
 				(request) =>
 					request.method() === 'POST' &&
-					new URL(request.url()).pathname === `/api/environments/0/containers/${containerId}/commit`
+					new URL(request.url()).pathname === `/api/agents/0/containers/${containerId}/commit`
 			);
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname ===
-						`/api/environments/0/containers/${containerId}/commit`
+					new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}/commit`
 			);
 			await dialog.getByRole('button', { name: 'Commit', exact: true }).click();
 			const request = await requestPromise;
@@ -857,8 +852,7 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'PUT' &&
-					new URL(response.url()).pathname ===
-						`/api/environments/0/containers/${containerId}/config`,
+					new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}/config`,
 				{ timeout: 60_000 }
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -888,8 +882,7 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname ===
-						`/api/environments/0/containers/${containerId}/redeploy`,
+					new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}/redeploy`,
 				{ timeout: 60_000 }
 			);
 			await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
@@ -916,7 +909,7 @@ test.describe('Lifecycle', () => {
 			const generateResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/containers/compose'
+					new URL(response.url()).pathname === '/api/agents/0/containers/compose'
 			);
 			await clickHeaderAction(page, 'Convert to Compose');
 			const generated = await readApiData<{ composeContent: string }>(
@@ -934,7 +927,7 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/projects'
+					new URL(response.url()).pathname === '/api/agents/0/projects'
 			);
 			await createButton.click();
 			const dialog = page.getByRole('dialog');
@@ -959,7 +952,7 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}` &&
+					new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}` &&
 					new URL(response.url()).searchParams.get('action') === 'kill'
 			);
 			await dialog.getByRole('button', { name: 'Kill container', exact: true }).click();
@@ -978,7 +971,7 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'DELETE' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}`
+					new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}`
 			);
 			await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
 			const result = await readApiData<ActionResult>(
@@ -1016,24 +1009,18 @@ test.describe('Lifecycle', () => {
 
 		registerCleanup(async () => {
 			for (const id of projectIds)
-				await removeApiResource(page, `/api/environments/0/projects/${id}`, {
+				await removeApiResource(page, `/api/agents/0/projects/${id}`, {
 					data: { removeVolumes: false }
 				});
 			for (const id of containerIds)
-				await removeApiResource(
-					page,
-					`/api/environments/0/containers/${id}?force=true&volumes=false`
-				);
+				await removeApiResource(page, `/api/agents/0/containers/${id}?force=true&volumes=false`);
 			for (const id of imageIds)
-				await removeApiResource(
-					page,
-					`/api/environments/0/images/${encodeURIComponent(id)}?force=true`
-				);
+				await removeApiResource(page, `/api/agents/0/images/${encodeURIComponent(id)}?force=true`);
 			for (const name of [secondaryNetworkName, primaryNetworkName])
-				await removeApiResource(page, `/api/environments/0/networks/${encodeURIComponent(name)}`);
+				await removeApiResource(page, `/api/agents/0/networks/${encodeURIComponent(name)}`);
 			await removeApiResource(
 				page,
-				`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+				`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
 			);
 			if (settingsChanged) await updateExperimentalFeatures(page, originalExperimentalSetting);
 		});
@@ -1054,14 +1041,14 @@ test.describe('Lifecycle', () => {
 		await updateExperimentalFeatures(page, 'true');
 
 		await readApiData(
-			await page.request.post('/api/environments/0/volumes', {
+			await page.request.post('/api/agents/0/volumes', {
 				data: { name: volumeName, driver: 'local' }
 			}),
 			`Create volume ${volumeName}`
 		);
 		for (const networkName of [primaryNetworkName, secondaryNetworkName]) {
 			await readApiData(
-				await page.request.post('/api/environments/0/networks', {
+				await page.request.post('/api/agents/0/networks', {
 					data: { name: networkName, options: { driver: 'bridge' } }
 				}),
 				`Create network ${networkName}`
@@ -1140,7 +1127,7 @@ test.describe('Lifecycle', () => {
 		);
 		committedImageId = commit.id;
 		const committedImageResponse = await page.request.get(
-			`/api/environments/0/images/${encodeURIComponent(committedImageId)}`
+			`/api/agents/0/images/${encodeURIComponent(committedImageId)}`
 		);
 		expect(committedImageResponse.ok()).toBe(true);
 
@@ -1174,9 +1161,9 @@ test.describe('Lifecycle', () => {
 			projectIds
 		);
 		expect(projectIds.has(convertedProject.id)).toBe(true);
-		expect(
-			(await page.request.get(`/api/environments/0/containers/${currentContainerId}`)).ok()
-		).toBe(true);
+		expect((await page.request.get(`/api/agents/0/containers/${currentContainerId}`)).ok()).toBe(
+			true
+		);
 
 		await page.goto(`/containers/${currentContainerId}?env=0`);
 		await killContainerThroughUI(page, currentContainerId, editedContainerName);
@@ -1290,7 +1277,7 @@ test.describe('Resource sorting', () => {
 				return;
 			}
 			const url = new URL(route.request().url());
-			if (!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)) {
+			if (!/^\/api\/agents\/[^/]+\/containers$/.test(url.pathname)) {
 				await route.continue();
 				return;
 			}
@@ -1479,12 +1466,12 @@ test.describe('Resource sorting', () => {
 		await expect.poll(() => scenario.requests.length, { timeout: 10000 }).toBeGreaterThan(frozen);
 
 		scenario.failList = true;
-		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeVisible({
+		await expect(page.getByRole('heading', { name: /^Automatic refresh failed: .*daemon exploded$/ })).toBeVisible({
 			timeout: 15000
 		});
 
 		scenario.failList = false;
-		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeHidden({
+		await expect(page.getByRole('heading', { name: /^Automatic refresh failed: .*daemon exploded$/ })).toBeHidden({
 			timeout: 15000
 		});
 	});
@@ -1494,7 +1481,7 @@ test.describe('Resource sorting', () => {
 		await installContainersMock(page, scenario);
 		await openContainers(page);
 
-		await expect(page.getByText('needs a newer agent for this environment')).toBeVisible();
+		await expect(page.getByText('needs a newer version of this agent')).toBeVisible();
 		await expect(
 			page.getByRole('columnheader', { name: 'Memory Usage', exact: true })
 		).toBeVisible();
@@ -1610,7 +1597,7 @@ test.describe('Project grouping', () => {
 			}
 
 			const url = new URL(route.request().url());
-			if (!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)) {
+			if (!/^\/api\/agents\/[^/]+\/containers$/.test(url.pathname)) {
 				await route.continue();
 				return;
 			}
@@ -1705,7 +1692,7 @@ test.describe('Project grouping', () => {
 			const url = new URL(route.request().url());
 			if (
 				route.request().method() !== 'GET' ||
-				!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)
+				!/^\/api\/agents\/[^/]+\/containers$/.test(url.pathname)
 			) {
 				await route.continue();
 				return;

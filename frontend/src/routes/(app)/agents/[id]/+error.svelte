@@ -8,5 +8,5 @@
 <ResourceErrorPage
 	fallbackTitle={m.error_generic()}
 	backLabel={m.common_back_to({ resource: m.environments_title() })}
-	backHref={resolve('/(app)/environments')}
+	backHref={resolve('/(app)/agents')}
 />

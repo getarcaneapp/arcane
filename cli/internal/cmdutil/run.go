@@ -89,7 +89,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	headers, rows := spec.Headers, make([][]string, len(result.Data))
 	if merged != nil {
 		merged.failures = append(merged.failures, result.FailedEnvironments...)
-		headers = slices.Concat([]string{"ENVIRONMENT"}, spec.Headers)
+		headers = slices.Concat([]string{"AGENT"}, spec.Headers)
 	}
 	for i, item := range result.Data {
 		rows[i] = spec.Row(item)

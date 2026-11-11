@@ -16,7 +16,7 @@ import (
 
 func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/system/containers" && r.URL.Query().Get("action") == "startall" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/agents/0/system/containers" && r.URL.Query().Get("action") == "startall" {
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 			return
@@ -29,7 +29,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "system", "containers", "start"},
+		[]string{"--config", configPath, "--agent", "0", "system", "containers", "start"},
 	)
 
 	require.Error(t, err,
@@ -45,14 +45,14 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 		partial bool
 		cancel  bool
 	}{
-		{name: "all environments succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
+		{name: "all agents succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
 			var mutations []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/api/environments" {
+				if r.URL.Path == "/api/agents" {
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"0","name":"Local","enabled":true},{"id":"remote","name":"Remote","enabled":true}]}`))
 					return
 				}
@@ -80,18 +80,18 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.ErrorContains(t, runErr, "re-run with --yes")
 				require.Empty(t, paths)
 				require.Empty(t, out)
-				require.ErrorContains(t, runErr, "in all 2 environments?")
+				require.ErrorContains(t, runErr, "in all 2 agents?")
 				require.NotContains(t, runErr.Error(), "Local")
 				return
 			}
-			require.Equal(t, []string{"/api/environments/0/system/containers?action=startall", "/api/environments/remote/system/containers?action=startall"}, paths)
+			require.Equal(t, []string{"/api/agents/0/system/containers?action=startall", "/api/agents/remote/system/containers?action=startall"}, paths)
 			if tc.partial {
 				require.ErrorContains(t, runErr, "start denied")
 			} else {
 				require.NoError(t, runErr, diagnostics)
 			}
 			var result struct {
-				Environments []jsontext.Value `json:"environments"`
+				Environments []jsontext.Value `json:"agents"`
 				Success      bool             `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)

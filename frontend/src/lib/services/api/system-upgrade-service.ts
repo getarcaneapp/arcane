@@ -10,20 +10,20 @@ type ApiResponse<T> = {
 };
 
 async function checkUpgradeAvailable(environmentId: string = '0'): Promise<UpgradeCheckResult> {
-	const res = await apiClient.get<UpgradeCheckResult>(`/environments/${environmentId}/system/upgrade/check`);
+	const res = await apiClient.get<UpgradeCheckResult>(`/agents/${environmentId}/system/upgrade/check`);
 	return res.data;
 }
 
 async function startUpgradeJob(environmentIds?: string[]): Promise<UpgradeJob> {
 	const res = await apiClient.post<ApiResponse<UpgradeJob>>(
-		'/environments/0/system/upgrade/jobs',
+		'/agents/0/system/upgrade/jobs',
 		environmentIds?.length ? { environmentIds } : {}
 	);
 	return res.data.data;
 }
 
 async function getCurrentUpgradeJob(): Promise<UpgradeJob> {
-	const res = await apiClient.get<ApiResponse<UpgradeJob>>('/environments/0/system/upgrade/jobs/current', {
+	const res = await apiClient.get<ApiResponse<UpgradeJob>>('/agents/0/system/upgrade/jobs/current', {
 		timeout: 5000
 	});
 	return res.data.data;
@@ -35,7 +35,7 @@ async function getVersionInfo(environmentId: string = '0'): Promise<VersionInfo>
 		return res.data;
 	}
 
-	const res = await apiClient.get<ApiResponse<VersionInfo>>(`/environments/${environmentId}/version`, {
+	const res = await apiClient.get<ApiResponse<VersionInfo>>(`/agents/${environmentId}/version`, {
 		timeout: 5000
 	});
 	return res.data.data;

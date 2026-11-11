@@ -4,7 +4,7 @@ import BaseAPIService from './api-service';
 
 class DiagnosticsService extends BaseAPIService {
 	async getGoroutinesForEnvironment(environmentId: string): Promise<GoroutineProfile> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/diagnostics/goroutines`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/diagnostics/goroutines`));
 	}
 }
 

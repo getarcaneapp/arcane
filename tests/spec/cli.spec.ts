@@ -242,8 +242,8 @@ const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 		expectation: expectPaginated
 	},
 	{
-		name: 'admin events list --environment',
-		args: ['admin', 'events', 'list', '--environment', '--limit', '5', '--json'],
+		name: 'admin events list --per-agent',
+		args: ['admin', 'events', 'list', '--per-agent', '--limit', '5', '--json'],
 		expectation: expectPaginated
 	},
 	{
@@ -482,7 +482,7 @@ test.describe('arcane-cli e2e', () => {
 			expect(exchange.expiresIn).toBeGreaterThan(0);
 
 			const projects = await runCLIJSON<PaginatedResponse<{ id: string }>>(config.configPath, [
-				'--env',
+				'--agent',
 				'0',
 				'projects',
 				'list',
@@ -499,18 +499,18 @@ test.describe('arcane-cli e2e', () => {
 		}
 	});
 
-	test('environments list and get return local environment JSON', async () => {
+	test('agents list and get return local agent JSON', async () => {
 		await withConfig(async (config) => {
 			const environments = await runCLIJSON<PaginatedResponse<{ id: string; name: string }>>(
 				config.configPath,
-				['environments', 'list']
+				['agents', 'list']
 			);
 			expect(environments.data).toEqual(
 				expect.arrayContaining([expect.objectContaining({ id: '0' })])
 			);
 
 			const local = await runCLIJSON<{ id: string; name: string }>(config.configPath, [
-				'environments',
+				'agents',
 				'get',
 				'0'
 			]);
@@ -519,7 +519,7 @@ test.describe('arcane-cli e2e', () => {
 		});
 	});
 
-	test('containers list without --env reads every environment', async () => {
+	test('containers list without --agent reads every agent', async () => {
 		await withConfig(async (config) => {
 			const containers = await runCLIJSON<PaginatedResponse<{ id: string; name?: string }>>(
 				config.configPath,
@@ -538,7 +538,7 @@ test.describe('arcane-cli e2e', () => {
 		test(`${command.name} returns JSON`, async () => {
 			await withConfig(async (config) => {
 				const result = await runCommandJSON<unknown>(config.configPath, [
-					'--env',
+					'--agent',
 					'0',
 					...command.args
 				]);
@@ -674,7 +674,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		const suffix = `${Date.now()}`.slice(-6);
 
-		const envResponse = await adminFetch('/api/environments', {
+		const envResponse = await adminFetch('/api/agents', {
 			method: 'POST',
 			body: JSON.stringify({
 				name: `cli-rbac-${suffix}`,
@@ -728,7 +728,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		}
 		if (remoteEnvId) {
 			try {
-				const response = await adminFetch(`/api/environments/${remoteEnvId}`, { method: 'DELETE' });
+				const response = await adminFetch(`/api/agents/${remoteEnvId}`, { method: 'DELETE' });
 				expect
 					.soft(
 						response.ok || response.status === 404,
@@ -747,7 +747,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	test('denies a remote write for a read-only key (403)', async () => {
 		await withReadonlyConfig(async (config) => {
 			const error = await runExpectingFailure(config.configPath, [
-				'--env',
+				'--agent',
 				remoteEnvId,
 				'volumes',
 				'create',
@@ -761,7 +761,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	test('authorizes a remote write for an admin key, reaching the disconnected agent (503, not 403)', async () => {
 		await withAdminConfig(async (config) => {
 			const error = await runExpectingFailure(config.configPath, [
-				'--env',
+				'--agent',
 				remoteEnvId,
 				'volumes',
 				'create',
@@ -778,7 +778,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	test('leaves the local environment unaffected for a read-only key', async () => {
 		await withReadonlyConfig(async (config) => {
 			const volumes = await runCLIJSON<{ data: unknown[] }>(config.configPath, [
-				'--env',
+				'--agent',
 				'0',
 				'volumes',
 				'list',

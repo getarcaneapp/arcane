@@ -70,7 +70,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-containers",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers",
+		Path:        "/agents/{id}/containers",
 		Summary:     "List containers",
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
@@ -81,7 +81,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "container-status-counts",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/counts",
+		Path:        "/agents/{id}/containers/counts",
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -91,7 +91,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-container",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers",
+		Path:        "/agents/{id}/containers",
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -100,7 +100,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/{containerId}",
+		Path:        "/agents/{id}/containers/{containerId}",
 		Summary:     "Get container",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -109,7 +109,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container-processes",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/{containerId}/processes",
+		Path:        "/agents/{id}/containers/{containerId}/processes",
 		Summary:     "Get container processes",
 		Description: "Snapshot of the processes running inside the container, as reported by Docker",
 		Tags:        []string{"Containers"},
@@ -119,7 +119,7 @@ func RegisterContainers(
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}",
+		Path:        "/agents/{id}/containers/{containerId}",
 		Summary:     "Run container lifecycle action",
 		Description: "Start, stop, restart, kill, pause, or unpause a container. Kill accepts an optional signal (default SIGKILL).",
 		Tags:        []string{"Containers"},
@@ -136,7 +136,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "commit-container",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/commit",
+		Path:        "/agents/{id}/containers/{containerId}/commit",
 		Summary:     "Commit container",
 		Description: "Create an image from a container",
 		Tags:        []string{"Containers", "Images"},
@@ -146,7 +146,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-container",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/redeploy",
+		Path:        "/agents/{id}/containers/{containerId}/redeploy",
 		Summary:     "Redeploy container",
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
@@ -156,7 +156,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "generate-compose",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/compose",
+		Path:        "/agents/{id}/containers/compose",
 		Summary:     "Generate compose file",
 		Description: "Generate a compose file from existing containers",
 		Tags:        []string{"Containers"},
@@ -166,7 +166,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container-edit-config",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/{containerId}/config",
+		Path:        "/agents/{id}/containers/{containerId}/config",
 		Summary:     "Get container edit config",
 		Description: "Editable configuration snapshot backing the container edit form",
 		Tags:        []string{"Containers"},
@@ -176,7 +176,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "edit-container",
 		Method:      http.MethodPut,
-		Path:        "/environments/{id}/containers/{containerId}/config",
+		Path:        "/agents/{id}/containers/{containerId}/config",
 		Summary:     "Edit container",
 		Description: "Apply configuration changes and recreate the container",
 		Tags:        []string{"Containers"},
@@ -186,7 +186,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-container",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/containers/{containerId}",
+		Path:        "/agents/{id}/containers/{containerId}",
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -195,7 +195,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-container-logs",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/{containerId}/logs/download",
+		Path:        "/agents/{id}/containers/{containerId}/logs/download",
 		Summary:     "Download container logs",
 		Description: "Download every log line Docker retains for the container as a text file",
 		Tags:        []string{"Containers"},
@@ -205,7 +205,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "set-container-auto-update",
 		Method:      http.MethodPut,
-		Path:        "/environments/{id}/containers/{containerId}/autoupdate",
+		Path:        "/agents/{id}/containers/{containerId}/autoupdate",
 		Summary:     "Set container auto-update",
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},

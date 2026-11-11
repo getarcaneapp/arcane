@@ -210,7 +210,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 
 func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	if input.EnvironmentID != "0" {
-		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
+		remotePath := fmt.Sprintf("/api/agents/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(h.environmentService.ProxyJSONRequest).JSON[types.ApiResponse[*types.Volume]](ctx, input.EnvironmentID, http.MethodPost, remotePath, input.Body)
 		if err != nil {
 			return nil, err

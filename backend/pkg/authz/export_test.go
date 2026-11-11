@@ -96,7 +96,7 @@ func TestBuildPermissionExport(t *testing.T) {
 	export := BuildPermissionExport(api, []PermissionRoute{
 		{
 			Method:     http.MethodGet,
-			Path:       "/environments/:id/ws/containers/:containerId/logs",
+			Path:       "/agents/:id/ws/containers/:containerId/logs",
 			Permission: PermContainersLogs,
 		},
 		{
@@ -113,6 +113,12 @@ func TestBuildPermissionExport(t *testing.T) {
 	})
 
 	require.Equal(t, []PermissionExportEndpoint{
+		{
+			Method:     http.MethodGet,
+			Path:       "/agents/{id}/ws/containers/{containerId}/logs",
+			Access:     EndpointAccessPermission,
+			Permission: PermContainersLogs,
+		},
 		{
 			Method:      http.MethodPost,
 			Path:        "/backups/{id}",
@@ -131,12 +137,6 @@ func TestBuildPermissionExport(t *testing.T) {
 			Access:     EndpointAccessPermission,
 			Permission: PermDiagnosticsRead,
 			Conditions: diagnosticsConditions,
-		},
-		{
-			Method:     http.MethodGet,
-			Path:       "/environments/{id}/ws/containers/{containerId}/logs",
-			Access:     EndpointAccessPermission,
-			Permission: PermContainersLogs,
 		},
 		{
 			Method:      http.MethodPost,

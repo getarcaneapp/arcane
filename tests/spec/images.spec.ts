@@ -17,7 +17,7 @@ import { waitForDialogReady } from '../utils/playwright.util';
 test.describe('Management', () => {
 	const ROUTES = {
 		page: '/images',
-		apiImages: '/api/environments/0/images'
+		apiImages: '/api/agents/0/images'
 	};
 
 	async function navigateToImages(page: Page) {
@@ -41,7 +41,7 @@ test.describe('Management', () => {
 			deletedIds: new Set<string>()
 		};
 
-		await page.route('**/api/environments/0/images**', async (route) => {
+		await page.route('**/api/agents/0/images**', async (route) => {
 			const request = route.request();
 			const url = new URL(request.url());
 
@@ -140,7 +140,7 @@ test.describe('Management', () => {
 			tag: '<none>'
 		};
 
-		await page.route('**/api/environments/0/images**', async (route) => {
+		await page.route('**/api/agents/0/images**', async (route) => {
 			const request = route.request();
 			const url = new URL(request.url());
 			if (request.method() !== 'GET') {
@@ -347,7 +347,7 @@ test.describe('Management', () => {
 				.poll(
 					async () => {
 						const detail = await readApiData<{ activity: { status: string } }>(
-							await page.request.get(`/api/environments/0/activities/${activityId}`),
+							await page.request.get(`/api/agents/0/activities/${activityId}`),
 							'Get image pull activity'
 						);
 						return detail.activity.status;
@@ -363,7 +363,7 @@ test.describe('Management', () => {
 
 			const removableImage = realImages.find((image) => image.repo && image.repo !== '<none>');
 			if (!removableImage) throw new Error('No removable images available');
-			const removePath = `/api/environments/0/images/${removableImage.id}`;
+			const removePath = `/api/agents/0/images/${removableImage.id}`;
 
 			let removeRequestCount = 0;
 			await page.route(
@@ -502,7 +502,7 @@ test.describe('Management', () => {
 			const pruneResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/images/prune'
+					new URL(response.url()).pathname === '/api/agents/0/images/prune'
 			);
 			await dialog.getByRole('button', { name: 'Prune Images', exact: true }).click();
 			await readApiData<Record<string, unknown>>(
@@ -549,8 +549,8 @@ test.describe('Management', () => {
 test.describe('Update checks', () => {
 	const ROUTES = {
 		page: '/images',
-		apiImageUpdatesCheck: '/api/environments/0/images/updates/check',
-		apiImageUpdatesSummary: '/api/environments/0/images/updates/summary'
+		apiImageUpdatesCheck: '/api/agents/0/images/updates/check',
+		apiImageUpdatesSummary: '/api/agents/0/images/updates/summary'
 	};
 
 	const TEST_IMAGE_REFS = {
@@ -571,7 +571,7 @@ test.describe('Update checks', () => {
 		}
 
 		const result = await readList(
-			await page.request.get(`/api/environments/0/images?${params.toString()}`),
+			await page.request.get(`/api/agents/0/images?${params.toString()}`),
 			'List filtered images'
 		);
 		const total = result.pagination?.totalItems;
@@ -691,7 +691,7 @@ test.describe('Update checks', () => {
 			expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
 			const fixtures = await readList<{ id: string; repoTags: string[] }>(
-				await page.request.get('/api/environments/0/images', {
+				await page.request.get('/api/agents/0/images', {
 					params: { search: TEST_IMAGE_REFS.busybox }
 				}),
 				'Find BusyBox fixture'
@@ -705,7 +705,7 @@ test.describe('Update checks', () => {
 				const url = new URL(response.url());
 				return (
 					response.request().method() === 'GET' &&
-					url.pathname === '/api/environments/0/images' &&
+					url.pathname === '/api/agents/0/images' &&
 					url.searchParams.get('search') === testImage.id
 				);
 			});
@@ -723,7 +723,7 @@ test.describe('Update checks', () => {
 				(response) =>
 					response.request().method() === 'POST' &&
 					decodeURIComponent(new URL(response.url()).pathname) ===
-						`/api/environments/0/images/updates/check/${testImage.id}`
+						`/api/agents/0/images/updates/check/${testImage.id}`
 			);
 			if (await trigger.evaluate((element) => element.tagName === 'BUTTON')) {
 				await trigger.click();

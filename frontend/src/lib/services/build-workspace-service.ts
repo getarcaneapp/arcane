@@ -7,12 +7,12 @@ import { uploadService } from './upload-service';
 
 class BuildWorkspaceService extends BaseAPIService {
 	async getWorkspace(environmentId: string): Promise<Workspace> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/builds/workspace`, { cache: 'no-store' }));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/builds/workspace`, { cache: 'no-store' }));
 	}
 
 	async getWorkspaceFile(relativePath: string, environmentId: string): Promise<WorkspaceFileContent> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/builds/workspace/file`, {
+			this.api.get(`/agents/${environmentId}/builds/workspace/file`, {
 				cache: 'no-store',
 				params: { relativePath }
 			})
@@ -21,16 +21,16 @@ class BuildWorkspaceService extends BaseAPIService {
 
 	async updateWorkspace(manifest: WorkspaceUpdateManifest, files: File[], environmentId: string): Promise<Workspace> {
 		const form = createWorkspaceFormData(manifest, files);
-		return this.handleResponse(this.api.patch(`/environments/${environmentId}/builds/workspace`, form));
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/builds/workspace`, form));
 	}
 
 	async uploadFile(parentPath: string, file: File, environmentId: string): Promise<Workspace> {
 		const uploadId = await uploadService.uploadFile(environmentId, 'build-workspace', file);
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/builds/workspace/upload`, { uploadId, parentPath }));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/builds/workspace/upload`, { uploadId, parentPath }));
 	}
 
 	async downloadWorkspaceFile(relativePath: string, environmentId: string): Promise<void> {
-		const response = await this.api.get(`/environments/${environmentId}/builds/workspace/file/download`, {
+		const response = await this.api.get(`/agents/${environmentId}/builds/workspace/file/download`, {
 			params: { relativePath },
 			responseType: 'blob'
 		});

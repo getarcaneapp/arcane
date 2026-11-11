@@ -18,7 +18,7 @@ class EventService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<Event>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/events/environment/${environmentId}`, { ...config, params });
+		const res = await this.api.get(`/events/agent/${environmentId}`, { ...config, params });
 		return res.data;
 	}
 

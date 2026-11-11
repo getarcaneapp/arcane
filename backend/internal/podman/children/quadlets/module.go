@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	quadletsPath = "/environments/{id}/podman/quadlets"
+	quadletsPath = "/agents/{id}/podman/quadlets"
 	quadletsTag  = "Podman"
 )
 

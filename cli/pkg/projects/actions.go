@@ -25,7 +25,7 @@ import (
 func newTagsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "tags",
-		Short:        "List project tags for the environment",
+		Short:        "List project tags for the agent",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

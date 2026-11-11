@@ -24,7 +24,7 @@ func networkScopeContext(t *testing.T, target string, bodies map[string]any) (co
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -87,7 +87,7 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 	svc := &NetworkService{}
 
 	t.Run("sorts by name across environments and pages", func(t *testing.T) {
-		ctx, queries := networkScopeContext(t, "/api/environments/a,b,c/networks?start=2&limit=2&sort=name&order=asc", bodies)
+		ctx, queries := networkScopeContext(t, "/api/agents/a,b,c/networks?start=2&limit=2&sort=name&order=asc", bodies)
 		body, err := svc.AggregateNetworks(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Start: 2, Limit: 2}})
 		require.NoError(t, err)
 
@@ -113,14 +113,14 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks?sort=environment&order=asc", bodies)
+		ctx, _ := networkScopeContext(t, "/api/agents/a,b,c/networks?sort=environment&order=asc", bodies)
 		body, err := svc.AggregateNetworks(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		require.Equal(t, []string{"a/bridge", "a/frontend", "b/backend", "b/bridge"}, rowLabels(body.Data))
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks", map[string]any{})
+		ctx, _ := networkScopeContext(t, "/api/agents/a,b,c/networks", map[string]any{})
 		body, err := svc.AggregateNetworks(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		require.Empty(t, body.Data)
@@ -129,7 +129,7 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 }
 
 func TestAggregateNetworkCountsSumsEnvironments(t *testing.T) {
-	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/counts", map[string]any{
+	ctx, _ := networkScopeContext(t, "/api/agents/a,b,c/networks/counts", map[string]any{
 		"a": types.ApiResponse[types.NetworkUsageCounts]{
 			Success: true,
 			Data: types.NetworkUsageCounts{
@@ -170,7 +170,7 @@ func TestAggregateNetworkTopologyPrefixesNodeIDs(t *testing.T) {
 			Edges: []types.NetworkTopologyEdge{{ID: "net:ctr", Source: "net", Target: "ctr"}},
 		},
 	}
-	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/topology", map[string]any{
+	ctx, _ := networkScopeContext(t, "/api/agents/a,b,c/networks/topology", map[string]any{
 		"a": topology,
 		"b": topology,
 	})

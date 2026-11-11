@@ -260,7 +260,7 @@ func portScopeContext(t *testing.T, target string, bodies map[string]any) (conte
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
 			queries.Store(id, r.URL.Query())
 			body, ok := bodies[id]
 			if !ok {
@@ -296,7 +296,7 @@ func TestAggregatePortsMergesEnvironments(t *testing.T) {
 	svc := &PortService{}
 
 	t.Run("sorts by host port across environments and pages", func(t *testing.T) {
-		ctx, queries := portScopeContext(t, "/api/environments/a,b,c/ports?start=0&limit=2&sort=hostPort&order=asc", bodies)
+		ctx, queries := portScopeContext(t, "/api/agents/a,b,c/ports?start=0&limit=2&sort=hostPort&order=asc", bodies)
 		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "hostPort", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
 		require.NoError(t, err)
 
@@ -318,14 +318,14 @@ func TestAggregatePortsMergesEnvironments(t *testing.T) {
 	})
 
 	t.Run("sorts by environment", func(t *testing.T) {
-		ctx, _ := portScopeContext(t, "/api/environments/a,b,c/ports?sort=environment&order=asc", bodies)
+		ctx, _ := portScopeContext(t, "/api/agents/a,b,c/ports?sort=environment&order=asc", bodies)
 		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: -1}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"a/db", "a/web", "b/api"}, rowLabels(body.Data))
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
-		ctx, _ := portScopeContext(t, "/api/environments/a,b,c/ports", map[string]any{})
+		ctx, _ := portScopeContext(t, "/api/agents/a,b,c/ports", map[string]any{})
 		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		assert.Empty(t, body.Data)

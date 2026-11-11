@@ -20,7 +20,7 @@ func TestGenerateMTLSCommandWritesMLDSA87Assets(t *testing.T) {
 	outDir := t.TempDir()
 
 	cmd := generate.Command()
-	cmd.SetArgs([]string{"mtls", "--out-dir", outDir, "--env-id", "env-123", "--app-url", "https://manager.example.com"})
+	cmd.SetArgs([]string{"mtls", "--out-dir", outDir, "--agent-id", "env-123", "--app-url", "https://manager.example.com"})
 
 	_, err := captureOutput(func() error {
 		_, err := cmd.ExecuteC()

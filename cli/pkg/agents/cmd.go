@@ -1,4 +1,4 @@
-package environments
+package agents
 
 import (
 	"fmt"
@@ -16,9 +16,9 @@ import (
 func Command() *cobra.Command {
 	command := &cobra.Command{
 		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
-		Use:         "environments",
-		Aliases:     []string{"environment", "env", "e"},
-		Short:       "Manage environments",
+		Use:         "agents",
+		Aliases:     []string{"agent"},
+		Short:       "Manage agents",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newGetCmd())
@@ -40,7 +40,7 @@ func newListCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
-		Short:        "List environments",
+		Short:        "List agents",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,9 +50,9 @@ func newListCmd() *cobra.Command {
 			}
 
 			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Environment]{
-				Resource: "environments",
+				Resource: "agents",
 				Endpoint: clitypes.Environments(),
-				Params:   cmdutil.ListParams{Resource: "environments", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
+				Params:   cmdutil.ListParams{Resource: "agents", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "API URL", "STATUS", "ENABLED"},
 				Row: func(env types.Environment) []string {
 					return []string{
@@ -66,7 +66,7 @@ func newListCmd() *cobra.Command {
 			})
 		},
 	}
-	command.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of environments to show")
+	command.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of agents to show")
 	command.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	command.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
 	return command
@@ -79,7 +79,7 @@ func newDeleteCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:          "delete <id>",
 		Aliases:      []string{"rm", "remove"},
-		Short:        "Delete environment",
+		Short:        "Delete agent",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -89,10 +89,10 @@ func newDeleteCmd() *cobra.Command {
 			}
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
-				Prompt:         fmt.Sprintf("Are you sure you want to delete environment %s?", args[0]),
+				Prompt:         fmt.Sprintf("Are you sure you want to delete agent %s?", args[0]),
 				Path:           clitypes.Environment(args[0]),
-				FailureMessage: "failed to delete environment",
-				SuccessMessage: "Environment deleted successfully",
+				FailureMessage: "failed to delete agent",
+				SuccessMessage: "Agent deleted successfully",
 			})
 		},
 	}
@@ -103,7 +103,7 @@ func newDeleteCmd() *cobra.Command {
 func newGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "get <id>",
-		Short:        "Get environment details",
+		Short:        "Get agent details",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -115,10 +115,10 @@ func newGetCmd() *cobra.Command {
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodGet,
 				Path:           clitypes.Environment(args[0]),
-				FailureMessage: "failed to get environment",
+				FailureMessage: "failed to get agent",
 				Body:           nil,
 				Render: func(data types.Environment) error {
-					output.Header("Environment Details")
+					output.Header("Agent Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("API URL", data.ApiUrl)
@@ -134,7 +134,7 @@ func newGetCmd() *cobra.Command {
 func newTestCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "test <id>",
-		Short:        "Test environment connection",
+		Short:        "Test agent connection",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -146,9 +146,9 @@ func newTestCmd() *cobra.Command {
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentTest]{
 				Method:         http.MethodPost,
 				Path:           clitypes.EnvironmentTest(args[0]),
-				FailureMessage: "failed to test environment",
+				FailureMessage: "failed to test agent",
 				Render: func(types.EnvironmentTest) error {
-					output.Success("%s", "Environment connection test successful")
+					output.Success("%s", "Agent connection test successful")
 					return nil
 				},
 			})
@@ -159,7 +159,7 @@ func newTestCmd() *cobra.Command {
 func newTunnelCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "tunnel",
-		Short: "Manage environment agent tunnels",
+		Short: "Manage agent tunnels",
 	}
 	command.AddCommand(newTunnelRestartCmd())
 	return command
@@ -168,7 +168,7 @@ func newTunnelCmd() *cobra.Command {
 func newTunnelRestartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "restart <id>",
-		Short:        "Restart the agent tunnel for an environment",
+		Short:        "Restart the agent tunnel for an agent",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -202,7 +202,7 @@ func newUpdateCmd() *cobra.Command {
 	}
 	command := &cobra.Command{
 		Use:          "update <id>",
-		Short:        "Update environment",
+		Short:        "Update agent",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -222,10 +222,10 @@ func newUpdateCmd() *cobra.Command {
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodPatch,
 				Path:           clitypes.Environment(args[0]),
-				FailureMessage: "failed to update environment",
+				FailureMessage: "failed to update agent",
 				Body:           req,
 				Render: func(data types.Environment) error {
-					output.Success("Environment updated successfully")
+					output.Success("Agent updated successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("API URL", data.ApiUrl)
@@ -235,8 +235,8 @@ func newUpdateCmd() *cobra.Command {
 			})
 		},
 	}
-	command.Flags().StringVar(&opts.name, "name", "", "Environment name")
-	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable environment")
+	command.Flags().StringVar(&opts.name, "name", "", "Agent name")
+	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable agent")
 	return command
 }
 
@@ -247,7 +247,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	command := &cobra.Command{
 		Use:          "create",
-		Short:        "Create environment",
+		Short:        "Create agent",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -259,13 +259,13 @@ func newCreateCmd() *cobra.Command {
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodPost,
 				Path:           clitypes.Environments(),
-				FailureMessage: "failed to create environment",
+				FailureMessage: "failed to create agent",
 				Body: map[string]any{
 					"name":    opts.name,
 					"enabled": opts.enabled,
 				},
 				Render: func(data types.Environment) error {
-					output.Success("Environment created successfully")
+					output.Success("Agent created successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("API URL", data.ApiUrl)
@@ -286,8 +286,8 @@ func newCreateCmd() *cobra.Command {
 			})
 		},
 	}
-	command.Flags().StringVar(&opts.name, "name", "", "Environment name (required)")
-	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable environment")
+	command.Flags().StringVar(&opts.name, "name", "", "Agent name (required)")
+	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable agent")
 	_ = command.MarkFlagRequired("name")
 	return command
 }
@@ -295,7 +295,7 @@ func newCreateCmd() *cobra.Command {
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "version <id>",
-		Short:        "Get environment version",
+		Short:        "Get agent version",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -307,9 +307,9 @@ func newVersionCmd() *cobra.Command {
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VersionInfo]{
 				Method:         http.MethodGet,
 				Path:           clitypes.EnvironmentVersion(args[0]),
-				FailureMessage: "failed to get environment version",
+				FailureMessage: "failed to get agent version",
 				Render: func(data types.VersionInfo) error {
-					output.Header("Environment Version")
+					output.Header("Agent Version")
 					output.KeyValue("Version", data.DisplayVersion)
 					output.KeyValue("Full Version", data.CurrentVersion)
 					output.KeyValue("Tag", data.CurrentTag)

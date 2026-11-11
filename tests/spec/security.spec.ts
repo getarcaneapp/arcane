@@ -32,7 +32,7 @@ function vulnerabilityResponse(response: { url(): string; request(): { method():
 }
 
 async function mockRiskOverview(page: Page) {
-	await page.route(/\/api\/environments\/[^/]+\/vulnerabilities\/overview$/, async (route) => {
+	await page.route(/\/api\/agents\/[^/]+\/vulnerabilities\/overview$/, async (route) => {
 		await route.fulfill({
 			json: {
 				success: true,
@@ -67,18 +67,12 @@ async function mockRiskOverview(page: Page) {
 
 async function mockSecurityPageData(page: Page, imageNames: string[]) {
 	await mockRiskOverview(page);
-	await page.route(
-		/\/api\/environments\/[^/]+\/vulnerabilities\/images(?:\?.*)?$/,
-		async (route) => {
-			await route.fulfill({ json: { success: true, data: imageNames } });
-		}
-	);
-	await page.route(
-		/\/api\/environments\/[^/]+\/images\/patches\/targets(?:\?.*)?$/,
-		async (route) => {
-			await route.fulfill({ json: paginated([]) });
-		}
-	);
+	await page.route(/\/api\/agents\/[^/]+\/vulnerabilities\/images(?:\?.*)?$/, async (route) => {
+		await route.fulfill({ json: { success: true, data: imageNames } });
+	});
+	await page.route(/\/api\/agents\/[^/]+\/images\/patches\/targets(?:\?.*)?$/, async (route) => {
+		await route.fulfill({ json: paginated([]) });
+	});
 }
 
 const EXPORT_FILENAME = 'vulnerabilities-0-2026-09-13T10-00-00Z.csv';
@@ -152,7 +146,7 @@ test.describe('Security Page', () => {
 		await navigateToSecurity(page);
 
 		const scanRequests: string[] = [];
-		await page.route(/\/api\/environments\/0\/images(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/images(?:\?.*)?$/, async (route) => {
 			const requestUrl = new URL(route.request().url());
 			expect(requestUrl.searchParams.get('limit')).toBe('100');
 			await route.fulfill({
@@ -162,32 +156,29 @@ test.describe('Security Page', () => {
 				])
 			});
 		});
-		await page.route(
-			/\/api\/environments\/0\/images\/([^/]+)\/vulnerabilities\/scan$/,
-			async (route) => {
-				const imageId = new URL(route.request().url()).pathname.split('/').at(-3);
-				if (!imageId) throw new Error('Scan request did not include an image ID');
-				scanRequests.push(imageId);
+		await page.route(/\/api\/agents\/0\/images\/([^/]+)\/vulnerabilities\/scan$/, async (route) => {
+			const imageId = new URL(route.request().url()).pathname.split('/').at(-3);
+			if (!imageId) throw new Error('Scan request did not include an image ID');
+			scanRequests.push(imageId);
 
-				if (imageId === 'scan-failure') {
-					await route.fulfill({ status: 500, json: { message: 'scanner unavailable' } });
-					return;
-				}
-
-				await route.fulfill({
-					json: {
-						success: true,
-						data: {
-							imageId,
-							imageName: 'example/success:latest',
-							scanTime: new Date().toISOString(),
-							status: 'scanning',
-							activityId: 'scan-activity'
-						}
-					}
-				});
+			if (imageId === 'scan-failure') {
+				await route.fulfill({ status: 500, json: { message: 'scanner unavailable' } });
+				return;
 			}
-		);
+
+			await route.fulfill({
+				json: {
+					success: true,
+					data: {
+						imageId,
+						imageName: 'example/success:latest',
+						scanTime: new Date().toISOString(),
+						status: 'scanning',
+						activityId: 'scan-activity'
+					}
+				}
+			});
+		});
 
 		await page.getByRole('button', { name: 'Scan all images', exact: true }).first().click();
 
@@ -212,7 +203,7 @@ test.describe('Security Page', () => {
 		let unignoreRequestCount = 0;
 
 		await mockRiskOverview(page);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			const showIgnored = new URL(route.request().url()).searchParams.get('ignored') === 'true';
 			const rows =
 				ignored === showIgnored
@@ -220,16 +211,13 @@ test.describe('Security Page', () => {
 					: [];
 			await route.fulfill({ json: paginated(rows) });
 		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/images(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/images(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: { success: true, data: [vulnerability.imageName] } });
 		});
-		await page.route(
-			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
-			async (route) => {
-				await route.fulfill({ json: paginated([]) });
-			}
-		);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/ignored$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/images\/patches\/targets(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: paginated([]) });
+		});
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/ignored$/, async (route) => {
 			ignorePayload = route.request().postDataJSON();
 			ignored = true;
 			await route.fulfill({
@@ -239,15 +227,12 @@ test.describe('Security Page', () => {
 				}
 			});
 		});
-		await page.route(
-			/\/api\/environments\/0\/vulnerabilities\/ignored\/ignore-1$/,
-			async (route) => {
-				expect(route.request().method()).toBe('DELETE');
-				unignoreRequestCount += 1;
-				ignored = false;
-				await route.fulfill({ status: 204 });
-			}
-		);
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/ignored\/ignore-1$/, async (route) => {
+			expect(route.request().method()).toBe('DELETE');
+			unignoreRequestCount += 1;
+			ignored = false;
+			await route.fulfill({ status: 204 });
+		});
 
 		await navigateToSecurity(page);
 
@@ -296,7 +281,7 @@ test.describe('Security Page', () => {
 		const exportRequests: URLSearchParams[] = [];
 
 		await mockSecurityPageData(page, [image]);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			const params = new URL(route.request().url()).searchParams;
 			listRequests.push(params);
 			const secondPage = params.get('start') === '20';
@@ -312,7 +297,7 @@ test.describe('Security Page', () => {
 				}
 			});
 		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			exportRequests.push(new URL(route.request().url()).searchParams);
 			await fulfillExport(route);
 		});
@@ -382,10 +367,10 @@ test.describe('Security Page', () => {
 		let exportRequest: URLSearchParams | undefined;
 
 		await mockSecurityPageData(page, []);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: paginated([]) });
 		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			exportRequest = new URL(route.request().url()).searchParams;
 			await fulfillExport(route);
 		});
@@ -414,10 +399,10 @@ test.describe('Security Page', () => {
 		});
 
 		await mockSecurityPageData(page, []);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: paginated([]) });
 		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			exportRequests += 1;
 			if (mode === 'hold') await held;
 			if (mode === 'fail') {
@@ -456,10 +441,10 @@ test.describe('Security Page', () => {
 		});
 
 		await mockSecurityPageData(page, []);
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: paginated([]) });
 		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			await held;
 			await fulfillExport(route);
 		});
@@ -523,13 +508,10 @@ test.describe('Security Page', () => {
 			}
 		];
 
-		await page.route(
-			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
-			async (route) => {
-				await route.fulfill({ json: paginated(targets()) });
-			}
-		);
-		await page.route(/\/api\/environments\/0\/images\/remote-image\/patch$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/images\/patches\/targets(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: paginated(targets()) });
+		});
+		await page.route(/\/api\/agents\/0\/images\/remote-image\/patch$/, async (route) => {
 			patchPayload = route.request().postDataJSON();
 			patchStarted = true;
 			await route.fulfill({
@@ -583,7 +565,7 @@ test.describe('Security Page', () => {
 
 test.describe('Disabled vulnerability management', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.route(/\/api\/environments\/[^/]+\/settings\/public$/, async (route) => {
+		await page.route(/\/api\/agents\/[^/]+\/settings\/public$/, async (route) => {
 			await route.fulfill({
 				json: {
 					settings: [
@@ -611,7 +593,7 @@ test.describe('Disabled vulnerability management', () => {
 			const vulnerabilityRequests: string[] = [];
 			page.on('request', (request) => {
 				if (
-					/\/api\/environments\/[^/]+\/(?:images\/[^/]+\/)?vulnerabilities(?:\/|$)/.test(
+					/\/api\/agents\/[^/]+\/(?:images\/[^/]+\/)?vulnerabilities(?:\/|$)/.test(
 						new URL(request.url()).pathname
 					)
 				) {
@@ -622,7 +604,7 @@ test.describe('Disabled vulnerability management', () => {
 			await page.goto(path);
 			await expect(
 				page.getByText(
-					'Vulnerability management is disabled for this environment. Saved reports and settings are retained.',
+					'Vulnerability management is disabled for this agent. Saved reports and settings are retained.',
 					{ exact: true }
 				)
 			).toBeVisible();
@@ -636,7 +618,7 @@ test.describe('Disabled vulnerability management', () => {
 	}
 
 	test('hides image vulnerability controls and keeps standalone patching', async ({ page }) => {
-		await page.route(/\/api\/environments\/0\/images(?:\?.*)?$/, async (route) => {
+		await page.route(/\/api\/agents\/0\/images(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				json: paginated([
 					{

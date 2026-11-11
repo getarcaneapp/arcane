@@ -34,7 +34,7 @@ func swarmScopeContext(t *testing.T, target string, bodies map[string]any) conte
 		IDs:     []string{"a", "b", "c"},
 		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
 			if !ok {
 				w.WriteHeader(http.StatusBadGateway)
 				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
@@ -49,7 +49,7 @@ func swarmScopeContext(t *testing.T, target string, bodies map[string]any) conte
 }
 
 func TestAggregateTasksMergesEnvironments(t *testing.T) {
-	ctx := swarmScopeContext(t, "/api/environments/a,b,c/swarm/tasks", map[string]any{
+	ctx := swarmScopeContext(t, "/api/agents/a,b,c/swarm/tasks", map[string]any{
 		"a": types.Paginated[types.SwarmTaskSummary]{
 			Success: true,
 			Data:    []types.SwarmTaskSummary{{ID: "t1", Name: "web.1"}},
@@ -71,7 +71,7 @@ func TestAggregateTasksMergesEnvironments(t *testing.T) {
 }
 
 func TestAggregateStatusReportsEachEnvironment(t *testing.T) {
-	ctx := swarmScopeContext(t, "/api/environments/a,b,c/swarm/status", map[string]any{
+	ctx := swarmScopeContext(t, "/api/agents/a,b,c/swarm/status", map[string]any{
 		"a": types.ApiResponse[types.SwarmRuntimeStatus]{
 			Success: true,
 			Data: types.SwarmRuntimeStatus{

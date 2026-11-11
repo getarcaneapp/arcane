@@ -111,9 +111,7 @@ async function selectUserAssignment(
 	environmentName: string,
 	roleName: string
 ) {
-	const environmentSelect = dialog
-		.getByRole('combobox', { name: 'Environment', exact: true })
-		.nth(index);
+	const environmentSelect = dialog.getByRole('combobox', { name: 'Agent', exact: true }).nth(index);
 	await environmentSelect.click();
 	await page.getByRole('option', { name: environmentName, exact: true }).click();
 
@@ -365,8 +363,7 @@ async function toggleAutoUpdateThroughUI(
 	const responsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'PUT' &&
-			new URL(response.url()).pathname ===
-				`/api/environments/0/containers/${containerId}/autoupdate`
+			new URL(response.url()).pathname === `/api/agents/0/containers/${containerId}/autoupdate`
 	);
 	await card.getByRole('switch').click();
 	await readApiData<{ message: string }>(await responsePromise, 'Toggle container auto-update');
@@ -374,7 +371,7 @@ async function toggleAutoUpdateThroughUI(
 		card.getByText(expectEnabledAfter ? 'Enabled' : 'Disabled', { exact: true })
 	).toBeVisible();
 	const details = await readApiData<{ autoUpdateEnabled?: boolean }>(
-		await page.request.get(`/api/environments/0/containers/${containerId}`),
+		await page.request.get(`/api/agents/0/containers/${containerId}`),
 		'Read container details'
 	);
 	expect(details.autoUpdateEnabled).toBe(expectEnabledAfter);
@@ -446,7 +443,7 @@ test('administers scoped identities and enforces their browser access immediatel
 
 	try {
 		const localEnvironment = await readApiData<TestEnvironment>(
-			await page.request.get('/api/environments/0'),
+			await page.request.get('/api/agents/0'),
 			'Get local environment'
 		);
 
@@ -469,7 +466,7 @@ test('administers scoped identities and enforces their browser access immediatel
 		);
 
 		remoteEnvironment = await readApiData<TestEnvironment>(
-			await page.request.post('/api/environments', {
+			await page.request.post('/api/agents', {
 				data: {
 					name: remoteEnvironmentName,
 					enabled: true
@@ -518,7 +515,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			storageState: { cookies: [], origins: [] }
 		});
 		const remoteID = remoteEnvironment.id;
-		await restrictedContext.route(`**/api/environments/${remoteID}/projects**`, async (route) => {
+		await restrictedContext.route(`**/api/agents/${remoteID}/projects**`, async (route) => {
 			const pathname = new URL(route.request().url()).pathname;
 			if (pathname.endsWith('/counts')) {
 				await route.fulfill({
@@ -653,13 +650,13 @@ test('administers scoped identities and enforces their browser access immediatel
 		);
 		const [targetContainer] = (
 			await readApiData<TestContainer[]>(
-				await page.request.get('/api/environments/0/containers?start=0&limit=50'),
+				await page.request.get('/api/agents/0/containers?start=0&limit=50'),
 				'List local containers'
 			)
 		).filter((container) => !container.labels?.['com.getarcaneapp.arcane.updater']);
 		expect(targetContainer, 'a container without an updater label is required').toBeTruthy();
 		await readApiData<unknown>(
-			await page.request.post('/api/environments/0/volumes', {
+			await page.request.post('/api/agents/0/volumes', {
 				data: { name: environmentAdminVolumeName, driver: 'local' }
 			}),
 			`Create volume ${environmentAdminVolumeName}`
@@ -691,9 +688,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			);
 			expect(environmentAdmin.permissionsByEnv.global ?? []).toEqual([]);
 
-			const environmentSettings = await environmentAdminPage.request.get(
-				'/api/environments/0/settings'
-			);
+			const environmentSettings = await environmentAdminPage.request.get('/api/agents/0/settings');
 			expect(environmentSettings.status(), 'environment settings must be readable').toBe(200);
 
 			for (const path of [
@@ -703,7 +698,7 @@ test('administers scoped identities and enforces their browser access immediatel
 				'/api/templates/default',
 				'/api/variables',
 				'/api/backups/s3/options',
-				`/api/environments/${remoteID}/containers`
+				`/api/agents/${remoteID}/containers`
 			]) {
 				const rejected = await environmentAdminPage.request.get(path);
 				expect(rejected.status(), `${path} must stay forbidden`).toBe(403);
@@ -716,9 +711,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			).toBeVisible();
 			await expect(environmentAdminPage.getByText('Auto-Update', { exact: true })).toBeVisible();
 			const initialDetails = await readApiData<{ autoUpdateEnabled?: boolean }>(
-				await environmentAdminPage.request.get(
-					`/api/environments/0/containers/${targetContainer.id}`
-				),
+				await environmentAdminPage.request.get(`/api/agents/0/containers/${targetContainer.id}`),
 				'Read initial container details'
 			);
 			expect(typeof initialDetails.autoUpdateEnabled).toBe('boolean');
@@ -738,7 +731,7 @@ test('administers scoped identities and enforces their browser access immediatel
 				environmentAdminPage.getByRole('heading', { name: 'Images', exact: true })
 			).toBeVisible();
 			const imageListResponse = await environmentAdminPage.request.get(
-				'/api/environments/0/images?start=0&limit=1'
+				'/api/agents/0/images?start=0&limit=1'
 			);
 			expect(imageListResponse.ok()).toBe(true);
 			const imageListBody = await imageListResponse.json();
@@ -839,7 +832,7 @@ test('administers scoped identities and enforces their browser access immediatel
 		if (environmentAdminVolumeCreated) {
 			await page.request
 				.delete(
-					`/api/environments/0/volumes/${encodeURIComponent(environmentAdminVolumeName)}?force=true`
+					`/api/agents/0/volumes/${encodeURIComponent(environmentAdminVolumeName)}?force=true`
 				)
 				.catch(() => undefined);
 		}
@@ -849,7 +842,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			}
 		}
 		if (remoteEnvironment) {
-			await removeApiResource(page, `/api/environments/${remoteEnvironment.id}`);
+			await removeApiResource(page, `/api/agents/${remoteEnvironment.id}`);
 		}
 	}
 });

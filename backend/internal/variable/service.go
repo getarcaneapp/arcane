@@ -70,7 +70,7 @@ type (
 
 const (
 	globalVariablesImportedKVPrefix = "globalvars:imported:"
-	agentVariablesPath              = "/api/environments/0/templates/variables"
+	agentVariablesPath              = "/api/agents/0/templates/variables"
 	variableSyncTimeout             = 15 * time.Second
 )
 

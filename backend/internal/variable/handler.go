@@ -129,7 +129,7 @@ func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableS
 
 func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.EnvVariable], error) {
 	if input.EnvironmentID != "0" {
-		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.EnvVariable]](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
+		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.EnvVariable]](ctx, input.EnvironmentID, http.MethodGet, "/api/agents/0/templates/variables", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *t
 
 func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.EnvironmentID != "0" {
-		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.MessageResponse]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
+		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.MessageResponse]](ctx, input.EnvironmentID, http.MethodPut, "/api/agents/0/templates/variables", input.Body)
 		if err != nil {
 			return nil, err
 		}

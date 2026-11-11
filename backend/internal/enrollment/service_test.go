@@ -522,9 +522,9 @@ func TestEnrollmentService_EnrollSwarmNodeOfKnownCluster(t *testing.T) {
 	startEnrollmentTestAgent(t, h.tunnels, "enroll-manager", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/environments/0/swarm/status":
+		case "/api/agents/0/swarm/status":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"enabled":true,"clusterId":"cluster1"}}`))
-		case "/api/environments/0/swarm/nodes/workernode1":
+		case "/api/agents/0/swarm/nodes/workernode1":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"workernode1","hostname":"worker-1","role":"worker","agent":{"state":"none"}}}`))
 		default:
 			http.NotFound(w, r)
@@ -588,9 +588,9 @@ func TestEnrollmentService_SwarmNodeEnrollsThroughManagerWhenItsParentIsOffline(
 	startEnrollmentTestAgent(t, h.tunnels, "joined-manager", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/environments/0/swarm/status":
+		case "/api/agents/0/swarm/status":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"enabled":true,"clusterId":"cluster5"}}`))
-		case "/api/environments/0/swarm/nodes/workernode5":
+		case "/api/agents/0/swarm/nodes/workernode5":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"workernode5","hostname":"worker-5","role":"worker","agent":{"state":"none"}}}`))
 		default:
 			http.NotFound(w, r)

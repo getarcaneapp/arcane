@@ -153,7 +153,7 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if input.EnvironmentID != "0" {
-				path := fmt.Sprintf("/api/environments/0/activities/%s?limit=%d", url.PathEscape(input.ActivityID), input.Limit)
+				path := fmt.Sprintf("/api/agents/0/activities/%s?limit=%d", url.PathEscape(input.ActivityID), input.Limit)
 				out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.ActivityDetail]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
 				if proxyErr != nil {
 					return nil, proxyErr
@@ -185,7 +185,7 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *types.Environ
 	}
 
 	if input.EnvironmentID != "0" {
-		out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.ActivityClearHistoryResult]](ctx, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
+		out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.ActivityClearHistoryResult]](ctx, input.EnvironmentID, http.MethodDelete, "/api/agents/0/activities/history", nil)
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
@@ -216,7 +216,7 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *ActivityAct
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			if input.EnvironmentID != "0" {
-				path := fmt.Sprintf("/api/environments/0/activities/%s?action=cancel", url.PathEscape(input.ActivityID))
+				path := fmt.Sprintf("/api/agents/0/activities/%s?action=cancel", url.PathEscape(input.ActivityID))
 				if requestedBy != "" {
 					path += "&requestedBy=" + url.QueryEscape(requestedBy)
 				}
@@ -500,7 +500,7 @@ func (h *ActivityHandler) listRemoteActivities(
 				query.Set(key, value)
 			}
 		}
-		remote, err := fetch("/api/environments/0/activities?" + query.Encode())
+		remote, err := fetch("/api/agents/0/activities?" + query.Encode())
 		if err != nil {
 			return nil, 0, err
 		}

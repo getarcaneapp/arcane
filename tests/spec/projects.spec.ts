@@ -13,8 +13,8 @@ import { getCodeMirrorValue, setCodeMirrorValue } from '../utils/playwright.util
 
 const ROUTES = {
 	page: '/projects',
-	apiProjects: '/api/environments/0/projects',
-	apiUpdaterRun: '/api/environments/0/updater/run',
+	apiProjects: '/api/agents/0/projects',
+	apiUpdaterRun: '/api/agents/0/updater/run',
 	newProject: '/projects/new'
 };
 
@@ -60,7 +60,7 @@ async function fetchProjectDetail(
 	section: '' | '/compose' = ''
 ): Promise<Project> {
 	const project = await readApiData<Project>(
-		await page.request.get(`/api/environments/0/projects/${projectId}${section}`),
+		await page.request.get(`/api/agents/0/projects/${projectId}${section}`),
 		`Get project ${projectId}`
 	);
 	expect(project.id).toBeTruthy();
@@ -79,7 +79,7 @@ async function fetchLatestProjectDeployActivity(
 		limit: '10'
 	});
 	const activities = await readApiData<Activity[]>(
-		await page.request.get(`/api/environments/0/activities?${params.toString()}`),
+		await page.request.get(`/api/agents/0/activities?${params.toString()}`),
 		'List project deploy activities'
 	);
 	expect(Array.isArray(activities)).toBe(true);
@@ -117,7 +117,7 @@ function getPathname(url: string): string {
 function isProjectDeployAction(url: string, action: 'up' | 'redeploy'): boolean {
 	const parsed = new URL(url, 'http://localhost');
 	return (
-		/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy$/.test(parsed.pathname) &&
+		/\/api\/agents\/[^/]+\/projects\/[^/]+\/deploy$/.test(parsed.pathname) &&
 		parsed.searchParams.get('action') === action
 	);
 }
@@ -200,7 +200,7 @@ async function createProjectViaUI(
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'POST' &&
-			/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+			/\/api\/agents\/[^/]+\/projects$/.test(getPathname(response.url()))
 	);
 	await createButton.click();
 	await expectProjectCreateResponse(createResponsePromise);
@@ -254,7 +254,7 @@ async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
 		return;
 	}
 
-	await removeApiResource(page, `/api/environments/0/projects/${encodeURIComponent(projectId)}`, {
+	await removeApiResource(page, `/api/agents/0/projects/${encodeURIComponent(projectId)}`, {
 		data: {
 			removeVolumes: true
 		}
@@ -444,7 +444,7 @@ test.describe('Projects Page', () => {
 			}
 		);
 
-		await page.route('**/api/environments/*/updater/run', async (route) => {
+		await page.route('**/api/agents/*/updater/run', async (route) => {
 			updaterRunRequests += 1;
 			await route.fulfill({
 				status: 200,
@@ -613,7 +613,7 @@ test.describe('New Compose Project Page', () => {
 			await setCodeMirrorValue(envEditor, envFile);
 			await expect(envEditor).toContainText('nginx');
 
-			await page.route('/api/environments/*/projects', async (route) => {
+			await page.route('/api/agents/*/projects', async (route) => {
 				if (route.request().method() === 'POST') {
 					const response = await route.fetch();
 					const responseBody = await response.text();
@@ -639,7 +639,7 @@ test.describe('New Compose Project Page', () => {
 			const createResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+					/\/api\/agents\/[^/]+\/projects$/.test(getPathname(response.url()))
 			);
 			await createButton.click();
 			await expectProjectCreateResponse(createResponsePromise);
@@ -671,7 +671,7 @@ test.describe('New Compose Project Page', () => {
 			await expect(serviceNameWhenStopped.or(emptyServicesState).first()).toBeVisible();
 
 			await page.route(
-				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=pull/,
+				/\/api\/agents\/[^/]+\/projects\/[^/]+\/deploy\?action=pull/,
 				async (route) => {
 					projectPullRequestCount += 1;
 					await route.continue();
@@ -721,7 +721,7 @@ test.describe('New Compose Project Page', () => {
 			await page.mouse.wheel(0, -100000);
 
 			await page.route(
-				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=up/,
+				/\/api\/agents\/[^/]+\/projects\/[^/]+\/deploy\?action=up/,
 				async (route) => {
 					await route.fulfill({
 						status: 200,
@@ -803,7 +803,7 @@ test.describe('New Compose Project Page', () => {
 			await page.mouse.wheel(0, -100000);
 
 			await page.route(
-				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=redeploy/,
+				/\/api\/agents\/[^/]+\/projects\/[^/]+\/deploy\?action=redeploy/,
 				async (route) => {
 					await route.fulfill({
 						status: 200,
@@ -1187,7 +1187,7 @@ test.describe('Project Detail Page', () => {
 		const projectName = `test-project-update-check-${Date.now()}`;
 		const projectID = await createProjectViaUI(page, projectName);
 		const project = await readApiData<Project>(
-			await page.request.get(`/api/environments/0/projects/${projectID}/updates`),
+			await page.request.get(`/api/agents/0/projects/${projectID}/updates`),
 			`Get project ${projectID} update metadata`
 		);
 		expect(
@@ -1198,7 +1198,7 @@ test.describe('Project Detail Page', () => {
 		let checkRequests = 0;
 		let updaterRunRequests = 0;
 
-		await page.route(`**/api/environments/*/updater/projects/${projectID}/check`, async (route) => {
+		await page.route(`**/api/agents/*/updater/projects/${projectID}/check`, async (route) => {
 			checkRequests += 1;
 			expect(route.request().method()).toBe('POST');
 			expect(route.request().postDataJSON()).toEqual({});
@@ -1209,7 +1209,7 @@ test.describe('Project Detail Page', () => {
 			});
 		});
 
-		await page.route('**/api/environments/*/updater/run', async (route) => {
+		await page.route('**/api/agents/*/updater/run', async (route) => {
 			updaterRunRequests += 1;
 			await route.fulfill({
 				status: 200,
@@ -1614,7 +1614,7 @@ test.describe('Project Detail Page', () => {
 		).toBeGreaterThan(0);
 
 		const targetProject = realProjects[0];
-		await page.routeWebSocket('**/api/environments/*/ws/projects/*/logs**', (ws) => {
+		await page.routeWebSocket('**/api/agents/*/ws/projects/*/logs**', (ws) => {
 			void ws.close({ code: 1013, reason: 'forced failure' });
 		});
 

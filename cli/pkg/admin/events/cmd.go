@@ -73,11 +73,11 @@ func newListCmd() *cobra.Command {
 		},
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, command)
-	command.Annotations["arcane:scope-flag"] = "environment"
+	command.Annotations["arcane:scope-flag"] = "per-agent"
 	command.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of events to show")
 	command.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	command.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
-	command.Flags().BoolVar(&opts.envOnly, "environment", false, "List each environment's events instead of global events")
+	command.Flags().BoolVar(&opts.envOnly, "per-agent", false, "List each agent's events instead of global events")
 	return command
 }
 

@@ -42,17 +42,17 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<ImageListResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/images`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/images`, { ...config, params });
 		return res.data;
 	}
 
 	async getImageUsageCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ImageUsageCounts> {
-		const res = await this.api.get(`/environments/${environmentId}/images/counts`, config);
+		const res = await this.api.get(`/agents/${environmentId}/images/counts`, config);
 		return res.data.data;
 	}
 
 	async getImageForEnvironment(environmentId: string, imageId: string): Promise<ImageDetailSummary> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/images/${imageId}`));
 	}
 
 	async getImageAttestationsForEnvironment(
@@ -66,7 +66,7 @@ class ImageService extends BaseAPIService {
 		if (options?.statement) params['statement'] = 'true';
 
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/images/${imageId}/attestations`, {
+			this.api.get(`/agents/${environmentId}/images/${imageId}/attestations`, {
 				params
 			})
 		);
@@ -81,25 +81,23 @@ class ImageService extends BaseAPIService {
 		if (options?.version) params['version'] = options.version;
 		if (options?.digest) params['digest'] = options.digest;
 
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/updates/releasenotes`, { params }));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/images/updates/releasenotes`, { params }));
 	}
 
 	async tagImage(imageId: string, request: ImageTagRequest, environmentId: string): Promise<MessageResponse> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/tag`, request)
-		);
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/${encodeURIComponent(imageId)}/tag`, request));
 	}
 
 	async getImageHistory(imageId: string, environmentId: string): Promise<ImageHistoryItem[]> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/history`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/images/${encodeURIComponent(imageId)}/history`));
 	}
 
 	async searchImages(term: string, environmentId: string): Promise<ImageSearchResult[]> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/search`, { params: { term } }));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/images/search`, { params: { term } }));
 	}
 
 	async getImageExportUrl(imageId: string, environmentId: string): Promise<string> {
-		return `/api/environments/${environmentId}/images/${encodeURIComponent(imageId)}/export`;
+		return `/api/agents/${environmentId}/images/${encodeURIComponent(imageId)}/export`;
 	}
 
 	async pullImageStream(
@@ -110,7 +108,7 @@ class ImageService extends BaseAPIService {
 		const operationResult = await tryCatch(
 			(async () => {
 				const body = await this.postStreamInternal(
-					`/api/environments/${environmentId}/images/pull`,
+					`/api/agents/${environmentId}/images/pull`,
 					{ imageName },
 					(status) => `${m.images_pull_server_error()}: HTTP ${status}`
 				);
@@ -143,7 +141,7 @@ class ImageService extends BaseAPIService {
 	}
 
 	async buildImageStream(request: ImageBuildRequest, environmentId: string, onLine: (line: string) => boolean): Promise<void> {
-		const body = await this.postStreamInternal(`/api/environments/${environmentId}/images/build`, request, (status) =>
+		const body = await this.postStreamInternal(`/api/agents/${environmentId}/images/build`, request, (status) =>
 			m.build_request_failed_http({ status })
 		);
 		const reader = body.getReader();
@@ -192,7 +190,7 @@ class ImageService extends BaseAPIService {
 		auth: ContainerRegistryCredential | undefined,
 		environmentId: string
 	): Promise<string> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/pull`, { imageName, tag, auth }));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/pull`, { imageName, tag, auth }));
 	}
 
 	async deleteImage(
@@ -200,16 +198,16 @@ class ImageService extends BaseAPIService {
 		options: { force?: boolean; noprune?: boolean } | undefined,
 		environmentId: string
 	): Promise<MessageResponse> {
-		return this.handleResponse(this.api.delete(`/environments/${environmentId}/images/${imageId}`, { params: options }));
+		return this.handleResponse(this.api.delete(`/agents/${environmentId}/images/${imageId}`, { params: options }));
 	}
 
 	async pruneImages(options: PruneImagesOptions, environmentId: string): Promise<ImagePruneReport> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/prune`, options));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/prune`, options));
 	}
 
 	async patchImage(imageId: string, options: PatchOptions | undefined, environmentId: string): Promise<PatchRecord> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
+			this.api.post(`/agents/${environmentId}/images/${encodeURIComponent(imageId)}/patch`, options ?? {})
 		);
 	}
 
@@ -219,33 +217,31 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<PatchTarget>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/images/patches/targets`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/images/patches/targets`, { ...config, params });
 		return res.data;
 	}
 
 	async checkImageUpdateByID(imageId: string, environmentId: string): Promise<ImageUpdateResponse> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/updates/check/${imageId}`, {}));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/updates/check/${imageId}`, {}));
 	}
 
 	async checkAllImages(environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/images/updates/check`, {}, { params: { action: 'all' } })
-		);
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/updates/check`, {}, { params: { action: 'all' } }));
 	}
 
 	async checkMultipleImages(imageRefs: string[], environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/images/updates/check`, { imageRefs }, { params: { action: 'batch' } })
+			this.api.post(`/agents/${environmentId}/images/updates/check`, { imageRefs }, { params: { action: 'batch' } })
 		);
 	}
 
 	async runAutoUpdate(options: UpdaterOptions | undefined, environmentId: string): Promise<UpdaterResult> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/updater/run`, options));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/updater/run`, options));
 	}
 
 	async uploadImage(file: File, environmentId: string, onProgress?: UploadProgressCallback): Promise<ImageLoadResult> {
 		const uploadId = await uploadService.uploadFile(environmentId, 'image', file, onProgress);
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/upload`, { uploadId }));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/upload`, { uploadId }));
 	}
 
 	async getImageBuilds(
@@ -254,12 +250,12 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<ImageBuildRecord>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/images/builds`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/images/builds`, { ...config, params });
 		return res.data;
 	}
 
 	async getImageBuild(buildId: string, environmentId: string): Promise<ImageBuildRecord> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/builds/${buildId}`));
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/images/builds/${buildId}`));
 	}
 }
 

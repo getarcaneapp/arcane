@@ -569,7 +569,7 @@ func TestGRPCTunnelHandler(t *testing.T) {
 		{
 			name:    "regular api request",
 			method:  http.MethodPost,
-			path:    "/api/environments/pair",
+			path:    "/api/agents/pair",
 			headers: http.Header{"Content-Type": {"application/json"}},
 		},
 		{

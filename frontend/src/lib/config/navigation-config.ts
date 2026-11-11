@@ -217,7 +217,7 @@ export const navigationItems: NavigationSections = {
 	adminItems: [
 		{
 			title: m.environments_title(),
-			url: resolve('/(app)/environments'),
+			url: resolve('/(app)/agents'),
 			icon: EnvironmentsIcon,
 			shortcut: ['mod', '3'],
 			accessSurfaceId: 'route.environments'

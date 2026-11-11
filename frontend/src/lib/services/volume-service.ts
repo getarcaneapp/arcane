@@ -13,42 +13,42 @@ class VolumeService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<VolumesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/volumes`, { ...config, params });
+		const res = await this.api.get(`/agents/${environmentId}/volumes`, { ...config, params });
 		return res.data;
 	}
 
 	async getVolumeForEnvironment(environmentId: string, volumeName: string): Promise<Volume> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<Volume>;
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/volumes/${volumeName}`)) as Promise<Volume>;
 	}
 
 	async getVolumeUsage(volumeName: string, environmentId: string): Promise<VolumeUsageResponse> {
 		return this.handleResponse(
-			this.api.get(`/environments/${environmentId}/volumes/${volumeName}/usage`)
+			this.api.get(`/agents/${environmentId}/volumes/${volumeName}/usage`)
 		) as Promise<VolumeUsageResponse>;
 	}
 
 	async getVolumeUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<VolumeUsageCounts> {
-		const res = await this.api.get(`/environments/${environmentId}/volumes/counts`, config);
+		const res = await this.api.get(`/agents/${environmentId}/volumes/counts`, config);
 		return res.data.data;
 	}
 
 	async getVolumeSizes(environmentId: string, config?: APIRequestConfig): Promise<VolumeSizeInfo[]> {
-		const res = await this.api.get(`/environments/${environmentId}/volumes/sizes`, config);
+		const res = await this.api.get(`/agents/${environmentId}/volumes/sizes`, config);
 		return res.data.data;
 	}
 
 	async createVolume(options: VolumeCreate, environmentId: string): Promise<Volume> {
-		return this.handleResponse(this.api.post(`/environments/${environmentId}/volumes`, options));
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/volumes`, options));
 	}
 
 	async renameVolume(sourceName: string, options: VolumeRename, environmentId: string): Promise<Volume> {
 		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/volumes/${encodeURIComponent(sourceName)}/rename`, options)
+			this.api.post(`/agents/${environmentId}/volumes/${encodeURIComponent(sourceName)}/rename`, options)
 		) as Promise<Volume>;
 	}
 
 	async deleteVolume(volumeName: string, environmentId: string): Promise<MessageResponse> {
-		return this.handleResponse(this.api.delete(`/environments/${environmentId}/volumes/${volumeName}`));
+		return this.handleResponse(this.api.delete(`/agents/${environmentId}/volumes/${volumeName}`));
 	}
 }
 

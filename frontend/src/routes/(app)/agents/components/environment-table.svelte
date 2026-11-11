@@ -263,7 +263,7 @@
 			<button
 				type="button"
 				class="h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium text-foreground hover:underline"
-				onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
+				onclick={() => goto(resolve('/(app)/agents/[id]', { id: item.id }))}
 			>
 				{item.name}
 			</button>
@@ -328,13 +328,13 @@
 			}
 		]}
 		rowActions={RowActions}
-		href={(item: Environment) => resolve('/(app)/environments/[id]', { id: item.id })}
+		href={(item: Environment) => resolve('/(app)/agents/[id]', { id: item.id })}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
 	<RowActionsMenu name={item.name || item.id}>
-		<DropdownMenu.Item onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}>
+		<DropdownMenu.Item onclick={() => goto(resolve('/(app)/agents/[id]', { id: item.id }))}>
 			<InspectIcon class="size-4" />
 			{m.common_view_details()}
 		</DropdownMenu.Item>

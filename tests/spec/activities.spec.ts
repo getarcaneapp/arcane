@@ -91,7 +91,7 @@ function activity(
 }
 
 function activityEnvironmentIdFromPath(pathname: string): string | null {
-	const match = pathname.match(/^\/api\/environments\/([^/]+)\/activities$/);
+	const match = pathname.match(/^\/api\/agents\/([^/]+)\/activities$/);
 	return match ? decodeURIComponent(match[1]) : null;
 }
 
@@ -99,7 +99,7 @@ async function mockSession(
 	page: Page,
 	{ environments, resolveUser }: { environments: MockEnvironment[]; resolveUser?: () => MockUser }
 ) {
-	await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
+	await page.context().route(/\/api\/agents(?:\?.*)?$/, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -189,36 +189,34 @@ async function mockActivityReads(
 		});
 	});
 
-	await page
-		.context()
-		.route(/\/api\/environments\/[^/]+\/activities(?:\?.*)?$/, async (route: Route) => {
-			const url = new URL(route.request().url());
-			const environmentId = activityEnvironmentIdFromPath(url.pathname);
-			if (!environmentId) {
-				await route.continue();
-				return;
-			}
-			readEnvironmentIds?.push(environmentId);
+	await page.context().route(/\/api\/agents\/[^/]+\/activities(?:\?.*)?$/, async (route: Route) => {
+		const url = new URL(route.request().url());
+		const environmentId = activityEnvironmentIdFromPath(url.pathname);
+		if (!environmentId) {
+			await route.continue();
+			return;
+		}
+		readEnvironmentIds?.push(environmentId);
 
-			if (failedEnvironmentIds.has(environmentId)) {
-				await route.fulfill({
-					status: failedActivityStatus,
-					contentType: 'application/json',
-					body: JSON.stringify({
-						success: false,
-						message: 'environment unavailable',
-						detail: 'permission denied: activities:read'
-					})
-				});
-				return;
-			}
-
+		if (failedEnvironmentIds.has(environmentId)) {
 			await route.fulfill({
-				status: 200,
+				status: failedActivityStatus,
 				contentType: 'application/json',
-				body: JSON.stringify(paginated(activitiesByEnvironment[environmentId] ?? []))
+				body: JSON.stringify({
+					success: false,
+					message: 'environment unavailable',
+					detail: 'permission denied: activities:read'
+				})
 			});
+			return;
+		}
+
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(paginated(activitiesByEnvironment[environmentId] ?? []))
 		});
+	});
 }
 
 function waitForActivityRead(page: Page, environmentId: string) {
@@ -274,7 +272,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 			const request = response.request();
 			return (
 				request.method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/networks$/.test(new URL(response.url()).pathname)
+				/\/api\/agents\/[^/]+\/networks$/.test(new URL(response.url()).pathname)
 			);
 		},
 		{ timeout: 15000 }
@@ -348,7 +346,7 @@ test.describe('Activity Center', () => {
 		);
 		page.on('request', (request) => {
 			const pathname = new URL(request.url()).pathname;
-			if (/^\/api\/environments\/[^/]+\/containers\/counts$/.test(pathname)) {
+			if (/^\/api\/agents\/[^/]+\/containers\/counts$/.test(pathname)) {
 				countRequests.push(pathname);
 			}
 		});
@@ -364,9 +362,9 @@ test.describe('Activity Center', () => {
 		await expect(activityRow(activityCenter, 'local-network')).toHaveCount(0);
 		await expect.poll(() => activityReads).toContain('remote-activity-test');
 		expect(activityReads).not.toContain('0');
-		await expect.poll(() => countRequests).toContain('/api/environments/0/containers/counts');
+		await expect.poll(() => countRequests).toContain('/api/agents/0/containers/counts');
 		expect(countRequests.some((pathname) => pathname.includes('remote-activity-test'))).toBe(false);
-		expect(statsSockets).not.toContain('/api/environments/remote-activity-test/ws/system/stats');
+		expect(statsSockets).not.toContain('/api/agents/remote-activity-test/ws/system/stats');
 	});
 
 	test('does not mount the activity center without an effective read scope', async ({ page }) => {
@@ -424,7 +422,7 @@ test.describe('Activity Center', () => {
 					: ''
 			});
 		});
-		await page.context().route(/\/api\/environments\/0\/activities(?:\?.*)?$/, async (route) => {
+		await page.context().route(/\/api\/agents\/0\/activities(?:\?.*)?$/, async (route) => {
 			const requestedBy = activeUserId;
 			const resourceName = requestedBy === 'user-a' ? 'user-a-private-activity' : 'user-b-activity';
 			await route.fulfill({
@@ -536,9 +534,9 @@ test.describe('Activity Center', () => {
 		});
 
 		const deletedEnvironments: string[] = [];
-		await page.route(/\/api\/environments\/[^/]+\/activities\/history$/, async (route) => {
+		await page.route(/\/api\/agents\/[^/]+\/activities\/history$/, async (route) => {
 			const url = new URL(route.request().url());
-			const match = url.pathname.match(/^\/api\/environments\/([^/]+)\/activities\/history$/);
+			const match = url.pathname.match(/^\/api\/agents\/([^/]+)\/activities\/history$/);
 			const environmentId = match ? decodeURIComponent(match[1]) : '';
 			deletedEnvironments.push(environmentId);
 
@@ -585,7 +583,7 @@ test.describe('Activity Center', () => {
 			expect(created.activityId).toBeTruthy();
 
 			const [environmentResponse, userResponse] = await Promise.all([
-				page.request.get('/api/environments/0'),
+				page.request.get('/api/agents/0'),
 				page.request.get('/api/auth/me')
 			]);
 			expect(environmentResponse.ok()).toBeTruthy();
@@ -623,7 +621,7 @@ test.describe('Activity Center', () => {
 		} finally {
 			await removeApiResource(
 				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkId ?? networkName)}`
+				`/api/agents/0/networks/${encodeURIComponent(networkId ?? networkName)}`
 			);
 		}
 	});

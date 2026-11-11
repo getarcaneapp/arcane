@@ -42,7 +42,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-project-updates",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/updater/projects/{projectId}/check",
+		Path:        "/agents/{id}/updater/projects/{projectId}/check",
 		Summary:     "Check project service updates",
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -50,7 +50,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "run-updater",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/updater/run",
+		Path:        "/agents/{id}/updater/run",
 		Summary:     "Run updater",
 		Description: "Apply pending container updates",
 		Tags:        []string{"Updater"},
@@ -60,7 +60,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-status",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/updater/status",
+		Path:        "/agents/{id}/updater/status",
 		Summary:     "Get updater status",
 		Description: "Get the current status of the updater",
 		Tags:        []string{"Updater"},
@@ -70,7 +70,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-history",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/updater/history",
+		Path:        "/agents/{id}/updater/history",
 		Summary:     "Get updater history",
 		Description: "Get the history of update operations",
 		Tags:        []string{"Updater"},
@@ -83,7 +83,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/update",
+		Path:        "/agents/{id}/containers/{containerId}/update",
 		Summary:     "Update a single container",
 		Description: "Pull the latest image and apply the appropriate update strategy for a specific container",
 		Tags:        []string{"Updater", "Containers"},

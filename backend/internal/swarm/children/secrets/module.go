@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "list-swarm-secrets",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/secrets",
+			Path:        "/agents/{id}/swarm/secrets",
 			Summary:     "List swarm secrets",
 			Tags: []string{
 				"Swarm",
@@ -32,7 +32,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-secret",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/secrets/{secretId}",
+			Path:        "/agents/{id}/swarm/secrets/{secretId}",
 			Summary:     "Get swarm secret",
 			Tags: []string{
 				"Swarm",
@@ -47,7 +47,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "create-swarm-secret",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/secrets",
+			Path:        "/agents/{id}/swarm/secrets",
 			Summary:     "Create swarm secret",
 			Tags: []string{
 				"Swarm",
@@ -62,7 +62,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "update-swarm-secret",
 			Method:      http.MethodPut,
-			Path:        "/environments/{id}/swarm/secrets/{secretId}",
+			Path:        "/agents/{id}/swarm/secrets/{secretId}",
 			Summary:     "Update swarm secret labels",
 			Tags: []string{
 				"Swarm",
@@ -77,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "delete-swarm-secret",
 			Method:      http.MethodDelete,
-			Path:        "/environments/{id}/swarm/secrets/{secretId}",
+			Path:        "/agents/{id}/swarm/secrets/{secretId}",
 			Summary:     "Delete swarm secret",
 			Tags: []string{
 				"Swarm",
