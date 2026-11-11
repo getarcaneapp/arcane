@@ -26,6 +26,7 @@ import (
 type (
 	fakeSystemd struct {
 		startErr     error
+		owners       map[uint32]string
 		availability types.PodmanSystemdAvailability
 		statuses     []types.PodmanUnitStatus
 		loaded       []string
@@ -81,6 +82,14 @@ func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUn
 		ActiveState: status.ActiveState,
 		SubState:    status.SubState,
 	}, nil
+}
+
+func (f *fakeSystemd) UnitByPID(_ context.Context, pid uint32) (string, error) {
+	unit, ok := f.owners[pid]
+	if !ok {
+		return "", common.Classify(common.ErrNotFound, errors.New("no unit for process"))
+	}
+	return unit, nil
 }
 
 func newTestServer(t *testing.T, host *testHost) *httptest.Server {
@@ -380,7 +389,13 @@ func TestServiceContainerUnitAction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			systemd := &fakeSystemd{
 				availability: types.PodmanSystemdAvailability{Available: true},
-				loaded:       []string{"web.service", "worker@1.service", "solo@1.service"},
+				loaded:       []string{"web.service", "worker@1.service", "solo@1.service", "nginx.service"},
+				owners: map[uint32]string{
+					101: "web.service",
+					102: "libpod-conmon-fed654cba321.scope",
+					103: "worker@1.service",
+					104: "solo@1.service",
+				},
 			}
 			svc := newTestService(t, &testHost{
 				engine:  "podman",
@@ -396,6 +411,18 @@ func TestServiceContainerUnitAction(t *testing.T) {
 							{"Id":"cd2222000444","Names":["plain"]},
 							{"Id":"ef5555000555","Names":["solo"],"Labels":{"PODMAN_SYSTEMD_UNIT":"solo@1.service"}}
 						]`))
+					},
+					"/containers/abc123def456/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`{"State":{"ConmonPid":101}}`))
+					},
+					"/containers/fed654cba321/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`{"State":{"ConmonPid":102}}`))
+					},
+					"/containers/cd1111000333/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`{"State":{"ConmonPid":103}}`))
+					},
+					"/containers/ef5555000555/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`{"State":{"ConmonPid":104}}`))
 					},
 					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
 						_, _ = w.Write([]byte(`[
@@ -436,6 +463,7 @@ func TestServiceContainerUnitActionSystemdManaged(t *testing.T) {
 					Reason:    "bus not mounted",
 				},
 				loaded: []string{"web.service"},
+				owners: map[uint32]string{101: "web.service"},
 			}
 			svc := newTestService(t, &testHost{
 				engine:  "podman",
@@ -444,6 +472,9 @@ func TestServiceContainerUnitActionSystemdManaged(t *testing.T) {
 				routes: map[string]http.HandlerFunc{
 					"/containers/json": func(w http.ResponseWriter, _ *http.Request) {
 						_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
+					},
+					"/containers/abc123def456/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`{"State":{"ConmonPid":101}}`))
 					},
 					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
 						_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))

@@ -26,6 +26,7 @@ type (
 		Stop(ctx context.Context, unit string) error
 		Restart(ctx context.Context, unit string) error
 		UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error)
+		UnitByPID(ctx context.Context, pid uint32) (string, error)
 	}
 
 	SystemdConfig struct {
@@ -143,6 +144,26 @@ func (s *dbusSystemd) UnitStatus(ctx context.Context, unit string) (types.Podman
 	}, nil
 }
 
+func (s *dbusSystemd) UnitByPID(ctx context.Context, pid uint32) (string, error) {
+	if pid == 0 {
+		return "", common.Classify(common.ErrNotFound, errors.New("process is not running"))
+	}
+	conn, err := s.connect(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	unit, err := conn.GetUnitNameByPID(ctx, pid)
+	if dbusErr, ok := errors.AsType[godbus.Error](err); ok && dbusErr.Name == "org.freedesktop.systemd1.NoUnitForPID" {
+		return "", common.Classify(common.ErrNotFound, fmt.Errorf("find systemd unit for process %d: %w", pid, err))
+	}
+	if err != nil {
+		return "", fmt.Errorf("find systemd unit for process %d: %w", pid, err)
+	}
+	return unit, nil
+}
+
 func (s *dbusSystemd) connect(ctx context.Context) (*dbus.Conn, error) {
 	if s.address == "" {
 		return nil, common.Classify(common.ErrUnavailable, errors.New(s.reason))
@@ -178,8 +199,7 @@ func (s *dbusSystemd) runJob(ctx context.Context, unit, action string, start fun
 
 	done := make(chan string, 1)
 	if _, startErr := start(conn, done); startErr != nil {
-		var dbusErr godbus.Error
-		if errors.As(startErr, &dbusErr) && dbusErr.Name == "org.freedesktop.systemd1.NoSuchUnit" {
+		if dbusErr, ok := errors.AsType[godbus.Error](startErr); ok && dbusErr.Name == "org.freedesktop.systemd1.NoSuchUnit" {
 			return common.Classify(common.ErrNotFound, fmt.Errorf("%s systemd unit %s: %w", action, unit, startErr))
 		}
 		return fmt.Errorf("%s systemd unit %s: %w", action, unit, startErr)

@@ -30,10 +30,11 @@ import (
 
 type (
 	Config struct {
-		Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
-		NewSystemd    func(rootless bool) libpodman.Systemd
-		NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
-		Host          func() string
+		Engine          func(context.Context) (compat.EngineCompatibilityInfo, error)
+		ContainerLabels func(ctx context.Context, containerRef string) (map[string]string, error)
+		NewSystemd      func(rootless bool) libpodman.Systemd
+		NotifyUpdates   func(context.Context, []notifications.ContainerUpdateBatchEntry) error
+		Host            func() string
 	}
 
 	Service struct {
@@ -148,13 +149,19 @@ func (s *Service) PodCount(ctx context.Context) mo.Option[int] {
 
 func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, action func(libpodman.Systemd, context.Context, string) error) (bool, error) {
 	rt, err := s.detect(ctx)
-	if err != nil || containerRef == "" {
+	if errors.Is(err, common.ErrPodmanNotDetected) || containerRef == "" {
 		return false, nil
 	}
 
-	containers, err := rt.Client.ContainerList(ctx, nil, nil)
+	var containers []types.PodmanContainer
+	if err == nil {
+		containers, err = rt.Client.ContainerList(ctx, nil, nil)
+	}
 	if err != nil {
-		slog.WarnContext(ctx, "Could not list containers", "container", containerRef, "error", err)
+		labels, labelsErr := s.config.ContainerLabels(ctx, containerRef)
+		if unit := types.QuadletUnit(labels); labelsErr == nil && unit != "" {
+			return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is labelled with systemd unit %s, but Arcane cannot verify it: %w", containerRef, unit, err))
+		}
 		return false, nil
 	}
 
@@ -177,6 +184,18 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	}
 	if !availability.Available {
 		return true, common.Classify(common.ErrUnavailable, fmt.Errorf("container %s is managed by systemd unit %s, but Arcane cannot reach systemd: %s", containerRef, unit, availability.Reason))
+	}
+
+	conmonPID, err := rt.Client.ContainerConmonPID(ctx, match.ID)
+	if err != nil {
+		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
+	}
+	owner, err := rt.Systemd.UnitByPID(ctx, conmonPID)
+	if errors.Is(err, common.ErrNotFound) || (err == nil && owner != unit) {
+		return false, nil
+	}
+	if err != nil {
+		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
 	return true, action(rt.Systemd, ctx, unit)
 }

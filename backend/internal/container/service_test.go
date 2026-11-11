@@ -1873,6 +1873,10 @@ func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (types.P
 	}, nil
 }
 
+func (f *quadletTestSystemd) UnitByPID(context.Context, uint32) (string, error) {
+	return "web.service", nil
+}
+
 func (f *quadletTestSystemd) record(call string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1916,6 +1920,8 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 			_, _ = w.Write([]byte(`{"host":{"security":{"rootless":false}}}`))
 		case "/v4.0.0/libpod/containers/json":
 			_, _ = w.Write([]byte(`[{"Id":"quadlet-id","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
+		case "/v4.0.0/libpod/containers/quadlet-id/json":
+			_, _ = w.Write([]byte(`{"State":{"ConmonPid":101}}`))
 		case "/v4.0.0/libpod/quadlets/json":
 			_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
 		default:

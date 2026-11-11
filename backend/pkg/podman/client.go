@@ -59,6 +59,12 @@ type (
 		Ports []PodPortMapping `json:"Ports"`
 		types.PodmanContainer
 	}
+
+	containerInspectResponse struct {
+		State struct {
+			ConmonPid uint32 `json:"ConmonPid"`
+		} `json:"State"`
+	}
 )
 
 const (
@@ -166,6 +172,11 @@ func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]ty
 		})
 	}
 	return containers, nil
+}
+
+func (c *Client) ContainerConmonPID(ctx context.Context, nameOrID string) (uint32, error) {
+	inspect, err := c.doJSON[containerInspectResponse](ctx, request{method: http.MethodGet, path: "/containers/" + url.PathEscape(nameOrID) + "/json"})
+	return inspect.State.ConmonPid, err
 }
 
 func (c *Client) doJSON[T any](ctx context.Context, req request) (T, error) {
