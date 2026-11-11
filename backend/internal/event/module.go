@@ -82,7 +82,7 @@ func RegisterEvents(api huma.API, eventService *EventService, resolveEnvironment
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEventsByEnvironment",
 		Method:      "GET",
-		Path:        "/events/environment/{environmentId}",
+		Path:        "/events/agent/{environmentId}",
 		Summary:     "Get events by environment",
 		Description: "Get a paginated list of events for a specific environment",
 		Tags:        []string{"Events"},

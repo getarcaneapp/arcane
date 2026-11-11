@@ -29,7 +29,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "system", "containers", "start"},
+		[]string{"--config", configPath, "--agent", "0", "system", "containers", "start"},
 	)
 
 	require.Error(t, err,
@@ -45,7 +45,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 		partial bool
 		cancel  bool
 	}{
-		{name: "all environments succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
+		{name: "all agents succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -80,7 +80,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.ErrorContains(t, runErr, "re-run with --yes")
 				require.Empty(t, paths)
 				require.Empty(t, out)
-				require.ErrorContains(t, runErr, "in all 2 environments?")
+				require.ErrorContains(t, runErr, "in all 2 agents?")
 				require.NotContains(t, runErr.Error(), "Local")
 				return
 			}
@@ -91,7 +91,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.NoError(t, runErr, diagnostics)
 			}
 			var result struct {
-				Environments []jsontext.Value `json:"environments"`
+				Environments []jsontext.Value `json:"agents"`
 				Success      bool             `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)

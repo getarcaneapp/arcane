@@ -1,4 +1,4 @@
-package environments_test
+package agents_test
 
 import (
 	"encoding/json/v2"
@@ -29,7 +29,7 @@ func TestEnvironmentsCreatePrintsEnrollmentTokenAndInstallCommands(t *testing.T)
 	}))
 	defer srv.Close()
 
-	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "environments", "create", "--name", "Agent One"})
+	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "agents", "create", "--name", "Agent One"})
 	require.NoError(t, err, "stdout=%s\nstderr=%s", out, errOut)
 
 	require.Equal(t, map[string]any{"name": "Agent One", "enabled": true}, createBody)
@@ -50,7 +50,7 @@ func TestEnvironmentsTunnelRestartPrintsSession(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "environments", "tunnel", "restart", "env-1"})
+	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "agents", "tunnel", "restart", "env-1"})
 	require.NoError(t, err, "stdout=%s\nstderr=%s", out, errOut)
 	require.Contains(t, out, "Agent tunnel reconnected")
 	require.Contains(t, out, "session-new")

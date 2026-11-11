@@ -43,7 +43,7 @@ func PrintTable(cmd *cobra.Command, headers []string, rows [][]string, summaries
 	}
 	if combined != nil {
 		if combined.headers == nil {
-			combined.headers = slices.Concat([]string{"ENVIRONMENT"}, headers)
+			combined.headers = slices.Concat([]string{"AGENT"}, headers)
 		}
 		combined.rows = append(combined.rows, formatted...)
 		combined.summary.Total = kit.Ternary(combined.summary.Total < 0 || summary.Total < 0, -1, combined.summary.Total+summary.Total)

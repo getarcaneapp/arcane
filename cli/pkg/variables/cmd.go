@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
@@ -46,7 +49,7 @@ func printMutationResult(result types.GlobalVariableMutationResponse, message st
 		scope := "-"
 		switch {
 		case result.Variable.AllEnvironments:
-			scope = "all environments"
+			scope = "all agents"
 		case len(result.Variable.EnvironmentIDs) > 0:
 			scope = strings.Join(result.Variable.EnvironmentIDs, ",")
 		}
@@ -83,7 +86,7 @@ func newListCmd() *cobra.Command {
 						scope := "-"
 						switch {
 						case variable.AllEnvironments:
-							scope = "all environments"
+							scope = "all agents"
 						case len(variable.EnvironmentIDs) > 0:
 							scope = strings.Join(variable.EnvironmentIDs, ",")
 						}
@@ -110,12 +113,11 @@ func newListCmd() *cobra.Command {
 
 func newCreateCmd() *cobra.Command {
 	var opts struct {
-		key     string
-		value   string
-		envIDs  []string
-		secret  bool
-		inject  bool
-		allEnvs bool
+		key    string
+		value  string
+		envIDs []string
+		secret bool
+		inject bool
 	}
 	command := &cobra.Command{
 		Use:          "create",
@@ -132,7 +134,7 @@ func newCreateCmd() *cobra.Command {
 				Key:                  opts.key,
 				Value:                opts.value,
 				IsSecret:             opts.secret,
-				AllEnvironments:      opts.allEnvs,
+				AllEnvironments:      len(opts.envIDs) == 0,
 				InjectIntoContainers: opts.inject,
 				EnvironmentIDs:       opts.envIDs,
 			}
@@ -152,20 +154,18 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
 	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
-	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
-	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
+	command.Flags().StringArrayVar(&opts.envIDs, "agent", nil, "Agent ID to scope the variable to (repeatable; default: all agents)")
 	_ = command.MarkFlagRequired("key")
 	return command
 }
 
 func newUpdateCmd() *cobra.Command {
 	var opts struct {
-		key     string
-		value   string
-		envIDs  []string
-		secret  bool
-		inject  bool
-		allEnvs bool
+		key    string
+		value  string
+		envIDs []string
+		secret bool
+		inject bool
 	}
 	command := &cobra.Command{
 		Use:          "update <id>",
@@ -183,8 +183,8 @@ func newUpdateCmd() *cobra.Command {
 				{flag: "value", key: "value", value: opts.value},
 				{flag: "secret", key: "isSecret", value: opts.secret},
 				{flag: "inject", key: "injectIntoContainers", value: opts.inject},
-				{flag: "all-environments", key: "allEnvironments", value: opts.allEnvs},
-				{flag: "environment", key: "environmentIds", value: opts.envIDs},
+				{flag: "agent", key: "allEnvironments", value: slices.Equal(opts.envIDs, []string{"all"})},
+				{flag: "agent", key: "environmentIds", value: kit.Ternary(slices.Equal(opts.envIDs, []string{"all"}), nil, opts.envIDs)},
 			} {
 				if cmd.Flags().Changed(field.flag) {
 					req[field.key] = field.value
@@ -213,8 +213,7 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.value, "value", "", "Variable value")
 	command.Flags().BoolVar(&opts.secret, "secret", false, "Store the value as a secret")
 	command.Flags().BoolVar(&opts.inject, "inject", false, "Inject the variable into every container's environment (otherwise it is only available for ${VAR} interpolation)")
-	command.Flags().BoolVar(&opts.allEnvs, "all-environments", false, "Scope the variable to all environments")
-	command.Flags().StringArrayVar(&opts.envIDs, "environment", nil, "Environment ID to scope the variable to (repeatable)")
+	command.Flags().StringArrayVar(&opts.envIDs, "agent", nil, "Agent ID to scope the variable to (repeatable; pass \"all\" for every agent)")
 	return command
 }
 
@@ -270,7 +269,7 @@ func newSyncCmd() *cobra.Command {
 				Path:           clitypes.VariablesSync(),
 				FailureMessage: failureMessage,
 				Render: func(data []types.EnvironmentSyncStatus) error {
-					headers := []string{"ENVIRONMENT ID", "NAME", "STATUS", "LAST SYNCED", "ERROR"}
+					headers := []string{"AGENT ID", "NAME", "STATUS", "LAST SYNCED", "ERROR"}
 					rows := make([][]string, len(data))
 					for i, status := range data {
 						lastSynced := "-"
@@ -291,6 +290,6 @@ func newSyncCmd() *cobra.Command {
 			})
 		},
 	}
-	command.Flags().BoolVar(&opts.syncStatus, "status", false, "Show the last sync result per environment instead of triggering a sync")
+	command.Flags().BoolVar(&opts.syncStatus, "status", false, "Show the last sync result per agent instead of triggering a sync")
 	return command
 }

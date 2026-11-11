@@ -26,12 +26,12 @@ import (
 	runtimectx "getarcane.dev/cli/v3/internal/runtime"
 	"getarcane.dev/cli/v3/pkg/activities"
 	"getarcane.dev/cli/v3/pkg/admin"
+	"getarcane.dev/cli/v3/pkg/agents"
 	"getarcane.dev/cli/v3/pkg/auth"
 	"getarcane.dev/cli/v3/pkg/completion"
 	configClient "getarcane.dev/cli/v3/pkg/config"
 	"getarcane.dev/cli/v3/pkg/containers"
 	"getarcane.dev/cli/v3/pkg/doctor"
-	"getarcane.dev/cli/v3/pkg/environments"
 	"getarcane.dev/cli/v3/pkg/generate"
 	"getarcane.dev/cli/v3/pkg/gitops"
 	"getarcane.dev/cli/v3/pkg/images"
@@ -118,7 +118,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.EnumVarP(root, flags, &opts.logLevel, "log-level", "", "info", "Log level", "debug", "info", "warn", "error", "fatal")
 	flags.StringVarP(&opts.configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	cmdutil.EnumVarP(root, flags, &opts.outputMode, "output", "", "text", "Output mode", "text", "json")
-	flags.StringVar(&opts.envOverride, "env", "", "Limit this invocation to one environment ID (default: all environments)")
+	flags.StringVar(&opts.envOverride, "agent", "", "Limit this invocation to one agent ID (default: all agents)")
 	flags.BoolVarP(&opts.assumeYes, "yes", "y", false, "Automatic yes to prompts")
 	flags.BoolVar(&opts.noColor, "no-color", false, "Disable colored output")
 	flags.DurationVar(&opts.requestTimeout, "request-timeout", 0, "HTTP request timeout override (e.g. 30s, 2m)")
@@ -132,7 +132,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.SetScope(cmdutil.ScopeGlobal, generateCmd)
 	root.AddCommand(
 		configClient.Command(), completion.NewCommand(root), doctor.Command(), generateCmd, version.Command(), auth.Command(),
-		containers.Command(), imagesCmd, volumes.Command(), networks.Command(), projects.Command(), environments.Command(),
+		containers.Command(), imagesCmd, volumes.Command(), networks.Command(), projects.Command(), agents.Command(),
 		registries.Command(), repos.Command(), templates.Command(), settings.Command(), jobs.Command(), system.Command(),
 		updater.Command(), selfupdate.Command(), admin.Command(), gitops.Command(), variables.Command(), activities.Command(),
 		webhooks.Command(), podman.Command(),

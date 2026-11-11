@@ -149,11 +149,11 @@ func (a *AppContext) Environments(ctx context.Context) ([]types.Environment, err
 		}
 		response, err := c.GetJSON[[]types.Environment](ctx, clitypes.Environments()+"?limit=-1")
 		if statusErr, ok := errors.AsType[*client.StatusError](err); ok && statusErr.StatusCode == http.StatusForbidden {
-			a.environmentsErr = errors.New("these credentials cannot list environments; pass --env <id> to choose one")
+			a.environmentsErr = errors.New("these credentials cannot list agents; pass --agent <id> to choose one")
 			return
 		}
 		if err != nil {
-			a.environmentsErr = fmt.Errorf("failed to discover environments: %w", err)
+			a.environmentsErr = fmt.Errorf("failed to discover agents: %w", err)
 			return
 		}
 		a.environments = slices.DeleteFunc(response.Data, func(env types.Environment) bool { return !env.Enabled })

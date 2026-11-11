@@ -133,7 +133,7 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	if len(candidates) > 1 || len(failures) > 0 {
 		if !allowPrompt {
 			if allEnvironments {
-				return nil, false, fmt.Errorf("%s %q requires an environment selection; pass --env <id> or run `%s`", ref.Singular, identifier, ref.ListCmd)
+				return nil, false, fmt.Errorf("%s %q requires an agent selection; pass --agent <id> or run `%s`", ref.Singular, identifier, ref.ListCmd)
 			}
 			return nil, false, fmt.Errorf("multiple %s match %q; use %s or run `%s`", ref.Plural, identifier, ref.IDHint, ref.ListCmd)
 		}

@@ -391,7 +391,7 @@ func Events() string { return "/api/events" }
 func Event(id string) string { return pathf("/api/events/%s", id) }
 
 func EventsEnvironment(envID string) string {
-	return pathf("/api/events/environment/%s", envID)
+	return pathf("/api/events/agent/%s", envID)
 }
 
 func EventsStats() string { return "/api/events/stats" }

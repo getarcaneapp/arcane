@@ -59,7 +59,7 @@ func Command() *cobra.Command {
 					Status:  kit.Ternary(serverConfigured, "ok", "fail"),
 					Details: kit.Ternary(serverConfigured, cfg.ServerURL, "server_url is not configured (run `arcane config set server-url <url>`)"),
 				},
-				{Name: "environment", Status: "ok", Details: kit.Ternary(app.AllEnvironments(), "all", app.EnvID())},
+				{Name: "agent", Status: "ok", Details: kit.Ternary(app.AllEnvironments(), "all", app.EnvID())},
 				{
 					Name:    "auth",
 					Status:  kit.Ternary(hasAuth, "ok", "fail"),

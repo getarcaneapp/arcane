@@ -40,7 +40,7 @@ var (
 		"volumes",
 		"networks",
 		"projects",
-		"environments",
+		"agents",
 		"registries",
 		"templates",
 		"repos",
@@ -69,8 +69,8 @@ func NormalizePaginatedResource(resource string) string {
 		return "networks"
 	case "project":
 		return "projects"
-	case "environment":
-		return "environments"
+	case "agent":
+		return "agents"
 	case "registry", "registries":
 		return "registries"
 	case "template":

@@ -30,8 +30,8 @@ type (
 	}
 
 	environmentResult struct {
-		EnvironmentID   string         `json:"environmentId"`
-		EnvironmentName string         `json:"environmentName"`
+		EnvironmentID   string         `json:"agentId"`
+		EnvironmentName string         `json:"agentName"`
 		Error           string         `json:"error,omitempty"`
 		Result          jsontext.Value `json:"result,omitempty"`
 	}
@@ -98,7 +98,7 @@ func Scope(cmd *cobra.Command) string {
 func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
 	scope := Scope(cmd)
 	if scope == "" {
-		return fmt.Errorf("%s has no environment scope", cmd.CommandPath())
+		return fmt.Errorf("%s has no agent scope", cmd.CommandPath())
 	}
 	app, ok := runtime.From(cmd.Context())
 	if !ok || !app.AllEnvironments() {
@@ -127,16 +127,16 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		return err
 	}
 	if len(environments) == 0 {
-		return errors.New("no enabled environments available")
+		return errors.New("no enabled agents available")
 	}
 	if JSONOutputEnabled(cmd) || !prompt.IsInteractive() {
-		return errors.New("an environment destination is required; pass --env <id>")
+		return errors.New("an agent destination is required; pass --agent <id>")
 	}
 	options := make([]string, len(environments))
 	for i, env := range environments {
 		options[i] = fmt.Sprintf("%s (%s)", cmp.Or(env.Name, env.ID), env.ID)
 	}
-	choice, selectErr := prompt.Select("environment", options)
+	choice, selectErr := prompt.Select("agent", options)
 	if selectErr != nil {
 		return selectErr
 	}
@@ -163,7 +163,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		}
 		publicSettings, settingsErr := c.DoJSON[types.SettingsSnapshot](cmd.Context(), http.MethodGet, clitypes.SettingsPublic("0"), nil)
 		if settingsErr != nil {
-			return fmt.Errorf("failed to read the environment limit: %w", settingsErr)
+			return fmt.Errorf("failed to read the agent limit: %w", settingsErr)
 		}
 		for _, setting := range publicSettings.Settings {
 			if parsed, parseErr := strconv.Atoi(setting.Value); setting.Key == "allEnvironmentsLimit" && parseErr == nil && parsed > 0 {
@@ -181,7 +181,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		}
 		merged.failures = append(merged.failures, types.EnvironmentFailure{
 			Environment: types.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
-			Message:     fmt.Sprintf("not included: more than %d environments are shown at once", limit),
+			Message:     fmt.Sprintf("not included: more than %d agents are shown at once", limit),
 		})
 	}
 	commandContext := cmd.Context()
@@ -212,11 +212,11 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 		return discoveryErr
 	}
 	if mutation && len(environments) == 0 {
-		return errors.New("no enabled environments available")
+		return errors.New("no enabled agents available")
 	}
 	skip, _ := cmd.Flags().GetBool("force")
 	if mutation && !skip {
-		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{Label: fmt.Sprintf("%s in all %d environments?", cmd.Short, len(environments))})
+		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{Label: fmt.Sprintf("%s in all %d agents?", cmd.Short, len(environments))})
 		if confirmErr != nil {
 			return confirmErr
 		}
@@ -239,7 +239,7 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	defer output.Configure(stdout, stderr, jsonMode, app.NoColor, cmd.Short)
 	defer app.SelectEnvironment("")
 	result := struct {
-		Environments []environmentResult `json:"environments"`
+		Environments []environmentResult `json:"agents"`
 		Success      bool                `json:"success"`
 	}{Success: true, Environments: make([]environmentResult, len(environments))}
 	var failures []error
@@ -296,7 +296,7 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 		}
 	}
 	if len(environments) == 0 {
-		output.Info("No enabled environments")
+		output.Info("No enabled agents")
 	}
 	return errors.Join(failures...)
 }

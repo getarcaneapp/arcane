@@ -54,7 +54,7 @@ func newStatusCmd() *cobra.Command {
 				FailureMessage: "failed to get Podman status",
 				Render: func(data types.PodmanStatus) error {
 					if !data.Detected {
-						output.Info("Podman was not detected on this environment")
+						output.Info("Podman was not detected on this agent")
 						return nil
 					}
 					output.Header("Podman Status")

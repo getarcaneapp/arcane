@@ -40,24 +40,24 @@ func TestRunScopedMerged(t *testing.T) {
 		{
 			name: "table names rows from their tags", environments: `[{"id":"b","name":"Beta","enabled":true},{"id":"0","name":"Alpha","enabled":true}]`,
 			body: tagged, scope: "/api/agents/0,b/rows",
-			wantOut: []string{"ENVIRONMENT", "Alpha", "web", "Beta", "db", "Showing: 2/7 rows"},
+			wantOut: []string{"AGENT", "Alpha", "web", "Beta", "db", "Showing: 2/7 rows"},
 		},
 		{
-			name: "single environment names untagged rows from the scope", environments: `[{"id":"0","name":"Alpha","enabled":true}]`,
+			name: "single agent names untagged rows from the scope", environments: `[{"id":"0","name":"Alpha","enabled":true}]`,
 			body: `{"success":true,"data":[{"name":"web"}],"pagination":{"totalItems":1}}`, scope: "/api/agents/0/rows",
-			wantOut: []string{"ENVIRONMENT", "Alpha", "web"},
+			wantOut: []string{"AGENT", "Alpha", "web"},
 		},
 		{
-			name: "failed environments are named and returned", environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]`,
+			name: "failed agents are named and returned", environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]`,
 			body: `{"success":true,"data":[{"environmentId":"0","environmentName":"Alpha","name":"web"}],"pagination":{"totalItems":1},` +
 				`"failedEnvironments":[{"environment":{"id":"b","name":"b"},"message":"offline"}]}`,
 			scope: "/api/agents/0,b/rows", wantErr: "Beta (b): offline", wantOut: []string{"Alpha", "web"},
 		},
 		{
-			name:         "environments beyond the limit are reported and not sent",
+			name:         "agents beyond the limit are reported and not sent",
 			environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true},{"id":"c","name":"Gamma","enabled":true}]`,
 			body:         tagged, scope: "/api/agents/0,b/rows", limit: "2",
-			wantErr: "Gamma (c): not included: more than 2 environments are shown at once", wantOut: []string{"Alpha", "web", "Beta", "db"},
+			wantErr: "Gamma (c): not included: more than 2 agents are shown at once", wantOut: []string{"Alpha", "web", "Beta", "db"},
 		},
 		{
 			name: "JSON passes the merged response through", environments: `[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]`,
@@ -124,9 +124,9 @@ func TestRunScopedRefusals(t *testing.T) {
 	for _, tt := range []struct {
 		name, scope, status, wantErr string
 	}{
-		{name: "missing scope", wantErr: "list has no environment scope"},
-		{name: "forbidden discovery", scope: ScopeRead, status: "403", wantErr: "pass --env <id>"},
-		{name: "mutation confirms without names", scope: ScopeAll, status: "200", wantErr: "(List rows in all 2 environments?)"},
+		{name: "missing scope", wantErr: "list has no agent scope"},
+		{name: "forbidden discovery", scope: ScopeRead, status: "403", wantErr: "pass --agent <id>"},
+		{name: "mutation confirms without names", scope: ScopeAll, status: "200", wantErr: "(List rows in all 2 agents?)"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -32,7 +32,7 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 	defer srv.Close()
 
 	configPath := testutil.WriteConfig(t, srv.URL)
-	_, errOut, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "set", "dockerApiTimeout", "60"})
+	_, errOut, err := testutil.Execute(t, []string{"--config", configPath, "--agent", "0", "settings", "set", "dockerApiTimeout", "60"})
 	require.NoError(t, err, "execute: %v (%s)", err, errOut)
 
 	mu.Lock()
@@ -47,9 +47,9 @@ func TestSettingsSetRoutesScopeToEndpoint(t *testing.T) {
 		wantPath string
 		args     []string
 	}{
-		{name: "environment", args: []string{"--env", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/agents/3/settings"},
-		{name: "manager", args: []string{"--env", "3", "settings", "set", "--scope", "manager", "analyticsEnabled", "false"}, wantPath: "/api/settings"},
-		{name: "authentication", args: []string{"--env", "0", "settings", "set", "--scope", "authentication", "authSessionTimeout", "60"}, wantPath: "/api/settings/authentication"},
+		{name: "agent", args: []string{"--agent", "3", "settings", "set", "dockerApiTimeout", "60"}, wantPath: "/api/agents/3/settings"},
+		{name: "manager", args: []string{"--agent", "3", "settings", "set", "--scope", "manager", "analyticsEnabled", "false"}, wantPath: "/api/settings"},
+		{name: "authentication", args: []string{"--agent", "0", "settings", "set", "--scope", "authentication", "authSessionTimeout", "60"}, wantPath: "/api/settings/authentication"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestSettingsListRejectsUnknownScope(t *testing.T) {
 	defer srv.Close()
 
 	configPath := testutil.WriteConfig(t, srv.URL)
-	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "list", "--scope", "global"})
+	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--agent", "0", "settings", "list", "--scope", "global"})
 	require.EqualError(t, err, `invalid scope "global": must be environment, manager, or authentication`)
 }
 
@@ -105,6 +105,6 @@ func TestSettingsSetReturnsFieldErrorMessage(t *testing.T) {
 	defer srv.Close()
 
 	configPath := testutil.WriteConfig(t, srv.URL)
-	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "set", "dockerApiTimeout", "60"})
+	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--agent", "0", "settings", "set", "dockerApiTimeout", "60"})
 	require.EqualError(t, err, message)
 }

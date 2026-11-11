@@ -37,7 +37,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "containers", "start", "abc123"},
+		[]string{"--config", configPath, "--agent", "0", "containers", "start", "abc123"},
 	)
 
 	require.Error(t, err,
@@ -57,12 +57,12 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 		prefix      bool
 		explicit    bool
 	}{
-		{name: "unique environment", identifier: "abc123"},
+		{name: "unique agent", identifier: "abc123"},
 		{name: "duplicate ID", identifier: "abc123", duplicate: true},
 		{name: "partial search", identifier: "abc123", unavailable: true},
 		{name: "name search", identifier: "nginx", search: true},
 		{name: "ID prefix fallback", identifier: "abcd", prefix: true},
-		{name: "explicit environment", identifier: "abc123", duplicate: true, explicit: true},
+		{name: "explicit agent", identifier: "abc123", duplicate: true, explicit: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -104,14 +104,14 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json", "--yes"}
 			if tc.explicit {
-				args = append(args, "--env", "remote")
+				args = append(args, "--agent", "remote")
 			}
 			out, diagnostics, runErr := testutil.Execute(t, append(args, "containers", "start", tc.identifier))
 			mu.Lock()
 			paths := append([]string(nil), mutations...)
 			mu.Unlock()
 			if !tc.explicit && (tc.duplicate || tc.unavailable) {
-				require.ErrorContains(t, runErr, "pass --env")
+				require.ErrorContains(t, runErr, "pass --agent")
 				require.Empty(t, paths)
 				require.Empty(t, out)
 				return
@@ -124,7 +124,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			require.Equal(t, []string{"/api/agents/remote/containers/" + resourceID + "?action=start"}, paths)
 			var result map[string]any
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
-			require.NotContains(t, result, "environments")
+			require.NotContains(t, result, "agents")
 		})
 	}
 }
@@ -134,7 +134,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 		name        string
 		single, all bool
 	}{
-		{name: "explicit environment", single: true}, {name: "pagination"}, {name: "all items", all: true},
+		{name: "explicit agent", single: true}, {name: "pagination"}, {name: "all items", all: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -153,7 +153,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 			defer server.Close()
 			args := []string{"--config", testutil.WriteConfig(t, server.URL), "containers", "list", "--json"}
 			if tc.single {
-				args = append(args, "--env", "0")
+				args = append(args, "--agent", "0")
 			}
 			if tc.all {
 				args = append(args, "--all")
@@ -200,7 +200,7 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "containers", "list", "--json", "--start", "0"},
+		[]string{"--config", configPath, "--agent", "0", "containers", "list", "--json", "--start", "0"},
 	)
 
 	require.NoError(t, err,
@@ -227,8 +227,8 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 		empty       bool
 		explicit    bool
 	}{
-		{name: "single environment", single: true, summary: "Showing: 1/26 containers"},
-		{name: "combined environments", summary: "Showing: 2/52 containers"},
+		{name: "single agent", single: true, summary: "Showing: 1/26 containers"},
+		{name: "combined agents", summary: "Showing: 2/52 containers"},
 		{name: "partial failure", unavailable: true, summary: "Showing: 1/26 containers"},
 		{name: "empty resources", empty: true, summary: "Showing: 0/0 containers"},
 		{name: "explicit override", explicit: true, summary: "Showing: 1/26 containers"},
@@ -261,10 +261,10 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 			configPath := testutil.WriteConfig(t, srv.URL)
 			args := []string{"--config", configPath, "--no-color"}
 			if tc.explicit {
-				args = append(args, "--env", "remote")
+				args = append(args, "--agent", "remote")
 			}
 			if tc.single {
-				args = append(args, "--env", "0")
+				args = append(args, "--agent", "0")
 			}
 			command := tc.command
 			if command == nil {
@@ -280,10 +280,10 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 			require.Equal(t, 1, strings.Count(out, tc.summary))
 			require.NotContains(t, out, "\x1b")
 			if tc.single || tc.explicit {
-				require.NotContains(t, out, "ENVIRONMENT")
+				require.NotContains(t, out, "AGENT")
 				return
 			}
-			require.Equal(t, 1, strings.Count(out, "ENVIRONMENT"), out)
+			require.Equal(t, 1, strings.Count(out, "AGENT"), out)
 			require.Equal(t, 1, strings.Count(out, "TYPE")+strings.Count(out, "NAME"), out)
 			if tc.empty {
 				require.NotContains(t, out, "nginx")
@@ -328,7 +328,7 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "containers", "list", "--json", "--all"},
+		[]string{"--config", configPath, "--agent", "0", "containers", "list", "--json", "--all"},
 	)
 
 	require.NoError(t, err,
@@ -366,7 +366,7 @@ func TestContainersListJSONContract(t *testing.T) {
 
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "--log-level", "debug", "containers", "list", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "--log-level", "debug", "containers", "list", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -393,9 +393,9 @@ func TestContainersListJSONContract(t *testing.T) {
 		discoveryFailure bool
 		explicit         bool
 	}{
-		{name: "all environments retain envelopes"},
+		{name: "all agents retain envelopes"},
 		{name: "partial failure", unavailable: true},
-		{name: "no environments", empty: true},
+		{name: "no agents", empty: true},
 		{name: "discovery failure", discoveryFailure: true},
 		{name: "explicit override", explicit: true},
 		{name: "custom job response", args: []string{"jobs", "list"}},
@@ -440,7 +440,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json"}
 			if tc.explicit {
-				args = append(args, "--env", "remote")
+				args = append(args, "--agent", "remote")
 			}
 			command := tc.args
 			if command == nil {
@@ -448,7 +448,7 @@ func TestContainersListJSONContract(t *testing.T) {
 			}
 			out, diagnostics, runErr := testutil.Execute(t, append(args, command...))
 			if tc.discoveryFailure {
-				require.ErrorContains(t, runErr, "pass --env <id>")
+				require.ErrorContains(t, runErr, "pass --agent <id>")
 				require.Empty(t, out)
 				return
 			}
@@ -474,10 +474,10 @@ func TestContainersListJSONContract(t *testing.T) {
 			}
 			var result struct {
 				Environments []struct {
-					ID     string         `json:"environmentId"`
+					ID     string         `json:"agentId"`
 					Error  string         `json:"error"`
 					Result jsontext.Value `json:"result"`
-				} `json:"environments"`
+				} `json:"agents"`
 				Success bool `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
@@ -534,7 +534,7 @@ func TestContainersListUpdatesJSONContract(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "containers", "list", "--updates", "has_update", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "containers", "list", "--updates", "has_update", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -591,7 +591,7 @@ func TestContainersUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "--output", "text", "containers", "updates"},
+		[]string{"--config", configPath, "--agent", "0", "--output", "text", "containers", "updates"},
 	)
 
 	require.NoError(t, err,

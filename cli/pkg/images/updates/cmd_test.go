@@ -45,7 +45,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check", imageRef, "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check", imageRef, "--json"},
 	)
 
 	require.NoError(t, err,
@@ -72,7 +72,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 }
 
 func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
-	outBuf, _, err := testutil.Execute(t, []string{"--env", "0", "images", "updates", "check"})
+	outBuf, _, err := testutil.Execute(t, []string{"--agent", "0", "images", "updates", "check"})
 
 	require.Error(t, err,
 		"expected missing image reference to fail, got output %q", outBuf)
@@ -138,7 +138,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-all", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check-all", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -156,7 +156,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "check-image", "image-123", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "check-image", "image-123", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -174,7 +174,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	outBuf, errOut, err = testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--env", "0", "images", "updates", "summary", "--json"},
+		[]string{"--config", configPath, "--agent", "0", "images", "updates", "summary", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -239,7 +239,7 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 			configPath := testutil.WriteConfig(t, srv.URL)
 			for _, command := range commands {
 				t.Run(command.name, func(t *testing.T) {
-					args := append([]string{"--config", configPath, "--env", "0"}, command.args...)
+					args := append([]string{"--config", configPath, "--agent", "0"}, command.args...)
 					outBuf, _, err := testutil.Execute(t, args)
 
 					require.Error(t, err,

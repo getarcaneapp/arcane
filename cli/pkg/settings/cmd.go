@@ -36,7 +36,7 @@ func Command() *cobra.Command {
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
 	scoped := []*cobra.Command{newListCmd(), newUpdateCmd(), newSetCmd()}
 	for _, child := range scoped {
-		child.Flags().String("scope", "environment", "Settings scope: environment, manager (app-wide), or authentication (global admin only)")
+		child.Flags().String("scope", "agent", "Settings scope: agent, manager (app-wide), or authentication (global admin only)")
 	}
 	cmd.AddCommand(append(scoped, newPublicCmd())...)
 	return cmd
@@ -48,14 +48,14 @@ func settingsEndpoint(cmd *cobra.Command, envID string) (string, error) {
 		return "", err
 	}
 	switch scope {
-	case "environment":
+	case "agent":
 		return clitypes.Settings(envID), nil
 	case "manager":
 		return clitypes.ManagerSettings(), nil
 	case "authentication":
 		return clitypes.AuthenticationSettings(), nil
 	default:
-		return "", fmt.Errorf("invalid scope %q: must be environment, manager, or authentication", scope)
+		return "", fmt.Errorf("invalid scope %q: must be agent, manager, or authentication", scope)
 	}
 }
 

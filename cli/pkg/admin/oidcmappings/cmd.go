@@ -92,7 +92,7 @@ func newCreateCmd() *cobra.Command {
 				Body: types.OidcRoleMapping{
 					ClaimValue:    opts.claim,
 					RoleID:        opts.roleID,
-					EnvironmentID: kit.Ternary(cmd.Flags().Changed("environment") && opts.environment != "", new(opts.environment), nil),
+					EnvironmentID: kit.Ternary(cmd.Flags().Changed("agent") && opts.environment != "", new(opts.environment), nil),
 				},
 				Render: func(data types.OidcRoleMapping) error {
 					output.Success("OIDC mapping created")
@@ -111,7 +111,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	command.Flags().StringVar(&opts.claim, "claim", "", "OIDC claim value (required)")
 	command.Flags().StringVar(&opts.roleID, "role", "", "Role ID to grant when the claim matches (required)")
-	command.Flags().StringVar(&opts.environment, "environment", "", "Scope the grant to one environment (omit for global)")
+	command.Flags().StringVar(&opts.environment, "agent", "", "Scope the grant to one agent (omit for global)")
 	_ = command.MarkFlagRequired("claim")
 	_ = command.MarkFlagRequired("role")
 	return command
@@ -142,7 +142,7 @@ func newUpdateCmd() *cobra.Command {
 			}{
 				{flag: "claim", key: "claimValue", value: opts.claim},
 				{flag: "role", key: "roleId", value: opts.roleID},
-				{flag: "environment", key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
+				{flag: "agent", key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
 			} {
 				if cmd.Flags().Changed(field.flag) {
 					body[field.key] = field.value
@@ -163,7 +163,7 @@ func newUpdateCmd() *cobra.Command {
 	}
 	command.Flags().StringVar(&opts.claim, "claim", "", "New claim value")
 	command.Flags().StringVar(&opts.roleID, "role", "", "New role ID")
-	command.Flags().StringVar(&opts.environment, "environment", "", "New environment scope (pass empty to make global)")
+	command.Flags().StringVar(&opts.environment, "agent", "", "New agent scope (pass empty to make global)")
 	return command
 }
 
