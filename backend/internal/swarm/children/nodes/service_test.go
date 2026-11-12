@@ -323,7 +323,7 @@ func TestService_EnrollNodeAgent(t *testing.T) {
 		DB:              db,
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		SettingsService: settingsSvc,
-		APIKeyService:   apikey.NewApiKeyService(db, user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB), roleSvc),
+		APIKeyService:   apikey.NewApiKeyService(db, user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil), roleSvc),
 		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc, tunnels),
 		Config:          &config.Config{},
 		Ctx:             ctx,

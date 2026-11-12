@@ -90,7 +90,7 @@ func newEnrollmentTestHarness(t *testing.T) enrollmentTestHarness {
 		Tunnels:         tunnels,
 		EventService:    eventSvc,
 		SettingsService: settingsSvc,
-		APIKeyService:   apikey.NewApiKeyService(db, user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB), roleSvc),
+		APIKeyService:   apikey.NewApiKeyService(db, user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil), roleSvc),
 		RemoteTransport: environment.NewRemoteTransport(db, settingsSvc, tunnels),
 		Config:          &config.Config{},
 		Ctx:             ctx,

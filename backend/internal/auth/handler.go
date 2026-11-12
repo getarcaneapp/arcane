@@ -390,14 +390,6 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
-	email, err := userdomain.NormalizeOptionalEmail(kit.Ternary(submitted["email"], input.Body.Email, userModel.Email))
-	if err != nil {
-		return nil, handlerutil.APIError(err)
-	}
-	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
-		return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
-	}
-
 	preferences := userModel.Preferences
 	if p := input.Body.Preferences; submitted["preferences"] {
 		// Huma's enum tags cannot express these checks. The "default" accent
@@ -435,7 +427,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		BaseModel:   userModel.BaseModel,
 		Username:    userModel.Username,
 		DisplayName: kit.Ternary(submitted["displayName"], input.Body.DisplayName, userModel.DisplayName),
-		Email:       email,
+		Email:       kit.Ternary(submitted["email"], input.Body.Email, userModel.Email),
 		Locale:      kit.Ternary(submitted["locale"], input.Body.Locale, userModel.Locale),
 		TimeFormat:  kit.Ternary(submitted["timeFormat"], input.Body.TimeFormat, userModel.TimeFormat),
 		FontSize:    kit.Ternary(submitted["fontSize"], input.Body.FontSize, userModel.FontSize),
@@ -444,6 +436,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	if err != nil {
 		if errors.Is(err, userdomain.ErrEmailTaken) {
 			return nil, huma.Error409Conflict(userdomain.ErrEmailTaken.Error())
+		}
+		if errors.Is(err, userdomain.ErrEmailChangeBlocked) {
+			return nil, huma.Error403Forbidden(userdomain.ErrEmailChangeBlocked.Error())
 		}
 		if errors.Is(err, common.ErrValidation) {
 			return nil, handlerutil.APIError(err)

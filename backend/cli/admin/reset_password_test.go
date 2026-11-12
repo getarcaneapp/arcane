@@ -42,7 +42,7 @@ func createGlobalAdmin(t *testing.T, db *database.DB) (*user.User, *user.UserSer
 	ctx := t.Context()
 	roleService := role.NewRoleService(db)
 	require.NoError(t, roleService.EnsureBuiltInRoles(ctx))
-	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB, nil)
 	passwordHash, err := userService.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	adminUser, err := userService.CreateUser(ctx, &user.User{

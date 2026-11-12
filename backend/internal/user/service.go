@@ -31,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -54,6 +55,7 @@ type (
 		argon2Params         *Argon2Params
 		argon2Slots          chan struct{}
 		revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
+		settingsService      *settings.SettingsService
 	}
 
 	DefaultAdminOptions struct {
@@ -74,6 +76,7 @@ var (
 	ErrUsernameRequired      = errors.New("username is required")
 	ErrUsernameTaken         = errors.New("username already in use")
 	ErrEmailTaken            = common.Classify(common.ErrConflict, errors.New("email already in use"))
+	ErrEmailChangeBlocked    = common.Classify(common.ErrForbidden, errors.New("email cannot be changed while OIDC account merging is enabled"))
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
 	ErrBackdropTooLarge      = common.Classify(common.ErrValidation, fmt.Errorf("background image must be %d MB or smaller", BackdropMaxBytes>>20))
 	ErrBackdropUnsupported   = common.Classify(common.ErrValidation, errors.New("unsupported image format: only PNG, JPEG and WebP are accepted"))
@@ -89,13 +92,14 @@ func DefaultArgon2Params() *Argon2Params {
 	}
 }
 
-func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error) *UserService {
+func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error, settingsService *settings.SettingsService) *UserService {
 	return &UserService{
 		db:                   db,
 		roleService:          roleService,
 		argon2Params:         DefaultArgon2Params(),
 		argon2Slots:          make(chan struct{}, 4),
 		revokeSessionsExcept: revokeSessionsExcept,
+		settingsService:      settingsService,
 	}
 }
 
@@ -185,7 +189,7 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 	}
 	localUser.Username = username
 	if localUser.OidcSubjectId == nil {
-		email, emailErr := NormalizeOptionalEmail(localUser.Email)
+		email, emailErr := normalizeOptionalEmail(localUser.Email)
 		if emailErr != nil {
 			return nil, emailErr
 		}
@@ -314,7 +318,10 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 			return fmt.Errorf("failed to load user: %w", err)
 		}
 		if !strings.EqualFold(kit.FromPtr(current.Email), strings.TrimSpace(kit.FromPtr(localUser.Email))) {
-			email, normalizeErr := NormalizeOptionalEmail(localUser.Email)
+			if s.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
+				return ErrEmailChangeBlocked
+			}
+			email, normalizeErr := normalizeOptionalEmail(localUser.Email)
 			if normalizeErr != nil {
 				return normalizeErr
 			}
@@ -355,7 +362,7 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	return localUser, nil
 }
 
-func NormalizeOptionalEmail(email *string) (*string, error) {
+func normalizeOptionalEmail(email *string) (*string, error) {
 	trimmedEmail := strings.TrimSpace(kit.FromPtr(email))
 	if trimmedEmail == "" {
 		return nil, nil

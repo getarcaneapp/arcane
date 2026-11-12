@@ -169,7 +169,7 @@ func resetPassword(ctx context.Context, db *database.DB, username, password, pol
 	}
 
 	roleService := role.NewRoleService(db)
-	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB, nil)
 	target, err := userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {

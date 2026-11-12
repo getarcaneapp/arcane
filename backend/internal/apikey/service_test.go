@@ -68,7 +68,7 @@ func setupAPIKeyService(t *testing.T) (*ApiKeyService, *database.DB, *user.UserS
 	db := setupAPIKeyServiceTestDB(t)
 	roleService := role.NewRoleService(db)
 	require.NoError(t, roleService.EnsureBuiltInRoles(t.Context()))
-	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB, nil)
 	return NewApiKeyService(db, userService, roleService), db, userService
 }
 
@@ -147,7 +147,7 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 	for _, keyCount := range []int{1, 5} {
 		t.Run(fmt.Sprintf("%d_keys", keyCount), func(t *testing.T) {
 			db := setupAPIKeyServiceTestDB(t)
-			service := NewApiKeyService(db, user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB), role.NewRoleService(db))
+			service := NewApiKeyService(db, user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil), role.NewRoleService(db))
 			userID := "query-count-user"
 
 			apiKeys := make([]ApiKey, keyCount)
@@ -294,7 +294,7 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
+	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-update-rollback", "admin-update-rollback")
 	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
@@ -351,7 +351,7 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
+	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	// Owner has no roles at all — their permission ceiling is empty.
 	owner := createTestAPIKeyUser(t, ctx, userSvc, "roleless-owner", "roleless-owner")
@@ -922,7 +922,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
+	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-env-bootstrap", "admin-env-bootstrap")
 	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
@@ -953,7 +953,7 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
+	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 
 	// Simulate a pre-existing env-bootstrap key with NO permission grants
@@ -1003,7 +1003,7 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 
 	roleSvc := role.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
+	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin", "admin")

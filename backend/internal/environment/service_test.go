@@ -1188,7 +1188,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnviro
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	roleService := role.NewRoleService(db)
-	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB, nil)
 	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
 		Tunnels:         tunnels,
@@ -1289,7 +1289,7 @@ func TestEnvironmentService_RegenerateEnvironmentApiKey_TokenResolvesEndToEnd(t 
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
 	roleService := role.NewRoleService(db)
-	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
+	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB, nil)
 	apiKeyService := apikey.NewApiKeyService(db, userService, roleService)
 	svc := NewEnvironmentService(EnvironmentServiceParams{
 		Tunnels:         tunnels,
