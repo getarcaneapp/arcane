@@ -19,6 +19,9 @@ func validateDeploySource(sync project.GitOpsSync) error {
 	invalid := func(field, message string) error {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: field, Err: errors.New(message)})
 	}
+	if composePath := path.Clean(filepath.ToSlash(strings.TrimSpace(sync.ComposePath))); composePath == ".." || strings.HasPrefix(composePath, "../") {
+		return invalid("composePath", "Compose path must stay inside the repository.")
+	}
 	overridePath := strings.TrimSpace(sync.ComposeOverridePath)
 	cleanedOverride := path.Clean(filepath.ToSlash(overridePath))
 	switch {

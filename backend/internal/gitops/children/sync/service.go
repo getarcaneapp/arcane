@@ -218,9 +218,9 @@ func (s *Service) syncTarget(
 			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
 			syncedFiles = append(syncedFiles, file.RelativePath)
 		}
-		workingDir := filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath))
+		composeDir := path.Dir(path.Join("/", filepath.ToSlash(sync.ComposePath)))
 		if !sync.SyncDirectory && sync.EnvContent != nil {
-			if writeErr := projects.WriteFileWithPerm(stageCtx, filepath.Join(workingDir, ".env"), kit.FromPtr(source.envContent), kitfs.FilePerm); writeErr != nil {
+			if writeErr := (acfs.Root{Path: source.repoPath}).Write(stageCtx, path.Join(composeDir, ".env"), []byte(kit.FromPtr(source.envContent)), acfs.WriteOptions{Mode: kitfs.FilePerm}); writeErr != nil {
 				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to write sync environment variables", writeErr)
 			}
 		}
@@ -234,7 +234,7 @@ func (s *Service) syncTarget(
 			Prune:            true,
 			WithRegistryAuth: true,
 			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
-			WorkingDir: kit.Ternary(sync.SyncDirectory, "", workingDir),
+			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Join(source.repoPath, filepath.FromSlash(composeDir))),
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
