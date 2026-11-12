@@ -126,6 +126,7 @@
 				.min(15, m.security_session_timeout_min())
 				.max(525600, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
+			hstsEnabled: z.boolean(),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
@@ -168,6 +169,7 @@
 			authLocalEnabled: source.authLocalEnabled,
 			authSessionTimeout: source.authSessionTimeout,
 			authPasswordPolicy: source.authPasswordPolicy,
+			hstsEnabled: source.hstsEnabled,
 			oidcEnabled: source.oidcEnabled,
 			oidcMergeAccounts: source.oidcMergeAccounts,
 			oidcSkipTlsVerify: source.oidcSkipTlsVerify,
@@ -588,6 +590,17 @@
 									aria-describedby={describedBy}
 									aria-errormessage={errorId}
 								/>
+							{/snippet}
+						</SettingsRow>
+						<SettingsRow
+							for="hstsEnabledSwitch"
+							label={m.hsts_label()}
+							description={m.hsts_description()}
+							layout="switch"
+							lock={settingsStore.lock('hstsEnabled')}
+						>
+							{#snippet children({ describedBy })}
+								<Switch id="hstsEnabledSwitch" bind:checked={formInputs.hstsEnabled.value} aria-describedby={describedBy} />
 							{/snippet}
 						</SettingsRow>
 					</SettingsSection>

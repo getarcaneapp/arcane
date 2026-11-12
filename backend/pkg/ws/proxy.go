@@ -12,6 +12,11 @@ import (
 	"github.com/coder/websocket"
 )
 
+const (
+	proxyClientReadLimit = 1 << 20
+	proxyRemoteReadLimit = 16 << 20
+)
+
 func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header, checkOrigin func(*http.Request) bool, client *http.Client) error {
 	if checkOrigin == nil {
 		return errors.New("websocket proxy requires an origin validator")
@@ -26,8 +31,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		return err
 	}
 	defer func() { _ = clientConn.CloseNow() }()
-	// This is a pure bridge; frame-size policing is the remote endpoint's job.
-	clientConn.SetReadLimit(-1)
+	clientConn.SetReadLimit(proxyClientReadLimit)
 
 	slog.DebugContext(r.Context(), "attempting websocket dial", "remoteWs", remoteWS)
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -50,7 +54,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		return err
 	}
 	defer func() { _ = remoteConn.CloseNow() }()
-	remoteConn.SetReadLimit(-1)
+	remoteConn.SetReadLimit(proxyRemoteReadLimit)
 
 	slog.DebugContext(dialCtx, "websocket proxy established", "remoteWs", remoteWS)
 

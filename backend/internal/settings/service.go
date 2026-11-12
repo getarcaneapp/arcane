@@ -392,6 +392,12 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		}
 	}
 
+	if value, ok := pending["buildsDirectory"]; ok && value != cfg.BuildsDirectory.Value {
+		if err := s.ValidateBuildsDirectory(effectiveValue("buildsDirectory")); err != nil {
+			return fieldErr("buildsDirectory", err)
+		}
+	}
+
 	if projectsDir != "" {
 		resolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDir))
 		if err != nil {
@@ -830,6 +836,28 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 	return s.normalizeDirectorySetting(ctx, "buildsDirectory")
+}
+
+func (s *SettingsService) ValidateBuildsDirectory(root string) error {
+	if !filepath.IsAbs(root) {
+		return errors.New("builds directory must be an absolute path")
+	}
+	reserved := []string{"data"}
+	if strings.HasPrefix(s.appConfig.DatabaseURL, "file:") {
+		databasePath, err := kit.SQLitePathFromDSN(s.appConfig.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse database URL: %w", err)
+		}
+		if databasePath != "" && !strings.HasPrefix(databasePath, ":memory:") {
+			reserved = append(reserved, filepath.Dir(databasePath))
+		}
+	}
+	for _, dataDirectory := range reserved {
+		if projects.IsSafeSubdirectory(dataDirectory, root) || projects.IsSafeSubdirectory(root, dataDirectory) {
+			return fmt.Errorf("builds directory %q overlaps the Arcane data directory", root)
+		}
+	}
+	return nil
 }
 
 func (s *SettingsService) normalizeDirectorySetting(ctx context.Context, key string) error {

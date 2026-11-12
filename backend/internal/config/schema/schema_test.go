@@ -122,6 +122,7 @@ var (
 		"githubToken",
 		"gpuMonitoringEnabled",
 		"gpuType",
+		"hstsEnabled",
 		"http2ReceiveWindowMb",
 		"httpClientTimeout",
 		"imageAutoPatchEnabled",

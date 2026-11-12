@@ -156,6 +156,11 @@ func newRouter(p RouterParams) *echo.Echo {
 
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.RequestID())
+	e.Use(echomiddleware.SecureWithConfig(echomiddleware.SecureConfig{
+		ContentTypeNosniff:    "nosniff",
+		XFrameOptions:         "SAMEORIGIN",
+		ContentSecurityPolicy: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+	}))
 	// Trace REST API calls only, skipping long-lived streams, tunnels, health probes, and the browser trace relay.
 	e.Use(echootel.NewMiddlewareWithConfig(echootel.Config{Skipper: func(c *echo.Context) bool {
 		req := c.Request()
@@ -193,6 +198,15 @@ func newRouter(p RouterParams) *echo.Echo {
 		}
 	})
 	e.Use(secureCookieContextMiddleware(trustedProxyNets))
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			secure, _ := c.Request().Context().Value(cookie.SecureCookieContextKey{}).(bool)
+			if secure && p.HandlerDeps.Settings.Service().GetSettingsConfig().HstsEnabled.IsTrue() {
+				c.Response().Header().Set(echo.HeaderStrictTransportSecurity, "max-age=31536000")
+			}
+			return next(c)
+		}
+	})
 	e.Use(middleware.WarnUntrustedForwardedFor(trustedProxyNets))
 
 	e.Use(middleware.NewCORSMiddleware(p.Config).Add())
