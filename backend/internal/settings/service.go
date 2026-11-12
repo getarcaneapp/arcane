@@ -372,12 +372,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 	swarmDir := kit.Ternary(pending["swarmStackSourcesDirectory"] != cfg.SwarmStackSourcesDirectory.Value, pending["swarmStackSourcesDirectory"], "")
 	var trivyConfig map[string]any
 	trivyConfigErr := yaml.Unmarshal([]byte(pending["trivyConfig"]), &trivyConfig)
-	_, buildsDirSubmitted := pending["buildsDirectory"]
-	buildsDirErr := kit.Ternary(buildsDirSubmitted, s.ValidateBuildsDirectory(effectiveValue("buildsDirectory")), nil)
 
 	switch {
-	case buildsDirErr != nil:
-		return fieldErr("buildsDirectory", buildsDirErr)
 	case projectsDir != "" && !projects.IsWindowsDrivePath(projectsDir) && !strings.HasPrefix(projectsContainerDir, "/"):
 		return fieldErr("projectsDirectory", errors.New(kit.Ternary(projectsDirIsMapping,
 			"projectsDirectory mapping format: container path must be absolute",
@@ -534,6 +530,11 @@ func (s *SettingsService) prepareUpdateValues(updates []types.SettingUpdate) ([]
 				Field: update.Key,
 				Err:   fmt.Errorf("%s cannot be changed because UI configuration is disabled", update.Key),
 			})
+		}
+		if update.Key == "buildsDirectory" {
+			if err := s.ValidateBuildsDirectory(value); err != nil {
+				return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: update.Key, Err: err})
+			}
 		}
 		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: update.Key, Value: value})
 	}
