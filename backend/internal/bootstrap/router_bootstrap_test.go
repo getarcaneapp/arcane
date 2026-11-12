@@ -158,11 +158,11 @@ func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		enabled        bool
-		directTLS      bool
 		remoteAddr     string
 		forwardedProto string
 		want           string
+		enabled        bool
+		directTLS      bool
 	}{
 		{name: "disabled on direct https", directTLS: true, remoteAddr: "203.0.113.10:54321"},
 		{name: "enabled on plain http", enabled: true, remoteAddr: "203.0.113.10:54321"},

@@ -372,8 +372,11 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 	swarmDir := kit.Ternary(pending["swarmStackSourcesDirectory"] != cfg.SwarmStackSourcesDirectory.Value, pending["swarmStackSourcesDirectory"], "")
 	var trivyConfig map[string]any
 	trivyConfigErr := yaml.Unmarshal([]byte(pending["trivyConfig"]), &trivyConfig)
+	buildsDirErr := s.ValidateBuildsDirectory(cmp.Or(pending["buildsDirectory"], byKey["buildsDirectory"].defaultValue))
 
 	switch {
+	case buildsDirErr != nil:
+		return fieldErr("buildsDirectory", buildsDirErr)
 	case projectsDir != "" && !projects.IsWindowsDrivePath(projectsDir) && !strings.HasPrefix(projectsContainerDir, "/"):
 		return fieldErr("projectsDirectory", errors.New(kit.Ternary(projectsDirIsMapping,
 			"projectsDirectory mapping format: container path must be absolute",
@@ -389,12 +392,6 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 	if submittedValue("projectsDirectories") != nil || submittedValue("projectsDirectory") != nil || submittedValue("templatesDirectory") != nil {
 		if err := validateProjectsDirectoriesOverlap(ctx, effectiveValue("projectsDirectories"), effectiveValue("projectsDirectory"), effectiveValue("templatesDirectory")); err != nil {
 			return fieldErr("projectsDirectories", err)
-		}
-	}
-
-	if value, ok := pending["buildsDirectory"]; ok && value != cfg.BuildsDirectory.Value {
-		if err := s.ValidateBuildsDirectory(effectiveValue("buildsDirectory")); err != nil {
-			return fieldErr("buildsDirectory", err)
 		}
 	}
 
