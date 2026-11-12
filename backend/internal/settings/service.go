@@ -372,7 +372,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 	swarmDir := kit.Ternary(pending["swarmStackSourcesDirectory"] != cfg.SwarmStackSourcesDirectory.Value, pending["swarmStackSourcesDirectory"], "")
 	var trivyConfig map[string]any
 	trivyConfigErr := yaml.Unmarshal([]byte(pending["trivyConfig"]), &trivyConfig)
-	buildsDirErr := s.ValidateBuildsDirectory(cmp.Or(pending["buildsDirectory"], byKey["buildsDirectory"].defaultValue))
+	_, buildsDirSubmitted := pending["buildsDirectory"]
+	buildsDirErr := kit.Ternary(buildsDirSubmitted, s.ValidateBuildsDirectory(effectiveValue("buildsDirectory")), nil)
 
 	switch {
 	case buildsDirErr != nil:
