@@ -1569,7 +1569,12 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
 	}
 
-	if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projectsDirectory, projectPath, opts.ComposeContent, envContent); writeProjectFilesErr != nil {
+	if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projects.ComposeFileWrite{
+		ProjectsRoot:       projectsDirectory,
+		GlobalEnvDirectory: globalEnvDirectory,
+		DirPath:            projectPath,
+		Content:            opts.ComposeContent,
+	}, envContent); writeProjectFilesErr != nil {
 		return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
 	}
 	composeMeta, err := projects.ParseArcaneComposeMetadata(
@@ -2748,13 +2753,13 @@ func (s *ProjectService) discoverRootProjects(ctx context.Context, roots []types
 		if !root.Enabled {
 			continue
 		}
-		discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(
-			ctx,
-			root.ContainerPath,
-			s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks"),
-			s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
-			s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-		)
+		discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projects.DiscoverOptions{
+			Root:               root.ContainerPath,
+			GlobalEnvDirectory: roots[0].ContainerPath,
+			SkipDirectories:    s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
+			MaxDepth:           s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
+			FollowSymlinks:     s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks"),
+		})
 		switch {
 		case discoveryErr != nil && root.Primary && errors.Is(discoveryErr, os.ErrNotExist):
 			return nil, nil, discoveryErr
@@ -3313,7 +3318,12 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 		if envErr := projectsync.PersistGitSyncEnvFiles(ctx, proj.Path, projectRoot, envUpdate); envErr != nil {
 			return fmt.Errorf("failed to sync git env files: %w", envErr)
 		}
-		if composeErr := projects.WriteComposeFile(ctx, projectRoot, proj.Path, composeContent); composeErr != nil {
+		if composeErr := projects.WriteComposeFile(ctx, projects.ComposeFileWrite{
+			ProjectsRoot:       projectRoot,
+			GlobalEnvDirectory: projectsDirectory,
+			DirPath:            proj.Path,
+			Content:            composeContent,
+		}); composeErr != nil {
 			return fmt.Errorf("failed to save compose file: %w", composeErr)
 		}
 		if overrideErr := projects.WriteComposeOverrideFile(ctx, projectRoot, proj.Path, gitOverrideContent, gitOverrideFileName); overrideErr != nil {

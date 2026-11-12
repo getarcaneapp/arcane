@@ -37,7 +37,9 @@ func TestProjectsDirectoryContainerPaths(t *testing.T) {
 		wantErr string
 		want    []string
 	}{
-		{name: "empty", value: ""},
+		{name: "empty", value: "", wantErr: "JSON array"},
+		{name: "whitespace", value: "   ", wantErr: "JSON array"},
+		{name: "null", value: "null", wantErr: "JSON array"},
 		{name: "empty list", value: "[]", want: []string{}},
 		{
 			name:  "absolute and mapped entries",

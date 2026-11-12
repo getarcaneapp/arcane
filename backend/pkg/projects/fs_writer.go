@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,13 @@ import (
 )
 
 type (
+	ComposeFileWrite struct {
+		ProjectsRoot       string
+		GlobalEnvDirectory string
+		DirPath            string
+		Content            string
+	}
+
 	SyncFile struct {
 		RelativePath string
 		Content      []byte
@@ -60,8 +68,9 @@ func detectExistingComposeFile(ctx context.Context, projectsRoot, dir string) st
 	return kit.Ternary(err == nil, composePath, "")
 }
 
-func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string) error {
-	if _, err := (acfs.Root{Path: projectsRoot}).LogicalPath(dirPath); err != nil {
+func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
+	dirPath := write.DirPath
+	if _, err := (acfs.Root{Path: write.ProjectsRoot}).LogicalPath(dirPath); err != nil {
 		return fmt.Errorf("refusing to write compose file: path outside projects root: %w", err)
 	}
 
@@ -71,14 +80,14 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 
 	composeFileName := DefaultComposeFileName
 	mode := kitfs.FilePerm
-	if existingFile := detectExistingComposeFile(ctx, projectsRoot, dirPath); existingFile != "" {
+	if existingFile := detectExistingComposeFile(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, types.StatOptions{}); statErr == nil {
 			mode = os.FileMode(entry.UnixMode).Perm()
 		}
 	}
 
-	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
+	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(write.Content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			return fmt.Errorf(
 				"failed to write compose file %s: not writable by uid %d gid %d (check the file owner matches PUID/PGID): %w",
@@ -206,8 +215,8 @@ func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName stri
 	return nil
 }
 
-func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeContent string, envContent *string) error {
-	if err := WriteComposeFile(ctx, projectsRoot, dirPath, composeContent); err != nil {
+func WriteProjectFiles(ctx context.Context, write ComposeFileWrite, envContent *string) error {
+	if err := WriteComposeFile(ctx, write); err != nil {
 		return err
 	}
 
@@ -215,7 +224,7 @@ func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeConten
 		return nil
 	}
 
-	return WriteProjectFile(ctx, projectsRoot, dirPath, ".env", *envContent)
+	return WriteProjectFile(ctx, write.ProjectsRoot, write.DirPath, ".env", *envContent)
 }
 
 func WriteTemplateFile(ctx context.Context, filePath, content string) error {

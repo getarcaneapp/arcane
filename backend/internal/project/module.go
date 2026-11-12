@@ -102,7 +102,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermProjectsList, h.GetProjectStatusCounts)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "list-project-directories",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/projects/directories",
@@ -110,7 +110,10 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Description: "Get the configured projects directories and whether each one is available",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsList, h.ListProjectsDirectories)
+	}, "view", map[string]string{
+		"projects": authz.PermProjectsList,
+		"settings": authz.PermEnvironmentSettingsRead,
+	}, h.ListProjectsDirectories)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-project-tags",

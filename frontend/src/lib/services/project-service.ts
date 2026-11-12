@@ -179,8 +179,8 @@ class ProjectService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getProjectDirectories(environmentId: string): Promise<ProjectsDirectoryStatus[]> {
-		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/directories`));
+	async getProjectDirectories(environmentId: string, view: 'projects' | 'settings'): Promise<ProjectsDirectoryStatus[]> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/directories`, { params: { view } }));
 	}
 
 	async getProjectTagsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectTagOption[]> {

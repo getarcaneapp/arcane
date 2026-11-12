@@ -240,6 +240,10 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) error {
 		}
 	}
 
+	if err := validateProjectsDirectoriesOverlap(ctx, values.ProjectsDirectories.Value, values.ProjectsDirectory.Value, values.TemplatesDirectory.Value); err != nil {
+		return fmt.Errorf("invalid projects directories configuration: %w", err)
+	}
+
 	s.snapshot.Store(&snapshot{
 		values:  values,
 		sources: sources,

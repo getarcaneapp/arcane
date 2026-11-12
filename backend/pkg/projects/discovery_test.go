@@ -32,7 +32,7 @@ func TestDiscoverProjectDirectories_StopsDescentAtCompose(t *testing.T) {
 	writeComposeFile(t, filepath.Join(root, "networking", "adguardhome"))
 	writeComposeFile(t, filepath.Join(root, "networking", "nginx-proxy-manager"))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 
 	names := discoveredNames(discovered)
@@ -46,7 +46,7 @@ func TestDiscoverProjectDirectories_SiblingProjectsAtRoot(t *testing.T) {
 	writeComposeFile(t, filepath.Join(root, "app1"))
 	writeComposeFile(t, filepath.Join(root, "app2"))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 
 	names := discoveredNames(discovered)
@@ -74,7 +74,7 @@ func TestDiscoverProjectDirectories_NestedStandaloneProject(t *testing.T) {
 
 	writeComposeFile(t, filepath.Join(root, "sub", "nested"))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 
 	names := discoveredNames(discovered)
@@ -87,7 +87,7 @@ func TestDiscoverProjectDirectories_SupportsCustomComposeFilename(t *testing.T) 
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services: {}\n"), 0o644))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 	require.Len(t, discovered, 1)
 	require.Equal(t, "Radarr-3", discovered[0].DirName)
@@ -96,7 +96,7 @@ func TestDiscoverProjectDirectories_SupportsCustomComposeFilename(t *testing.T) 
 
 func discoverProjectDirectories(t *testing.T, root string) []DiscoveredProjectDir {
 	t.Helper()
-	d, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	d, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 	return d
 }
@@ -107,7 +107,7 @@ func TestDiscoverProjectDirectories_RespectsMaxDepth(t *testing.T) {
 	writeComposeFile(t, filepath.Join(root, "top-level"))
 	writeComposeFile(t, filepath.Join(root, "group", "nested"))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 1, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root, MaxDepth: 1})
 	require.NoError(t, err)
 
 	names := discoveredNames(discovered)
@@ -185,7 +185,7 @@ func TestDiscoverProjectDirectories_SkipsUnreadableNestedSibling(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o700) })
 	require.NoError(t, os.Chmod(unreadableDir, 0))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err, "discovery must not fail when only a nested, non-root directory is unreadable")
 
 	// os.ReadDir returns entries sorted, so "adguard-cheetah" is walked before
@@ -204,7 +204,7 @@ func TestDiscoverProjectDirectories_SkipsFilesystemSnapshotDirs(t *testing.T) {
 	writeComposeFile(t, filepath.Join(root, "#recycle", "arcane"))
 	writeComposeFile(t, filepath.Join(root, ".snapshots", "1", "arcane"))
 
-	discovered, err := DiscoverProjectDirectories(t.Context(), root, false, 0, "")
+	discovered, err := DiscoverProjectDirectories(t.Context(), DiscoverOptions{Root: root})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"arcane"}, discoveredNames(discovered))
 }

@@ -25,6 +25,7 @@
 	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectDirectoriesQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -125,6 +126,7 @@
 		planMove: planWorkspaceFileMove
 	});
 	let newProjectTags = $state<ProjectTag[]>([]);
+	const projectDirectories = createQuery(() => projectDirectoriesQuery(currentEnvId, 'projects'));
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(currentEnvId),
 		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
@@ -225,7 +227,11 @@
 		// validation and the create payload use it (event-time write, not an effect).
 		if (composeYamlName) form.setValue('name', composeYamlName);
 		const destination = environmentId;
-		const directory = pickedDirectory;
+		const directory = (projectDirectories.data ?? []).some(
+			(candidate) => candidate.enabled && candidate.containerPath === pickedDirectory
+		)
+			? pickedDirectory
+			: '';
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),

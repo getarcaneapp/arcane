@@ -34,6 +34,11 @@ type (
 		appCtx          context.Context
 	}
 
+	ListProjectsDirectoriesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		View          string `query:"view" required:"true" enum:"projects,settings" doc:"Page the directories are listed for"`
+	}
+
 	ListProjectsInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		Search        string `query:"search" doc:"Search query"`
@@ -207,7 +212,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *type
 	}, nil
 }
 
-func (h *ProjectHandler) ListProjectsDirectories(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectsDirectoryStatus], error) {
+func (h *ProjectHandler) ListProjectsDirectories(ctx context.Context, _ *ListProjectsDirectoriesInput) (*handlerutil.Out[[]types.ProjectsDirectoryStatus], error) {
 	directories, err := h.projectService.ListProjectsDirectories(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list projects directories: " + err.Error())

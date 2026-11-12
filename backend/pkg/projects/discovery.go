@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,14 @@ type (
 	DiscoveredProjectDir struct {
 		DirName string
 		Path    string
+	}
+
+	DiscoverOptions struct {
+		Root               string
+		GlobalEnvDirectory string
+		SkipDirectories    string
+		MaxDepth           int
+		FollowSymlinks     bool
 	}
 )
 
@@ -84,10 +93,10 @@ func IsProjectDirectoryPath(ctx context.Context, path string, followSymlinks boo
 	return resolved.IsDirectory, nil
 }
 
-func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int, skipDirectories string) ([]DiscoveredProjectDir, error) {
-	root = filepath.Clean(root)
+func DiscoverProjectDirectories(ctx context.Context, opts DiscoverOptions) ([]DiscoveredProjectDir, error) {
+	root := filepath.Clean(opts.Root)
 
-	isDir, err := IsProjectDirectoryPath(ctx, root, followSymlinks)
+	isDir, err := IsProjectDirectoryPath(ctx, root, opts.FollowSymlinks)
 	if err == nil && !isDir {
 		return nil, fmt.Errorf("project root is not a directory: %s", root)
 	}
@@ -96,7 +105,18 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectories(ctx, root, root, true, 0, maxDepth, followSymlinks, workspace.SkipDirectorySet(skipDirectories), ancestors, &discovered)
+		err = walkProjectDirectories(
+			ctx,
+			cmp.Or(opts.GlobalEnvDirectory, root),
+			root,
+			true,
+			0,
+			opts.MaxDepth,
+			opts.FollowSymlinks,
+			workspace.SkipDirectorySet(opts.SkipDirectories),
+			ancestors,
+			&discovered,
+		)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even
@@ -116,7 +136,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 }
 
 func walkProjectDirectories(ctx context.Context,
-	root,
+	globalEnvDirectory,
 	path string,
 	isRoot bool,
 	currentDepth,
@@ -148,7 +168,7 @@ func walkProjectDirectories(ctx context.Context,
 	ancestors[identity] = struct{}{}
 	defer delete(ancestors, identity)
 
-	switch composePath, detectComposeFileErr := DetectComposeFile(ctx, root, path); {
+	switch composePath, detectComposeFileErr := DetectComposeFile(ctx, globalEnvDirectory, path); {
 	case detectComposeFileErr == nil, errors.Is(detectComposeFileErr, common.ErrProjectEnvUnreadable) && composePath != "":
 		if detectComposeFileErr != nil {
 			slog.WarnContext(ctx, "Discovered project with an unreadable .env",
@@ -191,7 +211,7 @@ func walkProjectDirectories(ctx context.Context,
 
 		if walkProjectDirectoriesErr := walkProjectDirectories(
 			ctx,
-			root,
+			globalEnvDirectory,
 			childPath,
 			false,
 			currentDepth+1,

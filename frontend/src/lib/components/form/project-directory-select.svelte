@@ -5,9 +5,10 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { ArrowDownIcon, FolderOpenIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ArrowDownIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectDirectoriesQuery } from '#lib/query/projects.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
 		value = $bindable(''),
@@ -19,11 +20,19 @@
 		readonly?: boolean;
 	} = $props();
 
-	const directoriesQuery = createQuery(() => projectDirectoriesQuery(environmentId));
+	const directoriesQuery = createQuery(() => projectDirectoriesQuery(environmentId, 'projects'));
 	const directories = $derived(directoriesQuery.data ?? []);
 	const options = $derived(directories.filter((directory) => directory.enabled));
 	const primary = $derived(directories.find((directory) => directory.primary));
 	const current = $derived(options.find((directory) => directory.containerPath === value) ?? primary);
+	const loadError = $derived(
+		directoriesQuery.error
+			? m.compose_optional_resource_load_failed({
+					resource: m.project_directory(),
+					message: extractApiErrorMessage(directoriesQuery.error)
+				})
+			: null
+	);
 
 	function pick(containerPath: string) {
 		value = containerPath === primary?.containerPath ? '' : containerPath;
@@ -34,7 +43,15 @@
 	<span class="text-sm text-muted-foreground/60">/</span>
 {/snippet}
 
-{#if readonly}
+{#if loadError}
+	<div class="flex min-w-0 items-center gap-2 pr-2 text-sm text-warning" title={loadError}>
+		<span class="inline-flex min-w-0 items-center gap-1.5">
+			<AlertIcon class="size-4 shrink-0" />
+			<span class="max-w-24 truncate sm:max-w-48">{loadError}</span>
+		</span>
+		{@render prefixSeparator()}
+	</div>
+{:else if readonly}
 	{#if directories.length > 1 && value}
 		<div class="flex min-w-0 items-center gap-2 pr-2 text-sm text-muted-foreground sm:shrink-0" title={value}>
 			<span class="inline-flex min-w-0 items-center gap-1.5">

@@ -8,13 +8,14 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectDirectoriesQuery } from '#lib/query/projects.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import type { StorageTabProps } from './tab-props';
 
 	let { formInputs = $bindable(), settings, mixed, lock, environmentId }: StorageTabProps = $props();
 
 	const directoriesQuery = createQuery(() => ({
-		...projectDirectoriesQuery(environmentId ?? ''),
+		...projectDirectoriesQuery(environmentId ?? '', 'settings'),
 		enabled: !!environmentId,
 		staleTime: 0
 	}));
@@ -77,6 +78,14 @@
 							<Switch bind:checked={row.enabled} aria-label={m.common_enabled()} />
 						{/snippet}
 					</RowListEditor>
+					{#if directoriesQuery.error}
+						<p class="mt-1.5 text-xs text-warning">
+							{m.compose_optional_resource_load_failed({
+								resource: m.additional_project_directories(),
+								message: extractApiErrorMessage(directoriesQuery.error)
+							})}
+						</p>
+					{/if}
 				{/snippet}
 			</SettingsRow>
 		{/if}

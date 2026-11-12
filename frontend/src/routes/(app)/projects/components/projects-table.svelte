@@ -349,8 +349,13 @@
 
 {#snippet DirectoryCell({ item }: { item: ProjectRow })}
 	<span class="block max-w-88 truncate text-muted-foreground" title={item.path}>
-		{#if showProjectsRoot && item.projectsRoot}<span class="text-muted-foreground/60">{item.projectsRoot}/</span
-			>{/if}{item.relativePath ?? item.dirName ?? item.path}
+		{#if showProjectsRoot && item.projectsRoot && item.relativePath}
+			<span class="text-muted-foreground/60">{item.projectsRoot}/</span>{item.relativePath}
+		{:else if showProjectsRoot && item.projectsRoot}
+			{item.path}
+		{:else}
+			{item.relativePath || item.dirName || item.path}
+		{/if}
 	</span>
 {/snippet}
 
@@ -467,7 +472,7 @@
 			{
 				label: m.common_working_directory(),
 				getValue: (item: ProjectRow) =>
-					`${showProjectsRoot && item.projectsRoot ? `${item.projectsRoot}/` : ''}${item.relativePath ?? item.dirName ?? item.path}`,
+					showProjectsRoot && item.projectsRoot ? item.path : item.relativePath || item.dirName || item.path,
 				icon: FolderOpenIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['directory'] ?? true

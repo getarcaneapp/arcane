@@ -196,7 +196,12 @@ func PersistUpdatedProjectFiles(ctx context.Context, req ProjectFilesUpdate) err
 		}
 	}
 	if req.ComposeContent != nil {
-		if writeErr := projects.WriteComposeFile(ctx, req.ProjectRoot, req.ProjectPath, *req.ComposeContent); writeErr != nil {
+		if writeErr := projects.WriteComposeFile(ctx, projects.ComposeFileWrite{
+			ProjectsRoot:       req.ProjectRoot,
+			GlobalEnvDirectory: req.ProjectsDirectory,
+			DirPath:            req.ProjectPath,
+			Content:            *req.ComposeContent,
+		}); writeErr != nil {
 			return fmt.Errorf("failed to save project files: %w", writeErr)
 		}
 	}

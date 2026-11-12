@@ -132,8 +132,8 @@ func (e Env) ValueOrDefault(key string) string {
 }
 
 func projectsDirectoryContainerPaths(value string) ([]string, error) {
-	if strings.TrimSpace(value) == "" {
-		return nil, nil
+	if !strings.HasPrefix(strings.TrimSpace(value), "[") {
+		return nil, errors.New("projectsDirectories must be a JSON array of {\"path\", \"enabled\"} entries")
 	}
 	var entries []types.ProjectsDirectoryEntry
 	if err := json.Unmarshal([]byte(value), &entries); err != nil {

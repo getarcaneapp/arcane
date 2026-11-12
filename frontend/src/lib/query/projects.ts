@@ -33,10 +33,10 @@ export function projectDetailQuery(environmentId: string, projectId: string) {
 	});
 }
 
-export function projectDirectoriesQuery(environmentId: string) {
+export function projectDirectoriesQuery(environmentId: string, view: 'projects' | 'settings') {
 	return queryOptions({
-		queryKey: queryKeys.projects.directories(environmentId),
-		queryFn: () => projectService.getProjectDirectories(environmentId)
+		queryKey: queryKeys.projects.directories(environmentId, view),
+		queryFn: () => projectService.getProjectDirectories(environmentId, view)
 	});
 }
 
