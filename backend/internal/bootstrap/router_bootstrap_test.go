@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -130,6 +131,63 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	t.Run("unparseable remote addr is untrusted", func(t *testing.T) {
 		assert.False(t, runRequest(t, trusted, "garbage", "https"))
 	})
+}
+
+func TestNewRouter_StrictTransportSecurity(t *testing.T) {
+	cfg := &config.Config{
+		AgentEnabled:   true,
+		AppUrl:         "http://localhost:3552",
+		Environment:    config.AppEnvironmentTest,
+		TrustedProxies: "10.0.0.0/8",
+	}
+	settingsModule := newTestSettingsModule(t, cfg)
+	router := newRouter(RouterParams{
+		Context: t.Context(),
+		Config:  cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   project.New(&project.ProjectService{}, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil),
+			Health:    health.New(&health.Service{}),
+			Settings:  settingsModule,
+		},
+		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
+		TunnelRegistry: agent.NewTunnelRegistry(),
+	})
+
+	tests := []struct {
+		name           string
+		enabled        bool
+		directTLS      bool
+		remoteAddr     string
+		forwardedProto string
+		want           string
+	}{
+		{name: "disabled on direct https", directTLS: true, remoteAddr: "203.0.113.10:54321"},
+		{name: "enabled on plain http", enabled: true, remoteAddr: "203.0.113.10:54321"},
+		{name: "enabled on direct https", enabled: true, directTLS: true, remoteAddr: "203.0.113.10:54321", want: "max-age=31536000"},
+		{name: "enabled behind trusted proxy", enabled: true, remoteAddr: "10.1.2.3:54321", forwardedProto: "https", want: "max-age=31536000"},
+		{name: "enabled behind untrusted proxy", enabled: true, remoteAddr: "203.0.113.10:54321", forwardedProto: "https"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, settingsModule.Service().SetBoolSetting(t.Context(), "hstsEnabled", tt.enabled))
+
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.directTLS {
+				req.TLS = &tls.ConnectionState{}
+			}
+			if tt.forwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.want, rec.Header().Get(echo.HeaderStrictTransportSecurity))
+		})
+	}
 }
 
 func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
