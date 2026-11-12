@@ -4564,5 +4564,7 @@
   "app_icon_image_types": "Square PNG, at least 512×512",
   "unsupported_file_type": "Unsupported file type",
   "image_too_large": "Image must be {maxSizeMb} MB or smaller.",
-  "app_icon_too_small": "App icon must be a square PNG at least 512×512 pixels."
+  "app_icon_too_small": "App icon must be a square PNG at least 512×512 pixels.",
+  "branding": "Branding",
+  "branding_description": "Replace the Arcane logos and icons with your own images."
 }

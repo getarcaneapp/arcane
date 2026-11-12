@@ -36,7 +36,8 @@ import {
 	ClockIcon,
 	CodeIcon,
 	MonitorIcon,
-	AgentIcon
+	AgentIcon,
+	PaletteIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -330,6 +331,12 @@ export const navigationItems: NavigationSections = {
 					url: resolve('/(app)/system/roles'),
 					icon: ShieldAlertIcon,
 					accessSurfaceId: 'settings.category.roles'
+				},
+				{
+					title: m.branding(),
+					url: resolve('/(app)/system/branding'),
+					icon: PaletteIcon,
+					accessSurfaceId: 'settings.category.branding'
 				},
 				{
 					title: m.diagnostics(),

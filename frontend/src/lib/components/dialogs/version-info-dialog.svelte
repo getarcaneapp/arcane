@@ -14,12 +14,10 @@
 	import type { VersionInfo } from '#lib/types/version.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { isDevelopmentBuild, logoBranding } from '#lib/utils/branding.js';
+	import { logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-
-	import BrandImageSettings from './brand-image-settings.svelte';
 
 	interface Props {
 		open: boolean;
@@ -121,16 +119,6 @@
 				settingsStore.current?.experimentalFeaturesEnabled === true,
 				(enabled) => updateSetting({ experimentalFeaturesEnabled: enabled })
 			)}
-			{#if isDevelopmentBuild()}
-				{@render settingToggle(
-					'development-branding-toggle',
-					m.development_branding(),
-					m.development_branding_description(),
-					settingsStore.current?.developmentBrandingEnabled !== false,
-					(enabled) => updateSetting({ developmentBrandingEnabled: enabled })
-				)}
-			{/if}
-			<BrandImageSettings />
 		{/if}
 
 		{#if displayInfo.currentDigest}

@@ -76,6 +76,7 @@ export { default as JobsIcon } from 'virtual:icons/solar/alarm-bold';
 export { default as LayersIcon } from 'virtual:icons/solar/layers-bold';
 export { default as HammerIcon } from 'virtual:icons/solar/sledgehammer-bold-duotone';
 export { default as GlobeIcon } from 'virtual:icons/solar/global-bold';
+export { default as PaletteIcon } from 'virtual:icons/solar/palette-bold';
 export { default as TagIcon } from 'virtual:icons/solar/tag-bold';
 export { default as HashIcon } from 'virtual:icons/solar/hashtag-bold';
 export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';

@@ -35,9 +35,11 @@
 			title: m.backups(),
 			urls: [resolve('/(app)/system/backups'), resolve('/(app)/system/backups/s3')]
 		},
+		{ id: 'branding', title: m.branding(), urls: [resolve('/(app)/system/branding')] },
 		{ id: 'diagnostics', title: m.diagnostics(), urls: [resolve('/(app)/system/diagnostics')] }
 	]}
 	navOnlyDescriptions={{
+		[resolve('/(app)/system/branding')]: m.branding_description,
 		[resolve('/(app)/system/roles')]: m.roles_subtitle,
 		[resolve('/(app)/system/diagnostics')]: m.diagnostics_description
 	}}
