@@ -14,10 +14,12 @@
 	import type { VersionInfo } from '#lib/types/version.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { isDevelopmentBuild, usesDevelopmentBranding } from '#lib/utils/branding.js';
+	import { isDevelopmentBuild, logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	import BrandImageSettings from './brand-image-settings.svelte';
 
 	interface Props {
 		open: boolean;
@@ -46,8 +48,8 @@
 
 	const enabledFeatures = $derived((displayInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
-	const developmentBranding = $derived(usesDevelopmentBranding());
-	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, { development: developmentBranding }));
+	const branding = $derived(logoBranding());
+	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, branding));
 
 	const canToggleSettings = $derived(hasPermission('settings:update', GLOBAL_SCOPE));
 	let savingSetting = $state(false);
@@ -84,7 +86,7 @@
 <ResponsiveDialog {open} {onOpenChange} contentClass="sm:max-w-xl">
 	{#snippet title()}
 		<div class="flex items-center gap-3">
-			<img src={logoUrl} alt="Arcane" class={developmentBranding ? 'size-10' : 'size-7'} />
+			<img src={logoUrl} alt="Arcane" class={branding.development ? 'size-10' : 'size-7 object-contain'} />
 			<div class="flex flex-col gap-0.5">
 				<span class="text-xl leading-none">{m.version_info_title()}</span>
 				<span class="text-sm font-normal text-muted-foreground">{displayInfo.displayVersion || displayInfo.currentVersion}</span>
@@ -128,6 +130,7 @@
 					(enabled) => updateSetting({ developmentBrandingEnabled: enabled })
 				)}
 			{/if}
+			<BrandImageSettings />
 		{/if}
 
 		{#if displayInfo.currentDigest}

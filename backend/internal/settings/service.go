@@ -302,6 +302,38 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 	return s.persistSettings(ctx, []SettingVariable{{Key: key, Value: value}})
 }
 
+func (s *SettingsService) UpdateSettingWithChanges(ctx context.Context, key, value string, changes func(tx *gorm.DB) error) error {
+	if s.appConfig.UIConfigurationDisabled {
+		return common.Classify(common.ErrValidation, errors.New("this cannot be changed because UI configuration is disabled"))
+	}
+	_, byKey := settingsFields()
+	if err := validateValue(byKey[key], value); err != nil {
+		return err
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := changes(tx); err != nil {
+			return err
+		}
+		if err := tx.Save(&SettingVariable{Key: key, Value: value}).Error; err != nil {
+			return fmt.Errorf("failed to update setting %s: %w", key, err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := s.LoadDatabaseSettings(context.WithoutCancel(ctx)); err != nil {
+		return fmt.Errorf("failed to refresh settings cache: %w", err)
+	}
+	return nil
+}
+
 func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []types.SettingUpdate) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -664,7 +696,7 @@ func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility, scopes 
 	fields, _ := settingsFields()
 	states := make([]types.SettingState, 0, len(fields))
 	for _, field := range fields {
-		if field.isInternal || !fieldVisibleForSettingVisibility(field, visibility) || len(scopes) > 0 && !slices.Contains(scopes, field.scope) {
+		if (field.isInternal && !field.isPublic) || !fieldVisibleForSettingVisibility(field, visibility) || len(scopes) > 0 && !slices.Contains(scopes, field.scope) {
 			continue
 		}
 		value := values.Field(field.index).FieldByName("Value").String()

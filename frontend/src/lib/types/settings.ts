@@ -64,6 +64,10 @@ export type Settings = {
 	enableGravatar: boolean;
 	experimentalFeaturesEnabled: boolean;
 	developmentBrandingEnabled: boolean;
+	customLogoHash?: string;
+	customLogoFullHash?: string;
+	customFaviconHash?: string;
+	customPwaIconHash?: string;
 	apnsEnabled?: boolean;
 	notificationsIncludeReleaseLinks?: boolean;
 	avatarMaxUploadSizeMb: number;
@@ -134,6 +138,8 @@ export type Settings = {
 };
 
 export type SettingKey = keyof Settings;
+
+export type BrandImageSlot = 'mark' | 'full' | 'favicon' | 'pwa';
 
 export interface SettingState {
 	key: string;
