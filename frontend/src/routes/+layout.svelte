@@ -87,9 +87,15 @@
 			.filter(Boolean)
 			.join(' | ')
 	);
+
+	const faviconHash = $derived(settingsStore.current?.customFaviconHash ?? '');
+	const pwaIconHash = $derived(settingsStore.current?.customPwaIconHash ?? '');
 </script>
 
 <svelte:head>
+	<link rel="icon" href={`/api/app/images/favicon?v=${faviconHash}`} />
+	<link rel="apple-touch-icon" sizes="152x152" href={`/api/app/images/pwa/icon-152x152.png?v=${pwaIconHash}`} />
+	<link rel="apple-touch-icon" href={`/api/app/images/pwa/icon-192x192.png?v=${pwaIconHash}`} />
 	{#if !isAuthPage}
 		<title>{pageTitle}</title>
 	{/if}

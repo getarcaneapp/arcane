@@ -10,3 +10,8 @@ export function isDevelopmentBuild(): boolean {
 export function usesDevelopmentBranding(): boolean {
 	return isDevelopmentBuild() && settingsStore.current?.developmentBrandingEnabled !== false;
 }
+
+export function logoBranding(full = false): { custom: string; development: boolean } {
+	const custom = (full ? settingsStore.current?.customLogoFullHash : settingsStore.current?.customLogoHash) ?? '';
+	return { custom, development: !custom && usesDevelopmentBranding() };
+}

@@ -3,6 +3,8 @@ package appimages
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"mime/multipart"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +13,8 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -25,15 +29,29 @@ type (
 		Loop     bool   `query:"loop" default:"false" doc:"Loop the animated icon indefinitely (loader mode; animated icon only)"`
 	}
 
+	UploadLogoInput struct {
+		RawBody multipart.Form `contentType:"multipart/form-data"`
+		Variant string         `path:"variant" enum:"mark,full" doc:"Logo slot to replace"`
+	}
+
+	DeleteLogoInput struct {
+		Variant string `path:"variant" enum:"mark,full" doc:"Logo slot to reset to the built-in artwork"`
+	}
+
+	UploadImageInput struct {
+		RawBody multipart.Form `contentType:"multipart/form-data"`
+	}
+
 	GetPWAIconInput struct {
 		Filename string `path:"filename" example:"icon-192x192.png" doc:"PWA icon filename"`
 	}
 
 	GetAppImageOutput struct {
-		ContentType         string `header:"Content-Type"`
-		CacheControl        string `header:"Cache-Control"`
-		XContentTypeOptions string `header:"X-Content-Type-Options"`
-		Body                []byte
+		ContentType           string `header:"Content-Type"`
+		CacheControl          string `header:"Cache-Control"`
+		XContentTypeOptions   string `header:"X-Content-Type-Options"`
+		ContentSecurityPolicy string `header:"Content-Security-Policy"`
+		Body                  []byte
 	}
 )
 
@@ -54,15 +72,39 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 		name += "-animated"
 	}
 
-	return h.getImageWithColor(name, input.Color, input.Loop)
+	return h.getImageWithColor(ctx, name, input.Color, input.Loop)
+}
+
+func (h *AppImagesHandler) UploadLogo(ctx context.Context, input *UploadLogoInput) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.uploadImage(ctx, ImageSlot(input.Variant), input.RawBody)
+}
+
+func (h *AppImagesHandler) DeleteLogo(ctx context.Context, input *DeleteLogoInput) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.deleteImage(ctx, ImageSlot(input.Variant))
+}
+
+func (h *AppImagesHandler) UploadFavicon(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.uploadImage(ctx, ImageSlotFavicon, input.RawBody)
+}
+
+func (h *AppImagesHandler) DeleteFavicon(ctx context.Context, input *struct{}) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.deleteImage(ctx, ImageSlotFavicon)
+}
+
+func (h *AppImagesHandler) UploadPWAIcon(ctx context.Context, input *UploadImageInput) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.uploadImage(ctx, ImageSlotPWA, input.RawBody)
+}
+
+func (h *AppImagesHandler) DeletePWAIcon(ctx context.Context, input *struct{}) (*handlerutil.Out[types.MessageResponse], error) {
+	return h.deleteImage(ctx, ImageSlotPWA)
 }
 
 func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImageWithColor("favicon", "", false)
+	return h.getImageWithColor(ctx, "favicon", "", false)
 }
 
 func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImageWithColor("profile", "", false)
+	return h.getImageWithColor(ctx, "profile", "", false)
 }
 
 func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
@@ -70,11 +112,43 @@ func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInpu
 		return nil, huma.Error400BadRequest("invalid PWA icon filename")
 	}
 
-	return h.getImageWithColor(strings.TrimSuffix(input.Filename, filepath.Ext(input.Filename)), "", false)
+	return h.getImageWithColor(ctx, strings.TrimSuffix(input.Filename, filepath.Ext(input.Filename)), "", false)
 }
 
-func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
-	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride, loop)
+func (h *AppImagesHandler) uploadImage(ctx context.Context, slot ImageSlot, form multipart.Form) (*handlerutil.Out[types.MessageResponse], error) {
+	files := form.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("no file uploaded; include a 'file' field in the multipart form")
+	}
+	f, err := files[0].Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read uploaded file: " + err.Error())
+	}
+	defer func() { _ = f.Close() }()
+
+	if uploadErr := h.appImagesService.UploadImage(ctx, slot, f); uploadErr != nil {
+		if errors.Is(uploadErr, common.ErrValidation) {
+			return nil, handlerutil.APIError(uploadErr)
+		}
+		slog.ErrorContext(ctx, "Failed to save custom image", "slot", slot, "error", uploadErr)
+		return nil, huma.Error500InternalServerError("failed to save image")
+	}
+	return handlerutil.MessageOutput("Image updated successfully", ""), nil
+}
+
+func (h *AppImagesHandler) deleteImage(ctx context.Context, slot ImageSlot) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.appImagesService.DeleteImage(ctx, slot); err != nil {
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
+		}
+		slog.ErrorContext(ctx, "Failed to delete custom image", "slot", slot, "error", err)
+		return nil, huma.Error500InternalServerError("failed to delete image")
+	}
+	return handlerutil.MessageOutput("Image reset successfully", ""), nil
+}
+
+func (h *AppImagesHandler) getImageWithColor(ctx context.Context, name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
+	imageData, mimeType, err := h.appImagesService.GetImageWithColor(ctx, name, colorOverride, loop)
 	if err != nil {
 		if errors.Is(err, common.ErrNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
@@ -92,9 +166,10 @@ func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bo
 	)
 
 	return &GetAppImageOutput{
-		ContentType:         mimeType,
-		CacheControl:        cacheControl,
-		XContentTypeOptions: "nosniff",
-		Body:                imageData,
+		ContentType:           mimeType,
+		CacheControl:          cacheControl,
+		XContentTypeOptions:   "nosniff",
+		ContentSecurityPolicy: "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+		Body:                  imageData,
 	}, nil
 }

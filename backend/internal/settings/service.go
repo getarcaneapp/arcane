@@ -664,7 +664,7 @@ func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility, scopes 
 	fields, _ := settingsFields()
 	states := make([]types.SettingState, 0, len(fields))
 	for _, field := range fields {
-		if field.isInternal || !fieldVisibleForSettingVisibility(field, visibility) || len(scopes) > 0 && !slices.Contains(scopes, field.scope) {
+		if (field.isInternal && !field.isPublic) || !fieldVisibleForSettingVisibility(field, visibility) || len(scopes) > 0 && !slices.Contains(scopes, field.scope) {
 			continue
 		}
 		value := values.Field(field.index).FieldByName("Value").String()

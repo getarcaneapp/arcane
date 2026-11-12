@@ -286,7 +286,7 @@ export function getApplicationLogo(
 	full = false,
 	colorOverride?: string,
 	version?: string,
-	opts?: { animated?: boolean; loop?: boolean; development?: boolean }
+	opts?: { animated?: boolean; loop?: boolean; development?: boolean; custom?: string }
 ): string {
 	const params = new URLSearchParams();
 
@@ -309,6 +309,10 @@ export function getApplicationLogo(
 	// Cache-busts open pages when development branding is toggled.
 	if (opts?.development) {
 		params.set('branding', 'development');
+	}
+
+	if (opts?.custom) {
+		params.set('custom', opts.custom);
 	}
 
 	if (version) {

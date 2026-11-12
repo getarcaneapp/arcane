@@ -740,6 +740,27 @@ func TestMigration111_AddsGitOpsComposeOverrideAndEnv(t *testing.T) {
 	assert.Zero(t, syncColumns())
 }
 
+func TestMigration112_AddsCustomImages(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-custom-images.db")
+	schemaObjects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'custom_images') +
+			(SELECT COUNT(*) FROM settings WHERE key IN ('customLogoHash', 'customLogoFullHash', 'customFaviconHash', 'customPwaIconHash'))`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 112))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES
+		('customLogoHash', 'a'), ('customLogoFullHash', 'b'), ('customFaviconHash', 'c'), ('customPwaIconHash', 'd')`)
+	require.NoError(t, err)
+	assert.Equal(t, 5, schemaObjects())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 111))
+	assert.Zero(t, schemaObjects())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

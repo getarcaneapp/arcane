@@ -1,10 +1,24 @@
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { GLOBAL_SCOPE } from '#lib/types/role.js';
-import type { ProjectsDirectoryEntry, SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
+import type {
+	BrandImageSlot,
+	ProjectsDirectoryEntry,
+	SettingKey,
+	SettingState,
+	Settings,
+	SettingsSnapshot
+} from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
 import BaseAPIService from './api-service';
+
+const brandImagePaths: Record<BrandImageSlot, string> = {
+	mark: '/app/images/logo/mark',
+	full: '/app/images/logo/full',
+	favicon: '/app/images/favicon',
+	pwa: '/app/images/pwa'
+};
 
 export function parseSettingValue(type: string, value: string): string | number | boolean | ProjectsDirectoryEntry[] {
 	switch (type) {
@@ -50,6 +64,16 @@ class SettingsService extends BaseAPIService {
 	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<ResolvedSettings> {
 		const res = await this.api.get<SettingsSnapshot>(`/agents/${environmentId}/settings/public`, { signal });
 		return this.normalize(res.data);
+	}
+
+	async uploadBrandImage(slot: BrandImageSlot, file: File): Promise<void> {
+		const formData = new FormData();
+		formData.append('file', file);
+		await this.api.put(brandImagePaths[slot], formData);
+	}
+
+	async deleteBrandImage(slot: BrandImageSlot): Promise<void> {
+		await this.api.delete(brandImagePaths[slot]);
 	}
 
 	async updateSettingsForEnvironment(

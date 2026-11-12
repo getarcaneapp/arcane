@@ -26,7 +26,7 @@
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
 	import { normalizeAuthenticationError } from '#lib/utils/auth.js';
-	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
+	import { logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
@@ -45,11 +45,11 @@
 
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
-	const developmentBranding = $derived(usesDevelopmentBranding());
+	const branding = $derived(logoBranding());
 	const markUrl = $derived(
 		getApplicationLogo(false, logoColor, logoColor, {
 			animated: animationsEnabled,
-			development: developmentBranding
+			...branding
 		})
 	);
 
@@ -195,7 +195,10 @@
 				<div class="p-6 md:p-8">
 					<div class="mb-7 flex flex-col items-center text-center">
 						<img
-							class={cn('mb-4 drop-shadow-md drop-shadow-primary/15 md:hidden', developmentBranding ? 'size-14' : 'size-10')}
+							class={cn(
+								'mb-4 object-contain drop-shadow-md drop-shadow-primary/15 md:hidden',
+								branding.development ? 'size-14' : 'size-10'
+							)}
 							src={markUrl}
 							alt={m.layout_title()}
 						/>
@@ -385,7 +388,7 @@
 				</div>
 
 				<div class="relative hidden flex-col items-center justify-center gap-4 bg-muted/20 md:flex">
-					<img class="size-36 drop-shadow-md drop-shadow-primary/15" src={markUrl} alt={m.layout_title()} />
+					<img class="size-36 object-contain drop-shadow-md drop-shadow-primary/15" src={markUrl} alt={m.layout_title()} />
 					{#if data.versionInformation?.displayVersion}
 						<span class="font-mono text-xs tracking-ultrawide text-muted-foreground uppercase"
 							>{data.versionInformation.displayVersion}</span

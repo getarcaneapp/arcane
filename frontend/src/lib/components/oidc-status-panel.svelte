@@ -4,7 +4,7 @@
 
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
+	import { logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 
@@ -24,7 +24,7 @@
 		getApplicationLogo(false, logoColor, logoColor, {
 			animated: animationsEnabled,
 			loop: animationsEnabled,
-			development: usesDevelopmentBranding()
+			...logoBranding()
 		})
 	);
 </script>
@@ -33,7 +33,7 @@
 	<div class="w-full max-w-md space-y-8">
 		<div class="flex flex-col items-center text-center">
 			{#if busy}
-				<img class="size-12" src={loaderLogoUrl} alt="" />
+				<img class="size-12 object-contain" src={loaderLogoUrl} alt="" />
 				<h2 class="mt-6 text-2xl font-semibold">{busyTitle}</h2>
 				<p class="mt-2 text-sm text-muted-foreground">{busyDescription}</p>
 			{:else if error}

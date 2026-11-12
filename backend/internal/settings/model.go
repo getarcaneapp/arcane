@@ -184,6 +184,10 @@ type (
 		BrowserSessionSigningKey   SettingVariable `key:"browserSessionSigningKey,internal,sensitive" default:""`
 		JwtSigningKeySeed          SettingVariable `key:"jwtSigningKeySeed,internal,sensitive" default:""`
 		InstanceID                 SettingVariable `key:"instanceId,internal" default:""`
+		CustomLogoHash             SettingVariable `key:"customLogoHash,internal,public,manager" default:""`
+		CustomLogoFullHash         SettingVariable `key:"customLogoFullHash,internal,public,manager" default:""`
+		CustomFaviconHash          SettingVariable `key:"customFaviconHash,internal,public,manager" default:""`
+		CustomPwaIconHash          SettingVariable `key:"customPwaIconHash,internal,public,manager" default:""`
 		SensitiveSettingsEncrypted SettingVariable `key:"sensitiveSettingsEncrypted,internal" default:""`
 		UsersCategoryPlaceholder   SettingVariable `key:"usersCategory,internal" default:"" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/system/users;description=Manage user accounts and access control"`
 		ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" default:"" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/system/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
