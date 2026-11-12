@@ -852,8 +852,16 @@ func (s *SettingsService) ValidateBuildsDirectory(root string) error {
 			reserved = append(reserved, filepath.Dir(databasePath))
 		}
 	}
+	resolvedRoot, err := resolveSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("failed to resolve builds directory %q: %w", root, err)
+	}
 	for _, dataDirectory := range reserved {
-		if projects.IsSafeSubdirectory(dataDirectory, root) || projects.IsSafeSubdirectory(root, dataDirectory) {
+		resolvedData, dataErr := resolveSymlinks(dataDirectory)
+		if dataErr != nil {
+			return fmt.Errorf("failed to resolve the Arcane data directory: %w", dataErr)
+		}
+		if projects.IsSafeSubdirectory(resolvedData, resolvedRoot) || projects.IsSafeSubdirectory(resolvedRoot, resolvedData) {
 			return fmt.Errorf("builds directory %q overlaps the Arcane data directory", root)
 		}
 	}

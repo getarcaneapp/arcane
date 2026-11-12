@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -158,6 +159,24 @@ func projectsDirectoryContainerPaths(value string) ([]string, error) {
 		paths = append(paths, cleaned)
 	}
 	return paths, nil
+}
+
+func resolveSymlinks(target string) (string, error) {
+	absolute, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	existing := absolute
+	for {
+		resolved, evalErr := filepath.EvalSymlinks(existing)
+		if evalErr == nil {
+			return filepath.Join(resolved, strings.TrimPrefix(absolute, existing)), nil
+		}
+		if !errors.Is(evalErr, fs.ErrNotExist) || filepath.Dir(existing) == existing {
+			return "", evalErr
+		}
+		existing = filepath.Dir(existing)
+	}
 }
 
 func validateProjectsDirectoriesOverlap(ctx context.Context, extrasValue, primaryValue, templatesValue string) error {
