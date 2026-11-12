@@ -96,7 +96,7 @@ require (
 	kit.getarcane.app/docker v0.3.1
 	kit.getarcane.app/docker/convert v0.4.2
 	kit.getarcane.app/sys/cgroup v0.3.2
-	kit.getarcane.app/tripwire v0.1.2
+	kit.getarcane.app/tripwire v0.2.0
 	kit.getarcane.app/updater v0.12.2
 	modernc.org/sqlite v1.62.0
 )

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,9 +27,9 @@ type (
 		templateService  *template.TemplateService
 		settingsService  *settings.SettingsService
 		lifecycleCtx     context.Context
+		projectsWatcher  *tripwire.Watcher[string]
+		templatesWatcher *tripwire.Watcher[struct{}]
 		restart          chan struct{}
-		projectsWatcher  []*tripwire.Watcher[string]
-		templatesWatcher []*tripwire.Watcher[struct{}]
 		restartMu        sync.Mutex
 		mu               sync.Mutex
 		stopped          bool
@@ -93,7 +94,14 @@ func (j *FilesystemWatcherJob) Stop(ctx context.Context) error {
 	projectsWatcher, templatesWatcher := j.projectsWatcher, j.templatesWatcher
 	j.projectsWatcher, j.templatesWatcher = nil, nil
 	j.mu.Unlock()
-	return errors.Join(stopWatchers(projectsWatcher), stopWatchers(templatesWatcher))
+	var err error
+	if projectsWatcher != nil {
+		err = projectsWatcher.Stop()
+	}
+	if templatesWatcher != nil {
+		err = errors.Join(err, templatesWatcher.Stop())
+	}
+	return err
 }
 
 func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error {
@@ -108,58 +116,58 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if err != nil {
 		return err
 	}
-	roots, err := j.projectService.EnabledProjectsRoots(ctx)
+	enabledRoots, err := j.projectService.EnabledProjectsRoots(ctx)
 	if err != nil {
 		return err
 	}
-
-	watchers := make([]*tripwire.Watcher[string], 0, len(roots))
-	for i, root := range roots {
-		if _, statErr := (acfs.Host{}).Stat(ctx, root, types.StatOptions{FollowFinal: true}); i > 0 && statErr != nil {
+	roots := slices.Clip(enabledRoots[:1])
+	for _, root := range enabledRoots[1:] {
+		if _, statErr := (acfs.Host{}).Stat(ctx, root, types.StatOptions{FollowFinal: true}); statErr != nil {
 			slog.WarnContext(ctx, "Skipping projects filesystem watcher for unavailable projects directory", "path", root, "error", statErr)
 			continue
 		}
-		if runtime.GOOS == "linux" {
-			slog.WarnContext(ctx,
-				"Projects filesystem watcher is monitoring directories recursively; very deep trees may require increasing fs.inotify.max_user_watches",
-				"path", root,
-				"sysctl", "fs.inotify.max_user_watches")
-		}
-
-		watcher, newErr := tripwire.New(root, tripwire.Config[string]{
-			Key: func(e tripwire.Event) (string, bool) {
-				return e.Logical, projects.IsProjectFile(filepath.Base(e.Path)) && !projects.PathHasSegment(e.Rel, projects.IsIgnoredProjectDirName)
-			},
-			OnBatch: func(ctx context.Context, batch tripwire.Batch[string]) {
-				j.mu.Lock()
-				defer j.mu.Unlock()
-				if j.stopped || ctx.Err() != nil {
-					return
-				}
-				slog.InfoContext(ctx, "Filesystem change detected, syncing projects")
-				if syncErr := j.projectService.SyncProjectsFromFileSystem(ctx); syncErr != nil {
-					slog.ErrorContext(ctx, "Failed to sync projects after filesystem change", "error", syncErr)
-				} else {
-					slog.InfoContext(ctx, "Project sync completed after filesystem change")
-				}
-				j.projectService.HandleProjectFilesChanged(ctx, batch.Keys)
-			},
-			SkipDir:        projects.IsIgnoredProjectDirName,
-			Debounce:       500 * time.Millisecond,
-			MaxDepth:       localSettings.ProjectScanMaxDepth.AsInt(),
-			FollowSymlinks: localSettings.FollowProjectSymlinks.IsTrue(),
-		})
-		if newErr != nil {
-			return errors.Join(newErr, stopWatchers(watchers))
-		}
-		if startErr := watcher.Start(j.lifecycleCtx); startErr != nil { //nolint:contextcheck // watcher lifetime belongs to the application, not this replacement task.
-			return errors.Join(startErr, stopWatchers(watchers))
-		}
-		slog.InfoContext(ctx, "Projects filesystem watcher started", "path", root)
-		watchers = append(watchers, watcher)
+		roots = append(roots, root)
+	}
+	if runtime.GOOS == "linux" {
+		slog.WarnContext(ctx,
+			"Projects filesystem watcher is monitoring directories recursively; very deep trees may require increasing fs.inotify.max_user_watches",
+			"paths", roots,
+			"sysctl", "fs.inotify.max_user_watches")
 	}
 
-	return j.replaceWatcher(ctx, &j.projectsWatcher, watchers, func(syncCtx context.Context) {
+	watcher, err := tripwire.New(tripwire.Config[string]{
+		Roots: roots,
+		Key: func(e tripwire.Event) (string, bool) {
+			return e.Logical, projects.IsProjectFile(filepath.Base(e.Path)) && !projects.PathHasSegment(e.Rel, projects.IsIgnoredProjectDirName)
+		},
+		OnBatch: func(ctx context.Context, batch tripwire.Batch[string]) {
+			j.mu.Lock()
+			defer j.mu.Unlock()
+			if j.stopped || ctx.Err() != nil {
+				return
+			}
+			slog.InfoContext(ctx, "Filesystem change detected, syncing projects")
+			if syncErr := j.projectService.SyncProjectsFromFileSystem(ctx); syncErr != nil {
+				slog.ErrorContext(ctx, "Failed to sync projects after filesystem change", "error", syncErr)
+			} else {
+				slog.InfoContext(ctx, "Project sync completed after filesystem change")
+			}
+			j.projectService.HandleProjectFilesChanged(ctx, batch.Keys)
+		},
+		SkipDir:        projects.IsIgnoredProjectDirName,
+		Debounce:       500 * time.Millisecond,
+		MaxDepth:       localSettings.ProjectScanMaxDepth.AsInt(),
+		FollowSymlinks: localSettings.FollowProjectSymlinks.IsTrue(),
+	})
+	if err != nil {
+		return err
+	}
+	if startErr := watcher.Start(j.lifecycleCtx); startErr != nil { //nolint:contextcheck // watcher lifetime belongs to the application, not this replacement task.
+		return startErr
+	}
+	slog.InfoContext(ctx, "Projects filesystem watcher started", "paths", roots)
+
+	return j.replaceWatcher(ctx, &j.projectsWatcher, watcher, func(syncCtx context.Context) {
 		if syncErr := j.projectService.SyncProjectsFromFileSystem(syncCtx); syncErr != nil {
 			slog.ErrorContext(syncCtx, "Initial project sync after watcher start failed", "error", syncErr)
 		}
@@ -203,7 +211,8 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 		}
 	}
 
-	watcher, err := tripwire.New(templatesDir, tripwire.Config[struct{}]{
+	watcher, err := tripwire.New(tripwire.Config[struct{}]{
+		Roots: []string{templatesDir},
 		Key: func(e tripwire.Event) (struct{}, bool) {
 			return struct{}{}, projects.IsProjectFile(filepath.Base(e.Path)) && !projects.PathHasSegment(e.Rel, projects.IsIgnoredProjectDirName)
 		},
@@ -229,36 +238,31 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 	}
 	slog.InfoContext(ctx, "Templates filesystem watcher started", "path", templatesDir)
 
-	return j.replaceWatcher(ctx, &j.templatesWatcher, []*tripwire.Watcher[struct{}]{watcher}, initialSync)
+	return j.replaceWatcher(ctx, &j.templatesWatcher, watcher, initialSync)
 }
 
-func (j *FilesystemWatcherJob) replaceWatcher[K comparable](ctx context.Context, slot *[]*tripwire.Watcher[K], watchers []*tripwire.Watcher[K], initialSync func(context.Context)) error {
+func (j *FilesystemWatcherJob) replaceWatcher[K comparable](ctx context.Context, slot **tripwire.Watcher[K], watcher *tripwire.Watcher[K], initialSync func(context.Context)) error {
 	j.mu.Lock()
 	if j.stopped {
 		j.mu.Unlock()
-		if len(watchers) == 0 {
+		if watcher == nil {
 			return errWatcherStopped
 		}
-		return errors.Join(errWatcherStopped, stopWatchers(watchers))
+		return errors.Join(errWatcherStopped, watcher.Stop())
 	}
 	previous := *slot
-	*slot = watchers
+	*slot = watcher
 	j.mu.Unlock()
 
-	err := stopWatchers(previous)
+	var err error
+	if previous != nil {
+		err = previous.Stop()
+	}
 
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if !j.stopped && ctx.Err() == nil {
 		initialSync(ctx)
-	}
-	return err
-}
-
-func stopWatchers[K comparable](watchers []*tripwire.Watcher[K]) error {
-	var err error
-	for _, watcher := range watchers {
-		err = errors.Join(err, watcher.Stop())
 	}
 	return err
 }
