@@ -675,7 +675,8 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 
 	switch fileName {
 	case EffectiveEnvFileName:
-		if strings.TrimSpace(content) == "" {
+		entry, statErr := acfs.Host{}.Stat(ctx, filepath.Join(projectPath, EffectiveEnvFileName), acfstypes.StatOptions{})
+		if strings.TrimSpace(content) == "" && (statErr != nil || !entry.IsSymlink) {
 			return RemoveProjectFile(ctx, projectsDirectory, projectPath, EffectiveEnvFileName)
 		}
 		return WriteProjectFile(ctx, projectsDirectory, projectPath, EffectiveEnvFileName, content)

@@ -25,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
@@ -51,6 +52,7 @@ type (
 		settingsService     *settings.SettingsService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
+		admissionGate       *runs.Admission
 
 		restarts map[string]*restartRecord
 
@@ -73,6 +75,7 @@ type (
 		SettingsService     *settings.SettingsService
 		EventService        *event.EventService
 		NotificationService *notification.NotificationService
+		AdmissionGate       *runs.Admission
 	}
 )
 
@@ -80,6 +83,7 @@ const (
 	AutoHealJobName            = "auto-heal"
 	autoHealDefaultSchedule    = "*/5 * * * *"
 	autoHealInspectConcurrency = 4
+	autoHealAdmissionScope     = "auto-heal"
 )
 
 func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
@@ -87,6 +91,7 @@ func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 		settingsService:     p.SettingsService,
 		eventService:        p.EventService,
 		notificationService: p.NotificationService,
+		admissionGate:       p.AdmissionGate,
 		restarts:            make(map[string]*restartRecord),
 		getDockerClientFn:   p.DockerClientService.GetClient,
 		listContainers:      listUnhealthyContainers,
@@ -113,6 +118,17 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 		slog.DebugContext(ctx, "auto-heal disabled; skipping run")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
+
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
+	if err != nil {
+		slog.ErrorContext(ctx, "auto-heal admission failed", "error", err)
+		return types.SchedulerOutcome{}, err
+	}
+	if !admitted {
+		slog.WarnContext(ctx, "auto-heal run still in progress; skipping overlapping run")
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+	}
+	defer lease.Release(ctx)
 
 	dockerClient, err := j.getDockerClientFn(ctx)
 	if err != nil {
@@ -410,6 +426,14 @@ func listUnhealthyContainers(ctx context.Context, dockerClient *client.Client) (
 }
 
 func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: autoHealAdmissionScope})
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	if !admitted {
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "A container healing run already owns admission"}, nil
+	}
+	defer lease.Release(ctx)
 	var plan autoHealPlan
 	planned := false
 	for _, target := range previous.Outcome.Targets {

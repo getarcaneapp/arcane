@@ -292,19 +292,16 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 		return fmt.Errorf("open backup directory: %w", err)
 	}
 
+	var restoreErrs []error
 	for _, rel := range backup.FileEntries {
-		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, rel); restoreBackupFileErr != nil {
-			return restoreBackupFileErr
-		}
+		restoreErrs = append(restoreErrs, restoreBackupFile(ctx, backupRoot, projRoot, backup, rel))
 	}
 
 	if backup.TopLevelFiles {
-		if restoreTopLevelFilesErr := restoreTopLevelFiles(ctx, backupRoot, projRoot, backup); restoreTopLevelFilesErr != nil {
-			return restoreTopLevelFilesErr
-		}
+		restoreErrs = append(restoreErrs, restoreTopLevelFiles(ctx, backupRoot, projRoot, backup))
 	}
 
-	return nil
+	return errors.Join(restoreErrs...)
 }
 
 func undoRenamedDirsAndDebris(ctx context.Context, projRoot acfs.Root, backup *ProjectUpdateBackup) error {
@@ -461,15 +458,14 @@ func restoreTopLevelFiles(ctx context.Context, backupRoot, projRoot acfs.Root, b
 		}
 	}
 
+	var restoreErrs []error
 	for _, entry := range backupEntries {
 		if !os.FileMode(entry.UnixMode).IsRegular() {
 			continue
 		}
-		if restoreBackupFileErr := restoreBackupFile(ctx, backupRoot, projRoot, backup, entry.Name); restoreBackupFileErr != nil {
-			return restoreBackupFileErr
-		}
+		restoreErrs = append(restoreErrs, restoreBackupFile(ctx, backupRoot, projRoot, backup, entry.Name))
 	}
-	return nil
+	return errors.Join(restoreErrs...)
 }
 
 func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath, pattern string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, func(), error) {

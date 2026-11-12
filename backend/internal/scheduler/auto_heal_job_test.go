@@ -19,7 +19,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/notification"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
 
@@ -168,6 +170,11 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
+
 	cfg := &config.Config{}
 	eventSvc := event.NewEventService(wrappedDB, cfg, nil)
 	job, err := NewAutoHealJob(AutoHealJobParams{
@@ -191,6 +198,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 			}),
 			SettingsService: settingsSvc,
 		}),
+		AdmissionGate: gate,
 	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func(context.Context) (*client.Client, error) { return nil, nil }

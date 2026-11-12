@@ -56,27 +56,31 @@ func SplitRegistryURL(url string) (host, namespace string) {
 }
 
 // MatchingForImage returns the items whose registry URL serves imageRef, most specific namespace first.
-// A namespaced registry URL such as host/team only serves images below that namespace.
 func MatchingForImage[T any](imageRef string, items []T, registryURL func(T) string) ([]T, error) {
 	named, err := ref.ParseNormalizedNamed(imageRef)
 	if err != nil {
 		return nil, err
 	}
 	imageHost, _ := SplitRegistryURL(ref.Domain(named))
-	repository := ref.Path(named)
 	if imageHost == "" {
 		return nil, nil
 	}
 	matches := slices.DeleteFunc(slices.Clone(items), func(item T) bool {
-		host, namespace := SplitRegistryURL(registryURL(item))
-		return host != imageHost || (namespace != "" && repository != namespace && !strings.HasPrefix(repository, namespace+"/"))
+		host, _ := SplitRegistryURL(registryURL(item))
+		return host != imageHost
 	})
 	slices.SortStableFunc(matches, func(a, b T) int {
-		_, namespaceA := SplitRegistryURL(registryURL(a))
-		_, namespaceB := SplitRegistryURL(registryURL(b))
-		return cmp.Compare(len(namespaceB), len(namespaceA))
+		return cmp.Compare(namespaceMatchLength(ref.Path(named), registryURL(b)), namespaceMatchLength(ref.Path(named), registryURL(a)))
 	})
 	return matches, nil
+}
+
+func namespaceMatchLength(repository, registryURL string) int {
+	_, namespace := SplitRegistryURL(registryURL)
+	if namespace != "" && repository != namespace && !strings.HasPrefix(repository, namespace+"/") {
+		return -1
+	}
+	return len(namespace)
 }
 
 func NormalizeRegistryURL(url string) string {
