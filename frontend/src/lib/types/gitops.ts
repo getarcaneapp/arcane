@@ -45,6 +45,8 @@ export interface GitOpsSync {
 	repository?: GitRepository;
 	branch: string;
 	composePath: string;
+	composeOverridePath?: string;
+	envContent?: string;
 	targetType: string;
 	mode: GitOpsSyncMode;
 	backupDirectory?: string;

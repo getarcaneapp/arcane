@@ -218,6 +218,12 @@ func (s *Service) syncTarget(
 			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
 			syncedFiles = append(syncedFiles, file.RelativePath)
 		}
+		composeDir := path.Dir(path.Join("/", filepath.ToSlash(sync.ComposePath)))
+		if !sync.SyncDirectory && sync.EnvContent != nil {
+			if writeErr := (acfs.Root{Path: source.repoPath}).Write(stageCtx, path.Join(composeDir, ".env"), []byte(kit.FromPtr(source.envContent)), acfs.WriteOptions{Mode: kitfs.FilePerm}); writeErr != nil {
+				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to write sync environment variables", writeErr)
+			}
+		}
 		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
 		request := types.SwarmStackDeployRequest{
 			Name:             sync.ProjectName,
@@ -227,7 +233,8 @@ func (s *Service) syncTarget(
 			Files:            swarmFiles,
 			Prune:            true,
 			WithRegistryAuth: true,
-			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
+			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Join(source.repoPath, filepath.FromSlash(composeDir))),
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
@@ -340,26 +347,50 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 		}
 	}
 
-	// Like docker compose, only a standard compose filename auto-loads a sibling override; a custom path is the -f case.
-	if slices.Contains(projects.ComposeFileCandidates, filepath.Base(sync.ComposePath)) {
-		overrideName, overrideContent, overrideFound, overrideErr := projects.ResolveComposeOverride(
-			func(name string) bool {
-				return s.repoService.FileExists(ctx, repoPath, filepath.Join(composeDir, name))
-			},
-			func(name string) (string, error) {
-				return s.repoService.ReadFile(ctx, repoPath, filepath.Join(composeDir, name))
-			},
-		)
-		// Degrading would delete the project's existing override on a transient read failure.
-		if overrideErr != nil {
-			return source, s.failSync(ctx, result, sync, actor, "Failed to read compose override file", overrideErr)
+	if err = s.resolveSyncOverride(ctx, sync, source); err != nil {
+		return source, s.failSync(ctx, result, sync, actor, "Failed to read compose override file", err)
+	}
+
+	// A non-nil empty value means the variables were cleared; it still replaces the git layer so their old values go.
+	if sync.EnvContent != nil {
+		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(source.envContent), *sync.EnvContent)
+		if mergeErr != nil {
+			return source, s.failSync(ctx, result, sync, actor, "Failed to merge sync environment variables", mergeErr)
 		}
-		if overrideFound {
-			source.overrideContent = &overrideContent
-			source.overrideFileName = overrideName
-		}
+		source.envContent = &merged
 	}
 	return source, nil
+}
+
+func (s *Service) resolveSyncOverride(ctx context.Context, sync *projectpkg.GitOpsSync, source *preparedSyncSource) error {
+	if overridePath := strings.TrimSpace(sync.ComposeOverridePath); overridePath != "" {
+		if !s.repoService.FileExists(ctx, source.repoPath, overridePath) {
+			return errors.New("compose override file not found: " + overridePath)
+		}
+		content, err := s.repoService.ReadFile(ctx, source.repoPath, overridePath)
+		if err != nil {
+			return err
+		}
+		source.overrideContent = &content
+		source.overrideFileName = overrideFileNameFor(overridePath)
+		return nil
+	}
+
+	composeDir := filepath.Dir(sync.ComposePath)
+	name, content, found, err := projects.ResolveComposeOverride(
+		func(name string) bool {
+			return s.repoService.FileExists(ctx, source.repoPath, filepath.Join(composeDir, name))
+		},
+		func(name string) (string, error) {
+			return s.repoService.ReadFile(ctx, source.repoPath, filepath.Join(composeDir, name))
+		},
+	)
+	if err != nil || !found {
+		return err
+	}
+	source.overrideContent = &content
+	source.overrideFileName = name
+	return nil
 }
 
 func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, source *preparedSyncSource) (*projectpkg.Project, bool, error) {
@@ -527,6 +558,13 @@ func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.Git
 		default:
 			slog.WarnContext(ctx, "dropping reserved Arcane env file from git payload; will be re-derived from override merge", "path", file.RelativePath)
 		}
+	}
+	if sync.EnvContent != nil {
+		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(stage.gitEnvContent), *sync.EnvContent)
+		if mergeErr != nil {
+			return nil, nil, false, false, fmt.Errorf("failed to merge sync environment variables: %w", mergeErr)
+		}
+		stage.gitEnvContent = &merged
 	}
 
 	if stage.project, err = s.DirectoryProject(ctx, sync); err != nil {

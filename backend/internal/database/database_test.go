@@ -724,6 +724,22 @@ func TestMigration110_RenamesEnvironmentsLandingPage(t *testing.T) {
 	assert.Equal(t, "/containers", landingPage("other"))
 }
 
+func TestMigration111_AddsGitOpsComposeOverrideAndEnv(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-gitops-override-env.db")
+	syncColumns := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('gitops_syncs') WHERE name IN ('compose_override_path', 'env_content')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 111))
+	assert.Equal(t, 2, syncColumns())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 110))
+	assert.Zero(t, syncColumns())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

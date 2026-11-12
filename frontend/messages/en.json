@@ -4547,5 +4547,10 @@
   "duplicate_directory": "This directory is already listed",
   "project_directory": "Project Directory",
   "hsts_label": "HTTP Strict Transport Security",
-  "hsts_description": "Tell browsers to use HTTPS only for this hostname for one year."
+  "hsts_description": "Tell browsers to use HTTPS only for this hostname for one year.",
+  "compose_override_file": "Compose Override File",
+  "compose_override_file_help": "Leave empty to use compose.override.yml or compose.override.yaml next to the compose file.",
+  "select_compose_override_file": "Select a compose override file from the repository",
+  "env_merge_help": "Merged over the repository .env on every sync. One KEY=VALUE per line.",
+  "load_env_file": "Load .env file"
 }

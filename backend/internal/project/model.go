@@ -64,6 +64,7 @@ type (
 		PreDeployRunnerImage   *string    `json:"preDeployRunnerImage,omitempty" gorm:"column:pre_deploy_runner_image"`
 		PreDeployEnv           *string    `json:"preDeployEnv,omitempty" gorm:"column:pre_deploy_env"`                  // KEY=VALUE lines, one per line; same format as .env files
 		PreDeployExtraMounts   *string    `json:"preDeployExtraMounts,omitempty" gorm:"column:pre_deploy_extra_mounts"` // docker -v style "src:tgt[:ro|:rw]" entries, one per line
+		EnvContent             *string    `json:"envContent,omitempty" gorm:"column:env_content"`
 		PreDeployLastRunAt     *time.Time `json:"preDeployLastRunAt,omitempty" gorm:"column:pre_deploy_last_run_at" sortable:"true"`
 		PreDeployLastRunStatus *string    `json:"preDeployLastRunStatus,omitempty" gorm:"column:pre_deploy_last_run_status" sortable:"true"` // "success" | "failed" | "timeout"
 		PreDeployLastRunOutput *string    `json:"preDeployLastRunOutput,omitempty" gorm:"column:pre_deploy_last_run_output"`                 // truncated stdout+stderr
@@ -76,6 +77,7 @@ type (
 		RepositoryID           string     `json:"repositoryId" sortable:"true"`
 		Branch                 string     `json:"branch" sortable:"true" search:"branch,main,master,develop,feature,release"`
 		ComposePath            string     `json:"composePath" sortable:"true" search:"compose,docker-compose,path,file,yaml,yml"`
+		ComposeOverridePath    string     `json:"composeOverridePath" gorm:"column:compose_override_path;not null;default:''"`
 		TargetType             string     `json:"targetType" gorm:"column:target_type;default:'project'"` // "project" or "swarm_stack"
 		ProjectName            string     `json:"projectName" sortable:"true" search:"project,name,stack,application,service"`
 		// Docker network mode for the runner: "none" denies access; "bridge", "host", or a named network enables it.

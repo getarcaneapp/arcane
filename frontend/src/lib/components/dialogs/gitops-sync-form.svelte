@@ -12,6 +12,8 @@
 				repositoryId: z.string().min(1, m.common_required()),
 				branch: z.string().min(1, m.common_required()),
 				composePath: z.string().default(''),
+				composeOverridePath: z.string().default(''),
+				envContent: z.string().default(''),
 				backupDirectory: z.string().default(''),
 				backupPaths: z.array(z.string()).default([]),
 				includeEnvFile: z.boolean().default(false),
@@ -60,7 +62,7 @@
 	export type GitOpsSyncFormSchema = ReturnType<typeof gitOpsSyncFormSchema>;
 	export type GitOpsSyncFormState = ReturnType<typeof createForm<GitOpsSyncFormSchema>>;
 	export type GitOpsSyncTargetType = 'project' | 'swarm_stack';
-	export type GitOpsSyncBrowseTarget = 'compose' | 'preDeployScript';
+	export type GitOpsSyncBrowseTarget = 'compose' | 'override' | 'preDeployScript';
 </script>
 
 <script lang="ts">
@@ -118,6 +120,16 @@
 	const isEditMode = $derived(!!syncToEdit);
 	let showFileBrowser = $state(false);
 	let fileBrowserTarget = $state<GitOpsSyncBrowseTarget>('compose');
+	const fileBrowserDescription = $derived.by(() => {
+		switch (fileBrowserTarget) {
+			case 'preDeployScript':
+				return m.git_sync_browse_files_description_script();
+			case 'override':
+				return m.select_compose_override_file();
+			default:
+				return m.git_sync_browse_files_description();
+		}
+	});
 
 	const canManageLifecycle = $derived(hasPermission('gitops:lifecycle', environmentId));
 	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
@@ -157,6 +169,8 @@
 			repositoryId: syncToEdit?.repositoryId ?? '',
 			branch: syncToEdit?.branch ?? 'main',
 			composePath: syncToEdit?.composePath ?? composePathFor(selectedTargetType),
+			composeOverridePath: syncToEdit?.composeOverridePath ?? '',
+			envContent: syncToEdit?.envContent ?? '',
 			backupDirectory: syncToEdit?.backupDirectory ?? '',
 			backupPaths: syncToEdit?.backupPaths ?? [],
 			includeEnvFile: syncToEdit?.backupPaths?.includes(envFileName) ?? false,
@@ -449,6 +463,8 @@
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
+			composeOverridePath: data.composeOverridePath.trim(),
+			envContent: data.envContent.trim(),
 			targetType: selectedTargetType,
 			projectName: selectedProject?.name ?? data.name,
 			syncDirectory: data.syncDirectory,
@@ -463,7 +479,14 @@
 
 		const payload: GitOpsSyncCreate | GitOpsSyncUpdate =
 			isEditMode && syncToEdit
-				? changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(syncToEdit, fields)
+				? changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(
+						{
+							...syncToEdit,
+							composeOverridePath: syncToEdit.composeOverridePath ?? '',
+							envContent: syncToEdit.envContent ?? ''
+						},
+						fields
+					)
 				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
 
 		if (shouldSubmitLifecycleFieldsInternal(data)) {
@@ -601,9 +624,7 @@
 	bind:open={showFileBrowser}
 	repositoryId={selectedRepository?.value || ''}
 	branch={selectedBranch}
-	description={fileBrowserTarget === 'preDeployScript'
-		? m.git_sync_browse_files_description_script()
-		: m.git_sync_browse_files_description()}
+	description={fileBrowserDescription}
 	rootPath={fileBrowserTarget === 'preDeployScript' && inputs.composePath.value.includes('/')
 		? inputs.composePath.value.slice(0, inputs.composePath.value.lastIndexOf('/'))
 		: ''}
@@ -611,10 +632,15 @@
 	fileBadge={fileBrowserTarget === 'preDeployScript' ? undefined : composeBadge}
 	footerHint={fileBrowserTarget === 'preDeployScript' ? undefined : composeFooterHint}
 	onSelect={(path) => {
-		if (fileBrowserTarget === 'preDeployScript') {
-			inputs.preDeployScriptPath.value = path;
-		} else {
-			inputs.composePath.value = path;
+		switch (fileBrowserTarget) {
+			case 'preDeployScript':
+				inputs.preDeployScriptPath.value = path;
+				break;
+			case 'override':
+				inputs.composeOverridePath.value = path;
+				break;
+			default:
+				inputs.composePath.value = path;
 		}
 	}}
 />

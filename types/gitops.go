@@ -34,6 +34,7 @@ type (
 		UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
 
 		PreDeployEnv           *string        `json:"preDeployEnv,omitempty"`
+		EnvContent             *string        `json:"envContent,omitempty" doc:"KEY=VALUE lines merged over the repository .env on every deploy sync"`
 		PreDeployLastRunOutput *string        `json:"preDeployLastRunOutput,omitempty" readOnly:"true"`
 		Repository             *GitRepository `json:"repository,omitempty" readOnly:"true"`
 		PreDeployLastRunStatus *string        `json:"preDeployLastRunStatus,omitempty" readOnly:"true"`
@@ -58,6 +59,8 @@ type (
 		PreDeployNetworkMode string `json:"preDeployNetworkMode" required:"false"`
 		Name                 string `json:"name" required:"false"`
 		EnvironmentID        string `json:"environmentId" readOnly:"true"`
+
+		ComposeOverridePath string `json:"composeOverridePath,omitempty" required:"false" doc:"Repository path of a compose override file; empty auto-detects one beside the compose file"`
 
 		EnvironmentName string   `json:"environmentName,omitempty" readOnly:"true" doc:"Display name of the environment the sync belongs to"`
 		RepositoryID    string   `json:"repositoryId" required:"false"`
