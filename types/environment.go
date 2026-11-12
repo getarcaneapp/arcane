@@ -106,11 +106,10 @@ type (
 
 	DeploymentSnippetFile struct {
 		Name          string `json:"name" doc:"Suggested filename"`
-		Content       string `json:"content,omitempty" doc:"PEM file contents. Omitted for sensitive files such as private keys; use downloadUrl instead."`
-		DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file when content is withheld"`
+		Content       string `json:"content,omitempty" doc:"PEM file contents"`
+		DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file"`
 		ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
 		Permissions   string `json:"permissions" doc:"Suggested file mode"`
-		Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
 	}
 )
 

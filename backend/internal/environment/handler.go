@@ -641,12 +641,10 @@ func (h *EnvironmentHandler) CreateDeploymentSnippets(ctx context.Context, input
 					}
 					files := make([]types.DeploymentSnippetFile, 0, len(snippets.MTLS.Files))
 					for _, file := range snippets.MTLS.Files {
-						// Secret material is only served through the download endpoint.
 						files = append(files, types.DeploymentSnippetFile{
 							Name:          file.Name,
-							Content:       kit.Ternary(isSensitiveMTLSAssetName(file.Name), "", file.Content),
+							Content:       file.Content,
 							DownloadURL:   fmt.Sprintf("/api/agents/%s/deployment/mtls/%s", input.ID, file.Name),
-							Sensitive:     isSensitiveMTLSAssetName(file.Name),
 							ContainerPath: file.ContainerPath,
 							Permissions:   file.Permissions,
 						})
@@ -800,7 +798,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 			if parsed, parseErr := strconv.ParseUint(strings.TrimSpace(file.Permissions), 8, 32); parseErr == nil && parsed != 0 {
 				return os.FileMode(parsed)
 			}
-			return kit.Ternary[os.FileMode](isSensitiveMTLSAssetName(file.Name), 0o600, 0o644)
+			return 0o644
 		}())
 
 		entry, createErr := zipWriter.CreateHeader(header)
@@ -839,7 +837,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, in
 
 	return h.mtlsDownloadResponse(env, "application/x-pem-file", environmentMTLSAssetDownloadName(env, file.Name), []byte(file.Content),
 		"mTLS asset downloaded", fmt.Sprintf("Administrator downloaded agent mTLS asset %q", file.Name),
-		database.JSON{"fileName": file.Name, "kind": "file", "sensitive": isSensitiveMTLSAssetName(file.Name)}), nil
+		database.JSON{"fileName": file.Name, "kind": "file"}), nil
 }
 
 func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*Environment, []types.DeploymentSnippetFile, error) {
@@ -903,11 +901,6 @@ func (h *EnvironmentHandler) mtlsDownloadResponse(env *Environment, contentType,
 	}
 }
 
-func isSensitiveMTLSAssetName(fileName string) bool {
-	name := strings.ToLower(strings.TrimSpace(fileName))
-	return strings.HasSuffix(name, ".key") || strings.HasSuffix(name, "-key.pem") || strings.HasSuffix(name, "_key.pem")
-}
-
 func environmentMTLSDownloadBaseName(env *Environment) string {
 	baseName := strings.Map(func(r rune) rune {
 		switch {
@@ -921,12 +914,8 @@ func environmentMTLSDownloadBaseName(env *Environment) string {
 }
 
 func environmentMTLSAssetDownloadName(env *Environment, fileName string) string {
-	switch fileName {
-	case "agent.crt":
+	if fileName == "agent.crt" {
 		return environmentMTLSDownloadBaseName(env) + ".pem"
-	case "agent.key":
-		return environmentMTLSDownloadBaseName(env) + ".key"
-	default:
-		return fileName
 	}
+	return fileName
 }

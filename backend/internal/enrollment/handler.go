@@ -29,6 +29,7 @@ type (
 		AgentToken    string `header:"X-Arcane-Agent-Token" doc:"Agent token"`
 		APIKey        string `header:"X-Api-Key" doc:"Agent token, for proxies that strip custom headers"`
 		Authorization string `header:"Authorization" doc:"Bearer agent token, for proxies that strip custom headers"`
+		Body          agent.EnrollMTLSRequest
 	}
 
 	EnrollMTLSOutput struct {
@@ -62,6 +63,7 @@ func (h *EnrollmentHandler) EnrollMTLS(ctx context.Context, input *EnrollMTLSInp
 			agent.ExtractBearerToken(input.Authorization),
 		),
 		RemoteAddr: middleware.GetRemoteAddrFromContext(ctx),
+		CSR:        input.Body.CSR,
 	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)

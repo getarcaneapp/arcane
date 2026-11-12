@@ -48,6 +48,7 @@ type (
 	EnrollMTLSParams struct {
 		AgentToken string
 		RemoteAddr string
+		CSR        string
 	}
 )
 
@@ -56,6 +57,7 @@ var (
 	errAgentTokenRequired    = common.Classify(common.ErrUnauthorized, errors.New("agent token required"))
 	errInvalidAgentToken     = common.Classify(common.ErrUnauthorized, errors.New("invalid agent token"))
 	errMTLSEnrollCooldown    = common.NewAPIError(agent.ErrMTLSEnrollCooldown.Error(), common.APIErrorCodeTooManyRequests, http.StatusTooManyRequests)
+	errMTLSEnrollInvalidCSR  = common.Classify(common.ErrValidation, agent.ErrMTLSEnrollInvalidCSR)
 	errMTLSEnrollFailed      = errors.New("failed to generate agent mTLS assets")
 )
 
@@ -178,8 +180,12 @@ func (s *EnrollmentService) EnrollMTLS(ctx context.Context, p EnrollMTLSParams) 
 	enrollment, err := s.mtls.IssueEnrollment(ctx, agent.IssueClientOptions{
 		EnvironmentID:   envID,
 		EnvironmentName: envName,
+		CSR:             p.CSR,
 	})
 	switch {
+	case errors.Is(err, agent.ErrMTLSEnrollInvalidCSR):
+		slog.WarnContext(ctx, "Rejected agent mTLS enrollment without a valid certificate signing request", "environmentId", envID, "remoteAddr", p.RemoteAddr, "error", err)
+		return nil, errMTLSEnrollInvalidCSR
 	case errors.Is(err, agent.ErrMTLSEnrollCooldown):
 		slog.WarnContext(ctx, "Rejected repeated agent mTLS enrollment during cooldown", "environmentId", envID, "remoteAddr", p.RemoteAddr, "error", err)
 		return nil, errMTLSEnrollCooldown

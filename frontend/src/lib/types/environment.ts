@@ -64,7 +64,6 @@ export interface DeploymentSnippetFile {
 	name: string;
 	content?: string;
 	downloadUrl?: string;
-	sensitive?: boolean;
 	containerPath: string;
 	permissions: string;
 }
