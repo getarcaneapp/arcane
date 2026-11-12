@@ -62,27 +62,37 @@
 			}
 		}
 
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(settingsService.uploadBrandImage(slot, file)),
-			message: m.images_upload_failed(),
-			setLoadingState: (value) => (pending = value ? 'upload' : null),
-			onSuccess: async () => {
-				await refresh();
-				toast.success(m.images_upload_success());
-			}
-		});
+		if (pending !== null) return;
+		pending = 'upload';
+		try {
+			await handleApiResultWithCallbacks({
+				result: await tryCatch(settingsService.uploadBrandImage(slot, file)),
+				message: m.images_upload_failed(),
+				onSuccess: async () => {
+					await refresh();
+					toast.success(m.images_upload_success());
+				}
+			});
+		} finally {
+			pending = null;
+		}
 	}
 
 	async function remove() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(settingsService.deleteBrandImage(slot)),
-			message: m.common_remove_failed({ resource: label }),
-			setLoadingState: (value) => (pending = value ? 'remove' : null),
-			onSuccess: async () => {
-				await refresh();
-				toast.success(m.common_remove_success({ resource: label }));
-			}
-		});
+		if (pending !== null) return;
+		pending = 'remove';
+		try {
+			await handleApiResultWithCallbacks({
+				result: await tryCatch(settingsService.deleteBrandImage(slot)),
+				message: m.common_remove_failed({ resource: label }),
+				onSuccess: async () => {
+					await refresh();
+					toast.success(m.common_remove_success({ resource: label }));
+				}
+			});
+		} finally {
+			pending = null;
+		}
 	}
 </script>
 
@@ -103,11 +113,16 @@
 			icon={UploadIcon}
 			customLabel={custom ? m.replace() : m.upload()}
 			loading={pending === 'upload'}
-			disabled={pending !== null}
+			disabled={pending !== null || settingsStore.readOnly}
 			onclick={() => fileInput?.click()}
 		/>
 		{#if custom}
-			<ArcaneButton action="remove" loading={pending === 'remove'} disabled={pending !== null} onclick={remove} />
+			<ArcaneButton
+				action="remove"
+				loading={pending === 'remove'}
+				disabled={pending !== null || settingsStore.readOnly}
+				onclick={remove}
+			/>
 		{/if}
 	</div>
 </div>

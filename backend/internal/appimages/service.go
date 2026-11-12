@@ -217,7 +217,8 @@ func (s *ApplicationImagesService) UploadImage(ctx context.Context, slot ImageSl
 		return buildErr
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	sum := sha256.Sum256(data)
+	return s.settingsService.UpdateSettingWithChanges(ctx, spec.hashKey, hex.EncodeToString(sum[:8]), func(tx *gorm.DB) error {
 		if deleteErr := tx.Where("slot = ?", slot).Delete(&CustomImage{}).Error; deleteErr != nil {
 			return fmt.Errorf("failed to replace custom image: %w", deleteErr)
 		}
@@ -225,11 +226,7 @@ func (s *ApplicationImagesService) UploadImage(ctx context.Context, slot ImageSl
 			return fmt.Errorf("failed to save custom image: %w", createErr)
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-	sum := sha256.Sum256(data)
-	return s.settingsService.UpdateSetting(ctx, spec.hashKey, hex.EncodeToString(sum[:8]))
+	})
 }
 
 func (s *ApplicationImagesService) DeleteImage(ctx context.Context, slot ImageSlot) error {
@@ -237,10 +234,12 @@ func (s *ApplicationImagesService) DeleteImage(ctx context.Context, slot ImageSl
 	if !ok {
 		return ErrImageSlotInvalid
 	}
-	if err := s.db.WithContext(ctx).Where("slot = ?", slot).Delete(&CustomImage{}).Error; err != nil {
-		return fmt.Errorf("failed to delete custom image: %w", err)
-	}
-	return s.settingsService.UpdateSetting(ctx, spec.hashKey, "")
+	return s.settingsService.UpdateSettingWithChanges(ctx, spec.hashKey, "", func(tx *gorm.DB) error {
+		if err := tx.Where("slot = ?", slot).Delete(&CustomImage{}).Error; err != nil {
+			return fmt.Errorf("failed to delete custom image: %w", err)
+		}
+		return nil
+	})
 }
 
 func IsLogoVariant(name string) bool {

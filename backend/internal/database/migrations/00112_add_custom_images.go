@@ -7,21 +7,27 @@ import (
 const (
 	v112SQLiteUp = `
 CREATE TABLE custom_images (
+    id TEXT PRIMARY KEY,
     slot TEXT NOT NULL,
     size INTEGER NOT NULL DEFAULT 0,
     data BLOB NOT NULL,
     mime_type TEXT NOT NULL,
-    PRIMARY KEY (slot, size)
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME
 );
+CREATE UNIQUE INDEX idx_custom_images_slot_size ON custom_images (slot, size);
 `
 	v112PostgresUp = `
 CREATE TABLE IF NOT EXISTS custom_images (
+    id text PRIMARY KEY,
     slot text NOT NULL,
     size integer NOT NULL DEFAULT 0,
     data bytea NOT NULL,
     mime_type text NOT NULL,
-    PRIMARY KEY (slot, size)
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_images_slot_size ON custom_images (slot, size);
 `
 	v112SQLiteDown = `
 DROP TABLE custom_images;
