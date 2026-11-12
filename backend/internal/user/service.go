@@ -68,8 +68,8 @@ type (
 	DefaultAdminOptions struct {
 		Username       string
 		Password       string
-		PasswordPolicy string
 		DataDirectory  string
+		PasswordPolicy validation.PasswordPolicy
 	}
 )
 
@@ -565,7 +565,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context, opts DefaultAdminO
 
 		if userCount == 0 {
 			if opts.Password != "" {
-				if err := validation.ValidatePasswordPolicy(opts.Password, opts.PasswordPolicy); err != nil {
+				if err := opts.PasswordPolicy.Validate(opts.Password); err != nil {
 					return fmt.Errorf("invalid ARCANE_DEFAULT_ADMIN_PASSWORD: %w", err)
 				}
 			}

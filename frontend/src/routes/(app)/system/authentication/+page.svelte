@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { mergeProps } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -125,7 +123,15 @@
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
 				.max(525600, m.security_session_timeout_max()),
-			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
+			authPasswordMinLength: z.coerce
+				.number()
+				.int(m.minimum_length_range())
+				.min(8, m.minimum_length_range())
+				.max(128, m.minimum_length_range()),
+			authPasswordRequireUppercase: z.boolean(),
+			authPasswordRequireLowercase: z.boolean(),
+			authPasswordRequireNumber: z.boolean(),
+			authPasswordRequireSymbol: z.boolean(),
 			hstsEnabled: z.boolean(),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
@@ -168,7 +174,11 @@
 		return {
 			authLocalEnabled: source.authLocalEnabled,
 			authSessionTimeout: source.authSessionTimeout,
-			authPasswordPolicy: source.authPasswordPolicy,
+			authPasswordMinLength: source.authPasswordMinLength,
+			authPasswordRequireUppercase: source.authPasswordRequireUppercase,
+			authPasswordRequireLowercase: source.authPasswordRequireLowercase,
+			authPasswordRequireNumber: source.authPasswordRequireNumber,
+			authPasswordRequireSymbol: source.authPasswordRequireSymbol,
 			hstsEnabled: source.hstsEnabled,
 			oidcEnabled: source.oidcEnabled,
 			oidcMergeAccounts: source.oidcMergeAccounts,
@@ -251,26 +261,6 @@
 		showMergeAccountsAlert = false;
 	}
 </script>
-
-{#snippet passwordPolicyOption(value: 'basic' | 'standard' | 'strong', label: string, tooltip: string)}
-	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger>
-			{#snippet child({ props })}
-				{@const triggerProps = mergeProps(props, {
-					onclick: () => (formInputs.authPasswordPolicy.value = value),
-					class: 'h-12 w-full text-xs sm:text-sm'
-				})}
-				<ArcaneButton
-					{...triggerProps}
-					action="base"
-					tone={formInputs.authPasswordPolicy.value === value ? 'outline-primary' : 'outline'}
-					customLabel={label}
-				/>
-			{/snippet}
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="top">{tooltip}</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
-{/snippet}
 
 <SettingsPageLayout
 	title={m.authentication()}
@@ -606,23 +596,80 @@
 					</SettingsSection>
 
 					<SettingsSection title={m.security_password_policy_label()} description={m.security_password_policy_description()}>
-						<div
-							class="grid grid-cols-1 gap-2 px-5 py-4 sm:grid-cols-3 sm:gap-3"
-							role="group"
-							aria-label={m.security_password_policy_label()}
+						<SettingsRow
+							for="authPasswordMinLength"
+							label={m.minimum_length()}
+							description={m.minimum_length_description()}
+							error={formInputs.authPasswordMinLength.error}
+							lock={settingsStore.lock('authPasswordMinLength')}
 						>
-							{@render passwordPolicyOption('basic', m.common_basic(), m.security_password_policy_basic_tooltip())}
-							{@render passwordPolicyOption(
-								'standard',
-								m.security_password_policy_standard(),
-								m.security_password_policy_standard_tooltip()
-							)}
-							{@render passwordPolicyOption(
-								'strong',
-								m.security_password_policy_strong(),
-								m.security_password_policy_strong_tooltip()
-							)}
-						</div>
+							{#snippet children({ describedBy, errorId })}
+								<Input
+									id="authPasswordMinLength"
+									type="number"
+									bind:value={formInputs.authPasswordMinLength.value}
+									aria-invalid={!!formInputs.authPasswordMinLength.error}
+									aria-describedby={describedBy}
+									aria-errormessage={errorId}
+								/>
+							{/snippet}
+						</SettingsRow>
+						<SettingsRow
+							for="authPasswordRequireUppercaseSwitch"
+							label={m.require_uppercase_letter()}
+							layout="switch"
+							lock={settingsStore.lock('authPasswordRequireUppercase')}
+						>
+							{#snippet children({ describedBy })}
+								<Switch
+									id="authPasswordRequireUppercaseSwitch"
+									bind:checked={formInputs.authPasswordRequireUppercase.value}
+									aria-describedby={describedBy}
+								/>
+							{/snippet}
+						</SettingsRow>
+						<SettingsRow
+							for="authPasswordRequireLowercaseSwitch"
+							label={m.require_lowercase_letter()}
+							layout="switch"
+							lock={settingsStore.lock('authPasswordRequireLowercase')}
+						>
+							{#snippet children({ describedBy })}
+								<Switch
+									id="authPasswordRequireLowercaseSwitch"
+									bind:checked={formInputs.authPasswordRequireLowercase.value}
+									aria-describedby={describedBy}
+								/>
+							{/snippet}
+						</SettingsRow>
+						<SettingsRow
+							for="authPasswordRequireNumberSwitch"
+							label={m.require_number()}
+							layout="switch"
+							lock={settingsStore.lock('authPasswordRequireNumber')}
+						>
+							{#snippet children({ describedBy })}
+								<Switch
+									id="authPasswordRequireNumberSwitch"
+									bind:checked={formInputs.authPasswordRequireNumber.value}
+									aria-describedby={describedBy}
+								/>
+							{/snippet}
+						</SettingsRow>
+						<SettingsRow
+							for="authPasswordRequireSymbolSwitch"
+							label={m.require_symbol()}
+							layout="switch"
+							lock={settingsStore.lock('authPasswordRequireSymbol')}
+						>
+							{#snippet children({ describedBy })}
+								<Switch
+									id="authPasswordRequireSymbolSwitch"
+									bind:checked={formInputs.authPasswordRequireSymbol.value}
+									aria-describedby={describedBy}
+								/>
+							{/snippet}
+						</SettingsRow>
 					</SettingsSection>
 				</fieldset>
 			</Tabs.Content>

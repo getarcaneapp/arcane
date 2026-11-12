@@ -69,12 +69,6 @@ export class APIError extends Error {
 	}
 }
 
-const problemMessageFactories: Record<string, () => string> = {
-	'urn:arcane:problem:password-policy:basic': m.security_password_policy_basic_tooltip,
-	'urn:arcane:problem:password-policy:standard': m.security_password_policy_standard_tooltip,
-	'urn:arcane:problem:password-policy:strong': m.security_password_policy_strong_tooltip
-};
-
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
 }
@@ -93,10 +87,6 @@ export function extractServerMessage(data: unknown, includeErrors = false): stri
 	if (inner['code'] === 'feature_disabled' && inner['feature'] === 'vulnerabilityManagement') {
 		return m.features_vulnerability_disabled();
 	}
-
-	const problemType = nonEmptyString(inner['type']);
-	const localizedMessage = problemType ? problemMessageFactories[problemType] : undefined;
-	if (localizedMessage) return localizedMessage();
 
 	for (const key of ['error', 'message', 'detail', 'error_description']) {
 		const message = nonEmptyString(inner[key]);

@@ -761,6 +761,70 @@ func TestMigration112_AddsCustomImages(t *testing.T) {
 	assert.Zero(t, schemaObjects())
 }
 
+func TestMigration113_SplitsPasswordPolicyIntoGranularSettings(t *testing.T) {
+	ctx := t.Context()
+	granularKeys := []string{
+		"authPasswordMinLength",
+		"authPasswordRequireUppercase",
+		"authPasswordRequireLowercase",
+		"authPasswordRequireNumber",
+		"authPasswordRequireSymbol",
+	}
+	tests := []struct {
+		name   string
+		preset string
+		down   string
+		want   []string
+	}{
+		{name: "basic", preset: "basic", want: []string{"8", "false", "false", "false", "false"}, down: "basic"},
+		{name: "standard", preset: "standard", want: []string{"10", "true", "true", "true", "false"}, down: "standard"},
+		{name: "strong", preset: "strong", want: []string{"12", "true", "true", "true", "true"}, down: "strong"},
+		{name: "unknown", preset: "bogus", want: []string{"12", "true", "true", "true", "true"}, down: "strong"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-password-policy.db")
+			settingValues := func(keys ...string) []string {
+				values := make([]string, 0, len(keys))
+				for _, key := range keys {
+					var value string
+					require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COALESCE(MAX(value), '') FROM settings WHERE key = ?`, key).Scan(&value))
+					values = append(values, value)
+				}
+				return values
+			}
+
+			require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 112))
+			_, err := rawDB.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('authPasswordPolicy', ?)`, tt.preset)
+			require.NoError(t, err)
+
+			require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 113))
+			assert.Equal(t, tt.want, settingValues(granularKeys...))
+			assert.Equal(t, []string{""}, settingValues("authPasswordPolicy"))
+
+			require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 112))
+			assert.Equal(t, []string{tt.down}, settingValues("authPasswordPolicy"))
+			assert.Equal(t, []string{"", "", "", "", ""}, settingValues(granularKeys...))
+		})
+	}
+
+	t.Run("no stored policy", func(t *testing.T) {
+		rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-password-policy-empty.db")
+		countRows := func() int {
+			var count int
+			require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM settings WHERE key LIKE 'authPassword%'`).Scan(&count))
+			return count
+		}
+
+		require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 113))
+		assert.Zero(t, countRows())
+
+		require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 112))
+		assert.Zero(t, countRows())
+	})
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

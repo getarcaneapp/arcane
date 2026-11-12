@@ -404,7 +404,7 @@ func initializeStartupState(p initializeStartupStateParams) error {
 			return p.User.CreateDefaultAdmin(ctx, user.DefaultAdminOptions{
 				Username:       p.Config.DefaultAdminUsername,
 				Password:       p.Config.DefaultAdminPassword,
-				PasswordPolicy: p.Settings.GetStringSetting(ctx, "authPasswordPolicy"),
+				PasswordPolicy: p.Settings.GetSettingsConfig().PasswordPolicy(),
 				DataDirectory:  "data",
 			})
 		},

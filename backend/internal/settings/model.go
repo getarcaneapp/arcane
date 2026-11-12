@@ -19,6 +19,7 @@ import (
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -128,7 +129,11 @@ type (
 		DepotToken                            SettingVariable `key:"depotToken,sensitive" default:"" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
 		AuthLocalEnabled                      SettingVariable `key:"authLocalEnabled,public,manager" default:"true" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=authentication;description=Enable local username/password authentication" catmeta:"id=authentication;title=Authentication;icon=lock;url=/system/authentication;description=Manage authentication providers, password policy, and session behavior"`
 		AuthSessionTimeout                    SettingVariable `key:"authSessionTimeout,manager" default:"1440" meta:"label=Session Timeout;type=integer;min=0;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=authentication;description=How long user sessions remain active"`
-		AuthPasswordPolicy                    SettingVariable `key:"authPasswordPolicy,authrequired,manager" default:"strong" meta:"label=Password Policy;type=select;values=basic|standard|strong;keywords=password,policy,strength,complexity,requirements,security,rules;category=authentication;description=Set password strength requirements"`
+		AuthPasswordMinLength                 SettingVariable `key:"authPasswordMinLength,authrequired,manager" default:"12" meta:"label=Minimum Password Length;type=integer;min=8;max=128;keywords=password,policy,length,minimum,characters,strength,security;category=authentication;description=Minimum number of characters a password must contain"`
+		AuthPasswordRequireUppercase          SettingVariable `key:"authPasswordRequireUppercase,authrequired,manager" default:"true" meta:"label=Require Uppercase Letter;type=boolean;keywords=password,policy,uppercase,capital,letter,complexity,security;category=authentication;description=Require at least one uppercase letter in passwords"`
+		AuthPasswordRequireLowercase          SettingVariable `key:"authPasswordRequireLowercase,authrequired,manager" default:"true" meta:"label=Require Lowercase Letter;type=boolean;keywords=password,policy,lowercase,letter,complexity,security;category=authentication;description=Require at least one lowercase letter in passwords"`
+		AuthPasswordRequireNumber             SettingVariable `key:"authPasswordRequireNumber,authrequired,manager" default:"true" meta:"label=Require Number;type=boolean;keywords=password,policy,number,digit,complexity,security;category=authentication;description=Require at least one number in passwords"`
+		AuthPasswordRequireSymbol             SettingVariable `key:"authPasswordRequireSymbol,authrequired,manager" default:"true" meta:"label=Require Symbol;type=boolean;keywords=password,policy,symbol,special,character,complexity,security;category=authentication;description=Require at least one symbol in passwords"`
 		HstsEnabled                           SettingVariable `key:"hstsEnabled,manager" default:"false" meta:"label=HTTP Strict Transport Security;type=boolean;keywords=hsts,strict,transport,security,https,tls,header;category=authentication;description=Send the Strict-Transport-Security header on HTTPS responses"`
 		FeatureVulnerabilityManagementEnabled SettingVariable `key:"featureVulnerabilityManagementEnabled,public" default:"true" meta:"label=Vulnerability management;type=boolean;keywords=features,vulnerability,security,scan,enable,disable;category=general;description=Enable vulnerability management for this environment. Disabling retains reports and configuration and leaves standalone image patching available"`
 		FeatureSwarmEnabled                   SettingVariable `key:"featureSwarmEnabled,public" default:"false" meta:"label=Docker Swarm;type=boolean;keywords=features,swarm,cluster,stacks,services,nodes,enable,disable;category=general;description=Show Docker Swarm for this environment. An active swarm cluster keeps it enabled"`
@@ -367,6 +372,16 @@ func validateValue(meta settingFieldMeta, value string) error {
 		return invalid("%s must be at most %g", meta.key, meta.max.MustGet())
 	default:
 		return nil
+	}
+}
+
+func (s *Settings) PasswordPolicy() validation.PasswordPolicy {
+	return validation.PasswordPolicy{
+		MinLength:        s.AuthPasswordMinLength.AsInt(),
+		RequireUppercase: s.AuthPasswordRequireUppercase.Value != "false",
+		RequireLowercase: s.AuthPasswordRequireLowercase.Value != "false",
+		RequireNumber:    s.AuthPasswordRequireNumber.Value != "false",
+		RequireSymbol:    s.AuthPasswordRequireSymbol.Value != "false",
 	}
 }
 

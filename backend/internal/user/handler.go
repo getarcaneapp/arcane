@@ -86,13 +86,12 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
+	if validatePasswordPolicyErr := h.settingsService.GetSettingsConfig().PasswordPolicy().Validate(input.Body.Password); validatePasswordPolicyErr != nil {
 		return nil, handlerutil.Error400BadRequestWithType(common.Classify(common.ErrValidation,
 			&types.FieldError{
 				Field: "password",
 				Err:   validatePasswordPolicyErr,
-			}), validation.PasswordPolicyProblemType(passwordPolicy))
+			}), validation.PasswordPolicyProblemType)
 	}
 
 	hashedPassword, err := h.userService.HashPassword(ctx, input.Body.Password)
@@ -176,10 +175,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != "" {
-		passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
+		if validatePasswordPolicyErr := h.settingsService.GetSettingsConfig().PasswordPolicy().Validate(input.Body.Password); validatePasswordPolicyErr != nil {
 			fieldErr := common.Classify(common.ErrValidation, &types.FieldError{Field: "password", Err: validatePasswordPolicyErr})
-			return nil, handlerutil.Error400BadRequestWithType(fieldErr, validation.PasswordPolicyProblemType(passwordPolicy))
+			return nil, handlerutil.Error400BadRequestWithType(fieldErr, validation.PasswordPolicyProblemType)
 		}
 	}
 

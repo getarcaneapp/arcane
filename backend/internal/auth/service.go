@@ -39,7 +39,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/cookie"
 	"getarcane.dev/arcane/v3/pkg/oidc"
 	"getarcane.dev/arcane/v3/pkg/pagination"
-	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -845,8 +844,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, req ChangePasswordRequ
 		}
 	}
 
-	policy := s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(req.NewPassword, policy); validatePasswordPolicyErr != nil {
+	if validatePasswordPolicyErr := s.settingsService.GetSettingsConfig().PasswordPolicy().Validate(req.NewPassword); validatePasswordPolicyErr != nil {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "newPassword", Err: validatePasswordPolicyErr})
 	}
 

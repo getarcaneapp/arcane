@@ -344,8 +344,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, common.ErrForbidden):
 			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
-			passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType(passwordPolicy))
+			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType)
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}

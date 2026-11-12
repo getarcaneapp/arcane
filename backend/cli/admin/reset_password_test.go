@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -73,7 +74,7 @@ func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
 	secondSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
-	require.NoError(t, resetPassword(ctx, db, "arcane", "new-password", validation.PasswordPolicyBasic))
+	require.NoError(t, resetPassword(ctx, db, "arcane", "new-password", validation.PasswordPolicy{MinLength: 8}))
 
 	updatedUser, err := userService.GetUserByID(ctx, adminUser.ID)
 	require.NoError(t, err)
@@ -105,7 +106,7 @@ func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) 
 		END;
 	`).Error)
 
-	err = resetPassword(ctx, db, adminUser.Username, "new-password", validation.PasswordPolicyBasic)
+	err = resetPassword(ctx, db, adminUser.Username, "new-password", validation.PasswordPolicy{MinLength: 8})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "forced session revocation failure")
 
@@ -132,7 +133,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = resetPassword(ctx, db, nonAdmin.Username, "new-password", validation.PasswordPolicyBasic)
+	err = resetPassword(ctx, db, nonAdmin.Username, "new-password", validation.PasswordPolicy{MinLength: 8})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "effective global administrator")
 
@@ -148,7 +149,33 @@ func TestEnsurePasswordResetEnabled(t *testing.T) {
 }
 
 func TestValidatePasswordPair(t *testing.T) {
-	require.ErrorContains(t, validatePasswordPair("short", "short", validation.PasswordPolicyBasic), "at least 8")
-	require.ErrorContains(t, validatePasswordPair("new-password", "different", validation.PasswordPolicyBasic), "do not match")
-	require.NoError(t, validatePasswordPair("new-password", "new-password", validation.PasswordPolicyBasic))
+	require.ErrorContains(t, validatePasswordPair("short", "short", validation.PasswordPolicy{MinLength: 8}), "at least 8")
+	require.ErrorContains(t, validatePasswordPair("new-password", "different", validation.PasswordPolicy{MinLength: 8}), "do not match")
+	require.NoError(t, validatePasswordPair("new-password", "new-password", validation.PasswordPolicy{MinLength: 8}))
+}
+
+func TestPasswordPolicyFromDB(t *testing.T) {
+	db := newResetPasswordTestDB(t)
+	ctx := t.Context()
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+
+	require.Equal(t, validation.PasswordPolicy{
+		MinLength:        12,
+		RequireUppercase: true,
+		RequireLowercase: true,
+		RequireNumber:    true,
+		RequireSymbol:    true,
+	}, passwordPolicyFromDB(ctx, db))
+
+	require.NoError(t, db.Create(&[]settings.SettingVariable{
+		{Key: "authPasswordMinLength", Value: "16"},
+		{Key: "authPasswordRequireUppercase", Value: "false"},
+		{Key: "authPasswordRequireSymbol", Value: "false"},
+	}).Error)
+
+	require.Equal(t, validation.PasswordPolicy{
+		MinLength:        16,
+		RequireLowercase: true,
+		RequireNumber:    true,
+	}, passwordPolicyFromDB(ctx, db))
 }

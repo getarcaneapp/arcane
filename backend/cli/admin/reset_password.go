@@ -12,8 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
@@ -31,6 +29,14 @@ const (
 
 var (
 	resetPasswordUsername string
+
+	passwordPolicySettingKeys = []string{
+		"authPasswordMinLength",
+		"authPasswordRequireUppercase",
+		"authPasswordRequireLowercase",
+		"authPasswordRequireNumber",
+		"authPasswordRequireSymbol",
+	}
 
 	AdminCmd = &cobra.Command{
 		Use:   "admin",
@@ -108,7 +114,7 @@ func ensurePasswordResetEnabled(cfg *config.Config) error {
 	return nil
 }
 
-func readNewPassword(out io.Writer, policy string) (string, error) {
+func readNewPassword(out io.Writer, policy validation.PasswordPolicy) (string, error) {
 	password, err := readPassword(out, "New password: ")
 	if err != nil {
 		return "", fmt.Errorf("failed to read new password: %w", err)
@@ -139,8 +145,8 @@ func readPassword(out io.Writer, prompt string) (string, error) {
 	return string(password), nil
 }
 
-func validatePasswordPair(password, confirmation, policy string) error {
-	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
+func validatePasswordPair(password, confirmation string, policy validation.PasswordPolicy) error {
+	if err := policy.Validate(password); err != nil {
 		return err
 	}
 	if password != confirmation {
@@ -149,13 +155,22 @@ func validatePasswordPair(password, confirmation, policy string) error {
 	return nil
 }
 
-func passwordPolicyFromDB(ctx context.Context, db *database.DB) string {
-	var setting settings.SettingVariable
-	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
-	return kit.Ternary(err != nil || strings.TrimSpace(setting.Value) == "", validation.PasswordPolicyStrong, setting.Value)
+func passwordPolicyFromDB(ctx context.Context, db *database.DB) validation.PasswordPolicy {
+	cfg := settings.DefaultSettingsConfig()
+	var stored []settings.SettingVariable
+	if err := db.WithContext(ctx).Find(&stored, "key IN ?", passwordPolicySettingKeys).Error; err != nil {
+		slog.WarnContext(ctx, "Failed to read password policy settings; using defaults", "error", err)
+		return cfg.PasswordPolicy()
+	}
+	for _, setting := range stored {
+		if err := cfg.UpdateField(setting.Key, strings.TrimSpace(setting.Value), true); err != nil {
+			slog.WarnContext(ctx, "Ignoring password policy setting", "key", setting.Key, "error", err)
+		}
+	}
+	return cfg.PasswordPolicy()
 }
 
-func resetPassword(ctx context.Context, db *database.DB, username, password, policy string) error {
+func resetPassword(ctx context.Context, db *database.DB, username, password string, policy validation.PasswordPolicy) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}
@@ -164,7 +179,7 @@ func resetPassword(ctx context.Context, db *database.DB, username, password, pol
 	if username == "" {
 		return errors.New("username cannot be empty")
 	}
-	if err := validation.ValidatePasswordPolicy(password, policy); err != nil {
+	if err := policy.Validate(password); err != nil {
 		return err
 	}
 

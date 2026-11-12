@@ -191,10 +191,10 @@ async function createRestrictedUserThroughUI(
 	});
 	expect(await policyResponse.json()).toMatchObject({
 		status: 400,
-		type: 'urn:arcane:problem:password-policy:strong'
+		type: 'urn:arcane:problem:password-policy'
 	});
 	await expect(
-		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+		page.getByText('At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.', { exact: true })
 	).toBeVisible();
 
 	await dialog.getByLabel('Password *', { exact: true }).fill(password);
@@ -266,10 +266,10 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 	const policyResponse = await policyResponsePromise;
 	expect(await policyResponse.json()).toMatchObject({
 		status: 400,
-		type: 'urn:arcane:problem:password-policy:strong'
+		type: 'urn:arcane:problem:password-policy'
 	});
 	await expect(
-		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+		page.getByText('At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.', { exact: true })
 	).toBeVisible();
 
 	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();

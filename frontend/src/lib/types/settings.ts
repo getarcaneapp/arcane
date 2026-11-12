@@ -78,7 +78,11 @@ export type Settings = {
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
-	authPasswordPolicy: 'basic' | 'standard' | 'strong';
+	authPasswordMinLength: number;
+	authPasswordRequireUppercase: boolean;
+	authPasswordRequireLowercase: boolean;
+	authPasswordRequireNumber: boolean;
+	authPasswordRequireSymbol: boolean;
 	hstsEnabled: boolean;
 	toolsImageRegistry: 'ghcr.io' | 'docker.io';
 	updateCheckRegistry: UpdateCheckRegistry;
