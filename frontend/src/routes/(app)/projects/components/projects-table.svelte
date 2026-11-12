@@ -183,6 +183,9 @@
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 	const isBulkActionRunning = $derived(Object.values(isBulkLoading).some(Boolean));
+	const showProjectsRoot = $derived(
+		new Set((projects?.data ?? []).flatMap((project) => (project.projectsRoot ? [project.projectsRoot] : []))).size > 1
+	);
 	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(rowKey(project))));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
@@ -345,7 +348,15 @@
 {/snippet}
 
 {#snippet DirectoryCell({ item }: { item: ProjectRow })}
-	<span class="block max-w-88 truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
+	<span class="block max-w-88 truncate text-muted-foreground" title={item.path}>
+		{#if showProjectsRoot && item.projectsRoot && item.relativePath}
+			<span class="text-muted-foreground/60">{item.projectsRoot}/</span>{item.relativePath}
+		{:else if showProjectsRoot && item.projectsRoot}
+			{item.path}
+		{:else}
+			{item.relativePath || item.dirName || item.path}
+		{/if}
+	</span>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: ProjectRow })}
@@ -460,7 +471,8 @@
 			},
 			{
 				label: m.common_working_directory(),
-				getValue: (item: ProjectRow) => item.relativePath ?? item.dirName ?? item.path,
+				getValue: (item: ProjectRow) =>
+					showProjectsRoot && item.projectsRoot ? item.path : item.relativePath || item.dirName || item.path,
 				icon: FolderOpenIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['directory'] ?? true

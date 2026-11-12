@@ -240,6 +240,10 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) error {
 		}
 	}
 
+	if err := validateProjectsDirectoriesOverlap(ctx, values.ProjectsDirectories.Value, values.ProjectsDirectory.Value, values.TemplatesDirectory.Value); err != nil {
+		return fmt.Errorf("invalid projects directories configuration: %w", err)
+	}
+
 	s.snapshot.Store(&snapshot{
 		values:  values,
 		sources: sources,
@@ -380,6 +384,12 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		return fieldErr("trivyConfig", fmt.Errorf("trivyConfig must be a YAML mapping: %w", trivyConfigErr))
 	case strings.TrimSpace(pending["trivyConfig"]) != "" && trivyConfig == nil:
 		return fieldErr("trivyConfig", errors.New("trivyConfig must be a YAML mapping"))
+	}
+
+	if submittedValue("projectsDirectories") != nil || submittedValue("projectsDirectory") != nil || submittedValue("templatesDirectory") != nil {
+		if err := validateProjectsDirectoriesOverlap(ctx, effectiveValue("projectsDirectories"), effectiveValue("projectsDirectory"), effectiveValue("templatesDirectory")); err != nil {
+			return fieldErr("projectsDirectories", err)
+		}
 	}
 
 	if projectsDir != "" {
@@ -703,6 +713,16 @@ func (s *SettingsService) SystemVolumeBackupPolicies() (*types.SystemVolumeBacku
 	return &types.SystemVolumeBackupPolicyCollection{
 		Policies: kit.Ternary(collection.Policies == nil, []types.SystemVolumeBackupPolicy{}, collection.Policies),
 	}, nil
+}
+
+func (s *SettingsService) ProjectsDirectories() ([]types.ProjectsDirectoryEntry, error) {
+	var entries []types.ProjectsDirectoryEntry
+	if raw := strings.TrimSpace(s.GetSettingsConfig().ProjectsDirectories.Value); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+			return nil, fmt.Errorf("decode additional projects directories: %w", err)
+		}
+	}
+	return entries, nil
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key string) string {

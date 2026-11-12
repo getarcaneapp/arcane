@@ -32,7 +32,11 @@ func TestWriteFilesPermissions(t *testing.T) {
 		fs.FilePerm = 0o600
 		fs.DirPerm = 0o700
 
-		err := WriteComposeFile(t.Context(), projectsRoot, projectDir, "services: {}")
+		err := WriteComposeFile(t.Context(), ComposeFileWrite{
+			ProjectsRoot: projectsRoot,
+			DirPath:      projectDir,
+			Content:      "services: {}",
+		})
 		require.NoError(t, err)
 
 		composePath := filepath.Join(projectDir, "compose.yaml")
@@ -201,7 +205,11 @@ func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
 			case "project":
 				err = WriteProjectFile(t.Context(), projectsRoot, projectDir, fileName, "services: { updated: true }")
 			case "compose":
-				err = WriteComposeFile(t.Context(), projectsRoot, projectDir, "services: { updated: true }")
+				err = WriteComposeFile(t.Context(), ComposeFileWrite{
+					ProjectsRoot: projectsRoot,
+					DirPath:      projectDir,
+					Content:      "services: { updated: true }",
+				})
 			case "sync":
 				_, err = WriteSyncedDirectory(t.Context(), projectsRoot, projectDir, []SyncFile{
 					{RelativePath: DefaultComposeFileName, Content: []byte("services: { updated: true }")},
@@ -230,7 +238,11 @@ func TestWriteProjectFiles(t *testing.T) {
 	projectDir := filepath.Join(tmpDir, "test-project")
 
 	t.Run("creates new project without env when envContent is nil", func(t *testing.T) {
-		err := WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: {}", nil)
+		err := WriteProjectFiles(t.Context(), ComposeFileWrite{
+			ProjectsRoot: projectsRoot,
+			DirPath:      projectDir,
+			Content:      "services: {}",
+		}, nil)
 		require.NoError(t, err)
 
 		assert.NoFileExists(t, filepath.Join(projectDir, ".env"))
@@ -242,7 +254,11 @@ func TestWriteProjectFiles(t *testing.T) {
 		err := os.WriteFile(envPath, []byte(expected), 0o600)
 		require.NoError(t, err)
 
-		err = WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: { updated: true }", nil)
+		err = WriteProjectFiles(t.Context(), ComposeFileWrite{
+			ProjectsRoot: projectsRoot,
+			DirPath:      projectDir,
+			Content:      "services: { updated: true }",
+		}, nil)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(envPath)
@@ -253,7 +269,11 @@ func TestWriteProjectFiles(t *testing.T) {
 	t.Run("overwrites env when envContent is provided", func(t *testing.T) {
 		envPath := filepath.Join(projectDir, ".env")
 		newContent := "NEW=true"
-		err := WriteProjectFiles(t.Context(), projectsRoot, projectDir, "services: {}", &newContent)
+		err := WriteProjectFiles(t.Context(), ComposeFileWrite{
+			ProjectsRoot: projectsRoot,
+			DirPath:      projectDir,
+			Content:      "services: {}",
+		}, &newContent)
 		require.NoError(t, err)
 
 		content, err := os.ReadFile(envPath)
@@ -286,7 +306,11 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
-			err = WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
+			err = WriteComposeFile(t.Context(), ComposeFileWrite{
+				ProjectsRoot: projectsRoot,
+				DirPath:      projectDir,
+				Content:      expectedContent,
+			})
 			require.NoError(t, err)
 
 			actualContent, err := os.ReadFile(existingComposePath)
@@ -399,7 +423,11 @@ func TestWriteComposeFile_PreservesExistingCustomComposeNames(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.yaml"), []byte("x-config: true\n"), 0o600))
 
 	expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
-	err := WriteComposeFile(t.Context(), projectsRoot, projectDir, expectedContent)
+	err := WriteComposeFile(t.Context(), ComposeFileWrite{
+		ProjectsRoot: projectsRoot,
+		DirPath:      projectDir,
+		Content:      expectedContent,
+	})
 	require.NoError(t, err)
 
 	actualContent, err := os.ReadFile(existingComposePath)

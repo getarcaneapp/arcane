@@ -160,6 +160,7 @@ var (
 		"projectWorkspaceMaxDepth",
 		"projectWorkspaceMaxEntries",
 		"projectWorkspaceMaxFileSizeMb",
+		"projectsDirectories",
 		"projectsDirectory",
 		"proxyRequestTimeout",
 		"pruneBuildCacheMode",

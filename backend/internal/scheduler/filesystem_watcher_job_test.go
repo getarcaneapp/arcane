@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -93,4 +94,22 @@ func newFilesystemWatcherTestJob(t *testing.T) *FilesystemWatcherJob {
 	)
 	require.NoError(t, err)
 	return job
+}
+
+func TestFilesystemWatcherJob_SkipsUnavailableProjectsDirectory(t *testing.T) {
+	job := newFilesystemWatcherTestJob(t)
+	missing := filepath.Join(t.TempDir(), "missing")
+	require.NoError(t, job.settingsService.UpdateSetting(t.Context(), "projectsDirectories",
+		`[{"path":"`+t.TempDir()+`","enabled":true},{"path":"`+missing+`","enabled":true}]`))
+
+	require.NoError(t, job.RestartProjectsWatcher(t.Context()))
+	job.mu.Lock()
+	watcher := job.projectsWatcher
+	job.mu.Unlock()
+	require.NotNil(t, watcher)
+	require.NoDirExists(t, missing)
+
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, job.Stop(stopCtx))
 }

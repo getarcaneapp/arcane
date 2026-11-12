@@ -1,13 +1,15 @@
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { GLOBAL_SCOPE } from '#lib/types/role.js';
-import type { SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
+import type { ProjectsDirectoryEntry, SettingKey, SettingState, Settings, SettingsSnapshot } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
 import BaseAPIService from './api-service';
 
-export function parseSettingValue(type: string, value: string): string | number | boolean {
+export function parseSettingValue(type: string, value: string): string | number | boolean | ProjectsDirectoryEntry[] {
 	switch (type) {
+		case 'json':
+			return JSON.parse(value) as ProjectsDirectoryEntry[];
 		case 'boolean':
 			return value === 'true';
 		case 'integer':
@@ -58,8 +60,9 @@ class SettingsService extends BaseAPIService {
 		const patches: Record<SettingState['scope'], Record<string, string>> = { manager: {}, authentication: {}, environment: {} };
 		for (const [key, value] of Object.entries(changes)) {
 			const meta = base.meta[key as SettingKey];
-			if (!meta || meta.locked || value === undefined || String(value) === meta.value) continue;
-			patches[meta.scope][key] = String(value);
+			const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
+			if (!meta || meta.locked || value === undefined || serialized === meta.value) continue;
+			patches[meta.scope][key] = serialized;
 		}
 		const endpoints: Record<SettingState['scope'], string> = {
 			manager: '/settings',

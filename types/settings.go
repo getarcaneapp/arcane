@@ -38,6 +38,11 @@ type (
 		DepotConfigured             bool   `json:"depotConfigured,omitzero"`
 	}
 
+	ProjectsDirectoryEntry struct {
+		Path    string `json:"path"`
+		Enabled bool   `json:"enabled"`
+	}
+
 	SettingsSnapshot struct {
 		Settings []SettingState  `json:"settings"`
 		Runtime  SettingsRuntime `json:"runtime"`

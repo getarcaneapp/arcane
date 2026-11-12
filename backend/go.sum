@@ -718,8 +718,8 @@ kit.getarcane.app/docker/convert v0.4.2 h1:7uPG1ogvIMtH8HMYEMbU1E9G2SXnkpKSqck+L
 kit.getarcane.app/docker/convert v0.4.2/go.mod h1:YBrAPFZoQd6mOrxBHushZWWpAPn7hZJUh4fqx5MV3PE=
 kit.getarcane.app/sys/cgroup v0.3.2 h1:e/FDK7UJwBIiDrmJGhM7+VDYPiS6rXh9j0MOd6/S+84=
 kit.getarcane.app/sys/cgroup v0.3.2/go.mod h1:v7nIHbthbeH0faXKMPQCCWLGG5vhB45xYM45BG76XCU=
-kit.getarcane.app/tripwire v0.1.2 h1:ArUOl1PTwNVt37eJWHwu+edwTbJ/ajKYhTFl3r3gWNA=
-kit.getarcane.app/tripwire v0.1.2/go.mod h1:YfT9SEDCw2i+1YG7btMkg62bm/suXWWI/0dF3iQ4szQ=
+kit.getarcane.app/tripwire v0.2.0 h1:JPdW9d9s1Z0cZWU+FbFoYcP97X6VSKKw1qnE8SPRUwU=
+kit.getarcane.app/tripwire v0.2.0/go.mod h1:YfT9SEDCw2i+1YG7btMkg62bm/suXWWI/0dF3iQ4szQ=
 kit.getarcane.app/updater v0.12.2 h1:W+6ySJ03CQm3U+z5dCapCe2Lez8LsDdzGruj/ufPRhM=
 kit.getarcane.app/updater v0.12.2/go.mod h1:qyZNLjvkW+x+3Fu57SCrFtl7s6YzwLNEIvHeBNQVSIw=
 mellium.im/reader v0.1.0 h1:UUEMev16gdvaxxZC7fC08j7IzuDKh310nB6BlwnxTww=

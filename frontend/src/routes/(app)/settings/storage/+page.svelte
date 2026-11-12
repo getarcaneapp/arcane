@@ -9,6 +9,7 @@
 	description={m.settings_category_storage_description()}
 	keys={[
 		'projectsDirectory',
+		'projectsDirectories',
 		'templatesDirectory',
 		'swarmStackSourcesDirectory',
 		'diskUsagePath',
@@ -20,7 +21,7 @@
 		'unmanagedBackupRetentionDays'
 	]}
 >
-	{#snippet content({ formInputs, mixed, settings })}
-		<StorageTab {formInputs} {mixed} {settings} />
+	{#snippet content({ formInputs, mixed, lock, settings, environmentId }, scope)}
+		<StorageTab {formInputs} {mixed} {lock} {settings} environmentId={scope.entries.length === 1 ? environmentId : undefined} />
 	{/snippet}
 </EnvironmentSettingsPage>

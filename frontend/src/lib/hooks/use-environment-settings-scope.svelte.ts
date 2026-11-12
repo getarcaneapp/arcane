@@ -45,7 +45,8 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 		new Set(
 			(Object.keys(first?.values ?? {}) as SettingKey[]).filter(
 				(key) =>
-					first?.meta[key]?.scope === 'environment' && entries.some(({ settings }) => settings.values[key] !== first.values[key])
+					first?.meta[key]?.scope === 'environment' &&
+					entries.some(({ settings }) => JSON.stringify(settings.values[key]) !== JSON.stringify(first.values[key]))
 			)
 		)
 	);

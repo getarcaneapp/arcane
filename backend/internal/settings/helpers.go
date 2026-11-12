@@ -5,9 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"slices"
 	"strings"
 	"uuid"
 
@@ -17,6 +20,8 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -124,4 +129,54 @@ func (e Env) Variables() map[string]string {
 func (e Env) ValueOrDefault(key string) string {
 	_, byKey := settingsFields()
 	return cmp.Or(e[key], byKey[key].defaultValue)
+}
+
+func projectsDirectoryContainerPaths(value string) ([]string, error) {
+	if !strings.HasPrefix(strings.TrimSpace(value), "[") {
+		return nil, errors.New("projectsDirectories must be a JSON array of {\"path\", \"enabled\"} entries")
+	}
+	var entries []types.ProjectsDirectoryEntry
+	if err := json.Unmarshal([]byte(value), &entries); err != nil {
+		return nil, fmt.Errorf("projectsDirectories must be a JSON array of {\"path\", \"enabled\"} entries: %w", err)
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		raw := strings.TrimSpace(entry.Path)
+		containerPath := kit.Ternary(projects.IsWindowsDrivePath(raw), raw, strings.SplitN(raw, ":", 2)[0])
+		if raw == "" || (!projects.IsWindowsDrivePath(raw) && !strings.HasPrefix(containerPath, "/")) {
+			return nil, fmt.Errorf("projectsDirectories entry %q must be an absolute path starting with '/'", entry.Path)
+		}
+		cleaned := filepath.Clean(containerPath)
+		if slices.Contains(paths, cleaned) {
+			return nil, fmt.Errorf("projectsDirectories contains %q more than once", cleaned)
+		}
+		for _, existing := range paths {
+			if projects.IsSafeSubdirectory(existing, cleaned) || projects.IsSafeSubdirectory(cleaned, existing) {
+				return nil, fmt.Errorf("projectsDirectories entries %q and %q overlap; one is inside the other", existing, cleaned)
+			}
+		}
+		paths = append(paths, cleaned)
+	}
+	return paths, nil
+}
+
+func validateProjectsDirectoriesOverlap(ctx context.Context, extrasValue, primaryValue, templatesValue string) error {
+	extras, err := projectsDirectoryContainerPaths(extrasValue)
+	if err != nil {
+		return err
+	}
+	for _, reserved := range []struct {
+		name string
+		path string
+	}{
+		{name: "projects directory", path: projects.ResolveConfiguredContainerDirectory(ctx, primaryValue, "/app/data/projects")},
+		{name: "templates directory", path: projects.ResolveConfiguredContainerDirectory(ctx, templatesValue, "/app/data/templates")},
+	} {
+		for _, extra := range extras {
+			if projects.IsSafeSubdirectory(reserved.path, extra) || projects.IsSafeSubdirectory(extra, reserved.path) {
+				return fmt.Errorf("projectsDirectories entry %q overlaps the %s %q", extra, reserved.name, reserved.path)
+			}
+		}
+	}
+	return nil
 }

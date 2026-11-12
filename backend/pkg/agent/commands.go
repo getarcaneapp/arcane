@@ -94,6 +94,7 @@ var (
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects", CommandName: "project.list"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/counts", CommandName: "project.counts"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/directories", CommandName: "project.directories"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.action"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/deploy", CommandName: "project.deploy"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects", CommandName: "project.create"},

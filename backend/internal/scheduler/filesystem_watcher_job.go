@@ -6,9 +6,12 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/tripwire"
 
@@ -113,18 +116,27 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if err != nil {
 		return err
 	}
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, localSettings.ProjectsDirectory.Value)
+	enabledRoots, err := j.projectService.EnabledProjectsRoots(ctx)
 	if err != nil {
 		return err
+	}
+	roots := slices.Clip(enabledRoots[:1])
+	for _, root := range enabledRoots[1:] {
+		if _, statErr := (acfs.Host{}).Stat(ctx, root, types.StatOptions{FollowFinal: true}); statErr != nil {
+			slog.WarnContext(ctx, "Skipping projects filesystem watcher for unavailable projects directory", "path", root, "error", statErr)
+			continue
+		}
+		roots = append(roots, root)
 	}
 	if runtime.GOOS == "linux" {
 		slog.WarnContext(ctx,
 			"Projects filesystem watcher is monitoring directories recursively; very deep trees may require increasing fs.inotify.max_user_watches",
-			"path", projectsDirectory,
+			"paths", roots,
 			"sysctl", "fs.inotify.max_user_watches")
 	}
 
-	watcher, err := tripwire.New(projectsDirectory, tripwire.Config[string]{
+	watcher, err := tripwire.New(tripwire.Config[string]{
+		Roots: roots,
 		Key: func(e tripwire.Event) (string, bool) {
 			return e.Logical, projects.IsProjectFile(filepath.Base(e.Path)) && !projects.PathHasSegment(e.Rel, projects.IsIgnoredProjectDirName)
 		},
@@ -153,7 +165,7 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if startErr := watcher.Start(j.lifecycleCtx); startErr != nil { //nolint:contextcheck // watcher lifetime belongs to the application, not this replacement task.
 		return startErr
 	}
-	slog.InfoContext(ctx, "Projects filesystem watcher started", "path", projectsDirectory)
+	slog.InfoContext(ctx, "Projects filesystem watcher started", "paths", roots)
 
 	return j.replaceWatcher(ctx, &j.projectsWatcher, watcher, func(syncCtx context.Context) {
 		if syncErr := j.projectService.SyncProjectsFromFileSystem(syncCtx); syncErr != nil {
@@ -174,7 +186,7 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, localSettings.ProjectsDirectory.Value)
+	roots, err := j.projectService.EnabledProjectsRoots(ctx)
 	if err != nil {
 		return err
 	}
@@ -189,15 +201,18 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 	}
 
 	// Watching overlapping trees would auto-import local templates as projects.
-	if projects.IsSafeSubdirectory(projectsDirectory, templatesDir) || projects.IsSafeSubdirectory(templatesDir, projectsDirectory) {
-		slog.ErrorContext(ctx,
-			"Templates and projects directories overlap; templates watcher disabled",
-			"projectsDirectory", projectsDirectory,
-			"templatesDirectory", templatesDir)
-		return j.replaceWatcher(ctx, &j.templatesWatcher, nil, initialSync)
+	for _, root := range roots {
+		if projects.IsSafeSubdirectory(root, templatesDir) || projects.IsSafeSubdirectory(templatesDir, root) {
+			slog.ErrorContext(ctx,
+				"Templates and projects directories overlap; templates watcher disabled",
+				"projectsDirectory", root,
+				"templatesDirectory", templatesDir)
+			return j.replaceWatcher(ctx, &j.templatesWatcher, nil, initialSync)
+		}
 	}
 
-	watcher, err := tripwire.New(templatesDir, tripwire.Config[struct{}]{
+	watcher, err := tripwire.New(tripwire.Config[struct{}]{
+		Roots: []string{templatesDir},
 		Key: func(e tripwire.Event) (struct{}, bool) {
 			return struct{}{}, projects.IsProjectFile(filepath.Base(e.Path)) && !projects.PathHasSegment(e.Rel, projects.IsIgnoredProjectDirName)
 		},

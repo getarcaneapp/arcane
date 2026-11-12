@@ -14,6 +14,7 @@
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
+	import ProjectDirectorySelect from '#lib/components/form/project-directory-select.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -24,6 +25,7 @@
 	import { ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectDirectoriesQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -68,6 +70,7 @@
 	let { data } = $props();
 
 	let pickedEnvironmentId = $state('');
+	let pickedDirectory = $state('');
 	// Converted containers default the destination to their environment.
 	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId || data.sourceEnvironmentId, 'projects:create'));
 	const currentEnvId = $derived(environmentId);
@@ -123,6 +126,7 @@
 		planMove: planWorkspaceFileMove
 	});
 	let newProjectTags = $state<ProjectTag[]>([]);
+	const projectDirectories = createQuery(() => projectDirectoriesQuery(currentEnvId, 'projects'));
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(currentEnvId),
 		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
@@ -223,11 +227,24 @@
 		// validation and the create payload use it (event-time write, not an effect).
 		if (composeYamlName) form.setValue('name', composeYamlName);
 		const destination = environmentId;
+		const directory = (projectDirectories.data ?? []).some(
+			(candidate) => candidate.enabled && candidate.containerPath === pickedDirectory
+		)
+			? pickedDirectory
+			: '';
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags, destination),
+				projectService.createProject(
+					name,
+					composeContent,
+					envContent,
+					workspaceDraft.toDrafts(),
+					newProjectTags,
+					destination,
+					directory
+				),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -251,6 +268,11 @@
 				});
 			}
 		});
+	}
+
+	function pickEnvironment(value: string) {
+		pickedEnvironmentId = value;
+		pickedDirectory = '';
 	}
 
 	function handleAddEnv() {
@@ -358,10 +380,11 @@
 {#snippet projectNameField(variant: 'inline' | 'block')}
 	<div class="flex min-w-0 items-center">
 		<EnvironmentDestinationSelect
-			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			bind:value={() => environmentId, pickEnvironment}
 			permission="projects:create"
 			variant="prefix"
 		/>
+		<ProjectDirectorySelect bind:value={pickedDirectory} environmentId={currentEnvId} />
 		<EditableName
 			bind:value={inputs.name.value}
 			displayValue={effectiveName}

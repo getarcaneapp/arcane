@@ -31,7 +31,17 @@ type (
 		TagColors      map[string]ProjectTagColor `json:"tagColors,omitempty"`
 		Name           string                     `json:"name" binding:"required"`
 		ComposeContent string                     `json:"composeContent" binding:"required"`
+		Directory      string                     `json:"directory,omitempty"`
 		Tags           []string                   `json:"tags,omitempty"`
+	}
+
+	ProjectsDirectoryStatus struct {
+		Path          string `json:"path"`
+		ContainerPath string `json:"containerPath"`
+		Error         string `json:"error,omitempty"`
+		Primary       bool   `json:"primary"`
+		Enabled       bool   `json:"enabled"`
+		Exists        bool   `json:"exists"`
 	}
 
 	ProjectTagSource string
@@ -176,6 +186,7 @@ type (
 		GitRepositoryProvider string       `json:"gitRepositoryProvider,omitempty" readOnly:"true"`
 		IconLightURL          string       `json:"iconLightUrl,omitempty" readOnly:"true"`
 		RelativePath          string       `json:"relativePath,omitempty" readOnly:"true"`
+		ProjectsRoot          string       `json:"projectsRoot,omitempty" readOnly:"true"`
 		ID                    string       `json:"id" readOnly:"true"`
 		IconDarkURL           string       `json:"iconDarkUrl,omitempty" readOnly:"true"`
 		Path                  string       `json:"path" readOnly:"true"`

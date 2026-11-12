@@ -32,6 +32,7 @@ type (
 
 		composeFiles      map[string]string
 		projectsDirectory string
+		projectsRoots     []types.ProjectsDirectoryStatus
 
 		composeFilesMu sync.Mutex
 		autoInjectEnv  bool

@@ -11,6 +11,19 @@ export const environmentSettingsSchema = z.object({
 	defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
 	defaultShell: z.string(),
 	projectsDirectory: z.string(),
+	projectsDirectories: z
+		.array(z.object({ path: z.string().trim().min(1, m.common_required()), enabled: z.boolean() }))
+		.superRefine((entries, ctx) => {
+			const containerPaths = entries.map((entry) => {
+				const separator = entry.path.indexOf(':', 2);
+				return separator === -1 ? entry.path : entry.path.slice(0, separator);
+			});
+			containerPaths.forEach((containerPath, index) => {
+				if (containerPath && containerPaths.indexOf(containerPath) !== index) {
+					ctx.addIssue({ code: 'custom', message: m.duplicate_directory(), path: [index, 'path'] });
+				}
+			});
+		}),
 	templatesDirectory: z.string(),
 	swarmStackSourcesDirectory: z.string(),
 	diskUsagePath: z.string(),

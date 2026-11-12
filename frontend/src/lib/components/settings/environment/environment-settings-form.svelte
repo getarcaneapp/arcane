@@ -45,7 +45,7 @@
 
 	const blankMixedKeys = mixedKeys.filter(
 		(key) =>
-			typeof values[key as SettingKey] === 'string' &&
+			(typeof values[key as SettingKey] === 'string' || Array.isArray(values[key as SettingKey])) &&
 			key !== 'trivyNetwork' &&
 			!(environmentSettingsSchema.shape[key] instanceof z.ZodEnum)
 	);
@@ -54,7 +54,7 @@
 	const currentSettings = Object.fromEntries(
 		formKeys.map((key) => {
 			if (nullMixedKeys.includes(key)) return [key, null];
-			if (blankMixedKeys.includes(key) || key === 'depotToken') return [key, ''];
+			if (blankMixedKeys.includes(key) || key === 'depotToken') return [key, Array.isArray(values[key as SettingKey]) ? [] : ''];
 			if (key === 'buildProvider' && !depotConfigured) return [key, 'local'];
 			return [key, values[key as SettingKey]];
 		})
@@ -77,10 +77,13 @@
 
 	function mixed(key: SettingKey): MixedSettingValue[] | undefined {
 		const formKey = key as SettingsFormKey;
-		if (!mixedKeys.includes(formKey) || formInputs[formKey]?.value !== currentSettings[formKey]) return undefined;
-		return [...Map.groupBy(scope.entries, (entry) => entry.settings.values[key])].map(([value, entries]) => {
+		if (!mixedKeys.includes(formKey) || JSON.stringify(formInputs[formKey]?.value) !== JSON.stringify(currentSettings[formKey]))
+			return undefined;
+		return [...Map.groupBy(scope.entries, (entry) => JSON.stringify(entry.settings.values[key]))].map(([, entries]) => {
+			const value = entries[0]!.settings.values[key];
 			let label = String(value ?? '') || m.not_set();
 			if (typeof value === 'boolean') label = value ? m.common_enabled() : m.common_disabled();
+			if (Array.isArray(value)) label = value.map((entry) => entry.path).join(', ') || m.not_set();
 			if (settings.meta[key]?.sensitive) label = m.hidden();
 			return {
 				label,

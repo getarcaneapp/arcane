@@ -350,7 +350,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		}
 	})
 
-	subscribe([]string{"projectsDirectory", "followProjectSymlinks", "projectScanMaxDepth"}, func(_ []types.SettingUpdate) {
+	subscribe([]string{"projectsDirectory", "projectsDirectories", "followProjectSymlinks", "projectScanMaxDepth"}, func(_ []types.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			params.FilesystemWatcher.RequestRestart()

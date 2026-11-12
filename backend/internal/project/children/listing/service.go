@@ -241,12 +241,23 @@ func RelativePath(projectsDir, projectPath string) string {
 	return kit.Ternary(err == nil, filepath.ToSlash(relativePath), "")
 }
 
-func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, tags []types.ProjectTag) types.Project {
+func ProjectRoot(roots []types.ProjectsDirectoryStatus, projectPath string) mo.Option[types.ProjectsDirectoryStatus] {
+	match, matchLen := mo.None[types.ProjectsDirectoryStatus](), -1
+	for _, root := range roots {
+		if projects.IsSafeSubdirectory(root.ContainerPath, projectPath) && len(root.ContainerPath) > matchLen {
+			match, matchLen = mo.Some(root), len(root.ContainerPath)
+		}
+	}
+	return match
+}
+
+func row(roots []types.ProjectsDirectoryStatus, catalog string, p types.ProjectRecord, snapshot Snapshot, tags []types.ProjectTag) types.Project {
 	var services []types.ProjectRuntimeService
 	for _, c := range snapshot.ProjectContainers(p) {
 		services = append(services, RuntimeServiceFromContainer(catalog, c, projects.ArcaneComposeMetadata{}, snapshot.currentContainerID, snapshot.currentContainerErr))
 	}
 	_, runningCount := ServiceCounts(services)
+	root := ProjectRoot(roots, p.Path).OrEmpty().ContainerPath
 	return types.Project{
 		Tags:            tags,
 		StatusReason:    p.StatusReason,
@@ -255,7 +266,8 @@ func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, 
 		Status:          LiveStatus(p.Status, snapshot.Err, services),
 		DirName:         mo.PointerToOption(p.DirName).OrEmpty(),
 		Name:            p.Name,
-		RelativePath:    RelativePath(projectsDir, p.Path),
+		RelativePath:    RelativePath(root, p.Path),
+		ProjectsRoot:    root,
 		ID:              p.ID,
 		Path:            p.Path,
 		UpdatedAt:       p.UpdatedAt.Format(time.RFC3339),
@@ -270,11 +282,11 @@ func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, 
 	}
 }
 
-func Rows(projectsDir, catalog string, records []types.ProjectRecord, snapshot Snapshot, tagsByProject map[string][]types.ProjectTag) ([]types.Project, map[string]int) {
+func Rows(roots []types.ProjectsDirectoryStatus, catalog string, records []types.ProjectRecord, snapshot Snapshot, tagsByProject map[string][]types.ProjectTag) ([]types.Project, map[string]int) {
 	rows := make([]types.Project, len(records))
 	inferredCounts := make(map[string]int)
 	for i, p := range records {
-		rows[i] = row(projectsDir, catalog, p, snapshot, tagsByProject[p.ID])
+		rows[i] = row(roots, catalog, p, snapshot, tagsByProject[p.ID])
 		if p.ServiceCount == 0 && rows[i].ServiceCount > 0 {
 			inferredCounts[p.ID] = rows[i].ServiceCount
 		}
@@ -329,6 +341,7 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 			GitRepositoryProvider: d.GitRepositoryProvider,
 			IconLightURL:          icon.IconLightURL,
 			RelativePath:          d.RelativePath,
+			ProjectsRoot:          d.ProjectsRoot,
 			ID:                    d.ID,
 			IconDarkURL:           icon.IconDarkURL,
 			Path:                  d.Path,

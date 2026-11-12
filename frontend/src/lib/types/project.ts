@@ -108,6 +108,7 @@ export interface Project {
 	name: string;
 	dirName?: string;
 	relativePath?: string;
+	projectsRoot?: string;
 	path: string;
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
@@ -160,4 +161,13 @@ export type ProjectDeployOptions = {
 
 export interface ProjectWorkspaceUpdateManifest {
 	fileChanges: WorkspaceFileChange[];
+}
+
+export interface ProjectsDirectoryStatus {
+	path: string;
+	containerPath: string;
+	primary: boolean;
+	enabled: boolean;
+	exists: boolean;
+	error?: string;
 }

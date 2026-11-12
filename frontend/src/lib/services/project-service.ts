@@ -4,6 +4,7 @@ import type {
 	Project,
 	ProjectDeployOptions,
 	ProjectStatusCounts,
+	ProjectsDirectoryStatus,
 	ProjectTag,
 	ProjectTagColor,
 	ProjectTagOption,
@@ -77,7 +78,8 @@ class ProjectService extends BaseAPIService {
 		envContent: string | undefined,
 		workspaceFiles: WorkspaceFileDraft[] = [],
 		tags: ProjectTag[] = [],
-		environmentId: string
+		environmentId: string,
+		directory?: string
 	): Promise<Project> {
 		const form = new FormData();
 		const uploads: File[] = [];
@@ -94,7 +96,8 @@ class ProjectService extends BaseAPIService {
 				composeContent,
 				envContent: envContent?.trim() ? envContent : undefined,
 				tags: tags.map((tag) => tag.name),
-				tagColors: Object.fromEntries(tags.map((tag) => [tag.name, tag.color]))
+				tagColors: Object.fromEntries(tags.map((tag) => [tag.name, tag.color])),
+				directory: directory || undefined
 			})
 		);
 		form.append('manifest', JSON.stringify({ fileChanges }));
@@ -174,6 +177,10 @@ class ProjectService extends BaseAPIService {
 	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
 		const res = await this.api.get(`/agents/${environmentId}/projects/counts`, config);
 		return res.data.data;
+	}
+
+	async getProjectDirectories(environmentId: string, view: 'projects' | 'settings'): Promise<ProjectsDirectoryStatus[]> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/directories`, { params: { view } }));
 	}
 
 	async getProjectTagsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectTagOption[]> {
