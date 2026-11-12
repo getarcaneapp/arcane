@@ -206,6 +206,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		if errors.Is(err, ErrEmailTaken) {
 			return nil, huma.Error409Conflict(ErrEmailTaken.Error())
 		}
+		if errors.Is(err, ErrEmailChangeBlocked) {
+			return nil, huma.Error403Forbidden(ErrEmailChangeBlocked.Error())
+		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")
 		}

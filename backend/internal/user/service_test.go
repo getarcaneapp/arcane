@@ -68,7 +68,11 @@ func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.Role
 	db := setupAuthServiceTestDB(t)
 	localRole := role.NewRoleService(db)
 	require.NoError(t, localRole.EnsureBuiltInRoles(t.Context()))
-	userRecord := userdomain.NewUserService(db, localRole, session.RevokeAllUserSessionsExceptInDB)
+	userRecord := userdomain.NewUserService(userdomain.UserServiceParams{
+		DB:                   db,
+		RoleService:          localRole,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	return userRecord, localRole
 }
 
@@ -840,7 +844,10 @@ func TestCreateDefaultAdminRejectsPasswordFailingPolicy(t *testing.T) {
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {
-	svc := userdomain.NewUserService(setupAuthServiceTestDB(t), nil, session.RevokeAllUserSessionsExceptInDB)
+	svc := userdomain.NewUserService(userdomain.UserServiceParams{
+		DB:                   setupAuthServiceTestDB(t),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	ctx := t.Context()
 	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new("jose@exa\u0301mple.com"), DisplayName: new(" Jose\u0301 ")})
 	require.NoError(t, err)
