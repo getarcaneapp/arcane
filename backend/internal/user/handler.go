@@ -15,7 +15,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -86,13 +85,12 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
-		return nil, handlerutil.Error400BadRequestWithType(common.Classify(common.ErrValidation,
+	if validatePasswordPolicyErr := h.settingsService.GetSettingsConfig().PasswordPolicy().Validate(input.Body.Password); validatePasswordPolicyErr != nil {
+		return nil, handlerutil.PasswordPolicyProblem(common.Classify(common.ErrValidation,
 			&types.FieldError{
 				Field: "password",
 				Err:   validatePasswordPolicyErr,
-			}), validation.PasswordPolicyProblemType(passwordPolicy))
+			}))
 	}
 
 	hashedPassword, err := h.userService.HashPassword(ctx, input.Body.Password)
@@ -176,10 +174,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != "" {
-		passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
-		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
+		if validatePasswordPolicyErr := h.settingsService.GetSettingsConfig().PasswordPolicy().Validate(input.Body.Password); validatePasswordPolicyErr != nil {
 			fieldErr := common.Classify(common.ErrValidation, &types.FieldError{Field: "password", Err: validatePasswordPolicyErr})
-			return nil, handlerutil.Error400BadRequestWithType(fieldErr, validation.PasswordPolicyProblemType(passwordPolicy))
+			return nil, handlerutil.PasswordPolicyProblem(fieldErr)
 		}
 	}
 

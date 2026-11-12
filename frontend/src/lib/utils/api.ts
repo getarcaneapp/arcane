@@ -3,6 +3,7 @@ import { toast } from 'svelte-sonner';
 
 import { APIError, extractServerMessage, isSessionCancelledError } from '#lib/services/api-service.js';
 import type { Result } from '#lib/types/ui/result.js';
+import { passwordPolicyProblemSchema, passwordRequirements } from '#lib/utils/password-policy.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function extractApiErrorMessage(error: unknown): string {
@@ -10,6 +11,9 @@ export function extractApiErrorMessage(error: unknown): string {
 	const record: Record<string, unknown> = typeof error === 'object' ? (error as Record<string, unknown>) : {};
 	const response = record['response'];
 	const respData = response !== null && typeof response === 'object' ? (response as Record<string, unknown>)['data'] : undefined;
+	const policyProblem = passwordPolicyProblemSchema.safeParse(respData);
+	if (policyProblem.success) return passwordRequirements(policyProblem.data.details.policy);
+
 	const serverMsg = extractServerMessage(respData, true);
 	if (serverMsg) return serverMsg;
 

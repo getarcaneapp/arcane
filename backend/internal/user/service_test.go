@@ -794,7 +794,7 @@ func TestCreateDefaultAdminUsesConfiguredCredentials(t *testing.T) {
 	require.NoError(t, userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
 		Username:       "ops-admin",
 		Password:       "Sup3r-Secret-Pass!",
-		PasswordPolicy: "strong",
+		PasswordPolicy: settings.DefaultSettingsConfig().PasswordPolicy(),
 	}))
 
 	admin, err := userSvc.GetUserByUsername(ctx, "ops-admin")
@@ -835,7 +835,7 @@ func TestCreateDefaultAdminRejectsPasswordFailingPolicy(t *testing.T) {
 	err := userSvc.CreateDefaultAdmin(ctx, userdomain.DefaultAdminOptions{
 		Username:       "ops-admin",
 		Password:       "short",
-		PasswordPolicy: "strong",
+		PasswordPolicy: settings.DefaultSettingsConfig().PasswordPolicy(),
 	})
 	require.ErrorContains(t, err, "ARCANE_DEFAULT_ADMIN_PASSWORD")
 

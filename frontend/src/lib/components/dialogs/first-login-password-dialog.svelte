@@ -11,8 +11,8 @@
 	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService } from '#lib/services/auth-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { passwordRequirements } from '#lib/utils/password-policy.js';
 
 	let {
 		open = $bindable(false),
@@ -30,16 +30,7 @@
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
 
-	const passwordRequirements = $derived.by(() => {
-		switch (settingsStore.current?.authPasswordPolicy) {
-			case 'basic':
-				return m.security_password_policy_basic_tooltip();
-			case 'standard':
-				return m.security_password_policy_standard_tooltip();
-			default:
-				return m.security_password_policy_strong_tooltip();
-		}
-	});
+	const requirements = $derived(passwordRequirements());
 	const formSchema = z
 		.object({
 			currentPassword: z.string().min(1, m.common_required()),
@@ -158,7 +149,7 @@
 			</InputGroup.Root>
 		</div>
 
-		<p id="new-password-requirements" class="text-sm text-muted-foreground">{passwordRequirements}</p>
+		<p id="new-password-requirements" class="text-sm text-muted-foreground">{requirements}</p>
 
 		<div class="space-y-2">
 			<Label for="confirm-password">{m.first_login_confirm_password()}</Label>

@@ -1,7 +1,6 @@
 package validation
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -12,25 +11,32 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-const (
-	PasswordPolicyBasic    = "basic"
-	PasswordPolicyStandard = "standard"
-	PasswordPolicyStrong   = "strong"
+type (
+	PasswordPolicy struct {
+		MinLength        int  `json:"minLength"`
+		RequireUppercase bool `json:"requireUppercase"`
+		RequireLowercase bool `json:"requireLowercase"`
+		RequireNumber    bool `json:"requireNumber"`
+		RequireSymbol    bool `json:"requireSymbol"`
+	}
 
-	passwordPolicyProblemTypePrefix = "urn:arcane:problem:password-policy:" // #nosec G101 -- public problem type, not a credential
+	PasswordPolicyError struct {
+		message string
+		Policy  PasswordPolicy
+	}
 )
 
-func PasswordPolicyProblemType(policy string) string {
-	switch policy {
-	case PasswordPolicyBasic, PasswordPolicyStandard:
-	default:
-		policy = PasswordPolicyStrong
-	}
-	return passwordPolicyProblemTypePrefix + policy
+const (
+	PasswordPolicyProblemType = "urn:arcane:problem:password-policy" // #nosec G101 -- public problem type, not a credential
+	PasswordMinLength         = 8
+)
+
+func (e *PasswordPolicyError) Error() string {
+	return e.message
 }
 
-// Unknown policy values are treated as strong so a corrupted setting fails closed.
-func ValidatePasswordPolicy(password, policy string) error {
+func (p PasswordPolicy) Validate(password string) error {
+	minLength := max(p.MinLength, PasswordMinLength)
 	var length int
 	var hasUpper, hasLower, hasDigit, hasSymbol bool
 	for _, r := range password {
@@ -47,21 +53,44 @@ func ValidatePasswordPolicy(password, policy string) error {
 		}
 	}
 
-	switch policy {
-	case PasswordPolicyBasic:
-		if length < 8 {
-			return errors.New("password must be at least 8 characters")
-		}
-	case PasswordPolicyStandard:
-		if length < 10 || !hasUpper || !hasLower || !hasDigit {
-			return errors.New("password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number")
-		}
-	default:
-		if length < 12 || !hasUpper || !hasLower || !hasDigit || !hasSymbol {
-			return errors.New("password must be at least 12 characters and include an uppercase letter, a lowercase letter, a number, and a symbol")
+	rules := []struct {
+		label     string
+		required  bool
+		satisfied bool
+	}{
+		{label: "an uppercase letter", required: p.RequireUppercase, satisfied: hasUpper},
+		{label: "a lowercase letter", required: p.RequireLowercase, satisfied: hasLower},
+		{label: "a number", required: p.RequireNumber, satisfied: hasDigit},
+		{label: "a symbol", required: p.RequireSymbol, satisfied: hasSymbol},
+	}
+	valid := length >= minLength
+	labels := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		if rule.required {
+			labels = append(labels, rule.label)
+			valid = valid && rule.satisfied
 		}
 	}
-	return nil
+	if valid {
+		return nil
+	}
+
+	message := fmt.Sprintf("password must be at least %d characters", minLength)
+	if len(labels) > 2 {
+		message = fmt.Sprintf("%s and include %s, and %s", message, strings.Join(labels[:len(labels)-1], ", "), labels[len(labels)-1])
+	} else if len(labels) > 0 {
+		message = fmt.Sprintf("%s and include %s", message, strings.Join(labels, " and "))
+	}
+	return &PasswordPolicyError{
+		message: message,
+		Policy: PasswordPolicy{
+			MinLength:        minLength,
+			RequireUppercase: p.RequireUppercase,
+			RequireLowercase: p.RequireLowercase,
+			RequireNumber:    p.RequireNumber,
+			RequireSymbol:    p.RequireSymbol,
+		},
+	}
 }
 
 func ValidateCredentialTargetChange(

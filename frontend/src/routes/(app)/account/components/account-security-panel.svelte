@@ -9,6 +9,8 @@
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { passwordRequirements } from '#lib/utils/password-policy.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	const currentUser = $derived(userStore.current);
@@ -21,7 +23,11 @@
 	let confirmPassword = $state('');
 	let passwordSaving = $state(false);
 	let revokingAll = $state(false);
-	const passwordValid = $derived(currentPassword.length > 0 && [...newPassword].length >= 8 && newPassword === confirmPassword);
+	const passwordValid = $derived(
+		currentPassword.length > 0 &&
+			[...newPassword].length >= (settingsStore.current?.authPasswordMinLength ?? 8) &&
+			newPassword === confirmPassword
+	);
 
 	async function changePassword() {
 		if (!passwordValid || passwordSaving) return;
@@ -39,7 +45,9 @@
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				toast.error(error instanceof Error ? error.message : m.common_update_failed({ resource: m.common_password() }));
+				toast.error(m.common_update_failed({ resource: m.common_password() }), {
+					description: extractApiErrorMessage(error)
+				});
 			}
 		} finally {
 			passwordSaving = false;
@@ -86,7 +94,7 @@
 				type="password"
 				bind:value={newPassword}
 				label={m.account_new_password()}
-				helpText={m.account_password_min_length()}
+				helpText={passwordRequirements()}
 				autocomplete="new-password"
 			/>
 			<TextInputWithLabel

@@ -66,7 +66,7 @@ async function changeDefaultPassword(page: Page, currentPassword: string, newPas
 	const submitButton = dialog.getByRole('button', { name: 'Change Password' });
 	await submitButton.click();
 	await expect(dialog.getByRole('alert')).toContainText(
-		'12+ chars with upper, lower, number, and symbol.'
+		'At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.'
 	);
 	const policyResponse = await page.request.post('/api/auth/password', {
 		data: { currentPassword, newPassword: 'abcdefghijkl' }
@@ -74,10 +74,10 @@ async function changeDefaultPassword(page: Page, currentPassword: string, newPas
 	expect(policyResponse.status()).toBe(400);
 	expect(await policyResponse.json()).toMatchObject({
 		status: 400,
-		type: 'urn:arcane:problem:password-policy:strong'
+		type: 'urn:arcane:problem:password-policy'
 	});
 	await expect(dialog.locator('#new-password-requirements')).toHaveText(
-		'12+ chars with upper, lower, number, and symbol.'
+		'At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.'
 	);
 
 	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill(newPassword);

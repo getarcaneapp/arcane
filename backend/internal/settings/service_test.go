@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -586,6 +587,36 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSettingsService_PasswordPolicy(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+
+	require.Equal(t, validation.PasswordPolicy{
+		MinLength:        12,
+		RequireUppercase: true,
+		RequireLowercase: true,
+		RequireNumber:    true,
+		RequireSymbol:    true,
+	}, svc.GetSettingsConfig().PasswordPolicy())
+
+	require.ErrorIs(t, svc.UpdateSetting(ctx, "authPasswordMinLength", "7"), common.ErrValidation)
+	require.ErrorIs(t, svc.UpdateSetting(ctx, "authPasswordMinLength", "129"), common.ErrValidation)
+	require.ErrorIs(t, svc.UpdateSetting(ctx, "authPasswordRequireSymbol", "maybe"), common.ErrValidation)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"authPasswordMinLength":        "16",
+		"authPasswordRequireUppercase": "false",
+		"authPasswordRequireSymbol":    "false",
+	}))
+	require.Equal(t, validation.PasswordPolicy{
+		MinLength:        16,
+		RequireLowercase: true,
+		RequireNumber:    true,
+	}, svc.GetSettingsConfig().PasswordPolicy())
+}
+
 func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
@@ -981,7 +1012,7 @@ func TestSettingsService_SettingsSnapshot(t *testing.T) {
 		nonAdminKeys = append(nonAdminKeys, state.Key)
 	}
 	require.Contains(t, nonAdminKeys, "dockerHost")
-	require.Subset(t, nonAdminKeys, []string{"authPasswordPolicy", "baseServerUrl", "buildProvider", "defaultShell", "lifecycleEnabled"})
+	require.Subset(t, nonAdminKeys, []string{"authPasswordMinLength", "authPasswordRequireSymbol", "baseServerUrl", "buildProvider", "defaultShell", "lifecycleEnabled"})
 	require.NotContains(t, nonAdminKeys, "depotToken")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")
 }

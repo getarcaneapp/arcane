@@ -3,6 +3,7 @@ package handlerutil
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -19,6 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -108,15 +110,20 @@ func APIError(err error) huma.StatusError {
 	}
 }
 
-func Error400BadRequestWithType(err error, problemType string) huma.StatusError {
+func PasswordPolicyProblem(err error) huma.StatusError {
+	fieldErr, _ := errors.AsType[*types.FieldError](err)
+	policyErr, _ := errors.AsType[*validation.PasswordPolicyError](err)
 	return &ProblemError{
 		ErrorModel: &huma.ErrorModel{
-			Type:   problemType,
+			Type:   validation.PasswordPolicyProblemType,
 			Title:  http.StatusText(http.StatusBadRequest),
 			Status: http.StatusBadRequest,
 			Detail: err.Error(),
 		},
-		Details: common.ToAPIError(err).Details,
+		Details: map[string]any{
+			"field":  kit.FromPtr(fieldErr).Field,
+			"policy": kit.FromPtr(policyErr).Policy,
+		},
 	}
 }
 
