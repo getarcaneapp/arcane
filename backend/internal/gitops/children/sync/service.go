@@ -58,7 +58,6 @@ type (
 		envContent       *string
 		overrideContent  *string
 		overrideFileName string
-		overrideRepoPath string
 		// replay marks a retry of a pinned revision, which redeploys even when the files are unchanged.
 		replay bool
 	}
@@ -214,17 +213,16 @@ func (s *Service) syncTarget(
 	var err error
 	switch {
 	case sync.TargetType == "swarm_stack":
-		sourceFiles := []string{filepath.Base(sync.ComposePath)}
-		if relOverride, relErr := filepath.Rel(filepath.Dir(sync.ComposePath), source.overrideRepoPath); source.overrideRepoPath != "" && relErr == nil {
-			sourceFiles = append(sourceFiles, filepath.ToSlash(relOverride))
-		}
-		swarmFiles := make([]types.SwarmSyncFile, 0, len(syncFiles))
-		for _, file := range syncFiles {
+		swarmFiles := make([]types.SwarmSyncFile, len(syncFiles))
+		for i, file := range syncFiles {
+			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
 			syncedFiles = append(syncedFiles, file.RelativePath)
-			if slices.Contains(sourceFiles, filepath.ToSlash(file.RelativePath)) {
-				continue
+		}
+		workingDir := filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath))
+		if !sync.SyncDirectory && sync.EnvContent != nil {
+			if writeErr := projects.WriteFileWithPerm(stageCtx, filepath.Join(workingDir, ".env"), kit.FromPtr(source.envContent), kitfs.FilePerm); writeErr != nil {
+				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to write sync environment variables", writeErr)
 			}
-			swarmFiles = append(swarmFiles, types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content})
 		}
 		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
 		request := types.SwarmStackDeployRequest{
@@ -236,7 +234,7 @@ func (s *Service) syncTarget(
 			Prune:            true,
 			WithRegistryAuth: true,
 			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
-			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath))),
+			WorkingDir: kit.Ternary(sync.SyncDirectory, "", workingDir),
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
@@ -375,7 +373,6 @@ func (s *Service) resolveSyncOverride(ctx context.Context, sync *projectpkg.GitO
 		}
 		source.overrideContent = &content
 		source.overrideFileName = overrideFileNameFor(overridePath)
-		source.overrideRepoPath = filepath.ToSlash(filepath.Clean(overridePath))
 		return nil
 	}
 
@@ -393,7 +390,6 @@ func (s *Service) resolveSyncOverride(ctx context.Context, sync *projectpkg.GitO
 	}
 	source.overrideContent = &content
 	source.overrideFileName = name
-	source.overrideRepoPath = filepath.ToSlash(filepath.Join(composeDir, name))
 	return nil
 }
 

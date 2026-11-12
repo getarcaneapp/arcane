@@ -10,12 +10,12 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
-func validateDeploySource(sync projectpkg.GitOpsSync) error {
+func validateDeploySource(sync project.GitOpsSync) error {
 	invalid := func(field, message string) error {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: field, Err: errors.New(message)})
 	}
