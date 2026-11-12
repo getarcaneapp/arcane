@@ -256,6 +256,8 @@ func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunn
 	}
 	w := c.Response()
 	agent.CopyResponseHeaders(resp.Header, w.Header())
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
 		if copyErr := agent.CopyResponseBody(w, resp); copyErr != nil {

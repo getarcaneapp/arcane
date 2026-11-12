@@ -106,8 +106,10 @@ func TestCopyResponseHeaders_SkipsConnectionTokens(t *testing.T) {
 		"Keep-Alive": {"timeout=5"},
 		"X-Bar":      {"2"},
 		"X-Baz":      {"3"},
+		"Set-Cookie": {"token=attacker; Path=/"},
+		"Etag":       {"abc"},
 	}, to)
-	require.Equal(t, http.Header{"X-Baz": {"3"}}, to)
+	require.Equal(t, http.Header{"Etag": {"abc"}}, to)
 }
 
 func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T) {

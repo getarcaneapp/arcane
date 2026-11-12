@@ -3,7 +3,6 @@ package agent
 import (
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -22,9 +21,11 @@ const (
 )
 
 var (
-	hopByHopHeaders = map[string]struct{}{
-		"Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {}, "Proxy-Authorization": {},
-		"Te": {}, "Trailers": {}, "Trailer": {}, "Transfer-Encoding": {}, "Upgrade": {},
+	forwardedResponseHeaders = map[string]struct{}{
+		"Accept-Ranges": {}, "Cache-Control": {}, "Content-Disposition": {}, "Content-Encoding": {},
+		"Content-Length": {}, "Content-Range": {}, "Content-Type": {}, "Date": {}, "Etag": {},
+		"Expires": {}, "Last-Modified": {}, "Link": {}, "Pragma": {}, "Retry-After": {}, "Vary": {},
+		"X-Accel-Buffering": {}, "X-Request-Id": {},
 	}
 	skipHeaders = map[string]struct{}{
 		"Host": {}, "Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {},
@@ -97,7 +98,7 @@ func CopyResponseBody(w http.ResponseWriter, resp *http.Response) error {
 }
 
 func CopyResponseHeaders(from, to http.Header) {
-	hop := maps.Clone(hopByHopHeaders)
+	hop := map[string]struct{}{}
 	for _, connVal := range from.Values("Connection") {
 		for token := range strings.SplitSeq(connVal, ",") {
 			if t := strings.TrimSpace(token); t != "" {
@@ -107,7 +108,11 @@ func CopyResponseHeaders(from, to http.Header) {
 	}
 
 	for k, vs := range from {
-		if _, ok := hop[http.CanonicalHeaderKey(k)]; ok {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := hop[ck]; ok {
+			continue
+		}
+		if _, ok := forwardedResponseHeaders[ck]; !ok {
 			continue
 		}
 		for _, v := range vs {
