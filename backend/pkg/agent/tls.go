@@ -262,8 +262,21 @@ func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*M
 	if safeEnvID == "" {
 		return nil, errors.New("environment ID is required")
 	}
+	if !m.UsesGeneratedCA(ctx) {
+		return nil, ErrMTLSEnrollUnavailable
+	}
+	clientLogicalDir := path.Join("/", generatedClientMTLSSubdir, safeEnvID)
+	if mkdirErr := (acfs.Root{Path: assetsDir}).MkdirAll(ctx, clientLogicalDir, fs.DirPerm); mkdirErr != nil {
+		return nil, fmt.Errorf("failed to create client cert dir: %w", mkdirErr)
+	}
+	unlock, err := lockAgentMTLSPath(ctx, filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID), ".enroll.lock")
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	markerPath := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName)
-	marker, readErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join("/", generatedClientMTLSSubdir, safeEnvID, generatedMTLSEnrolledName))
+	marker, readErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join(clientLogicalDir, generatedMTLSEnrolledName))
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read agent mTLS enrollment marker: %w", readErr)
 	}
