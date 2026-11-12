@@ -48,8 +48,6 @@ class AuthService extends BaseAPIService {
 		} catch (e) {
 			console.error('Failed to remove legacy token data:', e);
 		}
-		const storedExpiry = this.getStoredExpiry();
-		if (storedExpiry) this.scheduleTokenRefresh(storedExpiry);
 		window.addEventListener('storage', (event) => {
 			if (event.key !== TOKEN_EXPIRY_KEY) return;
 			if (event.newValue) {
@@ -58,6 +56,11 @@ class AuthService extends BaseAPIService {
 				this.clearRefreshTimer();
 			}
 		});
+	}
+
+	resumeTokenRefresh(): void {
+		const storedExpiry = this.getStoredExpiry();
+		if (storedExpiry) this.scheduleTokenRefresh(storedExpiry);
 	}
 
 	private storeTokenData(expiresAt: string): void {
