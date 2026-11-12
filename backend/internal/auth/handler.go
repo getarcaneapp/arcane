@@ -36,7 +36,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/cookie"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
 
@@ -344,7 +343,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, common.ErrForbidden):
 			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
-			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType)
+			return nil, handlerutil.PasswordPolicyProblem(err)
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}

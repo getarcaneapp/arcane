@@ -1,7 +1,6 @@
 package validation
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -12,18 +11,29 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-type PasswordPolicy struct {
-	MinLength        int
-	RequireUppercase bool
-	RequireLowercase bool
-	RequireNumber    bool
-	RequireSymbol    bool
-}
+type (
+	PasswordPolicy struct {
+		MinLength        int  `json:"minLength"`
+		RequireUppercase bool `json:"requireUppercase"`
+		RequireLowercase bool `json:"requireLowercase"`
+		RequireNumber    bool `json:"requireNumber"`
+		RequireSymbol    bool `json:"requireSymbol"`
+	}
+
+	PasswordPolicyError struct {
+		message string
+		Policy  PasswordPolicy
+	}
+)
 
 const (
 	PasswordPolicyProblemType = "urn:arcane:problem:password-policy" // #nosec G101 -- public problem type, not a credential
 	PasswordMinLength         = 8
 )
+
+func (e *PasswordPolicyError) Error() string {
+	return e.message
+}
 
 func (p PasswordPolicy) Validate(password string) error {
 	minLength := max(p.MinLength, PasswordMinLength)
@@ -66,13 +76,20 @@ func (p PasswordPolicy) Validate(password string) error {
 	}
 
 	message := fmt.Sprintf("password must be at least %d characters", minLength)
-	switch len(labels) {
-	case 0:
-		return errors.New(message)
-	case 1, 2:
-		return fmt.Errorf("%s and include %s", message, strings.Join(labels, " and "))
-	default:
-		return fmt.Errorf("%s and include %s, and %s", message, strings.Join(labels[:len(labels)-1], ", "), labels[len(labels)-1])
+	if len(labels) > 2 {
+		message = fmt.Sprintf("%s and include %s, and %s", message, strings.Join(labels[:len(labels)-1], ", "), labels[len(labels)-1])
+	} else if len(labels) > 0 {
+		message = fmt.Sprintf("%s and include %s", message, strings.Join(labels, " and "))
+	}
+	return &PasswordPolicyError{
+		message: message,
+		Policy: PasswordPolicy{
+			MinLength:        minLength,
+			RequireUppercase: p.RequireUppercase,
+			RequireLowercase: p.RequireLowercase,
+			RequireNumber:    p.RequireNumber,
+			RequireSymbol:    p.RequireSymbol,
+		},
 	}
 }
 

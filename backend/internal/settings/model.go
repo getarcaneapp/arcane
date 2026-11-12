@@ -431,6 +431,9 @@ func (s *Settings) UpdateField(key, value string, noSensitive bool) error {
 	if noSensitive && field.isSensitive {
 		return SettingSensitiveForbiddenError{field: key}
 	}
+	if err := validateValue(field, value); err != nil {
+		return err
+	}
 
 	valueField := rv.Field(field.index).FieldByName("Value")
 	if !valueField.CanSet() {
