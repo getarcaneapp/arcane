@@ -4540,5 +4540,11 @@
   "bitbucket": "Bitbucket",
   "environment": "환경",
   "podman_features_unavailable": "Podman features are unavailable",
-  "podman_libpod_unreachable_description": "Arcane reached the engine's Docker-compatible API but not Podman's libpod API, so a socket proxy in front of Podman must allow /libpod paths."
+  "podman_libpod_unreachable_description": "Arcane reached the engine's Docker-compatible API but not Podman's libpod API, so a socket proxy in front of Podman must allow /libpod paths.",
+  "additional_project_directories": "Additional Project Directories",
+  "additional_project_directories_description": "Disabled directories are kept but not scanned for projects.",
+  "add_directory": "Add Directory",
+  "directory_not_found_in_container": "Not found in this container. Check the volume mount.",
+  "duplicate_directory": "This directory is already listed",
+  "project_directory": "Project Directory"
 }
