@@ -144,8 +144,8 @@ func (s *Service) resolveFile(ctx context.Context, relativePath string) (string,
 func (s *Service) resolveRoot(ctx context.Context) (string, error) {
 	root := cmp.Or(strings.TrimSpace(s.settingsService.GetSettingsConfig().BuildsDirectory.Value), defaultBuildsDirectory)
 
-	if !filepath.IsAbs(root) {
-		return "", errors.New("builds directory must be an absolute path")
+	if err := s.settingsService.ValidateBuildsDirectory(root); err != nil {
+		return "", common.Classify(common.ErrBadRequest, err)
 	}
 
 	cleaned := filepath.Clean(root)

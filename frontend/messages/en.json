@@ -4545,5 +4545,7 @@
   "add_directory": "Add Directory",
   "directory_not_found_in_container": "Not found in this container. Check the volume mount.",
   "duplicate_directory": "This directory is already listed",
-  "project_directory": "Project Directory"
+  "project_directory": "Project Directory",
+  "hsts_label": "HTTP Strict Transport Security",
+  "hsts_description": "Tell browsers to use HTTPS only for this hostname for one year."
 }

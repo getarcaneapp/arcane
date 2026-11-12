@@ -531,6 +531,11 @@ func (s *SettingsService) prepareUpdateValues(updates []types.SettingUpdate) ([]
 				Err:   fmt.Errorf("%s cannot be changed because UI configuration is disabled", update.Key),
 			})
 		}
+		if update.Key == "buildsDirectory" {
+			if err := s.ValidateBuildsDirectory(value); err != nil {
+				return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: update.Key, Err: err})
+			}
+		}
 		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: update.Key, Value: value})
 	}
 
@@ -830,6 +835,36 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 	return s.normalizeDirectorySetting(ctx, "buildsDirectory")
+}
+
+func (s *SettingsService) ValidateBuildsDirectory(root string) error {
+	if !filepath.IsAbs(root) {
+		return errors.New("builds directory must be an absolute path")
+	}
+	reserved := []string{"data"}
+	if strings.HasPrefix(s.appConfig.DatabaseURL, "file:") {
+		databasePath, err := kit.SQLitePathFromDSN(s.appConfig.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse database URL: %w", err)
+		}
+		if databasePath != "" && !strings.HasPrefix(databasePath, ":memory:") {
+			reserved = append(reserved, filepath.Dir(databasePath))
+		}
+	}
+	resolvedRoot, err := resolveSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("failed to resolve builds directory %q: %w", root, err)
+	}
+	for _, dataDirectory := range reserved {
+		resolvedData, dataErr := resolveSymlinks(dataDirectory)
+		if dataErr != nil {
+			return fmt.Errorf("failed to resolve the Arcane data directory: %w", dataErr)
+		}
+		if projects.IsSafeSubdirectory(resolvedData, resolvedRoot) || projects.IsSafeSubdirectory(resolvedRoot, resolvedData) {
+			return fmt.Errorf("builds directory %q overlaps the Arcane data directory", root)
+		}
+	}
+	return nil
 }
 
 func (s *SettingsService) normalizeDirectorySetting(ctx context.Context, key string) error {
