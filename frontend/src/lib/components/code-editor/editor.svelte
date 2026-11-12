@@ -37,6 +37,7 @@
 	import type { CodeLanguage, CodeValidationMode, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
+	import { focusScrollGuard } from './focus-scroll-guard';
 	import { createMergeHostAttachment, type MergeAttachmentParams } from './merge-editor.svelte.js';
 	import { getEditorStatusHost, hasEditorStatusHost } from './status-context';
 	import { createArcaneTheme } from './theme';
@@ -724,7 +725,12 @@
 
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
-		const extensions: Extension[] = [editorLifecycleExtension, selectionHoverGuardExtension, shortcutKeymapExtension];
+		const extensions: Extension[] = [
+			editorLifecycleExtension,
+			selectionHoverGuardExtension,
+			shortcutKeymapExtension,
+			focusScrollGuard
+		];
 
 		if (!readOnly) {
 			extensions.push(enterIndentKeymaps[lang]);
