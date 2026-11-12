@@ -58,11 +58,6 @@ class EnvironmentManagementService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/deployment`));
 	}
 
-	async downloadDeploymentFile(downloadUrl: string): Promise<Blob> {
-		const res = await this.api.get<Blob>(downloadUrl, { baseURL: '', responseType: 'blob' });
-		return res.data;
-	}
-
 	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<VersionInfo> {
 		const res = await this.api.get(`/agents/${environmentId}/version`, config);
 		return res.data.data as VersionInfo;

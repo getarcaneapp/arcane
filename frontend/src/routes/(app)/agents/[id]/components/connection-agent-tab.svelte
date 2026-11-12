@@ -25,7 +25,6 @@
 
 	let mtlsBundleDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/bundle`);
 	let mtlsCertificateDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/agent.crt`);
-	let mtlsKeyDownloadHref = $derived(`/api/agents/${environment.id}/deployment/mtls/agent.key`);
 
 	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
 		const cert = environment.agentMTLSCertificate;
@@ -94,22 +93,16 @@
 							icon={DownloadIcon}
 							customLabel={m.environments_agent_mtls_download_bundle()}
 						/>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={mtlsCertificateDownloadHref}
-							rel="external"
-							icon={DownloadIcon}
-							customLabel={m.environments_agent_mtls_download_certificate()}
-						/>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={mtlsKeyDownloadHref}
-							rel="external"
-							icon={DownloadIcon}
-							customLabel={m.environments_agent_mtls_download_key()}
-						/>
+						{#if environment.agentMTLSCertificate}
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								href={mtlsCertificateDownloadHref}
+								rel="external"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_certificate()}
+							/>
+						{/if}
 					</div>
 				</div>
 			{/if}

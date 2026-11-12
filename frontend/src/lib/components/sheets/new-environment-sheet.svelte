@@ -10,18 +10,14 @@
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AgentConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { AgentConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { DeploymentSnippetFile } from '#lib/types/environment.js';
 	import type { EnvironmentCreate } from '#lib/types/ui/environment.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
@@ -77,44 +73,6 @@
 		onEnvironmentCreated?.();
 		open = false;
 	}
-
-	function findCreatedMTLSFile(fileName: string): DeploymentSnippetFile | undefined {
-		return generatedMTLS?.files?.find((file) => file.name === fileName);
-	}
-
-	async function downloadCreatedMTLSFile(fileName: string) {
-		const file = findCreatedMTLSFile(fileName);
-		if (!file) return;
-		if (file.content) {
-			downloadTextFile(file.name, file.content);
-			return;
-		}
-		if (!file.downloadUrl) {
-			toast.error(m.common_download_error());
-			return;
-		}
-
-		const downloadUrl = file.downloadUrl;
-		const operationResult2 = await tryCatch(
-			(async () => {
-				const blob = await environmentManagementService.downloadDeploymentFile(downloadUrl);
-				const url = URL.createObjectURL(blob);
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = file.name;
-				document.body.appendChild(a);
-				a.click();
-				document.body.removeChild(a);
-				URL.revokeObjectURL(url);
-			})()
-		);
-		if (operationResult2.error !== null && !isSessionCancelledError(operationResult2.error)) {
-			const err = operationResult2.error;
-
-			console.error('Failed to download mTLS asset:', err);
-			toast.error(m.common_download_error());
-		}
-	}
 </script>
 
 <ResponsiveDialog.Root
@@ -152,26 +110,6 @@
 							<p class="text-xs text-muted-foreground">
 								{m.environments_new_agent_mtls_auto_enroll()}
 							</p>
-						</div>
-						<div class="flex flex-col gap-2 sm:flex-row">
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								class="flex-1"
-								icon={DownloadIcon}
-								customLabel={m.environments_agent_mtls_download_certificate()}
-								onclick={() => downloadCreatedMTLSFile('agent.crt')}
-								disabled={!findCreatedMTLSFile('agent.crt')}
-							/>
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								class="flex-1"
-								icon={DownloadIcon}
-								customLabel={m.environments_agent_mtls_download_key()}
-								onclick={() => downloadCreatedMTLSFile('agent.key')}
-								disabled={!findCreatedMTLSFile('agent.key')}
-							/>
 						</div>
 					</div>
 				{/if}

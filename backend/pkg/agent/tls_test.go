@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
@@ -24,7 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
 	"kit.getarcane.app/fs"
 	libcrypto "kit.getarcane.app/sys/crypto"
 
@@ -45,6 +42,26 @@ func initAgentTestCrypto(t *testing.T) {
 		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})
+}
+
+func newTestClientKey(t *testing.T) ([]byte, string) {
+	t.Helper()
+	key, err := certgen.GenerateMLDSA87PrivateKey()
+	require.NoError(t, err)
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	require.NoError(t, err)
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
+		string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+}
+
+func writeTestClientAssets(t *testing.T, dir string, assets *GeneratedMTLSAssets, keyPEM []byte) {
+	t.Helper()
+	for _, file := range assets.Files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file.Name), []byte(file.Content), fs.FilePerm))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, generatedMTLSClientKeyName), keyPEM, 0o600))
 }
 
 func TestMTLSServer_GeneratesManagerCA(t *testing.T) {
@@ -76,7 +93,13 @@ func TestMTLSIssueClient(t *testing.T) {
 		AppURL:    "https://manager.example.com",
 	})
 
-	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
+	unissued, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
+	require.NoError(t, err)
+	require.False(t, unissued.CertIssued)
+	require.Len(t, unissued.Files, 1, "nothing is issued without a certificate signing request")
+
+	keyPEM, csr := newTestClientKey(t)
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server", CSR: csr})
 	require.NoError(t, err)
 	require.NotNil(t, assets)
 	require.Empty(t, cfg.CAFile)
@@ -84,22 +107,14 @@ func TestMTLSIssueClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Lab-Server-env-123", issued.Subject.CommonName)
 	require.Equal(t, "./arcane-agent-certs", assets.HostDirHint)
-	require.Len(t, assets.Files, 3)
+	require.Len(t, assets.Files, 2)
 	require.Equal(t, "ca.crt", assets.Files[0].Name)
 	require.Contains(t, assets.Files[0].Content, "BEGIN CERTIFICATE")
 	require.Equal(t, "/app/data/agent-mtls-client/ca.crt", assets.Files[0].ContainerPath)
 	require.Equal(t, "/app/data/agent-mtls-client/agent.crt", assets.Files[1].ContainerPath)
-	require.Equal(t, "agent.key", assets.Files[2].Name)
-	require.Equal(t, "/app/data/agent-mtls-client/agent.key", assets.Files[2].ContainerPath)
-	require.Contains(t, assets.Files[2].Content, "BEGIN PRIVATE KEY")
-
-	keyBlock, _ := pem.Decode([]byte(assets.Files[2].Content))
-	require.NotNil(t, keyBlock)
-	parsedKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	require.NoFileExists(t, filepath.Join(cfg.AssetsDir, generatedClientMTLSSubdir, "env-123", generatedMTLSClientKeyName))
+	_, err = tls.X509KeyPair([]byte(assets.Files[1].Content), keyPEM)
 	require.NoError(t, err)
-	privateKey, ok := parsedKey.(*mldsa.PrivateKey)
-	require.True(t, ok)
-	require.Equal(t, mldsa.MLDSA87(), privateKey.PublicKey().Parameters())
 
 	certBlock, _ := pem.Decode([]byte(assets.Files[1].Content))
 	require.NotNil(t, certBlock)
@@ -120,7 +135,8 @@ func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
 		AppURL:    "https://manager.example.com",
 	})
 
-	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-abc", EnvironmentName: "Lab Server"})
+	_, csr := newTestClientKey(t)
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-abc", EnvironmentName: "Lab Server", CSR: csr})
 	require.NoError(t, err)
 	require.NotNil(t, assets)
 
@@ -253,18 +269,15 @@ func TestMTLSManagerClientEnroll_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 	assetsDir := t.TempDir()
 	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 
+	keyPEM, csr := newTestClientKey(t)
 	generated, err := NewMTLS(MTLSConfig{
 		Mode:      MTLSModeRequired,
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
-	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-existing", EnvironmentName: "Existing"})
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-existing", EnvironmentName: "Existing", CSR: csr})
 	require.NoError(t, err)
 	require.NotNil(t, generated)
-	for _, file := range generated.Files {
-		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := kit.Ternary(file.Permissions == "0600", 0o600, fs.FilePerm)
-		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
-	}
+	writeTestClientAssets(t, assetsDir, generated, keyPEM)
 
 	cfg := NewMTLS(MTLSConfig{
 		Mode:       MTLSModeRequired,
@@ -419,18 +432,14 @@ func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *
 
 func TestLoadClientCertificate_RenewsExpiredCertificate(t *testing.T) {
 	assetsDir := t.TempDir()
+	keyPEM, csr := newTestClientKey(t)
 	assets, err := NewMTLS(MTLSConfig{
 		Mode:      MTLSModeRequired,
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
-	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-renew", EnvironmentName: "Renew"})
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-renew", EnvironmentName: "Renew", CSR: csr})
 	require.NoError(t, err)
-
-	for _, file := range assets.Files {
-		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := kit.Ternary(file.Permissions == "0600", 0o600, fs.FilePerm)
-		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
-	}
+	writeTestClientAssets(t, assetsDir, assets, keyPEM)
 
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
@@ -443,18 +452,14 @@ func TestLoadClientCertificate_RenewsExpiredCertificate(t *testing.T) {
 
 func TestLoadClientCertificate_RenewBeforeOnlyAppliesWhenRequested(t *testing.T) {
 	assetsDir := t.TempDir()
+	keyPEM, csr := newTestClientKey(t)
 	assets, err := NewMTLS(MTLSConfig{
 		Mode:      MTLSModeRequired,
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
-	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-window", EnvironmentName: "Window"})
+	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-window", EnvironmentName: "Window", CSR: csr})
 	require.NoError(t, err)
-
-	for _, file := range assets.Files {
-		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := kit.Ternary(file.Permissions == "0600", 0o600, fs.FilePerm)
-		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
-	}
+	writeTestClientAssets(t, assetsDir, assets, keyPEM)
 
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
@@ -475,20 +480,15 @@ func TestMTLSIssueClient_ReissuesMismatchedKeyPair(t *testing.T) {
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
 	})
-	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
+	_, originalCSR := newTestClientKey(t)
+	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server", CSR: originalCSR})
 	require.NoError(t, err)
 
-	replacementKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	require.NoError(t, err)
-	replacementKeyDER, err := x509.MarshalECPrivateKey(replacementKey)
-	require.NoError(t, err)
-	clientKeyPath := filepath.Join(cfg.AssetsDir, generatedClientMTLSSubdir, "env-123", generatedMTLSClientKeyName)
-	require.NoError(t, os.WriteFile(clientKeyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: replacementKeyDER}), 0o600))
-
-	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
+	replacementKeyPEM, replacementCSR := newTestClientKey(t)
+	assets, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server", CSR: replacementCSR})
 	require.NoError(t, err)
 	require.True(t, assets.CertIssued, "a key that no longer matches the certificate must be reissued")
-	_, err = tls.X509KeyPair([]byte(assets.Files[1].Content), []byte(assets.Files[2].Content))
+	_, err = tls.X509KeyPair([]byte(assets.Files[1].Content), replacementKeyPEM)
 	require.NoError(t, err)
 }
 
@@ -498,10 +498,11 @@ func TestMTLSIssueClient_PreservesCertificateWhenEnvironmentNameChanges(t *testi
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
 	})
-	original, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: ""})
+	_, csr := newTestClientKey(t)
+	original, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "", CSR: csr})
 	require.NoError(t, err)
 
-	renamed, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server"})
+	renamed, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-123", EnvironmentName: "Lab Server", CSR: csr})
 	require.NoError(t, err)
 	require.False(t, renamed.CertIssued)
 	require.Equal(t, original.Files[1].Content, renamed.Files[1].Content)
@@ -594,8 +595,11 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 		AssetsDir: assetsDir,
 		AppURL:    "https://manager.example.com",
 	})
-	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-hs", EnvironmentName: "Handshake"})
+	keyPEM, csr := newTestClientKey(t)
+	_, err := cfg.IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-hs", EnvironmentName: "Handshake", CSR: csr})
 	require.NoError(t, err)
+	clientKeyPath := filepath.Join(t.TempDir(), generatedMTLSClientKeyName)
+	require.NoError(t, os.WriteFile(clientKeyPath, keyPEM, 0o600))
 
 	caCertPath := filepath.Join(assetsDir, "ca.crt")
 	ca, caGenerated, err := ensureManagerCA(t.Context(), assetsDir)
@@ -619,7 +623,7 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 		Mode:       MTLSModeRequired,
 		CAFile:     caCertPath,
 		CertFile:   clientCertPath,
-		KeyFile:    filepath.Join(filepath.Dir(clientCertPath), "agent.key"),
+		KeyFile:    clientKeyPath,
 		ServerName: "localhost",
 		ManagerURL: "https://localhost/api",
 	}).clientTLS(t.Context())

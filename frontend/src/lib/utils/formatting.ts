@@ -448,15 +448,3 @@ const LOOSE_ANSI_MARKER_SEQUENCE = /\[(?:\d{1,3}(?:;\d{1,3})*)m/g;
 export function sanitizeLogText(input: string): string {
 	return stripAnsi(input.replaceAll('\r', '')).replace(LOOSE_ANSI_MARKER_SEQUENCE, '').trimEnd();
 }
-
-export function downloadTextFile(filename: string, content: string, mimeType = 'application/x-pem-file'): void {
-	const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
-	const url = window.URL.createObjectURL(blob);
-	const link = document.createElement('a');
-	link.href = url;
-	link.setAttribute('download', filename);
-	document.body.appendChild(link);
-	link.click();
-	document.body.removeChild(link);
-	window.URL.revokeObjectURL(url);
-}
