@@ -132,7 +132,10 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 
 func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t *testing.T) {
 	db := setupAuthMiddlewareTestDB(t)
-	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
@@ -307,7 +310,10 @@ func TestParseSecurityRequirements(t *testing.T) {
 
 func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	db := setupAuthMiddlewareTestDB(t)
-	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
@@ -399,7 +405,10 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	db := setupAuthMiddlewareTestDB(t)
-	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
@@ -663,7 +672,10 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 	t.Run("browser cookie uses owner role permissions", func(t *testing.T) {
 		ctx := t.Context()
 		db := setupAuthMiddlewareTestDB(t)
-		userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil)
+		userSvc := user.NewUserService(user.UserServiceParams{
+			DB:                   db,
+			RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+		})
 		sessionSvc := session.NewSessionService(db)
 		settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 		require.NoError(t, err)

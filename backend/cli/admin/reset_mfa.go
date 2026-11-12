@@ -68,7 +68,10 @@ func runResetMFACommand(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	userService := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB, nil)
+	userService := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	localUser, err := userService.GetUserByUsername(cmd.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {

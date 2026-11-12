@@ -208,7 +208,11 @@ func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt t
 
 func TestVerifyToken_ValidClaims(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -270,7 +274,11 @@ func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 
 func TestVerifyToken_Expired(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -370,7 +378,11 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 
 func TestRefreshToken_Valid(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -410,7 +422,11 @@ func TestRefreshToken_Valid(t *testing.T) {
 
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -470,7 +486,11 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 
 func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -506,7 +526,11 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 
 func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -526,7 +550,11 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 
 func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -549,7 +577,11 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 
 func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -575,7 +607,11 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -604,7 +640,11 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 
 func TestRefreshToken_AcceptsBrowserRefreshToken(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -642,7 +682,11 @@ func TestRefreshToken_AcceptsBrowserRefreshToken(t *testing.T) {
 
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -668,7 +712,11 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 
 func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -705,7 +753,11 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 
 func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -825,7 +877,11 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	authSvc := newTestAuthService()
 	authSvc.userService = userSvc
 	authSvc.settingsService = settingsSvc
@@ -889,7 +945,11 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-			userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+			userSvc := user.NewUserService(user.UserServiceParams{
+				DB:                   db,
+				RoleService:          role.NewRoleService(db),
+				RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+			})
 			email := "existing@example.com"
 			existing := &user.User{ID: "u1", Username: "existing", Email: &email}
 			_, err = userSvc.CreateUser(ctx, existing)
@@ -946,7 +1006,11 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 
 func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -1034,7 +1098,11 @@ func TestGetSessionBootstrap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupAuthServiceTestDB(t)
-			userSvc := user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil)
+			userSvc := user.NewUserService(user.UserServiceParams{
+				DB:                   db,
+				RoleService:          role.NewRoleService(db),
+				RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+			})
 			_, err := userSvc.CreateUser(t.Context(), &user.User{
 				ID:       "u-bootstrap",
 				Username: "bootstrap",
@@ -1067,7 +1135,11 @@ func TestGetSessionBootstrap(t *testing.T) {
 	t.Run("unknown user fails", func(t *testing.T) {
 		db := setupAuthServiceTestDB(t)
 		s := &AuthService{
-			userService:       user.NewUserService(db, role.NewRoleService(db), session.RevokeAllUserSessionsExceptInDB, nil),
+			userService: user.NewUserService(user.UserServiceParams{
+				DB:                   db,
+				RoleService:          role.NewRoleService(db),
+				RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+			}),
 			environmentLister: environment.NewLister(db, agent.NewTunnelRegistry()),
 			versionService:    newBootstrapTestVersionService(t, db),
 		}

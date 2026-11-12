@@ -85,7 +85,12 @@ var (
 			fx.Annotate(role.NewRoleService, fx.OnStop((*role.RoleService).Stop)),
 			fx.Annotate(apikey.NewApiKeyService, fx.OnStop((*apikey.ApiKeyService).Stop)),
 			func(db *database.DB, roles *role.RoleService, settingsService *settings.SettingsService) *user.UserService {
-				return user.NewUserService(db, roles, session.RevokeAllUserSessionsExceptInDB, settingsService)
+				return user.NewUserService(user.UserServiceParams{
+					DB:                   db,
+					RoleService:          roles,
+					SettingsService:      settingsService,
+					RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+				})
 			},
 			federated.NewFederatedCredentialService,
 			kv.NewKVService,

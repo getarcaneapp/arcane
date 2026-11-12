@@ -143,7 +143,11 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	ctx := t.Context()
 	db := setupFederatedCredentialServiceTestDB(t)
 	roleSvc := role.NewRoleService(db)
-	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB, nil)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          roleSvc,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
 	sessionSvc := session.NewSessionService(db)
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)

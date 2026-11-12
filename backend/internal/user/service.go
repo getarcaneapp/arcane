@@ -58,6 +58,13 @@ type (
 		settingsService      *settings.SettingsService
 	}
 
+	UserServiceParams struct {
+		DB                   *database.DB
+		RoleService          *role.RoleService
+		SettingsService      *settings.SettingsService
+		RevokeSessionsExcept func(context.Context, *gorm.DB, string, string) error
+	}
+
 	DefaultAdminOptions struct {
 		Username       string
 		Password       string
@@ -92,14 +99,14 @@ func DefaultArgon2Params() *Argon2Params {
 	}
 }
 
-func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error, settingsService *settings.SettingsService) *UserService {
+func NewUserService(p UserServiceParams) *UserService {
 	return &UserService{
-		db:                   db,
-		roleService:          roleService,
+		db:                   p.DB,
+		roleService:          p.RoleService,
 		argon2Params:         DefaultArgon2Params(),
 		argon2Slots:          make(chan struct{}, 4),
-		revokeSessionsExcept: revokeSessionsExcept,
-		settingsService:      settingsService,
+		revokeSessionsExcept: p.RevokeSessionsExcept,
+		settingsService:      p.SettingsService,
 	}
 }
 
@@ -317,7 +324,10 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", localUser.ID).First(&current).Error; err != nil {
 			return fmt.Errorf("failed to load user: %w", err)
 		}
-		if !strings.EqualFold(kit.FromPtr(current.Email), strings.TrimSpace(kit.FromPtr(localUser.Email))) {
+		trimmedEmail := strings.TrimSpace(kit.FromPtr(localUser.Email))
+		if strings.EqualFold(kit.FromPtr(current.Email), trimmedEmail) {
+			localUser.Email = kit.Ternary(trimmedEmail == "", nil, &trimmedEmail)
+		} else {
 			if s.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
 				return ErrEmailChangeBlocked
 			}
