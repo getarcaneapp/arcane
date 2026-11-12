@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -175,6 +176,14 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, err
 	}
 
+	email, err := NormalizeOptionalEmail(kit.Ternary(submitted["email"], input.Body.Email, current.Email))
+	if err != nil {
+		return nil, handlerutil.APIError(err)
+	}
+	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(current.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
+		return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
+	}
+
 	if input.Body.Password != "" {
 		passwordPolicy := h.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
@@ -187,7 +196,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		BaseModel:   current.BaseModel,
 		Username:    username,
 		DisplayName: kit.Ternary(submitted["displayName"], input.Body.DisplayName, current.DisplayName),
-		Email:       kit.Ternary(submitted["email"], input.Body.Email, current.Email),
+		Email:       email,
 		Locale:      kit.Ternary(submitted["locale"], input.Body.Locale, current.Locale),
 		TimeFormat:  kit.Ternary(submitted["timeFormat"], input.Body.TimeFormat, current.TimeFormat),
 		FontSize:    current.FontSize,
