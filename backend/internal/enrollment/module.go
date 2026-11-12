@@ -48,14 +48,15 @@ func RegisterEnrollment(api huma.API, service *EnrollmentService, cfg *config.Co
 	}, h.EnrollAgent)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "enroll-agent-mtls",
-		Method:      http.MethodPost,
-		Path:        "/tunnel/mtls/enroll",
-		Summary:     "Enroll an agent mTLS certificate",
-		Tags:        []string{"Environments"},
-		Hidden:      true,
-		Security:    []map[string][]string{},
-		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessAgentToken},
+		OperationID:  "enroll-agent-mtls",
+		Method:       http.MethodPost,
+		Path:         "/tunnel/mtls/enroll",
+		Summary:      "Enroll an agent mTLS certificate",
+		Tags:         []string{"Environments"},
+		Hidden:       true,
+		MaxBodyBytes: 64 << 10,
+		Security:     []map[string][]string{},
+		Metadata:     map[string]any{authz.MetaAccess: authz.EndpointAccessAgentToken},
 		Middlewares: huma.Middlewares{
 			middleware.EchoMiddleware(middleware.PerIPRateLimit(10, 3)),
 			middleware.EchoMiddleware(middleware.PerAgentTokenRateLimit(10, 3)),

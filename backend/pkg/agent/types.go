@@ -150,6 +150,10 @@ type (
 		CAGenerated bool                `json:"-"`
 	}
 
+	EnrollMTLSRequest struct {
+		CSR string `json:"csr" doc:"PEM certificate signing request for a key the agent generated"`
+	}
+
 	EnrollMTLSResponse struct {
 		Files []GeneratedMTLSFile `json:"files"`
 	}
@@ -201,6 +205,7 @@ type (
 		EnvironmentID   string
 		EnvironmentName string
 		FallbackAppURL  string
+		CSR             string
 	}
 
 	ManagerClientOptions struct {

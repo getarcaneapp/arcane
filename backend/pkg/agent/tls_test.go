@@ -195,19 +195,28 @@ func TestMTLSManagerClientEnroll_LimitsEnrollmentErrorBody(t *testing.T) {
 }
 
 func TestMTLSManagerClientEnroll_EnrollsWithoutUnusableGeneratedCert(t *testing.T) {
-	generated, err := NewMTLS(MTLSConfig{
+	manager := NewMTLS(MTLSConfig{
 		Mode:      MTLSModeRequired,
 		AssetsDir: t.TempDir(),
 		AppURL:    "https://manager.example.com",
-	}).IssueClient(t.Context(), IssueClientOptions{EnvironmentID: "env-renew", EnvironmentName: "Renew"})
-	require.NoError(t, err)
+	})
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.TLS == nil || len(r.TLS.PeerCertificates) > 0 {
+		var enrollReq EnrollMTLSRequest
+		if r.TLS == nil || len(r.TLS.PeerCertificates) > 0 || json.UnmarshalRead(r.Body, &enrollReq) != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		_ = json.MarshalWrite(w, EnrollMTLSResponse{Files: generated.Files})
+		enrollment, enrollErr := manager.IssueEnrollment(r.Context(), IssueClientOptions{
+			EnvironmentID:   "env-renew",
+			EnvironmentName: "Renew",
+			CSR:             enrollReq.CSR,
+		})
+		if enrollErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.MarshalWrite(w, EnrollMTLSResponse{Files: enrollment.Assets.Files})
 	}))
 	t.Cleanup(server.Close)
 
@@ -236,6 +245,8 @@ func TestMTLSManagerClientEnroll_EnrollsWithoutUnusableGeneratedCert(t *testing.
 	require.NoError(t, cfg.enrollClient(t.Context(), "valid-token"))
 	_, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
 	require.Empty(t, reason)
+	require.NoFileExists(t, filepath.Join(assetsDir, generatedMTLSPendingKeyName))
+	require.NoFileExists(t, filepath.Join(manager.AssetsDir, generatedClientMTLSSubdir, "env-renew", generatedMTLSClientKeyName))
 }
 
 func TestMTLSManagerClientEnroll_UsesDownloadedCAPathWhenPresent(t *testing.T) {

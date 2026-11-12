@@ -2,6 +2,8 @@ package enrollment
 
 import (
 	"context"
+	"crypto/mldsa"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"net/http"
@@ -751,22 +753,34 @@ func TestEnrollmentService_EnrollMTLS_IssuesClientAssets(t *testing.T) {
 	h := newEnrollmentTestHarness(t)
 	h.createAgentEnvironment(t, "env-mtls", "Lab Server", "valid-token")
 
-	files, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
+	_, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "valid-token",
 		RemoteAddr: "192.0.2.1",
 	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	csr := newEnrollmentCSR(t)
+	files, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
+		AgentToken: "valid-token",
+		RemoteAddr: "192.0.2.1",
+		CSR:        csr,
+	})
 	require.NoError(t, err)
-	require.Len(t, files, 3)
+	require.Len(t, files, 2)
 	assert.Equal(t, "ca.crt", files[0].Name)
 	assert.Contains(t, files[0].Content, "BEGIN CERTIFICATE")
-	assert.Equal(t, "agent.key", files[2].Name)
-	assert.Contains(t, files[2].Content, "BEGIN PRIVATE KEY")
+	assert.Equal(t, "agent.crt", files[1].Name)
+	assert.NoFileExists(t, filepath.Join(h.mtls.AssetsDir, "clients", "env-mtls", "agent.key"))
 
 	certBlock, _ := pem.Decode([]byte(files[1].Content))
 	require.NotNil(t, certBlock)
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	require.NoError(t, err)
 	assert.Equal(t, "Lab-Server-env-mtls", cert.Subject.CommonName)
+	csrBlock, _ := pem.Decode([]byte(csr))
+	request, err := x509.ParseCertificateRequest(csrBlock.Bytes)
+	require.NoError(t, err)
+	assert.Equal(t, request.RawSubjectPublicKeyInfo, cert.RawSubjectPublicKeyInfo)
 
 	events := h.mtlsEvents(t, "env-mtls")
 	require.Len(t, events, 3)
@@ -782,29 +796,50 @@ func TestEnrollmentService_EnrollMTLS_ServesCachedAssetsDuringCooldown(t *testin
 	h := newEnrollmentTestHarness(t)
 	h.createAgentEnvironment(t, "env-repeat", "", "valid-token")
 
+	csr := newEnrollmentCSR(t)
 	first, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "valid-token",
 		RemoteAddr: "192.0.2.1",
+		CSR:        csr,
 	})
 	require.NoError(t, err)
-	require.Len(t, first, 3)
+	require.Len(t, first, 2)
 
 	second, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "valid-token",
 		RemoteAddr: "192.0.2.1",
+		CSR:        csr,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, first, second)
 	assert.Len(t, h.mtlsEvents(t, "env-repeat"), 3, "a cached enrollment records no events")
+
+	_, err = h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
+		AgentToken: "valid-token",
+		RemoteAddr: "192.0.2.1",
+		CSR:        newEnrollmentCSR(t),
+	})
+	require.ErrorIs(t, err, errMTLSEnrollCooldown, "a different key cannot enroll during the cooldown")
+}
+
+func newEnrollmentCSR(t *testing.T) string {
+	t.Helper()
+	key, err := mldsa.GenerateKey(mldsa.MLDSA87())
+	require.NoError(t, err)
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))
 }
 
 func TestEnrollmentService_EnrollMTLS_AllowsRepeatAfterCooldownAndMarksReenrollment(t *testing.T) {
 	h := newEnrollmentTestHarness(t)
 	h.createAgentEnvironment(t, "env-repeat-old", "", "valid-token")
 
+	csr := newEnrollmentCSR(t)
 	_, err := h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "valid-token",
 		RemoteAddr: "192.0.2.1",
+		CSR:        csr,
 	})
 	require.NoError(t, err)
 
@@ -815,6 +850,7 @@ func TestEnrollmentService_EnrollMTLS_AllowsRepeatAfterCooldownAndMarksReenrollm
 	_, err = h.service.EnrollMTLS(t.Context(), EnrollMTLSParams{
 		AgentToken: "valid-token",
 		RemoteAddr: "192.0.2.1",
+		CSR:        csr,
 	})
 	require.NoError(t, err)
 

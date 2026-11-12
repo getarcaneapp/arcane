@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto"
@@ -49,6 +50,7 @@ const (
 	generatedMTLSCAKeyFileName  = "ca.key"
 	generatedMTLSClientCertName = "agent.crt"
 	generatedMTLSClientKeyName  = "agent.key"
+	generatedMTLSPendingKeyName = "agent.key.pending"
 	generatedMTLSEnrolledName   = ".enrolled"
 	managerMTLSReenrollCooldown = 15 * time.Minute
 	agentMTLSRenewBefore        = 30 * 24 * time.Hour
@@ -65,6 +67,7 @@ var (
 	errEnrollUnreachable        = errors.New("agent mTLS enrollment request failed")
 	ErrMTLSEnrollUnavailable    = errors.New("agent mTLS enrollment is not available")
 	ErrMTLSEnrollCooldown       = errors.New("agent mTLS enrollment was recently completed; retry later")
+	ErrMTLSEnrollInvalidCSR     = errors.New("agent mTLS enrollment requires a valid certificate signing request")
 	caKeyEncrypt                = libcrypto.Encrypt
 )
 
@@ -148,6 +151,14 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 	if safeEnvID == "" {
 		return nil, errors.New("environment ID is required")
 	}
+	var csr *x509.CertificateRequest
+	if opts.CSR != "" {
+		parsed, csrErr := parseEnrollmentCSR(opts.CSR)
+		if csrErr != nil {
+			return nil, csrErr
+		}
+		csr = parsed
+	}
 
 	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 	if err != nil {
@@ -175,19 +186,37 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 	uriSAN := certgen.BuildAgentMTLSURISAN(appURL, safeEnvID)
 
 	// The URI SAN is the stable identity, so renaming an environment keeps its certificate.
-	existing, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore)
-	certIssued := reason != "" || !supportedGeneratedKey(existing.Leaf.PublicKey) ||
-		existing.Leaf.CheckSignatureFrom(ca.Leaf) != nil || (uriSAN != nil && !certificateHasURISAN(existing.Leaf, uriSAN))
+	var existing *x509.Certificate
+	if csr == nil {
+		if pair, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore); reason == "" {
+			existing = pair.Leaf
+		}
+	} else if stored, storedErr := m.ClientCertificate(ctx, safeEnvID); storedErr == nil &&
+		bytes.Equal(stored.RawSubjectPublicKeyInfo, csr.RawSubjectPublicKeyInfo) &&
+		time.Now().Add(agentMTLSRenewBefore).Before(stored.NotAfter) {
+		existing = stored
+	}
+	certIssued := existing == nil || !supportedGeneratedKey(existing.PublicKey) ||
+		existing.CheckSignatureFrom(ca.Leaf) != nil || (uriSAN != nil && !certificateHasURISAN(existing, uriSAN))
 	if certIssued {
 		// Client keys follow the CA: P-384 under a legacy ECDSA CA, otherwise ML-DSA-87.
 		var clientKey crypto.Signer
-		if _, ecdsaCA := ca.PrivateKey.(*ecdsa.PrivateKey); ecdsaCA {
+		_, ecdsaCA := ca.PrivateKey.(*ecdsa.PrivateKey)
+		switch {
+		case csr != nil:
+		case ecdsaCA:
 			clientKey, err = certgen.GenerateP384PrivateKey()
-		} else {
+		default:
 			clientKey, err = certgen.GenerateMLDSA87PrivateKey()
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate client private key: %w", err)
+		}
+		var subjectKey crypto.PublicKey
+		if csr != nil {
+			subjectKey = csr.PublicKey
+		} else {
+			subjectKey = clientKey.Public()
 		}
 
 		// The common name is display metadata: "<name>-<id>", capped at 64 characters.
@@ -207,7 +236,7 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 		if templateErr != nil {
 			return nil, templateErr
 		}
-		certDER, createErr := x509.CreateCertificate(rand.Reader, template, ca.Leaf, clientKey.Public(), ca.PrivateKey)
+		certDER, createErr := x509.CreateCertificate(rand.Reader, template, ca.Leaf, subjectKey, ca.PrivateKey)
 		if createErr != nil {
 			return nil, fmt.Errorf("failed to create client certificate: %w", createErr)
 		}
@@ -215,19 +244,25 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 			return nil, writeErr
 		}
 
-		// P-384 keys keep SEC1 framing so agents from before the ML-DSA migration can parse them.
-		keyPEM := &pem.Block{Type: "PRIVATE KEY"}
-		if ecKey, ok := clientKey.(*ecdsa.PrivateKey); ok {
-			keyPEM.Type = "EC PRIVATE KEY"
-			keyPEM.Bytes, err = x509.MarshalECPrivateKey(ecKey)
+		if csr != nil {
+			if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, path.Join(clientLogicalDir, generatedMTLSClientKeyName)); removeErr != nil {
+				return nil, fmt.Errorf("failed to remove superseded client private key: %w", removeErr)
+			}
 		} else {
-			keyPEM.Bytes, err = x509.MarshalPKCS8PrivateKey(clientKey)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal client private key: %w", err)
-		}
-		if writeErr := atomic.WriteFile(keyPath, pem.EncodeToMemory(keyPEM), 0o600); writeErr != nil {
-			return nil, writeErr
+			// P-384 keys keep SEC1 framing so agents from before the ML-DSA migration can parse them.
+			keyPEM := &pem.Block{Type: "PRIVATE KEY"}
+			if ecKey, ok := clientKey.(*ecdsa.PrivateKey); ok {
+				keyPEM.Type = "EC PRIVATE KEY"
+				keyPEM.Bytes, err = x509.MarshalECPrivateKey(ecKey)
+			} else {
+				keyPEM.Bytes, err = x509.MarshalPKCS8PrivateKey(clientKey)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal client private key: %w", err)
+			}
+			if writeErr := atomic.WriteFile(keyPath, pem.EncodeToMemory(keyPEM), 0o600); writeErr != nil {
+				return nil, writeErr
+			}
 		}
 	}
 
@@ -239,24 +274,31 @@ func (m *MTLS) IssueClient(ctx context.Context, opts IssueClientOptions) (*Gener
 	if err != nil {
 		return nil, fmt.Errorf("failed to read generated client certificate: %w", err)
 	}
-	clientKeyPEM, err := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join(clientLogicalDir, generatedMTLSClientKeyName))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read generated client key: %w", err)
+	files := []GeneratedMTLSFile{
+		{Name: generatedMTLSCACertFileName, Content: string(caPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSCACertFileName), Permissions: "0644"},
+		{Name: generatedMTLSClientCertName, Content: string(clientCertPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSClientCertName), Permissions: "0644"},
+	}
+	if csr == nil {
+		clientKeyPEM, keyErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, path.Join(clientLogicalDir, generatedMTLSClientKeyName))
+		if keyErr != nil {
+			return nil, fmt.Errorf("failed to read generated client key: %w", keyErr)
+		}
+		files = append(files, GeneratedMTLSFile{Name: generatedMTLSClientKeyName, Content: string(clientKeyPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSClientKeyName), Permissions: "0600"})
 	}
 
 	return &GeneratedMTLSAssets{
 		HostDirHint: "./arcane-agent-certs",
 		CertIssued:  certIssued,
 		CAGenerated: caGenerated,
-		Files: []GeneratedMTLSFile{
-			{Name: generatedMTLSCACertFileName, Content: string(caPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSCACertFileName), Permissions: "0644"},
-			{Name: generatedMTLSClientCertName, Content: string(clientCertPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSClientCertName), Permissions: "0644"},
-			{Name: generatedMTLSClientKeyName, Content: string(clientKeyPEM), ContainerPath: path.Join(generatedMTLSContainerDir, generatedMTLSClientKeyName), Permissions: "0600"},
-		},
+		Files:       files,
 	}, nil
 }
 
 func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*MTLSEnrollment, error) {
+	csr, err := parseEnrollmentCSR(opts.CSR)
+	if err != nil {
+		return nil, err
+	}
 	assetsDir, err := m.assetsDir(ctx, managerMTLSDirName)
 	if err != nil {
 		return nil, err
@@ -278,6 +320,10 @@ func (m *MTLS) IssueEnrollment(ctx context.Context, opts IssueClientOptions) (*M
 	}
 
 	if enrolledMarker != "" && now.Sub(enrolledAt) < managerMTLSReenrollCooldown {
+		current, currentErr := m.ClientCertificate(ctx, safeEnvID)
+		if currentErr != nil || !bytes.Equal(current.RawSubjectPublicKeyInfo, csr.RawSubjectPublicKeyInfo) {
+			return nil, ErrMTLSEnrollCooldown
+		}
 		cached, cacheErr := m.IssueClient(ctx, opts)
 		if cacheErr != nil || cached == nil {
 			return nil, errors.Join(ErrMTLSEnrollCooldown, cacheErr)
@@ -349,7 +395,7 @@ func (m *MTLS) ResetClient(ctx context.Context) error {
 	if _, statErr := (acfs.Host{}).Stat(ctx, assetsDir, types.StatOptions{FollowFinal: true}); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
-	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName} {
+	for _, name := range []string{generatedMTLSClientCertName, generatedMTLSClientKeyName, generatedMTLSPendingKeyName} {
 		if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, "/"+name); removeErr != nil {
 			return fmt.Errorf("failed to remove agent mTLS %s: %w", name, removeErr)
 		}
@@ -429,10 +475,22 @@ func (m *MTLS) downloadClientAssets(ctx context.Context, agentToken, assetsDir, 
 	if clientErr != nil {
 		return fmt.Errorf("failed to configure agent mTLS enrollment client: %w", clientErr)
 	}
-	req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, managerBaseURL+"/api/tunnel/mtls/enroll", http.NoBody)
+	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, assetsDir, fs.DirPerm); mkdirErr != nil {
+		return fmt.Errorf("failed to create agent mTLS asset dir: %w", mkdirErr)
+	}
+	keyPEM, csrPEM, keyErr := pendingEnrollmentKey(ctx, assetsDir)
+	if keyErr != nil {
+		return keyErr
+	}
+	body, marshalErr := json.Marshal(EnrollMTLSRequest{CSR: string(csrPEM)})
+	if marshalErr != nil {
+		return fmt.Errorf("failed to encode agent mTLS enrollment request: %w", marshalErr)
+	}
+	req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, managerBaseURL+"/api/tunnel/mtls/enroll", bytes.NewReader(body))
 	if reqErr != nil {
 		return fmt.Errorf("failed to create agent mTLS enrollment request: %w", reqErr)
 	}
+	req.Header.Set("Content-Type", "application/json")
 	for header, value := range agentAuthCredentials(agentToken) {
 		req.Header.Set(header, value)
 	}
@@ -456,23 +514,91 @@ func (m *MTLS) downloadClientAssets(ctx context.Context, agentToken, assetsDir, 
 	if decodeErr := json.UnmarshalRead(io.LimitReader(resp.Body, maxEnrollResponseBytes), &enrollResp); decodeErr != nil {
 		return fmt.Errorf("failed to decode agent mTLS enrollment response: %w", decodeErr)
 	}
-	if len(enrollResp.Files) == 0 {
-		return errors.New("agent mTLS enrollment response did not include any files")
+	certIndex := slices.IndexFunc(enrollResp.Files, func(file GeneratedMTLSFile) bool {
+		return file.Name == generatedMTLSClientCertName
+	})
+	if certIndex < 0 {
+		return errors.New("agent mTLS enrollment response did not include a client certificate")
+	}
+	if _, pairErr := tls.X509KeyPair([]byte(enrollResp.Files[certIndex].Content), keyPEM); pairErr != nil {
+		return fmt.Errorf("agent mTLS enrollment returned a certificate that was not issued for this agent's key; the manager may predate CSR enrollment: %w", pairErr)
 	}
 
-	if mkdirErr := (acfs.Host{}).MkdirAll(ctx, assetsDir, fs.DirPerm); mkdirErr != nil {
-		return fmt.Errorf("failed to create agent mTLS asset dir: %w", mkdirErr)
+	assets := []GeneratedMTLSFile{
+		{Name: generatedMTLSClientKeyName, Content: string(keyPEM)},
+		enrollResp.Files[certIndex],
 	}
-	for _, file := range enrollResp.Files {
-		perm := kit.Ternary(strings.TrimSpace(file.Permissions) == "0600", 0o600, fs.FilePerm)
-		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+filepath.Base(file.Name), []byte(file.Content), acfs.WriteOptions{Mode: perm}); writeErr != nil {
+	if caIndex := slices.IndexFunc(enrollResp.Files, func(file GeneratedMTLSFile) bool {
+		return file.Name == generatedMTLSCACertFileName
+	}); caIndex >= 0 {
+		assets = append(assets, enrollResp.Files[caIndex])
+	}
+	for _, file := range assets {
+		perm := kit.Ternary(file.Name == generatedMTLSClientKeyName, 0o600, fs.FilePerm)
+		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+file.Name, []byte(file.Content), acfs.WriteOptions{Mode: perm}); writeErr != nil {
 			return fmt.Errorf("failed to write agent mTLS asset %s: %w", file.Name, writeErr)
 		}
 	}
 	if _, writtenReason := loadClientCertificate(certPath, keyPath, time.Now(), 0); writtenReason != "" {
 		return fmt.Errorf("agent mTLS enrollment wrote unusable assets: %s", writtenReason)
 	}
+	if removeErr := (acfs.Root{Path: assetsDir}).RemoveAll(ctx, "/"+generatedMTLSPendingKeyName); removeErr != nil {
+		return fmt.Errorf("failed to remove pending agent mTLS key: %w", removeErr)
+	}
 	return nil
+}
+
+func pendingEnrollmentKey(ctx context.Context, assetsDir string) ([]byte, []byte, error) {
+	keyPEM, readErr := acfs.Root{Path: assetsDir}.ReadFile(ctx, "/"+generatedMTLSPendingKeyName)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return nil, nil, fmt.Errorf("failed to read pending agent mTLS key: %w", readErr)
+	}
+	var key crypto.Signer
+	if block, _ := pem.Decode(keyPEM); block != nil {
+		if parsed, parseErr := x509.ParsePKCS8PrivateKey(block.Bytes); parseErr == nil {
+			if signer, ok := parsed.(crypto.Signer); ok && supportedGeneratedKey(signer.Public()) {
+				key = signer
+			}
+		}
+	}
+	if key == nil {
+		generated, genErr := certgen.GenerateMLDSA87PrivateKey()
+		if genErr != nil {
+			return nil, nil, fmt.Errorf("failed to generate agent mTLS private key: %w", genErr)
+		}
+		keyDER, marshalErr := x509.MarshalPKCS8PrivateKey(generated)
+		if marshalErr != nil {
+			return nil, nil, fmt.Errorf("failed to marshal agent mTLS private key: %w", marshalErr)
+		}
+		key = generated
+		keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+		if writeErr := (acfs.Root{Path: assetsDir}).Write(ctx, "/"+generatedMTLSPendingKeyName, keyPEM, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
+			return nil, nil, fmt.Errorf("failed to write pending agent mTLS key: %w", writeErr)
+		}
+	}
+	csrDER, csrErr := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if csrErr != nil {
+		return nil, nil, fmt.Errorf("failed to create agent mTLS certificate signing request: %w", csrErr)
+	}
+	return keyPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}), nil
+}
+
+func parseEnrollmentCSR(csrPEM string) (*x509.CertificateRequest, error) {
+	block, _ := pem.Decode([]byte(csrPEM))
+	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+		return nil, ErrMTLSEnrollInvalidCSR
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMTLSEnrollInvalidCSR, err)
+	}
+	if sigErr := csr.CheckSignature(); sigErr != nil {
+		return nil, fmt.Errorf("%w: %w", ErrMTLSEnrollInvalidCSR, sigErr)
+	}
+	if !supportedGeneratedKey(csr.PublicKey) {
+		return nil, fmt.Errorf("%w: unsupported key algorithm", ErrMTLSEnrollInvalidCSR)
+	}
+	return csr, nil
 }
 
 func (m *MTLS) clientTLS(ctx context.Context) (*tls.Config, error) {
