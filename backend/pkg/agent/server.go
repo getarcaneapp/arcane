@@ -315,6 +315,12 @@ func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTu
 		_ = tunnel.CloseWithReason(errAgentMuxRequired.Error())
 		return errAgentMuxRequired
 	}
+	if !slices.Contains(tunnel.Capabilities, TunnelCapabilityForwardedPermissions) {
+		slog.WarnContext(ctx, "Rejected agent older than Arcane v3", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance)
+		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: errAgentV3Required.Error()})
+		_ = tunnel.CloseWithReason(errAgentV3Required.Error())
+		return errAgentV3Required
+	}
 
 	registration, err := s.registry.RegisterSession(callbackCtx, tunnel)
 	if err != nil {

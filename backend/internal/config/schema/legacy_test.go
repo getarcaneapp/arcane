@@ -62,13 +62,18 @@ func TestCheckLegacyEnv(t *testing.T) {
 	t.Setenv("PROJECTS_DIRECTORY", "/projects")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("ARCANE_LOG_LEVEL", "info")
+	t.Setenv("ANALYTICS_DISABLED", "true")
+	t.Setenv("UPDATE_CHECK_DISABLED", "true")
+	t.Setenv("ARCANE_UPDATE_CHECK_ENABLED", "false")
 
 	err := CheckLegacyEnv(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "rename PORT to ARCANE_PORT")
 	require.ErrorContains(t, err, "rename ENCRYPTION_KEY_FILE to ARCANE_ENCRYPTION_KEY_FILE")
 	require.ErrorContains(t, err, "rename PROJECTS_DIRECTORY to ARCANE_PROJECTS_DIRECTORY")
+	require.ErrorContains(t, err, "replace ANALYTICS_DISABLED=true with ARCANE_ANALYTICS_ENABLED=false")
 	assert.NotContains(t, err.Error(), "LOG_LEVEL")
+	assert.NotContains(t, err.Error(), "UPDATE_CHECK_DISABLED")
 }
 
 func TestCheckLegacyEnvWarnsForRetiredNames(t *testing.T) {
@@ -80,11 +85,9 @@ func TestCheckLegacyEnvWarnsForRetiredNames(t *testing.T) {
 	})
 	t.Setenv("DEPOT_TOKEN", "")
 	t.Setenv("JWT_SECRET", "legacy")
-	t.Setenv("ANALYTICS_DISABLED", "true")
 	t.Setenv("VOLUME_WORKSPACE_MAX_DEPTH", "50")
 
 	require.NoError(t, CheckLegacyEnv(t.Context()))
 	assert.Contains(t, logs.String(), "env=JWT_SECRET")
-	assert.Contains(t, logs.String(), "env=ANALYTICS_DISABLED")
 	assert.Contains(t, logs.String(), "env=VOLUME_WORKSPACE_MAX_DEPTH")
 }

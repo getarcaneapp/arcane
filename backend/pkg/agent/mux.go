@@ -47,6 +47,7 @@ const (
 var (
 	errTunnelMuxActive    = errors.New("agent tunnel connection carries a multiplexed session")
 	errAgentMuxRequired   = errors.New("agent does not support the multiplexed data plane; upgrade the agent")
+	errAgentV3Required    = errors.New("agent predates Arcane v3; upgrade the agent to the manager's version")
 	errManagerMuxRequired = errors.New("manager did not grant the multiplexed data plane; upgrade the manager")
 	errMuxPingTimeout     = errors.New("agent tunnel ping timed out")
 )

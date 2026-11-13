@@ -250,7 +250,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegistry, s
 	if sendErr := stream.Send(tunnelpb.AgentMessage_builder{
 		Register: tunnelpb.RegisterRequest_builder{
 			AgentToken:   "valid-token",
-			Capabilities: []string{tunnelCapabilityMux},
+			Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
 		}.Build(),
 	}.Build()); sendErr != nil {
 		_ = conn.Close()

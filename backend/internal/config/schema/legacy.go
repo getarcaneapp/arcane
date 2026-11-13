@@ -17,7 +17,11 @@ import (
 )
 
 var (
-	RetiredEnv         = []string{"JWT_SECRET", "UPDATE_CHECK_DISABLED", "ANALYTICS_DISABLED", "ARCANE_VOLUME_WORKSPACE_MAX_DEPTH", "VOLUME_WORKSPACE_MAX_DEPTH"}
+	RetiredEnv  = []string{"JWT_SECRET", "ARCANE_VOLUME_WORKSPACE_MAX_DEPTH", "VOLUME_WORKSPACE_MAX_DEPTH"}
+	invertedEnv = map[string]string{
+		"ANALYTICS_DISABLED":    "ARCANE_ANALYTICS_ENABLED",
+		"UPDATE_CHECK_DISABLED": "ARCANE_UPDATE_CHECK_ENABLED",
+	}
 	envFileSuffixes    = []string{"", "_FILE", "__FILE"}
 	alreadyPrefixedEnv = []string{
 		"ARCANE_BACKUP_VOLUME_NAME",
@@ -72,6 +76,11 @@ func CheckLegacyEnv(ctx context.Context) error {
 			if os.Getenv(legacy+suffix) != "" {
 				errs = append(errs, fmt.Errorf("rename %s to %s", legacy+suffix, renamed[legacy]+suffix))
 			}
+		}
+	}
+	for _, legacy := range slices.Sorted(maps.Keys(invertedEnv)) {
+		if os.Getenv(legacy) != "" && os.Getenv(invertedEnv[legacy]) == "" {
+			errs = append(errs, fmt.Errorf("replace %s=true with %s=false", legacy, invertedEnv[legacy]))
 		}
 	}
 	for _, retired := range RetiredEnv {

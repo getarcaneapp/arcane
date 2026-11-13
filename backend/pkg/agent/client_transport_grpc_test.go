@@ -56,7 +56,7 @@ func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {
 
 	// Empty token in register is accepted via metadata fallback.
 	err = stream.Send(tunnelpb.AgentMessage_builder{
-		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux}}.Build(),
+		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions}}.Build(),
 	}.Build())
 	require.NoError(t, err)
 
@@ -101,7 +101,7 @@ func TestGRPCTunnel_MetadataAPIKeyFallback(t *testing.T) {
 	require.NoError(t, err)
 
 	err = stream.Send(tunnelpb.AgentMessage_builder{
-		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux}}.Build(),
+		Register: tunnelpb.RegisterRequest_builder{Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions}}.Build(),
 	}.Build())
 	require.NoError(t, err)
 

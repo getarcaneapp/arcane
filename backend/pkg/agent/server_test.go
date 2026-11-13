@@ -78,7 +78,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-connected",
-		Capabilities:  []string{tunnelCapabilityMux},
+		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
 	})
 	require.NoError(t, err)
 
@@ -142,7 +142,7 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-proxy-mtls",
-		Capabilities:  []string{tunnelCapabilityMux},
+		Capabilities:  []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
 	})
 	require.NoError(t, err)
 
@@ -430,7 +430,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 		return nil
 	}
 
-	server.manageConnectedTunnel(t.Context(), &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, AgentTunnelConfig{
+	server.manageConnectedTunnel(t.Context(), &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions}}, AgentTunnelConfig{
 		Conn:          conn,
 		EnvironmentID: envID,
 		SecurityMode:  "token",
@@ -452,7 +452,7 @@ func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCan
 
 	connectionCtx, cancelConnection := context.WithCancel(t.Context())
 	cancelConnection()
-	server.manageConnectedTunnel(connectionCtx, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, AgentTunnelConfig{
+	server.manageConnectedTunnel(connectionCtx, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions}}, AgentTunnelConfig{
 		Conn:          conn,
 		EnvironmentID: envID,
 		SecurityMode:  "token",

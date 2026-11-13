@@ -49,6 +49,11 @@ const (
 	preparedStmtTTL     = 15 * time.Minute
 )
 
+var settingsTableCountQueries = map[goose.Dialect]string{
+	goose.DialectSQLite3:  "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'",
+	goose.DialectPostgres: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'settings'",
+}
+
 var customGormLogger logger.Interface
 
 func SetGormLogger(l logger.Interface) {
@@ -234,6 +239,19 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 		return fmt.Errorf("failed to determine current migration version for %s: %w", dbProvider, err)
 	}
 	slog.InfoContext(ctx, "Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
+
+	if currentVersion == 0 {
+		var settingsTables int
+		if err = db.QueryRowContext(ctx, settingsTableCountQueries[dialect]).Scan(&settingsTables); err != nil {
+			return fmt.Errorf("failed to inspect the existing schema for %s: %w", dbProvider, err)
+		}
+		if settingsTables > 0 {
+			return fmt.Errorf(
+				"database for %s has Arcane tables but no Goose migration history, so it predates the Arcane v2.17.1 schema baseline %d; upgrade to Arcane v2.17.1 first, then upgrade to v3",
+				dbProvider, migrations.BaselineVersion,
+			)
+		}
+	}
 
 	switch {
 	case currentVersion > 0 && currentVersion < migrations.BaselineVersion:
