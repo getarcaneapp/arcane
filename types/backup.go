@@ -39,15 +39,15 @@ type (
 		CreatedAt        time.Time  `json:"createdAt" readOnly:"true"`
 		UpdatedAt        *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 		ID               string     `json:"id" readOnly:"true"`
-		Name             string     `json:"name" required:"false" minLength:"1" unorm:"nfc" trim:"true"`
-		Endpoint         string     `json:"endpoint,omitempty"`
-		Bucket           string     `json:"bucket" required:"false"`
-		Region           string     `json:"region" required:"false"`
-		AccessKeyID      string     `json:"accessKeyId" required:"false"`
-		SecretAccessKey  string     `json:"secretAccessKey,omitempty" writeOnly:"true"`
-		Prefix           string     `json:"prefix,omitempty"`
-		UseSSL           bool       `json:"useSsl" required:"false"`
-		ForcePathStyle   bool       `json:"forcePathStyle" required:"false"`
+		Name             string     `json:"name" required:"false" minLength:"1" unorm:"nfc" trim:"true" doc:"Display name of the destination; must not be empty"`
+		Endpoint         string     `json:"endpoint,omitempty" doc:"S3-compatible host and optional port, empty for AWS S3; an http:// or https:// prefix is replaced per useSsl"`
+		Bucket           string     `json:"bucket" required:"false" doc:"Bucket that stores the backups; must not be empty"`
+		Region           string     `json:"region" required:"false" doc:"Bucket region; required when endpoint is empty, otherwise empty signs requests for us-east-1"`
+		AccessKeyID      string     `json:"accessKeyId" required:"false" doc:"Access key ID; must not be empty"`
+		SecretAccessKey  string     `json:"secretAccessKey,omitempty" writeOnly:"true" doc:"Stored encrypted; required on create, empty on update keeps it if no connection field changes"`
+		Prefix           string     `json:"prefix,omitempty" doc:"Key prefix for Arcane's backups in the bucket; leading and trailing slashes are dropped"`
+		UseSSL           bool       `json:"useSsl" required:"false" doc:"https or http for a custom endpoint; AWS S3 (no endpoint) always uses https"`
+		ForcePathStyle   bool       `json:"forcePathStyle" required:"false" doc:"Put the bucket in the path, as most self-hosted stores need; false uses virtual-hosted style"`
 		SecretConfigured bool       `json:"secretConfigured" readOnly:"true"`
 	}
 
