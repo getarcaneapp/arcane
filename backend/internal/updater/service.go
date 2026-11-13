@@ -2011,7 +2011,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 		}
 		for _, record := range pending {
 			if carryErr := tx.Model(&imageupdate.ImageUpdateRecord{}).
-				Where("id = ?", record.ID).
+				Where("id = ? AND policy_key = ?", record.ID, record.PolicyKey).
 				Where(
 					"(has_update = ? AND COALESCE(latest_digest, '') = ? AND COALESCE(latest_version, '') = ?) OR (has_update = ? AND COALESCE(last_error, '') <> '')",
 					true, kit.FromPtr(record.LatestDigest), kit.FromPtr(record.LatestVersion), false,
