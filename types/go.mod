@@ -5,9 +5,9 @@ go 1.27.4
 require (
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/docker/go-units v0.5.0
-	github.com/moby/moby/api v1.56.1
-	github.com/moby/moby/client v0.6.2
-	kit.getarcane.app/builds v0.5.3
+	github.com/moby/moby/api v1.57.0
+	github.com/moby/moby/client v0.6.3
+	kit.getarcane.app/builds v0.5.4
 )
 
 require (

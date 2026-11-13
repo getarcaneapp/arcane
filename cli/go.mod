@@ -30,8 +30,8 @@ require (
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.7.2
 	kit.getarcane.app/acfs v0.10.2
-	kit.getarcane.app/builds v0.5.3
-	kit.getarcane.app/docker v0.3.2
+	kit.getarcane.app/builds v0.5.4
+	kit.getarcane.app/docker v0.3.3
 )
 
 require (
@@ -99,8 +99,8 @@ require (
 	github.com/mattn/go-shellwords v1.0.16 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/moby/api v1.56.1 // indirect
-	github.com/moby/moby/client v0.6.2 // indirect
+	github.com/moby/moby/api v1.57.0 // indirect
+	github.com/moby/moby/client v0.6.3 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/muesli/mango v0.2.0 // indirect
 	github.com/muesli/mango-cobra v1.3.0 // indirect

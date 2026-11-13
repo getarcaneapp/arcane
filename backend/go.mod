@@ -47,8 +47,8 @@ require (
 	github.com/libtnb/sqlite v1.3.0
 	github.com/lmittmann/tint v1.2.1
 	github.com/moby/buildkit v0.35.0
-	github.com/moby/moby/api v1.56.1
-	github.com/moby/moby/client v0.6.2
+	github.com/moby/moby/api v1.57.0
+	github.com/moby/moby/client v0.6.3
 	github.com/nicholas-fedor/shoutrrr v0.24.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -92,8 +92,8 @@ require (
 	gorm.io/plugin/opentelemetry v0.1.16
 	kit.getarcane.app v0.7.2
 	kit.getarcane.app/acfs v0.10.2
-	kit.getarcane.app/builds v0.5.3
-	kit.getarcane.app/docker v0.3.2
+	kit.getarcane.app/builds v0.5.4
+	kit.getarcane.app/docker v0.3.3
 	kit.getarcane.app/docker/convert v0.4.3
 	kit.getarcane.app/sys/cgroup v0.3.3
 	kit.getarcane.app/tripwire v0.2.1
