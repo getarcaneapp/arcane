@@ -33,6 +33,7 @@ import (
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
+	"kit.getarcane.app/updater/refs"
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -53,6 +54,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -96,6 +98,20 @@ type (
 	}
 
 	projectCheckRegistry struct{}
+
+	fakeVulnerabilityScanner struct {
+		result  *types.VulnerabilityScanResult
+		err     error
+		scanned []string
+	}
+
+	gateDockerCalls struct {
+		present map[string]bool
+		pulls   []string
+		tags    []string
+		removed []string
+		mu      sync.Mutex
+	}
 )
 
 func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
@@ -2166,9 +2182,9 @@ func newTestNotificationService(t *testing.T, db *database.DB) *notification.Not
 func TestEvaluateVulnerabilityGate(t *testing.T) {
 	tests := []struct {
 		name    string
+		wantErr string
 		found   types.VulnerabilitySeveritySummary
 		limits  types.VulnerabilitySeveritySummary
-		wantErr string
 	}{
 		{
 			name: "unlimited severities never block",
@@ -2238,6 +2254,234 @@ func TestEvaluateVulnerabilityGate(t *testing.T) {
 			}
 			require.EqualError(t, err, tt.wantErr)
 			assert.ErrorIs(t, err, common.ErrForbidden)
+		})
+	}
+}
+
+func (f *fakeVulnerabilityScanner) ScanImageAndWait(_ context.Context, _, imageID string, _ types.Actor) (*types.VulnerabilityScanResult, error) {
+	f.scanned = append(f.scanned, imageID)
+	return f.result, f.err
+}
+
+func newGateDockerServer(t *testing.T, digest string) (*httptest.Server, *gateDockerCalls) {
+	t.Helper()
+	calls := &gateDockerCalls{present: map[string]bool{}}
+	refFrom := func(path, prefix, suffix string) string {
+		index := strings.Index(path, prefix)
+		if index < 0 {
+			return ""
+		}
+		ref, err := url.PathUnescape(strings.TrimSuffix(path[index+len(prefix):], suffix))
+		if err != nil {
+			return ""
+		}
+		return ref
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.mu.Lock()
+		defer calls.mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/images/create"):
+			fromImage, tag := r.URL.Query().Get("fromImage"), r.URL.Query().Get("tag")
+			ref := fromImage
+			switch {
+			case strings.HasPrefix(tag, "sha256:"):
+				ref = fromImage + "@" + tag
+			case tag != "" && !strings.Contains(fromImage, "@"):
+				ref = fromImage + ":" + tag
+			}
+			calls.pulls = append(calls.pulls, ref)
+			calls.present[ref] = true
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, map[string]string{"status": "Pulled", "id": ref})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/tag"):
+			target := r.URL.Query().Get("repo") + ":" + r.URL.Query().Get("tag")
+			calls.tags = append(calls.tags, target)
+			calls.present[target] = true
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/images/"):
+			ref := refFrom(r.URL.Path, "/images/", "")
+			calls.removed = append(calls.removed, ref)
+			delete(calls.present, ref)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, []dockertypesimage.DeleteResponse{{Deleted: "sha256:scanned-image"}})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/distribution/"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, map[string]any{
+				"Descriptor": map[string]any{
+					"mediaType": "application/vnd.oci.image.index.v1+json",
+					"digest":    digest,
+					"size":      1,
+				},
+			})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			ref := refFrom(r.URL.Path, "/images/", "/json")
+			if !calls.present[ref] {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.MarshalWrite(w, map[string]string{"message": "No such image: " + ref})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, dockertypesimage.InspectResponse{ID: "sha256:scanned-image"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, calls
+}
+
+func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, scanner VulnerabilityScanner) *UpdaterService {
+	t.Helper()
+	ctx := t.Context()
+	require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
+	require.NoError(t, settingsService.SetBoolSetting(ctx, types.FeatureVulnerabilityManagementSettingKey, true))
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "vulnerabilityUpdateGateEnabled", true))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxCritical", 0))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxHigh", -1))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxMedium", -1))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxLow", -1))
+	dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
+	cfg := &config.Config{}
+	eventSvc := event.NewEventService(db, cfg, nil)
+	activitySvc := activity.NewActivityService(db, settingsService)
+	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+			return dockerSvc.GetClient(ctx)
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: settingsService,
+	})
+	imageUpdateSvc := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+		DB:              db,
+		ActivityService: activitySvc,
+		SettingsService: settingsService,
+		DockerService:   dockerSvc,
+		EventService:    eventSvc,
+		RegistryService: registrySvc,
+	})
+	imageSvc := image.NewImageService(image.ImageServiceParams{
+		DB:                 db,
+		DockerService:      dockerSvc,
+		RegistryService:    registrySvc,
+		ImageUpdateService: imageUpdateSvc,
+		EventService:       eventSvc,
+		SettingsService:    settingsService,
+		VulnerabilityService: vulnerability.NewVulnerabilityService(vulnerability.VulnerabilityServiceParams{
+			DB:              db,
+			Config:          cfg,
+			DockerService:   dockerSvc,
+			EventService:    eventSvc,
+			SettingsService: settingsService,
+			NotificationService: notification.NewNotificationService(notification.NotificationServiceParams{
+				DB:     db,
+				Config: cfg,
+			}),
+			ActivityService: activitySvc,
+			KVService:       kv.NewKVService(db),
+		}),
+	})
+	projectSvc := project.NewProjectService(project.ProjectServiceParams{
+		DB:            db,
+		DockerService: newUnreachableDockerService(t),
+	})
+	projectSvc.RegistryCredentialsProvider = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB: db,
+	}).GetEnabledRegistryCredentials
+	svc, err := NewUpdaterService(UpdaterServiceParams{
+		DB:                   db,
+		EventService:         eventSvc,
+		ActivityService:      activitySvc,
+		SettingsService:      settingsService,
+		DockerService:        dockerSvc,
+		ProjectService:       projectSvc,
+		ImageService:         imageSvc,
+		ImageUpdateService:   imageUpdateSvc,
+		VulnerabilityService: scanner,
+	})
+	require.NoError(t, err)
+	return svc
+}
+
+func TestUpdaterService_PullImageVulnerabilityGate(t *testing.T) {
+	const imageRef = "registry.example.com/team/app:latest"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	digestRef := "registry.example.com/team/app@" + digest
+	tests := []struct {
+		scanner     *fakeVulnerabilityScanner
+		name        string
+		wantErr     string
+		wantBlocked string
+		wantPulls   []string
+		wantTags    []string
+		wantRemoved []string
+		wantForbid  bool
+	}{
+		{
+			name:      "allowed image proceeds to the tagged pull",
+			scanner:   &fakeVulnerabilityScanner{result: &types.VulnerabilityScanResult{Summary: &types.VulnerabilitySeveritySummary{High: 4}}},
+			wantPulls: []string{digestRef, digestRef},
+			wantTags:  []string{imageRef},
+		},
+		{
+			name:        "rejected image is removed and its update blocked",
+			scanner:     &fakeVulnerabilityScanner{result: &types.VulnerabilityScanResult{Summary: &types.VulnerabilitySeveritySummary{Critical: 1}}},
+			wantErr:     vulnerabilityGateBlockedPrefix + "1 critical (limit 0)",
+			wantPulls:   []string{digestRef},
+			wantRemoved: []string{digestRef},
+			wantBlocked: "1 critical (limit 0)",
+			wantForbid:  true,
+		},
+		{
+			name:        "scan error fails without a block",
+			scanner:     &fakeVulnerabilityScanner{err: errors.New("trivy unavailable")},
+			wantErr:     vulnerabilityGateScanFailedPrefix + "trivy unavailable",
+			wantPulls:   []string{digestRef},
+			wantRemoved: []string{digestRef},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupProjectTestDB(t)
+			require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
+				ID:           "sha256:current-image",
+				Repository:   "registry.example.com/team/app",
+				Tag:          "latest",
+				UpdateType:   imageupdate.UpdateTypeDigest,
+				LatestDigest: new(digest),
+				HasUpdate:    true,
+			}).Error)
+			server, calls := newGateDockerServer(t, digest)
+			svc := newGateTestUpdater(t, db, server, tt.scanner)
+			ctx := context.WithValue(t.Context(), approvedImagesKey{}, &approvedImages{refs: map[string]string{}})
+
+			err := svc.PullImage(ctx, imageRef, io.Discard)
+
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]string{refs.NormalizeImageUpdateRef(imageRef): digestRef}, approvedImageRefs(ctx))
+			} else {
+				require.EqualError(t, err, tt.wantErr)
+				assert.Equal(t, tt.wantForbid, errors.Is(err, common.ErrForbidden))
+				assert.Empty(t, approvedImageRefs(ctx))
+			}
+			assert.Equal(t, []string{"sha256:scanned-image"}, tt.scanner.scanned)
+			assert.Equal(t, tt.wantPulls, calls.pulls)
+			assert.Equal(t, tt.wantTags, calls.tags)
+			assert.Equal(t, tt.wantRemoved, calls.removed)
+			var record imageupdate.ImageUpdateRecord
+			require.NoError(t, db.Where("id = ?", "sha256:current-image").First(&record).Error)
+			assert.Equal(t, tt.wantBlocked, kit.FromPtr(record.BlockedReason))
 		})
 	}
 }

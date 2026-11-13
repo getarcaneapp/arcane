@@ -740,7 +740,10 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"service", serviceName,
 			)
 
-			if updateProjectServicesErr := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user, false); updateProjectServicesErr != nil {
+			if updateProjectServicesErr := s.projectService.UpdateProjectServices(ctx, proj.ID, project.ServiceUpdateOptions{
+				User:     user,
+				Services: []string{serviceName},
+			}); updateProjectServicesErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 					Type:          event.EventTypeContainerError,
 					ResourceType:  "container",

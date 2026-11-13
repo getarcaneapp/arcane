@@ -854,7 +854,7 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
 
 	// Reset notification_sent only when the update state changed; latest_seen_at keeps the first-seen time.
-	return tx.Save(buildImageUpdateRecord(imageID, repo, tag, result,
+	record := buildImageUpdateRecord(imageID, repo, tag, result,
 		existingRecord.NotificationSent &&
 			(failed || hasExisting &&
 				existingRecord.HasUpdate == result.HasUpdate &&
@@ -872,7 +872,35 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 		}(),
 		kit.Ternary(failed || sameDigest, &existingRecord, nil),
 		kit.Ternary(hasExisting && (failed || result.HasUpdate && sameLatest), &existingRecord, nil),
-	)).Error
+	)
+	if err := tx.Save(record).Error; err != nil {
+		return err
+	}
+	*result = types.ImageUpdateResponse{ //exhaustruct:enforce
+		ImageUpdate:      result.ImageUpdate,
+		ImageRef:         result.ImageRef,
+		ContainerUpdates: result.ContainerUpdates,
+		CheckTime:        result.CheckTime,
+		ActivityID:       result.ActivityID,
+		UpdateType:       result.UpdateType,
+		CurrentVersion:   result.CurrentVersion,
+		LatestVersion:    result.LatestVersion,
+		CurrentDigest:    result.CurrentDigest,
+		LatestDigest:     result.LatestDigest,
+		CurrentCreated:   result.CurrentCreated,
+		LatestCreated:    result.LatestCreated,
+		Error:            result.Error,
+		BlockedReason:    kit.Ternary(result.HasUpdate, kit.FromPtr(record.BlockedReason), ""),
+		AuthMethod:       result.AuthMethod,
+		AuthUsername:     result.AuthUsername,
+		AuthRegistry:     result.AuthRegistry,
+		ReleaseURL:       result.ReleaseURL,
+		ResponseTimeMs:   result.ResponseTimeMs,
+		HasUpdate:        result.HasUpdate,
+		Blocked:          result.HasUpdate && kit.FromPtr(record.BlockedReason) != "",
+		UsedCredential:   result.UsedCredential,
+	}
+	return nil
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
@@ -1005,6 +1033,7 @@ func (s *ImageUpdateService) MarkImageRefBlocked(ctx context.Context, imageRef s
 	if err := s.db.WithContext(ctx).Model(&ImageUpdateRecord{}).
 		Where("has_update = ? AND repository IN ?", true, slices.Collect(maps.Keys(repositoryCandidates))).
 		Where("(update_type = ? AND latest_version = ?) OR (update_type <> ? AND tag = ?)", UpdateTypeTag, tag, UpdateTypeTag, tag).
+		Where("latest_digest = ? OR latest_digest IS NULL OR latest_digest = ''", block.Digest).
 		Updates(map[string]any{
 			"blocked_reason": block.Reason,
 			"blocked_policy": block.Policy,
@@ -1363,11 +1392,13 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 			CurrentCreated:   result.CurrentCreated,
 			LatestCreated:    result.LatestCreated,
 			Error:            kit.Ternary(failed, message, result.Error),
+			BlockedReason:    result.BlockedReason,
 			AuthMethod:       result.AuthMethod,
 			AuthUsername:     result.AuthUsername,
 			AuthRegistry:     result.AuthRegistry,
 			ResponseTimeMs:   result.ResponseTimeMs,
 			HasUpdate:        result.HasUpdate,
+			Blocked:          result.Blocked,
 			UsedCredential:   result.UsedCredential,
 			ReleaseURL:       result.ReleaseURL,
 		}

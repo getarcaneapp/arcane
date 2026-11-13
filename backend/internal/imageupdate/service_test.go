@@ -3409,11 +3409,20 @@ func TestImageUpdateService_MarkImageRefBlocked(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.Create(&[]ImageUpdateRecord{
 		{
-			ID:         "sha256:digest",
-			Repository: "ghcr.io/team/app",
-			Tag:        "1.0",
-			UpdateType: UpdateTypeDigest,
-			HasUpdate:  true,
+			ID:           "sha256:digest",
+			Repository:   "ghcr.io/team/app",
+			Tag:          "1.0",
+			UpdateType:   UpdateTypeDigest,
+			LatestDigest: new("sha256:scanned"),
+			HasUpdate:    true,
+		},
+		{
+			ID:           "sha256:moved",
+			Repository:   "ghcr.io/team/app",
+			Tag:          "1.0",
+			UpdateType:   UpdateTypeDigest,
+			LatestDigest: new("sha256:newer"),
+			HasUpdate:    true,
 		},
 		{
 			ID:            "container::tag",
@@ -3450,12 +3459,14 @@ func TestImageUpdateService_MarkImageRefBlocked(t *testing.T) {
 	require.NoError(t, svc.MarkImageRefBlocked(ctx, "ghcr.io/team/app:1.0", UpdateBlock{
 		Reason: "1 critical (limit 0)",
 		Policy: "critical=0;high=-1;medium=-1;low=-1",
+		Digest: "sha256:scanned",
 	}))
 	assert.Equal(t, []string{"sha256:digest"}, blockedIDs())
 
 	require.NoError(t, svc.MarkImageRefBlocked(ctx, "ghcr.io/team/app:1.1", UpdateBlock{
 		Reason: "1 critical (limit 0)",
 		Policy: "critical=0;high=-1;medium=-1;low=-1",
+		Digest: "sha256:tag-target",
 	}))
 	assert.Equal(t, []string{"container::tag", "sha256:digest"}, blockedIDs())
 
@@ -3583,6 +3594,8 @@ func TestSavePreparedUpdateResultWithTx_BlockedState(t *testing.T) {
 			require.NoError(t, db.Where("id = ?", "sha256:image").First(&saved).Error)
 			assert.Equal(t, tt.wantBlocked, saved.UpdateInfo().Blocked)
 			assert.Equal(t, tt.wantBlocked, kit.FromPtr(saved.BlockedPolicy) != "")
+			assert.Equal(t, tt.wantBlocked && tt.result.HasUpdate, tt.result.Blocked)
+			assert.Equal(t, kit.Ternary(tt.result.Blocked, "1 critical (limit 0)", ""), tt.result.BlockedReason)
 		})
 	}
 }

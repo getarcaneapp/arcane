@@ -457,7 +457,11 @@ func (h *ProjectHandler) RunProjectAction(ctx context.Context, input *ProjectAct
 			SuccessMessage:  "Project services updated successfully",
 			Queue:           true,
 			Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-				return h.projectService.UpdateProjectServices(runtimeCtx, projectID, input.Services, user, true)
+				return h.projectService.UpdateProjectServices(runtimeCtx, projectID, ServiceUpdateOptions{
+					User:         user,
+					Services:     input.Services,
+					DiscoverTags: true,
+				})
 			},
 			Error: func(err error) error {
 				if errors.Is(err, common.ErrProjectArchived) {

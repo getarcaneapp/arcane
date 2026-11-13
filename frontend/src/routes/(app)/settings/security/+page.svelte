@@ -70,7 +70,7 @@
 		'lifecycleMaxTimeoutSec'
 	]}
 >
-	{#snippet content({ formInputs, mixed, environmentId }, scope)}
+	{#snippet content({ formInputs, mixed, environmentId, settings }, scope)}
 		{@const trivyEnvironmentId = scope.entries.find(({ environment }) =>
 			featureStore.isEnabled('vulnerabilityManagement', environment.id)
 		)?.environment.id}
@@ -85,9 +85,13 @@
 				/>
 			</div>
 			{#if trivyEnvironmentId}
-				<Tabs.Content value="trivy" class="space-y-8">
-					<TrivySecuritySettings {formInputs} {mixed} environmentId={trivyEnvironmentId} />
-					<VulnerabilityUpdateGateSettings {formInputs} {mixed} />
+				<Tabs.Content value="trivy">
+					<div class="space-y-8">
+						<TrivySecuritySettings {formInputs} {mixed} environmentId={trivyEnvironmentId} />
+						{#if settings.values.vulnerabilityUpdateGateEnabled !== undefined}
+							<VulnerabilityUpdateGateSettings {formInputs} {mixed} />
+						{/if}
+					</div>
 				</Tabs.Content>
 			{/if}
 			<Tabs.Content value="patching">

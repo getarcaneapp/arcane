@@ -57,6 +57,7 @@ type (
 	UpdateBlock struct {
 		Reason string
 		Policy string
+		Digest string
 	}
 )
 

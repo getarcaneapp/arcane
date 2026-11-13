@@ -974,6 +974,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 			svc.deployment.ImageOperations(
 				nil,
 				nil,
+				nil,
 			),
 		),
 	)
@@ -1048,7 +1049,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.deployment.ImageOperations(nil, nil).Pull(ctx, imageRef, io.Discard))
+	require.NoError(t, svc.deployment.ImageOperations(nil, nil, nil).Pull(ctx, imageRef, io.Discard))
 
 	// sha256:old-worker may still be in use by another container (#2453).
 	var oldRecord imageupdate.ImageUpdateRecord
@@ -1173,7 +1174,7 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 		Enabled:  true,
 	}}
 
-	require.NoError(t, svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app", "app-copy", "sidecar", "builder"}, svc.deployment.ImageOperations(nil, credentials), nil))
+	require.NoError(t, svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app", "app-copy", "sidecar", "builder"}, svc.deployment.ImageOperations(nil, credentials, nil), nil))
 	assert.Equal(t, 1, pullsByRef[privateImageRef], "duplicate service refs should only be pulled once")
 	assert.Equal(t, 1, pullsByRef[publicImageRef], "selected public image should still be pulled")
 	assert.Len(t, pullsByRef, 2, "build-backed services should not trigger image pulls")
@@ -1271,7 +1272,7 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	err = svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app"}, svc.deployment.ImageOperations(nil, nil), nil)
+	err = svc.composeCoordinator.PullServices(ctx, projectDef, []string{"app"}, svc.deployment.ImageOperations(nil, nil, nil), nil)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed to pull image")
 
@@ -1375,7 +1376,11 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
+	err = svc.UpdateProjectServices(ctx, projectRecord.ID, ServiceUpdateOptions{
+		User:         types.SystemUser,
+		Services:     []string{"app"},
+		DiscoverTags: true,
+	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "pull updated service images")
 	assert.False(t, upCalled, "compose up must not run after a pull failure")
@@ -1510,7 +1515,11 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		ContainerRegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
+	err = svc.UpdateProjectServices(ctx, projectRecord.ID, ServiceUpdateOptions{
+		User:         types.SystemUser,
+		Services:     []string{"app"},
+		DiscoverTags: true,
+	})
 	require.Error(t, err)
 	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
 	assert.False(t, eventService.ShouldSuppressDaemonEvent("container", "unrelated", "unrelated", "other-project"))
@@ -8875,7 +8884,7 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 				KVService:                   kv.NewKVService(db),
 				RegistryCredentialsProvider: testRegistryCredentials,
 			})
-			err := service.UpdateProjectServiceImages(t.Context(), proj.ID, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: "app:1.0.0", TargetRef: "app:1.1.0"}}, types.Actor{})
+			err := service.UpdateProjectServiceImages(t.Context(), proj.ID, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: "app:1.0.0", TargetRef: "app:1.1.0"}}, ServiceUpdateOptions{})
 			require.Error(t, err)
 			if name == "archived" {
 				require.ErrorIs(t, err, common.ErrProjectArchived)
@@ -8944,7 +8953,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	})
 	changes := map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}
 	for range 2 {
-		updateProjectServiceImagesErr := service.UpdateProjectServiceImages(ctx, proj.ID, changes, types.SystemUser)
+		updateProjectServiceImagesErr := service.UpdateProjectServiceImages(ctx, proj.ID, changes, ServiceUpdateOptions{User: types.SystemUser})
 		require.ErrorIs(t, updateProjectServiceImagesErr, deploymentError)
 		content, readComposeErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, readComposeErr)
@@ -8990,7 +8999,12 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	err = service.UpdateProjectServiceImages(ctx, proj.ID, map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}, types.SystemUser)
+	err = service.UpdateProjectServiceImages(
+		ctx,
+		proj.ID,
+		map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}},
+		ServiceUpdateOptions{User: types.SystemUser},
+	)
 	require.ErrorContains(t, err, "overrides")
 	content, err := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
 	require.NoError(t, err)
@@ -9340,7 +9354,11 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 				KVService:                   kv.NewKVService(db),
 				RegistryCredentialsProvider: testRegistryCredentials,
 			})
-			err = service.UpdateProjectServices(ctx, proj.ID, []string{"app", "selected-digest"}, types.SystemUser, !tt.skipDiscovery)
+			err = service.UpdateProjectServices(ctx, proj.ID, ServiceUpdateOptions{
+				User:         types.SystemUser,
+				Services:     []string{"app", "selected-digest"},
+				DiscoverTags: !tt.skipDiscovery,
+			})
 			require.ErrorIs(t, err, deploymentError)
 			require.Equal(t, tt.wantCalls, transport.calls)
 			require.Len(t, deployed, 1)

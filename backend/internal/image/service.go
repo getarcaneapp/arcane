@@ -1282,8 +1282,8 @@ func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageup
 	}
 	unblocked := map[string]bool{}
 	for _, record := range records {
-		if record.ContainerID != "" && record.HasUpdate && kit.FromPtr(record.BlockedReason) == "" {
-			unblocked[record.ImageID] = true
+		if record.HasUpdate && kit.FromPtr(record.BlockedReason) == "" {
+			unblocked[kit.Ternary(record.ContainerID != "", record.ImageID, record.ID)] = true
 		}
 	}
 	for i := range records {

@@ -166,6 +166,13 @@ type (
 		RemoveVolumes bool
 	}
 
+	ServiceUpdateOptions struct {
+		PinnedImages map[string]string
+		User         types.Actor
+		Services     []string
+		DiscoverTags bool
+	}
+
 	ProjectTagUpdate struct {
 		Name     string
 		Color    types.ProjectTagColor
@@ -1154,26 +1161,26 @@ func ParseExtraMountsText(raw *string) ([]types.LifecycleExtraMount, error) {
 	return mounts, nil
 }
 
-func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user types.Actor, discoverTags bool) error {
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, options ServiceUpdateOptions) error {
 	unlock, err := s.lockProject(ctx, "update project services", projectID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	return s.updateProjectServices(ctx, projectID, servicesToUpdate, user, discoverTags)
+	return s.updateProjectServices(ctx, projectID, options)
 }
 
-func (s *ProjectService) updateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user types.Actor, discoverTags bool) error {
+func (s *ProjectService) updateProjectServices(ctx context.Context, projectID string, options ServiceUpdateOptions) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if discoverTags {
-		effective, loadErr := s.loadComposeProjectForProject(ctx, proj, nil, servicesToUpdate...)
+	if options.DiscoverTags {
+		effective, loadErr := s.loadComposeProjectForProject(ctx, proj, nil, options.Services...)
 		if loadErr != nil {
 			return fmt.Errorf("load project for service image checks: %w", loadErr)
 		}
-		changes, changesErr := s.updates.ImageChanges(ctx, effective, servicesToUpdate, strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "")
+		changes, changesErr := s.updates.ImageChanges(ctx, effective, options.Services, strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "")
 		if changesErr != nil {
 			return changesErr
 		}
@@ -1186,14 +1193,14 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	previousStatus := proj.Status
 
 	prepare := deployment.PrepareProjectBindDirectories(proj.Path)
-	compProj, err := s.loadComposeProjectForProject(ctx, proj, prepare, servicesToUpdate...)
+	compProj, err := s.loadComposeProjectForProject(ctx, proj, prepare, options.Services...)
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
-	dependents, stoppedDependents := s.deployment.NamespaceDependents(ctx, compProj, servicesToUpdate)
+	dependents, stoppedDependents := s.deployment.NamespaceDependents(ctx, compProj, options.Services)
 	if len(dependents)+len(stoppedDependents) > 0 {
-		slog.InfoContext(ctx, "recreating namespace dependents with updated services", "projectId", projectID, "services", servicesToUpdate, "dependents", dependents, "stoppedDependents", stoppedDependents)
-		if compProj, err = s.loadComposeProjectForProject(ctx, proj, prepare, slices.Concat(servicesToUpdate, dependents, stoppedDependents)...); err != nil {
+		slog.InfoContext(ctx, "recreating namespace dependents with updated services", "projectId", projectID, "services", options.Services, "dependents", dependents, "stoppedDependents", stoppedDependents)
+		if compProj, err = s.loadComposeProjectForProject(ctx, proj, prepare, slices.Concat(options.Services, dependents, stoppedDependents)...); err != nil {
 			return fmt.Errorf("failed to load compose project with dependents: %w", err)
 		}
 	}
@@ -1218,8 +1225,8 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
-		Project: compProj, DockerHost: s.dockerService.DockerHost(), Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
-		Images: s.deployment.ImageOperations(&user, credentials), Progress: progressWriter,
+		Project: compProj, DockerHost: s.dockerService.DockerHost(), Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
+		Images: s.deployment.ImageOperations(&options.User, credentials, options.PinnedImages), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
 			if statusErr := s.updateProjectStatus(ctx, projectID, previousStatus); statusErr != nil {
@@ -1241,7 +1248,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 		"action":      "update_services",
 		"projectID":   projectID,
 		"projectName": proj.Name,
-		"services":    append([]string(nil), servicesToUpdate...),
+		"services":    append([]string(nil), options.Services...),
 	}
 	if len(dependents) > 0 {
 		metadata["dependents"] = dependents
@@ -1249,7 +1256,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	if len(stoppedDependents) > 0 {
 		metadata["stoppedDependents"] = stoppedDependents
 	}
-	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project service update action")
+	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, projectID, proj.Name, options.User, metadata, "could not log project service update action")
 
 	return nil
 }
@@ -1382,12 +1389,12 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 		},
 		ResolveImages: func(ctx context.Context) (types.ComposeImageOperations, error) {
 			credentials, resolveRegistryCredentialsErr := s.ResolveRegistryCredentials(ctx)
-			operations := s.deployment.ImageOperations(&user, credentials)
+			operations := s.deployment.ImageOperations(&user, credentials, nil)
 			return types.ComposeImageOperations{
 				Exists:     operations.Exists,
 				LastTagged: operations.LastTagged,
 				// Deployment pulls are recorded as system actions; builds retain the requesting actor.
-				Pull:          s.deployment.ImageOperations(nil, credentials).Pull,
+				Pull:          s.deployment.ImageOperations(nil, credentials, nil).Pull,
 				Build:         operations.Build,
 				BuildProvider: operations.BuildProvider,
 			}, resolveRegistryCredentialsErr
@@ -1827,7 +1834,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 
 	defer s.eventService.BeginComposeSuppressionWindow(projectModel.Name)()
 
-	return s.composeCoordinator.BuildServices(ctx, projectID, projectModel, options, progressWriter, s.deployment.ImageOperations(user, nil))
+	return s.composeCoordinator.BuildServices(ctx, projectID, projectModel, options, progressWriter, s.deployment.ImageOperations(user, nil, nil))
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
@@ -3498,7 +3505,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
 }
 
-func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user types.Actor) error {
+func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, options ServiceUpdateOptions) error {
 	unlock, err := s.lockProject(ctx, "update project service images", projectID)
 	if err != nil {
 		return err
@@ -3510,7 +3517,11 @@ func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, project
 		return err
 	}
 	// The desired source stays on failure so a partially recreated update remains retryable.
-	return s.updateProjectServices(ctx, projectID, services, user, false)
+	return s.updateProjectServices(ctx, projectID, ServiceUpdateOptions{
+		PinnedImages: options.PinnedImages,
+		User:         options.User,
+		Services:     services,
+	})
 }
 
 func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {

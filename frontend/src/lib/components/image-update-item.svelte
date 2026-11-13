@@ -26,17 +26,14 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageUpdateInfo } from '#lib/types/image.js';
 	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort, formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
 
-	type DisplayedUpdateInfo = ImageUpdateResponse & Pick<ImageUpdateInfo, 'blocked' | 'blockedReason'>;
-
 	interface Props {
-		updateInfo?: DisplayedUpdateInfo;
+		updateInfo?: ImageUpdateResponse;
 		isLoadingInBackground?: boolean;
 		imageId?: string;
 		containerId?: string;
@@ -130,7 +127,7 @@
 		checkMatches && updateCheckMutation.error ? errorUpdateInfo(extractApiErrorMessage(updateCheckMutation.error)) : undefined
 	);
 
-	const resolvedUpdateInfo = $derived.by((): DisplayedUpdateInfo | undefined => {
+	const resolvedUpdateInfo = $derived.by((): ImageUpdateResponse | undefined => {
 		const checkInfo = checkMatches ? updateCheckMutation.data : undefined;
 		const propInfo = updateInfo;
 
@@ -140,7 +137,7 @@
 		return getCheckTimeValue(propInfo) > getCheckTimeValue(checkInfo) ? propInfo : checkInfo;
 	});
 
-	const effectiveUpdateInfo = $derived.by((): DisplayedUpdateInfo | undefined => {
+	const effectiveUpdateInfo = $derived.by((): ImageUpdateResponse | undefined => {
 		if (!resolvedUpdateInfo) return undefined;
 		if (debugHasUpdate) {
 			return { ...resolvedUpdateInfo, hasUpdate: true, updateType: resolvedUpdateInfo.updateType || 'tag' };

@@ -29,8 +29,8 @@ type (
 	}
 
 	vulnerabilityGate struct {
-		limits  types.VulnerabilitySeveritySummary
 		policy  string
+		limits  types.VulnerabilitySeveritySummary
 		enabled bool
 	}
 )
