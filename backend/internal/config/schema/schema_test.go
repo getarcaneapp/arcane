@@ -210,6 +210,11 @@ var (
 		"vulnerabilityScanEnabled",
 		"vulnerabilityScanInterval",
 		"vulnerabilityThreatIntelEnabled",
+		"vulnerabilityUpdateGateEnabled",
+		"vulnerabilityUpdateGateMaxCritical",
+		"vulnerabilityUpdateGateMaxHigh",
+		"vulnerabilityUpdateGateMaxLow",
+		"vulnerabilityUpdateGateMaxMedium",
 	}
 )
 

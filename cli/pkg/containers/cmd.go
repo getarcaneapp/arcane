@@ -172,6 +172,8 @@ func newContainerListCmd(updatesOnly bool) *cobra.Command {
 						switch {
 						case item.UpdateInfo.Error != "":
 							status = "error"
+						case item.UpdateInfo.Blocked:
+							status = types.UpdaterStatusBlocked
 						case item.UpdateInfo.HasUpdate:
 							status = "has_update"
 						default:

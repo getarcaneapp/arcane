@@ -16,6 +16,7 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ProjectsIcon, ImagesIcon, UpdateIcon, FileTextIcon } from '#lib/icons/index.js';
@@ -28,7 +29,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
+	import { blockedUpdateTitle, formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
 
 	type ProjectRow = EnvironmentRow<Project>;
@@ -45,6 +46,7 @@
 		checkedAt: string;
 		releaseNotesRef: string;
 		releaseNotesInfo?: ImageUpdateResponse;
+		blockedTitle: string | null;
 		project: ProjectRow;
 	};
 
@@ -110,6 +112,8 @@
 			checkedAt: info?.checkTime || updateInfo?.lastCheckedAt || '',
 			releaseNotesRef: hasSingleTarget ? firstRef : '',
 			releaseNotesInfo: info,
+			blockedTitle:
+				updatedRefs.map((ref) => blockedUpdateTitle(updateInfo?.updateInfoByRef?.[ref])).find((title) => title !== null) ?? null,
 			project
 		};
 	}
@@ -193,17 +197,24 @@
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ProjectUpdateRow })}
-	{#if item.project.isDiscovered}
-		<span class="block max-w-resource-name truncate font-medium" title={item.name}>{item.name}</span>
-	{:else}
-		<a
-			class="block max-w-resource-name truncate font-medium hover:underline"
-			href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId })}
-			title={item.name}
-		>
-			{item.name}
-		</a>
-	{/if}
+	<div class="flex min-w-0 items-center gap-2">
+		{#if item.project.isDiscovered}
+			<span class="block max-w-resource-name truncate font-medium" title={item.name}>{item.name}</span>
+		{:else}
+			<a
+				class="block max-w-resource-name truncate font-medium hover:underline"
+				href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId })}
+				title={item.name}
+			>
+				{item.name}
+			</a>
+		{/if}
+		{#if item.blockedTitle}
+			<Badge variant="amber" title={item.blockedTitle}>
+				{m.blocked()}
+			</Badge>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ProjectUpdateRow })}
@@ -255,6 +266,7 @@
 		})}
 		title={(item: ProjectUpdateRow) => item.name}
 		subtitle={(item: ProjectUpdateRow) => item.imageSummary}
+		badges={[(item: ProjectUpdateRow) => (item.blockedTitle ? { variant: 'amber' as const, text: m.blocked() } : null)]}
 		fields={[
 			{
 				label: m.common_current(),

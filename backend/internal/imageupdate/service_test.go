@@ -1145,7 +1145,7 @@ func TestBuildImageUpdateRecord_CarriesLatestOnlyForSameDigest(t *testing.T) {
 				UpdateType:   UpdateTypeDigest,
 				LatestDigest: tt.latestDigest,
 				Error:        "registry unavailable",
-			}, false, nil, carried)
+			}, false, nil, carried, nil)
 			assert.Equal(t, tt.wantLatestVersion, record.LatestVersion)
 			assert.Equal(t, tt.wantLatestCreated, record.LatestCreated)
 		})
@@ -3402,4 +3402,200 @@ func newImageUpdateTestRegistryService(t *testing.T, db *database.DB, dockerServ
 		KVService:       kv.NewKVService(db),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
 	})
+}
+
+func TestImageUpdateService_MarkImageRefBlocked(t *testing.T) {
+	ctx := t.Context()
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.Create(&[]ImageUpdateRecord{
+		{
+			ID:           "sha256:digest",
+			Repository:   "ghcr.io/team/app",
+			Tag:          "1.0",
+			UpdateType:   UpdateTypeDigest,
+			LatestDigest: new("sha256:scanned"),
+			HasUpdate:    true,
+		},
+		{
+			ID:           "sha256:moved",
+			Repository:   "ghcr.io/team/app",
+			Tag:          "1.0",
+			UpdateType:   UpdateTypeDigest,
+			LatestDigest: new("sha256:newer"),
+			HasUpdate:    true,
+		},
+		{
+			ID:            "container::tag",
+			Repository:    "ghcr.io/team/app",
+			Tag:           "1.0",
+			UpdateType:    UpdateTypeTag,
+			LatestVersion: new("1.1"),
+			HasUpdate:     true,
+		},
+		{
+			ID:         "sha256:other-tag",
+			Repository: "ghcr.io/team/app",
+			Tag:        "2.0",
+			UpdateType: UpdateTypeDigest,
+			HasUpdate:  true,
+		},
+		{
+			ID:         "sha256:current",
+			Repository: "ghcr.io/team/app",
+			Tag:        "1.0",
+			UpdateType: UpdateTypeDigest,
+		},
+	}).Error)
+	svc := &ImageUpdateService{
+		db:           db,
+		eventService: event.NewEventService(db, &config.Config{}, nil),
+	}
+	blockedIDs := func() []string {
+		var ids []string
+		require.NoError(t, db.Model(&ImageUpdateRecord{}).Where("blocked_reason <> ''").Order("id").Pluck("id", &ids).Error)
+		return ids
+	}
+
+	require.NoError(t, svc.MarkImageRefBlocked(ctx, "ghcr.io/team/app:1.0", UpdateBlock{
+		Reason: "1 critical (limit 0)",
+		Policy: "critical=0;high=-1;medium=-1;low=-1",
+		Digest: "sha256:scanned",
+	}))
+	assert.Equal(t, []string{"sha256:digest"}, blockedIDs())
+
+	require.NoError(t, svc.MarkImageRefBlocked(ctx, "ghcr.io/team/app:1.1", UpdateBlock{
+		Reason: "1 critical (limit 0)",
+		Policy: "critical=0;high=-1;medium=-1;low=-1",
+		Digest: "sha256:tag-target",
+	}))
+	assert.Equal(t, []string{"container::tag", "sha256:digest"}, blockedIDs())
+
+	var tagRecord ImageUpdateRecord
+	require.NoError(t, db.Where("id = ?", "container::tag").First(&tagRecord).Error)
+	assert.Equal(t, "critical=0;high=-1;medium=-1;low=-1", kit.FromPtr(tagRecord.BlockedPolicy))
+	assert.Equal(t, &types.ImageUpdateInfo{
+		HasUpdate:      true,
+		Blocked:        true,
+		BlockedReason:  "1 critical (limit 0)",
+		UpdateType:     UpdateTypeTag,
+		LatestVersion:  "1.1",
+		CheckTime:      tagRecord.CheckTime,
+		CurrentVersion: tagRecord.CurrentVersion,
+	}, tagRecord.UpdateInfo())
+}
+
+func TestSavePreparedUpdateResultWithTx_BlockedState(t *testing.T) {
+	seenAt := time.Now().Add(-time.Hour).UTC()
+	tests := []struct {
+		name        string
+		existing    ImageUpdateRecord
+		result      types.ImageUpdateResponse
+		wantBlocked bool
+	}{
+		{
+			name: "same latest digest keeps the block",
+			existing: ImageUpdateRecord{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: new("sha256:new"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType:   UpdateTypeDigest,
+				HasUpdate:    true,
+				LatestDigest: "sha256:new",
+			},
+			wantBlocked: true,
+		},
+		{
+			name: "new latest digest clears the block",
+			existing: ImageUpdateRecord{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: new("sha256:new"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType:   UpdateTypeDigest,
+				HasUpdate:    true,
+				LatestDigest: "sha256:newer",
+			},
+		},
+		{
+			name: "no update clears the block",
+			existing: ImageUpdateRecord{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: new("sha256:new"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: "sha256:new",
+			},
+		},
+		{
+			name: "failed check keeps the block",
+			existing: ImageUpdateRecord{
+				UpdateType:   UpdateTypeDigest,
+				LatestDigest: new("sha256:new"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType: UpdateTypeDigest,
+				Error:      "registry unavailable",
+			},
+			wantBlocked: true,
+		},
+		{
+			name: "same latest version keeps the block",
+			existing: ImageUpdateRecord{
+				UpdateType:    UpdateTypeTag,
+				LatestVersion: new("1.1"),
+				LatestDigest:  new("sha256:tag"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType:    UpdateTypeTag,
+				HasUpdate:     true,
+				LatestVersion: "1.1",
+				LatestDigest:  "sha256:tag",
+			},
+			wantBlocked: true,
+		},
+		{
+			name: "new latest version clears the block",
+			existing: ImageUpdateRecord{
+				UpdateType:    UpdateTypeTag,
+				LatestVersion: new("1.1"),
+				LatestDigest:  new("sha256:tag"),
+			},
+			result: types.ImageUpdateResponse{
+				UpdateType:    UpdateTypeTag,
+				HasUpdate:     true,
+				LatestVersion: "1.2",
+				LatestDigest:  "sha256:tag",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupImageUpdateTestDB(t)
+			require.NoError(t, db.Create(&ImageUpdateRecord{
+				ID:            "sha256:image",
+				Repository:    "ghcr.io/team/app",
+				Tag:           "1.0",
+				UpdateType:    tt.existing.UpdateType,
+				LatestVersion: tt.existing.LatestVersion,
+				LatestDigest:  tt.existing.LatestDigest,
+				LatestSeenAt:  &seenAt,
+				HasUpdate:     true,
+				BlockedReason: new("1 critical (limit 0)"),
+				BlockedPolicy: new("critical=0;high=-1;medium=-1;low=-1"),
+			}).Error)
+
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				return savePreparedUpdateResultWithTx(tx, "sha256:image", "ghcr.io/team/app", "1.0", &tt.result)
+			}))
+
+			var saved ImageUpdateRecord
+			require.NoError(t, db.Where("id = ?", "sha256:image").First(&saved).Error)
+			assert.Equal(t, tt.wantBlocked, saved.UpdateInfo().Blocked)
+			assert.Equal(t, tt.wantBlocked, kit.FromPtr(saved.BlockedPolicy) != "")
+			assert.Equal(t, tt.wantBlocked && tt.result.HasUpdate, tt.result.Blocked)
+			assert.Equal(t, kit.Ternary(tt.result.Blocked, "1 critical (limit 0)", ""), tt.result.BlockedReason)
+		})
+	}
 }

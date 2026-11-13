@@ -106,6 +106,11 @@ export type Settings = {
 	imagePatchAllPlatforms: boolean;
 	imageAutoPatchEnabled: boolean;
 	imageAutoPatchInterval: string;
+	vulnerabilityUpdateGateEnabled?: boolean;
+	vulnerabilityUpdateGateMaxCritical?: number;
+	vulnerabilityUpdateGateMaxHigh?: number;
+	vulnerabilityUpdateGateMaxMedium?: number;
+	vulnerabilityUpdateGateMaxLow?: number;
 	lifecycleEnabled: boolean;
 	lifecycleDefaultRunnerImage: string;
 	lifecycleMaxTimeoutSec: number;

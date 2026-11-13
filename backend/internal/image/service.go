@@ -1280,6 +1280,12 @@ func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageup
 			updateMap[records[i].ID] = &records[i]
 		}
 	}
+	unblocked := map[string]bool{}
+	for _, record := range records {
+		if record.HasUpdate && kit.FromPtr(record.BlockedReason) == "" {
+			unblocked[kit.Ternary(record.ContainerID != "", record.ImageID, record.ID)] = true
+		}
+	}
 	for i := range records {
 		record := &records[i]
 		if record.ContainerID == "" || record.ImageID == "" || !record.HasUpdate {
@@ -1287,8 +1293,9 @@ func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageup
 		}
 		// A shared image can have several container policies and target tags.
 		updateMap[record.ImageID] = &imageupdate.ImageUpdateRecord{
-			ID:        record.ImageID,
-			HasUpdate: true,
+			ID:            record.ImageID,
+			HasUpdate:     true,
+			BlockedReason: kit.Ternary(unblocked[record.ImageID], nil, record.BlockedReason),
 			CheckTime: func() time.Time {
 				if existing := updateMap[record.ImageID]; existing != nil && existing.CheckTime.After(record.CheckTime) {
 					return existing.CheckTime

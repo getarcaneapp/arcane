@@ -17,6 +17,7 @@ import (
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
 	kitfs "kit.getarcane.app/fs"
+	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/image"
@@ -78,13 +79,14 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetype
 	return running, stopped
 }
 
-func (s *Service) ImageOperations(user *types.Actor, credentials []types.ContainerRegistryCredential) types.ComposeImageOperations {
+func (s *Service) ImageOperations(user *types.Actor, credentials []types.ContainerRegistryCredential, pinnedImages map[string]string) types.ComposeImageOperations {
 	return types.ComposeImageOperations{
 		Exists:     s.imageService.ImageExistsLocally,
 		LastTagged: s.imageService.ImageLastTagTime,
 		Pull: func(ctx context.Context, ref string, progress io.Writer) error {
 			return s.imageService.Pull(ctx, image.PullRequest{
-				Ref:         ref,
+				Ref:         cmp.Or(pinnedImages[refs.NormalizeImageUpdateRef(ref)], ref),
+				Tag:         ref,
 				Progress:    progress,
 				User:        *cmp.Or(user, &types.SystemUser),
 				Credentials: credentials,

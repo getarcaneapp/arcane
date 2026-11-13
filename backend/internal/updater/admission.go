@@ -176,7 +176,7 @@ func (s *UpdaterService) admitUpdate(ctx context.Context, keys []types.Scheduler
 	if nested {
 		return ctx, func() {}, nil
 	}
-	return context.WithValue(ctx, updateAdmissionKey{}, owner), func() {
+	return context.WithValue(context.WithValue(ctx, updateAdmissionKey{}, owner), approvedImagesKey{}, &approvedImages{refs: map[string]string{}}), func() {
 		owner.mu.Lock()
 		ordered := slices.Clone(owner.keys)
 		leases := maps.Clone(owner.leases)

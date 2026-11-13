@@ -792,7 +792,7 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *Ima
 	return "<none>", untagged
 }
 
-func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdateResponse, notificationSent bool, latestSeenAt *time.Time, carried *ImageUpdateRecord) *ImageUpdateRecord {
+func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdateResponse, notificationSent bool, latestSeenAt *time.Time, carried, blocked *ImageUpdateRecord) *ImageUpdateRecord {
 	sameCarriedDigest := carried != nil && (result.LatestDigest == "" || kit.FromPtr(carried.LatestDigest) == result.LatestDigest)
 	return &ImageUpdateRecord{ //exhaustruct:enforce
 		BaseModel: database.BaseModel{
@@ -816,6 +816,8 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdate
 		CurrentCreated:   cmp.Or(result.CurrentCreated, kit.FromPtr(carried).CurrentCreated),
 		LatestCreated:    cmp.Or(result.LatestCreated, kit.Ternary(sameCarriedDigest, kit.FromPtr(carried).LatestCreated, nil)),
 		LastError:        mo.EmptyableToOption(result.Error).ToPointer(),
+		BlockedReason:    kit.FromPtr(blocked).BlockedReason,
+		BlockedPolicy:    kit.FromPtr(blocked).BlockedPolicy,
 		AuthMethod:       mo.EmptyableToOption(result.AuthMethod).ToPointer(),
 		AuthUsername:     mo.EmptyableToOption(result.AuthUsername).ToPointer(),
 		AuthRegistry:     mo.EmptyableToOption(result.AuthRegistry).ToPointer(),
@@ -852,7 +854,7 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
 
 	// Reset notification_sent only when the update state changed; latest_seen_at keeps the first-seen time.
-	return tx.Save(buildImageUpdateRecord(imageID, repo, tag, result,
+	record := buildImageUpdateRecord(imageID, repo, tag, result,
 		existingRecord.NotificationSent &&
 			(failed || hasExisting &&
 				existingRecord.HasUpdate == result.HasUpdate &&
@@ -869,7 +871,36 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 			return new(result.CheckTime)
 		}(),
 		kit.Ternary(failed || sameDigest, &existingRecord, nil),
-	)).Error
+		kit.Ternary(hasExisting && (failed || result.HasUpdate && sameLatest), &existingRecord, nil),
+	)
+	if err := tx.Save(record).Error; err != nil {
+		return err
+	}
+	*result = types.ImageUpdateResponse{ //exhaustruct:enforce
+		ImageUpdate:      result.ImageUpdate,
+		ImageRef:         result.ImageRef,
+		ContainerUpdates: result.ContainerUpdates,
+		CheckTime:        result.CheckTime,
+		ActivityID:       result.ActivityID,
+		UpdateType:       result.UpdateType,
+		CurrentVersion:   result.CurrentVersion,
+		LatestVersion:    result.LatestVersion,
+		CurrentDigest:    result.CurrentDigest,
+		LatestDigest:     result.LatestDigest,
+		CurrentCreated:   result.CurrentCreated,
+		LatestCreated:    result.LatestCreated,
+		Error:            result.Error,
+		BlockedReason:    kit.Ternary(result.HasUpdate, kit.FromPtr(record.BlockedReason), ""),
+		AuthMethod:       result.AuthMethod,
+		AuthUsername:     result.AuthUsername,
+		AuthRegistry:     result.AuthRegistry,
+		ReleaseURL:       result.ReleaseURL,
+		ResponseTimeMs:   result.ResponseTimeMs,
+		HasUpdate:        result.HasUpdate,
+		Blocked:          result.HasUpdate && kit.FromPtr(record.BlockedReason) != "",
+		UsedCredential:   result.UsedCredential,
+	}
+	return nil
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
@@ -927,7 +958,12 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 			// Only clear synthetic ref:: records; clearing sha256 records marks old-image containers up to date (#2453).
 			if clearStaleUpdatesErr := tx.Model(&ImageUpdateRecord{}).
 				Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", tag, slices.Collect(maps.Keys(repositoryCandidates))).
-				Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error; clearStaleUpdatesErr != nil {
+				Updates(map[string]any{
+					"has_update":     false,
+					"latest_seen_at": nil,
+					"blocked_reason": nil,
+					"blocked_policy": nil,
+				}).Error; clearStaleUpdatesErr != nil {
 				return fmt.Errorf("clear stale image updates: %w", clearStaleUpdatesErr)
 			}
 		}
@@ -953,6 +989,8 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 				Updates(map[string]any{
 					"has_update":      false,
 					"latest_seen_at":  nil,
+					"blocked_reason":  nil,
+					"blocked_policy":  nil,
 					"update_type":     UpdateTypeDigest,
 					"current_version": cmp.Or(snapshot.Version, tag),
 					"latest_version":  cmp.Or(snapshot.Version, tag),
@@ -982,6 +1020,25 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		return nil
 	}); transactionErr != nil {
 		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
+}
+
+func (s *ImageUpdateService) MarkImageRefBlocked(ctx context.Context, imageRef string, block UpdateBlock) error {
+	_, tag, repositoryCandidates, ok := imageref.ParseUpdateLookup(imageRef)
+	if !ok || len(repositoryCandidates) == 0 {
+		return fmt.Errorf("invalid image reference %q", imageRef)
+	}
+	if err := s.db.WithContext(ctx).Model(&ImageUpdateRecord{}).
+		Where("has_update = ? AND repository IN ?", true, slices.Collect(maps.Keys(repositoryCandidates))).
+		Where("(update_type = ? AND latest_version = ?) OR (update_type <> ? AND tag = ?)", UpdateTypeTag, tag, UpdateTypeTag, tag).
+		Where("latest_digest = ? OR latest_digest IS NULL OR latest_digest = ''", block.Digest).
+		Updates(map[string]any{
+			"blocked_reason": block.Reason,
+			"blocked_policy": block.Policy,
+		}).Error; err != nil {
+		return fmt.Errorf("mark image updates blocked: %w", err)
 	}
 	s.eventService.PublishChange("0", "image_update")
 	return nil
@@ -1335,11 +1392,13 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 			CurrentCreated:   result.CurrentCreated,
 			LatestCreated:    result.LatestCreated,
 			Error:            kit.Ternary(failed, message, result.Error),
+			BlockedReason:    result.BlockedReason,
 			AuthMethod:       result.AuthMethod,
 			AuthUsername:     result.AuthUsername,
 			AuthRegistry:     result.AuthRegistry,
 			ResponseTimeMs:   result.ResponseTimeMs,
 			HasUpdate:        result.HasUpdate,
+			Blocked:          result.Blocked,
 			UsedCredential:   result.UsedCredential,
 			ReleaseURL:       result.ReleaseURL,
 		}

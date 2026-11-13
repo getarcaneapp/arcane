@@ -316,11 +316,13 @@ func MergeProjectContainerUpdateInfo(base map[string]*types.ImageUpdateInfo, ser
 				info.LatestCreated,
 			),
 			Error:          cmp.Or(info.Error, previous.Error),
+			BlockedReason:  cmp.Or(info.BlockedReason, previous.BlockedReason),
 			AuthMethod:     info.AuthMethod,
 			AuthUsername:   info.AuthUsername,
 			AuthRegistry:   info.AuthRegistry,
 			ResponseTimeMs: info.ResponseTimeMs,
 			HasUpdate:      info.HasUpdate || previous.HasUpdate,
+			Blocked:        info.Blocked || previous.Blocked,
 			UsedCredential: info.UsedCredential,
 		}
 		seen[imageRef] = true

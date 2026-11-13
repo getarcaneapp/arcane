@@ -803,6 +803,42 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 		require.Empty(t, aggregate.UpdateType)
 		require.Equal(t, records[2].CheckTime, aggregate.CheckTime)
 	}
+	for _, tt := range []struct {
+		name        string
+		imageLevel  imageupdate.ImageUpdateRecord
+		wantBlocked bool
+	}{
+		{
+			name:        "blocked when every pending update is blocked",
+			imageLevel:  records[0],
+			wantBlocked: true,
+		},
+		{
+			name: "unblocked when the image-level update is pending",
+			imageLevel: imageupdate.ImageUpdateRecord{
+				ID:         "shared-image",
+				HasUpdate:  true,
+				UpdateType: "digest",
+				CheckTime:  now,
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			aggregate := buildUpdateMap([]imageupdate.ImageUpdateRecord{
+				tt.imageLevel,
+				{
+					ID:            "container::first",
+					ContainerID:   "first",
+					ImageID:       "shared-image",
+					HasUpdate:     true,
+					UpdateType:    "tag",
+					BlockedReason: new("1 critical (limit 0)"),
+					CheckTime:     now,
+				},
+			})["shared-image"]
+			require.Equal(t, tt.wantBlocked, aggregate.BlockedReason != nil)
+		})
+	}
 	for _, currentLabels := range []map[string]string{
 		{},
 		{"com.getarcaneapp.arcane.updater.strategy": "digest"},

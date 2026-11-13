@@ -55,6 +55,7 @@
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentHref, listScopes } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
+	import { blockedUpdateTitle } from '#lib/utils/image-updates.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -190,6 +191,7 @@
 	// The details response carries the stored check for this container's current
 	// policy; an older agent that omits it reports no status rather than "up to date".
 	const updateInfo = $derived(hasPermission('image-updates:read', currentEnvId) ? (container?.updateInfo ?? null) : null);
+	const blockedTitle = $derived(blockedUpdateTitle(updateInfo));
 	const canReadReleaseNotes = $derived(
 		hasPermission('image-updates:read', currentEnvId) && !!container?.image && !container.image.startsWith('sha256:')
 	);
@@ -555,7 +557,9 @@
 				>{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
-		{#if updateInfo?.hasUpdate}
+		{#if blockedTitle}
+			<Badge variant="amber" minWidth="20" title={blockedTitle}>{m.blocked()}</Badge>
+		{:else if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}
 		{#if quadletHref}

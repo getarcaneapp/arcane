@@ -112,7 +112,7 @@ var (
 			),
 			apns.NewApnsService,
 			notification.NewNotificationService,
-			provideVulnerabilityService,
+			fx.Annotate(provideVulnerabilityService, fx.As(fx.Self()), fx.As(new(updater.VulnerabilityScanner))),
 			provideImageUpdateService,
 			provideImageService,
 			build.NewBuildService,

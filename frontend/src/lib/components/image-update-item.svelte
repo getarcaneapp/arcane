@@ -20,7 +20,8 @@
 		ContainersIcon,
 		ClockIcon,
 		DownloadIcon,
-		FileTextIcon
+		FileTextIcon,
+		ShieldAlertIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -162,6 +163,7 @@
 		!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !!(imageId || imageRef) && !isLocalImage
 	);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
+	const isBlocked = $derived(!hasError && !!effectiveUpdateInfo?.hasUpdate && !!effectiveUpdateInfo.blocked);
 
 	const authLabel = $derived.by((): string | null => {
 		const mth = effectiveUpdateInfo?.authMethod;
@@ -186,6 +188,7 @@
 		if (hasError) return m.image_update_check_failed_title();
 		if (effectiveUpdateInfo.updateType === 'not_pulled') return m.image_update_not_pulled_title();
 		if (!effectiveUpdateInfo.hasUpdate) return m.image_update_up_to_date_title();
+		if (isBlocked) return m.blocked();
 		if (effectiveUpdateInfo.updateType === 'digest' && !versionChanged) return m.image_update_digest_title();
 		return m.image_update_version_title();
 	});
@@ -420,7 +423,8 @@
 		class={[
 			'text-xs-plus leading-5',
 			hasError && 'text-destructive',
-			!hasError && effectiveUpdateInfo?.hasUpdate && 'text-update',
+			isBlocked && 'text-warning',
+			!hasError && !isBlocked && effectiveUpdateInfo?.hasUpdate && 'text-update',
 			!hasError && !effectiveUpdateInfo?.hasUpdate && 'text-muted-foreground'
 		]}
 	>
@@ -463,6 +467,8 @@
 					<DownloadIcon class="size-4 shrink-0 text-info" aria-hidden="true" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
 					<VerifiedCheckIcon class="size-4 shrink-0 text-success" aria-hidden="true" />
+				{:else if isBlocked}
+					<ShieldAlertIcon class="size-4 shrink-0 text-warning" aria-hidden="true" />
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
 					<CircleArrowUpIcon class="size-4 shrink-0 text-info" aria-hidden="true" />
 				{:else}
@@ -486,6 +492,14 @@
 					)}
 				{:else if !effectiveUpdateInfo?.hasUpdate}
 					{@render successState()}
+				{:else if isBlocked}
+					{@render updateState(
+						ShieldAlertIcon,
+						m.update_blocked_by_vulnerability_limits(),
+						effectiveUpdateInfo?.blockedReason || m.blocked(),
+						'text-warning',
+						'bg-warning/15 text-warning'
+					)}
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
 					{@render updateState(
 						CircleArrowUpIcon,

@@ -17,4 +17,6 @@ export interface ImageUpdateResponse {
 	responseTimeMs: number;
 	hasUpdate: boolean;
 	usedCredential?: boolean;
+	blocked?: boolean;
+	blockedReason?: string;
 }

@@ -111,6 +111,19 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 		}
 		return fmt.Errorf("pull updated service images: %w", pullServicesErr)
 	}
+	pulled := NormalizeBuildSelections(request.Services)
+	selected, err = selected.WithServicesTransform(func(name string, svc composetypes.ServiceConfig) (composetypes.ServiceConfig, error) {
+		if ServiceSelected(pulled, name) && svc.Build == nil {
+			svc.PullPolicy = composetypes.PullPolicyMissing
+		}
+		return svc, nil
+	})
+	if err != nil {
+		if request.RestoreBeforeMutation != nil {
+			request.RestoreBeforeMutation(context.WithoutCancel(ctx))
+		}
+		return err
+	}
 	if stopErr := c.commands.Stop(ctx, types.ComposeTarget{
 		Project:    selected,
 		DockerHost: request.DockerHost,

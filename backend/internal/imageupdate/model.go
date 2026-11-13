@@ -5,6 +5,8 @@ import (
 
 	"github.com/samber/mo"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/types/v3"
 )
@@ -28,6 +30,8 @@ type (
 		CurrentCreated   *time.Time `json:"currentCreated,omitempty" gorm:"column:current_created"`
 		LatestCreated    *time.Time `json:"latestCreated,omitempty" gorm:"column:latest_created"`
 		LastError        *string    `json:"lastError,omitempty" gorm:"column:last_error"`
+		BlockedReason    *string    `json:"blockedReason,omitempty" gorm:"column:blocked_reason"`
+		BlockedPolicy    *string    `json:"blockedPolicy,omitempty" gorm:"column:blocked_policy"`
 		AuthMethod       *string    `json:"authMethod,omitempty" gorm:"column:auth_method"`
 		AuthUsername     *string    `json:"authUsername,omitempty" gorm:"column:auth_username"`
 		AuthRegistry     *string    `json:"authRegistry,omitempty" gorm:"column:auth_registry"`
@@ -48,6 +52,12 @@ type (
 		LatestVersion  string `json:"latestVersion,omitempty"`
 		CheckTime      string `json:"checkTime"`
 		HasUpdate      bool   `json:"hasUpdate"`
+	}
+
+	UpdateBlock struct {
+		Reason string
+		Policy string
+		Digest string
 	}
 )
 
@@ -78,6 +88,7 @@ func (i *ImageUpdateRecord) IsTagUpdate() bool {
 func (i *ImageUpdateRecord) UpdateInfo() *types.ImageUpdateInfo {
 	return &types.ImageUpdateInfo{
 		HasUpdate:      i.HasUpdate,
+		Blocked:        i.HasUpdate && kit.FromPtr(i.BlockedReason) != "",
 		UpdateType:     i.UpdateType,
 		CurrentVersion: i.CurrentVersion,
 		LatestVersion:  mo.PointerToOption(i.LatestVersion).OrEmpty(),
@@ -88,6 +99,7 @@ func (i *ImageUpdateRecord) UpdateInfo() *types.ImageUpdateInfo {
 		CheckTime:      i.CheckTime,
 		ResponseTimeMs: i.ResponseTimeMs,
 		Error:          mo.PointerToOption(i.LastError).OrEmpty(),
+		BlockedReason:  kit.Ternary(i.HasUpdate, kit.FromPtr(i.BlockedReason), ""),
 		AuthMethod:     mo.PointerToOption(i.AuthMethod).OrEmpty(),
 		AuthUsername:   mo.PointerToOption(i.AuthUsername).OrEmpty(),
 		AuthRegistry:   mo.PointerToOption(i.AuthRegistry).OrEmpty(),

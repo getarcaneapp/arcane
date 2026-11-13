@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js';
 import type { ImageUpdateInfo } from '#lib/types/image.js';
 import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 import { formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -18,6 +19,12 @@ export function formatImageUpdateValue(
 		return version || digest || '-';
 	}
 	return digest || version || '-';
+}
+
+export function blockedUpdateTitle(updateInfo: ImageUpdateInfo | undefined | null): string | null {
+	if (!updateInfo?.hasUpdate || !updateInfo.blocked || updateInfo.error) return null;
+	const reason = updateInfo.blockedReason?.trim();
+	return reason ? `${m.update_blocked_by_vulnerability_limits()}: ${reason}` : m.update_blocked_by_vulnerability_limits();
 }
 
 export function formatImageUpdateCheckedAt(value: string) {

@@ -816,7 +816,10 @@ func (s *WebhookService) syncWebhookContainerTarget(ctx context.Context, wh *Web
 func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	switch actionType {
 	case WebhookActionTypeUpdate:
-		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, nil, types.SystemUser, true); err != nil {
+		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, project.ServiceUpdateOptions{
+			User:         types.SystemUser,
+			DiscoverTags: true,
+		}); err != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
