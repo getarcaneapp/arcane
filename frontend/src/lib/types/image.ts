@@ -20,6 +20,8 @@ export interface ImageUpdateInfo {
 	authRegistry?: string;
 	responseTimeMs: number;
 	hasUpdate: boolean;
+	blocked?: boolean;
+	blockedReason?: string;
 	usedCredential?: boolean;
 }
 

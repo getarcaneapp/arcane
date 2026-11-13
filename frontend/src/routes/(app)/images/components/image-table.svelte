@@ -50,6 +50,7 @@
 	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatDate, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { hardenedImageDisplay, hardenedSupportSummary } from '#lib/utils/hardened-images.js';
+	import { blockedUpdateTitle } from '#lib/utils/image-updates.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -524,6 +525,7 @@
 				if (!item.repoDigests || item.repoDigests.length === 0) {
 					return { variant: 'gray' as const, text: m.image_update_local_title() };
 				}
+				if (blockedUpdateTitle(item.updateInfo)) return { variant: 'amber' as const, text: m.blocked() };
 				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
 				if (item.updateInfo?.updateType === 'local') return { variant: 'gray' as const, text: m.image_update_local_title() };
 				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };

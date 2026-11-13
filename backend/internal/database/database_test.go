@@ -825,6 +825,22 @@ func TestMigration113_SplitsPasswordPolicyIntoGranularSettings(t *testing.T) {
 	})
 }
 
+func TestMigration114_AddsImageUpdateBlocked(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-image-update-blocked.db")
+	blockedColumns := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('image_updates') WHERE name IN ('blocked_reason', 'blocked_policy')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 114))
+	assert.Equal(t, 2, blockedColumns())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 113))
+	assert.Zero(t, blockedColumns())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

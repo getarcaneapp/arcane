@@ -26,9 +26,13 @@ export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'i
 	result: T,
 	{ rejectSkipped = false }: ThrowOnUpdateFailureOptions = {}
 ): T {
+	const failedItem = result?.items?.find((item) => item.status === 'failed');
+	const blocked = result?.items?.find((item) => item.status === 'blocked');
+	if (blocked && !failedItem) {
+		throw new Error(blocked.error || m.update_blocked_by_vulnerability_limits());
+	}
 	if ((result?.failed ?? 0) > 0) {
-		const firstError = result.items?.find((item) => item.status === 'failed')?.error;
-		throw new Error(firstError || m.updates_bulk_update_failed());
+		throw new Error(failedItem?.error || m.updates_bulk_update_failed());
 	}
 	if (rejectSkipped) {
 		const skipped = result?.items?.find((item) => item.status === 'skipped');
@@ -42,7 +46,8 @@ export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'i
 export function summarizeUpdateResult(result: UpdaterResult) {
 	const options = activityToastOptions(result.activityId);
 	const updated = (result.updated ?? 0) + (result.restarted ?? 0);
-	const failed = result.failed ?? 0;
+	const blocked = result.items?.find((item) => item.status === 'blocked');
+	const failed = Math.max(0, (result.failed ?? 0) - (result.items?.filter((item) => item.status === 'blocked').length ?? 0));
 
 	if (failed > 0 && updated > 0) {
 		toast.warning(m.updates_apply_partial({ updated, failed }), options);
@@ -50,8 +55,11 @@ export function summarizeUpdateResult(result: UpdaterResult) {
 		toast.error(m.updates_apply_failed({ failed }), options);
 	} else if (updated > 0) {
 		toast.success(m.updates_apply_success({ updated }), options);
-	} else {
+	} else if (!blocked) {
 		toast.info(m.image_update_up_to_date_title(), options);
+	}
+	if (blocked) {
+		toast.warning(m.update_blocked_by_vulnerability_limits(), { ...options, description: blocked.error });
 	}
 }
 

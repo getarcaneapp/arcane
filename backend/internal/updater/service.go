@@ -51,6 +51,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/updater/children/execution"
 	"getarcane.dev/arcane/v3/internal/updater/children/recovery"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -83,6 +84,7 @@ type (
 		Notifications          *notification.NotificationService
 		SelfUpgrade            SelfUpgrader
 		Activity               *activity.ActivityService
+		Vulnerabilities        *vulnerability.VulnerabilityService
 		SystemUser             types.Actor
 	}
 
@@ -123,20 +125,21 @@ type (
 	UpdaterServiceParams struct {
 		fx.In
 
-		DB                  *database.DB
-		SettingsService     *settings.SettingsService
-		DockerService       *dockerInternal.DockerClientService
-		ProjectService      *projectpkg.ProjectService
-		ImageUpdateService  *imageupdate.ImageUpdateService
-		RegistryService     *registry.ContainerRegistryService
-		EventService        *event.EventService
-		ImageService        *image.ImageService
-		NotificationService *notification.NotificationService
-		SelfUpgrader        SelfUpgrader
-		ActivityService     *activity.ActivityService
-		Config              *config.Config
-		Admission           *runs.Admission
-		RoleService         *role.RoleService
+		DB                   *database.DB
+		SettingsService      *settings.SettingsService
+		DockerService        *dockerInternal.DockerClientService
+		ProjectService       *projectpkg.ProjectService
+		ImageUpdateService   *imageupdate.ImageUpdateService
+		RegistryService      *registry.ContainerRegistryService
+		EventService         *event.EventService
+		ImageService         *image.ImageService
+		NotificationService  *notification.NotificationService
+		SelfUpgrader         SelfUpgrader
+		ActivityService      *activity.ActivityService
+		Config               *config.Config
+		Admission            *runs.Admission
+		RoleService          *role.RoleService
+		VulnerabilityService *vulnerability.VulnerabilityService
 	}
 )
 
@@ -171,6 +174,7 @@ func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 			Notifications:          p.NotificationService,
 			SelfUpgrade:            p.SelfUpgrader,
 			Activity:               p.ActivityService,
+			Vulnerabilities:        p.VulnerabilityService,
 			SystemUser:             types.SystemUser,
 		},
 	}
@@ -840,13 +844,119 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if err != nil {
 		return fmt.Errorf("resolve registry credentials: %w", err)
 	}
+	gate := s.vulnerabilityGate(ctx)
+	gatedRef, err := s.scanBeforeUpdate(ctx, pulledRef, writer, credentials, gate)
+	if err != nil {
+		if reason, blocked := strings.CutPrefix(err.Error(), vulnerabilityGateBlockedPrefix); blocked {
+			if markErr := s.deps.ImageUpdates.MarkImageRefBlocked(ctx, imageRef, imageupdate.UpdateBlock{
+				Reason: reason,
+				Policy: gate.policy,
+			}); markErr != nil {
+				slog.WarnContext(ctx, "failed to record update blocked by vulnerability gate", "imageRef", imageRef, "error", markErr)
+			}
+		}
+		return err
+	}
 	return s.deps.ImagePuller.Pull(ctx, image.PullRequest{
-		Ref:         pulledRef,
+		Ref:         gatedRef,
 		Tag:         imageRef,
 		Progress:    writer,
 		User:        s.deps.SystemUser,
 		Credentials: credentials,
 	})
+}
+
+func (s *UpdaterService) vulnerabilityGate(ctx context.Context) vulnerabilityGate {
+	limits := types.VulnerabilitySeveritySummary{
+		Critical: s.deps.Settings.GetIntSetting(ctx, "vulnerabilityUpdateGateMaxCritical"),
+		High:     s.deps.Settings.GetIntSetting(ctx, "vulnerabilityUpdateGateMaxHigh"),
+		Medium:   s.deps.Settings.GetIntSetting(ctx, "vulnerabilityUpdateGateMaxMedium"),
+		Low:      s.deps.Settings.GetIntSetting(ctx, "vulnerabilityUpdateGateMaxLow"),
+	}
+	return vulnerabilityGate{
+		limits:  limits,
+		policy:  fmt.Sprintf("critical=%d;high=%d;medium=%d;low=%d", limits.Critical, limits.High, limits.Medium, limits.Low),
+		enabled: s.deps.Settings.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) && s.deps.Settings.GetBoolSetting(ctx, "vulnerabilityUpdateGateEnabled"),
+	}
+}
+
+func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string, progress io.Writer, credentials []types.ContainerRegistryCredential, gate vulnerabilityGate) (string, error) {
+	if !gate.enabled {
+		return pulledRef, nil
+	}
+	digestRef, err := func() (string, error) {
+		if refs.IsDigestPinnedReference(pulledRef) {
+			return pulledRef, nil
+		}
+		reference, normalizeErr := refs.NormalizeReference(pulledRef)
+		if normalizeErr != nil {
+			return "", normalizeErr
+		}
+		digest, digestErr := s.deps.ImagePuller.RemoteDigest(ctx, pulledRef, credentials)
+		switch {
+		case digestErr != nil:
+			return "", fmt.Errorf("resolve digest for %s: %w", pulledRef, digestErr)
+		case digest == "":
+			return "", fmt.Errorf("resolve digest for %s: registry returned no digest", pulledRef)
+		}
+		return reference.RegistryHost + "/" + reference.Repository + "@" + digest, nil
+	}()
+	if err != nil {
+		return "", fmt.Errorf("%s%w", vulnerabilityGateScanFailedPrefix, err)
+	}
+	_, absentErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+		return cli.ImageInspect(ctx, digestRef)
+	})
+	if err := s.deps.ImagePuller.PullImage(ctx, digestRef, progress, s.deps.SystemUser, credentials); err != nil {
+		return "", err
+	}
+	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), "Scanning "+pulledRef+" for vulnerabilities", "Scanning updated images", 30)
+	gateErr := func() error {
+		inspected, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+			return cli.ImageInspect(ctx, digestRef)
+		})
+		if inspectErr != nil {
+			return fmt.Errorf("%sinspect %s: %w", vulnerabilityGateScanFailedPrefix, digestRef, inspectErr)
+		}
+		scanned, scanErr := s.deps.Vulnerabilities.ScanImageAndWait(ctx, types.LocalDockerEnvironmentID, inspected.ID, s.deps.SystemUser)
+		if scanErr != nil {
+			return fmt.Errorf("%s%w", vulnerabilityGateScanFailedPrefix, scanErr)
+		}
+		return evaluateVulnerabilityGate(kit.FromPtr(scanned.Summary), gate.limits)
+	}()
+	if gateErr != nil && absentErr == nil {
+		return "", gateErr
+	}
+	if gateErr != nil {
+		if removeErr := s.deps.ImagePuller.RemoveImage(context.WithoutCancel(ctx), digestRef, false, s.deps.SystemUser); removeErr != nil {
+			slog.WarnContext(ctx, "failed to remove image blocked by vulnerability gate", "image", digestRef, "error", removeErr)
+		}
+		return "", gateErr
+	}
+	return digestRef, nil
+}
+
+func evaluateVulnerabilityGate(found, limits types.VulnerabilitySeveritySummary) error {
+	checks := []struct {
+		severity string
+		found    int
+		limit    int
+	}{
+		{severity: "critical", found: found.Critical, limit: limits.Critical},
+		{severity: "high", found: found.High, limit: limits.High},
+		{severity: "medium", found: found.Medium, limit: limits.Medium},
+		{severity: "low", found: found.Low, limit: limits.Low},
+	}
+	exceeded := make([]string, 0, len(checks))
+	for _, check := range checks {
+		if check.limit >= 0 && check.found > check.limit {
+			exceeded = append(exceeded, fmt.Sprintf("%d %s (limit %d)", check.found, check.severity, check.limit))
+		}
+	}
+	if len(exceeded) == 0 {
+		return nil
+	}
+	return common.Classify(common.ErrForbidden, errors.New(vulnerabilityGateBlockedPrefix+strings.Join(exceeded, ", ")))
 }
 
 func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
@@ -1032,13 +1142,19 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 }
 
 func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record updater.ImageUpdateRecord) error {
+	clearedImageUpdate := map[string]any{
+		"has_update":     false,
+		"latest_seen_at": nil,
+		"blocked_reason": nil,
+		"blocked_policy": nil,
+	}
 	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{})
 	if record.ContainerID == "" || strings.HasPrefix(record.ID, "container::") {
 		query = query.Where("container_id = ?", record.ContainerID)
 		if record.ID != "" {
-			return query.Where("id = ?", record.ID).Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
+			return query.Where("id = ?", record.ID).Updates(clearedImageUpdate).Error
 		}
-		return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
+		return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Updates(clearedImageUpdate).Error
 	}
 
 	// A record stays pending while another container it covers still runs an older image.
@@ -1085,7 +1201,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 			return nil
 		}
 	}
-	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
+	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(clearedImageUpdate).Error
 }
 
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
@@ -1375,6 +1491,8 @@ func (s *UpdaterService) recordSingleContainerUpdate(ctx context.Context, activi
 				return runErr.Error()
 			case result == nil:
 				return "container update produced no result"
+			case item.Status == types.UpdaterStatusBlocked:
+				return "Container update blocked: " + item.Error
 			case item.Error != "":
 				return item.Error
 			}
@@ -1428,16 +1546,17 @@ func resultFromModule(result *updater.Result) *types.UpdaterResult {
 	}
 	items := make([]types.UpdaterResourceResult, 0, len(result.Items))
 	for _, item := range result.Items {
+		_, blockedReason, blocked := strings.Cut(kit.Ternary(item.Status == updater.StatusFailed, item.Error, ""), vulnerabilityGateBlockedPrefix)
 		items = append(items, types.UpdaterResourceResult{
 			ResourceID:      item.ResourceID,
 			ResourceName:    item.ResourceName,
 			ResourceType:    string(item.ResourceType),
-			Status:          string(item.Status),
+			Status:          kit.Ternary(blocked, types.UpdaterStatusBlocked, string(item.Status)),
 			UpdateAvailable: item.UpdateAvailable,
 			UpdateApplied:   item.UpdateApplied,
 			OldImages:       mainImage(item.OldImage),
 			NewImages:       mainImage(item.NewImage),
-			Error:           item.Error,
+			Error:           kit.Ternary(blocked, blockedReason, item.Error),
 			Details:         item.Details,
 		})
 	}
@@ -1459,6 +1578,7 @@ func (s *UpdaterService) logResultItems(ctx context.Context, result *types.Updat
 	for _, item := range result.Items {
 		s.recordAutoUpdateEvent(ctx, cmp.Or(map[string]event.EventSeverity{
 			string(updater.StatusFailed):  event.EventSeverityError,
+			types.UpdaterStatusBlocked:    event.EventSeverityWarning,
 			string(updater.StatusUpdated): event.EventSeveritySuccess,
 		}[item.Status], event.EventSeverityInfo), database.JSON{
 			"phase":        item.ResourceType,
@@ -1626,11 +1746,12 @@ func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (i
 
 func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
 	now := time.Now()
+	_, blockedReason, blocked := strings.Cut(kit.Ternary(result.Status == updater.StatusFailed, result.Error, ""), vulnerabilityGateBlockedPrefix)
 	recordErr := s.deps.DB.WithContext(ctx).Create(&AutoUpdateRecord{
 		ResourceID:       result.ResourceID,
 		ResourceType:     string(result.ResourceType),
 		ResourceName:     result.ResourceName,
-		Status:           AutoUpdateStatus(result.Status),
+		Status:           kit.Ternary(blocked, AutoUpdateStatusBlocked, AutoUpdateStatus(result.Status)),
 		StartTime:        now,
 		EndTime:          &now,
 		UpdateAvailable:  result.UpdateAvailable || result.Status == updater.StatusUpdated || result.Status == updater.StatusUpdateAvailable,
@@ -1651,9 +1772,20 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	activityID := activityIDFromContext(ctx)
 	if activityID != "" {
 		if _, appendErr := s.deps.Activity.AppendMessage(ctx, activityID, activitylib.AppendMessageRequest{
-			Level: kit.Ternary(result.Status == updater.StatusFailed, types.ActivityMessageLevelError, types.ActivityMessageLevelInfo),
+			Level: func() types.ActivityMessageLevel {
+				switch {
+				case blocked:
+					return types.ActivityMessageLevelWarning
+				case result.Status == updater.StatusFailed:
+					return types.ActivityMessageLevelError
+				}
+				return types.ActivityMessageLevelInfo
+			}(),
 			Message: func() string {
 				reason := strings.TrimSpace(result.Error)
+				if blocked {
+					return name + ": " + types.UpdaterStatusBlocked + " (" + blockedReason + ")"
+				}
 				if result.Status == updater.StatusFailed && reason != "" {
 					return name + ": " + reason
 				}
@@ -1817,13 +1949,38 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 		records = append(records, s.checkProjectService(ctx, projectID, service))
 	}
 	if transactionErr := s.deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var blocked []imageupdate.ImageUpdateRecord
+		if findBlockedErr := tx.Where("project_id = ? AND has_update = ? AND blocked_reason <> ''", projectID, true).Find(&blocked).Error; findBlockedErr != nil {
+			return findBlockedErr
+		}
 		if deleteProjectUpdatesErr := tx.Where("project_id = ?", projectID).Delete(&imageupdate.ImageUpdateRecord{}).Error; deleteProjectUpdatesErr != nil {
 			return deleteProjectUpdatesErr
 		}
 		if len(records) == 0 {
 			return nil
 		}
-		return tx.Create(&records).Error
+		if createErr := tx.Create(&records).Error; createErr != nil {
+			return createErr
+		}
+		for _, record := range blocked {
+			if keepBlockErr := tx.Model(&imageupdate.ImageUpdateRecord{}).
+				Where(map[string]any{
+					"id":             record.ID,
+					"has_update":     true,
+					"latest_digest":  record.LatestDigest,
+					"latest_version": record.LatestVersion,
+				}).
+				Updates(map[string]any{
+					"blocked_reason": record.BlockedReason,
+					"blocked_policy": record.BlockedPolicy,
+				}).Error; keepBlockErr != nil {
+				return keepBlockErr
+			}
+		}
+		if len(blocked) == 0 {
+			return nil
+		}
+		return tx.Where("project_id = ?", projectID).Find(&records).Error
 	}); transactionErr != nil {
 		return nil, fmt.Errorf("save project update checks: %w", transactionErr)
 	}
@@ -1998,15 +2155,25 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 
 func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) (func(updater.ImageUpdateRecord, container.Summary) bool, error) {
 	var seen []imageupdate.ImageUpdateRecord
-	if err := s.deps.DB.WithContext(ctx).Select("id", "latest_seen_at").Where("has_update = ?", true).Find(&seen).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).Select("id", "latest_seen_at", "blocked_reason", "blocked_policy").Where("has_update = ?", true).Find(&seen).Error; err != nil {
 		return nil, err
 	}
 	seenAt := make(map[string]*time.Time, len(seen))
+	stillBlocked := map[string]string{}
+	gate := s.vulnerabilityGate(ctx)
 	for _, record := range seen {
 		seenAt[record.ID] = record.LatestSeenAt
+		if gate.enabled && kit.FromPtr(record.BlockedReason) != "" && kit.FromPtr(record.BlockedPolicy) == gate.policy {
+			stillBlocked[record.ID] = kit.FromPtr(record.BlockedReason)
+		}
 	}
 	envDelay := s.deps.Settings.GetIntSetting(ctx, "autoUpdateDelay")
 	return func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+		if reason, blocked := stillBlocked[record.ID]; blocked {
+			slog.InfoContext(ctx, "Deferring auto-update of an image blocked by the vulnerability gate until its target or the gate policy changes",
+				"containerId", candidate.ID, "imageRef", record.ImageRef(), "reason", reason)
+			return true
+		}
 		override, ok := imageref.UpdateDelay(candidate.Labels)
 		delay := time.Duration(min(kit.Ternary(ok, override, envDelay), imageref.MaxUpdateDelayHours)) * time.Hour
 		if delay <= 0 {

@@ -33,12 +33,14 @@ type (
 
 		LatestCreated *time.Time `json:"latestCreated,omitempty"`
 		Error         string     `json:"error"`
+		BlockedReason string     `json:"blockedReason,omitempty"`
 		AuthMethod    string     `json:"authMethod,omitempty"`
 		AuthUsername  string     `json:"authUsername,omitempty"`
 		AuthRegistry  string     `json:"authRegistry,omitempty"`
 
 		ResponseTimeMs int  `json:"responseTimeMs"`
 		HasUpdate      bool `json:"hasUpdate"`
+		Blocked        bool `json:"blocked,omitempty"`
 		UsedCredential bool `json:"usedCredential,omitempty"`
 	}
 

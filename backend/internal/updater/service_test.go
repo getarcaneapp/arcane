@@ -37,6 +37,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apns"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -2003,6 +2004,68 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 	}
 }
 
+func TestUpdaterService_AutoUpdateDeferral_VulnerabilityGateBlock(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.Create(&[]imageupdate.ImageUpdateRecord{
+		{
+			ID:            "blocked",
+			Repository:    "registry.example.com/blocked",
+			Tag:           "latest",
+			HasUpdate:     true,
+			BlockedReason: new("1 critical (limit 0)"),
+			BlockedPolicy: new("critical=0;high=-1;medium=-1;low=-1"),
+		},
+		{
+			ID:            "blocked-old-policy",
+			Repository:    "registry.example.com/old-policy",
+			Tag:           "latest",
+			HasUpdate:     true,
+			BlockedReason: new("6 critical (limit 5)"),
+			BlockedPolicy: new("critical=5;high=-1;medium=-1;low=-1"),
+		},
+		{
+			ID:         "pending",
+			Repository: "registry.example.com/pending",
+			Tag:        "latest",
+			HasUpdate:  true,
+		},
+	}).Error)
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
+	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 0))
+	require.NoError(t, settingsService.SetBoolSetting(ctx, types.FeatureVulnerabilityManagementSettingKey, true))
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "vulnerabilityUpdateGateEnabled", true))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxCritical", 0))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxHigh", -1))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxMedium", -1))
+	require.NoError(t, settingsService.SetIntSetting(ctx, "vulnerabilityUpdateGateMaxLow", -1))
+	svc, err := NewUpdaterService(UpdaterServiceParams{
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
+		SettingsService: settingsService,
+	})
+	require.NoError(t, err)
+
+	deferred, err := svc.autoUpdateDeferral(ctx, time.Now())
+	require.NoError(t, err)
+	assert.True(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, container.Summary{}))
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked-old-policy"}, container.Summary{}))
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "pending"}, container.Summary{}))
+
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "vulnerabilityUpdateGateEnabled", false))
+	deferred, err = svc.autoUpdateDeferral(ctx, time.Now())
+	require.NoError(t, err)
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, container.Summary{}))
+}
+
 func updaterScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
 	t.Helper()
 	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
@@ -2098,4 +2161,83 @@ func newTestNotificationService(t *testing.T, db *database.DB) *notification.Not
 		}),
 		SettingsService: settingsService,
 	})
+}
+
+func TestEvaluateVulnerabilityGate(t *testing.T) {
+	tests := []struct {
+		name    string
+		found   types.VulnerabilitySeveritySummary
+		limits  types.VulnerabilitySeveritySummary
+		wantErr string
+	}{
+		{
+			name: "unlimited severities never block",
+			found: types.VulnerabilitySeveritySummary{
+				Critical: 9,
+				High:     40,
+				Medium:   100,
+				Low:      500,
+			},
+			limits: types.VulnerabilitySeveritySummary{
+				Critical: -1,
+				High:     -1,
+				Medium:   -1,
+				Low:      -1,
+			},
+		},
+		{
+			name: "counts at the limit pass",
+			found: types.VulnerabilitySeveritySummary{
+				Critical: 0,
+				High:     5,
+				Medium:   10,
+				Low:      20,
+			},
+			limits: types.VulnerabilitySeveritySummary{
+				Critical: 0,
+				High:     5,
+				Medium:   10,
+				Low:      20,
+			},
+		},
+		{
+			name:  "one severity over the limit blocks",
+			found: types.VulnerabilitySeveritySummary{Critical: 1},
+			limits: types.VulnerabilitySeveritySummary{
+				Critical: 0,
+				High:     -1,
+				Medium:   -1,
+				Low:      -1,
+			},
+			wantErr: "update blocked by vulnerability gate: 1 critical (limit 0)",
+		},
+		{
+			name: "every exceeded severity is reported",
+			found: types.VulnerabilitySeveritySummary{
+				Critical: 3,
+				High:     12,
+				Medium:   2,
+				Low:      7,
+			},
+			limits: types.VulnerabilitySeveritySummary{
+				Critical: 0,
+				High:     5,
+				Medium:   -1,
+				Low:      6,
+			},
+			wantErr: "update blocked by vulnerability gate: 3 critical (limit 0), 12 high (limit 5), 7 low (limit 6)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := evaluateVulnerabilityGate(tt.found, tt.limits)
+
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tt.wantErr)
+			assert.ErrorIs(t, err, common.ErrForbidden)
+		})
+	}
 }

@@ -40,7 +40,7 @@
 	import { isAutoUpdateLabelDisabled, UPDATE_CHECK_LABEL } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { hasShownPermission, listScopes, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
+	import { blockedUpdateTitle, formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -65,6 +65,7 @@
 		/** False when the agent omitted `autoUpdateEnabled`; toggling is then unavailable. */
 		statusAvailable: boolean;
 		autoUpdateTitle: string;
+		blockedTitle: string | null;
 		updateInfo?: ImageUpdateInfo;
 		container: ContainerRow;
 	};
@@ -143,6 +144,7 @@
 			quadletHref,
 			statusAvailable,
 			autoUpdateTitle,
+			blockedTitle: blockedUpdateTitle(container.updateInfo),
 			updateInfo: container.updateInfo,
 			container
 		};
@@ -280,6 +282,11 @@
 			</ResourceName>
 			<code class="block font-mono text-xs whitespace-nowrap text-muted-foreground">{item.imageRef}</code>
 		</div>
+		{#if item.blockedTitle}
+			<Badge variant="amber" title={item.blockedTitle}>
+				{m.blocked()}
+			</Badge>
+		{/if}
 		{#if item.autoUpdateDisabled}
 			<Badge
 				variant="gray"
@@ -364,6 +371,7 @@
 		title={(item: ContainerUpdateRow) => item.name}
 		subtitle={(item: ContainerUpdateRow) => item.imageRef}
 		badges={[
+			(item: ContainerUpdateRow) => (item.blockedTitle ? { variant: 'amber' as const, text: m.blocked() } : null),
 			(item: ContainerUpdateRow) =>
 				item.autoUpdateDisabled ? { variant: 'gray' as const, text: m.updates_auto_update_disabled() } : null
 		]}

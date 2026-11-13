@@ -94,6 +94,7 @@ const (
 	UpdaterStatusRestarted       = "restarted"
 	UpdaterStatusSkipped         = "skipped"
 	UpdaterStatusFailed          = "failed"
+	UpdaterStatusBlocked         = "blocked"
 	UpdaterStatusUpToDate        = "up_to_date"
 	UpdaterStatusUpdateAvailable = "update_available"
 )

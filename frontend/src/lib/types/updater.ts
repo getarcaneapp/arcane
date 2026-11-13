@@ -14,7 +14,7 @@ export interface UpdaterResourceResult {
 	resourceId: string;
 	resourceName?: string;
 	resourceType: AutoUpdateResourceType;
-	status: 'checked' | 'up_to_date' | 'update_available' | 'updated' | 'restarted' | 'failed' | 'skipped';
+	status: 'checked' | 'up_to_date' | 'update_available' | 'updated' | 'restarted' | 'failed' | 'skipped' | 'blocked';
 	error?: string;
 	updateAvailable?: boolean;
 	updateApplied?: boolean;

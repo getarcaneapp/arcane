@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -26,6 +27,12 @@ type (
 		UpdateAvailable bool             `json:"updateAvailable"`
 		UpdateApplied   bool             `json:"updateApplied"`
 	}
+
+	vulnerabilityGate struct {
+		limits  types.VulnerabilitySeveritySummary
+		policy  string
+		enabled bool
+	}
 )
 
 const (
@@ -34,8 +41,12 @@ const (
 	AutoUpdateStatusUpdating  AutoUpdateStatus = "updating"
 	AutoUpdateStatusCompleted AutoUpdateStatus = "completed"
 	AutoUpdateStatusFailed    AutoUpdateStatus = "failed"
+	AutoUpdateStatusBlocked   AutoUpdateStatus = "blocked"
 	AutoUpdateStatusSkipped   AutoUpdateStatus = "skipped"
 	AutoUpdateStatusRestarted AutoUpdateStatus = "restarted"
+
+	vulnerabilityGateBlockedPrefix    = "update blocked by vulnerability gate: "
+	vulnerabilityGateScanFailedPrefix = "vulnerability gate scan failed: "
 )
 
 func (AutoUpdateRecord) TableName() string {
