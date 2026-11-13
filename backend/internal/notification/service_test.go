@@ -44,7 +44,6 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: testCfg.EncryptionKey,
 		Environment:   string(testCfg.Environment),
-		AgentMode:     testCfg.AgentEnabled,
 	})
 
 	return &database.DB{DB: db}

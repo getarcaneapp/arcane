@@ -2584,7 +2584,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	}
 	defer func() { _ = logs.Close() }()
 
-	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{Follow: opts.Follow, TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
+	return docker.StreamContainerLogs(ctx, logs, logsChan, docker.LogOptions{TTY: kit.FromPtr(containerInspect.Container.Config).Tty})
 }
 
 func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string) (io.ReadCloser, string, error) {

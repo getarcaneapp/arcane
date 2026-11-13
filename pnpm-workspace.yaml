@@ -57,16 +57,3 @@ peerDependencyRules:
   allowedVersions:
     vite: '*'
     'formsnap@2.0.1>sveltekit-superforms': ^3.0.0
-
-minimumReleaseAgeExclude:
-  - '@sveltejs/kit@3.2.0'
-  - '@voidzero-dev/vite-plus-core@1.6.0'
-  - '@voidzero-dev/vite-plus-darwin-arm64@1.6.0'
-  - '@voidzero-dev/vite-plus-darwin-x64@1.6.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-gnu@1.6.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-musl@1.6.0'
-  - '@voidzero-dev/vite-plus-linux-x64-gnu@1.6.0'
-  - '@voidzero-dev/vite-plus-linux-x64-musl@1.6.0'
-  - '@voidzero-dev/vite-plus-win32-arm64-msvc@1.6.0'
-  - '@voidzero-dev/vite-plus-win32-x64-msvc@1.6.0'
-  - vite-plus@1.6.0

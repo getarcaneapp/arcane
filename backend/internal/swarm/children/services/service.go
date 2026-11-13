@@ -397,11 +397,7 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 	}
 	defer func() { _ = logs.Close() }()
 
-	if opts.Follow {
-		return docker.StreamMultiplexedLogs(ctx, logs, logsChan)
-	}
-
-	return docker.ReadAllLogs(ctx, logs, logsChan)
+	return docker.StreamMultiplexedLogs(ctx, logs, logsChan)
 }
 
 func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID string, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {

@@ -443,7 +443,8 @@ func TestUpdaterService_StatusTracking(t *testing.T) {
 	})
 	require.NoError(t, svcErr)
 
-	stopContainer := svc.engine.BeginContainerUpdate("container-1")
+	stopContainer, err := svc.engine.BeginContainerUpdate("container-1")
+	require.NoError(t, err)
 	stopProject := svc.engine.BeginProjectUpdate("project-a")
 
 	status := svc.GetStatus()
@@ -469,7 +470,8 @@ func TestUpdaterService_DockerClientAdapter(t *testing.T) {
 			EventService: events,
 		})
 		require.NoError(t, err)
-		end := svc.engine.BeginContainerUpdate("updating-container")
+		end, err := svc.engine.BeginContainerUpdate("updating-container")
+		require.NoError(t, err)
 		require.True(t, events.ShouldSuppressDaemonEvent("container", "updating-container", "", ""))
 		require.False(t, events.ShouldSuppressDaemonEvent("container", "unrelated-container", "", ""))
 		require.False(t, events.ShouldSuppressDaemonEvent("image", "updating-container", "", ""))

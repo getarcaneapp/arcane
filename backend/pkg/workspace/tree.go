@@ -94,7 +94,8 @@ func ListFolder(ctx context.Context, rootPath, relativePath string, opts Options
 	protected := ProtectedPaths(ctx, rootPath, opts.ProtectedFiles)
 	files := make([]types.WorkspaceFileEntry, 0, min(opts.MaxEntries, 256))
 	truncated := false
-	err := acfs.Root{Path: rootPath}.ListEach(ctx, "/"+relativePath, func(entry acfstypes.Entry) error {
+	// Skipped and protected names are filtered out below, so the limit leaves room for them.
+	result, err := acfs.Root{Path: rootPath}.ListEach(ctx, "/"+relativePath, acfstypes.ListOptions{MaxEntries: opts.MaxEntries + len(skipDirs) + len(protected)}, func(entry acfstypes.Entry) error {
 		switch {
 		case entry.IsDirectory && skipDirs[entry.Name], relativePath == "" && protected[entry.Name]:
 			return nil
@@ -113,7 +114,7 @@ func ListFolder(ctx context.Context, rootPath, relativePath string, opts Options
 		return nil, err
 	}
 	slices.SortFunc(files, CompareEntries)
-	return &types.Workspace{Files: files, FileTreeTruncated: truncated}, nil
+	return &types.Workspace{Files: files, FileTreeTruncated: truncated || result.Truncated}, nil
 }
 
 func (w *treeWalker) walk() error {

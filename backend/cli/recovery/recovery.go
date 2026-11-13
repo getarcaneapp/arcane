@@ -190,7 +190,6 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   environment["ARCANE_ENVIRONMENT"],
-		AgentMode:     environment["ARCANE_AGENT"] == "true",
 	})
 	if finalizeRestoredRunErr := finalizeRestoredRun(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr

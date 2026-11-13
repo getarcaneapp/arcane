@@ -28,10 +28,10 @@ require (
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
-	kit.getarcane.app v0.7.1
-	kit.getarcane.app/acfs v0.10.1
-	kit.getarcane.app/builds v0.5.2
-	kit.getarcane.app/docker v0.3.1
+	kit.getarcane.app v0.7.2
+	kit.getarcane.app/acfs v0.10.2
+	kit.getarcane.app/builds v0.5.3
+	kit.getarcane.app/docker v0.3.2
 )
 
 require (
@@ -132,7 +132,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261109185158-a52e3aef5920 // indirect
 	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/net v0.62.0 // indirect

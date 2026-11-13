@@ -142,7 +142,6 @@ func Bootstrap(ctx context.Context) error {
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   string(cfg.Environment),
-		AgentMode:     cfg.AgentEnabled,
 	})
 
 	instanceID, err := settings.EnsureInstanceID(appCtx, db)
