@@ -89,6 +89,8 @@ type (
 		eventType          event.EventType
 	}
 
+	containerNameContextKey struct{}
+
 	ExecSession struct {
 		hijackedResp client.HijackedResponse
 		dockerClient *client.Client
@@ -452,6 +454,11 @@ func (s *ContainerService) lockContainer(ctx context.Context, op, containerID st
 	return unlock, nil
 }
 
+func containerNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(containerNameContextKey{}).(string)
+	return name
+}
+
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user types.Actor, cfg containerLifecycleAction) error {
 	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
@@ -469,7 +476,7 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 		Type:          cfg.eventType,
 		ResourceType:  "container",
 		ResourceID:    containerID,
-		ResourceName:  "name",
+		ResourceName:  cmp.Or(containerNameFromContext(ctx), containerID),
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
@@ -1679,7 +1686,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		Type:          event.EventTypeContainerDelete,
 		ResourceType:  "container",
 		ResourceID:    containerID,
-		ResourceName:  "name",
+		ResourceName:  strings.TrimPrefix(containerJSON.Container.Name, "/"),
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
@@ -1776,7 +1783,7 @@ func (s *ContainerService) CreateContainer(
 		Type:          event.EventTypeContainerCreate,
 		ResourceType:  "container",
 		ResourceID:    resp.ID,
-		ResourceName:  "name",
+		ResourceName:  containerName,
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
