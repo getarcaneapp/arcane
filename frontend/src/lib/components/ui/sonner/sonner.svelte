@@ -1,3 +1,19 @@
+<script lang="ts" module>
+	import { toast } from 'svelte-sonner';
+
+	import ToastCopyButton from './toast-copy-button.svelte';
+
+	const showError = toast.error;
+	const showWarning = toast.warning;
+
+	toast.error = (message, data) => {
+		return showError(message, { cancel: ToastCopyButton, ...data });
+	};
+	toast.warning = (message, data) => {
+		return showWarning(message, { cancel: ToastCopyButton, ...data });
+	};
+</script>
+
 <script lang="ts">
 	import { mode } from 'mode-watcher';
 	import { Toaster as Sonner, type ToasterProps as SonnerProps } from 'svelte-sonner';
