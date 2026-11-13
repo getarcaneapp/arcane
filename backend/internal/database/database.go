@@ -49,12 +49,14 @@ const (
 	preparedStmtTTL     = 15 * time.Minute
 )
 
-var settingsTableCountQueries = map[goose.Dialect]string{
-	goose.DialectSQLite3:  "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'",
-	goose.DialectPostgres: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'settings'",
-}
+var (
+	settingsTableCountQueries = map[goose.Dialect]string{
+		goose.DialectSQLite3:  "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'",
+		goose.DialectPostgres: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'settings'",
+	}
 
-var customGormLogger logger.Interface
+	customGormLogger logger.Interface
+)
 
 func SetGormLogger(l logger.Interface) {
 	customGormLogger = l

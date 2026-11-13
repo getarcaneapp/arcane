@@ -227,7 +227,11 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	defer func() { _ = conn.CloseNow() }()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token", Capabilities: []string{tunnelCapabilityMux}})
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{
+		Type:         MessageTypeRegister,
+		AgentToken:   "bad-token",
+		Capabilities: []string{tunnelCapabilityMux, TunnelCapabilityForwardedPermissions},
+	})
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
