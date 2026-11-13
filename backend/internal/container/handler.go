@@ -460,18 +460,17 @@ func (h *ContainerHandler) runContainerAction(ctx context.Context, input *Contai
 	}
 
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	containerName := h.containerActivityName(runtimeCtx, input.ContainerID)
+	runtimeCtx = context.WithValue(runtimeCtx, containerNameContextKey{}, containerName)
 	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID: input.EnvironmentID,
 		Type:          cfg.ActivityType,
 		ResourceType:  "container",
 		ResourceID:    input.ContainerID,
-		ResourceName: h.containerActivityName(
-			runtimeCtx,
-			input.ContainerID,
-		),
-		User:    user,
-		Step:    cfg.Step,
-		Message: cfg.StartMessage,
+		ResourceName:  containerName,
+		User:          user,
+		Step:          cfg.Step,
+		Message:       cfg.StartMessage,
 		Metadata: database.JSON{
 			"containerID": input.ContainerID,
 		},
