@@ -54,13 +54,13 @@ func nullableTrimmedString(p *string) *string {
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
 	if kit.FromPtr(maxFiles) < 0 {
-		return errors.New("maxSyncFiles must be non-negative")
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncFiles", Err: errors.New("maxSyncFiles must be non-negative")})
 	}
 	if kit.FromPtr(maxTotalSize) < 0 {
-		return errors.New("maxSyncTotalSize must be non-negative")
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncTotalSize", Err: errors.New("maxSyncTotalSize must be non-negative")})
 	}
 	if kit.FromPtr(maxBinarySize) < 0 {
-		return errors.New("maxSyncBinarySize must be non-negative")
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncBinarySize", Err: errors.New("maxSyncBinarySize must be non-negative")})
 	}
 	return nil
 }
