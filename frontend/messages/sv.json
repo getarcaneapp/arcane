@@ -4573,5 +4573,10 @@
   "require_uppercase_letter": "Kräv Stor Bokstav",
   "require_lowercase_letter": "Kräv Liten Bokstav",
   "require_number": "Kräv Siffra",
-  "require_symbol": "Kräv Symbol"
+  "require_symbol": "Kräv Symbol",
+  "scan_images_before_updating": "Scan Images Before Updating",
+  "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
+  "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
+  "blocked": "Blocked",
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
 }
