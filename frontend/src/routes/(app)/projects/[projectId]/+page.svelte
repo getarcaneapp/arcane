@@ -299,21 +299,20 @@
 	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
-	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
-	const showBackupTab = $derived(!isGitOpsManaged || lifecycleSync?.mode === 'bidirectional');
+	const gitOwnsFiles = $derived(!!project?.gitOpsManagedBy && lifecycleSync?.mode !== 'bidirectional');
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 
 	let canEditName = $derived(
 		canUpdateProject &&
 			!project?.isArchived &&
-			!isGitOpsManaged &&
+			!gitOwnsFiles &&
 			!isLoading.saving &&
 			!composeYamlName &&
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
-	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
+	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !gitOwnsFiles && !composeActionsBlocked);
+	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !gitOwnsFiles && !composeActionsBlocked);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
 	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
@@ -328,7 +327,7 @@
 	let envEditorRequested = $state(false);
 	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
-	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
+	let canRemoveEnv = $derived(canEditEnv && !gitOwnsFiles);
 
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
@@ -552,7 +551,7 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(!showBackupTab
+		...(gitOwnsFiles
 			? []
 			: [
 					{
@@ -819,7 +818,7 @@
 		}
 
 		const formValues = form.data();
-		const validated = isGitOpsManaged ? formValues : form.validate();
+		const validated = gitOwnsFiles ? formValues : form.validate();
 		if (!validated) return false;
 
 		const { composeContent, envContent, overrideContent } = validated;
@@ -830,7 +829,7 @@
 				envContent: serverEnvContent,
 				overrideContent: serverOverrideContent
 			},
-			isGitOpsManaged
+			gitOwnsFiles
 				? { envContent }
 				: {
 						name: effectiveName,
@@ -1776,7 +1775,7 @@
 										onOpenFolder={projectWorkspaceFolders.load}
 										{selectedFile}
 										disabled={!canEditProjectWorkspace}
-										readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
+										readOnlyMessage={gitOwnsFiles ? m.projects_workspace_readonly_git() : undefined}
 										onSelect={selectProjectWorkspaceFile}
 										onCreateFile={createProjectWorkspaceFile}
 										onCreateFolder={createProjectWorkspaceFolder}
@@ -2004,7 +2003,7 @@
 
 {#snippet projectBackupTab(project: Project)}
 	<Tabs.Content value="backup" class="h-full min-h-0">
-		{#if showBackupTab}
+		{#if !gitOwnsFiles}
 			<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
 		{/if}
 	</Tabs.Content>
@@ -2105,7 +2104,7 @@
 {/snippet}
 
 {#snippet gitSourceNotice()}
-	{#if isGitOpsManaged}
+	{#if gitOwnsFiles}
 		<Alert.Root variant="default" class="mb-4">
 			<AlertIcon class="size-4" />
 			<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">

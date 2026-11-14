@@ -456,7 +456,7 @@ func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error 
 	recovered := 0
 	for _, proj := range stuck {
 		err := func() error {
-			unlock, err := s.lockProject(ctx, "recover project status", proj.ID)
+			unlock, err := s.LockProject(ctx, "recover project status", proj.ID)
 			if err != nil {
 				return err
 			}
@@ -586,7 +586,7 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-func (s *ProjectService) lockProject(ctx context.Context, op, projectID string) (func(), error) {
+func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
 	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
 	defer cancel()
 	unlock, err := s.opLock.LockContext(waitCtx, "0:project:"+projectID)
@@ -1162,7 +1162,7 @@ func ParseExtraMountsText(raw *string) ([]types.LifecycleExtraMount, error) {
 }
 
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, options ServiceUpdateOptions) error {
-	unlock, err := s.lockProject(ctx, "update project services", projectID)
+	unlock, err := s.LockProject(ctx, "update project services", projectID)
 	if err != nil {
 		return err
 	}
@@ -1262,7 +1262,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 }
 
 func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user types.Actor) error {
-	unlock, err := s.lockProject(ctx, "archive project", projectID)
+	unlock, err := s.LockProject(ctx, "archive project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1304,7 +1304,7 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 }
 
 func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user types.Actor) error {
-	unlock, err := s.lockProject(ctx, "unarchive project", projectID)
+	unlock, err := s.LockProject(ctx, "unarchive project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1335,7 +1335,7 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 }
 
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
-	unlock, err := s.lockProject(ctx, "deploy project", projectID)
+	unlock, err := s.LockProject(ctx, "deploy project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1421,7 +1421,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 }
 
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user types.Actor) error {
-	unlock, err := s.lockProject(ctx, "down project", projectID)
+	unlock, err := s.LockProject(ctx, "down project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1663,7 +1663,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		"userId", user.ID,
 		"username", user.Username)
 
-	unlock, err := s.lockProject(ctx, "destroy project", projectID)
+	unlock, err := s.LockProject(ctx, "destroy project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1746,7 +1746,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 }
 
 func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
-	unlock, err := s.lockProject(ctx, "redeploy project", projectID)
+	unlock, err := s.LockProject(ctx, "redeploy project", projectID)
 	if err != nil {
 		return err
 	}
@@ -1838,7 +1838,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
-	unlock, err := s.lockProject(ctx, "restart project", projectID)
+	unlock, err := s.LockProject(ctx, "restart project", projectID)
 	if err != nil {
 		return err
 	}
@@ -3028,7 +3028,7 @@ func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, pro
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name, composeContent, envContent, overrideContent *string, user types.Actor) (*Project, error) {
-	unlock, err := s.lockProject(ctx, "update project", projectID)
+	unlock, err := s.LockProject(ctx, "update project", projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -3275,7 +3275,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	gitOverrideFileName string,
 	user types.Actor,
 ) (*Project, bool, error) {
-	unlock, err := s.lockProject(ctx, "apply git sync project files", projectID)
+	unlock, err := s.LockProject(ctx, "apply git sync project files", projectID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -3506,7 +3506,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 }
 
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, options ServiceUpdateOptions) error {
-	unlock, err := s.lockProject(ctx, "update project service images", projectID)
+	unlock, err := s.LockProject(ctx, "update project service images", projectID)
 	if err != nil {
 		return err
 	}
@@ -3525,7 +3525,7 @@ func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, project
 }
 
 func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
-	unlock, err := s.lockProject(ctx, "save project service images", projectID)
+	unlock, err := s.LockProject(ctx, "save project service images", projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -3596,7 +3596,7 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	if count := len(manifest.FileChanges); count == 0 || count > 500 {
 		return common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("fileChanges must contain between 1 and 500 changes"))
 	}
-	unlock, err := s.lockProject(ctx, "update project workspace", projectID)
+	unlock, err := s.LockProject(ctx, "update project workspace", projectID)
 	if err != nil {
 		return err
 	}

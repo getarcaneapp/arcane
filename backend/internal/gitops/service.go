@@ -515,7 +515,7 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", change.Request.Name, "repositoryId", change.Request.RepositoryID)
 
-	mode := cmp.Or(strings.TrimSpace(change.Request.Mode), types.GitOpsSyncModeDeploy)
+	mode := cmp.Or(change.Request.Mode, types.GitOpsSyncModeDeploy)
 	switch {
 	case strings.TrimSpace(change.Request.Name) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: errors.New("name is required")})
@@ -984,30 +984,39 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 	if req.BackupAdopt || syncRecord.BackupSnapshot() == nil {
 		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.BackupAdopt})
 	}
-	plan, err := s.backup.Plan(syncCtx, syncRecord, req.Actor, result)
-	if err != nil {
-		return result, err
+	pulled := result
+	var pullErr error
+	for range backup.BackupSnapshotMaxRetry {
+		plan, err := s.backup.Plan(syncCtx, syncRecord, req.Actor, result)
+		if err != nil {
+			return result, err
+		}
+		if len(plan.Files) == 0 && len(plan.Removed) == 0 && !syncRecord.PendingRedeploy {
+			return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
+		}
+		pulled, pullErr = s.sync.Pull(ctx, syncCtx, syncRecord, req.Actor, &types.GitOpsSyncResult{SyncedAt: result.SyncedAt}, gitopssync.PullRequest{
+			Expected: plan.Expected,
+			Commit:   plan.Commit,
+			Files:    plan.Files,
+			Removed:  plan.Removed,
+		})
+		if errors.Is(pullErr, common.ErrConflict) {
+			continue
+		}
+		if pullErr != nil {
+			return pulled, pullErr
+		}
+		pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
+		if err != nil {
+			return pushed, err
+		}
+		return &types.GitOpsSyncResult{
+			SyncedAt: pushed.SyncedAt,
+			Message:  pulled.Message + "; " + pushed.Message,
+			Success:  pushed.Success,
+		}, nil
 	}
-	if len(plan.Files) == 0 && len(plan.Removed) == 0 {
-		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
-	}
-	pulled, err := s.sync.Pull(ctx, syncCtx, syncRecord, req.Actor, &types.GitOpsSyncResult{SyncedAt: result.SyncedAt}, gitopssync.PullRequest{
-		Commit:  plan.Commit,
-		Files:   plan.Files,
-		Removed: plan.Removed,
-	})
-	if err != nil {
-		return pulled, err
-	}
-	pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
-	if err != nil {
-		return pushed, err
-	}
-	return &types.GitOpsSyncResult{
-		SyncedAt: pushed.SyncedAt,
-		Message:  pulled.Message + "; " + pushed.Message,
-		Success:  pushed.Success,
-	}, nil
+	return pulled, pullErr
 }
 
 func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*types.GitOpsSyncStatus, error) {

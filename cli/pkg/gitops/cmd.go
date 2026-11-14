@@ -19,6 +19,42 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+type (
+	listOptions struct {
+		mode  string
+		limit int
+		start int
+		all   bool
+	}
+
+	createOptions struct {
+		name            string
+		mode            string
+		repoID          string
+		branch          string
+		composePath     string
+		projectName     string
+		project         string
+		backupDirectory string
+		backupPaths     []string
+		backupOnSave    bool
+		autoSync        bool
+		interval        int
+	}
+
+	updateOptions struct {
+		name         string
+		repoID       string
+		branch       string
+		composePath  string
+		projectName  string
+		backupPaths  []string
+		backupOnSave bool
+		autoSync     bool
+		interval     int
+	}
+)
+
 var (
 	gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
 		EnvironmentScoped: true,
@@ -65,43 +101,14 @@ func Command() *cobra.Command {
 }
 
 func newListCmd() *cobra.Command {
-	var opts struct {
-		mode  string
-		limit int
-		start int
-		all   bool
-	}
+	var opts listOptions
 	cmd := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
 		Short:        "List GitOps syncs",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.GitOpsSync]{
-				Query:    kit.Ternary(opts.mode != "", url.Values{"mode": []string{opts.mode}}, nil),
-				Resource: "gitops syncs",
-				Endpoint: clitypes.GitOpsSyncs(c.EnvID()),
-				Params:   cmdutil.ListParams{Resource: "gitops-syncs", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
-				Headers:  []string{"ID", "NAME", "MODE", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
-				Row: func(sync types.GitOpsSync) []string {
-					return []string{
-						sync.ID,
-						sync.Name,
-						cmp.Or(sync.Mode, types.GitOpsSyncModeDeploy),
-						sync.Branch,
-						strconv.FormatBool(sync.AutoSync),
-						cmp.Or(kit.FromPtr(sync.LastSyncStatus), "-"),
-						kit.Ternary(sync.LastSyncAt != nil, kit.FromPtr(sync.LastSyncAt).Format("2006-01-02 15:04:05"), "-"),
-					}
-				},
-			})
-		},
+		RunE:         opts.run,
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.mode, "mode", "", "", "Only show syncs with this mode", syncModes...)
@@ -112,73 +119,13 @@ func newListCmd() *cobra.Command {
 }
 
 func newCreateCmd() *cobra.Command {
-	var opts struct {
-		name            string
-		mode            string
-		repoID          string
-		branch          string
-		composePath     string
-		projectName     string
-		project         string
-		backupDirectory string
-		backupPaths     []string
-		backupOnSave    bool
-		autoSync        bool
-		interval        int
-	}
+	var opts createOptions
 	cmd := &cobra.Command{
 		Use:          "create",
 		Short:        "Create a new GitOps sync",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-
-			req := map[string]any{
-				"name":         opts.name,
-				"mode":         opts.mode,
-				"repositoryId": opts.repoID,
-				"branch":       opts.branch,
-				"autoSync":     opts.autoSync,
-			}
-			if opts.project != "" {
-				resolved, _, resolveErr := projects.ProjectRef.Resolve(cmd.Context(), c, opts.project, cmdutil.AllowPrompt(cmd))
-				if resolveErr != nil {
-					return resolveErr
-				}
-				req["projectId"] = resolved.ID
-			}
-			for _, field := range []struct {
-				value any
-				flag  string
-				key   string
-			}{
-				{flag: "compose-path", key: "composePath", value: opts.composePath},
-				{flag: "project-name", key: "projectName", value: opts.projectName},
-				{flag: "interval", key: "syncInterval", value: opts.interval},
-				{flag: "backup-directory", key: "backupDirectory", value: opts.backupDirectory},
-				{flag: "backup-path", key: "backupPaths", value: opts.backupPaths},
-				{flag: "backup-on-save", key: "backupOnSave", value: opts.backupOnSave},
-			} {
-				if cmd.Flags().Changed(field.flag) {
-					req[field.key] = field.value
-				}
-			}
-
-			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
-				Method:         http.MethodPost,
-				Path:           clitypes.GitOpsSyncs(c.EnvID()),
-				Body:           req,
-				FailureMessage: "failed to create gitops sync",
-				Render: func(data types.GitOpsSync) error {
-					output.Success("GitOps sync %s created successfully (ID: %s)", data.Name, data.ID)
-					return nil
-				},
-			})
-		},
+		RunE:         opts.run,
 	}
 	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
 	cmd.Flags().StringVar(&opts.name, "name", "", "Name of the sync configuration")
@@ -205,112 +152,20 @@ func newGetCmd() *cobra.Command {
 		Short:        "Get GitOps sync details",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-
-			resolved, err := gitopsSyncRef.Fetch(cmd.Context(), c, args[0], cmdutil.AllowPrompt(cmd))
-			if err != nil {
-				return err
-			}
-
-			if cmdutil.JSONOutputEnabled(cmd) {
-				return cmdutil.PrintJSON(resolved)
-			}
-
-			output.Header("GitOps Sync Details")
-			output.KeyValue("ID", resolved.ID)
-			output.KeyValue("Name", resolved.Name)
-			output.KeyValue("Mode", cmp.Or(resolved.Mode, types.GitOpsSyncModeDeploy))
-			output.KeyValue("Branch", resolved.Branch)
-			output.KeyValue("Compose Path", resolved.ComposePath)
-			output.KeyValue("Project Name", resolved.ProjectName)
-			if resolved.Mode == types.GitOpsSyncModeBackup || resolved.Mode == types.GitOpsSyncModeBidirectional {
-				output.KeyValue("Backup Directory", resolved.BackupDirectory)
-				output.KeyValue("Backup Paths", cmp.Or(strings.Join(resolved.BackupPaths, ", "), "-"))
-				output.KeyValue("Backup On Save", resolved.BackupOnSave)
-				output.KeyValue("Backup State", cmp.Or(resolved.BackupState, "-"))
-			}
-			output.KeyValue("Auto Sync", resolved.AutoSync)
-			output.KeyValue("Sync Interval", fmt.Sprintf("%d min", resolved.SyncInterval))
-			if resolved.LastSyncStatus != nil {
-				output.KeyValue("Last Status", *resolved.LastSyncStatus)
-			}
-			if resolved.LastSyncAt != nil {
-				output.KeyValue("Last Sync", resolved.LastSyncAt.Format("2006-01-02 15:04:05"))
-			}
-			if resolved.LastSyncCommit != nil {
-				output.KeyValue("Last Commit", *resolved.LastSyncCommit)
-			}
-			return nil
-		},
+		RunE:         runGet,
 	}
 	cmdutil.SetResource(gitopsSyncRef, cmd)
 	return cmd
 }
 
 func newUpdateCmd() *cobra.Command {
-	var opts struct {
-		name         string
-		repoID       string
-		branch       string
-		composePath  string
-		projectName  string
-		backupPaths  []string
-		backupOnSave bool
-		autoSync     bool
-		interval     int
-	}
+	var opts updateOptions
 	cmd := &cobra.Command{
 		Use:          "update <sync-id|name>",
 		Short:        "Update a GitOps sync",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-
-			resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
-			if err != nil {
-				return err
-			}
-
-			req := map[string]any{}
-			for _, field := range []struct {
-				value any
-				flag  string
-				key   string
-			}{
-				{flag: "name", key: "name", value: opts.name},
-				{flag: "repo-id", key: "repositoryId", value: opts.repoID},
-				{flag: "branch", key: "branch", value: opts.branch},
-				{flag: "compose-path", key: "composePath", value: opts.composePath},
-				{flag: "project-name", key: "projectName", value: opts.projectName},
-				{flag: "auto-sync", key: "autoSync", value: opts.autoSync},
-				{flag: "interval", key: "syncInterval", value: opts.interval},
-				{flag: "backup-path", key: "backupPaths", value: opts.backupPaths},
-				{flag: "backup-on-save", key: "backupOnSave", value: opts.backupOnSave},
-			} {
-				if cmd.Flags().Changed(field.flag) {
-					req[field.key] = field.value
-				}
-			}
-
-			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
-				Method:         http.MethodPatch,
-				Path:           clitypes.GitOpsSync(c.EnvID(), resolved.ID),
-				Body:           req,
-				FailureMessage: "failed to update gitops sync",
-				Render: func(types.GitOpsSync) error {
-					output.Success("GitOps sync %s updated successfully", resolved.Name)
-					return nil
-				},
-			})
-		},
+		RunE:         opts.run,
 	}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Name of the sync configuration")
 	cmd.Flags().StringVar(&opts.repoID, "repo-id", "", "Repository ID")
@@ -323,6 +178,167 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.backupOnSave, "backup-on-save", false, "Push to Git whenever project files are saved in Arcane (backup and bidirectional modes)")
 	cmdutil.SetResource(gitopsSyncRef, cmd)
 	return cmd
+}
+
+func (o *listOptions) run(cmd *cobra.Command, _ []string) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.GitOpsSync]{
+		Query:    kit.Ternary(o.mode != "", url.Values{"mode": []string{o.mode}}, nil),
+		Resource: "gitops syncs",
+		Endpoint: clitypes.GitOpsSyncs(c.EnvID()),
+		Params:   cmdutil.ListParams{Resource: "gitops-syncs", Limit: o.limit, FallbackDefault: 20, Start: o.start, All: o.all},
+		Headers:  []string{"ID", "NAME", "MODE", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
+		Row: func(sync types.GitOpsSync) []string {
+			return []string{
+				sync.ID,
+				sync.Name,
+				cmp.Or(sync.Mode, types.GitOpsSyncModeDeploy),
+				sync.Branch,
+				strconv.FormatBool(sync.AutoSync),
+				cmp.Or(kit.FromPtr(sync.LastSyncStatus), "-"),
+				kit.Ternary(sync.LastSyncAt != nil, kit.FromPtr(sync.LastSyncAt).Format("2006-01-02 15:04:05"), "-"),
+			}
+		},
+	})
+}
+
+func (o *createOptions) run(cmd *cobra.Command, _ []string) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	req := map[string]any{
+		"name":         o.name,
+		"mode":         o.mode,
+		"repositoryId": o.repoID,
+		"branch":       o.branch,
+		"autoSync":     o.autoSync,
+	}
+	if o.project != "" {
+		resolved, _, resolveErr := projects.ProjectRef.Resolve(cmd.Context(), c, o.project, cmdutil.AllowPrompt(cmd))
+		if resolveErr != nil {
+			return resolveErr
+		}
+		req["projectId"] = resolved.ID
+	}
+	for _, field := range []struct {
+		value any
+		flag  string
+		key   string
+	}{
+		{flag: "compose-path", key: "composePath", value: o.composePath},
+		{flag: "project-name", key: "projectName", value: o.projectName},
+		{flag: "interval", key: "syncInterval", value: o.interval},
+		{flag: "backup-directory", key: "backupDirectory", value: o.backupDirectory},
+		{flag: "backup-path", key: "backupPaths", value: o.backupPaths},
+		{flag: "backup-on-save", key: "backupOnSave", value: o.backupOnSave},
+	} {
+		if cmd.Flags().Changed(field.flag) {
+			req[field.key] = field.value
+		}
+	}
+
+	return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
+		Method:         http.MethodPost,
+		Path:           clitypes.GitOpsSyncs(c.EnvID()),
+		Body:           req,
+		FailureMessage: "failed to create gitops sync",
+		Render: func(data types.GitOpsSync) error {
+			output.Success("GitOps sync %s created successfully (ID: %s)", data.Name, data.ID)
+			return nil
+		},
+	})
+}
+
+func runGet(cmd *cobra.Command, args []string) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	resolved, err := gitopsSyncRef.Fetch(cmd.Context(), c, args[0], cmdutil.AllowPrompt(cmd))
+	if err != nil {
+		return err
+	}
+
+	if cmdutil.JSONOutputEnabled(cmd) {
+		return cmdutil.PrintJSON(resolved)
+	}
+
+	output.Header("GitOps Sync Details")
+	output.KeyValue("ID", resolved.ID)
+	output.KeyValue("Name", resolved.Name)
+	output.KeyValue("Mode", cmp.Or(resolved.Mode, types.GitOpsSyncModeDeploy))
+	output.KeyValue("Branch", resolved.Branch)
+	output.KeyValue("Compose Path", resolved.ComposePath)
+	output.KeyValue("Project Name", resolved.ProjectName)
+	if resolved.Mode == types.GitOpsSyncModeBackup || resolved.Mode == types.GitOpsSyncModeBidirectional {
+		output.KeyValue("Backup Directory", resolved.BackupDirectory)
+		output.KeyValue("Backup Paths", cmp.Or(strings.Join(resolved.BackupPaths, ", "), "-"))
+		output.KeyValue("Backup On Save", resolved.BackupOnSave)
+		output.KeyValue("Backup State", cmp.Or(resolved.BackupState, "-"))
+	}
+	output.KeyValue("Auto Sync", resolved.AutoSync)
+	output.KeyValue("Sync Interval", fmt.Sprintf("%d min", resolved.SyncInterval))
+	if resolved.LastSyncStatus != nil {
+		output.KeyValue("Last Status", *resolved.LastSyncStatus)
+	}
+	if resolved.LastSyncAt != nil {
+		output.KeyValue("Last Sync", resolved.LastSyncAt.Format("2006-01-02 15:04:05"))
+	}
+	if resolved.LastSyncCommit != nil {
+		output.KeyValue("Last Commit", *resolved.LastSyncCommit)
+	}
+	return nil
+}
+
+func (o *updateOptions) run(cmd *cobra.Command, args []string) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	resolved, _, err := gitopsSyncRef.Resolve(cmd.Context(), c, args[0], false)
+	if err != nil {
+		return err
+	}
+
+	req := map[string]any{}
+	for _, field := range []struct {
+		value any
+		flag  string
+		key   string
+	}{
+		{flag: "name", key: "name", value: o.name},
+		{flag: "repo-id", key: "repositoryId", value: o.repoID},
+		{flag: "branch", key: "branch", value: o.branch},
+		{flag: "compose-path", key: "composePath", value: o.composePath},
+		{flag: "project-name", key: "projectName", value: o.projectName},
+		{flag: "auto-sync", key: "autoSync", value: o.autoSync},
+		{flag: "interval", key: "syncInterval", value: o.interval},
+		{flag: "backup-path", key: "backupPaths", value: o.backupPaths},
+		{flag: "backup-on-save", key: "backupOnSave", value: o.backupOnSave},
+	} {
+		if cmd.Flags().Changed(field.flag) {
+			req[field.key] = field.value
+		}
+	}
+
+	return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
+		Method:         http.MethodPatch,
+		Path:           clitypes.GitOpsSync(c.EnvID(), resolved.ID),
+		Body:           req,
+		FailureMessage: "failed to update gitops sync",
+		Render: func(types.GitOpsSync) error {
+			output.Success("GitOps sync %s updated successfully", resolved.Name)
+			return nil
+		},
+	})
 }
 
 func newDeleteCmd() *cobra.Command {

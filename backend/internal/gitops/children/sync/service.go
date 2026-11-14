@@ -69,6 +69,7 @@ type (
 		// stageLogical is stagePath relative to the projects directory, the root every staging mutation is confined to.
 		stageLogical    string
 		composeFileName string
+		expected        map[string]string
 		syncFiles       []projects.SyncFile
 		syncedFiles     []string
 		oldSyncedFiles  []string
@@ -80,9 +81,10 @@ type (
 	}
 
 	PullRequest struct {
-		Commit  string
-		Files   []projects.SyncFile
-		Removed []string
+		Expected map[string]string
+		Commit   string
+		Files    []projects.SyncFile
+		Removed  []string
 	}
 
 	Params struct {
@@ -579,6 +581,7 @@ func (s *Service) syncProjectDirectory(
 			kit.Ternary(pull != nil, kit.FromPtr(pull).Removed, sync.SyncedFileList()),
 			func(path string) bool { return slices.Contains(reservedRootEnvFiles, path) },
 		),
+		expected:        kit.FromPtr(pull).Expected,
 		contentsChanged: true,
 		partial:         pull != nil,
 	}
@@ -954,6 +957,16 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	if rootErr != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", rootErr)
 	}
+	if stage.partial {
+		unlock, lockErr := s.projectService.LockProject(ctx, "pull git changes", project.ID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		defer unlock()
+		if verifyErr := verifyPullExpectations(ctx, projectPath, stage.expected); verifyErr != nil {
+			return nil, verifyErr
+		}
+	}
 
 	if entry, err := (acfs.Host{}).Stat(ctx, projectPath, acfstypes.StatOptions{FollowFinal: true}); err == nil {
 		if !entry.IsDirectory {
@@ -1021,6 +1034,24 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 	}
 
 	return project, nil
+}
+
+func verifyPullExpectations(ctx context.Context, projectPath string, expected map[string]string) error {
+	var changed []string
+	for file, hash := range expected {
+		content, err := acfs.Root{Path: projectPath}.ReadFile(ctx, "/"+file)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to re-read %s before pulling: %w", file, err)
+		}
+		if kit.Ternary(err == nil, kit.SHA256Hex(content), "") != hash {
+			changed = append(changed, file)
+		}
+	}
+	if len(changed) > 0 {
+		slices.Sort(changed)
+		return common.Classify(common.ErrConflict, fmt.Errorf("project files changed while repository changes were being pulled: %s", strings.Join(changed, ", ")))
+	}
+	return nil
 }
 
 func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath string) (projects.ProjectEnvState, error) {

@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -74,6 +75,7 @@ type (
 
 	PullPlan struct {
 		Baseline map[string]string
+		Expected map[string]string
 		Commit   string
 		Files    []projects.SyncFile
 		Removed  []string
@@ -104,6 +106,8 @@ const (
 	BackupChangeModified         = "modified"
 	BackupChangeRemoved          = "removed"
 	DefaultBackupHistoryLimit    = 20
+	BackupModeExecutable         = ":x"
+	BackupModeRegular            = ":-"
 )
 
 func New(p Params) *Service {
@@ -176,7 +180,7 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: err})
 	}
-	paths, err := normalizeBackupPaths(req.BackupPaths)
+	paths, err := normalizeBackupPaths(ctx, project.Path, req.BackupPaths)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "backupPaths", Err: err})
 	}
@@ -203,7 +207,14 @@ func (s *Service) ApplyModeUpdates(ctx context.Context, current *projectpkg.GitO
 		updates["backup_failure_reason"] = nil
 	}
 	if submitted["backupPaths"] {
-		paths, err := normalizeBackupPaths(req.BackupPaths)
+		project, found, err := s.projectService.FindProjectByID(ctx, kit.FromPtr(current.ProjectID))
+		if err != nil {
+			return fmt.Errorf("failed to get project %s: %w", kit.FromPtr(current.ProjectID), err)
+		}
+		if !found {
+			return common.ErrProjectNotFound
+		}
+		paths, err := normalizeBackupPaths(ctx, project.Path, req.BackupPaths)
 		if err != nil {
 			return common.Classify(common.ErrValidation, &types.FieldError{Field: "backupPaths", Err: err})
 		}
@@ -306,17 +317,21 @@ func (s *Service) Plan(ctx context.Context, localSync *projectpkg.GitOpsSync, ac
 	}
 	defer s.repoService.Discard(ctx, checkout.RepoPath)
 
-	selection, err := s.backupSelection(ctx, localSync, project)
+	selection, overrides, err := s.backupSelection(ctx, localSync, project)
 	if err != nil {
 		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
 	}
-	remote, err := s.readRemoteBackup(ctx, localSync, checkout.RepoPath, selection)
+	remote, err := s.readRemoteBackup(ctx, localSync, checkout.RepoPath, slices.Concat(selection, overrides))
 	if err != nil {
 		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to read remote backup", err, false)
 	}
-	plan := &PullPlan{Baseline: make(map[string]string, len(remote)), Commit: checkout.HeadCommit}
+	plan := &PullPlan{
+		Baseline: make(map[string]string, len(remote)),
+		Expected: make(map[string]string),
+		Commit:   checkout.HeadCommit,
+	}
 	for file, content := range remote {
-		plan.Baseline[file] = kit.SHA256Hex(content.Content)
+		plan.Baseline[file] = kit.SHA256Hex(content.Content) + kit.Ternary(content.Executable, BackupModeExecutable, BackupModeRegular)
 	}
 	baseline := localSync.BackupSnapshot()
 	snapshot, err := s.buildBackupSnapshot(ctx, localSync, project, slices.Concat(slices.Collect(maps.Keys(plan.Baseline)), slices.Collect(maps.Keys(baseline))))
@@ -328,17 +343,25 @@ func (s *Service) Plan(ctx context.Context, localSync *projectpkg.GitOpsSync, ac
 	files := slices.Concat(slices.Collect(maps.Keys(snapshot.hashes)), slices.Collect(maps.Keys(plan.Baseline)), slices.Collect(maps.Keys(baseline)))
 	slices.Sort(files)
 	for _, file := range slices.Compact(files) {
-		local, remoteHash, base := snapshot.hashes[file], plan.Baseline[file], baseline[file]
+		local, remoteHash := snapshot.hashes[file], plan.Baseline[file]
+		base := kit.Ternary(sameBackupState(local, baseline[file]), local, baseline[file])
 		switch {
 		case local == remoteHash || remoteHash == base:
 		case local == base && remoteHash == "":
 			plan.Removed = append(plan.Removed, file)
+			plan.Expected[file], _, _ = strings.Cut(local, ":")
 		case local == base:
 			plan.Files = append(plan.Files, remote[file])
+			plan.Expected[file], _, _ = strings.Cut(local, ":")
 		default:
 			conflicts = append(conflicts, types.GitOpsBackupFileChange{Path: file, Change: BackupChangeModified})
 		}
 	}
+	collisions, err := pullCollisions(ctx, project.Path, plan)
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureUnreadableFiles, "Failed to inspect project files", err, false)
+	}
+	conflicts = append(conflicts, collisions...)
 	if len(conflicts) > 0 {
 		return nil, s.failBackup(
 			ctx,
@@ -354,6 +377,61 @@ func (s *Service) Plan(ctx context.Context, localSync *projectpkg.GitOpsSync, ac
 	return plan, nil
 }
 
+func pullCollisions(ctx context.Context, projectPath string, plan *PullPlan) ([]types.GitOpsBackupFileChange, error) {
+	var collisions []types.GitOpsBackupFileChange
+	for _, file := range plan.Files {
+		segments := strings.Split(file.RelativePath, "/")
+		blocked := false
+		for depth := 1; depth < len(segments) && !blocked; depth++ {
+			dir := strings.Join(segments[:depth], "/")
+			entry, err := acfs.Root{Path: projectPath}.Stat(ctx, "/"+dir, acfstypes.StatOptions{})
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				blocked = true
+			case err != nil:
+				return nil, fmt.Errorf("cannot inspect %s: %w", dir, err)
+			case !entry.IsDirectory:
+				blocked = true
+				if !slices.Contains(plan.Removed, dir) {
+					collisions = append(collisions, types.GitOpsBackupFileChange{Path: dir, Change: BackupChangeModified})
+				}
+			}
+		}
+		if blocked {
+			continue
+		}
+		occupied, err := localFilesOutside(ctx, projectPath, file.RelativePath, plan.Removed)
+		if err != nil {
+			return nil, err
+		}
+		if occupied {
+			collisions = append(collisions, types.GitOpsBackupFileChange{Path: file.RelativePath, Change: BackupChangeModified})
+		}
+	}
+	return collisions, nil
+}
+
+func localFilesOutside(ctx context.Context, projectPath, directory string, removed []string) (bool, error) {
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, "/"+directory, acfstypes.StatOptions{})
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("cannot inspect %s: %w", directory, err)
+	case !entry.IsDirectory:
+		return false, nil
+	}
+	occupied := false
+	visit := func(child acfstypes.Entry) error {
+		occupied = occupied || !child.IsDirectory && !slices.Contains(removed, strings.TrimPrefix(child.Path, "/"))
+		return nil
+	}
+	if _, walkErr := (acfs.Root{Path: projectPath}).Walk(ctx, "/"+directory, acfstypes.WalkOptions{}, visit); walkErr != nil {
+		return false, fmt.Errorf("cannot inspect %s: %w", directory, walkErr)
+	}
+	return occupied, nil
+}
+
 func (s *Service) readRemoteBackup(ctx context.Context, localSync *projectpkg.GitOpsSync, repoPath string, selection []string) (map[string]projects.SyncFile, error) {
 	root := path.Join("/", localSync.BackupDirectory)
 	prefix := strings.TrimSuffix(root, "/") + "/"
@@ -363,7 +441,7 @@ func (s *Service) readRemoteBackup(ctx context.Context, localSync *projectpkg.Gi
 	_, err := acfs.Root{Path: repoPath}.Walk(ctx, root, acfstypes.WalkOptions{}, func(entry acfstypes.Entry) error {
 		relative := strings.TrimPrefix(entry.Path, prefix)
 		switch {
-		case entry.IsDirectory && skipBackupDir(entry.Name):
+		case entry.IsDirectory && (entry.Name == ".git" || projects.IsInternalScratchDirName(entry.Name)):
 			return fs.SkipDir
 		case entry.IsDirectory || entry.IsSymlink || !inBackupScope(selection, localSync.SyncDirectory, relative):
 			return nil
@@ -650,35 +728,46 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 		return "", nil, fmt.Errorf("compose file %s is outside the project directory", composePath)
 	}
 	primary := filepath.ToSlash(relative)
-	composeFiles := []string{primary}
-	composeDir := path.Dir(primary)
+	overrides := make([]string, 0, len(projects.ComposeOverrideFileCandidates))
 	for _, candidate := range projects.ComposeOverrideFileCandidates {
-		candidatePath := path.Join(composeDir, candidate)
-		if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+candidatePath); existsErr == nil && exists {
-			composeFiles = append(composeFiles, candidatePath)
-		}
+		overrides = append(overrides, path.Join(path.Dir(primary), candidate))
 	}
-	return primary, composeFiles, nil
+	return primary, overrides, nil
 }
 
-func (s *Service) backupSelection(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) ([]string, error) {
-	_, composeFiles, err := s.backupComposeFiles(ctx, project)
+func (s *Service) backupSelection(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) ([]string, []string, error) {
+	primary, overrides, err := s.backupComposeFiles(ctx, project)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", err.Error(), git.ErrSelectionInvalid)
+		return nil, nil, fmt.Errorf("%s: %w", err.Error(), git.ErrSelectionInvalid)
 	}
 	paths := slices.Clone([]string(localSync.BackupPaths))
-	for _, composeFile := range composeFiles {
-		if !backupSelectionCovers(paths, composeFile) {
-			paths = append(paths, composeFile)
+	if !backupSelectionCovers(paths, primary) {
+		paths = append(paths, primary)
+	}
+	for _, override := range overrides {
+		if backupSelectionCovers(paths, override) {
+			continue
+		}
+		if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+override); existsErr == nil && exists {
+			paths = append(paths, override)
 		}
 	}
-	return paths, nil
+	return paths, overrides, nil
 }
 
 func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project, tracked []string) (*backupSnapshot, error) {
-	paths, err := s.backupSelection(ctx, localSync, project)
+	selection, _, err := s.backupSelection(ctx, localSync, project)
 	if err != nil {
 		return nil, err
+	}
+	paths := make([]string, 0, len(selection))
+	for _, selected := range selection {
+		if localSync.Mode == types.GitOpsSyncModeBidirectional {
+			if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+selected); existsErr == nil && !exists {
+				continue
+			}
+		}
+		paths = append(paths, selected)
 	}
 	for _, file := range tracked {
 		if !localSync.SyncDirectory || backupSelectionCovers(paths, file) || !inBackupScope(paths, true, file) {
@@ -689,11 +778,14 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 		}
 	}
 	maxFiles, maxTotalSize, _ := s.limits(ctx, localSync)
+	skipFile := func(name string) bool {
+		return !inBackupScope(nil, true, name)
+	}
 	options := git.CollectOptions{
 		MaxFiles:     maxFiles,
 		MaxTotalSize: maxTotalSize,
 		SkipDir:      projects.IsInternalScratchDirName,
-		SkipFile:     skipBackupFile,
+		SkipFile:     skipFile,
 	}
 
 	for range BackupSnapshotMaxRetry {
@@ -703,7 +795,7 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 		}
 		snapshot := &backupSnapshot{files: files, hashes: make(map[string]string, len(files))}
 		for _, file := range files {
-			snapshot.hashes[file.Path] = kit.SHA256Hex(file.Content)
+			snapshot.hashes[file.Path] = kit.SHA256Hex(file.Content) + kit.Ternary(file.Executable, BackupModeExecutable, BackupModeRegular)
 		}
 
 		stable := true
@@ -712,7 +804,7 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 			if readFileErr != nil {
 				return nil, fmt.Errorf("cannot re-read %s: %v: %w", file.Path, readFileErr.Error(), git.ErrSelectionUnreadable)
 			}
-			if kit.SHA256Hex(content) != snapshot.hashes[file.Path] {
+			if !bytes.Equal(content, file.Content) {
 				stable = false
 				break
 			}
@@ -738,14 +830,18 @@ func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *ba
 				if _, done := remote[file]; done {
 					continue
 				}
+				entry, statErr := acfs.Root{Path: repoPath}.Stat(ctx, "/"+path.Join(directory, file), acfstypes.StatOptions{})
+				if errors.Is(statErr, fs.ErrNotExist) {
+					continue
+				}
+				if statErr != nil {
+					return analysis, fmt.Errorf("failed to inspect remote backup file %s: %w", file, statErr)
+				}
 				content, readErr := acfs.Root{Path: repoPath}.ReadFile(ctx, "/"+path.Join(directory, file))
 				if readErr != nil {
-					if errors.Is(readErr, fs.ErrNotExist) {
-						continue
-					}
 					return analysis, fmt.Errorf("failed to read remote backup file %s: %w", file, readErr)
 				}
-				remote[file] = kit.SHA256Hex(content)
+				remote[file] = kit.SHA256Hex(content) + kit.Ternary(os.FileMode(entry.UnixMode)&0o111 != 0, BackupModeExecutable, BackupModeRegular)
 			}
 		}
 	}
@@ -850,7 +946,7 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 		switch {
 		case !ok:
 			changes = append(changes, types.GitOpsBackupFileChange{Path: file, Change: BackupChangeAdded})
-		case remoteHash != hash:
+		case !sameBackupState(remoteHash, hash):
 			changes = append(changes, types.GitOpsBackupFileChange{Path: file, Change: BackupChangeModified})
 		}
 	}
@@ -874,20 +970,24 @@ func changedPathList(changes []types.GitOpsBackupFileChange) string {
 	return strings.Join(names, ", ")
 }
 
-func skipBackupFile(name string) bool {
-	return name == projects.GitSourceEnvFileName || name == projects.GlobalEnvFileName || name == projects.EffectiveEnvFileName || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".env")
-}
-
-func skipBackupDir(name string) bool {
-	return name == ".git" || projects.IsInternalScratchDirName(name)
+func sameBackupState(a, b string) bool {
+	hashA, modeA, knownA := strings.Cut(a, ":")
+	hashB, modeB, knownB := strings.Cut(b, ":")
+	return hashA == hashB && (!knownA || !knownB || modeA == modeB)
 }
 
 func inBackupScope(selection []string, wholeDirectory bool, file string) bool {
-	segments := strings.Split(file, "/")
-	switch {
-	case slices.Contains(selection, file):
+	if slices.Contains(selection, file) {
 		return true
-	case slices.ContainsFunc(segments[:len(segments)-1], skipBackupDir) || skipBackupFile(segments[len(segments)-1]):
+	}
+	segments := strings.Split(file, "/")
+	for _, dir := range segments[:len(segments)-1] {
+		if dir == ".git" || projects.IsInternalScratchDirName(dir) {
+			return false
+		}
+	}
+	name := segments[len(segments)-1]
+	if name == projects.GitSourceEnvFileName || name == projects.GlobalEnvFileName || name == projects.EffectiveEnvFileName || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".env") {
 		return false
 	}
 	return wholeDirectory || backupSelectionCovers(selection, file)
@@ -902,7 +1002,7 @@ func backupSelectionCovers(paths []string, file string) bool {
 	return false
 }
 
-func normalizeBackupPaths(raw []string) ([]string, error) {
+func normalizeBackupPaths(ctx context.Context, projectPath string, raw []string) ([]string, error) {
 	normalized := make([]string, 0, len(raw))
 	for _, entry := range raw {
 		cleaned, err := kit.NormalizeRelativePath(entry)
@@ -912,6 +1012,13 @@ func normalizeBackupPaths(raw []string) ([]string, error) {
 		localBase := path.Base(cleaned)
 		if localBase == projects.GitSourceEnvFileName || localBase == projects.GlobalEnvFileName || slices.Contains(strings.Split(cleaned, "/"), ".git") {
 			return nil, fmt.Errorf("backup path %q is reserved", entry)
+		}
+		exists, err := acfs.Root{Path: projectPath}.Exists(ctx, "/"+cleaned)
+		if err != nil {
+			return nil, fmt.Errorf("cannot inspect backup path %q: %w", entry, err)
+		}
+		if !exists {
+			return nil, fmt.Errorf("backup path %q does not exist in the project", entry)
 		}
 		normalized = append(normalized, cleaned)
 	}
