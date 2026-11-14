@@ -76,40 +76,40 @@ type (
 	}
 
 	Container struct {
-		Labels       map[string]string   `json:"labels,omitempty"`
-		ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
+		Labels       map[string]string   `json:"labels,omitempty" doc:"Container labels; Arcane also sets com.arcane.created"`
+		ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty" doc:"Ports to expose unpublished, keyed port or port/protocol (tcp by default), each an empty object"`
 
-		Healthcheck      *ContainerHealthcheckCreate      `json:"healthcheck,omitempty"`
+		Healthcheck      *ContainerHealthcheckCreate      `json:"healthcheck,omitempty" doc:"Overrides the image healthcheck; durations in seconds, test NONE disables it"`
 		HostConfig       *ContainerHostConfigCreate       `json:"hostConfig,omitempty"`
-		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
-		Ports            map[string]string                `json:"ports,omitempty"`
-		Name             string                           `json:"name" required:"false"`
-		Image            string                           `json:"image" required:"false"`
+		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty" doc:"Networks to join keyed by name, with optional static addresses and aliases"`
+		Ports            map[string]string                `json:"ports,omitempty" doc:"Published TCP ports, container port to host port; added to hostConfig.portBindings"`
+		Name             string                           `json:"name" required:"false" doc:"Container name; must not be empty"`
+		Image            string                           `json:"image" required:"false" doc:"Image to run, pulled when missing locally; must not be empty"`
 		WorkingDir       string                           `json:"workingDir,omitempty"`
-		User             string                           `json:"user,omitempty"`
-		Hostname         string                           `json:"hostname,omitempty"`
+		User             string                           `json:"user,omitempty" doc:"User, and optionally group, that runs the process, by name or ID"`
+		Hostname         string                           `json:"hostname,omitempty" doc:"Must be a valid RFC 1123 hostname"`
 		Domainname       string                           `json:"domainname,omitempty"`
-		RestartPolicy    string                           `json:"restartPolicy,omitempty"`
-		Command          []string                         `json:"command,omitempty"`
-		Cmd              []string                         `json:"cmd,omitempty"`
-		Entrypoint       []string                         `json:"entrypoint,omitempty"`
-		Environment      []string                         `json:"environment,omitempty"`
-		Env              []string                         `json:"env,omitempty"`
-		Volumes          []string                         `json:"volumes,omitempty"`
-		Networks         []string                         `json:"networks,omitempty"`
-		Credentials      []ContainerRegistryCredential    `json:"credentials,omitempty" writeOnly:"true"`
+		RestartPolicy    string                           `json:"restartPolicy,omitempty" doc:"no, always, unless-stopped or on-failure; ignored when hostConfig.restartPolicy is set"`
+		Command          []string                         `json:"command,omitempty" doc:"Overrides the image CMD"`
+		Cmd              []string                         `json:"cmd,omitempty" doc:"Alias of command, used when command is empty"`
+		Entrypoint       []string                         `json:"entrypoint,omitempty" doc:"Overrides the image ENTRYPOINT"`
+		Environment      []string                         `json:"environment,omitempty" doc:"Environment variables as KEY=VALUE"`
+		Env              []string                         `json:"env,omitempty" doc:"Alias of environment, used when environment is empty"`
+		Volumes          []string                         `json:"volumes,omitempty" doc:"Bind and volume specs as source:target[:options]; ignored when hostConfig.binds is non-empty"`
+		Networks         []string                         `json:"networks,omitempty" doc:"Networks to join by name; ignored when networkingConfig lists endpoints"`
+		Credentials      []ContainerRegistryCredential    `json:"credentials,omitempty" writeOnly:"true" doc:"Registry credentials for pulling a missing image"`
 
-		Memory          int64   `json:"memory,omitempty"`
-		CPUs            float64 `json:"cpus,omitempty"`
+		Memory          int64   `json:"memory,omitempty" doc:"Memory limit in bytes; above 0 it replaces hostConfig.memory"`
+		CPUs            float64 `json:"cpus,omitempty" doc:"CPU limit in CPUs, fractions allowed; above 0 it replaces hostConfig.nanoCpus"`
 		AttachStdout    bool    `json:"attachStdout,omitempty"`
 		AttachStderr    bool    `json:"attachStderr,omitempty"`
 		AttachStdin     bool    `json:"attachStdin,omitempty"`
-		Tty             bool    `json:"tty,omitempty"`
+		Tty             bool    `json:"tty,omitempty" doc:"Allocate a pseudo-TTY"`
 		OpenStdin       bool    `json:"openStdin,omitempty"`
-		StdinOnce       bool    `json:"stdinOnce,omitempty"`
+		StdinOnce       bool    `json:"stdinOnce,omitempty" doc:"Close stdin after the first attached client disconnects"`
 		NetworkDisabled bool    `json:"networkDisabled,omitempty"`
-		Privileged      bool    `json:"privileged,omitempty"`
-		AutoRemove      bool    `json:"autoRemove,omitempty"`
+		Privileged      bool    `json:"privileged,omitempty" doc:"Privileged mode; hostConfig.privileged wins when set"`
+		AutoRemove      bool    `json:"autoRemove,omitempty" doc:"Remove the container when it exits; hostConfig.autoRemove wins when set"`
 	}
 
 	ContainerCommitRequest struct {
@@ -362,22 +362,22 @@ type (
 	}
 
 	ContainerEdit struct {
-		Name       *string `json:"name,omitempty"`
-		Image      *string `json:"image,omitempty"`
-		WorkingDir *string `json:"workingDir,omitempty"`
-		User       *string `json:"user,omitempty"`
+		Name       *string `json:"name,omitempty" doc:"New name; omitted or empty keeps the current one"`
+		Image      *string `json:"image,omitempty" doc:"Omitted or empty keeps the current image; pulled only when missing locally"`
+		WorkingDir *string `json:"workingDir,omitempty" doc:"Omitted keeps the current one"`
+		User       *string `json:"user,omitempty" doc:"Omitted keeps the current one"`
 
-		Hostname    *string                     `json:"hostname,omitempty"`
-		Command     *[]string                   `json:"command,omitempty"`
-		Entrypoint  *[]string                   `json:"entrypoint,omitempty"`
-		Environment *[]string                   `json:"environment,omitempty"`
-		Labels      *map[string]string          `json:"labels,omitempty"`
-		Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty"`
-		HostConfig  *ContainerHostConfigEdit    `json:"hostConfig,omitempty"`
+		Hostname    *string                     `json:"hostname,omitempty" doc:"Omitted keeps the current one, empty clears it"`
+		Command     *[]string                   `json:"command,omitempty" doc:"Replaces the current command; omitted keeps it"`
+		Entrypoint  *[]string                   `json:"entrypoint,omitempty" doc:"Replaces the current entrypoint; omitted keeps it"`
+		Environment *[]string                   `json:"environment,omitempty" doc:"Full KEY=VALUE list replacing the current one; omitted keeps it"`
+		Labels      *map[string]string          `json:"labels,omitempty" doc:"Full label set replacing the current one; omitted keeps it"`
+		Healthcheck *ContainerHealthcheckCreate `json:"healthcheck,omitempty" doc:"Replaces the current healthcheck, durations in seconds; omitted keeps it"`
+		HostConfig  *ContainerHostConfigEdit    `json:"hostConfig,omitempty" doc:"Host settings to change; each omitted field keeps its current value"`
 
-		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty"`
-		Credentials      []ContainerRegistryCredential    `json:"credentials,omitempty"`
-		ClearHealthcheck bool                             `json:"clearHealthcheck,omitempty"`
+		NetworkingConfig *ContainerNetworkingConfigCreate `json:"networkingConfig,omitempty" doc:"Full set of endpoints keyed by network name; omitted keeps the current ones"`
+		Credentials      []ContainerRegistryCredential    `json:"credentials,omitempty" doc:"Registry credentials for pulling a missing image"`
+		ClearHealthcheck bool                             `json:"clearHealthcheck,omitempty" doc:"Drop the healthcheck override so the image's applies; wins over healthcheck"`
 	}
 
 	ContainerEditConfigNetwork struct {
