@@ -156,6 +156,7 @@ func newRouter(p RouterParams) *echo.Echo {
 
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.RequestID())
+	e.Use(middleware.RejectDotSegmentParams)
 	e.Use(echomiddleware.SecureWithConfig(echomiddleware.SecureConfig{
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "SAMEORIGIN",
