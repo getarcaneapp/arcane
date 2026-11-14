@@ -24,7 +24,8 @@ func RejectDotSegmentParams(next echo.HandlerFunc) echo.HandlerFunc {
 
 func hasDotSegment(pv echo.PathValue) bool {
 	for segment := range strings.SplitSeq(pv.Value, "/") {
-		if segment == "." || segment == ".." {
+		switch strings.TrimSpace(segment) {
+		case ".", "..":
 			return true
 		}
 	}
