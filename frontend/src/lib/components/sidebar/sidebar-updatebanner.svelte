@@ -6,7 +6,6 @@
 	import { CircleArrowUpIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 
 	import UpdateAvailableBanner from './update-available-banner.svelte';
 
@@ -42,11 +41,12 @@
 />
 
 {#if upgradeCheck.shouldShowBanner}
-	<div class={cn('pb-1', isCollapsed ? 'px-0' : 'px-3')}>
+	<div class="pb-1">
 		{#if !isCollapsed}
 			<UpdateAvailableBanner
 				label={m.sidebar_update_available()}
 				versionChip={upgradeCheck.versionChip}
+				updateCount={upgradeCheck.updateCount}
 				disabled={upgradeCheck.checkingUpgrade}
 				onclick={upgradeCheck.openDialog}
 			/>

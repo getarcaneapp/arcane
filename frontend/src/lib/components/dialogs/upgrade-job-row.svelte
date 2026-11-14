@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Attachment } from 'svelte/attachments';
+	import { slide } from 'svelte/transition';
 
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
@@ -134,12 +135,14 @@
 	{/if}
 
 	{#if showLogs}
-		{#if logs.length > 0}
-			<CodeBlock.Root size="sm" class="mt-2 ml-10 w-auto">
-				<CodeBlock.Content {@attach followLogTail} wrap code={logs.join('\n')} class="max-h-48" />
-			</CodeBlock.Root>
-		{:else}
-			<p class="mt-2 ml-10 text-xs text-muted-foreground italic">{m.environments_update_all_no_logs()}</p>
-		{/if}
+		<div class="mt-2 ml-10" transition:slide={{ duration: 200 }}>
+			{#if logs.length > 0}
+				<CodeBlock.Root size="sm" class="w-auto">
+					<CodeBlock.Content {@attach followLogTail} wrap code={logs.join('\n')} class="max-h-48" />
+				</CodeBlock.Root>
+			{:else}
+				<p class="text-xs text-muted-foreground italic">{m.environments_update_all_no_logs()}</p>
+			{/if}
+		</div>
 	{/if}
 </li>

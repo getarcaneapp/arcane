@@ -1,26 +1,31 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
 	import type { Attachment } from 'svelte/attachments';
+	import { slide } from 'svelte/transition';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, AlertIcon, ExternalLinkIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, AlertIcon, ArrowRightIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { clientStream } from '#lib/stores/client-stream.svelte.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
 	import type { VersionInfo } from '#lib/types/version.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';
-	import UpgradeJobRow from './upgrade-job-row.svelte';
+	import UpgradeJobDetail from './upgrade-job-detail.svelte';
+	import UpgradeQueueRow from './upgrade-queue-row.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
@@ -44,6 +49,8 @@
 	let starting = $state(false);
 	let demoJob = $state<UpgradeJob | null>(null);
 	let demoReconnecting = $state(false);
+	let pinnedId = $state<string | null>(null);
+	let foldToggles = $state<Record<string, boolean>>({});
 	let startAttempt = 0;
 
 	const job = $derived.by(() => {
@@ -71,6 +78,8 @@
 		starting = false;
 		demoJob = null;
 		demoReconnecting = false;
+		pinnedId = null;
+		foldToggles = {};
 	}
 
 	function followJob(next: UpgradeJob) {
@@ -149,6 +158,13 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
+	const planOfflineCount = $derived(environmentStore.available.filter((env) => !isEnvironmentOnline(env)).length);
+	const planOpen = $derived(foldToggles['plan'] ?? false);
+	const planEnvironments = $derived([
+		...environmentStore.available.filter((env) => env.id !== MANAGER_ENVIRONMENT_ID),
+		...environmentStore.available.filter((env) => env.id === MANAGER_ENVIRONMENT_ID)
+	]);
+
 	const results = $derived(job?.results ?? []);
 	const managerResult = $derived(results.find((r) => r.environmentId === MANAGER_ENVIRONMENT_ID));
 	const totalCount = $derived(results.length);
@@ -184,16 +200,55 @@
 	const failedIds = $derived(results.filter((r) => r.status === 'failed').map((r) => r.environmentId));
 	const updatingCount = $derived(results.filter((r) => r.status === 'updating').length);
 	const progressSegments = $derived([
-		{ count: outcomeCounts.updated + outcomeCounts.current, class: 'bg-success', label: m.environments_update_all_legend_done },
-		{ count: updatingCount, class: 'bg-primary animate-pulse', label: m.environments_update_all_legend_updating },
-		{
-			count: outcomeCounts.skipped + outcomeCounts.unconfirmed,
-			class: 'bg-warning',
-			label: m.environments_update_all_legend_skipped
-		},
-		{ count: outcomeCounts.failed, class: 'bg-destructive', label: m.environments_update_all_legend_failed },
-		{ count: totalCount - doneCount - updatingCount, class: 'bg-muted', label: m.environments_update_all_legend_queued }
+		{ count: outcomeCounts.updated + outcomeCounts.current, class: 'bg-success' },
+		{ count: updatingCount, class: 'bg-primary animate-pulse' },
+		{ count: outcomeCounts.skipped + outcomeCounts.unconfirmed, class: 'bg-warning' },
+		{ count: outcomeCounts.failed, class: 'bg-destructive' },
+		{ count: totalCount - doneCount - updatingCount, class: 'bg-muted' }
 	]);
+	const doneFoldable = $derived(outcomeCounts.updated + outcomeCounts.current < totalCount);
+	const queueGroups = $derived([
+		{
+			key: 'failed',
+			label: m.environments_update_all_legend_failed,
+			foldable: false,
+			open: true,
+			results: orderedResults.filter((r) => r.status === 'failed')
+		},
+		{
+			key: 'updating',
+			label: m.environments_update_all_legend_updating,
+			foldable: false,
+			open: true,
+			results: orderedResults.filter((r) => r.status === 'updating')
+		},
+		{
+			key: 'queued',
+			label: m.environments_update_all_legend_queued,
+			foldable: true,
+			open: foldToggles['queued'] ?? false,
+			results: orderedResults.filter((r) => r.status === 'pending')
+		},
+		{
+			key: 'skipped',
+			label: m.environments_update_all_legend_skipped,
+			foldable: false,
+			open: true,
+			results: orderedResults.filter((r) => r.status === 'skipped_offline' || r.status === 'triggered')
+		},
+		{
+			key: 'done',
+			label: m.environments_update_all_legend_done,
+			foldable: doneFoldable,
+			open: foldToggles['done'] ?? (!doneFoldable || outcomeCounts.updated + outcomeCounts.current <= 5),
+			results: orderedResults.filter((r) => r.status === 'updated' || r.status === 'up_to_date')
+		}
+	]);
+	const selectedResult = $derived(
+		results.find((r) => r.environmentId === pinnedId) ??
+			orderedResults.find((r) => r.status === (phase === 'finished' ? 'failed' : 'updating')) ??
+			orderedResults[0]
+	);
 
 	async function runDebugDemo() {
 		const attempt = startAttempt;
@@ -241,7 +296,7 @@
 		};
 		starting = false;
 
-		// Remotes four at a time, manager last — the real processing order.
+		// Remotes in batches of the parallel upgrade setting, manager last — the real processing order.
 		const runRow = async (index: number, entry: (typeof demo)[number]) => {
 			const row = demoJob?.results?.[index];
 			if (!live() || !row) return false;
@@ -271,9 +326,10 @@
 			if (entry.error) row.error = entry.error;
 			return true;
 		};
+		const parallelAgents = Number(settingsStore.current?.upgradeMaxParallelAgents) || 4;
 		const remotes = [...demo.entries()].slice(1);
-		for (let start = 0; start < remotes.length; start += 4) {
-			const batch = remotes.slice(start, start + 4).map(([index, entry]) => runRow(index, entry));
+		for (let start = 0; start < remotes.length; start += parallelAgents) {
+			const batch = remotes.slice(start, start + parallelAgents).map(([index, entry]) => runRow(index, entry));
 			if ((await Promise.all(batch)).includes(false)) return;
 		}
 		if (!demo[0] || !(await runRow(0, demo[0]))) return;
@@ -288,20 +344,69 @@
 	<Dialog.Content
 		{@attach observeUpdate}
 		sectioned
-		class="flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-130"
+		class="flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-200"
 	>
 		{#if phase === 'confirm'}
-			<div class="px-6 pt-6 pb-4">
+			<div class="px-6 py-4">
 				<Dialog.Header>
 					<div class="space-y-3">
 						<Dialog.Title>{title}</Dialog.Title>
-						<Dialog.Description>{m.environments_update_all_message()}</Dialog.Description>
 						{#if versionInformation}
 							<VersionUpdateSummary {versionInformation} {releasedAgo} />
 						{/if}
 					</div>
 				</Dialog.Header>
 			</div>
+
+			{#if planEnvironments.length > 0}
+				<div class="shrink-0 border-t border-border/60">
+					<button
+						type="button"
+						class="flex w-full items-center gap-3 px-6 py-3 text-left text-sm"
+						aria-expanded={planOpen}
+						onclick={() => (foldToggles = { ...foldToggles, plan: !planOpen })}
+					>
+						<span class="font-medium">{m.all_environments_count({ count: planEnvironments.length })}</span>
+						{#if planOfflineCount > 0}
+							<span class="text-xs text-warning">{m.environments_update_all_legend_skipped({ count: planOfflineCount })}</span>
+						{/if}
+						<ArrowRightIcon class={cn('ml-auto size-3.5 text-muted-foreground transition-transform', planOpen && 'rotate-90')} />
+					</button>
+					{#if planOpen}
+						<div class="max-h-56 overflow-y-auto px-6 pb-1" transition:slide={{ duration: 200 }}>
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="text-left text-xs text-muted-foreground">
+										<th class="pb-2 font-normal">{m.agent()}</th>
+										<th class="pb-2 text-right font-normal">{m.common_status()}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each planEnvironments as env (env.id)}
+										<tr class="border-t border-border/50">
+											<td class="py-2.5">
+												<span class="flex items-center gap-1.5">
+													<span class="truncate">{env.name}</span>
+													{#if env.id === MANAGER_ENVIRONMENT_ID}
+														<span class="shrink-0 rounded-xl border px-1 text-3xs text-muted-foreground">{m.manager()}</span>
+													{/if}
+												</span>
+											</td>
+											<td class="py-2.5 text-right text-xs">
+												{#if isEnvironmentOnline(env)}
+													<span class="text-muted-foreground">{m.common_online()}</span>
+												{:else}
+													<span class="text-warning">{m.environments_update_all_status_skipped_offline()}</span>
+												{/if}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			{#if versionInformation}
 				<div class="flex min-h-0 flex-1 flex-col border-t border-border/60">
@@ -329,7 +434,7 @@
 				</div>
 			{/if}
 		{:else}
-			<div class="px-6 pt-6 pb-4">
+			<div class="px-6 py-4">
 				<Dialog.Header>
 					<div class="flex items-center justify-between gap-3">
 						<div class="flex min-w-0 items-center gap-2">
@@ -367,16 +472,6 @@
 							{/if}
 						{/each}
 					</div>
-					<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
-						{#each progressSegments as segment, index (index)}
-							{#if segment.count > 0}
-								<span class="inline-flex items-center gap-1.5">
-									<span class={cn('size-1.5 rounded-full', segment.class)}></span>
-									{segment.label({ count: segment.count })}
-								</span>
-							{/if}
-						{/each}
-					</div>
 				{/if}
 
 				{#if phase === 'finished' && job?.error}
@@ -397,15 +492,51 @@
 			</div>
 
 			{#if totalCount > 0}
-				<div class="border-t border-border/60">
+				<div class="flex min-h-0 flex-col border-t border-border/60 sm:h-104 sm:flex-row">
 					<!-- Native scroller: ScrollArea's percentage-height viewport resolves to auto
 					     under a max-height-only parent, so it never clips (#3655). -->
-					<div class="max-h-96 overflow-y-auto">
-						<ul class="divide-y divide-border/50">
-							{#each orderedResults as result (result.environmentId)}
-								<UpgradeJobRow {result} />
+					<div
+						class="max-h-48 shrink-0 overflow-y-auto border-b border-border/60 p-2 sm:max-h-none sm:w-60 sm:border-r sm:border-b-0"
+					>
+						<ul>
+							{#each queueGroups as group (group.key)}
+								{#if group.results.length > 0}
+									<li>
+										{#if group.foldable}
+											<button
+												type="button"
+												class="flex w-full items-center justify-between rounded-xl px-2.5 pt-2 pb-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+												aria-expanded={group.open}
+												onclick={() => (foldToggles = { ...foldToggles, [group.key]: !group.open })}
+											>
+												{group.label({ count: group.results.length })}
+												<ArrowRightIcon class={cn('size-3.5 transition-transform', group.open && 'rotate-90')} />
+											</button>
+										{:else}
+											<span class="block px-2.5 pt-2 pb-1 text-xs text-muted-foreground tabular-nums">
+												{group.label({ count: group.results.length })}
+											</span>
+										{/if}
+										{#if group.open}
+											<ul transition:slide={{ duration: 200 }}>
+												{#each group.results as result (result.environmentId)}
+													<UpgradeQueueRow
+														{result}
+														selected={result.environmentId === selectedResult?.environmentId}
+														onselect={() => (pinnedId = result.environmentId)}
+													/>
+												{/each}
+											</ul>
+										{/if}
+									</li>
+								{/if}
 							{/each}
 						</ul>
+					</div>
+					<div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+						{#if selectedResult}
+							<UpgradeJobDetail result={selectedResult} />
+						{/if}
 					</div>
 				</div>
 			{:else}
@@ -418,6 +549,7 @@
 
 		<Dialog.Footer>
 			{#if phase === 'confirm'}
+				<p class="text-xs text-muted-foreground sm:mr-auto sm:self-center">{m.manager_updates_last()}</p>
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
 					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>

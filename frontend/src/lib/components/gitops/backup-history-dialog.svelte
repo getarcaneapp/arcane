@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
+	import { slide } from 'svelte/transition';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
@@ -100,7 +101,7 @@
 						</button>
 
 						{#if isSelected}
-							<div class="border-t border-border/50 bg-muted/20 px-3 py-3">
+							<div class="border-t border-border/50 bg-muted/20 px-3 py-3" transition:slide={{ duration: 200 }}>
 								{#if revision.isPending}
 									<div class="flex items-center gap-2 text-sm text-muted-foreground">
 										<Spinner class="size-4" />

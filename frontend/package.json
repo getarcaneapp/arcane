@@ -61,6 +61,7 @@
 		"formsnap": "^2.1.0",
 		"ky": "^2.2.0",
 		"marked": "^18.2.0",
+		"marked-alert": "^2.1.2",
 		"mode-watcher": "^1.1.0",
 		"runed": "^0.38.0",
 		"strip-ansi": "^7.2.0",

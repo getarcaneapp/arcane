@@ -197,6 +197,7 @@
 						class="mt-3 rounded-xl px-3 py-2"
 						label={m.sidebar_update_available()}
 						versionChip={upgradeCheck.versionChip}
+						updateCount={upgradeCheck.updateCount}
 						disabled={upgradeCheck.checkingUpgrade}
 						onclick={upgradeCheck.openDialog}
 					/>
