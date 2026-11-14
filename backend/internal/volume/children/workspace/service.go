@@ -47,7 +47,7 @@ type (
 		Events             *event.EventService
 		Locks              *concurrency.KeyedMutex
 		AcquireHelper      func(ctx context.Context, volumeName string) (string, func(), error)
-		RequireACFS        func(ctx context.Context, volumeName, containerID string) error
+		RequireACFS        func(ctx context.Context, volumeName, containerID string) (bool, error)
 		Exec               func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		HelperImage        func(ctx context.Context) (string, error)
 		BackupStorageMount func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
@@ -193,13 +193,14 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName, folderPath
 		return nil, err
 	}
 	defer cleanup()
-	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
-		return nil, requireVolumeHelperACFSErr
+	listLimit, err := s.deps.RequireACFS(ctx, volumeName, containerID)
+	if err != nil {
+		return nil, err
 	}
 	slog.DebugContext(ctx, "volume workspace helper acquired", "volume", volumeName, "containerId", containerID, "duration", time.Since(helperStartedAt))
 
 	listStartedAt := time.Now()
-	folder, err := s.listVolumeWorkspaceFolder(ctx, containerID, rel)
+	folder, err := s.listVolumeWorkspaceFolder(ctx, containerID, rel, listLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -207,11 +208,12 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName, folderPath
 	return folder, nil
 }
 
-func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, relativePath string) (*types.Workspace, error) {
+func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, relativePath string, listLimit bool) (*types.Workspace, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	maxEntries := s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxEntries")
 	workCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pipeReader, pipeWriter := io.Pipe()
@@ -228,7 +230,7 @@ func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, re
 			Options: client.ExecCreateOptions{
 				AttachStdout: true,
 				AttachStderr: true,
-				Cmd:          []string{"acfs", "list", "--root", "/volume", "--path", "/" + relativePath},
+				Cmd:          slices.Concat([]string{"acfs", "list", "--root", "/volume", "--path", "/" + relativePath}, kit.Ternary(listLimit, []string{"--limit", strconv.Itoa(maxEntries)}, nil)),
 			},
 		})
 		if execErr == nil && exitCode != 0 {
@@ -238,7 +240,7 @@ func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, re
 		done <- execErr
 	}()
 
-	folder, parseErr := decodeVolumeWorkspaceList(pipeReader, s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxEntries"), s.MaxFileSizeBytes(ctx))
+	folder, parseErr := decodeVolumeWorkspaceList(pipeReader, maxEntries, s.MaxFileSizeBytes(ctx))
 	stopped := parseErr != nil || folder.FileTreeTruncated
 	if stopped {
 		cancel()
@@ -270,7 +272,7 @@ func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relati
 		return nil, err
 	}
 	defer cleanup()
-	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
+	if _, requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
 		return nil, requireVolumeHelperACFSErr
 	}
 	stdout, stderr, err := s.deps.Exec(ctx, containerID, "", []string{
@@ -343,7 +345,7 @@ func (s *Service) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, r
 		cleanup()
 		unlock()
 	}
-	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
+	if _, requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
 		cleanupAndUnlock()
 		return nil, 0, requireVolumeHelperACFSErr
 	}
@@ -515,7 +517,7 @@ func (s *Service) UpdateVolumeWorkspace(
 		return err
 	}
 	defer cleanup()
-	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
+	if _, requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
 		return requireVolumeHelperACFSErr
 	}
 	slog.DebugContext(ctx, "volume workspace mutation helper acquired", "volume", volumeName, "containerId", containerID, "dedicated", needsBackups, "duration", time.Since(helperStartedAt))
@@ -1237,6 +1239,7 @@ func decodeVolumeWorkspaceList(source io.Reader, maxEntries int, maxFileSizeByte
 	}
 	files := make([]types.WorkspaceFileEntry, 0, min(maxEntries, 256))
 	version := 0
+	truncated := false
 	for decoder.PeekKind() != '}' {
 		name, err := decoder.ReadToken()
 		if err != nil {
@@ -1265,6 +1268,10 @@ func decodeVolumeWorkspaceList(source io.Reader, maxEntries int, maxFileSizeByte
 			if unmarshalErr := json.UnmarshalDecode(decoder, &version); unmarshalErr != nil {
 				return nil, unmarshalErr
 			}
+		case "truncated":
+			if unmarshalErr := json.UnmarshalDecode(decoder, &truncated); unmarshalErr != nil {
+				return nil, unmarshalErr
+			}
 		default:
 			if skipErr := decoder.SkipValue(); skipErr != nil {
 				return nil, skipErr
@@ -1282,5 +1289,5 @@ func decodeVolumeWorkspaceList(source io.Reader, maxEntries int, maxFileSizeByte
 		return nil, fmt.Errorf("unsupported acfs protocol %d", version)
 	}
 	slices.SortFunc(files, workspacepkg.CompareEntries)
-	return &types.Workspace{Files: files}, nil
+	return &types.Workspace{Files: files, FileTreeTruncated: truncated}, nil
 }
