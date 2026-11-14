@@ -750,6 +750,9 @@ func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB,
 	}
 	if len(grants) > 0 {
 		if err := tx.WithContext(ctx).Create(&grants).Error; err != nil {
+			if database.IsForeignKeyError(tx, err) {
+				return common.Classify(common.ErrValidation, errors.New("a permission grant references an environment that does not exist"))
+			}
 			return fmt.Errorf("failed to insert api key permissions: %w", err)
 		}
 	}
