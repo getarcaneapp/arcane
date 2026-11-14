@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "Agent CA downloaden",
   "update_all": "Alles bijwerken",
   "environments_update_all_title": "Alle agenten bijwerken",
-  "environments_update_all_message": "Hiermee wordt de nieuwste Arcane-image opgehaald en worden alle agents bijgewerkt, ongeacht of er al dan niet een update is gemeld. Agents op afstand worden eerst bijgewerkt, daarna deze manager, die alleen opnieuw wordt opgestart als er bij het ophalen een nieuwe image is gevonden. Offline agents worden overgeslagen.",
   "environments_update_all_manager_restarting": "De manager wordt opnieuw opgestart en maakt opnieuw verbinding met…",
   "environments_update_all_in_progress": "Agents bijwerken…",
   "environments_update_all_progress": "{done} van {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }
