@@ -29,6 +29,7 @@ type (
 		GlobalEnvDirectory string
 		DirPath            string
 		Content            string
+		FileName           string
 	}
 
 	SyncFile struct {
@@ -79,12 +80,18 @@ func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
 	}
 
 	composeFileName := DefaultComposeFileName
-	mode := kitfs.FilePerm
 	if existingFile := detectExistingComposeFile(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
-		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, types.StatOptions{}); statErr == nil {
-			mode = os.FileMode(entry.UnixMode).Perm()
+	}
+	if write.FileName != "" {
+		selected, _ := ComposeFileEnvSelection(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath)
+		if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+write.FileName, types.StatOptions{}); len(selected) == 0 && statErr == nil && !entry.IsDirectory {
+			composeFileName = write.FileName
 		}
+	}
+	mode := kitfs.FilePerm
+	if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, types.StatOptions{}); statErr == nil {
+		mode = os.FileMode(entry.UnixMode).Perm()
 	}
 
 	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(write.Content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {

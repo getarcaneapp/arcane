@@ -1,10 +1,6 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
-
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import { ComposeEditorWrapper } from '#lib/components/compose/index.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import type { Project, ProjectIncludeFile } from '#lib/types/project.js';
@@ -24,13 +20,7 @@
 		rootFilename?: string;
 	} = $props();
 
-	const managingSyncQuery = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.detail(environmentId, project.gitOpsManagedBy ?? 'none'),
-		queryFn: () => gitOpsSyncService.getSync(environmentId, project.gitOpsManagedBy!),
-		enabled: !!project.gitOpsManagedBy,
-		staleTime: 30_000
-	}));
-	const gitOwnsFiles = $derived(!!project.gitOpsManagedBy && managingSyncQuery.data?.mode !== 'bidirectional');
+	const gitOwnsFiles = $derived(!!project.gitOpsManagedBy && project.gitOpsSyncMode !== 'bidirectional');
 
 	const sourceContent = $derived(includeFile ? (includeFile.content ?? '') : (project.composeContent ?? ''));
 	// This component is keyed by compose source identity in the parent route, so capturing the initial source is intentional.

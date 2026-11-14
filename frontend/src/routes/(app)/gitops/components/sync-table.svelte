@@ -69,6 +69,7 @@
 		hasPermission(sync.mode === 'bidirectional' ? 'gitops:bidirectional' : 'gitops:backup', sync.environmentId);
 	const canRunPush = (sync: SyncRow) => canPush(sync) && hasPermission('gitops:sync', sync.environmentId);
 	const canEditPush = (sync: SyncRow) => canPush(sync) && hasPermission('gitops:update', sync.environmentId);
+	const canResolve = (sync: SyncRow) => (sync.mode === 'bidirectional' ? canRunPush(sync) : canPush(sync));
 
 	const isLoading = $state({
 		removing: false,
@@ -81,8 +82,8 @@
 
 	const modeOptions = [
 		{ value: '', label: m.common_all() },
-		{ value: 'deploy', label: m.deployments() },
-		{ value: 'backup', label: m.backups() },
+		{ value: 'deploy', label: m.pull() },
+		{ value: 'backup', label: m.push() },
 		{ value: 'bidirectional', label: m.pull_and_push() }
 	];
 
@@ -133,6 +134,17 @@
 				return RefreshCwIcon;
 			default:
 				return DownloadIcon;
+		}
+	}
+
+	function successMessage(sync: GitOpsSync, message: string): string {
+		switch (sync.mode) {
+			case 'backup':
+				return m.backup_completed();
+			case 'bidirectional':
+				return message || m.git_sync_success();
+			default:
+				return m.git_sync_success();
 		}
 	}
 
@@ -194,16 +206,18 @@
 	}
 
 	async function handleDisconnectBackup(sync: SyncRow) {
+		const name = sync.projectName || sync.name;
+		const bidirectional = sync.mode === 'bidirectional';
 		confirmAndRun({
-			title: m.disconnect_backup_title({ name: sync.projectName || sync.name }),
-			message: m.disconnect_backup_message(),
+			title: bidirectional ? m.disconnect_git_sync_title({ name }) : m.disconnect_backup_title({ name }),
+			message: bidirectional ? m.disconnect_git_sync_message() : m.disconnect_backup_message(),
 			confirmLabel: m.common_disconnect(),
 			destructive: true,
 			setLoading: (loading) => (isLoading.removing = loading),
 			run: () => gitOpsSyncService.deleteSync(sync.environmentId, sync.id),
-			failureMessage: m.disconnect_backup_failed(),
+			failureMessage: bidirectional ? m.disconnect_git_sync_failed() : m.disconnect_backup_failed(),
 			onSuccess: async () => {
-				toast.success(m.disconnect_backup_success());
+				toast.success(bidirectional ? m.disconnect_git_sync_success() : m.disconnect_backup_success());
 				await invalidateSyncs();
 			}
 		});
@@ -216,8 +230,8 @@
 			result,
 			message: isBackup(sync) ? m.backup_failed() : m.git_sync_failed(),
 			setLoadingState: () => {},
-			onSuccess: async () => {
-				toast.success(isBackup(sync) ? m.backup_completed() : m.git_sync_success());
+			onSuccess: async (data) => {
+				toast.success(successMessage(sync, data.message));
 				await invalidateSyncs();
 			}
 		});
@@ -366,20 +380,9 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: SyncRow })}
-	{#if isBackup(item)}
+	{#if pushesToGit(item)}
 		<BackupStateBadge sync={item} />
-	{:else if item.mode === 'bidirectional'}
-		<span class="inline-flex items-center gap-1.5">
-			{@render DeployStatus(item)}
-			<BackupStateBadge sync={item} />
-		</span>
-	{:else}
-		{@render DeployStatus(item)}
-	{/if}
-{/snippet}
-
-{#snippet DeployStatus(item: SyncRow)}
-	{#if item.lastSyncStatus === 'success'}
+	{:else if item.lastSyncStatus === 'success'}
 		<Badge variant="green" minWidth="20">{m.common_success()}</Badge>
 	{:else if item.lastSyncStatus === 'failed'}
 		<Badge variant="red" minWidth="20">{m.common_failed()}</Badge>
@@ -478,7 +481,7 @@
 				show: mobileFieldVisibility['composePath'] ?? true
 			},
 			{
-				label: m.backup_state(),
+				label: item.mode === 'bidirectional' ? m.git_sync_status() : m.backup_state(),
 				getValue: (item: SyncRow) => item,
 				type: 'component' as const,
 				component: BackupStateField,
@@ -543,7 +546,7 @@
 					{m.history()}
 				</DropdownMenu.Item>
 
-				{#if item.backupState === 'needs_attention' && canPush(item)}
+				{#if item.backupState === 'needs_attention' && canResolve(item)}
 					<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
 						<AlertIcon class="size-4" />
 						{m.resolve()}
@@ -556,8 +559,14 @@
 				{m.common_edit()}
 			</DropdownMenu.Item>
 
-			{#if canDelete(item) && (!pushesToGit(item) || canPush(item))}
+			{#if canDelete(item) && !pushesToGit(item)}
 				<RemoveMenuItem onclick={() => handleDeleteOne(item)} disabled={isLoading.removing} />
+			{:else if canDelete(item) && canPush(item)}
+				<RemoveMenuItem
+					onclick={() => handleDisconnectBackup(item)}
+					disabled={isLoading.removing}
+					label={m.common_disconnect()}
+				/>
 			{/if}
 		{/if}
 	</RowActionsMenu>

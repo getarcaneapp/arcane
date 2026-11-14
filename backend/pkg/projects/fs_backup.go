@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/acfs/types"
@@ -125,6 +126,19 @@ func backupScopePath(ctx context.Context, projRoot, backupRoot acfs.Root, rel st
 		}
 		backup.AbsentEntries = append(backup.AbsentEntries, absent)
 		return nil
+	}
+	if errors.Is(err, syscall.ENOTDIR) {
+		blocker := path.Dir(rel)
+		for blocker != "." {
+			if _, statErr := projRoot.Stat(ctx, "/"+blocker, types.StatOptions{}); statErr == nil {
+				break
+			}
+			blocker = path.Dir(blocker)
+		}
+		if blocker == "." || slices.Contains(backup.FileEntries, blocker) {
+			return nil
+		}
+		return backupScopePath(ctx, projRoot, backupRoot, blocker, backup)
 	}
 	if err != nil {
 		return fmt.Errorf("inspect project path %s: %w", rel, err)

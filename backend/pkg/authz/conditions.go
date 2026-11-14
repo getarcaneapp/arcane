@@ -72,6 +72,25 @@ var (
 		},
 	}
 
+	GitOpsBackupResolveConditions = PermissionConditions{
+		{
+			In:         ConditionInResource,
+			Field:      "mode",
+			Value:      types.GitOpsSyncModeBackup,
+			Permission: PermGitOpsBackup,
+		}, {
+			In:         ConditionInResource,
+			Field:      "mode",
+			Value:      types.GitOpsSyncModeBidirectional,
+			Permission: PermGitOpsBidirectional,
+		}, {
+			In:         ConditionInResource,
+			Field:      "mode",
+			Value:      types.GitOpsSyncModeBidirectional,
+			Permission: PermGitOpsSync,
+		},
+	}
+
 	GitOpsRemoveStackConditions = PermissionConditions{
 		{
 			In:         ConditionInQuery,

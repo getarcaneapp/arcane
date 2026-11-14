@@ -253,7 +253,7 @@ type (
 	}
 
 	GitOpsResolveBackupConflictRequest struct {
-		Strategy string `json:"strategy" binding:"required,oneof=use_arcane"`
+		Strategy string `json:"strategy" binding:"required,oneof=use_arcane use_repository" enum:"use_arcane,use_repository"`
 	}
 )
 
@@ -278,6 +278,7 @@ const (
 	GitOpsBackupFailureDestinationOccupied                  = "destination_occupied"
 	GitOpsBackupFailurePushRejected                         = "push_rejected"
 	GitOpsBackupConflictUseArcane                           = "use_arcane"
+	GitOpsBackupConflictUseRepository                       = "use_repository"
 	FileTreeNodeTypeFile                   FileTreeNodeType = "file"
 	FileTreeNodeTypeDirectory              FileTreeNodeType = "directory"
 )

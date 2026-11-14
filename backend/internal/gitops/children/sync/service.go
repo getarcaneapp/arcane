@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -81,6 +82,9 @@ type (
 	}
 
 	PullRequest struct {
+		Sync     *projectpkg.GitOpsSync
+		Actor    types.Actor
+		Result   *types.GitOpsSyncResult
 		Expected map[string]string
 		Commit   string
 		Files    []projects.SyncFile
@@ -98,9 +102,6 @@ type (
 		UnregisterJob  func(context.Context, string)
 	}
 )
-
-// reservedRootEnvFiles are the project-root env files the override merge owns; git never writes them raw.
-var reservedRootEnvFiles = []string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName}
 
 func New(p Params) *Service {
 	return &Service{
@@ -155,8 +156,21 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 	return s.deliver(ctx, stageCtx, sync, actor, result, source, syncFiles)
 }
 
-func (s *Service) Pull(ctx, stageCtx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, req PullRequest) (*types.GitOpsSyncResult, error) {
-	return s.deliver(ctx, stageCtx, sync, actor, result, &preparedSyncSource{commitHash: req.Commit, pull: &req}, req.Files)
+func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (*types.GitOpsSyncResult, error) {
+	if len(req.Files) == 0 && len(req.Removed) == 0 && !req.Sync.PendingRedeploy && req.Sync.EnvContent == nil {
+		req.Result.Success = true
+		req.Result.Message = "No repository changes to pull"
+		return req.Result, nil
+	}
+	run, _ := jobcontext.Run(ctx)
+	source := &preparedSyncSource{
+		commitHash: req.Commit,
+		pull:       &req,
+		replay: slices.ContainsFunc(run.Outcome.Targets, func(recorded types.TargetOutcome) bool {
+			return recorded.ID == req.Sync.ID+":deploy"
+		}),
+	}
+	return s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
 }
 
 func (s *Service) deliver(
@@ -194,7 +208,7 @@ func (s *Service) deliver(
 	}
 
 	if project != nil && (changed || source.replay || pendingBefore) {
-		if err = s.deployOnce(ctx, sync, project, actor, source.replay); err != nil {
+		if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
 			// The files reached disk, so the row keeps their revision and list.
 			errMsg := err.Error()
 			result.Message = "Sync wrote files but redeploy failed"
@@ -289,20 +303,30 @@ func (s *Service) syncTarget(
 	return project, syncedFiles, changed, nil
 }
 
-func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor, replay bool) error {
-	target := types.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: types.RunStatusRunning}
+func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor, source *preparedSyncSource) error {
+	revision, err := json.Marshal(syncRevision{Commit: source.commitHash})
+	if err != nil {
+		return err
+	}
+	target := types.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: types.RunStatusRunning, RecoveryData: revision}
 	previous, _ := jobcontext.Run(ctx)
-	if index := slices.IndexFunc(previous.Outcome.Targets, func(recorded types.TargetOutcome) bool { return recorded.ID == target.ID }); replay && index >= 0 {
-		switch previous.Outcome.Targets[index].Status {
-		case types.RunStatusSucceeded:
-			return nil
-		case types.RunStatusRunning:
+	if index := slices.IndexFunc(previous.Outcome.Targets, func(recorded types.TargetOutcome) bool { return recorded.ID == target.ID }); source.replay && index >= 0 {
+		recorded := previous.Outcome.Targets[index]
+		deployed := syncRevision{Commit: source.commitHash}
+		if len(recorded.RecoveryData) > 0 {
+			if decodeErr := json.Unmarshal(recorded.RecoveryData, &deployed); decodeErr != nil {
+				return decodeErr
+			}
+		}
+		switch {
+		case recorded.Status == types.RunStatusRunning:
 			return errors.New("the interrupted deploy may already have run its lifecycle hooks; redeploy the project to finish it")
-		default:
+		case recorded.Status == types.RunStatusSucceeded && deployed.Commit == source.commitHash:
+			return nil
 		}
 	}
-	if err := jobcontext.Progress(ctx, target); err != nil {
-		return err
+	if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
+		return progressErr
 	}
 	deployErr := s.redeployIfRunningAfterSync(ctx, sync, project, actor)
 	// Interrupted mid-deploy, its effects are unknown, so the deploy stays running for the replay to refuse.
@@ -579,10 +603,10 @@ func (s *Service) syncProjectDirectory(
 		// Older syncs may still track .env, which cleanup would delete from the stage before the env merge reads it.
 		oldSyncedFiles: slices.DeleteFunc(
 			kit.Ternary(pull != nil, kit.FromPtr(pull).Removed, sync.SyncedFileList()),
-			func(path string) bool { return slices.Contains(reservedRootEnvFiles, path) },
+			func(path string) bool { return slices.Contains(projects.ReservedRootEnvFiles, path) },
 		),
 		expected:        kit.FromPtr(pull).Expected,
-		contentsChanged: true,
+		contentsChanged: pull == nil || len(pull.Files) > 0 || len(pull.Removed) > 0,
 		partial:         pull != nil,
 	}
 	// The stage must go even after ctx was cancelled: acfs refuses work on a cancelled context.
@@ -595,7 +619,7 @@ func (s *Service) syncProjectDirectory(
 	// Reserved root env files are Arcane's bookkeeping and only come from the env merge, which takes a committed .env as its git source.
 	for _, file := range syncFiles {
 		switch {
-		case !slices.Contains(reservedRootEnvFiles, file.RelativePath):
+		case !slices.Contains(projects.ReservedRootEnvFiles, file.RelativePath):
 			stage.syncFiles = append(stage.syncFiles, file)
 			stage.syncedFiles = append(stage.syncedFiles, file.RelativePath)
 		case file.RelativePath == projects.EffectiveEnvFileName:
@@ -871,6 +895,16 @@ func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, sta
 			return "", "", fmt.Errorf("failed to clean removed synced files: %w", err)
 		}
 	}
+	if stage.partial {
+		for _, removed := range stage.oldSyncedFiles {
+			if slices.Contains(stage.syncedFiles, removed) {
+				continue
+			}
+			if _, statErr := (acfs.Root{Path: targetPath}).Stat(ctx, "/"+removed, acfstypes.StatOptions{}); statErr == nil {
+				return "", "", fmt.Errorf("failed to remove %s from the project", removed)
+			}
+		}
+	}
 
 	if !stage.partial {
 		if err := projects.RemoveStaleComposeFiles(ctx, targetPath, stage.composeFileName, stage.syncedFiles); err != nil {
@@ -1038,9 +1072,25 @@ func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectp
 
 func verifyPullExpectations(ctx context.Context, projectPath string, expected map[string]string) error {
 	var changed []string
+	root := acfs.Root{Path: projectPath}
+	visit := func(child acfstypes.Entry) error {
+		if _, planned := expected[strings.TrimPrefix(child.Path, "/")]; !child.IsDirectory && !planned {
+			changed = append(changed, strings.TrimPrefix(child.Path, "/"))
+		}
+		return nil
+	}
 	for file, hash := range expected {
-		content, err := acfs.Root{Path: projectPath}.ReadFile(ctx, "/"+file)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		content, err := root.ReadFile(ctx, "/"+file)
+		switch {
+		case errors.Is(err, acfs.ErrIsDirectory):
+			if _, walkErr := root.Walk(ctx, "/"+file, acfstypes.WalkOptions{}, visit); walkErr != nil {
+				return fmt.Errorf("failed to inspect %s before pulling: %w", file, walkErr)
+			}
+		case errors.Is(err, syscall.ENOTDIR):
+			if !plannedAncestor(expected, file) {
+				changed = append(changed, file)
+			}
+		case err != nil && !errors.Is(err, fs.ErrNotExist):
 			return fmt.Errorf("failed to re-read %s before pulling: %w", file, err)
 		}
 		if kit.Ternary(err == nil, kit.SHA256Hex(content), "") != hash {
@@ -1049,9 +1099,20 @@ func verifyPullExpectations(ctx context.Context, projectPath string, expected ma
 	}
 	if len(changed) > 0 {
 		slices.Sort(changed)
+		changed = slices.Compact(changed)
 		return common.Classify(common.ErrConflict, fmt.Errorf("project files changed while repository changes were being pulled: %s", strings.Join(changed, ", ")))
 	}
 	return nil
+}
+
+func plannedAncestor(expected map[string]string, file string) bool {
+	segments := strings.Split(file, "/")
+	for depth := 1; depth < len(segments); depth++ {
+		if _, planned := expected[strings.Join(segments[:depth], "/")]; planned {
+			return true
+		}
+	}
+	return false
 }
 
 func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath string) (projects.ProjectEnvState, error) {

@@ -2,7 +2,6 @@ import type { QueryClient } from '@tanstack/svelte-query';
 
 import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
 import { queryKeys } from '#lib/query/query-keys.js';
-import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 import { projectService } from '#lib/services/project-service.js';
 import { variableService } from '#lib/services/variable-service.js';
 import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
@@ -46,17 +45,6 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	}
 
 	void queryClient.prefetchQuery(projectWorkspaceFolderQuery(envId, params.projectId, ''));
-
-	const managingSyncId = project.gitOpsManagedBy;
-	if (managingSyncId) {
-		await tryCatch(
-			queryClient.query({
-				queryKey: queryKeys.gitOpsSyncs.detail(envId, managingSyncId),
-				queryFn: () => gitOpsSyncService.getSync(envId, managingSyncId),
-				staleTime: 30_000
-			})
-		);
-	}
 
 	const { globalVariables, globalVariablesError } = userHasPermission(user, 'variables:list')
 		? await loadGlobalVariables(queryClient)

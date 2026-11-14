@@ -27,6 +27,7 @@ type (
 		ProjectName       string
 		ProjectsDirectory string
 		ProjectRoot       string
+		ComposeFileName   string
 	}
 
 	GitSyncEnvUpdate struct {
@@ -201,6 +202,7 @@ func PersistUpdatedProjectFiles(ctx context.Context, req ProjectFilesUpdate) err
 			GlobalEnvDirectory: req.ProjectsDirectory,
 			DirPath:            req.ProjectPath,
 			Content:            *req.ComposeContent,
+			FileName:           req.ComposeFileName,
 		}); writeErr != nil {
 			return fmt.Errorf("failed to save project files: %w", writeErr)
 		}

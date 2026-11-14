@@ -167,8 +167,10 @@ export interface GitOpsBackupRevision {
 	diffs: GitOpsBackupFileDiff[];
 }
 
+export type GitOpsResolveBackupConflictStrategy = 'use_arcane' | 'use_repository';
+
 export interface GitOpsResolveBackupConflictRequest {
-	strategy: 'use_arcane';
+	strategy: GitOpsResolveBackupConflictStrategy;
 }
 
 export interface GitRepositoryTestResponse {

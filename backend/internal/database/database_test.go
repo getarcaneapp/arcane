@@ -356,6 +356,9 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
+		if permission == authz.PermGitOpsBidirectional {
+			continue
+		}
 		id := fmt.Sprintf("c%d", i)
 		catalogRoles[id] = permission
 		_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES (?, ?, ?)`, id, "Catalog "+id, `["`+permission+`"]`)
@@ -438,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 102))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 115))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -462,6 +465,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
+		"gitops:backup",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -839,6 +843,40 @@ func TestMigration114_AddsImageUpdateBlocked(t *testing.T) {
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 113))
 	assert.Zero(t, blockedColumns())
+}
+
+func TestMigration115_GrantsGitOpsBidirectional(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-gitops-bidirectional.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 114))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('m1', 'Pusher', '["gitops:list","gitops:read","gitops:backup"]'),
+		('m2', 'Reader', '["gitops:list","gitops:read"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('mk1', 'Pusher key', 'hash-mk1', 'mk1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES ('mp1', 'mk1', 'gitops:backup')`)
+	require.NoError(t, err)
+	granted := func() (string, string, int) {
+		var pusher, reader string
+		var keyGrants int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'm1'`).Scan(&pusher))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'm2'`).Scan(&reader))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'mk1' AND permission = 'gitops:bidirectional'`).Scan(&keyGrants))
+		return pusher, reader, keyGrants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 115))
+	pusher, reader, keyGrants := granted()
+	assert.JSONEq(t, `["gitops:list","gitops:read","gitops:backup","gitops:bidirectional"]`, pusher)
+	assert.JSONEq(t, `["gitops:list","gitops:read"]`, reader)
+	assert.Equal(t, 1, keyGrants)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 114))
+	pusher, reader, keyGrants = granted()
+	assert.JSONEq(t, `["gitops:list","gitops:read","gitops:backup"]`, pusher)
+	assert.JSONEq(t, `["gitops:list","gitops:read"]`, reader)
+	assert.Zero(t, keyGrants)
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
