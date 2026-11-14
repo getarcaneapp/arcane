@@ -250,6 +250,41 @@ func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, action
 	return nil
 }
 
+func (s *WebhookService) authorizeGitOpsSyncMode(ctx context.Context, callerPerms *authz.PermissionSet, environmentID, syncID string) error {
+	mode, err := s.gitOpsSyncMode(ctx, environmentID, syncID)
+	if err != nil {
+		return err
+	}
+	for _, permission := range authz.GitOpsSyncModeConditions.Required("mode", mode) {
+		if !callerPerms.Allows(permission, environmentID) {
+			return ErrWebhookForbidden
+		}
+	}
+	return nil
+}
+
+func (s *WebhookService) gitOpsSyncMode(ctx context.Context, environmentID, syncID string) (string, error) {
+	if environmentID != "" && environmentID != types.LocalDockerEnvironmentID {
+		var out types.ApiResponse[types.GitOpsSync]
+		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/agents/"+types.LocalDockerEnvironmentID+"/gitops/syncs/"+url.PathEscape(syncID), nil, &out); err != nil {
+			return "", fmt.Errorf("failed to load gitops sync: %w", err)
+		}
+		return out.Data.Mode, nil
+	}
+	var localSync project.GitOpsSync
+	err := s.db.WithContext(ctx).
+		Select("mode").
+		Where("id = ? AND environment_id = ?", syncID, cmp.Or(environmentID, types.LocalDockerEnvironmentID)).
+		First(&localSync).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", common.Classify(common.ErrNotFound, errors.New("gitops sync not found"))
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to load gitops sync: %w", err)
+	}
+	return localSync.Mode, nil
+}
+
 func resolvedWebhookActionType(targetType, actionType string) string {
 	resolvedActionType, err := resolveWebhookActionType(targetType, actionType)
 	if err != nil {
@@ -286,6 +321,11 @@ func (s *WebhookService) CreateWebhook(
 		targetID = ""
 	} else if strings.TrimSpace(targetID) == "" {
 		return nil, "", ErrWebhookMissingTarget
+	}
+	if targetType == WebhookTargetTypeGitOps {
+		if modeErr := s.authorizeGitOpsSyncMode(ctx, callerPerms, environmentID, targetID); modeErr != nil {
+			return nil, "", modeErr
+		}
 	}
 
 	// Container references can only be resolved against the local Docker daemon;
@@ -550,6 +590,11 @@ func (s *WebhookService) UpdateWebhook(
 	}
 
 	enabled := kit.Ternary(submitted["enabled"], update.Enabled, wh.Enabled)
+	if enabled && wh.TargetType == WebhookTargetTypeGitOps {
+		if modeErr := s.authorizeGitOpsSyncMode(ctx, callerPerms, wh.EnvironmentID, wh.TargetID); modeErr != nil {
+			return nil, modeErr
+		}
+	}
 	if updateWebhookErr := s.db.WithContext(ctx).Model(&wh).Update("enabled", enabled).Error; updateWebhookErr != nil {
 		return nil, fmt.Errorf("failed to update webhook: %w", updateWebhookErr)
 	}

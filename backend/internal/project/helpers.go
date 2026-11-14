@@ -26,9 +26,9 @@ type (
 	}
 
 	projectMetadataEnv struct {
-		settings           *settings.Settings
-		gitOpsComposePaths map[string]string
-		pathMapper         func() *projects.PathMapper
+		settings    *settings.Settings
+		gitOpsSyncs map[string]GitOpsSync
+		pathMapper  func() *projects.PathMapper
 
 		composeFiles      map[string]string
 		projectsDirectory string

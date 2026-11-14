@@ -351,19 +351,19 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 		slog.WarnContext(ctx, "failed to resolve projects directories for listing", "error", rootsErr)
 	}
 	env := &projectMetadataEnv{
-		projectsDirectory:  projectsDirectory,
-		projectsRoots:      roots,
-		autoInjectEnv:      s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
-		settings:           s.settingsService.GetSettingsOrDefaults(ctx),
-		gitOpsComposePaths: make(map[string]string),
-		pathMapper:         sync.OnceValue(func() *projects.PathMapper { return s.projectPathMapper(ctx) }),
-		composeFiles:       make(map[string]string, len(projectsList)),
+		projectsDirectory: projectsDirectory,
+		projectsRoots:     roots,
+		autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
+		settings:          s.settingsService.GetSettingsOrDefaults(ctx),
+		gitOpsSyncs:       make(map[string]GitOpsSync),
+		pathMapper:        sync.OnceValue(func() *projects.PathMapper { return s.projectPathMapper(ctx) }),
+		composeFiles:      make(map[string]string, len(projectsList)),
 	}
-	s.preloadGitOpsComposePaths(ctx, env, projectsList)
+	s.preloadGitOpsSyncs(ctx, env, projectsList)
 	return env
 }
 
-func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
+func (s *ProjectService) preloadGitOpsSyncs(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
 		if id := strings.TrimSpace(kit.FromPtr((&proj).GitOpsManagedBy)); id != "" {
@@ -374,16 +374,16 @@ func (s *ProjectService) preloadGitOpsComposePaths(ctx context.Context, env *pro
 		return
 	}
 	var syncRecords []GitOpsSync
-	if err := s.db.WithContext(ctx).Select("id", "compose_path").Where("id IN ?", syncIDs).Find(&syncRecords).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("id", "compose_path", "mode").Where("id IN ?", syncIDs).Find(&syncRecords).Error; err != nil {
 		// Unloaded IDs fall back to a per-project lookup that surfaces the failure.
 		slog.WarnContext(ctx, "failed to batch resolve GitOps compose paths", "error", err)
 		return
 	}
 	for _, id := range syncIDs {
-		env.gitOpsComposePaths[id] = ""
+		env.gitOpsSyncs[id] = GitOpsSync{}
 	}
 	for _, record := range syncRecords {
-		env.gitOpsComposePaths[record.ID] = record.ComposePath
+		env.gitOpsSyncs[record.ID] = record
 	}
 }
 
@@ -806,9 +806,9 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 		return "", errors.New("project is nil")
 	}
 	return env.composeFile(proj.ID, func() (string, error) {
-		projectsDirectory, preloadedComposePaths := func() (string, map[string]string) {
+		projectsDirectory, preloadedSyncs := func() (string, map[string]GitOpsSync) {
 			if env != nil {
-				return env.projectsDirectory, env.gitOpsComposePaths
+				return env.projectsDirectory, env.gitOpsSyncs
 			}
 			dir, dirErr := s.GetProjectsDirectory(ctx)
 			if dirErr != nil {
@@ -828,8 +828,8 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 			if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) == "" {
 				return "", nil
 			}
-			if preloaded, ok := preloadedComposePaths[strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))]; ok {
-				return preloaded, nil
+			if preloaded, ok := preloadedSyncs[strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy))]; ok {
+				return preloaded.ComposePath, nil
 			}
 			var syncRecord GitOpsSync
 			if err := s.db.WithContext(ctx).
@@ -2113,6 +2113,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		Name:                  proj.Name,
 		GitRepositoryURL:      kit.FromPtr(syncRecord.Repository).URL,
 		GitRepositoryProvider: kit.FromPtr(syncRecord.Repository).Provider,
+		GitOpsSyncMode:        syncRecord.Mode,
 		IconLightURL:          icon.IconLightURL,
 		RelativePath:          listing.RelativePath(projectRoot, proj.Path),
 		ProjectsRoot:          projectRoot,
@@ -2254,6 +2255,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			Name:                  d.Name,
 			GitRepositoryURL:      d.GitRepositoryURL,
 			GitRepositoryProvider: d.GitRepositoryProvider,
+			GitOpsSyncMode:        env.gitOpsSyncs[strings.TrimSpace(kit.FromPtr(d.GitOpsManagedBy))].Mode,
 			IconLightURL:          d.IconLightURL,
 			RelativePath:          d.RelativePath,
 			ProjectsRoot:          d.ProjectsRoot,
@@ -2507,7 +2509,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		}
 	}
 	if updatesFilter != "" {
-		s.preloadGitOpsComposePaths(ctx, env, projectsArray)
+		s.preloadGitOpsSyncs(ctx, env, projectsArray)
 		items = s.enrichProjectsWithUpdateInfo(ctx, projectsArray, items, true, env)
 		// Untracked compose projects only join an unfiltered-by-tag has_update view.
 		if strings.EqualFold(updatesFilter, "has_update") && strings.TrimSpace(params.Filters["tags"]) == "" {
@@ -2545,7 +2547,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		pageDetails = append(pageDetails, result.Items[i])
 	}
 	if updatesFilter == "" {
-		s.preloadGitOpsComposePaths(ctx, env, pageProjects)
+		s.preloadGitOpsSyncs(ctx, env, pageProjects)
 		pageDetails = s.enrichProjectsWithUpdateInfo(ctx, pageProjects, pageDetails, true, env)
 	}
 	metas := make([]projects.ArcaneComposeMetadata, len(pageProjects))

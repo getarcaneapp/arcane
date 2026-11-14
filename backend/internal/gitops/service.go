@@ -121,7 +121,7 @@ type (
 		EnvironmentID string
 		SyncID        string
 		Actor         types.Actor
-		BackupAdopt   bool
+		Resolve       string
 	}
 )
 
@@ -133,14 +133,19 @@ const (
 	gitOpsSyncAdmissionScope   = "gitops-sync"
 )
 
-var syncRuns = func() metric.Int64Counter {
-	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
-		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
+var (
+	errBidirectionalOverride    = errors.New("a compose override path cannot be set on a bidirectional sync")
+	errBidirectionalBinaryLimit = errors.New("the binary size limit does not apply to a bidirectional sync and must be 0")
+
+	syncRuns = func() metric.Int64Counter {
+		counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+			metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
+		if err != nil {
+			otel.Handle(err)
+		}
+		return counter
+	}()
+)
 
 // validateSwarmStackName rejects a stack sync whose name Docker Swarm would refuse at deploy time.
 func validateSwarmStackName(targetType, stackName string) error {
@@ -529,6 +534,10 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\" or \"bidirectional\"")})
 	case mode == types.GitOpsSyncModeBidirectional && change.Request.TargetType != "" && change.Request.TargetType != "project":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "targetType", Err: errors.New("a bidirectional sync must target a project")})
+	case mode == types.GitOpsSyncModeBidirectional && strings.TrimSpace(change.Request.ComposeOverridePath) != "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composeOverridePath", Err: errBidirectionalOverride})
+	case mode == types.GitOpsSyncModeBidirectional && change.Submitted["maxSyncBinarySize"] && change.Request.MaxSyncBinarySize != 0:
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncBinarySize", Err: errBidirectionalBinaryLimit})
 	case mode == types.GitOpsSyncModeBackup &&
 		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
 			change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync ||
@@ -585,7 +594,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		RedeployAfterSync:    change.Request.RedeployAfterSync,
 		MaxSyncFiles:         kit.Ternary(change.Submitted["maxSyncFiles"], change.Request.MaxSyncFiles, defaultMaxFiles),
 		MaxSyncTotalSize:     kit.Ternary(change.Submitted["maxSyncTotalSize"], change.Request.MaxSyncTotalSize, defaultMaxTotalSize),
-		MaxSyncBinarySize:    kit.Ternary(change.Submitted["maxSyncBinarySize"], change.Request.MaxSyncBinarySize, defaultMaxBinarySize),
+		MaxSyncBinarySize:    kit.Ternary(change.Submitted["maxSyncBinarySize"] || mode == types.GitOpsSyncModeBidirectional, change.Request.MaxSyncBinarySize, defaultMaxBinarySize),
 		BackupOnSave:         true,
 		PreDeployScriptPath:  nullableTrimmedString(change.Request.PreDeployScriptPath),
 		PreDeployRunnerImage: nullableTrimmedString(change.Request.PreDeployRunnerImage),
@@ -725,6 +734,10 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			change.Submitted["composePath"] && change.Request.ComposePath != syncRecord.ComposePath ||
 			change.Submitted["projectName"] && change.Request.ProjectName != syncRecord.ProjectName):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("the project, target, and compose path of a bidirectional sync cannot be changed")})
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional && change.Submitted["composeOverridePath"] && strings.TrimSpace(change.Request.ComposeOverridePath) != "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composeOverridePath", Err: errBidirectionalOverride})
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional && change.Submitted["maxSyncBinarySize"] && change.Request.MaxSyncBinarySize != 0:
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncBinarySize", Err: errBidirectionalBinaryLimit})
 	}
 	// Only checked when the name or target changes, so unrelated edits to an existing sync still save.
 	if change.Submitted["targetType"] || change.Submitted["projectName"] {
@@ -971,7 +984,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	}
 
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
-		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.BackupAdopt})
+		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
 	}
 	if syncRecord.Mode == types.GitOpsSyncModeBidirectional {
 		return s.performBidirectional(ctx, syncCtx, syncRecord, req, result)
@@ -981,40 +994,55 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 }
 
 func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, syncRecord *projectpkg.GitOpsSync, req SyncRequest, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
-	if req.BackupAdopt || syncRecord.BackupSnapshot() == nil {
-		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.BackupAdopt})
-	}
 	pulled := result
 	var pullErr error
 	for range backup.BackupSnapshotMaxRetry {
-		plan, err := s.backup.Plan(syncCtx, syncRecord, req.Actor, result)
+		plan, err := s.backup.Plan(syncCtx, backup.PlanRequest{
+			Sync:     syncRecord,
+			Actor:    req.Actor,
+			Result:   result,
+			Strategy: req.Resolve,
+		})
 		if err != nil {
 			return result, err
 		}
-		if len(plan.Files) == 0 && len(plan.Removed) == 0 && !syncRecord.PendingRedeploy {
-			return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
-		}
-		pulled, pullErr = s.sync.Pull(ctx, syncCtx, syncRecord, req.Actor, &types.GitOpsSyncResult{SyncedAt: result.SyncedAt}, gitopssync.PullRequest{
+		pulled, pullErr = s.sync.Pull(ctx, syncCtx, gitopssync.PullRequest{
+			Sync:     syncRecord,
+			Actor:    req.Actor,
+			Result:   &types.GitOpsSyncResult{SyncedAt: result.SyncedAt},
 			Expected: plan.Expected,
 			Commit:   plan.Commit,
 			Files:    plan.Files,
 			Removed:  plan.Removed,
 		})
-		if errors.Is(pullErr, common.ErrConflict) {
+		switch {
+		case errors.Is(pullErr, common.ErrRedeployAfterSyncFailed):
+		case errors.Is(pullErr, common.ErrConflict):
 			continue
-		}
-		if pullErr != nil {
+		case pullErr != nil:
 			return pulled, pullErr
 		}
-		pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Baseline: plan.Baseline})
+		if recordErr := s.backup.RecordPull(syncCtx, backup.RecordPullRequest{
+			Sync:   syncRecord,
+			Actor:  req.Actor,
+			Result: result,
+			Plan:   plan,
+		}); recordErr != nil {
+			return result, errors.Join(pullErr, recordErr)
+		}
+		pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{
+			Baseline:  plan.Baseline,
+			RunFailed: pullErr != nil,
+		})
 		if err != nil {
-			return pushed, err
+			return pushed, errors.Join(pullErr, err)
 		}
 		return &types.GitOpsSyncResult{
 			SyncedAt: pushed.SyncedAt,
 			Message:  pulled.Message + "; " + pushed.Message,
-			Success:  pushed.Success,
-		}, nil
+			Success:  pushed.Success && pullErr == nil,
+			Error:    pulled.Error,
+		}, pullErr
 	}
 	return pulled, pullErr
 }
@@ -1290,18 +1318,21 @@ func (r *backupRuntime) cancel(syncID string) {
 }
 
 func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req types.GitOpsResolveBackupConflictRequest, actor types.Actor) (*types.GitOpsSyncResult, error) {
-	if req.Strategy != types.GitOpsBackupConflictUseArcane {
+	if req.Strategy != types.GitOpsBackupConflictUseArcane && req.Strategy != types.GitOpsBackupConflictUseRepository {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
 	}
 	syncRecord, err := s.getBackupSync(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
+	if req.Strategy == types.GitOpsBackupConflictUseRepository && syncRecord.Mode != types.GitOpsSyncModeBidirectional {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: errors.New("only a bidirectional sync can take the repository version")})
+	}
 	return s.PerformSync(ctx, SyncRequest{
 		EnvironmentID: syncRecord.EnvironmentID,
 		SyncID:        syncRecord.ID,
 		Actor:         actor,
-		BackupAdopt:   true,
+		Resolve:       req.Strategy,
 	})
 }
 

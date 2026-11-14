@@ -58,13 +58,27 @@ func newHistoryCmd() *cobra.Command {
 func newResolveCmd() *cobra.Command {
 	var opts resolveOptions
 	cmd := &cobra.Command{
-		Use:          "resolve <sync-id|name>",
-		Short:        "Resolve a push conflict that needs attention",
+		Use:   "resolve <sync-id|name>",
+		Short: "Resolve a push conflict that needs attention",
+		Long: "Resolve a conflict on a gitops sync that pushes to Git.\n\n" +
+			"use_arcane keeps the Arcane copies of the conflicting files and pushes them to Git.\n" +
+			"use_repository replaces the conflicting project files with the repository copies (bidirectional syncs only).\n" +
+			"On a bidirectional sync, files changed on only one side merge normally with either strategy.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE:         opts.run,
 	}
-	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.strategy, "strategy", "", types.GitOpsBackupConflictUseArcane, "How to resolve the conflict", types.GitOpsBackupConflictUseArcane)
+	cmdutil.EnumVarP(
+		cmd,
+		cmd.Flags(),
+		&opts.strategy,
+		"strategy",
+		"",
+		types.GitOpsBackupConflictUseArcane,
+		"Which copy of the conflicting files wins",
+		types.GitOpsBackupConflictUseArcane,
+		types.GitOpsBackupConflictUseRepository,
+	)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Resolve without confirmation")
 	cmdutil.SetResource(gitopsSyncRef, cmd)
 	return cmd
@@ -144,7 +158,14 @@ func (o *resolveOptions) run(cmd *cobra.Command, args []string) error {
 	}
 
 	confirmed, err := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{
-		Label: fmt.Sprintf("Overwrite the conflicting files in Git with the Arcane copies for gitops sync %s?", cmp.Or(resolved.Name, resolved.ID)),
+		Label: fmt.Sprintf(
+			kit.Ternary(
+				o.strategy == types.GitOpsBackupConflictUseRepository,
+				"Replace the conflicting project files with the repository copies for gitops sync %s?",
+				"Overwrite the conflicting files in Git with the Arcane copies for gitops sync %s?",
+			),
+			cmp.Or(resolved.Name, resolved.ID),
+		),
 		Force: o.force,
 	})
 	if err != nil || !confirmed {

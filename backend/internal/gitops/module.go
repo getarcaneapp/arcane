@@ -208,7 +208,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 			Summary:     "Resolve a Git backup conflict",
 			Description: "Resolve a backup that needs attention",
 			Tags:        []string{"GitOps Syncs"},
-			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsBackupResolveConditions},
 		},
 		authz.PermGitOpsRead,
 		h.ResolveBackupConflict,

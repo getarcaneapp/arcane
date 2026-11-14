@@ -404,10 +404,21 @@
 	}
 
 	const backupPaths = $derived(
-		[...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
+		isBidirectionalMode
+			? [...selectedPaths].filter((path) => !isEnvPathInternal(path)).sort((a, b) => a.localeCompare(b))
+			: [...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
 	);
-	const hasSelectedEnvFile = $derived([...selectedPaths].some((path) => isEnvPathInternal(path)));
-	const backupNamePlaceholder = $derived(m.project_backup_name({ name: selectedProject?.name ?? '' }));
+	const hasSelectedEnvFile = $derived(!isBidirectionalMode && [...selectedPaths].some((path) => isEnvPathInternal(path)));
+	const workspaceFiles = $derived(
+		isBidirectionalMode
+			? workspaceFolders.files.filter((entry) => entry.isDirectory || !isEnvFileInternal(entry.name))
+			: workspaceFolders.files
+	);
+	const backupNamePlaceholder = $derived(
+		isBidirectionalMode
+			? m.project_git_sync_name({ name: selectedProject?.name ?? '' })
+			: m.project_backup_name({ name: selectedProject?.name ?? '' })
+	);
 	const backupSummaryDestination = $derived(
 		`${selectedRepository?.label ?? ''} · ${selectedBranch} / ${effectiveBackupDirectory}`
 	);
@@ -424,7 +435,9 @@
 
 	function handleModeChange(value: GitOpsSyncMode) {
 		mode = value;
-		if (value === 'bidirectional' && selectedTargetType !== 'project') handleTargetTypeChange('project');
+		if (value !== 'bidirectional') return;
+		if (selectedTargetType !== 'project') handleTargetTypeChange('project');
+		inputs.maxSyncBinarySizeMb.value = untrack(formValues).maxSyncBinarySizeMb;
 	}
 
 	function buildBackupPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
@@ -460,6 +473,56 @@
 		);
 	}
 
+	function buildBidirectionalPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
+		const fields = {
+			name: data.name.trim() || backupNamePlaceholder,
+			repositoryId: selectedRepository?.value || data.repositoryId,
+			branch: data.branch,
+			envContent: data.envContent.trim(),
+			syncDirectory: data.syncDirectory,
+			pullImageAfterSync: data.pullImageAfterSync,
+			redeployAfterSync: data.redeployAfterSync,
+			maxSyncFiles: data.maxSyncFiles,
+			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
+			autoSync: data.autoSync,
+			syncInterval: data.syncInterval,
+			backupOnSave: data.backupOnSave,
+			backupPaths
+		};
+
+		if (!isEditMode || !syncToEdit) {
+			return {
+				...fields,
+				mode: 'bidirectional',
+				targetType: 'project',
+				projectId: data.projectId,
+				backupDirectory: data.backupDirectory.trim()
+			};
+		}
+
+		return changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(
+			{
+				...syncToEdit,
+				envContent: syncToEdit.envContent ?? '',
+				backupPaths: [...(syncToEdit.backupPaths ?? [])].sort((a, b) => a.localeCompare(b))
+			},
+			fields
+		);
+	}
+
+	function applyLifecycleFieldsInternal(data: z.infer<GitOpsSyncFormSchema>, payload: GitOpsSyncCreate | GitOpsSyncUpdate) {
+		if (!shouldSubmitLifecycleFieldsInternal(data)) return payload;
+		return {
+			...payload,
+			preDeployScriptPath: data.preDeployScriptPath.trim(),
+			preDeployRunnerImage: data.preDeployRunnerImage.trim(),
+			preDeployTimeoutSec: data.preDeployTimeoutSec,
+			preDeployNetworkMode: normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode),
+			preDeployEnv: data.preDeployEnv.trim(),
+			preDeployExtraMounts: data.preDeployExtraMounts.trim()
+		};
+	}
+
 	function handleSubmit() {
 		if (selectedRepository) inputs.repositoryId.value = selectedRepository.value;
 		inputs.branch.value = selectedBranch;
@@ -476,16 +539,20 @@
 			return;
 		}
 
-		const name = isBidirectionalMode ? data.name.trim() || backupNamePlaceholder : data.name;
+		if (isBidirectionalMode) {
+			onSubmit({ sync: applyLifecycleFieldsInternal(data, buildBidirectionalPayloadInternal(data)), isEditMode });
+			return;
+		}
+
 		const fields: GitOpsSyncCreate = {
-			name,
+			name: data.name,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
 			composeOverridePath: data.composeOverridePath.trim(),
 			envContent: data.envContent.trim(),
 			targetType: selectedTargetType,
-			projectName: selectedProject?.name ?? name,
+			projectName: selectedProject?.name ?? data.name,
 			syncDirectory: data.syncDirectory,
 			pullImageAfterSync: data.pullImageAfterSync,
 			redeployAfterSync: data.redeployAfterSync,
@@ -493,8 +560,7 @@
 			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
 			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
 			autoSync: data.autoSync,
-			syncInterval: data.syncInterval,
-			...(isBidirectionalMode ? { backupOnSave: data.backupOnSave, backupPaths } : {})
+			syncInterval: data.syncInterval
 		};
 
 		const payload: GitOpsSyncCreate | GitOpsSyncUpdate =
@@ -503,27 +569,13 @@
 						{
 							...syncToEdit,
 							composeOverridePath: syncToEdit.composeOverridePath ?? '',
-							envContent: syncToEdit.envContent ?? '',
-							backupPaths: [...(syncToEdit.backupPaths ?? [])].sort((a, b) => a.localeCompare(b))
+							envContent: syncToEdit.envContent ?? ''
 						},
 						fields
 					)
-				: {
-						...fields,
-						...(data.projectId ? { projectId: data.projectId } : {}),
-						...(isBidirectionalMode ? { mode, backupDirectory: data.backupDirectory.trim() } : {})
-					};
+				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
 
-		if (shouldSubmitLifecycleFieldsInternal(data)) {
-			payload.preDeployScriptPath = data.preDeployScriptPath.trim();
-			payload.preDeployRunnerImage = data.preDeployRunnerImage.trim();
-			payload.preDeployTimeoutSec = data.preDeployTimeoutSec;
-			payload.preDeployNetworkMode = normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode);
-			payload.preDeployEnv = data.preDeployEnv.trim();
-			payload.preDeployExtraMounts = data.preDeployExtraMounts.trim();
-		}
-
-		onSubmit({ sync: payload, isEditMode });
+		onSubmit({ sync: applyLifecycleFieldsInternal(data, payload), isEditMode });
 	}
 </script>
 
@@ -614,7 +666,7 @@
 				{backupProjectOptions}
 				{backupNamePlaceholder}
 				{suggestedBackupDirectory}
-				workspaceFiles={workspaceFolders.files}
+				{workspaceFiles}
 				loadedFolders={workspaceFolders.loaded}
 				onOpenFolder={workspaceFolders.load}
 				{loadingWorkspace}

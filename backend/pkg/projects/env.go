@@ -91,6 +91,9 @@ const (
 )
 
 var (
+	// ReservedRootEnvFiles are the project-root env files the override merge owns; git never writes them raw.
+	ReservedRootEnvFiles = []string{EffectiveEnvFileName, GitSourceEnvFileName, OverrideEnvFileName, GlobalEnvFileName}
+
 	globalEnvFileCache = &cache.Cache[string, envFileCacheEntry]{
 		Capacity: 4096,
 	}

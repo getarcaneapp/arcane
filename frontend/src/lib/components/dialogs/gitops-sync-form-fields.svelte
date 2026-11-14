@@ -135,7 +135,13 @@
 		<div class="min-w-0">
 			<Label for="syncDirectorySwitch" class="mb-0">{m.git_sync_sync_files()}</Label>
 			<p class="text-xs text-muted-foreground">
-				{lockSyncDirectory ? m.git_sync_sync_files_locked_hint() : m.git_sync_sync_files_description()}
+				{#if lockSyncDirectory}
+					{m.git_sync_sync_files_locked_hint()}
+				{:else if bidirectional}
+					{m.git_sync_sync_files_bidirectional_description()}
+				{:else}
+					{m.git_sync_sync_files_description()}
+				{/if}
 			</p>
 			{#if inputs.syncDirectory.error}
 				<p class="text-xs font-medium text-destructive">{inputs.syncDirectory.error}</p>
@@ -191,7 +197,7 @@
 	<Collapsible.Content>
 		<div class="space-y-3 pt-3">
 			<p class="text-xs text-muted-foreground">{m.git_sync_per_sync_file_limits_description()}</p>
-			<div class="grid gap-3 sm:grid-cols-3">
+			<div class={bidirectional ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3 sm:grid-cols-3'}>
 				<FormInput
 					label={m.git_sync_max_files_label()}
 					type="number"
@@ -206,13 +212,15 @@
 					helpText={m.git_sync_max_total_size_per_sync_help()}
 					bind:input={inputs.maxSyncTotalSizeMb}
 				/>
-				<FormInput
-					label={m.git_sync_max_binary_size_label()}
-					type="number"
-					placeholder="0"
-					helpText={m.git_sync_max_binary_size_per_sync_help()}
-					bind:input={inputs.maxSyncBinarySizeMb}
-				/>
+				{#if !bidirectional}
+					<FormInput
+						label={m.git_sync_max_binary_size_label()}
+						type="number"
+						placeholder="0"
+						helpText={m.git_sync_max_binary_size_per_sync_help()}
+						bind:input={inputs.maxSyncBinarySizeMb}
+					/>
+				{/if}
 			</div>
 		</div>
 	</Collapsible.Content>

@@ -711,6 +711,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 				Name:                  details.Name,
 				GitRepositoryURL:      details.GitRepositoryURL,
 				GitRepositoryProvider: details.GitRepositoryProvider,
+				GitOpsSyncMode:        details.GitOpsSyncMode,
 				IconLightURL:          details.IconLightURL,
 				RelativePath:          details.RelativePath,
 				ProjectsRoot:          details.ProjectsRoot,

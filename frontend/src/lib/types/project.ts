@@ -125,6 +125,7 @@ export interface Project {
 	isDiscovered?: boolean;
 	archivedAt?: string;
 	gitOpsManagedBy?: string;
+	gitOpsSyncMode?: string;
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
 	gitRepositoryProvider?: string;
