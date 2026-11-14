@@ -16,6 +16,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
 	acfstypes "kit.getarcane.app/acfs/types"
@@ -34,36 +35,40 @@ type (
 		id         string
 		inUse      int
 		protocol   int
+		listLimit  bool
 	}
 )
 
-func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName, containerID string) error {
+func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName, containerID string) (bool, error) {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	if helper != nil && helper.id == containerID && helper.protocol >= acfstypes.ProtocolVersion {
+		listLimit := helper.listLimit
 		s.helperMu.Unlock()
-		return nil
+		return listLimit, nil
 	}
 	s.helperMu.Unlock()
 
 	stdout, stderr, err := s.execInContainer(ctx, containerID, "", []string{"acfs", "version"})
 	if err != nil {
-		return fmt.Errorf("%s: %w", "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr), err)
+		return false, fmt.Errorf("%s: %w", "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr), err)
 	}
 	var response acfstypes.VersionResponse
 	if unmarshalErr := json.Unmarshal([]byte(stdout), &response); unmarshalErr != nil {
-		return fmt.Errorf("parse ACFS tools-image capability: %w", unmarshalErr)
+		return false, fmt.Errorf("parse ACFS tools-image capability: %w", unmarshalErr)
 	}
 	if response.Protocol < acfstypes.ProtocolVersion {
-		return fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
+		return false, fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
 	}
+	listLimit := semver.Compare(kit.EnsurePrefix(strings.TrimSpace(response.Version), "v"), "v0.9.0") >= 0
 
 	s.helperMu.Lock()
 	if helper = s.helperByVolume[volumeName]; helper != nil && helper.id == containerID {
 		helper.protocol = response.Protocol
+		helper.listLimit = listLimit
 	}
 	s.helperMu.Unlock()
-	return nil
+	return listLimit, nil
 }
 
 func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error) {

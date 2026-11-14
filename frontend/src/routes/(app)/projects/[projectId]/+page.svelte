@@ -92,6 +92,7 @@
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		workspaceFilePathMatches,
+		workspaceFileServerPath,
 		remapWorkspaceFileRecord,
 		remapSelectedWorkspaceFileKey,
 		removeWorkspaceFileRecord,
@@ -1085,7 +1086,11 @@
 			return targetFile;
 		}
 
-		const requestKey = getProjectWorkspaceCacheKey(currentProjectId, kind, relativePath);
+		const serverPath = kind === 'workspace' ? workspaceFileServerPath(projectWorkspaceChanges, relativePath) : relativePath;
+		if (serverPath === null) {
+			throw new Error(m.workspace_file_not_found());
+		}
+		const requestKey = getProjectWorkspaceCacheKey(currentProjectId, kind, serverPath);
 		const existingPromise = projectWorkspaceFilePromises[requestKey];
 		if (existingPromise) {
 			return existingPromise;
@@ -1094,7 +1099,7 @@
 		const requestedEnvId = envId;
 		const pendingFiles = projectWorkspaceFilePromises;
 		const promise = (async () => {
-			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, requestedEnvId);
+			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, serverPath, requestedEnvId);
 			if (
 				kind !== 'workspace' &&
 				currentProjectId === projectId &&
@@ -1227,6 +1232,7 @@
 		const requestedProjectId = projectId;
 		const requestedEnvId = envId;
 		const pendingFiles = projectWorkspaceFilePromises;
+		const requestedServerPath = workspaceFileServerPath(projectWorkspaceChanges, relativePath);
 		if (
 			kind === 'workspace' &&
 			(!relativePath || projectWorkspaceContents[relativePath] !== undefined || projectWorkspaceLoading[relativePath])
@@ -1245,7 +1251,12 @@
 				(async () => {
 					if (kind === 'workspace') {
 						const file = await getProjectWorkspaceFileResource(kind, relativePath);
-						if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+						if (
+							requestedProjectId !== projectId ||
+							requestedEnvId !== envId ||
+							pendingFiles !== projectWorkspaceFilePromises ||
+							requestedServerPath !== workspaceFileServerPath(projectWorkspaceChanges, relativePath)
+						)
 							return;
 						projectWorkspaceFileMetadata = {
 							...projectWorkspaceFileMetadata,
@@ -1258,7 +1269,13 @@
 				})()
 			);
 			if (operationResult.error !== null) {
-				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
+				if (
+					requestedProjectId !== projectId ||
+					requestedEnvId !== envId ||
+					pendingFiles !== projectWorkspaceFilePromises ||
+					requestedServerPath !== workspaceFileServerPath(projectWorkspaceChanges, relativePath)
+				)
+					return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1333,7 +1350,7 @@
 		projectWorkspaceHasErrors = remapWorkspaceFileRecord(projectWorkspaceHasErrors, oldPath, newPath);
 		projectWorkspaceValidationReady = remapWorkspaceFileRecord(projectWorkspaceValidationReady, oldPath, newPath);
 		projectWorkspaceLoadErrors = remapWorkspaceFileRecord(projectWorkspaceLoadErrors, oldPath, newPath);
-		projectWorkspaceLoading = remapWorkspaceFileRecord(projectWorkspaceLoading, oldPath, newPath);
+		projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, oldPath);
 		projectWorkspaceFileMetadata = remapWorkspaceFileRecord(projectWorkspaceFileMetadata, oldPath, newPath);
 		projectWorkspaceStagedFiles = remapWorkspaceFileRecord(projectWorkspaceStagedFiles, oldPath, newPath);
 		projectWorkspaceStagedUploadedText = remapWorkspaceFileRecord(projectWorkspaceStagedUploadedText, oldPath, newPath);
@@ -1446,9 +1463,11 @@
 	}
 
 	async function downloadProjectWorkspaceFile(relativePath: string) {
+		const serverPath = workspaceFileServerPath(projectWorkspaceChanges, relativePath);
+		if (serverPath === null) return;
 		const operationResult = await tryCatch(
 			(async () => {
-				await projectWorkspaceService.downloadWorkspaceFile(projectId, relativePath, envId);
+				await projectWorkspaceService.downloadWorkspaceFile(projectId, serverPath, envId);
 			})()
 		);
 		if (operationResult.error !== null) {

@@ -21,7 +21,8 @@ import {
 	validateWorkspaceFileName,
 	workspaceFileBasename,
 	workspaceFileParentPath,
-	workspaceFilePathMatches
+	workspaceFilePathMatches,
+	workspaceFileServerPath
 } from '#lib/utils/workspace-files.js';
 
 type BuildWorkspaceDraftOptions = {
@@ -45,6 +46,7 @@ export class BuildWorkspaceDraft {
 	readonly environmentId: string;
 	readonly #options: BuildWorkspaceDraftOptions;
 	readonly #loadTokens = new SvelteMap<string, number>();
+	#loadSequence = 0;
 
 	entries = $derived.by(() =>
 		applyWorkspaceFileChangesForDisplay(this.#options.workspace()?.files ?? [], this.changes).map((file) => {
@@ -119,10 +121,13 @@ export class BuildWorkspaceDraft {
 			};
 			return;
 		}
-		const token = (this.#loadTokens.get(relativePath) ?? 0) + 1;
+		const serverPath = workspaceFileServerPath(this.changes, relativePath);
+		if (serverPath === null) return;
+		this.#loadSequence += 1;
+		const token = this.#loadSequence;
 		this.#loadTokens.set(relativePath, token);
 		this.loading = { ...this.loading, [relativePath]: true };
-		const result = await tryCatch(buildWorkspaceService.getWorkspaceFile(relativePath, this.environmentId));
+		const result = await tryCatch(buildWorkspaceService.getWorkspaceFile(serverPath, this.environmentId));
 		if (this.#loadTokens.get(relativePath) !== token) return;
 		this.#loadTokens.delete(relativePath);
 		this.loading = removeWorkspaceFileRecord(this.loading, relativePath);
@@ -230,7 +235,9 @@ export class BuildWorkspaceDraft {
 	};
 
 	download = async (relativePath: string) => {
-		const result = await tryCatch(buildWorkspaceService.downloadWorkspaceFile(relativePath, this.environmentId));
+		const serverPath = workspaceFileServerPath(this.changes, relativePath);
+		if (serverPath === null) return;
+		const result = await tryCatch(buildWorkspaceService.downloadWorkspaceFile(serverPath, this.environmentId));
 		if (result.error !== null) toast.error(m.common_download_error(), { description: extractApiErrorMessage(result.error) });
 	};
 

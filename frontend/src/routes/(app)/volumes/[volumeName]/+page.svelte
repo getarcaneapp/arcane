@@ -68,7 +68,8 @@
 		workspaceFileBasename,
 		workspaceFileLanguage,
 		workspaceFileParentPath,
-		workspaceFilePathMatches
+		workspaceFilePathMatches,
+		workspaceFileServerPath
 	} from '#lib/utils/workspace-files.js';
 
 	import BackupList from '../components/volume-backup-table.svelte';
@@ -325,6 +326,8 @@
 			};
 			return;
 		}
+		const serverPath = workspaceFileServerPath(workspaceFileChanges, relativePath);
+		if (serverPath === null) return;
 
 		workspaceFileLoading = { ...workspaceFileLoading, [relativePath]: true };
 		workspaceFileLoadErrors = removeWorkspaceFileRecord(workspaceFileLoadErrors, relativePath);
@@ -334,7 +337,7 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const file = await volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, relativePath, requestedEnvId);
+					const file = await volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, serverPath, requestedEnvId);
 					if (
 						!active ||
 						requestedEnvId !== currentEnvId ||
@@ -463,7 +466,10 @@
 		workspaceStagedFiles = remapWorkspaceFileRecord(workspaceStagedFiles, oldPath, newPath);
 		workspaceStagedUploadedText = remapWorkspaceFileRecord(workspaceStagedUploadedText, oldPath, newPath);
 		workspaceFileLoadErrors = remapWorkspaceFileRecord(workspaceFileLoadErrors, oldPath, newPath);
-		workspaceFileLoading = remapWorkspaceFileRecord(workspaceFileLoading, oldPath, newPath);
+		for (const relativePath of Object.keys(workspaceFileLoading)) {
+			if (workspaceFilePathMatches(relativePath, oldPath)) expireWorkspaceFileLoad(relativePath);
+		}
+		workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, oldPath);
 		workspaceRestoreRecords = remapWorkspaceFileRecord(workspaceRestoreRecords, oldPath, newPath);
 		openWorkspaceTabs = openWorkspaceTabs.map((tab) => remapSelectedWorkspaceFileKey(tab, oldPath, newPath) ?? tab);
 		const remappedSelection = remapSelectedWorkspaceFileKey(selectedWorkspaceFile, oldPath, newPath);
@@ -774,10 +780,11 @@
 	async function downloadVolumeWorkspaceFile(relativePath: string) {
 		const environmentId = currentEnvId;
 		const volumeName = volume?.name;
-		if (!active || !volumeName) return;
+		const serverPath = workspaceFileServerPath(workspaceFileChanges, relativePath);
+		if (!active || !volumeName || serverPath === null) return;
 		const operationResult = await tryCatch(
 			(async () => {
-				await volumeWorkspaceService.downloadWorkspaceFile(volumeName, relativePath, environmentId);
+				await volumeWorkspaceService.downloadWorkspaceFile(volumeName, serverPath, environmentId);
 			})()
 		);
 		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
