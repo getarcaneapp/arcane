@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "Agent CA 다운로드",
   "update_all": "모두 업데이트",
   "environments_update_all_title": "모든 에이전트 업데이트",
-  "environments_update_all_message": "이 작업은 최신 Arcane 이미지를 가져오고, 업데이트가 보고되었는지 여부와 관계없이 모든 에이전트를 업데이트합니다. 원격 에이전트가 먼저 업데이트되고, 그 다음에 이 관리자가 업데이트되는데, 관리자는 이미지를 가져온 결과 새로운 이미지가 있는 경우에만 재시작됩니다. 오프라인 상태인 에이전트는 건너뜁니다.",
   "environments_update_all_manager_restarting": "관리자가 다시 시작 중입니다. 다시 연결 중입니다…",
   "environments_update_all_in_progress": "에이전트 업데이트…",
   "environments_update_all_progress": "{done} ~의 {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }

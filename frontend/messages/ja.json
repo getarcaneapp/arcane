@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "エージェントCAをダウンロード",
   "update_all": "すべて更新",
   "environments_update_all_title": "すべてのエージェントを更新する",
-  "environments_update_all_message": "これにより、最新のArcaneイメージが取得され、更新の報告の有無にかかわらず、すべてのエージェントが更新されます。まずリモートエージェントが更新され、次にこのマネージャーが更新されます。このマネージャーは、イメージの取得によって新しいイメージが導入された場合にのみ再起動します。オフラインのエージェントはスキップされます。",
   "environments_update_all_manager_restarting": "マネージャーが再起動中、… に再接続しています",
   "environments_update_all_in_progress": "エージェントの更新…",
   "environments_update_all_progress": "{done} の {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }

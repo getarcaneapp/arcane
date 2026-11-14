@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "下載 CA 代理程式",
   "update_all": "更新全部",
   "environments_update_all_title": "Update all agents",
-  "environments_update_all_message": "This pulls the latest Arcane image and updates every agent, whether or not an update is reported. Remote agents update first, then this manager, which restarts only if the pull brought a new image. Offline agents are skipped.",
   "environments_update_all_manager_restarting": "管理員正在重新啟動，並重新連線至…",
   "environments_update_all_in_progress": "Updating agents…",
   "environments_update_all_progress": "{done} 的 {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }

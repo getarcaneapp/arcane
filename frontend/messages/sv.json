@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "Ladda ner Agent CA",
   "update_all": "Uppdatera alla",
   "environments_update_all_title": "Uppdatera alla agenter",
-  "environments_update_all_message": "Detta hämtar den senaste Arcane-avbildningen och uppdaterar alla agenter, oavsett om en uppdatering har rapporterats eller inte. Fjärragenterna uppdateras först, därefter denna hanterare, som endast startas om om hämtningen resulterade i en ny avbildning. Agenter som är offline hoppas över.",
   "environments_update_all_manager_restarting": "Manager startas om och återansluter till…",
   "environments_update_all_in_progress": "Uppdatering av agenter…",
   "environments_update_all_progress": "{done} av {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }

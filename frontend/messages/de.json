@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "CA-Download-Agent",
   "update_all": "Alle updaten",
   "environments_update_all_title": "Alle Agenten aktualisieren",
-  "environments_update_all_message": "Dadurch wird das neueste Arcane-Image abgerufen und jeder Agent aktualisiert, unabhängig davon, ob ein Update gemeldet wurde oder nicht. Zuerst werden die Remote-Agenten aktualisiert, dann dieser Manager, der nur neu gestartet wird, wenn durch den Abruf ein neues Image bereitgestellt wurde. Offline-Agenten werden übersprungen.",
   "environments_update_all_manager_restarting": "Manager startet neu, Verbindung wird wiederhergestellt…",
   "environments_update_all_in_progress": "Agenten aktualisieren…",
   "environments_update_all_progress": "{done} von {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }
