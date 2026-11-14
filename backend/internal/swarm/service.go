@@ -275,7 +275,7 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req types.SwarmInitRequest
 	for _, raw := range req.DefaultAddrPool {
 		prefix, parsePrefixErr := netip.ParsePrefix(raw)
 		if parsePrefixErr != nil {
-			return nil, fmt.Errorf("failed to parse default address pool %q: %w", raw, parsePrefixErr)
+			return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("failed to parse default address pool %q: %w", raw, parsePrefixErr))
 		}
 		defaultAddrPool = append(defaultAddrPool, prefix.Masked())
 	}
@@ -540,7 +540,7 @@ func decodeSwarmSpec(raw jsontext.Value) (swarm.Spec, error) {
 	var spec swarm.Spec
 	// Docker encodes durations as integer nanoseconds.
 	if err := json.Unmarshal(trimmed, &spec, jsonx.DurationNano); err != nil {
-		return swarm.Spec{}, fmt.Errorf("failed to parse swarm spec: %w", err)
+		return swarm.Spec{}, common.Classify(common.ErrBadRequest, fmt.Errorf("failed to parse swarm spec: %w", err))
 	}
 
 	if spec.Labels == nil {
