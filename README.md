@@ -1,3 +1,6 @@
+> [!NOTE]
+> The `main` branch is the v3 version of Arcane, which is still unreleased. See the [`release/2.x.x`](https://github.com/getarcaneapp/arcane/tree/release/2.x.x) branch for the latest 2.x release.
+
 > [!IMPORTANT]
 > Feature requests have moved to [Discussions](https://github.com/getarcaneapp/arcane/discussions/categories/feature-requests). Open new requests and upvote existing ones there; issues are only used for Bug reports now to help maintain priority on those issues.
 
@@ -14,7 +17,11 @@
 
 <br />
 
-<img width="1685" alt="image" align="center" src=".github/assets/arcane-dash-2.18.1.png" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/arcane-dash-v3-dark.jpg" />
+  <source media="(prefers-color-scheme: light)" srcset=".github/assets/arcane-dash-v3-light.jpg" />
+  <img width="1685" alt="Arcane v3 dashboard" src=".github/assets/arcane-dash-v3-dark.jpg" />
+</picture>
 
 ## Documentation
 

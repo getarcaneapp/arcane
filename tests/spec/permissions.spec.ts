@@ -194,7 +194,10 @@ async function createRestrictedUserThroughUI(
 		type: 'urn:arcane:problem:password-policy'
 	});
 	await expect(
-		page.getByText('At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.', { exact: true })
+		page.getByText(
+			'At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.',
+			{ exact: true }
+		)
 	).toBeVisible();
 
 	await dialog.getByLabel('Password *', { exact: true }).fill(password);
@@ -269,7 +272,10 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 		type: 'urn:arcane:problem:password-policy'
 	});
 	await expect(
-		page.getByText('At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.', { exact: true })
+		page.getByText(
+			'At least 12 characters with an uppercase letter, a lowercase letter, a number, and a symbol.',
+			{ exact: true }
+		)
 	).toBeVisible();
 
 	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
