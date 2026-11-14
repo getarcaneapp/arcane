@@ -15,6 +15,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+const maxParentFolders = 4
+
 func NormalizePath(value string, allowEmpty bool) (string, error) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
 	if trimmed == "" || path.Clean(trimmed) == "." {
@@ -112,6 +114,53 @@ func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]t
 	}
 	result := config.SearchOrderAndPaginate(entries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
+}
+
+func ParentEntries(selection types.BackupRestoreSelection, list func(folder string, recursive bool) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
+	var normalizedPaths []string
+	folders := make(map[string]struct{})
+	for _, requested := range selection.Paths {
+		if normalized, err := NormalizePath(requested, false); err == nil {
+			normalizedPaths = append(normalizedPaths, normalized)
+			folders[path.Dir(normalized)] = struct{}{}
+		}
+	}
+	if selection.SelectAll || len(folders) > maxParentFolders {
+		return list("", true)
+	}
+	listed := make(map[string][]types.BackupFileEntry)
+	var eligible []types.BackupFileEntry
+	var listParent func(child string) ([]types.BackupFileEntry, error)
+	listParent = func(child string) ([]types.BackupFileEntry, error) {
+		folder := child[:max(strings.LastIndex(child, "/"), 0)]
+		if entries, ok := listed[folder]; ok {
+			return entries, nil
+		}
+		entries, err := list(folder, false)
+		if err != nil {
+			if folder == "" {
+				return nil, err
+			}
+			siblings, parentErr := listParent(folder)
+			if parentErr != nil {
+				return nil, parentErr
+			}
+			if slices.ContainsFunc(siblings, func(sibling types.BackupFileEntry) bool {
+				return sibling.Path == folder && sibling.IsDirectory
+			}) {
+				return nil, err
+			}
+		}
+		listed[folder] = entries
+		eligible = append(eligible, entries...)
+		return entries, nil
+	}
+	for _, normalized := range normalizedPaths {
+		if _, err := listParent(normalized); err != nil {
+			return nil, err
+		}
+	}
+	return eligible, nil
 }
 
 func NormalizeSelection(selection types.BackupRestoreSelection, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {

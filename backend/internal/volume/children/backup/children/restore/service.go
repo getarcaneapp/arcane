@@ -217,27 +217,37 @@ func (s *Service) resolveRestoreSelection(
 		}
 		return selectionPlan{globalRoot: true}, nil
 	}
-	paths, err := func() ([]string, error) {
-		if entry.Format == types.VolumeBackupFormatArchive {
-			return s.deps.ArchivePaths(ctx, entry.ID)
+	if entry.Format == types.VolumeBackupFormatArchive {
+		archivePaths, err := s.deps.ArchivePaths(ctx, entry.ID)
+		if err != nil {
+			return selectionPlan{}, err
 		}
-		password, passwordErr := s.deps.Password(ctx, dockerClient, repository)
-		if passwordErr != nil {
-			return nil, passwordErr
+		entries, err := backupbrowser.NormalizeSelection(selection, backupbrowser.BuildEntries(archivePaths, "", true))
+		if err != nil {
+			return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 		}
-		return s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
-	}()
+		return selectionPlan{
+			entries:      entries,
+			archivePaths: archivePaths,
+		}, nil
+	}
+	password, err := s.deps.Password(ctx, dockerClient, repository)
 	if err != nil {
 		return selectionPlan{}, err
 	}
-	entries, err := backupbrowser.NormalizeSelection(selection, backupbrowser.BuildEntries(paths, "", true))
+	list := func(folder string, recursive bool) ([]types.BackupFileEntry, error) {
+		paths, listErr := s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, folder+"/", recursive)
+		return backupbrowser.BuildEntries(paths, folder, recursive), listErr
+	}
+	eligible, err := backupbrowser.ParentEntries(selection, list)
+	if err != nil {
+		return selectionPlan{}, err
+	}
+	entries, err := backupbrowser.NormalizeSelection(selection, eligible)
 	if err != nil {
 		return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
-	return selectionPlan{
-		entries:      entries,
-		archivePaths: kit.Ternary(entry.Format == types.VolumeBackupFormatArchive, paths, nil),
-	}, nil
+	return selectionPlan{entries: entries}, nil
 }
 
 func archiveMembersForSelection(paths []string, selected []types.BackupFileEntry) []string {

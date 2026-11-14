@@ -1,6 +1,7 @@
 package backupbrowser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,69 @@ func TestNormalizeSelection(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be combined")
 	_, err = NormalizeSelection(types.BackupRestoreSelection{}, eligible)
 	require.ErrorContains(t, err, "paths are required")
+}
+
+func TestParentEntriesListsEachParentFolderOnce(t *testing.T) {
+	tree := map[string][]string{
+		"":       {"folder/", "locked/", "other.txt"},
+		"folder": {"folder/a.txt", "folder/b.txt", "folder/nested/"},
+	}
+	var folders []string
+	recursiveListings := 0
+	list := func(folder string, recursive bool) ([]types.BackupFileEntry, error) {
+		if recursive {
+			recursiveListings++
+			return BuildEntries([]string{"a/1.txt", "b/2.txt", "c/3.txt", "d/4.txt", "folder/a.txt"}, folder, true), nil
+		}
+		folders = append(folders, folder)
+		files, ok := tree[folder]
+		if !ok {
+			return nil, errors.New("path not found")
+		}
+		return BuildEntries(files, folder, false), nil
+	}
+
+	selection := types.BackupRestoreSelection{Paths: []string{"folder/a.txt", "folder/nested/", "other.txt", "folder/b.txt"}}
+	eligible, err := ParentEntries(selection, list)
+	require.NoError(t, err)
+	require.Equal(t, []string{"folder", ""}, folders)
+	selected, err := NormalizeSelection(selection, eligible)
+	require.NoError(t, err)
+	require.Equal(t, []types.BackupFileEntry{
+		{Path: "other.txt", Name: "other.txt"},
+		{Path: "folder/a.txt", Name: "a.txt"},
+		{Path: "folder/b.txt", Name: "b.txt"},
+		{Path: "folder/nested", Name: "nested", IsDirectory: true},
+	}, selected)
+
+	for _, missing := range []string{"folder/missing.txt", "missing/deep/file.txt", "other.txt/file.txt"} {
+		eligible, err = ParentEntries(types.BackupRestoreSelection{Paths: []string{missing}}, list)
+		require.NoError(t, err)
+		_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: []string{missing}}, eligible)
+		require.ErrorContains(t, err, "does not exist")
+	}
+
+	_, err = ParentEntries(types.BackupRestoreSelection{Paths: []string{"locked/file.txt"}}, list)
+	require.ErrorContains(t, err, "path not found")
+	require.Zero(t, recursiveListings)
+
+	folders = nil
+	wide := types.BackupRestoreSelection{Paths: []string{"a/1.txt", "b/2.txt", "c/3.txt", "d/4.txt", "folder/a.txt"}}
+	eligible, err = ParentEntries(wide, list)
+	require.NoError(t, err)
+	require.Empty(t, folders)
+	require.Equal(t, 1, recursiveListings)
+	selected, err = NormalizeSelection(wide, eligible)
+	require.NoError(t, err)
+	require.Len(t, selected, 5)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: append(wide.Paths, "e/missing.txt")}, eligible)
+	require.ErrorContains(t, err, "does not exist")
+
+	eligible, err = ParentEntries(types.BackupRestoreSelection{SelectAll: true, Search: "folder"}, list)
+	require.NoError(t, err)
+	require.Empty(t, folders)
+	require.Equal(t, 2, recursiveListings)
+	require.Len(t, eligible, 10)
 }
 
 func TestNormalizeSearchSelectionCoversDescendants(t *testing.T) {
