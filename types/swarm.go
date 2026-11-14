@@ -53,16 +53,16 @@ type (
 	}
 
 	SwarmInitRequest struct {
-		ListenAddr       string                 `json:"listenAddr,omitempty"`
-		AdvertiseAddr    string                 `json:"advertiseAddr,omitempty"`
-		DataPathAddr     string                 `json:"dataPathAddr,omitempty"`
+		ListenAddr       string                 `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr    string                 `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
+		DataPathAddr     string                 `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
 		Spec             jsontext.Value         `json:"spec" doc:"Swarm specification"`
-		Availability     swarm.NodeAvailability `json:"availability,omitempty"`
-		DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty"`
-		DataPathPort     uint32                 `json:"dataPathPort,omitempty"`
-		SubnetSize       uint32                 `json:"subnetSize,omitempty"`
-		ForceNewCluster  bool                   `json:"forceNewCluster,omitempty"`
-		AutoLockManagers bool                   `json:"autoLockManagers,omitempty"`
+		Availability     swarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
+		DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty" doc:"CIDR pools for overlay network subnets; empty uses Docker's default"`
+		DataPathPort     uint32                 `json:"dataPathPort,omitempty" doc:"UDP port for VXLAN data traffic; 0 uses Docker's default 4789"`
+		SubnetSize       uint32                 `json:"subnetSize,omitempty" doc:"Prefix length of subnets from defaultAddrPool; 0 uses Docker's default 24"`
+		ForceNewCluster  bool                   `json:"forceNewCluster,omitempty" doc:"Force a new single-manager cluster from this node's state, even if already in a swarm"`
+		AutoLockManagers bool                   `json:"autoLockManagers,omitempty" doc:"Restarted managers stay locked until unlocked with the unlock key"`
 	}
 
 	SwarmInitResponse struct {
@@ -70,20 +70,20 @@ type (
 	}
 
 	SwarmJoinRequest struct {
-		ListenAddr    string                 `json:"listenAddr,omitempty"`
-		AdvertiseAddr string                 `json:"advertiseAddr,omitempty"`
-		DataPathAddr  string                 `json:"dataPathAddr,omitempty"`
-		JoinToken     string                 `json:"joinToken"`
-		Availability  swarm.NodeAvailability `json:"availability,omitempty"`
-		RemoteAddrs   []string               `json:"remoteAddrs"`
+		ListenAddr    string                 `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr string                 `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
+		DataPathAddr  string                 `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
+		JoinToken     string                 `json:"joinToken" doc:"Worker or manager join token of the swarm"`
+		Availability  swarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
+		RemoteAddrs   []string               `json:"remoteAddrs" doc:"Manager addresses to join through, as host:port"`
 	}
 
 	SwarmLeaveRequest struct {
-		Force bool `json:"force,omitempty"`
+		Force bool `json:"force,omitempty" doc:"Leave even as a manager, which can cost the swarm its quorum"`
 	}
 
 	SwarmUnlockRequest struct {
-		Key string `json:"key"`
+		Key string `json:"key" doc:"Unlock key of the locked swarm"`
 	}
 
 	SwarmUnlockKeyResponse struct {
@@ -96,13 +96,13 @@ type (
 	}
 
 	SwarmRotateJoinTokensRequest struct {
-		RotateWorkerToken  bool `json:"rotateWorkerToken,omitempty"`
-		RotateManagerToken bool `json:"rotateManagerToken,omitempty"`
+		RotateWorkerToken  bool `json:"rotateWorkerToken,omitempty" doc:"Rotate the worker token; both rotate when neither flag is set"`
+		RotateManagerToken bool `json:"rotateManagerToken,omitempty" doc:"Rotate the manager token; both rotate when neither flag is set"`
 	}
 
 	SwarmUpdateRequest struct {
 		Spec                   jsontext.Value `json:"spec" doc:"Updated swarm specification"`
-		Version                uint64         `json:"version,omitempty"`
+		Version                uint64         `json:"version,omitempty" doc:"Swarm version index to update; 0 uses the current one"`
 		RotateWorkerToken      bool           `json:"rotateWorkerToken,omitempty"`
 		RotateManagerToken     bool           `json:"rotateManagerToken,omitempty"`
 		RotateManagerUnlockKey bool           `json:"rotateManagerUnlockKey,omitempty"`
@@ -122,9 +122,9 @@ type (
 	}
 
 	NodeAgentBindingRequest struct {
-		EnvironmentID     string `json:"environmentId"`
-		Rebind            bool   `json:"rebind,omitempty"`
-		ReplaceDeployment bool   `json:"replaceDeployment,omitempty"`
+		EnvironmentID     string `json:"environmentId" doc:"Visible environment to attach; it must report this swarm node"`
+		Rebind            bool   `json:"rebind,omitempty" doc:"Move an existing binding of the node or environment instead of failing"`
+		ReplaceDeployment bool   `json:"replaceDeployment,omitempty" doc:"Also delete the dedicated agent environment Arcane deployed for this node"`
 	}
 
 	SwarmJoinEnvironmentRole string
@@ -139,17 +139,17 @@ type (
 	}
 
 	SwarmJoinEnvironmentTarget struct {
-		EnvironmentID string                   `json:"environmentId"`
-		Role          SwarmJoinEnvironmentRole `json:"role"`
-		Availability  swarm.NodeAvailability   `json:"availability,omitempty"`
-		ListenAddr    string                   `json:"listenAddr,omitempty"`
-		AdvertiseAddr string                   `json:"advertiseAddr,omitempty"`
-		DataPathAddr  string                   `json:"dataPathAddr,omitempty"`
+		EnvironmentID string                   `json:"environmentId" doc:"Environment whose Docker host joins the swarm"`
+		Role          SwarmJoinEnvironmentRole `json:"role" doc:"manager or worker"`
+		Availability  swarm.NodeAvailability   `json:"availability,omitempty" doc:"active, pause or drain"`
+		ListenAddr    string                   `json:"listenAddr,omitempty" doc:"Manager listen address on the target; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr string                   `json:"advertiseAddr,omitempty" doc:"Address the target advertises; empty lets Docker detect it"`
+		DataPathAddr  string                   `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic on the target"`
 	}
 
 	SwarmJoinEnvironmentsRequest struct {
-		RemoteAddrs []string                     `json:"remoteAddrs"`
-		Targets     []SwarmJoinEnvironmentTarget `json:"targets"`
+		RemoteAddrs []string                     `json:"remoteAddrs" doc:"Manager addresses to join through, as host:port; empty uses the swarm's known managers"`
+		Targets     []SwarmJoinEnvironmentTarget `json:"targets" doc:"Environments to join; managers first, then workers in parallel"`
 	}
 
 	SwarmJoinEnvironmentResult struct {
@@ -189,16 +189,16 @@ type (
 	SwarmNode struct {
 		CreatedAt    time.Time         `json:"createdAt" readOnly:"true"`
 		UpdatedAt    time.Time         `json:"updatedAt" readOnly:"true"`
-		Labels       map[string]string `json:"labels,omitempty"`
+		Labels       map[string]string `json:"labels,omitempty" doc:"User-defined node labels; an update replaces the whole set"`
 		SystemLabels map[string]string `json:"systemLabels,omitempty" readOnly:"true"`
 
 		EnvironmentTag
 		ID string `json:"id" readOnly:"true"`
 
-		Name           string          `json:"name,omitempty"`
+		Name           string          `json:"name,omitempty" doc:"Node name from the node spec"`
 		Hostname       string          `json:"hostname" readOnly:"true"`
-		Role           string          `json:"role" required:"false"`
-		Availability   string          `json:"availability" required:"false"`
+		Role           string          `json:"role" required:"false" doc:"manager or worker"`
+		Availability   string          `json:"availability" required:"false" doc:"Scheduling availability: active, pause or drain"`
 		Status         string          `json:"status" readOnly:"true"`
 		Address        string          `json:"address,omitempty" readOnly:"true"`
 		ManagerStatus  string          `json:"managerStatus,omitempty" readOnly:"true"`
@@ -208,7 +208,7 @@ type (
 		Platform       string          `json:"platform,omitempty" readOnly:"true"`
 		Agent          NodeAgentStatus `json:"agent" readOnly:"true"`
 
-		Version uint64 `json:"version,omitempty"`
+		Version uint64 `json:"version,omitempty" doc:"Node version index; an update with 0 uses the current one"`
 	}
 
 	SwarmServicePort struct {
@@ -301,9 +301,9 @@ type (
 	}
 
 	SwarmServiceUpdateRequest struct {
-		Spec    swarm.ServiceSpec          `json:"spec"`
-		Options *SwarmServiceUpdateOptions `json:"options,omitzero"`
-		Version uint64                     `json:"version"`
+		Spec    swarm.ServiceSpec          `json:"spec" doc:"Full service spec replacing the current one"`
+		Options *SwarmServiceUpdateOptions `json:"options,omitzero" doc:"Registry auth, registry query and rollback options"`
+		Version uint64                     `json:"version" doc:"Service version index to update; 0 uses the current one"`
 	}
 
 	SwarmServiceCreateResponse struct {
@@ -328,7 +328,7 @@ type (
 	}
 
 	SwarmServiceScaleRequest struct {
-		Replicas uint64 `json:"replicas"`
+		Replicas uint64 `json:"replicas" doc:"Replicas, or completions for a replicated job"`
 	}
 
 	SwarmStackSummary struct {
@@ -355,10 +355,10 @@ type (
 	}
 
 	SwarmStackRenderConfigRequest struct {
-		Name            string `json:"name"`
+		Name            string `json:"name" doc:"Stack name (namespace)"`
 		ComposeContent  string `json:"composeContent"`
-		OverrideContent string `json:"overrideContent,omitempty"`
-		EnvContent      string `json:"envContent,omitempty"`
+		OverrideContent string `json:"overrideContent,omitempty" doc:"Compose override merged over composeContent"`
+		EnvContent      string `json:"envContent,omitempty" doc:"Content of the stack's .env file"`
 	}
 
 	SwarmStackRenderConfigResponse struct {
@@ -374,28 +374,28 @@ type (
 
 	SwarmStackSource struct {
 		Name            string          `json:"name" readOnly:"true"`
-		ComposeContent  string          `json:"composeContent" required:"false"`
-		OverrideContent string          `json:"overrideContent,omitempty"`
-		EnvContent      string          `json:"envContent,omitempty"`
-		Files           []SwarmSyncFile `json:"files,omitempty"`
+		ComposeContent  string          `json:"composeContent" required:"false" doc:"Saved compose file; saving a source redeploys the stack"`
+		OverrideContent string          `json:"overrideContent,omitempty" doc:"Compose override merged over composeContent"`
+		EnvContent      string          `json:"envContent,omitempty" doc:"Content of the stack's .env file"`
+		Files           []SwarmSyncFile `json:"files,omitempty" doc:"Extra stack files, such as env files, configs and secrets"`
 	}
 
 	SwarmStackDeployRequest struct {
-		Name            string `json:"name"`
-		ComposeContent  string `json:"composeContent"`
-		OverrideContent string `json:"overrideContent,omitempty"`
-		EnvContent      string `json:"envContent,omitempty"`
-		ResolveImage    string `json:"resolveImage,omitempty"`
+		Name            string `json:"name" doc:"Stack name (namespace); required"`
+		ComposeContent  string `json:"composeContent" doc:"Compose file content; saved as the stack source"`
+		OverrideContent string `json:"overrideContent,omitempty" doc:"Compose override merged over composeContent"`
+		EnvContent      string `json:"envContent,omitempty" doc:"Content of the stack's .env file"`
+		ResolveImage    string `json:"resolveImage,omitempty" doc:"Registry digest lookup: always (default), changed (changed images only) or never"`
 
 		WorkingDir       string          `json:"-"`
-		Files            []SwarmSyncFile `json:"files,omitempty"`
-		WithRegistryAuth bool            `json:"withRegistryAuth,omitempty"`
-		Prune            bool            `json:"prune,omitempty"`
+		Files            []SwarmSyncFile `json:"files,omitempty" doc:"Extra files the compose file uses, such as env files, configs and secrets"`
+		WithRegistryAuth bool            `json:"withRegistryAuth,omitempty" doc:"Send the credentials of Arcane's registries with the service specs"`
+		Prune            bool            `json:"prune,omitempty" doc:"Remove stack services the compose file no longer defines"`
 	}
 
 	SwarmSyncFile struct {
-		RelativePath string `json:"relativePath"`
-		Content      []byte `json:"content"`
+		RelativePath string `json:"relativePath" doc:"Path relative to the stack directory"`
+		Content      []byte `json:"content" doc:"File content, base64-encoded"`
 	}
 
 	SwarmStackDeployResponse struct {
