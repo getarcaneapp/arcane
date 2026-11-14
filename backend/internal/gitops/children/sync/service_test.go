@@ -116,7 +116,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 		{RelativePath: "docker-compose.yaml", Content: []byte("services:\n  app:\n    image: nginx:alpine\n")},
 	}
 
-	_, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	_, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
@@ -164,7 +164,7 @@ services:
 		},
 	}
 
-	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -269,7 +269,7 @@ services:
 	keepBefore, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
 	require.NoError(t, err)
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -354,7 +354,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 		},
 	}
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -438,7 +438,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 		},
 	}
 
-	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -489,7 +489,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles
 		},
 	}
 
-	project, syncedFiles, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	project, syncedFiles, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -547,7 +547,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	}
 	assert.Contains(t, composeContent, "./config/dynamic_config.yml")
 
-	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -618,7 +618,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -782,7 +782,7 @@ func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUp
 		_ = db.Callback().Update().Remove(callbackName)
 	}()
 
-	updatedProject, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.Error(t, err)
 	require.Nil(t, updatedProject)
 	assert.Contains(t, err.Error(), "forced project update failure")
@@ -972,7 +972,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		},
 	}
 
-	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, types.Actor{})
+	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, nil, types.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -985,4 +985,99 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	composeBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "docker-compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
+}
+
+func TestGitOpsSyncService_SyncProjectDirectory_PartialPullLeavesUnlistedFiles(t *testing.T) {
+	compose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
+	tests := []struct {
+		pull        *PullRequest
+		wantPresent map[string]string
+		name        string
+		files       []projects.SyncFile
+		wantAbsent  []string
+		wantSynced  []string
+	}{
+		{
+			name: "partial pull writes and removes only the listed files",
+			pull: &PullRequest{Removed: []string{"gone.txt"}},
+			files: []projects.SyncFile{
+				{RelativePath: "config/app.conf", Content: []byte("a = 2\n")},
+			},
+			wantPresent: map[string]string{
+				"compose.yaml":    compose,
+				"extra.yaml":      compose,
+				"old.txt":         "old\n",
+				"local.txt":       "local\n",
+				"config/app.conf": "a = 2\n",
+			},
+			wantAbsent: []string{"gone.txt"},
+			wantSynced: []string{"config/app.conf"},
+		},
+		{
+			name: "full sync prunes stale compose files and old synced files",
+			files: []projects.SyncFile{
+				{RelativePath: "compose.yaml", Content: []byte(compose)},
+				{RelativePath: "config/app.conf", Content: []byte("a = 2\n")},
+			},
+			wantPresent: map[string]string{
+				"compose.yaml":    compose,
+				"local.txt":       "local\n",
+				"config/app.conf": "a = 2\n",
+			},
+			wantAbsent: []string{"extra.yaml", "old.txt"},
+			wantSynced: []string{"compose.yaml", "config/app.conf"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, db, projectsDir := setupSyncTestService(t)
+			projectPath := filepath.Join(projectsDir, "demo-project")
+			require.NoError(t, os.MkdirAll(projectPath, 0o755))
+			for name, content := range map[string]string{
+				"compose.yaml": compose,
+				"extra.yaml":   compose,
+				"old.txt":      "old\n",
+				"gone.txt":     "gone\n",
+				"local.txt":    "local\n",
+			} {
+				require.NoError(t, os.WriteFile(filepath.Join(projectPath, name), []byte(content), 0o644))
+			}
+			project := &projectpkg.Project{
+				ID:      "proj-partial",
+				Name:    "demo-project",
+				DirName: new("demo-project"),
+				Path:    projectPath,
+				Status:  projectpkg.ProjectStatusStopped,
+			}
+			require.NoError(t, db.Create(project).Error)
+			syncedFilesJSON, err := json.Marshal([]string{"compose.yaml", "old.txt"})
+			require.NoError(t, err)
+			sync := &projectpkg.GitOpsSync{
+				ID:            "sync-partial",
+				Name:          "demo-sync",
+				EnvironmentID: "0",
+				RepositoryID:  "repo-1",
+				ComposePath:   "backups/demo/compose.yaml",
+				ProjectName:   "demo-project",
+				ProjectID:     &project.ID,
+				SyncedFiles:   new(string(syncedFilesJSON)),
+			}
+			require.NoError(t, db.Create(sync).Error)
+
+			_, syncedFiles, created, changed, err := svc.syncProjectDirectory(t.Context(), sync, test.files, test.pull, types.Actor{})
+			require.NoError(t, err)
+			assert.False(t, created)
+			assert.True(t, changed)
+			assert.ElementsMatch(t, test.wantSynced, syncedFiles)
+			for name, content := range test.wantPresent {
+				got, readErr := os.ReadFile(filepath.Join(projectPath, filepath.FromSlash(name)))
+				require.NoError(t, readErr, name)
+				assert.Equal(t, content, string(got), name)
+			}
+			for _, name := range test.wantAbsent {
+				assert.NoFileExists(t, filepath.Join(projectPath, name))
+			}
+		})
+	}
 }

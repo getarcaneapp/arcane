@@ -510,7 +510,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 func TestProjectService_LockProject_ReturnsWaitErrorOnDeadline(t *testing.T) {
 	svc, _, _ := setupProjectDestroyTestService(t)
 
-	unlock, err := svc.lockProject(t.Context(), "test", "project-a")
+	unlock, err := svc.LockProject(t.Context(), "test", "project-a")
 	require.NoError(t, err)
 	defer unlock()
 

@@ -184,6 +184,7 @@ type (
 		Name                  string       `json:"name" required:"false"`
 		GitRepositoryURL      string       `json:"gitRepositoryURL,omitempty" readOnly:"true"`
 		GitRepositoryProvider string       `json:"gitRepositoryProvider,omitempty" readOnly:"true"`
+		GitOpsSyncMode        string       `json:"gitOpsSyncMode,omitempty" readOnly:"true"`
 		IconLightURL          string       `json:"iconLightUrl,omitempty" readOnly:"true"`
 		RelativePath          string       `json:"relativePath,omitempty" readOnly:"true"`
 		ProjectsRoot          string       `json:"projectsRoot,omitempty" readOnly:"true"`

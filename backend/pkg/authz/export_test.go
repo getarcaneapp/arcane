@@ -261,4 +261,6 @@ func TestPermissionConditionsRequired(t *testing.T) {
 	require.Empty(t, BuildPushConditions.Required("push", "false"))
 	require.Empty(t, UploadKindConditions.Required("kind", "unknown"))
 	require.Equal(t, []string{PermGitOpsBackup}, GitOpsSyncModeConditions.Required("mode", "backup"))
+	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsSyncModeConditions.Required("mode", "bidirectional"))
+	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsModeConditions.Required("mode", "bidirectional"))
 }

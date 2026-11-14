@@ -209,6 +209,7 @@ const (
 	PermGitOpsSync                = "gitops:sync"
 	PermGitOpsLifecycle           = "gitops:lifecycle"
 	PermGitOpsBackup              = "gitops:backup"
+	PermGitOpsBidirectional       = "gitops:bidirectional"
 	PermWebhooksList              = "webhooks:list"
 	PermWebhooksCreate            = "webhooks:create"
 	PermWebhooksUpdate            = "webhooks:update"
@@ -391,7 +392,7 @@ func BuiltInEditorPermissions() []string {
 		PermPodmanQuadletsStart, PermPodmanQuadletsStop, PermPodmanQuadletsRestart,
 		PermPodmanSecretsList, PermPodmanSecretsRead, PermPodmanSecretsCreate, PermPodmanSecretsUpdate, PermPodmanSecretsDelete,
 		PermPodmanKubeRead, PermPodmanKubeCreate, PermPodmanKubeDelete,
-		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
+		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup, PermGitOpsBidirectional,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
 		PermJobsList, PermJobsRead, PermJobsUpdate, PermJobsRun, PermJobsRestart, PermJobsRetry, PermJobsCancel, PermJobsAck,
 		PermNotificationsList, PermNotificationsRead, PermNotificationsUpdate, PermNotificationsDelete, PermNotificationsTest,

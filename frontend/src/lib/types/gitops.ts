@@ -21,7 +21,7 @@ export interface GitRepository {
 	signingKeyPassphrase?: string;
 }
 
-export type GitOpsSyncMode = 'deploy' | 'backup';
+export type GitOpsSyncMode = 'deploy' | 'backup' | 'bidirectional';
 
 export type GitOpsBackupState = 'never' | 'pending' | 'backing_up' | 'backed_up' | 'paused' | 'failed' | 'needs_attention';
 
@@ -90,6 +90,7 @@ export interface GitOpsSyncCounts {
 	successfulSyncs: number;
 	deploySyncs: number;
 	backupSyncs: number;
+	bidirectionalSyncs: number;
 }
 
 export interface GitOpsSyncResult {
@@ -166,8 +167,10 @@ export interface GitOpsBackupRevision {
 	diffs: GitOpsBackupFileDiff[];
 }
 
+export type GitOpsResolveBackupConflictStrategy = 'use_arcane' | 'use_repository';
+
 export interface GitOpsResolveBackupConflictRequest {
-	strategy: 'use_arcane';
+	strategy: GitOpsResolveBackupConflictStrategy;
 }
 
 export interface GitRepositoryTestResponse {

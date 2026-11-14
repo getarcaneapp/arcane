@@ -339,6 +339,7 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 			Name:                  d.Name,
 			GitRepositoryURL:      d.GitRepositoryURL,
 			GitRepositoryProvider: d.GitRepositoryProvider,
+			GitOpsSyncMode:        d.GitOpsSyncMode,
 			IconLightURL:          icon.IconLightURL,
 			RelativePath:          d.RelativePath,
 			ProjectsRoot:          d.ProjectsRoot,

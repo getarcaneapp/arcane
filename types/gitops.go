@@ -94,11 +94,12 @@ type (
 	}
 
 	GitOpsSyncCounts struct {
-		TotalSyncs      int `json:"totalSyncs"`
-		ActiveSyncs     int `json:"activeSyncs"`
-		SuccessfulSyncs int `json:"successfulSyncs"`
-		DeploySyncs     int `json:"deploySyncs"`
-		BackupSyncs     int `json:"backupSyncs"`
+		TotalSyncs         int `json:"totalSyncs"`
+		ActiveSyncs        int `json:"activeSyncs"`
+		SuccessfulSyncs    int `json:"successfulSyncs"`
+		DeploySyncs        int `json:"deploySyncs"`
+		BackupSyncs        int `json:"backupSyncs"`
+		BidirectionalSyncs int `json:"bidirectionalSyncs"`
 	}
 
 	GitOpsPreDeployConfigRequest struct {
@@ -252,13 +253,14 @@ type (
 	}
 
 	GitOpsResolveBackupConflictRequest struct {
-		Strategy string `json:"strategy" binding:"required,oneof=use_arcane"`
+		Strategy string `json:"strategy" binding:"required,oneof=use_arcane use_repository" enum:"use_arcane,use_repository"`
 	}
 )
 
 const (
 	GitOpsSyncModeDeploy                                    = "deploy"
 	GitOpsSyncModeBackup                                    = "backup"
+	GitOpsSyncModeBidirectional                             = "bidirectional"
 	GitOpsBackupStateNever                                  = "never"
 	GitOpsBackupStatePending                                = "pending"
 	GitOpsBackupStateBackingUp                              = "backing_up"
@@ -276,6 +278,7 @@ const (
 	GitOpsBackupFailureDestinationOccupied                  = "destination_occupied"
 	GitOpsBackupFailurePushRejected                         = "push_rejected"
 	GitOpsBackupConflictUseArcane                           = "use_arcane"
+	GitOpsBackupConflictUseRepository                       = "use_repository"
 	FileTreeNodeTypeFile                   FileTreeNodeType = "file"
 	FileTreeNodeTypeDirectory              FileTreeNodeType = "directory"
 )
