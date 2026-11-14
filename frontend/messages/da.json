@@ -1533,7 +1533,6 @@
   "environments_download_agent_ca": "Download Agent CA",
   "update_all": "Opdater alt",
   "environments_update_all_title": "Opdater alle agenter",
-  "environments_update_all_message": "Dette henter den nyeste Arcane-image og opdaterer alle agenter, uanset om der er rapporteret om en opdatering eller ej. Fjernagenter opdateres først, derefter denne manager, som kun genstarter, hvis hentningen medførte en ny image. Offline-agenter springes over.",
   "environments_update_all_manager_restarting": "Manager genstarter og opretter forbindelse igen til…",
   "environments_update_all_in_progress": "Opdatering af agenter…",
   "environments_update_all_progress": "{done} af {total}",
@@ -4578,5 +4577,7 @@
   "scan_images_before_updating_description": "Block an update when the new image exceeds these vulnerability limits.",
   "vulnerability_limits_help": "Highest number allowed for each severity. Use -1 for no limit.",
   "blocked": "Blocked",
-  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits"
+  "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
+  "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
+  "count_to_update": "{count} to update"
 }
