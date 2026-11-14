@@ -2,6 +2,7 @@ package imageupdate
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -51,6 +52,9 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdate(runtimeCtx, input.ImageRef)
 	if err != nil {
+		if errors.Is(err, common.ErrValidation) {
+			return nil, huma.Error400BadRequest("Failed to check image update: " + err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to check image update: " + err.Error())
 	}
 
