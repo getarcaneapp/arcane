@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -332,6 +333,9 @@ func removeProjectVolumeWithRetry(ctx context.Context, dockerClient *client.Clie
 }
 
 func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntime, sourceVolume, targetVolume string) error {
+	if runtime.GOOS == "windows" {
+		return copyProjectVolumeDataInHelper(ctx, dockerClient, copyRuntime, sourceVolume, targetVolume)
+	}
 	sourceID, cleanupSource, err := createProjectVolumeCopyHolderContainer(ctx, dockerClient, copyRuntime, sourceVolume, true)
 	if err != nil {
 		return err

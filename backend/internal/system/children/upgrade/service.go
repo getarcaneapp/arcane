@@ -174,6 +174,9 @@ const (
 	upgradeJobWorkflowName                       = "update-all"
 	upgradeJobManagerWatchTimeout                = 15 * time.Minute
 	upgradeJobManagerNoRestartGrace              = 15 * time.Second
+
+	// windowsAgentBinaryPath is where the Windows agent image ships the agent.
+	windowsAgentBinaryPath = `C:\app\arcane-agent.exe`
 )
 
 var (
@@ -348,6 +351,9 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	containerName := strings.TrimPrefix(current.Name, "/")
 	config := kit.FromPtr(current.Config)
 	binaryPath := kit.Ternary(labels.IsArcaneAgentContainer(config.Labels), "/app/arcane-agent", "/app/arcane")
+	if strings.EqualFold(current.Platform, "windows") {
+		binaryPath = windowsAgentBinaryPath
+	}
 
 	info := kit.FromPtr(s.versionService.GetAppVersionInfo(ctx))
 	targetImage := strings.TrimSpace(target.NewImageRef)
@@ -435,7 +441,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	// Mount /app/data from the current container so upgrade logs persist.
-	appDataMount := docker.MountForDestination(prepared.current.Mounts, selfcontainer.UpgradeLogDirectory, selfcontainer.UpgradeLogDirectory)
+	appDataMount := upgradeLogMount(prepared.current)
 	if appDataMount == nil {
 		slog.WarnContext(ctx, "Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -470,7 +476,15 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	mounts := append([]mount.Mount{}, runtimeMounts...)
-	if appDataMount != nil {
+	var binds []string
+	switch {
+	case appDataMount == nil:
+	case strings.EqualFold(prepared.current.Platform, "windows"):
+		// Docker on Windows matches -v binds against the image's declared VOLUME paths but not
+		// Mounts targets spelled with another case, and Windows refuses two mounts on one path.
+		// Write the volume as a -v bind in short syntax (source:target[:ro]).
+		binds = append(binds, appDataMount.Source+":"+appDataMount.Target+kit.Ternary(appDataMount.ReadOnly, ":ro", ""))
+	default:
 		mounts = append(mounts, *appDataMount)
 	}
 
@@ -500,7 +514,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				Image: prepared.pullImage,
 				Cmd:   upgradeCmd,
 				// Root for the Docker socket: the short-lived upgrader never goes through the runtime-identity drop.
-				User: "0:0",
+				// Windows images already run as ContainerAdministrator, which can open the engine pipe.
+				User: kit.Ternary(strings.EqualFold(prepared.current.Platform, "windows"), "", "0:0"),
 				Env:  containerEnv,
 				Labels: map[string]string{
 					selfcontainer.LabelArcaneUpgrader: "true",
@@ -509,10 +524,14 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 			},
 			HostConfig: &container.HostConfig{
 				AutoRemove:  !s.keepUpgrader,
+				Binds:       binds,
 				Mounts:      mounts,
 				NetworkMode: networkMode,
 				SecurityOpt: securityOpt,
 				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
+				// Windows only mounts the engine named pipe under process isolation, which the
+				// daemon default (hyperv on Windows 10/11) would not give the upgrader.
+				Isolation: kit.FromPtr(prepared.current.HostConfig).Isolation,
 			},
 			NetworkingConfig: func() *network.NetworkingConfig {
 				if networkMode == "" || !networkMode.IsUserDefined() {
@@ -1714,4 +1733,19 @@ func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time
 		removed++
 	}
 	return removed, errors.Join(failures...)
+}
+
+// upgradeLogMount returns the current container's /app/data mount for the upgrader.
+// On Windows the CLI's /app/data resolves to C:\app\data; Docker may report it with another case.
+func upgradeLogMount(current container.InspectResponse) *mount.Mount {
+	if !strings.EqualFold(current.Platform, "windows") {
+		return docker.MountForDestination(current.Mounts, selfcontainer.UpgradeLogDirectory, selfcontainer.UpgradeLogDirectory)
+	}
+	const windowsDataDir = `C:\app\data`
+	for _, m := range current.Mounts {
+		if strings.EqualFold(strings.TrimRight(m.Destination, `\`), windowsDataDir) {
+			return docker.MountForDestination(current.Mounts, m.Destination, windowsDataDir)
+		}
+	}
+	return nil
 }
