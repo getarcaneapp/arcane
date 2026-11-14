@@ -4579,5 +4579,7 @@
   "blocked": "Blocked",
   "update_blocked_by_vulnerability_limits": "Update blocked by vulnerability limits",
   "manager_updates_last": "The manager updates last and restarts only if a new image was pulled.",
-  "count_to_update": "{count} to update"
+  "count_to_update": "{count} to update",
+  "pull_and_push": "Pull and push",
+  "pull_and_push_description": "Configuration lives in the repository and in Arcane; changes on either side are synced"
 }

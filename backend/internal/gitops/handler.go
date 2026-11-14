@@ -26,7 +26,7 @@ type (
 		Search        string `query:"search" doc:"Search query"`
 		Sort          string `query:"sort" doc:"Column to sort by"`
 		Order         string `query:"order" default:"asc" doc:"Sort direction"`
-		Mode          string `query:"mode" doc:"Filter by direction (deploy or backup)"`
+		Mode          string `query:"mode" doc:"Filter by direction (deploy, backup, or bidirectional)"`
 		ProjectID     string `query:"projectId" doc:"Filter by linked project ID"`
 		RepositoryID  string `query:"repositoryId" doc:"Filter by repository ID"`
 		AutoSync      string `query:"autoSync" doc:"Filter by automatic sync (true or false)"`
@@ -339,6 +339,9 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFi
 }
 
 func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPreviewInput) (*handlerutil.Out[types.GitOpsBackupPreview], error) {
+	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	preview, err := h.syncService.PreviewBackup(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -354,6 +357,9 @@ func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPrev
 }
 
 func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHistoryInput) (*handlerutil.Out[types.GitOpsBackupHistoryResponse], error) {
+	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	history, err := h.syncService.GetBackupHistory(ctx, input.EnvironmentID, input.SyncID, min(input.Limit, maxBackupHistoryLimit))
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -369,6 +375,9 @@ func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHist
 }
 
 func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRevisionInput) (*handlerutil.Out[types.GitOpsBackupRevision], error) {
+	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	revision, err := h.syncService.GetBackupRevision(ctx, input.EnvironmentID, input.SyncID, input.Commit)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -384,6 +393,9 @@ func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRev
 }
 
 func (h *GitOpsSyncHandler) ResolveBackupConflict(ctx context.Context, input *ResolveBackupConflictInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
+	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	actor := handlerutil.CurrentActor(ctx)
 
 	result, err := h.syncService.ResolveBackupConflict(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)

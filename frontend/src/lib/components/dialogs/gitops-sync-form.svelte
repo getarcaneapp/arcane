@@ -2,9 +2,10 @@
 	import { z } from 'zod/v4';
 
 	import { m } from '#lib/paraglide/messages.js';
+	import type { GitOpsSyncMode } from '#lib/types/gitops.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
-	export function gitOpsSyncFormSchema(isBackupMode: () => boolean) {
+	export function gitOpsSyncFormSchema(syncMode: () => GitOpsSyncMode) {
 		return z
 			.object({
 				name: z.string().default(''),
@@ -35,7 +36,7 @@
 			})
 			.check((ctx) => {
 				const value = ctx.value;
-				if (isBackupMode()) {
+				if (syncMode() !== 'deploy') {
 					if (!value.projectId.trim()) {
 						ctx.issues.push({ code: 'custom', message: m.project_required(), path: ['projectId'], input: value });
 					}
@@ -82,7 +83,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitOpsSyncMode, GitRepository } from '#lib/types/gitops.js';
+	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitRepository } from '#lib/types/gitops.js';
 	import type { Project } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { GitOpsSyncCreate, GitOpsSyncUpdate, GitOpsSyncWritable } from '#lib/types/ui/gitops.js';
@@ -132,7 +133,11 @@
 	});
 
 	const canManageLifecycle = $derived(hasPermission('gitops:lifecycle', environmentId));
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const modeAllowed = $derived<Record<GitOpsSyncMode, boolean>>({
+		deploy: true,
+		backup: hasPermission('gitops:backup', environmentId),
+		bidirectional: hasPermission('gitops:bidirectional', environmentId)
+	});
 	const hookConfigured = $derived(!!syncToEdit?.preDeployScriptPath?.trim());
 
 	const composeFileFilter = (file: FileTreeNode) =>
@@ -199,7 +204,7 @@
 	}
 
 	const form = createForm<GitOpsSyncFormSchema>(
-		gitOpsSyncFormSchema(() => mode === 'backup'),
+		gitOpsSyncFormSchema(() => mode),
 		untrack(formValues)
 	);
 	const inputs = form.inputs;
@@ -276,13 +281,16 @@
 	});
 
 	const isBackupMode = $derived(mode === 'backup');
+	const isBidirectionalMode = $derived(mode === 'bidirectional');
+	const pushesToGit = $derived(mode !== 'deploy');
 
 	const allDirectionOptions = [
 		{ value: 'deploy', label: m.pull(), description: m.deploy_from_git_description() },
-		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() }
+		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() },
+		{ value: 'bidirectional', label: m.pull_and_push(), description: m.pull_and_push_description() }
 	] satisfies { value: GitOpsSyncMode; label: string; description: string }[];
-	const directionOptions = $derived(allDirectionOptions.filter((option) => option.value !== 'backup' || canBackup || isEditMode));
-	const selectedDirection = $derived(directionOptions.find((option) => option.value === mode));
+	const directionOptions = $derived(allDirectionOptions.filter((option) => isEditMode || modeAllowed[option.value]));
+	const selectedDirection = $derived(allDirectionOptions.find((option) => option.value === mode));
 
 	const projectListOptions: SearchPaginationSortRequest = {
 		pagination: { page: 1, limit: 200 },
@@ -295,28 +303,33 @@
 		enabled: open
 	}));
 
-	const backupSyncListOptions: SearchPaginationSortRequest = {
+	const pushSyncListOptions: SearchPaginationSortRequest = {
 		pagination: { page: 1, limit: -1 },
-		filters: { mode: 'backup' }
+		filters: { mode: 'backup,bidirectional' }
 	};
 
-	const backupSyncsQuery = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.list(environmentId, backupSyncListOptions),
-		queryFn: () => gitOpsSyncService.getSyncs(environmentId, backupSyncListOptions),
-		enabled: open && isBackupMode && !isEditMode
+	const pushSyncsQuery = createQuery(() => ({
+		queryKey: queryKeys.gitOpsSyncs.list(environmentId, pushSyncListOptions),
+		queryFn: () => gitOpsSyncService.getSyncs(environmentId, pushSyncListOptions),
+		enabled: open && pushesToGit && !isEditMode
 	}));
-	const backedUpProjectIds = $derived(
-		new Set((backupSyncsQuery.data?.data ?? []).map((sync) => sync.projectId).filter((id): id is string => !!id))
+	const pushedProjectIds = $derived(
+		new Set((pushSyncsQuery.data?.data ?? []).map((sync) => sync.projectId).filter((id): id is string => !!id))
 	);
 
 	const projects = $derived<Project[]>(projectsQuery.data?.data ?? []);
 	const projectOptions = $derived(projects.map((project) => ({ value: project.id, label: project.name })));
 	const backupProjectOptions = $derived(
-		isEditMode ? projectOptions : projectOptions.filter((option) => !backedUpProjectIds.has(option.value))
+		isEditMode
+			? projectOptions
+			: projects
+					.filter((project) => !pushedProjectIds.has(project.id) && !(isBidirectionalMode && project.gitOpsManagedBy))
+					.map((project) => ({ value: project.id, label: project.name }))
 	);
 	const selectedProjectId = $derived.by(() => {
 		const value = inputs.projectId.value;
-		if (!isBackupMode || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
+		if (!pushesToGit || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
+		if (value) return '';
 		return backupProjectOptions.length === 1 ? (backupProjectOptions[0]?.value ?? '') : '';
 	});
 	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
@@ -325,7 +338,7 @@
 
 	const workspaceFolders = useWorkspaceFolders({
 		folderQuery: (path) => projectWorkspaceFolderQuery(environmentId, selectedProjectId, path),
-		enabled: () => open && isBackupMode && !!selectedProjectId
+		enabled: () => open && pushesToGit && !!selectedProjectId
 	});
 	const loadingWorkspace = $derived(
 		!!selectedProjectId && (!!workspaceFolders.root?.isPending || !!workspaceFolders.root?.isFetching)
@@ -409,6 +422,11 @@
 		}
 	}
 
+	function handleModeChange(value: GitOpsSyncMode) {
+		mode = value;
+		if (value === 'bidirectional' && selectedTargetType !== 'project') handleTargetTypeChange('project');
+	}
+
 	function buildBackupPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
 		const name = data.name.trim() || backupNamePlaceholder;
 		const repositoryId = selectedRepository?.value || data.repositoryId;
@@ -445,9 +463,9 @@
 	function handleSubmit() {
 		if (selectedRepository) inputs.repositoryId.value = selectedRepository.value;
 		inputs.branch.value = selectedBranch;
-		if (isBackupMode) inputs.projectId.value = selectedProjectId;
+		if (pushesToGit) inputs.projectId.value = selectedProjectId;
 		inputs.backupPaths.value = backupPaths;
-		if (!isEditMode && isBackupMode && !inputs.backupDirectory.value.trim()) {
+		if (!isEditMode && pushesToGit && !inputs.backupDirectory.value.trim()) {
 			inputs.backupDirectory.value = suggestedBackupDirectory;
 		}
 		const data = form.validate();
@@ -458,15 +476,16 @@
 			return;
 		}
 
+		const name = isBidirectionalMode ? data.name.trim() || backupNamePlaceholder : data.name;
 		const fields: GitOpsSyncCreate = {
-			name: data.name,
+			name,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
 			composeOverridePath: data.composeOverridePath.trim(),
 			envContent: data.envContent.trim(),
 			targetType: selectedTargetType,
-			projectName: selectedProject?.name ?? data.name,
+			projectName: selectedProject?.name ?? name,
 			syncDirectory: data.syncDirectory,
 			pullImageAfterSync: data.pullImageAfterSync,
 			redeployAfterSync: data.redeployAfterSync,
@@ -474,7 +493,8 @@
 			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
 			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
 			autoSync: data.autoSync,
-			syncInterval: data.syncInterval
+			syncInterval: data.syncInterval,
+			...(isBidirectionalMode ? { backupOnSave: data.backupOnSave, backupPaths } : {})
 		};
 
 		const payload: GitOpsSyncCreate | GitOpsSyncUpdate =
@@ -483,11 +503,16 @@
 						{
 							...syncToEdit,
 							composeOverridePath: syncToEdit.composeOverridePath ?? '',
-							envContent: syncToEdit.envContent ?? ''
+							envContent: syncToEdit.envContent ?? '',
+							backupPaths: [...(syncToEdit.backupPaths ?? [])].sort((a, b) => a.localeCompare(b))
 						},
 						fields
 					)
-				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
+				: {
+						...fields,
+						...(data.projectId ? { projectId: data.projectId } : {}),
+						...(isBidirectionalMode ? { mode, backupDirectory: data.backupDirectory.trim() } : {})
+					};
 
 		if (shouldSubmitLifecycleFieldsInternal(data)) {
 			payload.preDeployScriptPath = data.preDeployScriptPath.trim();
@@ -555,15 +580,15 @@
 		{/if}
 		{#if isEditMode}
 			<p class="text-xs text-muted-foreground">
-				<span class="font-medium text-foreground">{isBackupMode ? m.push() : m.pull()}</span>
-				· {isBackupMode ? m.back_up_to_git_description() : m.deploy_from_git_description()}
+				<span class="font-medium text-foreground">{selectedDirection?.label}</span>
+				· {selectedDirection?.description}
 			</p>
 		{:else}
 			<div class="space-y-2">
 				<RadioGroupPrimitive.Root
 					class="inline-flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 text-muted-foreground"
 					value={mode}
-					onValueChange={(value) => (mode = value as GitOpsSyncMode)}
+					onValueChange={(value) => handleModeChange(value as GitOpsSyncMode)}
 					aria-label={m.direction()}
 				>
 					{#each directionOptions as option (option.value)}
@@ -580,9 +605,10 @@
 			</div>
 		{/if}
 
-		{#if isBackupMode}
+		{#if pushesToGit}
 			<GitOpsSyncBackupFields
 				{form}
+				bidirectional={isBidirectionalMode}
 				{isEditMode}
 				{selectedProjectId}
 				{backupProjectOptions}
@@ -602,9 +628,11 @@
 				{backupSummaryDestination}
 				source={sourceFields}
 			/>
-		{:else}
+		{/if}
+		{#if !isBackupMode}
 			<GitOpsSyncFormFields
 				{form}
+				bidirectional={isBidirectionalMode}
 				{isEditMode}
 				{selectedTargetType}
 				onTargetTypeChange={handleTargetTypeChange}

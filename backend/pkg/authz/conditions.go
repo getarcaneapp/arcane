@@ -50,6 +50,11 @@ var (
 			Field:      "mode",
 			Value:      types.GitOpsSyncModeBackup,
 			Permission: PermGitOpsBackup,
+		}, {
+			In:         ConditionInBody,
+			Field:      "mode",
+			Value:      types.GitOpsSyncModeBidirectional,
+			Permission: PermGitOpsBidirectional,
 		},
 	}
 
@@ -59,6 +64,11 @@ var (
 			Field:      "mode",
 			Value:      types.GitOpsSyncModeBackup,
 			Permission: PermGitOpsBackup,
+		}, {
+			In:         ConditionInResource,
+			Field:      "mode",
+			Value:      types.GitOpsSyncModeBidirectional,
+			Permission: PermGitOpsBidirectional,
 		},
 	}
 

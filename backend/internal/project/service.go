@@ -3663,6 +3663,8 @@ func (s *ProjectService) gitOpsOwnedWorkspacePaths(ctx context.Context, proj *Pr
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf("load gitops sync for workspace: %w", err)
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional:
+		return nil, nil
 	}
 	return workspace.OwnedPaths(syncRecord.SyncedFiles, syncRecord.ComposePath)
 }

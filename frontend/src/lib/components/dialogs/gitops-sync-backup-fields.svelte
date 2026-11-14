@@ -17,6 +17,7 @@
 
 	type Props = {
 		form: GitOpsSyncFormState;
+		bidirectional: boolean;
 		isEditMode: boolean;
 		selectedProjectId: string;
 		backupProjectOptions: { value: string; label: string }[];
@@ -39,6 +40,7 @@
 
 	let {
 		form,
+		bidirectional,
 		isEditMode,
 		selectedProjectId,
 		backupProjectOptions,
@@ -145,8 +147,8 @@
 		{form}
 		switchId="backupAutoSyncSwitch"
 		intervalId="backupSyncInterval"
-		label={m.automatic_backup()}
-		description={m.automatic_backup_description()}
+		label={bidirectional ? m.git_sync_auto_sync() : m.automatic_backup()}
+		description={bidirectional ? m.common_auto_sync_description() : m.automatic_backup_description()}
 	/>
 
 	<div class="flex items-center justify-between gap-4 py-3">

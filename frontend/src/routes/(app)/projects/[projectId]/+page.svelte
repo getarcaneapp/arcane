@@ -300,6 +300,7 @@
 	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
+	const showBackupTab = $derived(!isGitOpsManaged || lifecycleSync?.mode === 'bidirectional');
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 
 	let canEditName = $derived(
@@ -551,7 +552,7 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(isGitOpsManaged
+		...(!showBackupTab
 			? []
 			: [
 					{
@@ -2003,7 +2004,7 @@
 
 {#snippet projectBackupTab(project: Project)}
 	<Tabs.Content value="backup" class="h-full min-h-0">
-		{#if !isGitOpsManaged}
+		{#if showBackupTab}
 			<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
 		{/if}
 	</Tabs.Content>

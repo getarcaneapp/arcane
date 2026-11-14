@@ -582,6 +582,18 @@ func GitOpsSyncFiles(envID, syncID string) string {
 	return pathf("/api/agents/%s/gitops/syncs/%s/files", envID, syncID)
 }
 
+func GitOpsSyncBackupPreview(envID, syncID string) string {
+	return pathf("/api/agents/%s/gitops/syncs/%s/backup/preview", envID, syncID)
+}
+
+func GitOpsSyncBackupHistory(envID, syncID string) string {
+	return pathf("/api/agents/%s/gitops/syncs/%s/backup/history", envID, syncID)
+}
+
+func GitOpsSyncBackupResolve(envID, syncID string) string {
+	return pathf("/api/agents/%s/gitops/syncs/%s/backup/resolve", envID, syncID)
+}
+
 func GitOpsSyncsImport(envID string) string {
 	return pathf("/api/agents/%s/gitops/syncs/import", envID)
 }

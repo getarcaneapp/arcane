@@ -124,7 +124,7 @@ func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	if err := tx.Where("project_id = ?", projectID).Delete(&ProjectTag{}).Error; err != nil {
 		return fmt.Errorf("delete project tags: %w", err)
 	}
-	if err := tx.Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, projectID).Delete(&GitOpsSync{}).Error; err != nil {
+	if err := tx.Where("mode IN ? AND project_id = ?", GitOpsPushModes, projectID).Delete(&GitOpsSync{}).Error; err != nil {
 		return fmt.Errorf("delete project git backups: %w", err)
 	}
 	if err := tx.Delete(&Project{}, "id = ?", projectID).Error; err != nil {

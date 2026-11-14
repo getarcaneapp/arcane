@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -20,6 +22,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -62,6 +65,18 @@ type (
 	backupSnapshot struct {
 		hashes map[string]string
 		files  []git.CommitFile
+	}
+
+	PerformOptions struct {
+		Baseline map[string]string
+		Adopt    bool
+	}
+
+	PullPlan struct {
+		Baseline map[string]string
+		Commit   string
+		Files    []projects.SyncFile
+		Removed  []string
 	}
 
 	backupAnalysis struct {
@@ -133,7 +148,7 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	}
 	var existing int64
 	if countBackupsErr := tx.Model(&projectpkg.GitOpsSync{}).
-		Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, project.ID).
+		Where("mode IN ? AND project_id = ?", projectpkg.GitOpsPushModes, project.ID).
 		Count(&existing).Error; countBackupsErr != nil {
 		return nil, fmt.Errorf("failed to check existing backups: %w", countBackupsErr)
 	}
@@ -174,7 +189,7 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 }
 
 func (s *Service) ApplyModeUpdates(ctx context.Context, current *projectpkg.GitOpsSync, req types.GitOpsSync, submitted map[string]bool, updates map[string]any) error {
-	if current.Mode != types.GitOpsSyncModeBackup {
+	if !slices.Contains(projectpkg.GitOpsPushModes, current.Mode) {
 		return nil
 	}
 	repositoryID := kit.Ternary(submitted["repositoryId"], req.RepositoryID, current.RepositoryID)
@@ -200,23 +215,31 @@ func (s *Service) ApplyModeUpdates(ctx context.Context, current *projectpkg.GitO
 	return nil
 }
 
-func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, adopt bool) (*types.GitOpsSyncResult, error) {
+func (s *Service) loadBackupProject(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*projectpkg.Project, error) {
 	if localSync.Repository == nil {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureRepository, "Repository not found", errors.New("repository not found"), false)
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureRepository, "Repository not found", errors.New("repository not found"), false)
 	}
-	if localSync.ProjectID == nil || strings.TrimSpace(*localSync.ProjectID) == "" {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project not linked", errors.New("backup sync has no project"), false)
+	if strings.TrimSpace(kit.FromPtr(localSync.ProjectID)) == "" {
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project not linked", errors.New("backup sync has no project"), false)
 	}
 	project, found, err := s.projectService.FindProjectByID(ctx, *localSync.ProjectID)
 	if err != nil {
 		err = fmt.Errorf("failed to get project %s: %w", *localSync.ProjectID, err)
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Failed to load project", err, false)
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Failed to load project", err, false)
 	}
 	if !found {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project not found", fmt.Errorf("project %s no longer exists", *localSync.ProjectID), false)
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project not found", fmt.Errorf("project %s no longer exists", *localSync.ProjectID), false)
 	}
 	if ensureProjectPathUnderRootErr := s.projectService.EnsureProjectPathUnderRoot(ctx, project, true); ensureProjectPathUnderRootErr != nil {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project directory is unavailable", ensureProjectPathUnderRootErr, false)
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureProjectMissing, "Project directory is unavailable", ensureProjectPathUnderRootErr, false)
+	}
+	return project, nil
+}
+
+func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, opts PerformOptions) (*types.GitOpsSyncResult, error) {
+	project, err := s.loadBackupProject(ctx, localSync, actor, result)
+	if err != nil {
+		return result, err
 	}
 	authConfig, err := s.repoService.GetAuthConfig(ctx, localSync.Repository)
 	if err != nil {
@@ -238,14 +261,14 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 	lock.Lock()
 	defer lock.Unlock()
 
-	snapshot, err := s.buildBackupSnapshot(ctx, localSync, project)
+	baseline := kit.Ternary(opts.Baseline != nil, opts.Baseline, localSync.BackupSnapshot())
+	snapshot, err := s.buildBackupSnapshot(ctx, localSync, project, slices.Collect(maps.Keys(baseline)))
 	if err != nil {
 		return result, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
 	}
-	baseline := localSync.BackupSnapshot()
 
 	for attempt := 1; attempt <= BackupPushAttempts; attempt++ {
-		retry, commitBackupErr := s.commitBackup(ctx, localSync, project, actor, result, authConfig, identity, snapshot, baseline, adopt, startedAt)
+		retry, commitBackupErr := s.commitBackup(ctx, localSync, project, actor, result, authConfig, identity, snapshot, baseline, opts.Adopt, startedAt)
 		if retry {
 			slog.InfoContext(ctx, "git backup push rejected; retrying with a fresh checkout", "syncId", localSync.ID, "attempt", attempt, "error", commitBackupErr)
 			continue
@@ -266,6 +289,102 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 		),
 		false,
 	)
+}
+
+func (s *Service) Plan(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*PullPlan, error) {
+	project, err := s.loadBackupProject(ctx, localSync, actor, result)
+	if err != nil {
+		return nil, err
+	}
+	authConfig, err := s.repoService.GetAuthConfig(ctx, localSync.Repository)
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureAuth, "Failed to get authentication config", err, false)
+	}
+	checkout, err := s.repoService.CheckoutForWrite(ctx, localSync.Repository.URL, localSync.Branch, authConfig)
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to prepare repository checkout", err, false)
+	}
+	defer s.repoService.Discard(ctx, checkout.RepoPath)
+
+	selection, err := s.backupSelection(ctx, localSync, project)
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
+	}
+	remote, err := s.readRemoteBackup(ctx, localSync, checkout.RepoPath, selection)
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to read remote backup", err, false)
+	}
+	plan := &PullPlan{Baseline: make(map[string]string, len(remote)), Commit: checkout.HeadCommit}
+	for file, content := range remote {
+		plan.Baseline[file] = kit.SHA256Hex(content.Content)
+	}
+	baseline := localSync.BackupSnapshot()
+	snapshot, err := s.buildBackupSnapshot(ctx, localSync, project, slices.Concat(slices.Collect(maps.Keys(plan.Baseline)), slices.Collect(maps.Keys(baseline))))
+	if err != nil {
+		return nil, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
+	}
+
+	var conflicts []types.GitOpsBackupFileChange
+	files := slices.Concat(slices.Collect(maps.Keys(snapshot.hashes)), slices.Collect(maps.Keys(plan.Baseline)), slices.Collect(maps.Keys(baseline)))
+	slices.Sort(files)
+	for _, file := range slices.Compact(files) {
+		local, remoteHash, base := snapshot.hashes[file], plan.Baseline[file], baseline[file]
+		switch {
+		case local == remoteHash || remoteHash == base:
+		case local == base && remoteHash == "":
+			plan.Removed = append(plan.Removed, file)
+		case local == base:
+			plan.Files = append(plan.Files, remote[file])
+		default:
+			conflicts = append(conflicts, types.GitOpsBackupFileChange{Path: file, Change: BackupChangeModified})
+		}
+	}
+	if len(conflicts) > 0 {
+		return nil, s.failBackup(
+			ctx,
+			localSync,
+			result,
+			actor,
+			types.GitOpsBackupFailureConflict,
+			"Files changed in both Arcane and the repository",
+			fmt.Errorf("%d file(s) changed in both Arcane and the repository since the last sync: %s", len(conflicts), changedPathList(conflicts)),
+			true,
+		)
+	}
+	return plan, nil
+}
+
+func (s *Service) readRemoteBackup(ctx context.Context, localSync *projectpkg.GitOpsSync, repoPath string, selection []string) (map[string]projects.SyncFile, error) {
+	root := path.Join("/", localSync.BackupDirectory)
+	prefix := strings.TrimSuffix(root, "/") + "/"
+	maxFiles, maxTotalSize, _ := s.limits(ctx, localSync)
+	files := make(map[string]projects.SyncFile)
+	var totalSize int64
+	_, err := acfs.Root{Path: repoPath}.Walk(ctx, root, acfstypes.WalkOptions{}, func(entry acfstypes.Entry) error {
+		relative := strings.TrimPrefix(entry.Path, prefix)
+		switch {
+		case entry.IsDirectory && skipBackupDir(entry.Name):
+			return fs.SkipDir
+		case entry.IsDirectory || entry.IsSymlink || !inBackupScope(selection, localSync.SyncDirectory, relative):
+			return nil
+		case maxFiles > 0 && len(files) >= maxFiles:
+			return fmt.Errorf("file count limit exceeded (max %d files): %w", maxFiles, git.ErrSelectionLimits)
+		}
+		content, err := acfs.Root{Path: repoPath}.ReadFile(ctx, entry.Path)
+		if err != nil {
+			return fmt.Errorf("failed to read remote backup file %s: %w", relative, err)
+		}
+		totalSize += int64(len(content))
+		if maxTotalSize > 0 && totalSize > maxTotalSize {
+			return fmt.Errorf("total size limit exceeded (max %d bytes): %w", maxTotalSize, git.ErrSelectionLimits)
+		}
+		files[relative] = projects.SyncFile{RelativePath: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0}
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return files, nil
 }
 
 func (
@@ -305,13 +424,6 @@ func (
 		result.Message = "Repository already contains the current files for project " + project.Name
 		return false, nil
 	case BackupPreviewConflict:
-		names := make([]string, 0, BackupCommitFileLines+1)
-		for _, change := range analysis.conflicts[:min(len(analysis.conflicts), BackupCommitFileLines)] {
-			names = append(names, change.Path)
-		}
-		if len(analysis.conflicts) > BackupCommitFileLines {
-			names = append(names, "...")
-		}
 		return false, s.failBackup(
 			ctx,
 			localSync,
@@ -324,9 +436,8 @@ func (
 				len(
 					analysis.conflicts,
 				),
-				strings.Join(
-					names,
-					", ",
+				changedPathList(
+					analysis.conflicts,
 				),
 			),
 			true,
@@ -430,9 +541,11 @@ func (s *Service) recordBackupSuccess(
 		"last_sync_status":      "success",
 		"last_sync_error":       nil,
 		"last_backup_snapshot":  string(hashes),
-		"synced_files":          projectpkg.EncodeSyncedFiles(paths),
 		"backup_conflict":       false,
 		"backup_failure_reason": nil,
+	}
+	if localSync.Mode == types.GitOpsSyncModeBackup {
+		updates["synced_files"] = projectpkg.EncodeSyncedFiles(paths)
 	}
 	if commit != "" {
 		updates["last_sync_commit"] = commit
@@ -497,7 +610,7 @@ func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.Git
 	if ensureProjectPathUnderRootErr := s.projectService.EnsureProjectPathUnderRoot(previewCtx, project, false); ensureProjectPathUnderRootErr != nil {
 		return nil, ensureProjectPathUnderRootErr
 	}
-	snapshot, err := s.buildBackupSnapshot(previewCtx, syncRecord, project)
+	snapshot, err := s.buildBackupSnapshot(previewCtx, syncRecord, project, slices.Collect(maps.Keys(syncRecord.BackupSnapshot())))
 	if err != nil {
 		return nil, common.Classify(common.ErrBadRequest, err)
 	}
@@ -548,7 +661,7 @@ func (s *Service) backupComposeFiles(ctx context.Context, project *projectpkg.Pr
 	return primary, composeFiles, nil
 }
 
-func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshot, error) {
+func (s *Service) backupSelection(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project) ([]string, error) {
 	_, composeFiles, err := s.backupComposeFiles(ctx, project)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err.Error(), git.ErrSelectionInvalid)
@@ -559,14 +672,28 @@ func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg
 			paths = append(paths, composeFile)
 		}
 	}
+	return paths, nil
+}
+
+func (s *Service) buildBackupSnapshot(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project, tracked []string) (*backupSnapshot, error) {
+	paths, err := s.backupSelection(ctx, localSync, project)
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range tracked {
+		if !localSync.SyncDirectory || backupSelectionCovers(paths, file) || !inBackupScope(paths, true, file) {
+			continue
+		}
+		if exists, existsErr := (acfs.Root{Path: project.Path}).Exists(ctx, "/"+file); existsErr == nil && exists {
+			paths = append(paths, file)
+		}
+	}
 	maxFiles, maxTotalSize, _ := s.limits(ctx, localSync)
 	options := git.CollectOptions{
 		MaxFiles:     maxFiles,
 		MaxTotalSize: maxTotalSize,
 		SkipDir:      projects.IsInternalScratchDirName,
-		SkipFile: func(name string) bool {
-			return name == projects.GitSourceEnvFileName || name == projects.GlobalEnvFileName || name == projects.EffectiveEnvFileName || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".env")
-		},
+		SkipFile:     skipBackupFile,
 	}
 
 	for range BackupSnapshotMaxRetry {
@@ -736,6 +863,36 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 	return changes
 }
 
+func changedPathList(changes []types.GitOpsBackupFileChange) string {
+	names := make([]string, 0, BackupCommitFileLines+1)
+	for _, change := range changes[:min(len(changes), BackupCommitFileLines)] {
+		names = append(names, change.Path)
+	}
+	if len(changes) > BackupCommitFileLines {
+		names = append(names, "...")
+	}
+	return strings.Join(names, ", ")
+}
+
+func skipBackupFile(name string) bool {
+	return name == projects.GitSourceEnvFileName || name == projects.GlobalEnvFileName || name == projects.EffectiveEnvFileName || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".env")
+}
+
+func skipBackupDir(name string) bool {
+	return name == ".git" || projects.IsInternalScratchDirName(name)
+}
+
+func inBackupScope(selection []string, wholeDirectory bool, file string) bool {
+	segments := strings.Split(file, "/")
+	switch {
+	case slices.Contains(selection, file):
+		return true
+	case slices.ContainsFunc(segments[:len(segments)-1], skipBackupDir) || skipBackupFile(segments[len(segments)-1]):
+		return false
+	}
+	return wholeDirectory || backupSelectionCovers(selection, file)
+}
+
 func backupSelectionCovers(paths []string, file string) bool {
 	for _, selected := range paths {
 		if selected == file || strings.HasPrefix(file, selected+"/") {
@@ -784,7 +941,7 @@ func backupFailureReason(err error) string {
 func ensureBackupDestinationFree(tx *gorm.DB, excludeSyncID, repositoryID, branch, directory string) error {
 	var others []projectpkg.GitOpsSync
 	q := tx.Select("id", "backup_directory").
-		Where("mode = ? AND repository_id = ? AND branch = ?", types.GitOpsSyncModeBackup, repositoryID, branch)
+		Where("mode IN ? AND repository_id = ? AND branch = ?", projectpkg.GitOpsPushModes, repositoryID, branch)
 	if excludeSyncID != "" {
 		q = q.Where("id <> ?", excludeSyncID)
 	}

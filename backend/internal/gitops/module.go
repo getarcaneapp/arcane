@@ -159,54 +159,58 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"previewGitOpsBackup",
-			"GET",
-			syncPath+"/backup/preview",
-			"Preview a Git backup",
-			"Show the files the next backup would commit and any conflicts",
-			"GitOps Syncs",
-		),
-		authz.PermGitOpsBackup,
+		huma.Operation{
+			OperationID: "previewGitOpsBackup",
+			Method:      http.MethodGet,
+			Path:        syncPath + "/backup/preview",
+			Summary:     "Preview a Git backup",
+			Description: "Show the files the next backup would commit and any conflicts",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+		},
+		authz.PermGitOpsRead,
 		h.PreviewBackup,
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"listGitOpsBackupHistory",
-			"GET",
-			syncPath+"/backup/history",
-			"List Git backup history",
-			"List repository revisions that changed the backup",
-			"GitOps Syncs",
-		),
-		authz.PermGitOpsBackup,
+		huma.Operation{
+			OperationID: "listGitOpsBackupHistory",
+			Method:      http.MethodGet,
+			Path:        syncPath + "/backup/history",
+			Summary:     "List Git backup history",
+			Description: "List repository revisions that changed the backup",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+		},
+		authz.PermGitOpsRead,
 		h.BackupHistory,
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"getGitOpsBackupRevision",
-			"GET",
-			syncPath+"/backup/history/{commit}",
-			"Get a Git backup revision",
-			"Get one revision with per-file diffs",
-			"GitOps Syncs",
-		),
-		authz.PermGitOpsBackup,
+		huma.Operation{
+			OperationID: "getGitOpsBackupRevision",
+			Method:      http.MethodGet,
+			Path:        syncPath + "/backup/history/{commit}",
+			Summary:     "Get a Git backup revision",
+			Description: "Get one revision with per-file diffs",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+		},
+		authz.PermGitOpsRead,
 		h.BackupRevision,
 	)
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"resolveGitOpsBackupConflict",
-			"POST",
-			syncPath+"/backup/resolve",
-			"Resolve a Git backup conflict",
-			"Resolve a backup that needs attention",
-			"GitOps Syncs",
-		),
-		authz.PermGitOpsBackup,
+		huma.Operation{
+			OperationID: "resolveGitOpsBackupConflict",
+			Method:      http.MethodPost,
+			Path:        syncPath + "/backup/resolve",
+			Summary:     "Resolve a Git backup conflict",
+			Description: "Resolve a backup that needs attention",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaPermissionConditions: authz.GitOpsSyncModeConditions},
+		},
+		authz.PermGitOpsRead,
 		h.ResolveBackupConflict,
 	)
 }

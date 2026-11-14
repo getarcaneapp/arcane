@@ -22,7 +22,8 @@
 		ShieldAlertIcon,
 		CheckIcon,
 		AlertIcon,
-		PauseIcon
+		PauseIcon,
+		RefreshIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -63,14 +64,18 @@
 		queryFn: () =>
 			gitOpsSyncService.getSyncs(environmentId, {
 				pagination: { page: 1, limit: 1 },
-				filters: { projectId, mode: 'backup' }
+				filters: { projectId, mode: 'backup,bidirectional' }
 			}),
 		enabled: !!environmentId && !!projectId
 	}));
 
 	const sync = $derived(backups.data?.data?.[0] ?? null);
+	const isBidirectional = $derived(sync?.mode === 'bidirectional');
 
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const canBackup = $derived(hasPermission(isBidirectional ? 'gitops:bidirectional' : 'gitops:backup', environmentId));
+	const createMode = $derived(
+		(['backup', 'bidirectional'] as const).find((mode) => hasPermission(`gitops:${mode}`, environmentId))
+	);
 
 	const RECENT_LIMIT = 5;
 	const history = createQuery(() => ({
@@ -84,14 +89,16 @@
 	const fileLimit = $derived(sync?.maxSyncFiles ?? 0);
 	const filePercent = $derived(fileLimit > 0 ? (snapshotFiles / fileLimit) * 100 : 0);
 
-	const canCreate = $derived(canBackup && hasPermission('gitops:create', environmentId));
+	const canCreate = $derived(!!createMode && hasPermission('gitops:create', environmentId));
 	const canRun = $derived(canBackup && hasPermission('gitops:sync', environmentId));
 	const canEdit = $derived(canBackup && hasPermission('gitops:update', environmentId));
 	const canDisconnect = $derived(canBackup && hasPermission('gitops:delete', environmentId));
 	const backupState = $derived<GitOpsBackupState>(sync?.backupState ?? 'never');
 	const needsAttention = $derived(backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (backupState === 'failed' || needsAttention));
-	const createHref = $derived(environmentHref(`/gitops?action=create&mode=backup&projectId=${projectId}`, environmentId));
+	const createHref = $derived(
+		environmentHref(`/gitops?action=create&mode=${createMode ?? 'backup'}&projectId=${projectId}`, environmentId)
+	);
 	const destination = $derived.by(() => {
 		if (!sync) return '';
 		const repository = sync.repository?.name ?? sync.repositoryId;
@@ -131,10 +138,10 @@
 		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, sync.id));
 		await handleApiResultWithCallbacks({
 			result,
-			message: m.backup_failed(),
+			message: isBidirectional ? m.git_sync_failed() : m.backup_failed(),
 			setLoadingState: (value) => (backingUp = value),
 			onSuccess: async () => {
-				toast.success(m.backup_started());
+				toast.success(isBidirectional ? m.git_sync_success() : m.backup_started());
 				await invalidate();
 			}
 		});
@@ -205,8 +212,8 @@
 					<ArcaneButton
 						action="base"
 						tone="outline-primary"
-						icon={UploadIcon}
-						customLabel={m.back_up_now()}
+						icon={isBidirectional ? RefreshIcon : UploadIcon}
+						customLabel={isBidirectional ? m.git_sync_perform() : m.back_up_now()}
 						loading={backingUp}
 						disabled={backingUp || disconnecting}
 						onclick={backUpNow}

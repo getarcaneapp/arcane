@@ -94,11 +94,12 @@ type (
 	}
 
 	GitOpsSyncCounts struct {
-		TotalSyncs      int `json:"totalSyncs"`
-		ActiveSyncs     int `json:"activeSyncs"`
-		SuccessfulSyncs int `json:"successfulSyncs"`
-		DeploySyncs     int `json:"deploySyncs"`
-		BackupSyncs     int `json:"backupSyncs"`
+		TotalSyncs         int `json:"totalSyncs"`
+		ActiveSyncs        int `json:"activeSyncs"`
+		SuccessfulSyncs    int `json:"successfulSyncs"`
+		DeploySyncs        int `json:"deploySyncs"`
+		BackupSyncs        int `json:"backupSyncs"`
+		BidirectionalSyncs int `json:"bidirectionalSyncs"`
 	}
 
 	GitOpsPreDeployConfigRequest struct {
@@ -259,6 +260,7 @@ type (
 const (
 	GitOpsSyncModeDeploy                                    = "deploy"
 	GitOpsSyncModeBackup                                    = "backup"
+	GitOpsSyncModeBidirectional                             = "bidirectional"
 	GitOpsBackupStateNever                                  = "never"
 	GitOpsBackupStatePending                                = "pending"
 	GitOpsBackupStateBackingUp                              = "backing_up"

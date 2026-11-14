@@ -77,7 +77,7 @@ func newTagCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -122,7 +122,7 @@ func newArchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -150,7 +150,7 @@ func newUnarchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -212,7 +212,7 @@ func newUpdateServicesCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -257,7 +257,7 @@ func newWorkspaceCatCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -291,7 +291,7 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}

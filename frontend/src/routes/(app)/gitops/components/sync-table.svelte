@@ -65,9 +65,10 @@
 	} = $props();
 
 	const canDelete = (sync: SyncRow) => hasPermission('gitops:delete', sync.environmentId);
-	const canBackup = (sync: SyncRow) => hasPermission('gitops:backup', sync.environmentId);
-	const canRunBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:sync', sync.environmentId);
-	const canEditBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:update', sync.environmentId);
+	const canPush = (sync: SyncRow) =>
+		hasPermission(sync.mode === 'bidirectional' ? 'gitops:bidirectional' : 'gitops:backup', sync.environmentId);
+	const canRunPush = (sync: SyncRow) => canPush(sync) && hasPermission('gitops:sync', sync.environmentId);
+	const canEditPush = (sync: SyncRow) => canPush(sync) && hasPermission('gitops:update', sync.environmentId);
 
 	const isLoading = $state({
 		removing: false,
@@ -81,7 +82,8 @@
 	const modeOptions = [
 		{ value: '', label: m.common_all() },
 		{ value: 'deploy', label: m.deployments() },
-		{ value: 'backup', label: m.backups() }
+		{ value: 'backup', label: m.backups() },
+		{ value: 'bidirectional', label: m.pull_and_push() }
 	];
 
 	const activeMode = $derived(String(requestOptions?.filters?.['mode'] ?? ''));
@@ -106,6 +108,32 @@
 
 	function isBackup(sync: GitOpsSync): boolean {
 		return sync.mode === 'backup';
+	}
+
+	function pushesToGit(sync: GitOpsSync): boolean {
+		return sync.mode !== 'deploy';
+	}
+
+	function directionLabel(sync: GitOpsSync): string {
+		switch (sync.mode) {
+			case 'backup':
+				return m.push();
+			case 'bidirectional':
+				return m.pull_and_push();
+			default:
+				return m.pull();
+		}
+	}
+
+	function directionIcon(sync: GitOpsSync) {
+		switch (sync.mode) {
+			case 'backup':
+				return UploadIcon;
+			case 'bidirectional':
+				return RefreshCwIcon;
+			default:
+				return DownloadIcon;
+		}
 	}
 
 	function openBackupHistory(sync: SyncRow) {
@@ -294,14 +322,10 @@
 {/snippet}
 
 {#snippet DirectionCell({ item }: { item: SyncRow })}
+	{@const DirectionIcon = directionIcon(item)}
 	<span class="inline-flex items-center gap-1.5 text-sm">
-		{#if isBackup(item)}
-			<UploadIcon class="size-3.5 text-muted-foreground" />
-			{m.push()}
-		{:else}
-			<DownloadIcon class="size-3.5 text-muted-foreground" />
-			{m.pull()}
-		{/if}
+		<DirectionIcon class="size-3.5 text-muted-foreground" />
+		{directionLabel(item)}
 	</span>
 {/snippet}
 
@@ -344,7 +368,18 @@
 {#snippet StatusCell({ item }: { item: SyncRow })}
 	{#if isBackup(item)}
 		<BackupStateBadge sync={item} />
-	{:else if item.lastSyncStatus === 'success'}
+	{:else if item.mode === 'bidirectional'}
+		<span class="inline-flex items-center gap-1.5">
+			{@render DeployStatus(item)}
+			<BackupStateBadge sync={item} />
+		</span>
+	{:else}
+		{@render DeployStatus(item)}
+	{/if}
+{/snippet}
+
+{#snippet DeployStatus(item: SyncRow)}
+	{#if item.lastSyncStatus === 'success'}
 		<Badge variant="green" minWidth="20">{m.common_success()}</Badge>
 	{:else if item.lastSyncStatus === 'failed'}
 		<Badge variant="red" minWidth="20">{m.common_failed()}</Badge>
@@ -423,8 +458,8 @@
 		fields={[
 			{
 				label: m.direction(),
-				getValue: (item: SyncRow) => (isBackup(item) ? m.push() : m.pull()),
-				icon: isBackup(item) ? UploadIcon : DownloadIcon,
+				getValue: (item: SyncRow) => directionLabel(item),
+				icon: directionIcon(item),
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['mode'] ?? true
 			},
@@ -449,7 +484,7 @@
 				component: BackupStateField,
 				icon: UploadIcon,
 				iconVariant: 'gray' as const,
-				show: isBackup(item) && (mobileFieldVisibility['backupState'] ?? true)
+				show: pushesToGit(item) && (mobileFieldVisibility['backupState'] ?? true)
 			}
 		]}
 		rowActions={RowActions}
@@ -459,29 +494,29 @@
 {#snippet RowActions({ item }: { item: SyncRow })}
 	<RowActionsMenu name={item.name}>
 		{#if isBackup(item)}
-			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunBackup(item)}>
+			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunPush(item)}>
 				<UploadIcon class="size-4" />
 				{m.back_up_now()}
 			</DropdownMenu.Item>
 
-			<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canBackup(item)}>
+			<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canPush(item)}>
 				<ClockIcon class="size-4" />
 				{m.history()}
 			</DropdownMenu.Item>
 
-			{#if item.backupState === 'needs_attention' && canBackup(item)}
+			{#if item.backupState === 'needs_attention' && canPush(item)}
 				<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
 					<AlertIcon class="size-4" />
 					{m.resolve()}
 				</DropdownMenu.Item>
 			{/if}
 
-			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={!canEditBackup(item)}>
+			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={!canEditPush(item)}>
 				<SettingsIcon class="size-4" />
 				{m.settings()}
 			</DropdownMenu.Item>
 
-			{#if canDelete(item) && canBackup(item)}
+			{#if canDelete(item) && canPush(item)}
 				<RemoveMenuItem
 					onclick={() => handleDisconnectBackup(item)}
 					disabled={isLoading.removing}
@@ -489,17 +524,39 @@
 				/>
 			{/if}
 		{:else}
-			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing}>
-				<PlayIcon class="size-4" />
-				{m.pull_from_git()}
+			<DropdownMenu.Item
+				onclick={() => handlePerformSync(item)}
+				disabled={isLoading.syncing || (pushesToGit(item) && !canRunPush(item))}
+			>
+				{#if pushesToGit(item)}
+					<RefreshCwIcon class="size-4" />
+					{m.git_sync_perform()}
+				{:else}
+					<PlayIcon class="size-4" />
+					{m.pull_from_git()}
+				{/if}
 			</DropdownMenu.Item>
 
-			<DropdownMenu.Item onclick={() => onEditSync(item)}>
+			{#if pushesToGit(item)}
+				<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canPush(item)}>
+					<ClockIcon class="size-4" />
+					{m.history()}
+				</DropdownMenu.Item>
+
+				{#if item.backupState === 'needs_attention' && canPush(item)}
+					<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
+						<AlertIcon class="size-4" />
+						{m.resolve()}
+					</DropdownMenu.Item>
+				{/if}
+			{/if}
+
+			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={pushesToGit(item) && !canEditPush(item)}>
 				<PencilIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
 
-			{#if canDelete(item)}
+			{#if canDelete(item) && (!pushesToGit(item) || canPush(item))}
 				<RemoveMenuItem onclick={() => handleDeleteOne(item)} disabled={isLoading.removing} />
 			{/if}
 		{/if}

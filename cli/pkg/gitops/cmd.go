@@ -15,27 +15,32 @@ import (
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
-var gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
-	EnvironmentScoped: true,
-	Singular:          "gitops sync",
-	Plural:            "gitops syncs",
-	IDHint:            "the sync ID",
-	ListCmd:           "arcane gitops list",
-	GetPath:           clitypes.GitOpsSync,
-	IdentifierOf:      func(item types.GitOpsSync) string { return item.ID },
-	ListPath:          clitypes.GitOpsSyncs,
-	Matches: func(item types.GitOpsSync, identifierLower, original string) bool {
-		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
-			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
-	},
-	Label: func(match types.GitOpsSync) string {
-		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, cmp.Or(kit.FromPtr(match.LastSyncStatus), "-"))
-	},
-	Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
-}
+var (
+	gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
+		EnvironmentScoped: true,
+		Singular:          "gitops sync",
+		Plural:            "gitops syncs",
+		IDHint:            "the sync ID",
+		ListCmd:           "arcane gitops list",
+		GetPath:           clitypes.GitOpsSync,
+		IdentifierOf:      func(item types.GitOpsSync) string { return item.ID },
+		ListPath:          clitypes.GitOpsSyncs,
+		Matches: func(item types.GitOpsSync, identifierLower, original string) bool {
+			return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
+				strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
+		},
+		Label: func(match types.GitOpsSync) string {
+			return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, cmp.Or(kit.FromPtr(match.LastSyncStatus), "-"))
+		},
+		Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
+	}
+
+	syncModes = []string{types.GitOpsSyncModeDeploy, types.GitOpsSyncModeBackup, types.GitOpsSyncModeBidirectional}
+)
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
@@ -53,11 +58,15 @@ func Command() *cobra.Command {
 	cmd.AddCommand(newSyncCmd())
 	cmd.AddCommand(newFilesCmd())
 	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(newPreviewCmd())
+	cmd.AddCommand(newHistoryCmd())
+	cmd.AddCommand(newResolveCmd())
 	return cmd
 }
 
 func newListCmd() *cobra.Command {
 	var opts struct {
+		mode  string
 		limit int
 		start int
 		all   bool
@@ -75,14 +84,16 @@ func newListCmd() *cobra.Command {
 			}
 
 			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.GitOpsSync]{
+				Query:    kit.Ternary(opts.mode != "", url.Values{"mode": []string{opts.mode}}, nil),
 				Resource: "gitops syncs",
 				Endpoint: clitypes.GitOpsSyncs(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "gitops-syncs", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
-				Headers:  []string{"ID", "NAME", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
+				Headers:  []string{"ID", "NAME", "MODE", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
 				Row: func(sync types.GitOpsSync) []string {
 					return []string{
 						sync.ID,
 						sync.Name,
+						cmp.Or(sync.Mode, types.GitOpsSyncModeDeploy),
 						sync.Branch,
 						strconv.FormatBool(sync.AutoSync),
 						cmp.Or(kit.FromPtr(sync.LastSyncStatus), "-"),
@@ -93,6 +104,7 @@ func newListCmd() *cobra.Command {
 		},
 	}
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.mode, "mode", "", "", "Only show syncs with this mode", syncModes...)
 	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of syncs to show")
 	cmd.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	cmd.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
@@ -101,13 +113,18 @@ func newListCmd() *cobra.Command {
 
 func newCreateCmd() *cobra.Command {
 	var opts struct {
-		name        string
-		repoID      string
-		branch      string
-		composePath string
-		projectName string
-		autoSync    bool
-		interval    int
+		name            string
+		mode            string
+		repoID          string
+		branch          string
+		composePath     string
+		projectName     string
+		project         string
+		backupDirectory string
+		backupPaths     []string
+		backupOnSave    bool
+		autoSync        bool
+		interval        int
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -122,14 +139,33 @@ func newCreateCmd() *cobra.Command {
 
 			req := map[string]any{
 				"name":         opts.name,
+				"mode":         opts.mode,
 				"repositoryId": opts.repoID,
 				"branch":       opts.branch,
-				"composePath":  opts.composePath,
-				"projectName":  opts.projectName,
 				"autoSync":     opts.autoSync,
 			}
-			if cmd.Flags().Changed("interval") {
-				req["syncInterval"] = opts.interval
+			if opts.project != "" {
+				resolved, _, resolveErr := projects.ProjectRef.Resolve(cmd.Context(), c, opts.project, cmdutil.AllowPrompt(cmd))
+				if resolveErr != nil {
+					return resolveErr
+				}
+				req["projectId"] = resolved.ID
+			}
+			for _, field := range []struct {
+				value any
+				flag  string
+				key   string
+			}{
+				{flag: "compose-path", key: "composePath", value: opts.composePath},
+				{flag: "project-name", key: "projectName", value: opts.projectName},
+				{flag: "interval", key: "syncInterval", value: opts.interval},
+				{flag: "backup-directory", key: "backupDirectory", value: opts.backupDirectory},
+				{flag: "backup-path", key: "backupPaths", value: opts.backupPaths},
+				{flag: "backup-on-save", key: "backupOnSave", value: opts.backupOnSave},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
@@ -146,16 +182,20 @@ func newCreateCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
 	cmd.Flags().StringVar(&opts.name, "name", "", "Name of the sync configuration")
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.mode, "mode", "", types.GitOpsSyncModeDeploy, "Sync direction: pull from Git, push to Git, or both", syncModes...)
 	cmd.Flags().StringVar(&opts.repoID, "repo-id", "", "Repository ID")
 	cmd.Flags().StringVar(&opts.branch, "branch", "", "Branch to sync from")
-	cmd.Flags().StringVar(&opts.composePath, "compose-path", "", "Path to docker-compose file")
+	cmd.Flags().StringVar(&opts.composePath, "compose-path", "", "Path to docker-compose file (required for deploy mode)")
 	cmd.Flags().BoolVar(&opts.autoSync, "auto-sync", false, "Enable automatic sync")
 	cmd.Flags().IntVar(&opts.interval, "interval", 0, "Sync interval in minutes")
 	cmd.Flags().StringVar(&opts.projectName, "project-name", "", "Project name for the sync")
+	cmd.Flags().StringVar(&opts.project, "project", "", "Existing project ID or name to link (required for backup and bidirectional modes)")
+	cmd.Flags().StringVar(&opts.backupDirectory, "backup-directory", "", "Repository directory that project files are pushed to (backup and bidirectional modes)")
+	cmd.Flags().StringArrayVar(&opts.backupPaths, "backup-path", nil, "Extra project path to push besides the compose files (repeatable; backup and bidirectional modes)")
+	cmd.Flags().BoolVar(&opts.backupOnSave, "backup-on-save", true, "Push to Git whenever project files are saved in Arcane (backup and bidirectional modes)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("repo-id")
 	_ = cmd.MarkFlagRequired("branch")
-	_ = cmd.MarkFlagRequired("compose-path")
 	return cmd
 }
 
@@ -183,9 +223,16 @@ func newGetCmd() *cobra.Command {
 			output.Header("GitOps Sync Details")
 			output.KeyValue("ID", resolved.ID)
 			output.KeyValue("Name", resolved.Name)
+			output.KeyValue("Mode", cmp.Or(resolved.Mode, types.GitOpsSyncModeDeploy))
 			output.KeyValue("Branch", resolved.Branch)
 			output.KeyValue("Compose Path", resolved.ComposePath)
 			output.KeyValue("Project Name", resolved.ProjectName)
+			if resolved.Mode == types.GitOpsSyncModeBackup || resolved.Mode == types.GitOpsSyncModeBidirectional {
+				output.KeyValue("Backup Directory", resolved.BackupDirectory)
+				output.KeyValue("Backup Paths", cmp.Or(strings.Join(resolved.BackupPaths, ", "), "-"))
+				output.KeyValue("Backup On Save", resolved.BackupOnSave)
+				output.KeyValue("Backup State", cmp.Or(resolved.BackupState, "-"))
+			}
 			output.KeyValue("Auto Sync", resolved.AutoSync)
 			output.KeyValue("Sync Interval", fmt.Sprintf("%d min", resolved.SyncInterval))
 			if resolved.LastSyncStatus != nil {
@@ -206,13 +253,15 @@ func newGetCmd() *cobra.Command {
 
 func newUpdateCmd() *cobra.Command {
 	var opts struct {
-		name        string
-		repoID      string
-		branch      string
-		composePath string
-		projectName string
-		autoSync    bool
-		interval    int
+		name         string
+		repoID       string
+		branch       string
+		composePath  string
+		projectName  string
+		backupPaths  []string
+		backupOnSave bool
+		autoSync     bool
+		interval     int
 	}
 	cmd := &cobra.Command{
 		Use:          "update <sync-id|name>",
@@ -243,6 +292,8 @@ func newUpdateCmd() *cobra.Command {
 				{flag: "project-name", key: "projectName", value: opts.projectName},
 				{flag: "auto-sync", key: "autoSync", value: opts.autoSync},
 				{flag: "interval", key: "syncInterval", value: opts.interval},
+				{flag: "backup-path", key: "backupPaths", value: opts.backupPaths},
+				{flag: "backup-on-save", key: "backupOnSave", value: opts.backupOnSave},
 			} {
 				if cmd.Flags().Changed(field.flag) {
 					req[field.key] = field.value
@@ -268,6 +319,8 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.projectName, "project-name", "", "Project name for the sync")
 	cmd.Flags().BoolVar(&opts.autoSync, "auto-sync", false, "Enable automatic sync")
 	cmd.Flags().IntVar(&opts.interval, "interval", 0, "Sync interval in minutes")
+	cmd.Flags().StringArrayVar(&opts.backupPaths, "backup-path", nil, "Extra project path to push besides the compose files; replaces the current list (repeatable; backup and bidirectional modes)")
+	cmd.Flags().BoolVar(&opts.backupOnSave, "backup-on-save", false, "Push to Git whenever project files are saved in Arcane (backup and bidirectional modes)")
 	cmdutil.SetResource(gitopsSyncRef, cmd)
 	return cmd
 }
