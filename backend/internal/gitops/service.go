@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,7 +121,7 @@ type (
 		EnvironmentID string
 		SyncID        string
 		Actor         types.Actor
-		BackupAdopt   bool
+		Resolve       string
 	}
 )
 
@@ -132,14 +133,19 @@ const (
 	gitOpsSyncAdmissionScope   = "gitops-sync"
 )
 
-var syncRuns = func() metric.Int64Counter {
-	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
-		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
-	if err != nil {
-		otel.Handle(err)
-	}
-	return counter
-}()
+var (
+	errBidirectionalOverride    = errors.New("a compose override path cannot be set on a bidirectional sync")
+	errBidirectionalBinaryLimit = errors.New("the binary size limit does not apply to a bidirectional sync and must be 0")
+
+	syncRuns = func() metric.Int64Counter {
+		counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+			metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
+		if err != nil {
+			otel.Handle(err)
+		}
+		return counter
+	}()
+)
 
 // validateSwarmStackName rejects a stack sync whose name Docker Swarm would refuse at deploy time.
 func validateSwarmStackName(targetType, stackName string) error {
@@ -351,7 +357,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	for _, syncRecord := range syncs {
 		s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
 		overdue := syncRecord.LastSyncAt == nil || time.Since(*syncRecord.LastSyncAt) > time.Duration(max(syncRecord.SyncInterval, 1))*time.Minute
-		if overdue || (syncRecord.Mode == types.GitOpsSyncModeBackup && syncRecord.BackupPending) {
+		if overdue || (slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) && syncRecord.BackupPending) {
 			s.kickSync(ctx, syncRecord.ID, "startup")
 		}
 	}
@@ -399,21 +405,23 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 	q = pagination.ApplyFilter(q, "repository_id", params.Filters["repositoryId"])
 	q = pagination.ApplyFilter(q, "project_id", params.Filters["projectId"])
 
-	var total, active, successful, backups int64
+	var total, active, successful, backups, bidirectional int64
 	if err := errors.Join(
 		q.Session(&gorm.Session{}).Count(&total).Error,
 		q.Session(&gorm.Session{}).Where("auto_sync = ?", true).Count(&active).Error,
 		q.Session(&gorm.Session{}).Where("last_sync_status = ?", "success").Count(&successful).Error,
 		q.Session(&gorm.Session{}).Where("mode = ?", types.GitOpsSyncModeBackup).Count(&backups).Error,
+		q.Session(&gorm.Session{}).Where("mode = ?", types.GitOpsSyncModeBidirectional).Count(&bidirectional).Error,
 	); err != nil {
 		return nil, pagination.Response{}, types.GitOpsSyncCounts{}, fmt.Errorf("failed to get sync counts: %w", err)
 	}
 	counts := types.GitOpsSyncCounts{
-		TotalSyncs:      int(total),
-		ActiveSyncs:     int(active),
-		SuccessfulSyncs: int(successful),
-		DeploySyncs:     int(total - backups),
-		BackupSyncs:     int(backups),
+		TotalSyncs:         int(total),
+		ActiveSyncs:        int(active),
+		SuccessfulSyncs:    int(successful),
+		DeploySyncs:        int(total - backups - bidirectional),
+		BackupSyncs:        int(backups),
+		BidirectionalSyncs: int(bidirectional),
 	}
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q.Preload("Repository").Preload("Project"), &syncs)
@@ -444,11 +452,12 @@ func (s *GitOpsSyncService) AggregateSyncs(ctx context.Context, params paginatio
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
 		})
 		counts = types.GitOpsSyncCounts{
-			TotalSyncs:      counts.TotalSyncs + result.Value.Counts.TotalSyncs,
-			ActiveSyncs:     counts.ActiveSyncs + result.Value.Counts.ActiveSyncs,
-			SuccessfulSyncs: counts.SuccessfulSyncs + result.Value.Counts.SuccessfulSyncs,
-			DeploySyncs:     counts.DeploySyncs + result.Value.Counts.DeploySyncs,
-			BackupSyncs:     counts.BackupSyncs + result.Value.Counts.BackupSyncs,
+			TotalSyncs:         counts.TotalSyncs + result.Value.Counts.TotalSyncs,
+			ActiveSyncs:        counts.ActiveSyncs + result.Value.Counts.ActiveSyncs,
+			SuccessfulSyncs:    counts.SuccessfulSyncs + result.Value.Counts.SuccessfulSyncs,
+			DeploySyncs:        counts.DeploySyncs + result.Value.Counts.DeploySyncs,
+			BackupSyncs:        counts.BackupSyncs + result.Value.Counts.BackupSyncs,
+			BidirectionalSyncs: counts.BidirectionalSyncs + result.Value.Counts.BidirectionalSyncs,
 		}
 	}
 	data, resp := pagination.MergeEnvironmentPages(pagination.Config[types.GitOpsSync]{
@@ -511,7 +520,7 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", change.Request.Name, "repositoryId", change.Request.RepositoryID)
 
-	mode := cmp.Or(strings.TrimSpace(change.Request.Mode), types.GitOpsSyncModeDeploy)
+	mode := cmp.Or(change.Request.Mode, types.GitOpsSyncModeDeploy)
 	switch {
 	case strings.TrimSpace(change.Request.Name) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "name", Err: errors.New("name is required")})
@@ -519,10 +528,16 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "repositoryId", Err: errors.New("repository is required")})
 	case strings.TrimSpace(change.Request.Branch) == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "branch", Err: errors.New("branch is required")})
-	case mode != types.GitOpsSyncModeDeploy && mode != types.GitOpsSyncModeBackup:
+	case mode != types.GitOpsSyncModeDeploy && !slices.Contains(projectpkg.GitOpsPushModes, mode):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: fmt.Errorf("unsupported sync mode %q", change.Request.Mode)})
 	case mode == types.GitOpsSyncModeDeploy && (change.Request.BackupDirectory != "" || len(change.Request.BackupPaths) > 0 || change.Submitted["backupOnSave"]):
-		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\"")})
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options require mode \"backup\" or \"bidirectional\"")})
+	case mode == types.GitOpsSyncModeBidirectional && change.Request.TargetType != "" && change.Request.TargetType != "project":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "targetType", Err: errors.New("a bidirectional sync must target a project")})
+	case mode == types.GitOpsSyncModeBidirectional && strings.TrimSpace(change.Request.ComposeOverridePath) != "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composeOverridePath", Err: errBidirectionalOverride})
+	case mode == types.GitOpsSyncModeBidirectional && change.Submitted["maxSyncBinarySize"] && change.Request.MaxSyncBinarySize != 0:
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncBinarySize", Err: errBidirectionalBinaryLimit})
 	case mode == types.GitOpsSyncModeBackup &&
 		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
 			change.Request.SyncDirectory || change.Request.PullImageAfterSync || change.Request.RedeployAfterSync ||
@@ -579,7 +594,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		RedeployAfterSync:    change.Request.RedeployAfterSync,
 		MaxSyncFiles:         kit.Ternary(change.Submitted["maxSyncFiles"], change.Request.MaxSyncFiles, defaultMaxFiles),
 		MaxSyncTotalSize:     kit.Ternary(change.Submitted["maxSyncTotalSize"], change.Request.MaxSyncTotalSize, defaultMaxTotalSize),
-		MaxSyncBinarySize:    kit.Ternary(change.Submitted["maxSyncBinarySize"], change.Request.MaxSyncBinarySize, defaultMaxBinarySize),
+		MaxSyncBinarySize:    kit.Ternary(change.Submitted["maxSyncBinarySize"] || mode == types.GitOpsSyncModeBidirectional, change.Request.MaxSyncBinarySize, defaultMaxBinarySize),
 		BackupOnSave:         true,
 		PreDeployScriptPath:  nullableTrimmedString(change.Request.PreDeployScriptPath),
 		PreDeployRunnerImage: nullableTrimmedString(change.Request.PreDeployRunnerImage),
@@ -588,7 +603,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		PreDeployTimeoutSec:  kit.Ternary(change.Submitted["preDeployTimeoutSec"], change.Request.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec),
 		PreDeployNetworkMode: cmp.Or(strings.TrimSpace(change.Request.PreDeployNetworkMode), "none"),
 	}
-	if mode == types.GitOpsSyncModeDeploy {
+	if mode != types.GitOpsSyncModeBackup {
 		if sourceErr := validateDeploySource(syncRecord); sourceErr != nil {
 			return nil, sourceErr
 		}
@@ -637,7 +652,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *projectpkg.GitOpsSync, req types.GitOpsSync, submitted map[string]bool, mode string) (*projectpkg.Project, error) {
 	var adoptedProject *projectpkg.Project
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if mode == types.GitOpsSyncModeDeploy && strings.TrimSpace(kit.FromPtr(req.ProjectID)) != "" {
+		if mode != types.GitOpsSyncModeBackup && strings.TrimSpace(kit.FromPtr(req.ProjectID)) != "" {
 			if strings.TrimSpace(req.TargetType) == "swarm_stack" {
 				return common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("an existing project cannot be linked to a swarm stack sync")})
 			}
@@ -649,7 +664,7 @@ func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *pr
 				return common.Classify(common.ErrConflict, errors.New("project is already deployed from Git"))
 			}
 			var backups int64
-			if countErr := tx.Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, project.ID).Count(&backups).Error; countErr != nil {
+			if countErr := tx.Model(&projectpkg.GitOpsSync{}).Where("mode IN ? AND project_id = ?", projectpkg.GitOpsPushModes, project.ID).Count(&backups).Error; countErr != nil {
 				return fmt.Errorf("failed to check existing backups: %w", countErr)
 			}
 			if backups > 0 {
@@ -662,7 +677,7 @@ func (s *GitOpsSyncService) insertSyncRecord(ctx context.Context, syncRecord *pr
 			syncRecord.ProjectID = &project.ID
 			syncRecord.ProjectName = project.Name
 		}
-		if mode == types.GitOpsSyncModeBackup {
+		if slices.Contains(projectpkg.GitOpsPushModes, mode) {
 			if err := s.backup.ApplyCreate(ctx, tx, req, submitted, syncRecord); err != nil {
 				return err
 			}
@@ -701,7 +716,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 
 	switch {
-	case syncRecord.Mode != types.GitOpsSyncModeBackup && (change.Submitted["backupPaths"] || change.Submitted["backupOnSave"]):
+	case syncRecord.Mode == types.GitOpsSyncModeDeploy && (change.Submitted["backupPaths"] || change.Submitted["backupOnSave"]):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("backup options cannot be set on a deployment sync")})
 	case syncRecord.Mode == types.GitOpsSyncModeBackup &&
 		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
@@ -714,6 +729,15 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			change.Request.RedeployAfterSync ||
 			hasPreDeployConfig(change.Submitted)):
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional &&
+		(change.Request.TargetType != "" && change.Request.TargetType != "project" ||
+			change.Submitted["composePath"] && change.Request.ComposePath != syncRecord.ComposePath ||
+			change.Submitted["projectName"] && change.Request.ProjectName != syncRecord.ProjectName):
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "mode", Err: errors.New("the project, target, and compose path of a bidirectional sync cannot be changed")})
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional && change.Submitted["composeOverridePath"] && strings.TrimSpace(change.Request.ComposeOverridePath) != "":
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "composeOverridePath", Err: errBidirectionalOverride})
+	case syncRecord.Mode == types.GitOpsSyncModeBidirectional && change.Submitted["maxSyncBinarySize"] && change.Request.MaxSyncBinarySize != 0:
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "maxSyncBinarySize", Err: errBidirectionalBinaryLimit})
 	}
 	// Only checked when the name or target changes, so unrelated edits to an existing sync still save.
 	if change.Submitted["targetType"] || change.Submitted["projectName"] {
@@ -960,10 +984,67 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	}
 
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
-		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, req.BackupAdopt)
+		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
+	}
+	if syncRecord.Mode == types.GitOpsSyncModeBidirectional {
+		return s.performBidirectional(ctx, syncCtx, syncRecord, req, result)
 	}
 
 	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, req.Actor, result)
+}
+
+func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, syncRecord *projectpkg.GitOpsSync, req SyncRequest, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
+	pulled := result
+	var pullErr error
+	for range backup.BackupSnapshotMaxRetry {
+		plan, err := s.backup.Plan(syncCtx, backup.PlanRequest{
+			Sync:     syncRecord,
+			Actor:    req.Actor,
+			Result:   result,
+			Strategy: req.Resolve,
+		})
+		if err != nil {
+			return result, err
+		}
+		pulled, pullErr = s.sync.Pull(ctx, syncCtx, gitopssync.PullRequest{
+			Sync:     syncRecord,
+			Actor:    req.Actor,
+			Result:   &types.GitOpsSyncResult{SyncedAt: result.SyncedAt},
+			Expected: plan.Expected,
+			Commit:   plan.Commit,
+			Files:    plan.Files,
+			Removed:  plan.Removed,
+		})
+		switch {
+		case errors.Is(pullErr, common.ErrRedeployAfterSyncFailed):
+		case errors.Is(pullErr, common.ErrConflict):
+			continue
+		case pullErr != nil:
+			return pulled, pullErr
+		}
+		if recordErr := s.backup.RecordPull(syncCtx, backup.RecordPullRequest{
+			Sync:   syncRecord,
+			Actor:  req.Actor,
+			Result: result,
+			Plan:   plan,
+		}); recordErr != nil {
+			return result, errors.Join(pullErr, recordErr)
+		}
+		pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{
+			Baseline:  plan.Baseline,
+			RunFailed: pullErr != nil,
+		})
+		if err != nil {
+			return pushed, errors.Join(pullErr, err)
+		}
+		return &types.GitOpsSyncResult{
+			SyncedAt: pushed.SyncedAt,
+			Message:  pulled.Message + "; " + pushed.Message,
+			Success:  pushed.Success && pullErr == nil,
+			Error:    pulled.Error,
+		}, pullErr
+	}
+	return pulled, pullErr
 }
 
 func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*types.GitOpsSyncStatus, error) {
@@ -1237,18 +1318,21 @@ func (r *backupRuntime) cancel(syncID string) {
 }
 
 func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req types.GitOpsResolveBackupConflictRequest, actor types.Actor) (*types.GitOpsSyncResult, error) {
-	if req.Strategy != types.GitOpsBackupConflictUseArcane {
+	if req.Strategy != types.GitOpsBackupConflictUseArcane && req.Strategy != types.GitOpsBackupConflictUseRepository {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
 	}
 	syncRecord, err := s.getBackupSync(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
+	if req.Strategy == types.GitOpsBackupConflictUseRepository && syncRecord.Mode != types.GitOpsSyncModeBidirectional {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "strategy", Err: errors.New("only a bidirectional sync can take the repository version")})
+	}
 	return s.PerformSync(ctx, SyncRequest{
 		EnvironmentID: syncRecord.EnvironmentID,
 		SyncID:        syncRecord.ID,
 		Actor:         actor,
-		BackupAdopt:   true,
+		Resolve:       req.Strategy,
 	})
 }
 
@@ -1257,7 +1341,7 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges() {
 	s.projectService.FilesChanged.Subscribe(func(projectID string) {
 		var syncs []projectpkg.GitOpsSync
 		if err := s.db.WithContext(runCtx).
-			Where("mode = ? AND project_id = ?", types.GitOpsSyncModeBackup, projectID).
+			Where("mode IN ? AND project_id = ?", projectpkg.GitOpsPushModes, projectID).
 			Find(&syncs).Error; err != nil {
 			slog.ErrorContext(runCtx, "Failed to load git backups for changed project", "projectId", projectID, "error", err)
 			return
@@ -1331,7 +1415,7 @@ func (s *GitOpsSyncService) GetBackupRevision(ctx context.Context, environmentID
 }
 
 func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Context, protectedIDs ...string) error {
-	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND last_sync_status = ?", types.GitOpsSyncModeBackup, backup.BackupStatusRunning)
+	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode IN ? AND last_sync_status = ?", projectpkg.GitOpsPushModes, backup.BackupStatusRunning)
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
@@ -1353,7 +1437,7 @@ func (s *GitOpsSyncService) getBackupSync(ctx context.Context, environmentID, id
 	if err != nil {
 		return nil, err
 	}
-	if syncRecord.Mode != types.GitOpsSyncModeBackup {
+	if !slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("sync does not back up to Git"))
 	}
 	if syncRecord.Repository == nil {

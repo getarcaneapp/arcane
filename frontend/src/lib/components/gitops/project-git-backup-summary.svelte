@@ -22,7 +22,8 @@
 		ShieldAlertIcon,
 		CheckIcon,
 		AlertIcon,
-		PauseIcon
+		PauseIcon,
+		RefreshIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -44,11 +45,15 @@
 	let {
 		environmentId,
 		projectId,
-		projectName
+		projectName,
+		hasUnsavedChanges = false,
+		onSynced
 	}: {
 		environmentId: string;
 		projectId: string;
 		projectName: string;
+		hasUnsavedChanges?: boolean;
+		onSynced?: () => Promise<void>;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -63,14 +68,20 @@
 		queryFn: () =>
 			gitOpsSyncService.getSyncs(environmentId, {
 				pagination: { page: 1, limit: 1 },
-				filters: { projectId, mode: 'backup' }
+				filters: { projectId, mode: 'backup,bidirectional' }
 			}),
 		enabled: !!environmentId && !!projectId
 	}));
 
 	const sync = $derived(backups.data?.data?.[0] ?? null);
+	const isBidirectional = $derived(sync?.mode === 'bidirectional');
+	const syncBlocked = $derived(isBidirectional && hasUnsavedChanges);
 
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const canBackup = $derived(hasPermission(isBidirectional ? 'gitops:bidirectional' : 'gitops:backup', environmentId));
+	const canCreateBidirectional = $derived(hasPermission('gitops:bidirectional', environmentId));
+	const createMode = $derived(
+		(['backup', 'bidirectional'] as const).find((mode) => hasPermission(`gitops:${mode}`, environmentId))
+	);
 
 	const RECENT_LIMIT = 5;
 	const history = createQuery(() => ({
@@ -84,14 +95,17 @@
 	const fileLimit = $derived(sync?.maxSyncFiles ?? 0);
 	const filePercent = $derived(fileLimit > 0 ? (snapshotFiles / fileLimit) * 100 : 0);
 
-	const canCreate = $derived(canBackup && hasPermission('gitops:create', environmentId));
+	const canCreate = $derived(!!createMode && hasPermission('gitops:create', environmentId));
 	const canRun = $derived(canBackup && hasPermission('gitops:sync', environmentId));
 	const canEdit = $derived(canBackup && hasPermission('gitops:update', environmentId));
 	const canDisconnect = $derived(canBackup && hasPermission('gitops:delete', environmentId));
+	const canResolve = $derived(canBackup && (!isBidirectional || hasPermission('gitops:sync', environmentId)));
 	const backupState = $derived<GitOpsBackupState>(sync?.backupState ?? 'never');
 	const needsAttention = $derived(backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (backupState === 'failed' || needsAttention));
-	const createHref = $derived(environmentHref(`/gitops?action=create&mode=backup&projectId=${projectId}`, environmentId));
+	const createHref = $derived(
+		environmentHref(`/gitops?action=create&mode=${createMode ?? 'backup'}&projectId=${projectId}`, environmentId)
+	);
 	const destination = $derived.by(() => {
 		if (!sync) return '';
 		const repository = sync.repository?.name ?? sync.repositoryId;
@@ -131,29 +145,37 @@
 		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, sync.id));
 		await handleApiResultWithCallbacks({
 			result,
-			message: m.backup_failed(),
+			message: isBidirectional ? m.git_sync_failed() : m.backup_failed(),
 			setLoadingState: (value) => (backingUp = value),
-			onSuccess: async () => {
-				toast.success(m.backup_started());
+			onSuccess: async (data) => {
+				toast.success(isBidirectional ? data.message || m.git_sync_success() : m.backup_started());
 				await invalidate();
+				if (isBidirectional) await onSynced?.();
 			}
 		});
 		backingUp = false;
+	}
+
+	async function handleResolved() {
+		await invalidate();
+		if (isBidirectional) await onSynced?.();
 	}
 
 	function disconnect() {
 		if (!sync) return;
 		const syncId = sync.id;
 		confirmAndRun({
-			title: m.disconnect_backup_title({ name: projectName }),
-			message: m.disconnect_backup_message(),
+			title: isBidirectional
+				? m.disconnect_git_sync_title({ name: projectName })
+				: m.disconnect_backup_title({ name: projectName }),
+			message: isBidirectional ? m.disconnect_git_sync_message() : m.disconnect_backup_message(),
 			confirmLabel: m.common_disconnect(),
 			destructive: true,
 			setLoading: (value) => (disconnecting = value),
 			run: () => gitOpsSyncService.deleteSync(environmentId, syncId),
-			failureMessage: m.disconnect_backup_failed(),
+			failureMessage: isBidirectional ? m.disconnect_git_sync_failed() : m.disconnect_backup_failed(),
 			onSuccess: async () => {
-				toast.success(m.disconnect_backup_success());
+				toast.success(isBidirectional ? m.disconnect_git_sync_success() : m.disconnect_backup_success());
 				await invalidate();
 			}
 		});
@@ -167,8 +189,10 @@
 				<Empty.Media variant="icon">
 					<GitBranchIcon />
 				</Empty.Media>
-				<Empty.Title>{m.not_backed_up_to_git()}</Empty.Title>
-				<Empty.Description>{m.back_up_to_git_description()}</Empty.Description>
+				<Empty.Title>{canCreateBidirectional ? m.not_synced_with_git() : m.not_backed_up_to_git()}</Empty.Title>
+				<Empty.Description>
+					{canCreateBidirectional ? m.git_sync_project_description() : m.back_up_to_git_description()}
+				</Empty.Description>
 			</Empty.Header>
 			{#if canCreate}
 				<Empty.Content>
@@ -176,8 +200,8 @@
 						action="base"
 						tone="outline-primary"
 						href={createHref}
-						icon={UploadIcon}
-						customLabel={m.back_up_to_git()}
+						icon={canCreateBidirectional ? RefreshIcon : UploadIcon}
+						customLabel={canCreateBidirectional ? m.git_sync_add_title() : m.back_up_to_git()}
 					/>
 				</Empty.Content>
 			{/if}
@@ -192,7 +216,7 @@
 			</div>
 			<div class="min-w-0 flex-1 space-y-1">
 				<div class="flex flex-wrap items-center gap-2">
-					<h3 class="text-base font-semibold">{m.git_backup()}</h3>
+					<h3 class="text-base font-semibold">{isBidirectional ? m.git_sync() : m.git_backup()}</h3>
 					<BackupStateBadge {sync} />
 				</div>
 				<p class="flex items-center gap-1.5 truncate font-mono text-xs text-muted-foreground" title={destination}>
@@ -205,10 +229,10 @@
 					<ArcaneButton
 						action="base"
 						tone="outline-primary"
-						icon={UploadIcon}
-						customLabel={m.back_up_now()}
+						icon={isBidirectional ? RefreshIcon : UploadIcon}
+						customLabel={isBidirectional ? m.git_sync_perform() : m.back_up_now()}
 						loading={backingUp}
-						disabled={backingUp || disconnecting}
+						disabled={backingUp || disconnecting || syncBlocked}
 						onclick={backUpNow}
 					/>
 				{/if}
@@ -230,8 +254,8 @@
 							</DropdownMenu.Item>
 						{/if}
 
-						{#if needsAttention}
-							<DropdownMenu.Item onclick={() => (resolveOpen = true)}>
+						{#if needsAttention && canResolve}
+							<DropdownMenu.Item disabled={syncBlocked} onclick={() => (resolveOpen = true)}>
 								<ShieldAlertIcon class="size-4" />
 								{m.resolve()}
 							</DropdownMenu.Item>
@@ -250,6 +274,10 @@
 			</div>
 		</div>
 
+		{#if syncBlocked && (canRun || (needsAttention && canResolve))}
+			<p class="text-sm text-warning">{m.save_or_discard_changes_before_sync()}</p>
+		{/if}
+
 		{#if showError}
 			<p class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm break-words text-destructive">
 				{sync.lastSyncError}
@@ -259,7 +287,9 @@
 		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 			<div class="hover-lift flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/10 p-4">
 				<div class="space-y-2">
-					<p class="text-sm font-medium tracking-wide text-muted-foreground">{m.files_in_last_backup()}</p>
+					<p class="text-sm font-medium tracking-wide text-muted-foreground">
+						{isBidirectional ? m.files_in_last_sync() : m.files_in_last_backup()}
+					</p>
 					<h3 class="text-2xl font-semibold tracking-tight tabular-nums">{snapshotFiles}</h3>
 					{#if fileLimit > 0}
 						<p class="text-xs text-muted-foreground">{m.file_limit({ limit: fileLimit })}</p>
@@ -272,7 +302,7 @@
 				</MetricRing>
 			</div>
 			<StatCard
-				title={m.last_backup()}
+				title={isBidirectional ? m.last_sync() : m.last_backup()}
 				value={sync.lastBackupAt ? formatRelativeTime(sync.lastBackupAt) : m.common_never()}
 				subtitle={sync.lastBackupAt ? formatDateTimeShort(sync.lastBackupAt) : undefined}
 				icon={UploadIcon}
@@ -299,7 +329,7 @@
 				<div class="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
 					<h3 class="flex items-center gap-2 text-sm font-medium">
 						<ClockIcon class="size-4" />
-						{m.recent_backups()}
+						{isBidirectional ? m.recent_syncs() : m.recent_backups()}
 					</h3>
 					{#if recentEntries.length > 0}
 						<ArcaneButton action="base" tone="ghost" customLabel={m.common_view_all()} onclick={() => (historyOpen = true)} />
@@ -337,4 +367,4 @@
 {/if}
 
 <BackupHistoryDialog bind:open={historyOpen} {environmentId} {sync} />
-<BackupResolveDialog bind:open={resolveOpen} {environmentId} {sync} onResolved={invalidate} />
+<BackupResolveDialog bind:open={resolveOpen} {environmentId} {sync} onResolved={handleResolved} />

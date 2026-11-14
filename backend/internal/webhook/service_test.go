@@ -335,8 +335,13 @@ func TestCreateWebhook_GitOpsTypeAccepted(t *testing.T) {
 	ctx := t.Context()
 	db := setupWebhookServiceTestDB(t)
 	svc := newTestWebhookService(db)
+	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE gitops_syncs (id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, name TEXT NOT NULL, mode TEXT NOT NULL)`).Error)
+	require.NoError(t, db.WithContext(ctx).Exec(
+		`INSERT INTO gitops_syncs (id, environment_id, name, mode) VALUES (?, ?, ?, ?)`,
+		"sync-id", types.LocalDockerEnvironmentID, "Deploy Sync", types.GitOpsSyncModeDeploy,
+	).Error)
 
-	wh, _, err := svc.CreateWebhook(ctx, "gitops-hook", WebhookTargetTypeGitOps, WebhookActionTypeSync, "sync-id", "env-1", types.Actor{}, authz.SudoPermissionSet())
+	wh, _, err := svc.CreateWebhook(ctx, "gitops-hook", WebhookTargetTypeGitOps, WebhookActionTypeSync, "sync-id", types.LocalDockerEnvironmentID, types.Actor{}, authz.SudoPermissionSet())
 	require.NoError(t, err)
 	assert.Equal(t, WebhookTargetTypeGitOps, wh.TargetType)
 	assert.Equal(t, WebhookActionTypeSync, wh.ActionType)
@@ -374,9 +379,12 @@ func TestListWebhookSummaries_ResolvesTargetNames(t *testing.T) {
 	svc := newTestWebhookService(db)
 
 	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL)`).Error)
-	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE gitops_syncs (id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, name TEXT NOT NULL)`).Error)
+	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE gitops_syncs (id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, name TEXT NOT NULL, mode TEXT NOT NULL)`).Error)
 	require.NoError(t, db.WithContext(ctx).Exec(`INSERT INTO projects (id, name) VALUES (?, ?)`, "project-1", "Main Project").Error)
-	require.NoError(t, db.WithContext(ctx).Exec(`INSERT INTO gitops_syncs (id, environment_id, name) VALUES (?, ?, ?)`, "sync-1", types.LocalDockerEnvironmentID, "Deploy Sync").Error)
+	require.NoError(t, db.WithContext(ctx).Exec(
+		`INSERT INTO gitops_syncs (id, environment_id, name, mode) VALUES (?, ?, ?, ?)`,
+		"sync-1", types.LocalDockerEnvironmentID, "Deploy Sync", types.GitOpsSyncModeDeploy,
+	).Error)
 
 	_, _, err := svc.CreateWebhook(ctx, "project-hook", WebhookTargetTypeProject, WebhookActionTypeUpdate, "project-1", types.LocalDockerEnvironmentID, types.Actor{}, authz.SudoPermissionSet())
 	require.NoError(t, err)

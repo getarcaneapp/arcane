@@ -20,6 +20,8 @@
 		rootFilename?: string;
 	} = $props();
 
+	const gitOwnsFiles = $derived(!!project.gitOpsManagedBy && project.gitOpsSyncMode !== 'bidirectional');
+
 	const sourceContent = $derived(includeFile ? (includeFile.content ?? '') : (project.composeContent ?? ''));
 	// This component is keyed by compose source identity in the parent route, so capturing the initial source is intentional.
 	// svelte-ignore state_referenced_locally
@@ -48,7 +50,7 @@
 <ComposeEditorWrapper
 	projectHref={environmentHref(`/projects/${project.id}`, environmentId)}
 	projectName={project.name}
-	gitOpsManagedBy={project.gitOpsManagedBy}
+	gitOpsManagedBy={gitOwnsFiles ? project.gitOpsManagedBy : undefined}
 	{fileTitle}
 	{serviceName}
 	{isDirty}
@@ -59,7 +61,7 @@
 		bind:open={panelOpen}
 		language="yaml"
 		bind:value={composeContent}
-		readOnly={!!project.gitOpsManagedBy}
+		readOnly={gitOwnsFiles}
 		fileId="container-compose-{project.id}{includeFile ? `-${includeFile.relativePath.replace(/[^a-zA-Z0-9_-]/g, '-')}` : ''}"
 	/>
 </ComposeEditorWrapper>

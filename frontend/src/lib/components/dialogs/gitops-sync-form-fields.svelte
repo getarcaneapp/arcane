@@ -20,6 +20,7 @@
 
 	type Props = {
 		form: GitOpsSyncFormState;
+		bidirectional: boolean;
 		isEditMode: boolean;
 		selectedTargetType: GitOpsSyncTargetType;
 		onTargetTypeChange: (value: GitOpsSyncTargetType) => void;
@@ -34,6 +35,7 @@
 
 	let {
 		form,
+		bidirectional,
 		isEditMode,
 		selectedTargetType,
 		onTargetTypeChange,
@@ -74,31 +76,33 @@
 	const deployProjectOptions = $derived([{ value: newProjectOption, label: m.create_new_project() }, ...projectOptions]);
 </script>
 
-<div class="grid gap-3 sm:grid-cols-2">
-	<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
+{#if !bidirectional}
+	<div class="grid gap-3 sm:grid-cols-2">
+		<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
 
-	<SelectWithLabel
-		id="targetType"
-		label={m.target_type()}
-		value={selectedTargetType}
-		options={targetTypeOptions}
-		onValueChange={(value) => onTargetTypeChange(value as GitOpsSyncTargetType)}
-	/>
-</div>
+		<SelectWithLabel
+			id="targetType"
+			label={m.target_type()}
+			value={selectedTargetType}
+			options={targetTypeOptions}
+			onValueChange={(value) => onTargetTypeChange(value as GitOpsSyncTargetType)}
+		/>
+	</div>
 
-{#if !isEditMode && selectedTargetType === 'project'}
-	<SelectWithLabel
-		id="deployProject"
-		label={m.project()}
-		description={m.link_existing_project_description()}
-		value={inputs.projectId.value || newProjectOption}
-		options={deployProjectOptions}
-		error={inputs.projectId.error}
-		onValueChange={(value) => (inputs.projectId.value = value === newProjectOption ? '' : value)}
-	/>
+	{#if !isEditMode && selectedTargetType === 'project'}
+		<SelectWithLabel
+			id="deployProject"
+			label={m.project()}
+			description={m.link_existing_project_description()}
+			value={inputs.projectId.value || newProjectOption}
+			options={deployProjectOptions}
+			error={inputs.projectId.error}
+			onValueChange={(value) => (inputs.projectId.value = value === newProjectOption ? '' : value)}
+		/>
+	{/if}
+
+	{@render source(true)}
 {/if}
-
-{@render source(true)}
 
 <div class="space-y-2">
 	<FormInput
@@ -116,20 +120,28 @@
 </div>
 
 <div class="divide-y divide-border/50 border-y border-border/50">
-	<GitOpsSyncScheduleFields
-		{form}
-		switchId="autoSyncSwitch"
-		intervalId="syncInterval"
-		label={m.git_sync_auto_sync()}
-		description={m.common_auto_sync_description()}
-		showAutoSyncError
-	/>
+	{#if !bidirectional}
+		<GitOpsSyncScheduleFields
+			{form}
+			switchId="autoSyncSwitch"
+			intervalId="syncInterval"
+			label={m.git_sync_auto_sync()}
+			description={m.common_auto_sync_description()}
+			showAutoSyncError
+		/>
+	{/if}
 
 	<div class="flex items-center justify-between gap-4 py-3">
 		<div class="min-w-0">
 			<Label for="syncDirectorySwitch" class="mb-0">{m.git_sync_sync_files()}</Label>
 			<p class="text-xs text-muted-foreground">
-				{lockSyncDirectory ? m.git_sync_sync_files_locked_hint() : m.git_sync_sync_files_description()}
+				{#if lockSyncDirectory}
+					{m.git_sync_sync_files_locked_hint()}
+				{:else if bidirectional}
+					{m.git_sync_sync_files_bidirectional_description()}
+				{:else}
+					{m.git_sync_sync_files_description()}
+				{/if}
 			</p>
 			{#if inputs.syncDirectory.error}
 				<p class="text-xs font-medium text-destructive">{inputs.syncDirectory.error}</p>
@@ -185,7 +197,7 @@
 	<Collapsible.Content>
 		<div class="space-y-3 pt-3">
 			<p class="text-xs text-muted-foreground">{m.git_sync_per_sync_file_limits_description()}</p>
-			<div class="grid gap-3 sm:grid-cols-3">
+			<div class={bidirectional ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3 sm:grid-cols-3'}>
 				<FormInput
 					label={m.git_sync_max_files_label()}
 					type="number"
@@ -200,13 +212,15 @@
 					helpText={m.git_sync_max_total_size_per_sync_help()}
 					bind:input={inputs.maxSyncTotalSizeMb}
 				/>
-				<FormInput
-					label={m.git_sync_max_binary_size_label()}
-					type="number"
-					placeholder="0"
-					helpText={m.git_sync_max_binary_size_per_sync_help()}
-					bind:input={inputs.maxSyncBinarySizeMb}
-				/>
+				{#if !bidirectional}
+					<FormInput
+						label={m.git_sync_max_binary_size_label()}
+						type="number"
+						placeholder="0"
+						helpText={m.git_sync_max_binary_size_per_sync_help()}
+						bind:input={inputs.maxSyncBinarySizeMb}
+					/>
+				{/if}
 			</div>
 		</div>
 	</Collapsible.Content>

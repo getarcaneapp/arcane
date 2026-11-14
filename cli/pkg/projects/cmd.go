@@ -52,7 +52,7 @@ type (
 	}
 )
 
-var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
+var ProjectRef = cmdutil.ResourceRef[types.Project, types.Project]{
 	EnvironmentScoped: true,
 	Singular:          "project",
 	Plural:            "projects",
@@ -158,7 +158,7 @@ func newDestroyCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -192,7 +192,7 @@ func newGetCmd() *cobra.Command {
 			}
 
 			allowPrompt := cmdutil.AllowPrompt(cmd)
-			resolved, err := projectRef.Fetch(cmd.Context(), c, args[0], allowPrompt)
+			resolved, err := ProjectRef.Fetch(cmd.Context(), c, args[0], allowPrompt)
 			if err != nil {
 				return err
 			}
@@ -242,7 +242,7 @@ func newDownCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -272,7 +272,7 @@ func newRestartCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -332,7 +332,7 @@ func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectSt
 		return err
 	}
 
-	resolved, _, err := projectRef.Resolve(cmd.Context(), c, identifier, false)
+	resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, identifier, false)
 	if err != nil {
 		return err
 	}
@@ -514,7 +514,7 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}
@@ -580,7 +580,7 @@ func newUpdateIncludesCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := projectRef.Resolve(cmd.Context(), c, args[0], false)
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], false)
 			if err != nil {
 				return err
 			}

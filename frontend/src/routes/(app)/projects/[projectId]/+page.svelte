@@ -299,20 +299,26 @@
 	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
-	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
+	const gitOwnsFiles = $derived(!!project?.gitOpsManagedBy && project.gitOpsSyncMode !== 'bidirectional');
+	const gitSyncsBothWays = $derived(!!project?.gitOpsManagedBy && project.gitOpsSyncMode === 'bidirectional');
+	const nameDisabledMessage = $derived.by(() => {
+		if (composeYamlName) return m.compose_project_name_defined_in_yaml();
+		if (gitSyncsBothWays) return m.project_name_locked_git();
+		return undefined;
+	});
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 
 	let canEditName = $derived(
 		canUpdateProject &&
 			!project?.isArchived &&
-			!isGitOpsManaged &&
+			!project?.gitOpsManagedBy &&
 			!isLoading.saving &&
 			!composeYamlName &&
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
-	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
+	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !gitOwnsFiles && !composeActionsBlocked);
+	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !gitOwnsFiles && !composeActionsBlocked);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
 	let canEditProjectWorkspace = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
@@ -327,7 +333,7 @@
 	let envEditorRequested = $state(false);
 	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
-	let canRemoveEnv = $derived(canEditEnv && !isGitOpsManaged);
+	let canRemoveEnv = $derived(canEditEnv && !gitOwnsFiles);
 
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
@@ -551,12 +557,12 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(isGitOpsManaged
+		...(gitOwnsFiles
 			? []
 			: [
 					{
 						value: 'backup',
-						label: m.git_backup(),
+						label: gitSyncsBothWays ? m.git_sync() : m.git_backup(),
 						icon: GitBranchIcon
 					}
 				])
@@ -818,7 +824,7 @@
 		}
 
 		const formValues = form.data();
-		const validated = isGitOpsManaged ? formValues : form.validate();
+		const validated = gitOwnsFiles ? formValues : form.validate();
 		if (!validated) return false;
 
 		const { composeContent, envContent, overrideContent } = validated;
@@ -829,7 +835,7 @@
 				envContent: serverEnvContent,
 				overrideContent: serverOverrideContent
 			},
-			isGitOpsManaged
+			gitOwnsFiles
 				? { envContent }
 				: {
 						name: effectiveName,
@@ -1775,7 +1781,7 @@
 										onOpenFolder={projectWorkspaceFolders.load}
 										{selectedFile}
 										disabled={!canEditProjectWorkspace}
-										readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
+										readOnlyMessage={gitOwnsFiles ? m.projects_workspace_readonly_git() : undefined}
 										onSelect={selectProjectWorkspaceFile}
 										onCreateFile={createProjectWorkspaceFile}
 										onCreateFolder={createProjectWorkspaceFolder}
@@ -2003,8 +2009,19 @@
 
 {#snippet projectBackupTab(project: Project)}
 	<Tabs.Content value="backup" class="h-full min-h-0">
-		{#if !isGitOpsManaged}
-			<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
+		{#if !gitOwnsFiles}
+			<ProjectGitBackupSummary
+				environmentId={envId}
+				projectId={project.id}
+				projectName={project.name}
+				hasUnsavedChanges={hasChanges}
+				onSynced={() =>
+					refreshProjectDetails({
+						forceRebaseDraft: true,
+						preserveEditableDrafts: true,
+						clearLoadedFileCache: true
+					})}
+			/>
 		{/if}
 	</Tabs.Content>
 {/snippet}
@@ -2103,8 +2120,55 @@
 	{/if}
 {/snippet}
 
+{#snippet gitLifecycleHookSummary()}
+	{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
+		<div class="flex items-center gap-1.5 font-mono text-xs">
+			<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
+			<span class="rounded-xl bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+			<span class="text-muted-foreground">
+				{m.lifecycle_inline_runner_summary({
+					image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
+					network: lifecycleSync.preDeployNetworkMode || 'none'
+				})}
+			</span>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet gitRepositoryLink()}
+	{#if gitProjectUrl}
+		<ArcaneButton
+			action="base"
+			tone="outline"
+			href={gitProjectUrl}
+			target="_blank"
+			rel="noopener noreferrer"
+			icon={ExternalLinkIcon}
+			customLabel={m.git_open_project_in_repository()}
+		/>
+	{/if}
+{/snippet}
+
 {#snippet gitSourceNotice()}
-	{#if isGitOpsManaged}
+	{#if gitSyncsBothWays}
+		<Alert.Root variant="default" class="mb-4">
+			<GitBranchIcon class="size-4" />
+			<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+				<div class="flex-1">
+					<Alert.Title>{m.git_sync()} · {m.pull_and_push()}</Alert.Title>
+					<Alert.Description>
+						{m.git_two_way_notice()}
+						<div class="mt-2 flex flex-col gap-1">
+							{@render gitLifecycleHookSummary()}
+						</div>
+					</Alert.Description>
+				</div>
+				<div class="flex shrink-0 flex-wrap items-center gap-2">
+					{@render gitRepositoryLink()}
+				</div>
+			</div>
+		</Alert.Root>
+	{:else if gitOwnsFiles}
 		<Alert.Root variant="default" class="mb-4">
 			<AlertIcon class="size-4" />
 			<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
@@ -2114,18 +2178,7 @@
 						{m.git_managed_readonly_alert()}
 						<br />
 						<div class="mt-2 flex flex-col gap-1">
-							{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
-								<div class="flex items-center gap-1.5 font-mono text-xs">
-									<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
-									<span class="rounded-xl bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
-									<span class="text-muted-foreground">
-										{m.lifecycle_inline_runner_summary({
-											image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
-											network: lifecycleSync.preDeployNetworkMode || 'none'
-										})}
-									</span>
-								</div>
-							{/if}
+							{@render gitLifecycleHookSummary()}
 							<span class="text-xs text-muted-foreground">
 								{m.git_managed_env_note()}
 							</span>
@@ -2133,17 +2186,7 @@
 					</Alert.Description>
 				</div>
 				<div class="flex shrink-0 flex-wrap items-center gap-2">
-					{#if gitProjectUrl}
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={gitProjectUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							icon={ExternalLinkIcon}
-							customLabel={m.git_open_project_in_repository()}
-						/>
-					{/if}
+					{@render gitRepositoryLink()}
 					{#if canUpdateProject}
 						<ArcaneButton
 							action="base"
@@ -2377,7 +2420,7 @@
 						error={inputs.name.error ?? undefined}
 						originalValue={serverName}
 						canEdit={canEditName}
-						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+						disabledMessage={nameDisabledMessage}
 						onCommit={saveNameIfChanged}
 						class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
 					/>

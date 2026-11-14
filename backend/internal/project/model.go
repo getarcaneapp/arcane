@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -115,6 +116,8 @@ const (
 	ProjectStatusRestarting       ProjectStatus = types.ProjectStatusRestarting
 )
 
+var GitOpsPushModes = []string{types.GitOpsSyncModeBackup, types.GitOpsSyncModeBidirectional}
+
 func (Project) TableName() string {
 	return "projects"
 }
@@ -124,7 +127,7 @@ func (ProjectTag) TableName() string {
 }
 
 func (s GitOpsSync) BackupState() string {
-	if s.Mode != types.GitOpsSyncModeBackup {
+	if !slices.Contains(GitOpsPushModes, s.Mode) {
 		return ""
 	}
 	status := kit.FromPtr(s.LastSyncStatus)

@@ -111,7 +111,8 @@
 		activeSyncs: 0,
 		successfulSyncs: 0,
 		deploySyncs: 0,
-		backupSyncs: 0
+		backupSyncs: 0,
+		bidirectionalSyncs: 0
 	};
 	const syncCounts = $derived(resourcesReady ? (syncs.counts ?? syncCountsFallback) : syncCountsFallback);
 
@@ -120,7 +121,7 @@
 	let dialogProjectId = $state<string | undefined>(undefined);
 
 	function parseSyncMode(value: string | null): GitOpsSyncMode | undefined {
-		return value === 'deploy' || value === 'backup' ? value : undefined;
+		return value === 'deploy' || value === 'backup' || value === 'bidirectional' ? value : undefined;
 	}
 
 	afterNavigate(() => {

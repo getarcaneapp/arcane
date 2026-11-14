@@ -1587,6 +1587,13 @@ var permissionCatalog = []PermissionCatalogResource{
 				Description: "View a project's Git backup preview and history, and manage the backup together with the matching sync permission (create, update, sync, delete)",
 				Requires:    []string{PermGitOpsRead},
 			},
+			{
+				Key:         "bidirectional",
+				Permission:  PermGitOpsBidirectional,
+				Label:       "Sync both ways with Git",
+				Description: "View a pull-and-push sync's preview and history, and manage it together with the matching sync permission (create, update, sync, delete)",
+				Requires:    []string{PermGitOpsRead},
+			},
 		},
 	},
 	{

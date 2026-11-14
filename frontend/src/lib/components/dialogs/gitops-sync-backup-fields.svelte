@@ -17,6 +17,7 @@
 
 	type Props = {
 		form: GitOpsSyncFormState;
+		bidirectional: boolean;
 		isEditMode: boolean;
 		selectedProjectId: string;
 		backupProjectOptions: { value: string; label: string }[];
@@ -39,6 +40,7 @@
 
 	let {
 		form,
+		bidirectional,
 		isEditMode,
 		selectedProjectId,
 		backupProjectOptions,
@@ -134,7 +136,9 @@
 			/>
 		{/if}
 	</div>
-	<p class="text-xs text-muted-foreground">{m.included_files_description()}</p>
+	<p class="text-xs text-muted-foreground">
+		{bidirectional ? m.included_files_bidirectional_description() : m.included_files_description()}
+	</p>
 	{#if hasSelectedEnvFile}
 		<p class="text-xs text-warning">{m.environment_file_warning()}</p>
 	{/if}
@@ -145,36 +149,38 @@
 		{form}
 		switchId="backupAutoSyncSwitch"
 		intervalId="backupSyncInterval"
-		label={m.automatic_backup()}
-		description={m.automatic_backup_description()}
+		label={bidirectional ? m.git_sync_auto_sync() : m.automatic_backup()}
+		description={bidirectional ? m.common_auto_sync_description() : m.automatic_backup_description()}
 	/>
 
 	<div class="flex items-center justify-between gap-4 py-3">
 		<div class="min-w-0">
-			<Label for="backupOnSaveSwitch" class="mb-0">{m.back_up_on_save()}</Label>
+			<Label for="backupOnSaveSwitch" class="mb-0">{bidirectional ? m.commit_on_save() : m.back_up_on_save()}</Label>
 			<p class="text-xs text-muted-foreground">{m.back_up_on_save_description()}</p>
 		</div>
 		<Switch id="backupOnSaveSwitch" bind:checked={inputs.backupOnSave.value} />
 	</div>
 
-	<div class="py-3">
-		<div class="flex items-center justify-between gap-4">
-			<div class="min-w-0">
-				<Label for="includeEnvFileSwitch" class="mb-0">{m.include_environment_file()}</Label>
-				<p class="text-xs text-muted-foreground">{m.include_environment_file_description()}</p>
+	{#if !bidirectional}
+		<div class="py-3">
+			<div class="flex items-center justify-between gap-4">
+				<div class="min-w-0">
+					<Label for="includeEnvFileSwitch" class="mb-0">{m.include_environment_file()}</Label>
+					<p class="text-xs text-muted-foreground">{m.include_environment_file_description()}</p>
+				</div>
+				<Switch id="includeEnvFileSwitch" bind:checked={inputs.includeEnvFile.value} />
 			</div>
-			<Switch id="includeEnvFileSwitch" bind:checked={inputs.includeEnvFile.value} />
+			{#if inputs.includeEnvFile.value}
+				<p class="mt-2 text-xs text-warning">{m.environment_file_warning()}</p>
+			{/if}
 		</div>
-		{#if inputs.includeEnvFile.value}
-			<p class="mt-2 text-xs text-warning">{m.environment_file_warning()}</p>
-		{/if}
-	</div>
+	{/if}
 </div>
 
 {#if showBackupSummary}
 	<div class="space-y-1 text-xs text-muted-foreground">
 		<p>
-			{m.commits_files_to({ count: backupPaths.length })}
+			{bidirectional ? m.syncs_files_with({ count: backupPaths.length }) : m.commits_files_to({ count: backupPaths.length })}
 			<span class="font-mono break-all text-foreground">{backupSummaryDestination}</span>
 		</p>
 		<p class="font-mono break-all">{backupPaths.join(', ')}</p>

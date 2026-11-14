@@ -9,7 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type { GitOpsBackupFileChange, GitOpsSync } from '#lib/types/gitops.js';
+	import type { GitOpsBackupFileChange, GitOpsResolveBackupConflictStrategy, GitOpsSync } from '#lib/types/gitops.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -22,12 +22,14 @@
 		open?: boolean;
 		environmentId: string;
 		sync: GitOpsSync | null;
-		onResolved?: () => void;
+		onResolved?: () => void | Promise<void>;
 	} = $props();
 
 	const queryClient = useQueryClient();
 
-	let resolving = $state(false);
+	let resolving = $state<GitOpsResolveBackupConflictStrategy | null>(null);
+
+	const isBidirectional = $derived(sync?.mode === 'bidirectional');
 
 	const preview = createQuery(() => ({
 		queryKey: queryKeys.gitOpsSyncs.backupPreview(environmentId, sync?.id ?? ''),
@@ -38,7 +40,7 @@
 	const stateLabel = $derived.by(() => {
 		switch (preview.data?.state) {
 			case 'conflict':
-				return m.backup_files_changed_in_repository();
+				return isBidirectional ? m.files_changed_in_arcane_and_repository() : m.backup_files_changed_in_repository();
 			case 'destination_occupied':
 				return m.backup_folder_occupied();
 			case 'changes':
@@ -60,22 +62,21 @@
 		return 'amber';
 	}
 
-	async function useArcaneFiles() {
+	async function resolveConflict(strategy: GitOpsResolveBackupConflictStrategy) {
 		if (!sync) return;
-		resolving = true;
-		const result = await tryCatch(gitOpsSyncService.resolveBackupConflict(environmentId, sync.id, { strategy: 'use_arcane' }));
+		resolving = strategy;
+		const result = await tryCatch(gitOpsSyncService.resolveBackupConflict(environmentId, sync.id, { strategy }));
 		await handleApiResultWithCallbacks({
 			result,
-			message: m.backup_resolve_failed(),
-			setLoadingState: (value) => (resolving = value),
+			message: isBidirectional ? m.conflicts_resolve_failed() : m.backup_resolve_failed(),
 			onSuccess: async () => {
-				toast.success(m.backup_resolved());
+				toast.success(isBidirectional ? m.conflicts_resolved() : m.backup_resolved());
 				await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.all });
 				open = false;
-				onResolved?.();
+				await onResolved?.();
 			}
 		});
-		resolving = false;
+		resolving = null;
 	}
 </script>
 
@@ -93,7 +94,12 @@
 	</div>
 {/snippet}
 
-<ResponsiveDialog bind:open title={m.resolve_backup()} description={sync?.name} contentClass="sm:max-w-xl">
+<ResponsiveDialog
+	bind:open
+	title={isBidirectional ? m.resolve_conflicts() : m.resolve_backup()}
+	description={sync?.name}
+	contentClass="sm:max-w-xl"
+>
 	<div class="pb-6">
 		{#if preview.isPending}
 			<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -105,7 +111,18 @@
 		{:else}
 			<div class="space-y-4">
 				<p class="text-sm font-medium">{stateLabel}</p>
-				<p class="text-sm text-muted-foreground">{m.use_arcane_files_description()}</p>
+				{#if isBidirectional}
+					<div class="space-y-1 text-sm text-muted-foreground">
+						<p>
+							<span class="font-medium text-foreground">{m.use_arcane_files()}</span> · {m.use_arcane_files_conflicts_description()}
+						</p>
+						<p>
+							<span class="font-medium text-foreground">{m.use_repository_files()}</span> · {m.use_repository_files_description()}
+						</p>
+					</div>
+				{:else}
+					<p class="text-sm text-muted-foreground">{m.use_arcane_files_description()}</p>
+				{/if}
 
 				{#if (preview.data?.conflicts ?? []).length > 0}
 					{@render fileList(m.conflicts(), preview.data?.conflicts ?? [])}
@@ -121,14 +138,25 @@
 	</div>
 	{#snippet footer()}
 		<ArcaneButton action="base" tone="outline" customLabel={m.common_cancel()} icon={null} onclick={() => (open = false)} />
+		{#if isBidirectional}
+			<ArcaneButton
+				action="base"
+				tone="outline-primary"
+				customLabel={m.use_repository_files()}
+				icon={null}
+				loading={resolving === 'use_repository'}
+				disabled={!!resolving || !sync}
+				onclick={() => resolveConflict('use_repository')}
+			/>
+		{/if}
 		<ArcaneButton
 			action="base"
 			tone="outline-primary"
 			customLabel={m.use_arcane_files()}
 			icon={null}
-			loading={resolving}
-			disabled={resolving || !sync}
-			onclick={useArcaneFiles}
+			loading={resolving === 'use_arcane'}
+			disabled={!!resolving || !sync}
+			onclick={() => resolveConflict('use_arcane')}
 		/>
 	{/snippet}
 </ResponsiveDialog>

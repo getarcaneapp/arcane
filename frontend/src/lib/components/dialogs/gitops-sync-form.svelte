@@ -2,9 +2,10 @@
 	import { z } from 'zod/v4';
 
 	import { m } from '#lib/paraglide/messages.js';
+	import type { GitOpsSyncMode } from '#lib/types/gitops.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
-	export function gitOpsSyncFormSchema(isBackupMode: () => boolean) {
+	export function gitOpsSyncFormSchema(syncMode: () => GitOpsSyncMode) {
 		return z
 			.object({
 				name: z.string().default(''),
@@ -35,7 +36,7 @@
 			})
 			.check((ctx) => {
 				const value = ctx.value;
-				if (isBackupMode()) {
+				if (syncMode() !== 'deploy') {
 					if (!value.projectId.trim()) {
 						ctx.issues.push({ code: 'custom', message: m.project_required(), path: ['projectId'], input: value });
 					}
@@ -82,7 +83,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitOpsSyncMode, GitRepository } from '#lib/types/gitops.js';
+	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitRepository } from '#lib/types/gitops.js';
 	import type { Project } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { GitOpsSyncCreate, GitOpsSyncUpdate, GitOpsSyncWritable } from '#lib/types/ui/gitops.js';
@@ -132,7 +133,11 @@
 	});
 
 	const canManageLifecycle = $derived(hasPermission('gitops:lifecycle', environmentId));
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const modeAllowed = $derived<Record<GitOpsSyncMode, boolean>>({
+		deploy: true,
+		backup: hasPermission('gitops:backup', environmentId),
+		bidirectional: hasPermission('gitops:bidirectional', environmentId)
+	});
 	const hookConfigured = $derived(!!syncToEdit?.preDeployScriptPath?.trim());
 
 	const composeFileFilter = (file: FileTreeNode) =>
@@ -199,7 +204,7 @@
 	}
 
 	const form = createForm<GitOpsSyncFormSchema>(
-		gitOpsSyncFormSchema(() => mode === 'backup'),
+		gitOpsSyncFormSchema(() => mode),
 		untrack(formValues)
 	);
 	const inputs = form.inputs;
@@ -276,13 +281,16 @@
 	});
 
 	const isBackupMode = $derived(mode === 'backup');
+	const isBidirectionalMode = $derived(mode === 'bidirectional');
+	const pushesToGit = $derived(mode !== 'deploy');
 
 	const allDirectionOptions = [
 		{ value: 'deploy', label: m.pull(), description: m.deploy_from_git_description() },
-		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() }
+		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() },
+		{ value: 'bidirectional', label: m.pull_and_push(), description: m.pull_and_push_description() }
 	] satisfies { value: GitOpsSyncMode; label: string; description: string }[];
-	const directionOptions = $derived(allDirectionOptions.filter((option) => option.value !== 'backup' || canBackup || isEditMode));
-	const selectedDirection = $derived(directionOptions.find((option) => option.value === mode));
+	const directionOptions = $derived(allDirectionOptions.filter((option) => isEditMode || modeAllowed[option.value]));
+	const selectedDirection = $derived(allDirectionOptions.find((option) => option.value === mode));
 
 	const projectListOptions: SearchPaginationSortRequest = {
 		pagination: { page: 1, limit: 200 },
@@ -295,28 +303,33 @@
 		enabled: open
 	}));
 
-	const backupSyncListOptions: SearchPaginationSortRequest = {
+	const pushSyncListOptions: SearchPaginationSortRequest = {
 		pagination: { page: 1, limit: -1 },
-		filters: { mode: 'backup' }
+		filters: { mode: 'backup,bidirectional' }
 	};
 
-	const backupSyncsQuery = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.list(environmentId, backupSyncListOptions),
-		queryFn: () => gitOpsSyncService.getSyncs(environmentId, backupSyncListOptions),
-		enabled: open && isBackupMode && !isEditMode
+	const pushSyncsQuery = createQuery(() => ({
+		queryKey: queryKeys.gitOpsSyncs.list(environmentId, pushSyncListOptions),
+		queryFn: () => gitOpsSyncService.getSyncs(environmentId, pushSyncListOptions),
+		enabled: open && pushesToGit && !isEditMode
 	}));
-	const backedUpProjectIds = $derived(
-		new Set((backupSyncsQuery.data?.data ?? []).map((sync) => sync.projectId).filter((id): id is string => !!id))
+	const pushedProjectIds = $derived(
+		new Set((pushSyncsQuery.data?.data ?? []).map((sync) => sync.projectId).filter((id): id is string => !!id))
 	);
 
 	const projects = $derived<Project[]>(projectsQuery.data?.data ?? []);
 	const projectOptions = $derived(projects.map((project) => ({ value: project.id, label: project.name })));
 	const backupProjectOptions = $derived(
-		isEditMode ? projectOptions : projectOptions.filter((option) => !backedUpProjectIds.has(option.value))
+		isEditMode
+			? projectOptions
+			: projects
+					.filter((project) => !pushedProjectIds.has(project.id) && !(isBidirectionalMode && project.gitOpsManagedBy))
+					.map((project) => ({ value: project.id, label: project.name }))
 	);
 	const selectedProjectId = $derived.by(() => {
 		const value = inputs.projectId.value;
-		if (!isBackupMode || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
+		if (!pushesToGit || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
+		if (value) return '';
 		return backupProjectOptions.length === 1 ? (backupProjectOptions[0]?.value ?? '') : '';
 	});
 	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
@@ -325,7 +338,7 @@
 
 	const workspaceFolders = useWorkspaceFolders({
 		folderQuery: (path) => projectWorkspaceFolderQuery(environmentId, selectedProjectId, path),
-		enabled: () => open && isBackupMode && !!selectedProjectId
+		enabled: () => open && pushesToGit && !!selectedProjectId
 	});
 	const loadingWorkspace = $derived(
 		!!selectedProjectId && (!!workspaceFolders.root?.isPending || !!workspaceFolders.root?.isFetching)
@@ -391,10 +404,21 @@
 	}
 
 	const backupPaths = $derived(
-		[...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
+		isBidirectionalMode
+			? [...selectedPaths].filter((path) => !isEnvPathInternal(path)).sort((a, b) => a.localeCompare(b))
+			: [...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
 	);
-	const hasSelectedEnvFile = $derived([...selectedPaths].some((path) => isEnvPathInternal(path)));
-	const backupNamePlaceholder = $derived(m.project_backup_name({ name: selectedProject?.name ?? '' }));
+	const hasSelectedEnvFile = $derived(!isBidirectionalMode && [...selectedPaths].some((path) => isEnvPathInternal(path)));
+	const workspaceFiles = $derived(
+		isBidirectionalMode
+			? workspaceFolders.files.filter((entry) => entry.isDirectory || !isEnvFileInternal(entry.name))
+			: workspaceFolders.files
+	);
+	const backupNamePlaceholder = $derived(
+		isBidirectionalMode
+			? m.project_git_sync_name({ name: selectedProject?.name ?? '' })
+			: m.project_backup_name({ name: selectedProject?.name ?? '' })
+	);
 	const backupSummaryDestination = $derived(
 		`${selectedRepository?.label ?? ''} · ${selectedBranch} / ${effectiveBackupDirectory}`
 	);
@@ -407,6 +431,13 @@
 		if (inputs.composePath.value === previousDefault) {
 			inputs.composePath.value = composePathFor(value);
 		}
+	}
+
+	function handleModeChange(value: GitOpsSyncMode) {
+		mode = value;
+		if (value !== 'bidirectional') return;
+		if (selectedTargetType !== 'project') handleTargetTypeChange('project');
+		inputs.maxSyncBinarySizeMb.value = untrack(formValues).maxSyncBinarySizeMb;
 	}
 
 	function buildBackupPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
@@ -442,12 +473,62 @@
 		);
 	}
 
+	function buildBidirectionalPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
+		const fields = {
+			name: data.name.trim() || backupNamePlaceholder,
+			repositoryId: selectedRepository?.value || data.repositoryId,
+			branch: data.branch,
+			envContent: data.envContent.trim(),
+			syncDirectory: data.syncDirectory,
+			pullImageAfterSync: data.pullImageAfterSync,
+			redeployAfterSync: data.redeployAfterSync,
+			maxSyncFiles: data.maxSyncFiles,
+			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
+			autoSync: data.autoSync,
+			syncInterval: data.syncInterval,
+			backupOnSave: data.backupOnSave,
+			backupPaths
+		};
+
+		if (!isEditMode || !syncToEdit) {
+			return {
+				...fields,
+				mode: 'bidirectional',
+				targetType: 'project',
+				projectId: data.projectId,
+				backupDirectory: data.backupDirectory.trim()
+			};
+		}
+
+		return changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(
+			{
+				...syncToEdit,
+				envContent: syncToEdit.envContent ?? '',
+				backupPaths: [...(syncToEdit.backupPaths ?? [])].sort((a, b) => a.localeCompare(b))
+			},
+			fields
+		);
+	}
+
+	function applyLifecycleFieldsInternal(data: z.infer<GitOpsSyncFormSchema>, payload: GitOpsSyncCreate | GitOpsSyncUpdate) {
+		if (!shouldSubmitLifecycleFieldsInternal(data)) return payload;
+		return {
+			...payload,
+			preDeployScriptPath: data.preDeployScriptPath.trim(),
+			preDeployRunnerImage: data.preDeployRunnerImage.trim(),
+			preDeployTimeoutSec: data.preDeployTimeoutSec,
+			preDeployNetworkMode: normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode),
+			preDeployEnv: data.preDeployEnv.trim(),
+			preDeployExtraMounts: data.preDeployExtraMounts.trim()
+		};
+	}
+
 	function handleSubmit() {
 		if (selectedRepository) inputs.repositoryId.value = selectedRepository.value;
 		inputs.branch.value = selectedBranch;
-		if (isBackupMode) inputs.projectId.value = selectedProjectId;
+		if (pushesToGit) inputs.projectId.value = selectedProjectId;
 		inputs.backupPaths.value = backupPaths;
-		if (!isEditMode && isBackupMode && !inputs.backupDirectory.value.trim()) {
+		if (!isEditMode && pushesToGit && !inputs.backupDirectory.value.trim()) {
 			inputs.backupDirectory.value = suggestedBackupDirectory;
 		}
 		const data = form.validate();
@@ -455,6 +536,11 @@
 
 		if (isBackupMode) {
 			onSubmit({ sync: buildBackupPayloadInternal(data), isEditMode });
+			return;
+		}
+
+		if (isBidirectionalMode) {
+			onSubmit({ sync: applyLifecycleFieldsInternal(data, buildBidirectionalPayloadInternal(data)), isEditMode });
 			return;
 		}
 
@@ -489,16 +575,7 @@
 					)
 				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
 
-		if (shouldSubmitLifecycleFieldsInternal(data)) {
-			payload.preDeployScriptPath = data.preDeployScriptPath.trim();
-			payload.preDeployRunnerImage = data.preDeployRunnerImage.trim();
-			payload.preDeployTimeoutSec = data.preDeployTimeoutSec;
-			payload.preDeployNetworkMode = normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode);
-			payload.preDeployEnv = data.preDeployEnv.trim();
-			payload.preDeployExtraMounts = data.preDeployExtraMounts.trim();
-		}
-
-		onSubmit({ sync: payload, isEditMode });
+		onSubmit({ sync: applyLifecycleFieldsInternal(data, payload), isEditMode });
 	}
 </script>
 
@@ -555,15 +632,15 @@
 		{/if}
 		{#if isEditMode}
 			<p class="text-xs text-muted-foreground">
-				<span class="font-medium text-foreground">{isBackupMode ? m.push() : m.pull()}</span>
-				· {isBackupMode ? m.back_up_to_git_description() : m.deploy_from_git_description()}
+				<span class="font-medium text-foreground">{selectedDirection?.label}</span>
+				· {selectedDirection?.description}
 			</p>
 		{:else}
 			<div class="space-y-2">
 				<RadioGroupPrimitive.Root
 					class="inline-flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 text-muted-foreground"
 					value={mode}
-					onValueChange={(value) => (mode = value as GitOpsSyncMode)}
+					onValueChange={(value) => handleModeChange(value as GitOpsSyncMode)}
 					aria-label={m.direction()}
 				>
 					{#each directionOptions as option (option.value)}
@@ -580,15 +657,16 @@
 			</div>
 		{/if}
 
-		{#if isBackupMode}
+		{#if pushesToGit}
 			<GitOpsSyncBackupFields
 				{form}
+				bidirectional={isBidirectionalMode}
 				{isEditMode}
 				{selectedProjectId}
 				{backupProjectOptions}
 				{backupNamePlaceholder}
 				{suggestedBackupDirectory}
-				workspaceFiles={workspaceFolders.files}
+				{workspaceFiles}
 				loadedFolders={workspaceFolders.loaded}
 				onOpenFolder={workspaceFolders.load}
 				{loadingWorkspace}
@@ -602,9 +680,11 @@
 				{backupSummaryDestination}
 				source={sourceFields}
 			/>
-		{:else}
+		{/if}
+		{#if !isBackupMode}
 			<GitOpsSyncFormFields
 				{form}
+				bidirectional={isBidirectionalMode}
 				{isEditMode}
 				{selectedTargetType}
 				onTargetTypeChange={handleTargetTypeChange}

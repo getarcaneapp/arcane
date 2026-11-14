@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1265,7 +1266,7 @@ func (e *backupTestEnv) remoteHead(t *testing.T) string {
 	return head
 }
 
-func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string, files map[string]string) {
+func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string, files map[string]string, executable ...string) {
 	t.Helper()
 	auth := git.AuthConfig{AuthType: "none"}
 	checkout, err := remote.CheckoutForWrite(t.Context(), repoURL, "main", auth)
@@ -1274,10 +1275,27 @@ func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string,
 
 	request := git.CommitRequest{Message: message, AuthorName: "Other", AuthorEmail: "other@localhost"}
 	for path, content := range files {
-		request.Files = append(request.Files, git.CommitFile{Path: path, Content: []byte(content)})
+		if content == "" {
+			request.Remove = append(request.Remove, path)
+			continue
+		}
+		request.Files = append(request.Files, git.CommitFile{Path: path, Content: []byte(content), Executable: slices.Contains(executable, path)})
 	}
 	_, _, err = remote.CommitAndPush(t.Context(), checkout, request, auth)
 	require.NoError(t, err)
+}
+
+func pushRemoteBackupFiles(t *testing.T, env *backupTestEnv, message string, files map[string]string, executable []string) {
+	t.Helper()
+	remote := make(map[string]string, len(files))
+	for relative, content := range files {
+		remote["backups/demo/"+relative] = content
+	}
+	prefixed := make([]string, 0, len(executable))
+	for _, relative := range executable {
+		prefixed = append(prefixed, "backups/demo/"+relative)
+	}
+	pushRemoteCommit(t, env.remote, env.repoURL, message, remote, prefixed...)
 }
 
 func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
@@ -1311,7 +1329,7 @@ func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
 
 	snapshot := stored.BackupSnapshot()
 	assert.Len(t, snapshot, 2)
-	assert.Equal(t, kit.SHA256Hex(composeBytes), snapshot["compose.yaml"])
+	assert.Equal(t, kit.SHA256Hex(composeBytes)+backup.BackupModeRegular, snapshot["compose.yaml"])
 }
 
 func TestGitOpsBackup_UnchangedContentMakesNoNewCommit(t *testing.T) {
@@ -1430,6 +1448,11 @@ func TestGitOpsBackup_RemoteEditConflictsThenResolvesWithArcane(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, backup.BackupPreviewConflict, preview.State)
 	assert.NotEmpty(t, preview.Conflicts)
+
+	_, err = env.service.ResolveBackupConflict(t.Context(), "0", syncRecord.ID, types.GitOpsResolveBackupConflictRequest{
+		Strategy: types.GitOpsBackupConflictUseRepository,
+	}, types.SystemUser)
+	require.ErrorIs(t, err, common.ErrValidation)
 
 	result, err := env.service.ResolveBackupConflict(t.Context(), "0", syncRecord.ID, types.GitOpsResolveBackupConflictRequest{
 		Strategy: types.GitOpsBackupConflictUseArcane,
@@ -1567,17 +1590,49 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 			submitted: map[string]bool{"preDeployScriptPath": true},
 			wantErr:   common.ErrValidation,
 		},
+		{
+			name:    "bidirectional selected path that does not exist",
+			request: types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupPaths: []string{"compose.yaml", "missing.conf"}},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name:    "bidirectional selected env file",
+			request: types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupPaths: []string{"compose.yaml", ".env"}},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name: "bidirectional selected env override file",
+			mutate: func(t *testing.T, env *backupTestEnv) {
+				t.Helper()
+				writeBackupProjectFile(t, env.projectPath, projects.OverrideEnvFileName, "TOKEN=override\n")
+			},
+			request: types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupPaths: []string{"compose.yaml", projects.OverrideEnvFileName}},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name:      "bidirectional compose override",
+			request:   types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, ComposeOverridePath: "compose.prod.yaml"},
+			submitted: map[string]bool{"composeOverridePath": true},
+			wantErr:   common.ErrValidation,
+		},
+		{
+			name:      "bidirectional binary size limit",
+			request:   types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, MaxSyncBinarySize: 1024},
+			submitted: map[string]bool{"maxSyncBinarySize": true},
+			wantErr:   common.ErrValidation,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			env := setupGitOpsBackupTestService(t)
 			writeBackupProjectFile(t, env.projectPath, "config/app.conf", "key = value\n")
+			writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=secret\n")
 			if test.mutate != nil {
 				test.mutate(t, env)
 			}
 			request := test.request
-			request.Mode = types.GitOpsSyncModeBackup
+			request.Mode = cmp.Or(request.Mode, types.GitOpsSyncModeBackup)
 			request.Name = cmp.Or(request.Name, "demo-backup")
 			request.RepositoryID = "repo-backup"
 			request.Branch = "main"
@@ -2031,9 +2086,10 @@ func TestAggregateSyncsSumsCounts(t *testing.T) {
 			Success: true,
 			Data:    []types.GitOpsSync{{ID: "s2", Name: "api"}},
 			Counts: types.GitOpsSyncCounts{
-				TotalSyncs:      1,
-				SuccessfulSyncs: 1,
-				BackupSyncs:     1,
+				TotalSyncs:         3,
+				SuccessfulSyncs:    1,
+				BackupSyncs:        1,
+				BidirectionalSyncs: 2,
 			},
 		},
 	})
@@ -2045,11 +2101,12 @@ func TestAggregateSyncsSumsCounts(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, types.GitOpsSyncCounts{
-		TotalSyncs:      2,
-		ActiveSyncs:     1,
-		SuccessfulSyncs: 1,
-		DeploySyncs:     1,
-		BackupSyncs:     1,
+		TotalSyncs:         4,
+		ActiveSyncs:        1,
+		SuccessfulSyncs:    1,
+		DeploySyncs:        1,
+		BackupSyncs:        1,
+		BidirectionalSyncs: 2,
 	}, body.Counts)
 	require.Len(t, body.Data, 2)
 	require.Equal(t, "api", body.Data[0].Name)
@@ -2165,5 +2222,705 @@ func TestGitOpsSyncService_DeleteSync_RemoveStackWaitsForActiveSync(t *testing.T
 		assert.Equal(t, []string{"/services/svc-1"}, *removed)
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "delete did not run after admission was released")
+	}
+}
+
+func writeOrRemoveProjectFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for relative, content := range files {
+		if content == "" {
+			require.NoError(t, os.Remove(filepath.Join(root, filepath.FromSlash(relative))))
+			continue
+		}
+		writeBackupProjectFile(t, root, relative, content)
+	}
+}
+
+func assertFileContents(t *testing.T, root string, want map[string]string) {
+	t.Helper()
+	for relative, content := range want {
+		target := filepath.Join(root, filepath.FromSlash(relative))
+		if content == "" {
+			assert.NoFileExists(t, target, relative)
+			continue
+		}
+		got, err := os.ReadFile(target)
+		require.NoError(t, err, relative)
+		assert.Equal(t, content, string(got), relative)
+	}
+}
+
+func assertExecutableFiles(t *testing.T, relatives []string, roots ...string) {
+	t.Helper()
+	for _, relative := range relatives {
+		for _, root := range roots {
+			info, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative)))
+			require.NoError(t, err, relative)
+			assert.NotZero(t, info.Mode().Perm()&0o111, root+": "+relative)
+		}
+	}
+}
+
+func TestGitOpsBidirectional_RunMergesPerFile(t *testing.T) {
+	originalCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
+	remoteCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
+	localCompose := "services:\n  app:\n    image: nginx:1.29-alpine\n"
+
+	override := "services:\n  app:\n    environment:\n      MODE: git\n"
+
+	tests := []struct {
+		wantErr          error
+		seedRemote       map[string]string
+		remote           map[string]string
+		local            map[string]string
+		wantLocal        map[string]string
+		wantRemote       map[string]string
+		remoteAfterFail  map[string]string
+		name             string
+		wantState        string
+		envContent       string
+		backupPaths      []string
+		remoteExecutable []string
+		localExecutable  []string
+		wantExecutable   []string
+		wantSyncedFiles  []string
+		syncDirectory    bool
+		pendingRedeploy  bool
+		legacySnapshot   bool
+		wantConflict     bool
+		wantNewHead      bool
+		envAtCreate      bool
+		failPush         bool
+	}{
+		{
+			name:       "nothing changed",
+			wantLocal:  map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+			wantRemote: map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+		},
+		{
+			name:           "snapshot without mode info is not treated as changed",
+			legacySnapshot: true,
+			wantLocal:      map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+			wantRemote:     map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+		},
+		{
+			name:       "remote compose edit is pulled",
+			remote:     map[string]string{"compose.yaml": remoteCompose},
+			wantLocal:  map[string]string{"compose.yaml": remoteCompose},
+			wantRemote: map[string]string{"compose.yaml": remoteCompose},
+		},
+		{
+			name:       "remote edit to a non-compose pushed file is pulled",
+			remote:     map[string]string{"config/app.conf": "a = 2\n"},
+			wantLocal:  map[string]string{"config/app.conf": "a = 2\n", "compose.yaml": originalCompose},
+			wantRemote: map[string]string{"config/app.conf": "a = 2\n"},
+		},
+		{
+			name:       "remote file added in a pushed directory is pulled",
+			remote:     map[string]string{"config/new.conf": "n = 1\n"},
+			wantLocal:  map[string]string{"config/new.conf": "n = 1\n"},
+			wantRemote: map[string]string{"config/new.conf": "n = 1\n"},
+		},
+		{
+			name:       "remote deletion of an unchanged file is applied locally",
+			remote:     map[string]string{"config/extra.conf": ""},
+			wantLocal:  map[string]string{"config/extra.conf": "", "config/app.conf": "a = 1\n"},
+			wantRemote: map[string]string{"config/extra.conf": ""},
+		},
+		{
+			name:        "local edit is pushed",
+			local:       map[string]string{"compose.yaml": localCompose},
+			wantLocal:   map[string]string{"compose.yaml": localCompose},
+			wantRemote:  map[string]string{"compose.yaml": localCompose},
+			wantNewHead: true,
+		},
+		{
+			name:        "disjoint edits merge both ways",
+			remote:      map[string]string{"config/app.conf": "a = 2\n"},
+			local:       map[string]string{"compose.yaml": localCompose},
+			wantLocal:   map[string]string{"compose.yaml": localCompose, "config/app.conf": "a = 2\n"},
+			wantRemote:  map[string]string{"compose.yaml": localCompose, "config/app.conf": "a = 2\n"},
+			wantNewHead: true,
+		},
+		{
+			name:       "identical edits on both sides are not a conflict",
+			remote:     map[string]string{"config/app.conf": "a = 2\n"},
+			local:      map[string]string{"config/app.conf": "a = 2\n"},
+			wantLocal:  map[string]string{"config/app.conf": "a = 2\n"},
+			wantRemote: map[string]string{"config/app.conf": "a = 2\n"},
+		},
+		{
+			name:         "same-file edits stop with a conflict",
+			remote:       map[string]string{"config/app.conf": "a = 2\n", "compose.yaml": remoteCompose},
+			local:        map[string]string{"config/app.conf": "a = 3\n"},
+			wantErr:      common.ErrConflict,
+			wantLocal:    map[string]string{"config/app.conf": "a = 3\n", "compose.yaml": originalCompose},
+			wantRemote:   map[string]string{"config/app.conf": "a = 2\n", "compose.yaml": remoteCompose},
+			wantConflict: true,
+		},
+		{
+			name:         "local delete against a remote edit stops with a conflict",
+			remote:       map[string]string{"config/extra.conf": "b = 2\n"},
+			local:        map[string]string{"config/extra.conf": ""},
+			wantErr:      common.ErrConflict,
+			wantLocal:    map[string]string{"config/extra.conf": ""},
+			wantRemote:   map[string]string{"config/extra.conf": "b = 2\n"},
+			wantConflict: true,
+		},
+		{
+			name:         "local edit against a remote delete stops with a conflict",
+			remote:       map[string]string{"config/extra.conf": ""},
+			local:        map[string]string{"config/extra.conf": "b = 3\n"},
+			wantErr:      common.ErrConflict,
+			wantLocal:    map[string]string{"config/extra.conf": "b = 3\n"},
+			wantRemote:   map[string]string{"config/extra.conf": ""},
+			wantConflict: true,
+		},
+		{
+			name:       "remote file outside the pushed scope is left alone",
+			remote:     map[string]string{"docs/readme.md": "docs\n"},
+			wantLocal:  map[string]string{"docs/readme.md": ""},
+			wantRemote: map[string]string{"docs/readme.md": "docs\n"},
+		},
+		{
+			name:          "directory sync pulls a remote file outside the selected paths",
+			syncDirectory: true,
+			remote:        map[string]string{"docs/readme.md": "docs\n"},
+			wantLocal:     map[string]string{"docs/readme.md": "docs\n"},
+			wantRemote:    map[string]string{"docs/readme.md": "docs\n"},
+		},
+		{
+			name:          "directory sync merges disjoint edits both ways",
+			syncDirectory: true,
+			remote:        map[string]string{"docs/readme.md": "docs\n", "compose.yaml": remoteCompose},
+			local:         map[string]string{"config/app.conf": "a = 3\n"},
+			wantLocal:     map[string]string{"docs/readme.md": "docs\n", "compose.yaml": remoteCompose, "config/app.conf": "a = 3\n"},
+			wantRemote:    map[string]string{"docs/readme.md": "docs\n", "compose.yaml": remoteCompose, "config/app.conf": "a = 3\n"},
+			wantNewHead:   true,
+		},
+		{
+			name:          "directory sync same-file edits stop with a conflict",
+			syncDirectory: true,
+			remote:        map[string]string{"compose.yaml": remoteCompose},
+			local:         map[string]string{"compose.yaml": localCompose},
+			wantErr:       common.ErrConflict,
+			wantLocal:     map[string]string{"compose.yaml": localCompose},
+			wantRemote:    map[string]string{"compose.yaml": remoteCompose},
+			wantConflict:  true,
+		},
+		{
+			name:          "directory sync never pulls a committed env file",
+			syncDirectory: true,
+			remote:        map[string]string{".env": "TOKEN=from-git\n", "config/app.conf": "a = 2\n"},
+			wantLocal:     map[string]string{"config/app.conf": "a = 2\n"},
+			wantRemote:    map[string]string{".env": "TOKEN=from-git\n"},
+		},
+		{
+			name:          "remote file replacing a directory with local-only files stops with a conflict",
+			syncDirectory: true,
+			remote:        map[string]string{"docs": "now a file\n"},
+			local:         map[string]string{"docs/private.txt": "private\n"},
+			wantErr:       common.ErrConflict,
+			wantLocal:     map[string]string{"docs/private.txt": "private\n"},
+			wantRemote:    map[string]string{"docs": "now a file\n"},
+			wantConflict:  true,
+		},
+		{
+			name:          "remote directory replacing a local-only file stops with a conflict",
+			syncDirectory: true,
+			remote:        map[string]string{"tools/run.sh": "#!/bin/sh\n"},
+			local:         map[string]string{"tools": "local only\n"},
+			wantErr:       common.ErrConflict,
+			wantLocal:     map[string]string{"tools": "local only\n"},
+			wantRemote:    map[string]string{"tools/run.sh": "#!/bin/sh\n"},
+			wantConflict:  true,
+		},
+		{
+			name:        "remote deletion of an explicitly selected file keeps later runs working",
+			backupPaths: []string{"compose.yaml", "config/app.conf", "config/extra.conf"},
+			remote:      map[string]string{"config/app.conf": ""},
+			wantLocal:   map[string]string{"config/app.conf": "", "config/extra.conf": "b = 1\n"},
+			wantRemote:  map[string]string{"config/app.conf": "", "config/extra.conf": "b = 1\n"},
+		},
+		{
+			name:       "remote deletion of every file in a selected directory keeps later runs working",
+			remote:     map[string]string{"config/app.conf": "", "config/extra.conf": ""},
+			wantLocal:  map[string]string{"config/app.conf": "", "config/extra.conf": ""},
+			wantRemote: map[string]string{"config/app.conf": "", "config/extra.conf": ""},
+		},
+		{
+			name:       "new remote compose override is pulled",
+			remote:     map[string]string{"compose.override.yaml": override},
+			wantLocal:  map[string]string{"compose.override.yaml": override},
+			wantRemote: map[string]string{"compose.override.yaml": override},
+		},
+		{
+			name:             "remote executable bit is pulled",
+			remote:           map[string]string{"config/app.conf": "a = 1\n"},
+			remoteExecutable: []string{"config/app.conf"},
+			wantLocal:        map[string]string{"config/app.conf": "a = 1\n"},
+			wantExecutable:   []string{"config/app.conf"},
+		},
+		{
+			name:             "remote executable bit is pulled over a snapshot without mode info",
+			legacySnapshot:   true,
+			remote:           map[string]string{"config/app.conf": "a = 1\n"},
+			remoteExecutable: []string{"config/app.conf"},
+			wantLocal:        map[string]string{"config/app.conf": "a = 1\n", "compose.yaml": originalCompose},
+			wantExecutable:   []string{"config/app.conf"},
+		},
+		{
+			name:            "local executable bit is pushed",
+			localExecutable: []string{"config/app.conf"},
+			wantLocal:       map[string]string{"config/app.conf": "a = 1\n"},
+			wantExecutable:  []string{"config/app.conf"},
+			wantNewHead:     true,
+		},
+		{
+			name:       "saved env settings are applied when nothing else changed",
+			envContent: "SAVED=later\n",
+			wantLocal:  map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+			wantRemote: map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+		},
+		{
+			name:        "saved env settings are applied on the first run",
+			envContent:  "SAVED=first\n",
+			envAtCreate: true,
+			wantLocal:   map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+			wantRemote:  map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n"},
+		},
+		{
+			name:            "pending redeploy is retried and its failure is not recorded as success",
+			pendingRedeploy: true,
+			wantErr:         common.ErrRedeployAfterSyncFailed,
+			wantState:       types.GitOpsBackupStateFailed,
+		},
+		{
+			name:            "failing pending redeploy still pushes local edits",
+			pendingRedeploy: true,
+			local:           map[string]string{"compose.yaml": localCompose},
+			wantErr:         common.ErrRedeployAfterSyncFailed,
+			wantState:       types.GitOpsBackupStateFailed,
+			wantLocal:       map[string]string{"compose.yaml": localCompose},
+			wantRemote:      map[string]string{"compose.yaml": localCompose},
+			wantNewHead:     true,
+		},
+		{
+			name:       "first run merges an occupied repository folder per file",
+			seedRemote: map[string]string{"compose.yaml": originalCompose, "config/new.conf": "n = 1\n"},
+			wantLocal:  map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n", "config/new.conf": "n = 1\n"},
+			wantRemote: map[string]string{"compose.yaml": originalCompose, "config/app.conf": "a = 1\n", "config/new.conf": "n = 1\n"},
+		},
+		{
+			name:            "last sync records every synced file",
+			remote:          map[string]string{"config/new.conf": "n = 1\n"},
+			wantLocal:       map[string]string{"config/new.conf": "n = 1\n"},
+			wantRemote:      map[string]string{"config/new.conf": "n = 1\n"},
+			wantSyncedFiles: []string{"compose.yaml", "config/app.conf", "config/extra.conf", "config/new.conf"},
+		},
+		{
+			name:            "failed push after a pull does not turn the next Git edit into a conflict",
+			failPush:        true,
+			remote:          map[string]string{"config/app.conf": "a = 2\n"},
+			remoteAfterFail: map[string]string{"config/app.conf": "a = 3\n"},
+			wantLocal:       map[string]string{"config/app.conf": "a = 3\n", "compose.yaml": originalCompose},
+			wantRemote:      map[string]string{"config/app.conf": "a = 3\n", "compose.yaml": originalCompose},
+		},
+		{
+			name:            "failed push after a pull keeps the pending local edit and pushes it next run",
+			failPush:        true,
+			remote:          map[string]string{"config/app.conf": "a = 2\n"},
+			local:           map[string]string{"compose.yaml": localCompose},
+			remoteAfterFail: map[string]string{"config/app.conf": "a = 3\n"},
+			wantLocal:       map[string]string{"config/app.conf": "a = 3\n", "compose.yaml": localCompose},
+			wantRemote:      map[string]string{"config/app.conf": "a = 3\n", "compose.yaml": localCompose},
+			wantNewHead:     true,
+		},
+		{
+			name:         "first run stops on a file that differs in an occupied repository folder",
+			seedRemote:   map[string]string{"compose.yaml": remoteCompose, "config/new.conf": "n = 1\n"},
+			wantErr:      common.ErrConflict,
+			wantLocal:    map[string]string{"compose.yaml": originalCompose, "config/new.conf": ""},
+			wantRemote:   map[string]string{"compose.yaml": remoteCompose, "config/app.conf": ""},
+			wantConflict: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=secret\n")
+			writeBackupProjectFile(t, env.projectPath, "config/app.conf", "a = 1\n")
+			writeBackupProjectFile(t, env.projectPath, "config/extra.conf", "b = 1\n")
+			writeBackupProjectFile(t, env.projectPath, "notes/local.txt", "local only\n")
+			if len(test.seedRemote) > 0 {
+				pushRemoteBackupFiles(t, env, "existing files", test.seedRemote, nil)
+			}
+
+			syncRecord := env.createBackup(t, types.GitOpsSync{
+				Mode:          types.GitOpsSyncModeBidirectional,
+				BackupPaths:   kit.Ternary(len(test.backupPaths) > 0, test.backupPaths, []string{"compose.yaml", "config"}),
+				SyncDirectory: test.syncDirectory,
+				EnvContent:    kit.Ternary(test.envAtCreate, new(test.envContent), nil),
+			})
+			require.Equal(t, kit.Ternary(test.wantConflict && len(test.seedRemote) > 0, backup.BackupStatusConflict, "success"), kit.FromPtr(env.reload(t, syncRecord.ID).LastSyncStatus))
+			if test.envContent != "" {
+				require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Update("env_content", kit.Ternary[any](test.envAtCreate, nil, test.envContent)).Error)
+			}
+			if test.legacySnapshot {
+				legacy := make(map[string]string)
+				for file, state := range env.reload(t, syncRecord.ID).BackupSnapshot() {
+					legacy[file], _, _ = strings.Cut(state, ":")
+				}
+				encoded, err := json.Marshal(legacy)
+				require.NoError(t, err)
+				require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Update("last_backup_snapshot", string(encoded)).Error)
+			}
+
+			if len(test.remote) > 0 {
+				pushRemoteBackupFiles(t, env, "edited in git", test.remote, test.remoteExecutable)
+			}
+			writeOrRemoveProjectFiles(t, env.projectPath, test.local)
+			for _, relative := range test.localExecutable {
+				require.NoError(t, os.Chmod(filepath.Join(env.projectPath, filepath.FromSlash(relative)), 0o755))
+			}
+			if test.pendingRedeploy {
+				require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).Updates(map[string]any{
+					"pending_redeploy": true,
+					"backup_pending":   true,
+				}).Error)
+				require.NoError(t, env.db.Model(&projectpkg.Project{}).Where("id = ?", env.project.ID).Update("is_archived", true).Error)
+			}
+			if test.failPush {
+				require.NoError(t, env.db.Model(&gitrepo.GitRepository{}).Where("id = ?", "repo-backup").Update("signing_key", "not-a-signing-key").Error)
+				_, failErr := env.service.PerformSync(t.Context(), SyncRequest{
+					EnvironmentID: "0",
+					SyncID:        syncRecord.ID,
+					Actor:         types.SystemUser,
+				})
+				require.Error(t, failErr, "failed push")
+				assertFileContents(t, env.projectPath, test.remote)
+				require.NoError(t, env.db.Model(&gitrepo.GitRepository{}).Where("id = ?", "repo-backup").Update("signing_key", "").Error)
+				pushRemoteBackupFiles(t, env, "edited in git again", test.remoteAfterFail, nil)
+			}
+			headBefore := env.remoteHead(t)
+
+			result, err := env.service.PerformSync(t.Context(), SyncRequest{
+				EnvironmentID: "0",
+				SyncID:        syncRecord.ID,
+				Actor:         types.SystemUser,
+			})
+			if test.wantErr != nil {
+				require.ErrorIs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, result.Success)
+			}
+
+			assertFileContents(t, env.projectPath, test.wantLocal)
+			assertFileContents(t, env.projectPath, map[string]string{"notes/local.txt": "local only\n"})
+			envFile, err := os.ReadFile(filepath.Join(env.projectPath, ".env"))
+			require.NoError(t, err)
+			assert.Contains(t, string(envFile), "TOKEN=secret")
+			assert.NotContains(t, string(envFile), "from-git")
+			assert.Contains(t, string(envFile), test.envContent)
+
+			repoPath := env.checkoutRemote(t)
+			assertFileContents(t, filepath.Join(repoPath, "backups", "demo"), test.wantRemote)
+			assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", "notes", "local.txt"))
+			if test.remote[".env"] == "" {
+				assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", ".env"))
+			}
+			assert.Equal(t, test.wantNewHead, env.remoteHead(t) != headBefore)
+			assertExecutableFiles(t, test.wantExecutable, env.projectPath, filepath.Join(repoPath, "backups", "demo"))
+
+			stored := env.reload(t, syncRecord.ID)
+			if test.wantSyncedFiles != nil {
+				assert.ElementsMatch(t, test.wantSyncedFiles, stored.SyncedFileList())
+			}
+			assert.Equal(t, test.wantConflict, stored.BackupConflict)
+			assert.Equal(t, test.pendingRedeploy, stored.PendingRedeploy)
+			assert.False(t, stored.BackupPending)
+			assert.Equal(t, cmp.Or(test.wantState, kit.Ternary(test.wantConflict, types.GitOpsBackupStateNeedsAttention, types.GitOpsBackupStateBackedUp)), stored.BackupState())
+			var project projectpkg.Project
+			require.NoError(t, env.db.Where("id = ?", env.project.ID).First(&project).Error)
+			assert.Equal(t, env.projectPath, project.Path)
+			assert.Equal(t, syncRecord.ID, kit.FromPtr(project.GitOpsManagedBy))
+
+			if test.wantErr != nil {
+				return
+			}
+			headAfter := env.remoteHead(t)
+			rerun, err := env.service.PerformSync(t.Context(), SyncRequest{
+				EnvironmentID: "0",
+				SyncID:        syncRecord.ID,
+				Actor:         types.SystemUser,
+			})
+			require.NoError(t, err, "second run")
+			assert.True(t, rerun.Success, "second run")
+			assert.Equal(t, headAfter, env.remoteHead(t), "second run")
+		})
+	}
+}
+
+func TestGitOpsBidirectional_DirectorySyncPushesEditsToPulledFiles(t *testing.T) {
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, types.GitOpsSync{
+		Mode:          types.GitOpsSyncModeBidirectional,
+		SyncDirectory: true,
+	})
+	pushRemoteCommit(t, env.remote, env.repoURL, "add docs", map[string]string{"backups/demo/docs/readme.md": "docs\n"})
+
+	for _, step := range []struct {
+		local      map[string]string
+		wantRemote string
+		name       string
+	}{
+		{name: "pull the new remote file", wantRemote: "docs\n"},
+		{name: "push a local edit to it", local: map[string]string{"docs/readme.md": "edited\n"}, wantRemote: "edited\n"},
+	} {
+		writeOrRemoveProjectFiles(t, env.projectPath, step.local)
+		_, err := env.service.PerformSync(t.Context(), SyncRequest{
+			EnvironmentID: "0",
+			SyncID:        syncRecord.ID,
+			Actor:         types.SystemUser,
+		})
+		require.NoError(t, err, step.name)
+		assertFileContents(t, filepath.Join(env.checkoutRemote(t), "backups", "demo"), map[string]string{"docs/readme.md": step.wantRemote})
+		assertFileContents(t, env.projectPath, map[string]string{"docs/readme.md": step.wantRemote})
+	}
+}
+
+func TestGitOpsBidirectional_ConflictResolves(t *testing.T) {
+	remoteCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
+	localCompose := "services:\n  app:\n    image: nginx:1.29-alpine\n"
+
+	tests := []struct {
+		name        string
+		strategy    string
+		wantCompose string
+	}{
+		{name: "use arcane", strategy: types.GitOpsBackupConflictUseArcane, wantCompose: localCompose},
+		{name: "use repository", strategy: types.GitOpsBackupConflictUseRepository, wantCompose: remoteCompose},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			writeBackupProjectFile(t, env.projectPath, "config/app.conf", "a = 1\n")
+			writeBackupProjectFile(t, env.projectPath, "config/extra.conf", "b = 1\n")
+			writeBackupProjectFile(t, env.projectPath, "config/local.conf", "l = 1\n")
+			syncRecord := env.createBackup(t, types.GitOpsSync{
+				Mode:        types.GitOpsSyncModeBidirectional,
+				BackupPaths: []string{"compose.yaml", "config"},
+			})
+
+			pushRemoteCommit(t, env.remote, env.repoURL, "edited in git", map[string]string{
+				"backups/demo/compose.yaml":      remoteCompose,
+				"backups/demo/config/app.conf":   "a = 2\n",
+				"backups/demo/config/extra.conf": "",
+			})
+			writeBackupProjectFile(t, env.projectPath, "compose.yaml", localCompose)
+			writeBackupProjectFile(t, env.projectPath, "config/local.conf", "l = 2\n")
+
+			_, err := env.service.PerformSync(t.Context(), SyncRequest{
+				EnvironmentID: "0",
+				SyncID:        syncRecord.ID,
+				Actor:         types.SystemUser,
+			})
+			require.ErrorIs(t, err, common.ErrConflict)
+			assert.Equal(t, types.GitOpsBackupStateNeedsAttention, env.reload(t, syncRecord.ID).BackupState())
+
+			preview, err := env.service.PreviewBackup(t.Context(), "0", syncRecord.ID)
+			require.NoError(t, err)
+			assert.Equal(t, backup.BackupPreviewConflict, preview.State)
+			assert.Equal(t, []types.GitOpsBackupFileChange{{Path: "compose.yaml", Change: backup.BackupChangeModified}}, preview.Conflicts)
+
+			result, err := env.service.ResolveBackupConflict(t.Context(), "0", syncRecord.ID, types.GitOpsResolveBackupConflictRequest{
+				Strategy: test.strategy,
+			}, types.SystemUser)
+			require.NoError(t, err)
+			require.True(t, result.Success)
+			assert.Equal(t, types.GitOpsBackupStateBackedUp, env.reload(t, syncRecord.ID).BackupState())
+
+			want := map[string]string{
+				"compose.yaml":      test.wantCompose,
+				"config/app.conf":   "a = 2\n",
+				"config/extra.conf": "",
+				"config/local.conf": "l = 2\n",
+			}
+			assertFileContents(t, env.projectPath, want)
+			assertFileContents(t, filepath.Join(env.checkoutRemote(t), "backups", "demo"), want)
+
+			headAfter := env.remoteHead(t)
+			_, err = env.service.PerformSync(t.Context(), SyncRequest{
+				EnvironmentID: "0",
+				SyncID:        syncRecord.ID,
+				Actor:         types.SystemUser,
+			})
+			require.NoError(t, err, "second run")
+			assert.Equal(t, headAfter, env.remoteHead(t), "second run")
+		})
+	}
+}
+
+func TestGitOpsBidirectional_OccupiesDeployAndBackupSlots(t *testing.T) {
+	tests := []struct {
+		wantErr error
+		name    string
+		first   types.GitOpsSync
+		second  types.GitOpsSync
+	}{
+		{
+			name:    "swarm target is rejected",
+			second:  types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, TargetType: "swarm_stack"},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name:    "padded bidirectional mode is rejected",
+			second:  types.GitOpsSync{Mode: " " + types.GitOpsSyncModeBidirectional + " "},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name:    "padded backup mode is rejected",
+			second:  types.GitOpsSync{Mode: " " + types.GitOpsSyncModeBackup + " "},
+			wantErr: common.ErrValidation,
+		},
+		{
+			name:    "bidirectional after a backup",
+			first:   types.GitOpsSync{Mode: types.GitOpsSyncModeBackup},
+			second:  types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupDirectory: "backups/other"},
+			wantErr: common.ErrConflict,
+		},
+		{
+			name:    "backup after a bidirectional sync",
+			first:   types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional},
+			second:  types.GitOpsSync{Mode: types.GitOpsSyncModeBackup, BackupDirectory: "backups/other"},
+			wantErr: common.ErrConflict,
+		},
+		{
+			name:    "deploy after a bidirectional sync",
+			first:   types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional},
+			second:  types.GitOpsSync{Mode: types.GitOpsSyncModeDeploy, ComposePath: "backups/demo/compose.yaml"},
+			wantErr: common.ErrConflict,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			if test.first.Mode != "" {
+				env.createBackup(t, test.first)
+			}
+			_, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+				Request: types.GitOpsSync{
+					Name:            "second",
+					RepositoryID:    "repo-backup",
+					Branch:          "main",
+					Mode:            test.second.Mode,
+					TargetType:      test.second.TargetType,
+					ComposePath:     test.second.ComposePath,
+					ProjectID:       &env.project.ID,
+					BackupDirectory: test.second.BackupDirectory,
+				},
+				Actor: types.SystemUser,
+			})
+			require.ErrorIs(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestGitOpsBidirectional_CountsAndFilters(t *testing.T) {
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional})
+
+	syncs, _, counts, err := env.service.GetSyncsPaginated(t.Context(), "0", pagination.QueryParams{
+		Filters: map[string]string{"mode": types.GitOpsSyncModeBidirectional},
+		Params:  pagination.Params{Limit: 20},
+	})
+	require.NoError(t, err)
+	require.Len(t, syncs, 1)
+	assert.Equal(t, syncRecord.ID, syncs[0].ID)
+	assert.Equal(t, types.GitOpsSyncCounts{
+		TotalSyncs:         1,
+		ActiveSyncs:        1,
+		SuccessfulSyncs:    1,
+		BidirectionalSyncs: 1,
+	}, counts)
+}
+
+func TestGitOpsCreateSync_LinksExistingProjectInEveryMode(t *testing.T) {
+	remoteCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
+	tests := []struct {
+		name        string
+		wantCompose string
+		request     types.GitOpsSync
+		wantManaged bool
+	}{
+		{
+			name:        "deploy",
+			request:     types.GitOpsSync{Mode: types.GitOpsSyncModeDeploy, ComposePath: "apps/demo/compose.yaml"},
+			wantCompose: remoteCompose,
+			wantManaged: true,
+		},
+		{
+			name:        "deploy directory",
+			request:     types.GitOpsSync{Mode: types.GitOpsSyncModeDeploy, ComposePath: "apps/demo/compose.yaml", SyncDirectory: true},
+			wantCompose: remoteCompose,
+			wantManaged: true,
+		},
+		{
+			name:        "backup",
+			request:     types.GitOpsSync{Mode: types.GitOpsSyncModeBackup, BackupDirectory: "backups/demo"},
+			wantCompose: "services:\n  app:\n    image: nginx:1.27-alpine\n",
+		},
+		{
+			name:        "bidirectional",
+			request:     types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupDirectory: "backups/demo"},
+			wantCompose: "services:\n  app:\n    image: nginx:1.27-alpine\n",
+			wantManaged: true,
+		},
+		{
+			name:        "bidirectional directory",
+			request:     types.GitOpsSync{Mode: types.GitOpsSyncModeBidirectional, BackupDirectory: "backups/demo", SyncDirectory: true},
+			wantCompose: "services:\n  app:\n    image: nginx:1.27-alpine\n",
+			wantManaged: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := setupGitOpsBackupTestService(t)
+			pushRemoteCommit(t, env.remote, env.repoURL, "seed", map[string]string{"apps/demo/compose.yaml": remoteCompose})
+			writeBackupProjectFile(t, env.projectPath, "notes/local.txt", "local only\n")
+
+			created, err := env.service.CreateSync(t.Context(), "0", SyncUpdate{
+				Request: types.GitOpsSync{
+					Name:            "existing-" + test.request.Mode,
+					RepositoryID:    "repo-backup",
+					Branch:          "main",
+					Mode:            test.request.Mode,
+					ComposePath:     test.request.ComposePath,
+					SyncDirectory:   test.request.SyncDirectory,
+					BackupDirectory: test.request.BackupDirectory,
+					ProjectID:       &env.project.ID,
+				},
+				Actor: types.SystemUser,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, env.project.ID, kit.FromPtr(created.ProjectID))
+			assert.Equal(t, env.project.Name, created.ProjectName)
+			assert.Equal(t, "success", kit.FromPtr(env.reload(t, created.ID).LastSyncStatus))
+
+			var stored []projectpkg.Project
+			require.NoError(t, env.db.Find(&stored).Error)
+			require.Len(t, stored, 1)
+			assert.Equal(t, env.projectPath, stored[0].Path)
+			assert.Equal(t, kit.Ternary(test.wantManaged, created.ID, ""), kit.FromPtr(stored[0].GitOpsManagedBy))
+			assertFileContents(t, env.projectPath, map[string]string{
+				"compose.yaml":    test.wantCompose,
+				"notes/local.txt": "local only\n",
+			})
+		})
 	}
 }
