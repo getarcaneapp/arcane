@@ -245,7 +245,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: '~> v2'
-          args: release --clean --skip=validate,announce
+          args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}

@@ -24,6 +24,7 @@
 - remove newSelfUpdater preview and always verify updates ([\#4773](https://github.com/getarcaneapp/arcane/pull/4773) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.0.0...v3.0.1
+
 ## v3.0.0
 
 ### New features
@@ -254,6 +255,7 @@
 - rename environment routes to agents ([\#4731](https://github.com/getarcaneapp/arcane/pull/4731) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.17.3...v3.0.0
+
 ## v2.17.3
 
 ### Bug fixes
