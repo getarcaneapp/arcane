@@ -7,6 +7,7 @@ FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS agent-builder
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG BUILD_TAGS="exclude_frontend"
+ARG ENABLED_FEATURES=""
 ARG VERSION="dev"
 ARG REVISION="unknown"
 ARG BUILD_TIME="unknown"
@@ -39,8 +40,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     fi && \
     CGO_ENABLED=0 GOOS=linux \
     go build \
-    -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME}" \
+    -tags "${BUILD_TAGS}${ENABLED_FEATURES:+,buildables}" \
+    -ldflags "-w -s -X getarcane.dev/arcane/v3/buildables.EnabledFeatures=${ENABLED_FEATURES} -X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME}" \
     -trimpath \
     -o /out/arcane-agent \
     ./cmd/main.go
