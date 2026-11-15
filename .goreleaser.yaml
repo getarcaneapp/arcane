@@ -391,7 +391,7 @@ changelog:
       - '^revert'
   ai:
     use: openai
-    model: openai/gpt-6-luna-pro
+    model: anthropic/claude-haiku-5.5
     prompt: |
       Rewrite these release notes for Arcane, a Docker management app.
       Start with a short intro highlighting the most notable changes, wrapped
