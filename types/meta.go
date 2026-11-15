@@ -93,7 +93,7 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		Description:    "Removes expired and old revoked user sessions from the database",
 		Category:       "maintenance",
 		SettingsKey:    "expiredSessionsCleanupInterval",
-		ManagerOnly:    false,
+		ManagerOnly:    true,
 		IsContinuous:   false,
 		CanRunManually: true,
 		Prerequisites:  []JobPrerequisiteMetadata{},
