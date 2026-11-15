@@ -1257,3 +1257,24 @@ func TestSQLiteDSN_ConcurrencyDefaults(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigureSQLiteConnectionPool_AgentMode(t *testing.T) {
+	tempDir := t.TempDir()
+	dsn := "file:" + filepath.Join(tempDir, "agent-test.db") + "?_journal_mode=WAL"
+
+	dbAgent, err := Initialize(t.Context(), dsn, MigrationOptions{AgentMode: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dbAgent.Close()) })
+	assert.Nil(t, dbAgent.reader)
+	sqlDBAgent, err := dbAgent.DB.DB()
+	require.NoError(t, err)
+	assert.Equal(t, 1, sqlDBAgent.Stats().MaxOpenConnections)
+
+	dbNormal, err := Initialize(t.Context(), dsn, MigrationOptions{AgentMode: false})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dbNormal.Close()) })
+	assert.NotNil(t, dbNormal.reader)
+	sqlDBNormal, err := dbNormal.DB.DB()
+	require.NoError(t, err)
+	assert.Equal(t, sqliteWriteConns, sqlDBNormal.Stats().MaxOpenConnections)
+}
