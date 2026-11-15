@@ -316,7 +316,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 	serveDone := make(chan struct{})
 	go func() {
 		defer close(serveDone)
-		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
+		_ = (&TunnelServer{registry: tunnels, streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 	}()
 
 	return tunnels, tunnel.EnvironmentID, func() {

@@ -35,23 +35,17 @@ const (
 
 var ErrAgentNotResponding = errors.New("agent is not responding")
 
-func (r *TunnelRegistry) GrantLeases(ctx context.Context, envIDs []string) error {
+func (r *TunnelRegistry) GrantLeases(envIDs []string) {
 	expiry := time.Now().Add(leaseDuration)
-	return r.leases.Apply(ctx, "grant agent readiness leases", func(leases map[string]time.Time) (bool, error) {
-		changed := false
-		for _, envID := range envIDs {
-			if expiry.After(leases[envID]) {
-				leases[envID] = expiry
-				changed = true
-			}
-		}
-		return changed, nil
-	})
+	for _, envID := range envIDs {
+		r.leases.Store(envID, expiry)
+	}
 }
 
 func (r *TunnelRegistry) Readiness(envID string) TunnelReadiness {
 	tunnel, connected := r.Active(envID).Get()
-	expiry, _ := r.leases.Get(envID)
+	stored, _ := r.leases.Load(envID)
+	expiry, _ := stored.(time.Time)
 	left := max(time.Until(expiry), 0)
 	switch {
 	case connected && (left > 0 || !slices.Contains(tunnel.Capabilities, tunnelCapabilityReadinessLease)):
@@ -96,12 +90,12 @@ func (r *TunnelRegistry) Acquire(ctx context.Context, envID string, opts Acquire
 }
 
 func (s *TunnelServer) muxLeaseHandler(ctx context.Context, tunnel *AgentTunnel) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := s.registry.GrantLeases(r.Context(), []string{tunnel.EnvironmentID}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if tunnel.leaseLapsed.CompareAndSwap(true, false) {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		tunnel.leaseMu.Lock()
+		defer tunnel.leaseMu.Unlock()
+		s.registry.GrantLeases([]string{tunnel.EnvironmentID})
+		if tunnel.leaseLapsed {
+			tunnel.leaseLapsed = false
 			slog.InfoContext(ctx, "Agent resumed renewing its readiness lease", "environmentId", tunnel.EnvironmentID)
 			s.updateConnectionStatus(ctx, tunnel, ConnectionStateOnline)
 		}
@@ -110,8 +104,11 @@ func (s *TunnelServer) muxLeaseHandler(ctx context.Context, tunnel *AgentTunnel)
 }
 
 func (s *TunnelServer) checkLease(ctx context.Context, tunnel *AgentTunnel) {
+	tunnel.leaseMu.Lock()
+	defer tunnel.leaseMu.Unlock()
 	readiness := s.registry.Readiness(tunnel.EnvironmentID)
-	if readiness.Tunnel == tunnel && readiness.State == ReadinessNotReady && tunnel.leaseLapsed.CompareAndSwap(false, true) {
+	if readiness.Tunnel == tunnel && readiness.State == ReadinessNotReady && !tunnel.leaseLapsed {
+		tunnel.leaseLapsed = true
 		slog.WarnContext(ctx, "Agent readiness lease expired", "environmentId", tunnel.EnvironmentID)
 		s.updateConnectionStatus(ctx, tunnel, ConnectionStateUnresponsive)
 	}

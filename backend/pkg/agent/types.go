@@ -89,14 +89,15 @@ type (
 		Capabilities  []string
 		mu            sync.RWMutex
 		closeOnce     sync.Once
-		leaseLapsed   atomic.Bool
+		leaseMu       sync.Mutex
+		leaseLapsed   bool
 	}
 
 	TunnelRegistry struct {
 		tunnels    *concurrency.StateMap[string, *AgentTunnel]
 		history    *concurrency.StateMap[string, TunnelHistory]
-		leases     *concurrency.StateMap[string, time.Time]
 		registered *concurrency.Signal[string]
+		leases     sync.Map
 		stopped    atomic.Bool
 	}
 

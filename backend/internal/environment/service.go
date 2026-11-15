@@ -1296,9 +1296,7 @@ func (s *EnvironmentService) ReconcileAgentStatusesOnStartup(ctx context.Context
 		Pluck("id", &online).Error; err != nil {
 		return fmt.Errorf("failed to list environments online before startup: %w", err)
 	}
-	if err := s.tunnels.GrantLeases(ctx, online); err != nil {
-		return fmt.Errorf("failed to seed agent readiness leases: %w", err)
-	}
+	s.tunnels.GrantLeases(online)
 
 	result := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("id <> ?", LocalEnvironmentID).

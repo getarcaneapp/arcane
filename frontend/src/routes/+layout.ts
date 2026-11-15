@@ -77,6 +77,7 @@ const EMPTY_PODMAN_STATUS: PodmanStatus = {
 };
 let knownPodmanStatuses: Record<string, PodmanStatus> = {};
 let knownSwarmEnabled: boolean | undefined;
+let knownSwarmScope = '';
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
@@ -251,6 +252,11 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 						})
 					)
 				: Promise.resolve(null);
+		const swarmScope = `${user.id}:${swarmEnvironments.map((env) => env.id).join(',')}`;
+		if (swarmScope !== knownSwarmScope) {
+			knownSwarmScope = swarmScope;
+			knownSwarmEnabled = undefined;
+		}
 		const swarmStatusDiscovery = Promise.race([swarmStatusRequest, afterDiscoveryTimeout()]);
 		const podmanEnvironments = passwordChangePending ? [] : readableEnvironments('podman:read');
 		const podmanStatusRequest = (
@@ -284,7 +290,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		]);
 		if (discoveredSwarmStatus === undefined) {
 			void swarmStatusRequest.then((status) => {
-				if (status?.enabled === knownSwarmEnabled) return;
+				if (swarmScope !== knownSwarmScope || status?.enabled === knownSwarmEnabled) return;
 				knownSwarmEnabled = status?.enabled;
 				void invalidate(SWARM_STATUS_DEPENDENCY);
 			});
@@ -306,8 +312,14 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 				})
 			));
 		await featuresRequest;
-		knownSwarmEnabled = discoveredSwarmStatus === undefined ? knownSwarmEnabled : discoveredSwarmStatus?.enabled;
-		swarmEnabled = knownSwarmEnabled;
+		if (discoveredSwarmStatus === undefined) {
+			swarmEnabled = swarmScope === knownSwarmScope ? knownSwarmEnabled : undefined;
+		} else {
+			swarmEnabled = discoveredSwarmStatus?.enabled;
+			if (swarmScope === knownSwarmScope) {
+				knownSwarmEnabled = swarmEnabled;
+			}
+		}
 		knownPodmanStatuses = discoveredPodmanStatuses ?? knownPodmanStatuses;
 		podmanStatuses = Object.fromEntries(Object.entries(knownPodmanStatuses).filter(([, status]) => status.detected));
 		podmanUnavailableReasons = Object.fromEntries(

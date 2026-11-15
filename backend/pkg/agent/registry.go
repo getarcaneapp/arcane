@@ -149,7 +149,6 @@ func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
 		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
 		history:    concurrency.NewStateMap[string, TunnelHistory](),
-		leases:     concurrency.NewStateMap[string, time.Time](),
 		registered: concurrency.NewSignal[string](),
 	}
 }
@@ -307,9 +306,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 		r.recordDisconnect(ctx, result.previous)
 	}
 	if result.stored && slices.Contains(tunnel.Capabilities, tunnelCapabilityReadinessLease) {
-		if leaseErr := r.GrantLeases(ctx, []string{envID}); leaseErr != nil {
-			slog.ErrorContext(ctx, "Failed to grant agent readiness lease", "environmentId", envID, "error", leaseErr)
-		}
+		r.GrantLeases([]string{envID})
 	}
 	if result.stored {
 		r.recordSession(ctx, envID)

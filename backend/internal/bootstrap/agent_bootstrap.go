@@ -82,6 +82,9 @@ func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
 		Registry: p.Registry,
 		Resolver: p.EnvironmentService.ResolveAgentEnvironmentByToken,
 		StatusCallback: func(ctx context.Context, envID string, state agent.ConnectionState) {
+			if state == agent.ConnectionStateOffline && p.Context.Err() != nil {
+				return
+			}
 			handleAgentStatusChange(ctx, p.EnvironmentService, p.EventService, envID, state)
 		},
 		MTLS: p.MTLS,

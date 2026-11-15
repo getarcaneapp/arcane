@@ -51,10 +51,7 @@ func newLeaseTestTunnel(t *testing.T, envID string, capable bool) *AgentTunnel {
 
 func setTestLease(t *testing.T, r *TunnelRegistry, envID string, left time.Duration) {
 	t.Helper()
-	require.NoError(t, r.leases.Apply(t.Context(), "set test lease", func(leases map[string]time.Time) (bool, error) {
-		leases[envID] = time.Now().Add(left)
-		return true, nil
-	}))
+	r.leases.Store(envID, time.Now().Add(left))
 }
 
 func (s leaseScenario) registry(t *testing.T, envID string) *TunnelRegistry {
@@ -222,16 +219,12 @@ func TestTunnelRegistryGrantLeases(t *testing.T) {
 	r := NewTunnelRegistry()
 	registerTestTunnel(t, r, newLeaseTestTunnel(t, "capable", true))
 	registerTestTunnel(t, r, newLeaseTestTunnel(t, "legacy", false))
-	setTestLease(t, r, "longer", 2*leaseDuration)
-	longer, _ := r.leases.Get("longer")
 
-	require.NoError(t, r.GrantLeases(t.Context(), []string{"longer", "seeded"}))
+	r.GrantLeases([]string{"seeded"})
 
-	extended, _ := r.leases.Get("longer")
-	assert.Equal(t, longer, extended)
 	assert.InDelta(t, leaseDuration, r.Readiness("seeded").LeaseLeft, float64(time.Second))
 	assert.InDelta(t, leaseDuration, r.Readiness("capable").LeaseLeft, float64(time.Second))
-	_, legacyLeased := r.leases.Get("legacy")
+	_, legacyLeased := r.leases.Load("legacy")
 	assert.False(t, legacyLeased)
 	assert.Equal(t, 4*DefaultHeartbeatInterval, leaseDuration)
 }

@@ -31,7 +31,7 @@ func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Ser
 
 	tunnel := newWebSocketAgentTunnel("env-1", conn)
 	go func() {
-		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
+		_ = (&TunnelServer{registry: NewTunnelRegistry(), streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
 	}()
 
 	return server, tunnel
