@@ -17,10 +17,6 @@ type (
 		Default   PaginationResourceConfig            `yaml:"default,omitempty"`
 	}
 
-	PreviewsConfig struct {
-		NewSelfUpdater bool `yaml:"newSelfUpdater"`
-	}
-
 	Config struct {
 		Pagination        PaginationConfig `yaml:"pagination,omitempty"`
 		ServerURL         string           `yaml:"server_url"`
@@ -30,7 +26,6 @@ type (
 		FederatedAudience string           `yaml:"federated_audience,omitempty"`
 		LogLevel          string           `yaml:"log_level,omitempty"`
 		CLIUpdateChannel  string           `yaml:"cli_update_channel,omitempty"`
-		Previews          PreviewsConfig   `yaml:"previews"`
 	}
 )
 

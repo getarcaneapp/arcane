@@ -77,10 +77,11 @@ func Command() *cobra.Command {
 		Short:       "Update arcane-cli",
 		Long: `Update arcane-cli using the configured release channel.
 
-Enable Sigstore verification with arcane-cli config set previews.newSelfUpdater true.
-This preview fetches trust data from tuf-repo-cdn.sigstore.dev and caches it under
-the user cache directory at arcane-cli/sigstore, usable offline until expiry.
-Releases before v1.18.0 are unsigned. Valid signatures do not prevent replay of older releases.`,
+Self-update verifies the release checksum file with Sigstore before installing.
+Trust data is fetched from tuf-repo-cdn.sigstore.dev and cached under the user
+cache directory at arcane-cli/sigstore, usable offline until expiry.
+Releases before v1.18.0 are unsigned and cannot be installed with self-update.
+Valid signatures do not prevent replay of older releases.`,
 		Args: cobra.NoArgs, SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error { return opts.runCLIUpdate(cmd, "") },
 	}
@@ -175,9 +176,7 @@ func (opts cliUpdateOptions) runCLIUpdate(cmd *cobra.Command, overrideChannel st
 		output.KeyValue("Latest SHA", plan.ExpectedSHA)
 	}
 	output.KeyValue("Artifact SHA", plan.ArtifactSHA)
-	if plan.SignatureVerified {
-		output.KeyValue("Signature", "verified")
-	}
+	output.KeyValue("Signature", "verified")
 
 	if !plan.UpdateNeeded {
 		output.Success("arcane-cli is already up to date")
@@ -226,12 +225,9 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 	if err != nil {
 		return nil, err
 	}
-	var verifier *selfupdate.Verifier
-	if cfg.Previews.NewSelfUpdater {
-		verifier, err = selfupdate.New(ctx)
-		if err != nil {
-			return nil, err
-		}
+	verifier, err := selfupdate.New(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	resolve := kit.Ternary(channel == cliUpdateChannelNext, opts.resolveNextCLIUpdate, opts.resolveStableCLIUpdate)
@@ -298,7 +294,7 @@ func (opts cliUpdateOptions) resolveNextCLIUpdate(ctx context.Context, verifier 
 		ArtifactURL:       artifactURL,
 		ChecksumURL:       checksumURL,
 		BundleURL:         bundleURL,
-		SignatureVerified: verifier != nil,
+		SignatureVerified: true,
 		ArtifactSHA:       expectedSHA,
 		ExpectedSHA:       expectedSHA,
 	}, nil
@@ -352,7 +348,7 @@ func (opts cliUpdateOptions) resolveStableCLIUpdate(ctx context.Context, verifie
 		ArtifactURL:       artifactURL,
 		ChecksumURL:       checksumURL,
 		BundleURL:         bundleURL,
-		SignatureVerified: verifier != nil,
+		SignatureVerified: true,
 		ArtifactSHA:       artifactSHA,
 	}, nil
 }
@@ -552,15 +548,11 @@ func (opts cliUpdateOptions) fetchCLIChecksums(ctx context.Context, checksumURL 
 	if err != nil {
 		return "", "", err
 	}
-	if verifier == nil {
-		return string(checksums), "", nil
-	}
-
 	bundleURL := checksumURL + ".sigstore.json"
 	opts.verboseCLIUpdate("checksum bundle URL: %s", bundleURL)
 	bundleJSON, err := fetchBytes(ctx, bundleURL, "application/json", "bundle", maxCLIBundleSize)
 	if errors.Is(err, errCLIUpdateNotFound) {
-		return "", "", fmt.Errorf("failed to fetch %s: releases before v1.18.0 are unsigned; run `arcane-cli config set previews.newSelfUpdater false` to install them", bundleURL)
+		return "", "", fmt.Errorf("failed to fetch %s: releases before v1.18.0 are unsigned and cannot be installed with self-update", bundleURL)
 	}
 	if err != nil {
 		return "", "", err

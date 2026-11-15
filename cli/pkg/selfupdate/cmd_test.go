@@ -13,8 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/cli/v3/internal/selfupdate"
 )
 
@@ -89,25 +87,23 @@ func TestFetchCLIChecksumsSignatureVerification(t *testing.T) {
 		bundle         []byte
 		status         int
 		bundleRequests int
-		preview        bool
 	}{
-		{name: "preview off", checksums: checksums, bundle: []byte("invalid")},
-		{name: "verified", preview: true, checksums: checksums, bundle: bundleJSON, bundleRequests: 1},
-		{name: "bad bundle", preview: true, checksums: checksums, bundle: []byte("{"), bundleRequests: 1, wantError: "failed to parse checksum signature bundle"},
+		{name: "verified", checksums: checksums, bundle: bundleJSON, bundleRequests: 1},
+		{name: "bad bundle", checksums: checksums, bundle: []byte("{"), bundleRequests: 1, wantError: "failed to parse checksum signature bundle"},
 		{
-			name: "altered checksums", preview: true, checksums: append([]byte("x"), checksums[1:]...), bundle: bundleJSON,
+			name: "altered checksums", checksums: append([]byte("x"), checksums[1:]...), bundle: bundleJSON,
 			bundleRequests: 1, wantError: "checksum signature verification failed",
 		},
 		{
-			name: "unsigned release", preview: true, checksums: checksums, status: http.StatusNotFound, bundleRequests: 1,
-			wantError: "releases before v1.18.0 are unsigned; run `arcane-cli config set previews.newSelfUpdater false` to install them",
+			name: "unsigned release", checksums: checksums, status: http.StatusNotFound, bundleRequests: 1,
+			wantError: "releases before v1.18.0 are unsigned and cannot be installed with self-update",
 		},
-		{name: "bundle HTTP failure", preview: true, checksums: checksums, status: http.StatusServiceUnavailable, bundleRequests: 1, wantError: "HTTP 503 Service Unavailable"},
+		{name: "bundle HTTP failure", checksums: checksums, status: http.StatusServiceUnavailable, bundleRequests: 1, wantError: "HTTP 503 Service Unavailable"},
 		{
-			name: "oversized bundle", preview: true, checksums: checksums, bundle: []byte(strings.Repeat("x", maxCLIBundleSize+1)),
+			name: "oversized bundle", checksums: checksums, bundle: []byte(strings.Repeat("x", maxCLIBundleSize+1)),
 			bundleRequests: 1, wantError: "bundle response exceeds maximum size",
 		},
-		{name: "oversized checksums", preview: true, checksums: []byte(strings.Repeat("x", maxCLIChecksumSize+1)), wantError: "checksum response exceeds maximum size"},
+		{name: "oversized checksums", checksums: []byte(strings.Repeat("x", maxCLIChecksumSize+1)), wantError: "checksum response exceeds maximum size"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var bundleRequests atomic.Int32
@@ -127,7 +123,7 @@ func TestFetchCLIChecksumsSignatureVerification(t *testing.T) {
 			defer server.Close()
 
 			checksumURL := server.URL + "/arcane_2.15.1_checksums.txt"
-			got, bundleURL, fetchErr := cliUpdateOptions{}.fetchCLIChecksums(t.Context(), checksumURL, kit.Ternary(tt.preview, verifier, nil))
+			got, bundleURL, fetchErr := cliUpdateOptions{}.fetchCLIChecksums(t.Context(), checksumURL, verifier)
 			require.EqualValues(t, tt.bundleRequests, bundleRequests.Load())
 			if tt.wantError != "" {
 				require.ErrorContains(t, fetchErr, tt.wantError)
@@ -135,7 +131,7 @@ func TestFetchCLIChecksumsSignatureVerification(t *testing.T) {
 			}
 			require.NoError(t, fetchErr)
 			require.Equal(t, string(checksums), got)
-			require.Equal(t, kit.Ternary(tt.preview, checksumURL+".sigstore.json", ""), bundleURL)
+			require.Equal(t, checksumURL+".sigstore.json", bundleURL)
 		})
 	}
 }

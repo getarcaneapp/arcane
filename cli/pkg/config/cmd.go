@@ -70,8 +70,6 @@ func newConfigShowCmd() *cobra.Command {
 				output.KeyValue("Access token", maskAPIKey(cfg.JWTToken))
 				output.KeyValue("Refresh token", maskAPIKey(cfg.RefreshToken))
 			}
-			output.Header("Previews")
-			output.KeyValue("newSelfUpdater", strconv.FormatBool(cfg.Previews.NewSelfUpdater))
 			output.Header("Pagination resources")
 			for _, resource := range types.KnownPaginatedResources {
 				limit := cfg.LimitFor(resource)
@@ -129,7 +127,6 @@ Preferred syntax (key/value pairs):
 Examples:
 	arcane config set server-url http://localhost:3553
 	arcane config set api-key arc_xxxxxxxxxxxxx
-	arcane config set previews.newSelfUpdater true
 	arcane config set pagination.default.limit 25
 	arcane config set pagination.resources.images.limit 100
 	arcane config set server-url http://localhost:3553 api-key arc_xxxxxxxxxxxxx
@@ -436,14 +433,6 @@ func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string
 		cfg.APIKey = ""
 		cfg.RefreshToken = ""
 		_, _ = fmt.Fprintf(w, "Set jwt_token = %s\n", maskAPIKey(value))
-		return nil
-	case "previews.newselfupdater":
-		enabled, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("invalid previews.newSelfUpdater value %q (expected true or false)", value)
-		}
-		cfg.Previews.NewSelfUpdater = enabled
-		_, _ = fmt.Fprintf(w, "Set previews.newSelfUpdater = %t\n", enabled)
 		return nil
 	case "federated-audience", "federated_audience", "audience":
 		cfg.FederatedAudience = value
