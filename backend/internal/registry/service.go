@@ -123,6 +123,7 @@ const (
 	OCIImageURLLabel                    = "org.opencontainers.image.url"
 	OCIImageDocumentationLabel          = "org.opencontainers.image.documentation"
 	versionLabelCacheTTL                = 3 * time.Hour
+	digestRetryMaxInterval              = 10 * time.Second
 )
 
 func (f rateLimitRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -815,6 +816,12 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		}
 		if daemonErr != nil && IsRateLimitErrorString(daemonErr.Error()) {
 			slog.DebugContext(ctx, "rate limited by registry", "registry", parts.RegistryHost, "imageRef", parts.NormalizedRef)
+			_, retryAfter, _ := strings.Cut(strings.ToLower(daemonErr.Error()), "retry-after:")
+			retryAfter, _, _ = strings.Cut(retryAfter, ",")
+			wait, parseErr := time.ParseDuration(strings.TrimSpace(retryAfter))
+			if parseErr == nil && wait <= digestRetryMaxInterval {
+				return nil, daemonErr
+			}
 			return nil, backoff.Permanent(daemonErr)
 		}
 		if !registry.IsFallbackEligibleDaemonError(daemonErr) &&
@@ -869,7 +876,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		InitialInterval:     500 * time.Millisecond,
 		RandomizationFactor: 0.3,
 		Multiplier:          backoff.DefaultMultiplier,
-		MaxInterval:         10 * time.Second,
+		MaxInterval:         digestRetryMaxInterval,
 	}), backoff.WithMaxTries(5))
 
 	switch {

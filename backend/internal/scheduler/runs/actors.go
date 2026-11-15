@@ -3,12 +3,9 @@ package runs
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -17,7 +14,6 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
-	"github.com/robfig/cron/v3"
 
 	"kit.getarcane.app"
 
@@ -41,9 +37,6 @@ const (
 	executorType        = "job-executor"
 	outcomePersistGrace = 30 * time.Second
 	coordinatorIdleWake = 2 * time.Minute
-
-	scheduleJitterDivisor = 10
-	scheduleJitterMax     = 5 * time.Minute
 )
 
 func (q *Coordinator) Register(runtime *francis.Runtime) error {
@@ -290,7 +283,7 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, _ actor.Envel
 }
 
 func (a *coordinatorActor) Job(ctx context.Context, method string, _ actor.Envelope) error {
-	if method != "tick" && method != "start" {
+	if method != "tick" {
 		return errors.Join(fmt.Errorf("unknown coordinator job: %s", method), actor.ErrJobPermanentFailure)
 	}
 	if !a.q.enabled.Load() {
@@ -303,21 +296,6 @@ func (a *coordinatorActor) Job(ctx context.Context, method string, _ actor.Envel
 	normalizeRecordTimes(&state.Record)
 	if state.Record.Schedule == "" {
 		return nil
-	}
-	if method == "tick" {
-		schedule, err := cron.ParseStandard("CRON_TZ=" + a.q.location.String() + " " + state.Record.Schedule)
-		if err != nil {
-			return errors.Join(err, actor.ErrJobPermanentFailure)
-		}
-		var jitter [2]byte
-		if _, jitterErr := io.ReadFull(rand.Reader, jitter[:]); jitterErr != nil {
-			slog.WarnContext(ctx, "Schedule jitter unavailable; starting scheduled run without delay", "jobId", state.Record.JobID, "error", jitterErr)
-		}
-		now := time.Now()
-		window := min(schedule.Next(now).Sub(now)/scheduleJitterDivisor, scheduleJitterMax)
-		delay := time.Duration(float64(window) * float64(binary.BigEndian.Uint16(jitter[:])) / (1 << 16))
-		_, _, err = a.q.service.Dispatch(ctx, coordinatorType, a.id, "start", nil, actor.WithJobDueTime(now.Add(delay)))
-		return err
 	}
 	if !slices.ContainsFunc(state.Record.Runs, func(run types.SchedulerRun) bool {
 		return !separateTrigger(run.Trigger) && !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
