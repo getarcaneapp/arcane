@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app/docker/streams/bus"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -25,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	projectpkg "getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -1078,6 +1083,63 @@ func TestGitOpsSyncService_SyncProjectDirectory_PartialPullLeavesUnlistedFiles(t
 			for _, name := range test.wantAbsent {
 				assert.NoFileExists(t, filepath.Join(projectPath, name))
 			}
+		})
+	}
+}
+
+func TestGitOpsSyncService_SyncTarget_SwarmStackKeepsSavedEnvWithoutSyncVariables(t *testing.T) {
+	svc, db, _ := setupSyncTestService(t)
+	ctx := t.Context()
+
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/info") {
+			_, _ = w.Write([]byte(`{"Swarm":{"LocalNodeState":"active","ControlAvailable":true}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(dockerServer.Close)
+	cli, err := client.New(client.WithHost(dockerServer.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(dockerServer.Client()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, settingsService.UpdateSetting(ctx, "swarmStackSourcesDirectory", t.TempDir()))
+	svc.swarmService = swarm.NewSwarmService(swarm.SwarmServiceParams{
+		DockerService:   dockerInternal.NewDockerClientService(ctx, db, settingsService, bus.Config{}).WithClient(cli),
+		SettingsService: settingsService,
+	})
+
+	const compose = "services: {}\n"
+	_, err = svc.swarmService.DeployStack(ctx, "0", types.SwarmStackDeployRequest{Name: "demo", ComposeContent: compose, EnvContent: "FOO=bar\n"})
+	require.NoError(t, err)
+
+	sync := &projectpkg.GitOpsSync{ID: "sync-swarm", EnvironmentID: "0", ComposePath: "stack.yaml", ProjectName: "demo", TargetType: "swarm_stack"}
+	tests := []struct {
+		name    string
+		env     *string
+		wantEnv string
+	}{
+		{name: "no repository or sync variables keeps the saved env", wantEnv: "FOO=bar\n"},
+		{name: "cleared sync variables replace the saved env", env: new("")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := &preparedSyncSource{repoPath: t.TempDir(), composeContent: compose, envContent: test.env}
+			_, _, _, syncErr := svc.syncTarget(ctx, ctx, sync, types.Actor{}, &types.GitOpsSyncResult{}, source, nil)
+			require.NoError(t, syncErr)
+
+			saved, sourceErr := svc.swarmService.GetStackSource(ctx, "0", "demo")
+			require.NoError(t, sourceErr)
+			assert.Equal(t, test.wantEnv, saved.EnvContent)
 		})
 	}
 }

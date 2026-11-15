@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -266,12 +267,21 @@ func (s *Service) syncTarget(
 				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to write sync environment variables", writeErr)
 			}
 		}
+		envContent := kit.FromPtr(source.envContent)
+		// Neither the repository nor the sync supplies variables, so the stack's saved .env stays in effect.
+		if source.envContent == nil {
+			saved, sourceErr := s.swarmService.GetStackSource(stageCtx, sync.EnvironmentID, sync.ProjectName)
+			if sourceErr != nil && !errdefs.IsNotFound(sourceErr) {
+				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to read saved swarm stack source", sourceErr)
+			}
+			envContent = kit.FromPtr(saved).EnvContent
+		}
 		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
 		request := types.SwarmStackDeployRequest{
 			Name:             sync.ProjectName,
 			ComposeContent:   source.composeContent,
 			OverrideContent:  kit.FromPtr(source.overrideContent),
-			EnvContent:       kit.FromPtr(source.envContent),
+			EnvContent:       envContent,
 			Files:            swarmFiles,
 			Prune:            true,
 			WithRegistryAuth: true,

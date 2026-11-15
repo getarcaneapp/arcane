@@ -141,6 +141,10 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 	return s.stacks.DeployStack(ctx, environmentID, req)
 }
 
+func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackName string) (*types.SwarmStackSource, error) {
+	return s.stacks.GetStackSource(ctx, environmentID, stackName)
+}
+
 func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName string) error {
 	return s.stacks.RemoveStack(ctx, environmentID, stackName)
 }

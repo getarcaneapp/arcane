@@ -203,6 +203,36 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	require.Empty(t, source.OverrideContent)
 }
 
+func TestService_UpdateStackSource_AppliesWorkspaceFileNamedEnv(t *testing.T) {
+	ctx := t.Context()
+	db := setupSwarmServiceTestDB(t)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
+	require.NoError(t, err)
+
+	svc := NewService(ServiceParams{
+		SettingsService: settingsSvc,
+	})
+	rec := stubStackSourceUpdateDeploy(t)
+
+	// The editor's "Create File" sends a root .env as a workspace file, not as envContent.
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
+		Source: types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+			Files:          []types.SwarmSyncFile{{RelativePath: ".env", Content: []byte("FOO=bar\n")}},
+		},
+		Submitted: map[string]bool{"composeContent": true, "files": true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "FOO=bar\n", rec.lastReq.EnvContent)
+
+	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, "FOO=bar\n", source.EnvContent)
+	require.Empty(t, source.Files)
+}
+
 func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T) {
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
