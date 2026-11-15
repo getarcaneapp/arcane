@@ -1093,7 +1093,7 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 		imageID string
 	}
 	imageLevel := func(record imageupdate.ImageUpdateRecord) bool {
-		return record.ContainerID == "" && refs.IsImageIDLikeReference(record.ID)
+		return record.ContainerID == "" && (record.ImageID != "" || refs.IsImageIDLikeReference(record.ID))
 	}
 	eligible, err := func() ([]eligibleContainer, error) {
 		if scopedCount == 0 && !isScoped && !slices.ContainsFunc(records, imageLevel) {
@@ -1171,7 +1171,7 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 		}
 		recordRef := refs.NormalizeImageUpdateRef(converted(record, "").ImageRef())
 		for _, cnt := range eligible {
-			if cnt.ref == recordRef && (!imageLevel(record) || cnt.imageID == record.ID) {
+			if cnt.ref == recordRef && (!imageLevel(record) || cnt.imageID == cmp.Or(record.ImageID, record.ID)) {
 				out = append(out, converted(record, cnt.id))
 			}
 		}

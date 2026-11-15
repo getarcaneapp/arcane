@@ -29,6 +29,7 @@ import (
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
+	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -949,6 +950,7 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 		return result, nil
 	}
 	digestImageIDs := make(map[string]string, len(containers))
+	digestImageRefs := make(map[string]string, len(containers))
 	tagContainerIDs := make([]string, 0, len(containers))
 	policies := make(map[string]string, len(containers))
 	for _, cnt := range containers {
@@ -959,6 +961,7 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 		if policyErr == nil && policy.Strategy == "digest" {
 			if imageID := strings.TrimSpace(cnt.ImageID); imageID != "" {
 				digestImageIDs[cnt.ID] = imageID
+				digestImageRefs[cnt.ID] = refs.NormalizeImageUpdateRef(cnt.Image)
 			}
 			continue
 		}
@@ -967,11 +970,23 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 	}
 
 	if len(digestImageIDs) > 0 {
-		byImageID, err := s.GetUpdateInfoByImageIDs(ctx, kit.Unique(slices.Collect(maps.Values(digestImageIDs))))
+		imageIDs := kit.Unique(slices.Collect(maps.Values(digestImageIDs)))
+		byImageID, err := s.GetUpdateInfoByImageIDs(ctx, imageIDs)
 		if err != nil {
 			return nil, err
 		}
+		var tagRecords []imageupdate.ImageUpdateRecord
+		if fetchErr := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND image_id IN ?", "", "", imageIDs).Find(&tagRecords).Error; fetchErr != nil {
+			return nil, fmt.Errorf("failed to fetch image tag update records: %w", fetchErr)
+		}
 		for containerID, imageID := range digestImageIDs {
+			if index := slices.IndexFunc(tagRecords, func(record imageupdate.ImageUpdateRecord) bool {
+				return record.ImageID == imageID && digestImageRefs[containerID] != "" &&
+					refs.NormalizeImageUpdateRef(record.Repository+":"+record.Tag) == digestImageRefs[containerID]
+			}); index >= 0 {
+				result[containerID] = tagRecords[index].UpdateInfo()
+				continue
+			}
 			if info := byImageID[imageID]; info != nil {
 				// Each container gets its own copy so aggregation never mutates a shared record.
 				result[containerID] = new(*info)
@@ -1283,12 +1298,12 @@ func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageup
 	unblocked := map[string]bool{}
 	for _, record := range records {
 		if record.HasUpdate && kit.FromPtr(record.BlockedReason) == "" {
-			unblocked[kit.Ternary(record.ContainerID != "", record.ImageID, record.ID)] = true
+			unblocked[cmp.Or(record.ImageID, record.ID)] = true
 		}
 	}
 	for i := range records {
 		record := &records[i]
-		if record.ContainerID == "" || record.ImageID == "" || !record.HasUpdate {
+		if record.ImageID == "" || !record.HasUpdate {
 			continue
 		}
 		// A shared image can have several container policies and target tags.
@@ -1342,8 +1357,7 @@ func collectPinnedReferencesByImageID(containers []container.Summary) map[string
 
 	result := make(map[string][]string, len(seen))
 	for imageID, refsMap := range seen {
-		refs := slices.Sorted(maps.Keys(refsMap))
-		result[imageID] = refs
+		result[imageID] = slices.Sorted(maps.Keys(refsMap))
 	}
 
 	return result
