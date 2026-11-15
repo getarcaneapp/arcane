@@ -277,6 +277,8 @@ func (s *Service) syncTarget(
 			WithRegistryAuth: true,
 			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
 			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Join(source.repoPath, filepath.FromSlash(composeDir))),
+			// Neither the repository nor the sync supplies variables, so the stack's saved .env stays in effect.
+			KeepSavedEnv: source.envContent == nil,
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)

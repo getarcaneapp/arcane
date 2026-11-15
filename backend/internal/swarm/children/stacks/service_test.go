@@ -126,16 +126,20 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 			Files: []types.SwarmSyncFile{
 				{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
 				{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+				// The editor's "Create File" sends a root .env as a workspace file, not as envContent.
+				{RelativePath: ".env", Content: []byte("FOO=baz\n")},
 			},
 		},
 		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
+	require.Equal(t, "FOO=baz\n", deployRec.lastReq.EnvContent)
 	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "config", "nginx.conf"))
 	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
 
 	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
+	require.Equal(t, "FOO=baz\n", source.EnvContent)
 	require.Len(t, source.Files, 2)
 
 	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
@@ -420,7 +424,7 @@ func TestService_DownStack_RemovesServicesAndKeepsSource(t *testing.T) {
 	stubStackSourceUpdateDeploy(t)
 
 	_, err := svc.UpdateStackSource(ctx, "0", "demo-stack", StackSourceUpdate{
-		Source:    types.SwarmStackSource{ComposeContent: "services:\n  web:\n    image: nginx:alpine\n"},
+		Source:    types.SwarmStackSource{ComposeContent: "services:\n  web:\n    image: nginx:alpine\n", EnvContent: "FOO=bar\n"},
 		Submitted: fullStackSourceSubmitted,
 	})
 	require.NoError(t, err)
@@ -431,6 +435,13 @@ func TestService_DownStack_RemovesServicesAndKeepsSource(t *testing.T) {
 	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Equal(t, "services:\n  web:\n    image: nginx:alpine\n", source.ComposeContent)
+
+	// A deploy that supplies no variables of its own, such as a Git sync, keeps the saved .env.
+	_, err = svc.DeployStack(ctx, "0", types.SwarmStackDeployRequest{Name: "demo-stack", ComposeContent: "services: {}\n", KeepSavedEnv: true})
+	require.NoError(t, err)
+	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, "FOO=bar\n", source.EnvContent)
 }
 
 func TestService_DownStack_RefusesWhenSavedSourceCannotRender(t *testing.T) {

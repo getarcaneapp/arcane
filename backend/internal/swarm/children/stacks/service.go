@@ -231,7 +231,14 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 		return nil, err
 	}
 
-	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); upsertStackSourceErr != nil {
+	overrideContent := reservedFileContent(req.OverrideContent, swarmStackOverrideFilename, req.Files)
+	envContent := reservedFileContent(req.EnvContent, swarmStackEnvFilename, req.Files)
+	if req.KeepSavedEnv && envContent == "" {
+		if envContent, err = readStackEnvContent(ctx, stackSourceDir); err != nil {
+			return nil, err
+		}
+	}
+	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, overrideContent, envContent, req.Files); upsertStackSourceErr != nil {
 		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", upsertStackSourceErr)
 	}
 
@@ -250,8 +257,8 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 	if deployStackErr := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:                 stackName,
 		ComposeContent:       req.ComposeContent,
-		OverrideContent:      req.OverrideContent,
-		EnvContent:           req.EnvContent,
+		OverrideContent:      overrideContent,
+		EnvContent:           envContent,
 		WithRegistryAuth:     req.WithRegistryAuth,
 		RegistryAuthForImage: s.registryAuth,
 		Prune:                req.Prune,
@@ -336,12 +343,9 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		return nil, fmt.Errorf("failed to read swarm stack override source: %w", err)
 	}
 
-	envContent := ""
-	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
-	if err == nil {
-		envContent = string(envBytes)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("failed to read swarm stack env source: %w", err)
+	envContent, err := readStackEnvContent(ctx, stackSourceDir)
+	if err != nil {
+		return nil, err
 	}
 
 	var files []types.SwarmSyncFile
@@ -381,6 +385,15 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}, nil
 }
 
+// readStackEnvContent returns the stack's saved .env, or "" when none is saved, without reading its other files.
+func readStackEnvContent(ctx context.Context, stackSourceDir string) (string, error) {
+	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("failed to read swarm stack env source: %w", err)
+	}
+	return string(envBytes), nil
+}
+
 func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
@@ -393,12 +406,13 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 	}
 
 	current := kit.FromPtr(previous)
+	files := kit.Ternary(change.Submitted["files"], change.Source.Files, current.Files)
 	source := types.SwarmStackSource{
 		Name:            stackName,
 		ComposeContent:  kit.Ternary(change.Submitted["composeContent"], change.Source.ComposeContent, current.ComposeContent),
-		OverrideContent: kit.Ternary(change.Submitted["overrideContent"], change.Source.OverrideContent, current.OverrideContent),
-		EnvContent:      kit.Ternary(change.Submitted["envContent"], change.Source.EnvContent, current.EnvContent),
-		Files:           kit.Ternary(change.Submitted["files"], change.Source.Files, current.Files),
+		OverrideContent: reservedFileContent(kit.Ternary(change.Submitted["overrideContent"], change.Source.OverrideContent, current.OverrideContent), swarmStackOverrideFilename, files),
+		EnvContent:      reservedFileContent(kit.Ternary(change.Submitted["envContent"], change.Source.EnvContent, current.EnvContent), swarmStackEnvFilename, files),
+		Files:           files,
 	}
 	if strings.TrimSpace(source.ComposeContent) == "" {
 		return nil, errors.New("stack compose source is required")
@@ -853,6 +867,18 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	}
 
 	return nil
+}
+
+// reservedFileContent returns content, or when it is empty the workspace file saved under the reserved name,
+// so a file created as ".env" or "compose.override.yaml" is applied instead of silently dropped.
+func reservedFileContent(content, filename string, files []types.SwarmSyncFile) string {
+	index := slices.IndexFunc(files, func(file types.SwarmSyncFile) bool {
+		return filepath.ToSlash(filepath.Clean(file.RelativePath)) == filename
+	})
+	if content != "" || index < 0 {
+		return content
+	}
+	return string(files[index].Content)
 }
 
 func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackName string) error {
