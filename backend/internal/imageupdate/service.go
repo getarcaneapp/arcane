@@ -115,6 +115,7 @@ type (
 		Version           string
 		AllDigests        []string
 		RepositoryDigests []string
+		RepoTags          []string
 		IsLocalBuild      bool
 	}
 
@@ -676,6 +677,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		PrimaryDigest:     slices.Concat(repositoryDigests, allDigests, []string{inspectResponse.ID})[0],
 		AllDigests:        kit.Ternary(len(allDigests) > 0, allDigests, []string{inspectResponse.ID}),
 		RepositoryDigests: repositoryDigests,
+		RepoTags:          inspectResponse.RepoTags,
 		IsLocalBuild:      imageref.IsLocalImage(inspectResponse.InspectResponse) || isLocalBuildImageRef(imageRef, composeBuildRefs),
 		Version:           strings.TrimSpace(kit.FromPtr(inspectResponse.Config).Labels[registry.OCIImageVersionLabel]),
 		Created:           created,
@@ -730,29 +732,41 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 }
 
 func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, imageRef string, result *types.ImageUpdateResponse, snapshot *localImageSnapshot) error {
-	if kit.FromPtr(snapshot).ImageID != "" {
-		return s.savePreparedUpdateResult(ctx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, result)
-	}
-
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
 		return errors.New("invalid image reference")
 	}
-	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
-		return dockerClient.ImageInspect(ctx, imageRef)
-	})
+	repository := func() string {
+		repositoryPath := strings.TrimSpace(parts.Repository)
+		if parts.Registry == "docker.io" && repositoryPath != "" && !strings.Contains(repositoryPath, "/") {
+			repositoryPath = "library/" + repositoryPath
+		}
+		if strings.TrimSpace(parts.Registry) == "" {
+			return repositoryPath
+		}
+		return fmt.Sprintf("%s/%s", strings.TrimSpace(parts.Registry), repositoryPath)
+	}()
+	syntheticID := fmt.Sprintf("ref::%s@%s", strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(parts.Tag))
+
+	local, err := func() (*localImageSnapshot, error) {
+		if kit.FromPtr(snapshot).ImageID != "" {
+			return snapshot, nil
+		}
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, imageRef)
+		})
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, parts)
+		return &localImageSnapshot{
+			ImageID:    inspectResponse.ID,
+			Repository: repo,
+			Tag:        tag,
+			RepoTags:   inspectResponse.RepoTags,
+		}, nil
+	}()
 	if err != nil {
-		repository := func() string {
-			repositoryPath := strings.TrimSpace(parts.Repository)
-			if parts.Registry == "docker.io" && repositoryPath != "" && !strings.Contains(repositoryPath, "/") {
-				repositoryPath = "library/" + repositoryPath
-			}
-			if strings.TrimSpace(parts.Registry) == "" {
-				return repositoryPath
-			}
-			return fmt.Sprintf("%s/%s", strings.TrimSpace(parts.Registry), repositoryPath)
-		}()
-		syntheticID := fmt.Sprintf("ref::%s@%s", strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(parts.Tag))
 		slog.DebugContext(ctx, "Saving image update result with synthetic ref ID",
 			"imageRef", imageRef,
 			"error", err.Error(),
@@ -763,22 +777,41 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 		return s.savePreparedUpdateResult(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
-	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, parts)
-	return s.savePreparedUpdateResult(ctx, inspectResponse.ID, repo, tag, result)
+	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if !slices.ContainsFunc(local.RepoTags, func(repoTag string) bool {
+			return !refs.IsDigestPinnedReference(repoTag) && refs.NormalizeImageUpdateRef(repoTag) == refs.NormalizeImageUpdateRef(imageRef)
+		}) || refs.NormalizeImageUpdateRef(local.Repository+":"+local.Tag) == refs.NormalizeImageUpdateRef(imageRef) {
+			if saveErr := savePreparedUpdateResultWithTx(tx, local.ImageID, local.Repository, local.Tag, result); saveErr != nil {
+				return saveErr
+			}
+			return tx.Where("id = ? AND image_id <> ?", syntheticID, "").Delete(&ImageUpdateRecord{}).Error
+		}
+		if saveErr := savePreparedUpdateResultWithTx(tx, syntheticID, repository, parts.Tag, result); saveErr != nil {
+			return saveErr
+		}
+		return tx.Model(&ImageUpdateRecord{}).Where("id = ?", syntheticID).Update("image_id", local.ImageID).Error
+	}); transactionErr != nil {
+		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }
 
 // extractRepoAndTagFromImage reads the image's first usable tag; an untagged image uses fallback's tag when set.
 func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *ImageParts) (repo, tag string) {
 	untagged := cmp.Or(strings.TrimSpace(kit.FromPtr(fallback).Tag), "<none>")
-	if len(dockerImage.RepoTags) > 0 && dockerImage.RepoTags[0] != "<none>:<none>" {
-		if named, err := reference.ParseNormalizedNamed(dockerImage.RepoTags[0]); err == nil {
+	primary := max(slices.IndexFunc(dockerImage.RepoTags, func(repoTag string) bool {
+		return repoTag != "<none>:<none>" && !refs.IsDigestPinnedReference(repoTag)
+	}), 0)
+	if len(dockerImage.RepoTags) > 0 && dockerImage.RepoTags[primary] != "<none>:<none>" {
+		if named, err := reference.ParseNormalizedNamed(dockerImage.RepoTags[primary]); err == nil {
 			if tagged, ok := named.(reference.NamedTagged); ok {
 				return reference.FamiliarName(named), tagged.Tag()
 			}
 			return reference.FamiliarName(named), "latest"
 		}
 
-		parts := strings.SplitN(dockerImage.RepoTags[0], ":", 2)
+		parts := strings.SplitN(dockerImage.RepoTags[primary], ":", 2)
 		if len(parts) > 1 {
 			return parts[0], parts[1]
 		}
@@ -1756,9 +1789,9 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		dockerImageIDs = append(dockerImageIDs, img.ID)
 	}
 
-	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT LIKE 'ref::%'", "", "")
+	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND (id NOT LIKE 'ref::%' OR image_id <> ?)", "", "", "")
 	if len(dockerImageIDs) > 0 {
-		imageScoped = imageScoped.Where("id NOT IN ?", dockerImageIDs)
+		imageScoped = imageScoped.Where("id NOT IN ? AND image_id NOT IN ?", dockerImageIDs, dockerImageIDs)
 	}
 	imageResult := imageScoped.Delete(&ImageUpdateRecord{})
 	if imageResult.Error != nil {
