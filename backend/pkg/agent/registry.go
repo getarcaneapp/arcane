@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 	"uuid"
 
@@ -44,6 +45,16 @@ type (
 	WaitForActiveOptions struct {
 		Except  *AgentTunnel
 		Timeout time.Duration
+	}
+
+	AcquireOptions struct {
+		Except *AgentTunnel
+	}
+
+	TunnelReadiness struct {
+		Tunnel    *AgentTunnel
+		State     Readiness
+		LeaseLeft time.Duration
 	}
 
 	RegisterResult struct {
@@ -138,28 +149,9 @@ func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
 		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
 		history:    concurrency.NewStateMap[string, TunnelHistory](),
-		expected:   concurrency.NewStateMap[string, time.Time](),
+		leases:     concurrency.NewStateMap[string, time.Time](),
 		registered: concurrency.NewSignal[string](),
 	}
-}
-
-func (r *TunnelRegistry) ExpectReconnect(ctx context.Context, envIDs []string) error {
-	deadline := time.Now().Add(tunnelReconnectWindow)
-	return r.expected.Apply(ctx, "expect agent tunnel reconnects", func(expected map[string]time.Time) (bool, error) {
-		for _, envID := range envIDs {
-			expected[envID] = deadline
-		}
-		return len(envIDs) > 0, nil
-	})
-}
-
-func (r *TunnelRegistry) AcquireTimeout(envID string) time.Duration {
-	history, _ := r.history.Get(envID)
-	deadline, _ := r.expected.Get(envID)
-	if time.Since(history.LastDisconnectAt) < tunnelReconnectWindow || time.Now().Before(deadline) {
-		return DefaultTunnelAcquireTimeout
-	}
-	return 0
 }
 
 func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
@@ -313,6 +305,11 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	if result.previous != nil {
 		_ = result.previous.CloseWithReason("replaced by newer agent tunnel session")
 		r.recordDisconnect(ctx, result.previous)
+	}
+	if result.stored && slices.Contains(tunnel.Capabilities, tunnelCapabilityReadinessLease) {
+		if leaseErr := r.GrantLeases(ctx, []string{envID}); leaseErr != nil {
+			slog.ErrorContext(ctx, "Failed to grant agent readiness lease", "environmentId", envID, "error", leaseErr)
+		}
 	}
 	if result.stored {
 		r.recordSession(ctx, envID)

@@ -26,18 +26,52 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-type TunnelServerParams struct {
-	fx.In
+type (
+	agentConnectionChange struct {
+		status      environment.EnvironmentStatus
+		eventType   event.EventType
+		severity    event.EventSeverity
+		title       string
+		description string
+	}
 
-	Context             context.Context
-	Lifecycle           fx.Lifecycle
-	Config              *config.Config
-	Registry            *agent.TunnelRegistry
-	MTLS                *agent.MTLS
-	EnvironmentService  *environment.EnvironmentService
-	EventService        *event.EventService
-	NotificationService *notification.NotificationService
-	SettingsService     *settings.SettingsService
+	TunnelServerParams struct {
+		fx.In
+
+		Context             context.Context
+		Lifecycle           fx.Lifecycle
+		Config              *config.Config
+		Registry            *agent.TunnelRegistry
+		MTLS                *agent.MTLS
+		EnvironmentService  *environment.EnvironmentService
+		EventService        *event.EventService
+		NotificationService *notification.NotificationService
+		SettingsService     *settings.SettingsService
+	}
+)
+
+var agentConnectionChanges = map[agent.ConnectionState]agentConnectionChange{
+	agent.ConnectionStateOnline: {
+		status:      environment.EnvironmentStatusOnline,
+		eventType:   event.EventTypeEnvironmentConnect,
+		severity:    event.EventSeveritySuccess,
+		title:       "Agent Connected",
+		description: "Agent for environment '%s' connected",
+	},
+	agent.ConnectionStateUnresponsive: {
+		status:      environment.EnvironmentStatusError,
+		eventType:   event.EventTypeEnvironmentDisconnect,
+		severity:    event.EventSeverityWarning,
+		title:       "Agent Not Responding",
+		description: "Agent for environment '%s' stopped renewing its readiness lease",
+	},
+	agent.ConnectionStateOffline: {
+		status:      environment.EnvironmentStatusOffline,
+		eventType:   event.EventTypeEnvironmentDisconnect,
+		severity:    event.EventSeverityWarning,
+		title:       "Agent Disconnected",
+		description: "Agent for environment '%s' disconnected",
+	},
 }
 
 func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
@@ -47,8 +81,8 @@ func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
 	server := agent.NewTunnelServer(agent.TunnelServerOptions{
 		Registry: p.Registry,
 		Resolver: p.EnvironmentService.ResolveAgentEnvironmentByToken,
-		StatusCallback: func(ctx context.Context, envID string, connected bool) {
-			handleAgentStatusChange(ctx, p.EnvironmentService, p.EventService, envID, connected)
+		StatusCallback: func(ctx context.Context, envID string, state agent.ConnectionState) {
+			handleAgentStatusChange(ctx, p.EnvironmentService, p.EventService, envID, state)
 		},
 		MTLS: p.MTLS,
 		EventCallback: func(ctx context.Context, envID string, evt *agent.TunnelEvent) error {
@@ -94,59 +128,38 @@ func tunnelRoutes(server *agent.TunnelServer) []middleware.EchoRoute {
 	}}
 }
 
-func handleAgentStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
+func handleAgentStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, state agent.ConnectionState) {
 	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 	if getErr != nil {
 		slog.WarnContext(ctx, "Failed to load environment before agent status update", "environmentId", envID, "error", getErr)
 		env = &environment.Environment{}
 	}
 	envName := kit.Ternary(env.Name != "", env.Name, envID)
+	change := agentConnectionChanges[state]
 
-	if err := environmentService.UpdateEnvironmentConnectionState(ctx, envID, connected); err != nil {
-		slog.WarnContext(ctx, "Failed to update environment status on agent connect/disconnect", "environmentId", envID, "connected", connected, "error", err)
+	if err := environmentService.UpdateEnvironmentConnectionState(ctx, envID, change.status); err != nil {
+		slog.WarnContext(ctx, "Failed to update environment status on agent connection change", "environmentId", envID, "state", state, "error", err)
 	} else {
-		slog.InfoContext(ctx, "Updated agent environment connection state", "environmentId", envID, "connected", connected)
+		slog.InfoContext(ctx, "Updated agent environment connection state", "environmentId", envID, "state", state)
 	}
 
-	targetStatus := kit.Ternary(connected, environment.EnvironmentStatusOnline, environment.EnvironmentStatusOffline)
-	if env.Status != string(targetStatus) {
-		if err := createAgentConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
-			slog.WarnContext(ctx, "Failed to create agent connection event", "environmentId", envID, "connected", connected, "error", err)
+	if env.Status != string(change.status) {
+		if _, err := eventService.CreateEvent(ctx, event.CreateEventRequest{
+			Type:          change.eventType,
+			Severity:      change.severity,
+			Title:         change.title,
+			Description:   fmt.Sprintf(change.description, envName),
+			ResourceType:  new("environment"),
+			ResourceID:    &envID,
+			ResourceName:  &envName,
+			EnvironmentID: &envID,
+		}); err != nil {
+			slog.WarnContext(ctx, "Failed to create agent connection event", "environmentId", envID, "state", state, "error", err)
 		}
 	}
 
 	// Every tunnel up/down path funnels here, so status streams learn about it without polling.
 	environmentService.NotifyRuntimeStateChanged()
-}
-
-func createAgentConnectionEvent(ctx context.Context, eventService *event.EventService, envID, envName string, connected bool) error {
-	eventType := event.EventTypeEnvironmentDisconnect
-	title := "Agent Disconnected"
-	description := fmt.Sprintf("Agent for environment '%s' disconnected", envName)
-	severity := event.EventSeverityWarning
-
-	if connected {
-		eventType = event.EventTypeEnvironmentConnect
-		title = "Agent Connected"
-		description = fmt.Sprintf("Agent for environment '%s' connected", envName)
-		severity = event.EventSeveritySuccess
-	}
-
-	_, err := eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          eventType,
-		Severity:      severity,
-		Title:         title,
-		Description:   description,
-		ResourceType:  new("environment"),
-		ResourceID:    &envID,
-		ResourceName:  &envName,
-		EnvironmentID: &envID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create agent lifecycle event: %w", err)
-	}
-
-	return nil
 }
 
 func handleAgentEvent(ctx context.Context, envID string, evt *agent.TunnelEvent, eventService *event.EventService, notificationService *notification.NotificationService) error {

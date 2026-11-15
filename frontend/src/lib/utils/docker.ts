@@ -356,7 +356,7 @@ export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): 
 	}
 
 	if (environment.connected === true) {
-		return 'online';
+		return status === 'error' ? 'error' : 'online';
 	}
 
 	if (status === 'pending') {

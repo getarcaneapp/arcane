@@ -229,6 +229,9 @@ func startTestAgent(t *testing.T, tunnels *agent.TunnelRegistry, envID string, h
 		StreamWindowMiB: func() int {
 			return 16
 		},
+		ReadinessProbe: func(context.Context) error {
+			return nil
+		},
 		Config: &agent.Config{
 			MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: server.URL}),
 			AgentEnabled:   true,
@@ -867,6 +870,44 @@ func TestEnvironmentService_ReconcileAgentStatusesOnStartup(t *testing.T) {
 	require.Equal(t, string(EnvironmentStatusOnline), local.Status)
 }
 
+func TestEnvironmentService_ReconcileAgentStatusesOnStartup_SeedsLeases(t *testing.T) {
+	tunnels := agent.NewTunnelRegistry()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(EnvironmentServiceParams{
+		Tunnels:         tunnels,
+		VariableSyncer:  &environmentTestVariableSyncer{},
+		DB:              db,
+		RemoteTransport: NewRemoteTransport(db, nil, tunnels),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		Config:          &config.Config{},
+		Ctx:             t.Context(),
+		Scheduler:       &environmentTestScheduler{},
+	})
+
+	tests := []struct {
+		id     string
+		status EnvironmentStatus
+		want   agent.Readiness
+	}{
+		{id: "agent-online", status: EnvironmentStatusOnline, want: agent.ReadinessReconnecting},
+		{id: "agent-offline", status: EnvironmentStatusOffline, want: agent.ReadinessNotReady},
+		{id: "agent-error", status: EnvironmentStatusError, want: agent.ReadinessNotReady},
+		{id: "agent-pending", status: EnvironmentStatusPending, want: agent.ReadinessNotReady},
+		{id: LocalEnvironmentID, status: EnvironmentStatusOnline, want: agent.ReadinessNotReady},
+	}
+	for _, tt := range tests {
+		createTestEnvironmentWithState(t, db, tt.id, "agent://"+tt.id, string(tt.status), nil)
+	}
+
+	require.NoError(t, svc.ReconcileAgentStatusesOnStartup(t.Context()))
+
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			assert.Equal(t, tt.want, tunnels.Readiness(tt.id).State)
+		})
+	}
+}
+
 func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
@@ -884,7 +925,7 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 
 	createTestEnvironmentWithState(t, db, "agent-runtime", "agent://runtime", string(EnvironmentStatusOffline), nil)
 
-	err := svc.UpdateEnvironmentConnectionState(ctx, "agent-runtime", true)
+	err := svc.UpdateEnvironmentConnectionState(ctx, "agent-runtime", EnvironmentStatusOnline)
 	require.NoError(t, err)
 
 	var env Environment
@@ -894,7 +935,7 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 
 	lastSeen := env.LastSeen
 
-	err = svc.UpdateEnvironmentConnectionState(ctx, "agent-runtime", false)
+	err = svc.UpdateEnvironmentConnectionState(ctx, "agent-runtime", EnvironmentStatusOffline)
 	require.NoError(t, err)
 
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "agent-runtime").First(&env).Error)

@@ -19,7 +19,7 @@ import (
 
 const legacyUpgradePathPrefix = "/api/environments/0/system/upgrade"
 
-func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamWindowMiB int) error {
+func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamWindowMiB int, leased bool) error {
 	compress, err := gzhttp.NewWrapper(
 		gzhttp.MinSize(muxCompressMinSize),
 		gzhttp.CompressionLevel(gzip.BestSpeed),
@@ -75,6 +75,11 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 	activeAgentEvents.Store(eventsClient)
 	// A newer session may already have replaced this one.
 	defer activeAgentEvents.CompareAndSwap(eventsClient, nil)
+	if leased {
+		leaseCtx, stopLeases := context.WithCancel(ctx)
+		defer stopLeases()
+		go c.renewLeases(leaseCtx, eventsClient)
+	}
 
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- srv.Serve(muxListener{Session: session, conn: rw}) }()

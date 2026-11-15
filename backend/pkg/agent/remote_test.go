@@ -22,7 +22,7 @@ func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Ser
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB())
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB(), false)
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -95,6 +95,7 @@ func TestTransportErrorUnavailable(t *testing.T) {
 		unavailable bool
 	}{
 		{name: "not connected", cause: ErrEnvironmentUnavailable, unavailable: true},
+		{name: "not responding", cause: ErrAgentNotResponding, unavailable: true},
 		{name: "deadline", cause: context.DeadlineExceeded, unavailable: true},
 		{name: "response truncated", cause: io.ErrUnexpectedEOF},
 		{name: "invalid request", cause: errors.New("invalid URL")},

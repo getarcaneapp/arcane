@@ -25,10 +25,12 @@ const (
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
 	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
 	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
+	tunnelCapabilityReadinessLease       = "readiness-lease-v1"
 
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"
 	muxEventsPath     = "/api/tunnel/events"
+	muxLeasePath      = "/api/tunnel/lease"
 
 	muxCompressMinSize    = 1 << 10
 	muxMaxFrameSize       = 1 << 20

@@ -184,11 +184,10 @@ const (
 	legacyLocalEnvironmentName   = "Local Docker"
 	SyncDeliveryExpiry           = time.Hour
 
-	agentReconnectLookback = 5 * time.Minute
-	agentTokenCacheTTL     = time.Minute
-	environmentCacheTTL    = 30 * time.Second
-	remoteSyncTimeout      = time.Minute
-	maxAccessTokenLength   = 128
+	agentTokenCacheTTL   = time.Minute
+	environmentCacheTTL  = 30 * time.Second
+	remoteSyncTimeout    = time.Minute
+	maxAccessTokenLength = 128
 
 	defaultEnvironmentHealthInterval = "*/2 * * * *"
 	environmentHealthCheckTimeout    = 90 * time.Second
@@ -1030,32 +1029,6 @@ func (s *EnvironmentService) ListEnabledEnvironmentIDs(ctx context.Context) ([]s
 	return ids, nil
 }
 
-func (s *EnvironmentService) ExpectAgentReconnects(ctx context.Context) error {
-	var environments []Environment
-	if err := s.db.WithContext(ctx).
-		Select("id", "last_seen").
-		Where("enabled = ?", true).
-		Where("last_seen IS NOT NULL").
-		Find(&environments).Error; err != nil {
-		return fmt.Errorf("failed to list environments expected to reconnect: %w", err)
-	}
-
-	var latest time.Time
-	for _, env := range environments {
-		if env.LastSeen.After(latest) {
-			latest = *env.LastSeen
-		}
-	}
-
-	ids := make([]string, 0, len(environments))
-	for _, env := range environments {
-		if env.ID != LocalEnvironmentID && latest.Sub(*env.LastSeen) < agentReconnectLookback {
-			ids = append(ids, env.ID)
-		}
-	}
-	return s.tunnels.ExpectReconnect(ctx, ids)
-}
-
 func (s *EnvironmentService) RescheduleHealthJobs(ctx context.Context) {
 	ids, err := s.ListEnabledEnvironmentIDs(ctx)
 	if err != nil {
@@ -1233,25 +1206,23 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	return err
 }
 
-func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Context, id string, connected bool) error {
+func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Context, id string, status EnvironmentStatus) error {
 	now := time.Now()
 
 	updates := map[string]any{
+		"status":     string(status),
 		"updated_at": &now,
 	}
-	if connected {
-		updates["status"] = string(EnvironmentStatusOnline)
+	if status == EnvironmentStatusOnline {
 		updates["last_seen"] = &now
 		// Remember the transport so the UI can show it after the tunnel drops.
 		if state, ok := s.tunnels.RuntimeState(id).Get(); ok && state.Transport != "" {
 			updates["last_agent_transport"] = state.Transport
 		}
-	} else {
-		updates["status"] = string(EnvironmentStatusOffline)
 	}
 
 	query := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id)
-	if !connected {
+	if status != EnvironmentStatusOnline {
 		query = query.Where("status <> ?", string(EnvironmentStatusPending))
 	}
 	if err := query.Updates(updates).Error; err != nil {
@@ -1315,6 +1286,18 @@ func (s *EnvironmentService) ReconcileAgentStatusesOnStartup(ctx context.Context
 	if len(awaitingEnrollment) > 0 {
 		slog.WarnContext(ctx, "Environments need re-enrollment as agents; regenerate their API key and redeploy the agent with ARCANE_AGENT=true",
 			"count", len(awaitingEnrollment), "environments", awaitingEnrollment)
+	}
+
+	var online []string
+	if err := s.db.WithContext(ctx).Model(&Environment{}).
+		Where("id <> ?", LocalEnvironmentID).
+		Where("enabled = ?", true).
+		Where("status = ?", string(EnvironmentStatusOnline)).
+		Pluck("id", &online).Error; err != nil {
+		return fmt.Errorf("failed to list environments online before startup: %w", err)
+	}
+	if err := s.tunnels.GrantLeases(ctx, online); err != nil {
+		return fmt.Errorf("failed to seed agent readiness leases: %w", err)
 	}
 
 	result := s.db.WithContext(ctx).Model(&Environment{}).

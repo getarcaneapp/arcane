@@ -39,7 +39,7 @@ import (
 type (
 	EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
 
-	StatusUpdateCallback func(ctx context.Context, environmentID string, connected bool)
+	StatusUpdateCallback func(ctx context.Context, environmentID string, state ConnectionState)
 
 	EventCallback func(ctx context.Context, environmentID string, event *TunnelEvent) error
 )
@@ -338,7 +338,7 @@ func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTu
 	defer func() {
 		if s.registry.UnregisterCurrent(callbackCtx, tunnel) {
 			slog.InfoContext(ctx, "Agent disconnected", "environmentId", envID, "sessionId", tunnel.SessionID)
-			s.updateConnectionStatus(callbackCtx, tunnel, false)
+			s.updateConnectionStatus(callbackCtx, tunnel, ConnectionStateOffline)
 		}
 	}()
 
@@ -351,7 +351,9 @@ func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTu
 		EnvironmentID: envID,
 		SessionID:     tunnel.SessionID,
 		SecurityMode:  tunnel.SecurityMode,
-		Capabilities:  []string{tunnelCapabilityMuxGrant},
+		Capabilities: kit.Ternary(slices.Contains(tunnel.Capabilities, tunnelCapabilityReadinessLease),
+			[]string{tunnelCapabilityMuxGrant, tunnelCapabilityReadinessLease},
+			[]string{tunnelCapabilityMuxGrant}),
 		DrainPrevious: registration.DrainPrevious,
 	}); sendErr != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environmentId", envID, "error", sendErr)
@@ -372,7 +374,7 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 		case <-ticker.C:
 			removed := s.registry.CleanupStale(ctx, TunnelStaleTimeout)
 			for _, tunnel := range removed {
-				s.updateConnectionStatus(context.WithoutCancel(ctx), tunnel, false)
+				s.updateConnectionStatus(context.WithoutCancel(ctx), tunnel, ConnectionStateOffline)
 			}
 			if len(removed) > 0 {
 				slog.InfoContext(ctx, "Cleaned up stale tunnels", "count", len(removed))
@@ -381,17 +383,17 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 	}
 }
 
-func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *AgentTunnel, connected bool) {
+func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *AgentTunnel, state ConnectionState) {
 	if s.statusCallback == nil {
 		return
 	}
 
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
-	if active, ok := s.registry.Active(tunnel.EnvironmentID).Get(); !connected && ok && active != tunnel {
+	if active, ok := s.registry.Active(tunnel.EnvironmentID).Get(); state != ConnectionStateOnline && ok && active != tunnel {
 		return
 	}
-	s.statusCallback(ctx, tunnel.EnvironmentID, connected)
+	s.statusCallback(ctx, tunnel.EnvironmentID, state)
 }
 
 func (s *contextualServerStream) Context() context.Context {

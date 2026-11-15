@@ -187,12 +187,9 @@ func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*ht
 	var lost *agent.AgentTunnel
 	var resp *http.Response
 	for {
-		tunnel, ok := s.tunnels.WaitForActive(ctx, target.id, agent.WaitForActiveOptions{
-			Except:  lost,
-			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, s.tunnels.AcquireTimeout(target.id)),
-		}).Get()
-		if !ok {
-			return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}
+		tunnel, acquireErr := s.tunnels.Acquire(ctx, target.id, agent.AcquireOptions{Except: lost})
+		if acquireErr != nil {
+			return nil, &agent.TransportError{Err: acquireErr}
 		}
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, agent.MuxAgentBaseURL+path, http.NoBody)
 		if reqErr != nil {

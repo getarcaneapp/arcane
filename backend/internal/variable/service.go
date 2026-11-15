@@ -404,9 +404,11 @@ func (s *VariableService) syncEnvironments(ctx context.Context, targets []string
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target != environment.LocalEnvironmentID && s.tunnels.WaitForActive(syncCtx, target, agent.WaitForActiveOptions{Timeout: s.tunnels.AcquireTimeout(target)}).IsAbsent() {
-				s.recordSyncPending(target)
-				return
+			if target != environment.LocalEnvironmentID {
+				if _, err := s.tunnels.Acquire(syncCtx, target, agent.AcquireOptions{}); err != nil {
+					s.recordSyncPending(target)
+					return
+				}
 			}
 			if err := s.SyncEnvironment(syncCtx, target); err != nil {
 				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", target, "error", err)

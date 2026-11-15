@@ -12,6 +12,8 @@ import type {
 } from '../swarm';
 import type { UpdateRequest } from './pagination';
 
+export const SWARM_STATUS_DEPENDENCY = 'app:swarm-status';
+
 export interface RawSwarmServicePort {
 	protocol?: string;
 	Protocol?: string;

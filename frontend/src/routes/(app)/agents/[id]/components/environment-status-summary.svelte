@@ -92,6 +92,8 @@
 			{/if}
 		{:else if currentStatus === 'online'}
 			<span>{m.environments_version_unavailable()}</span>
+		{:else if currentStatus === 'error'}
+			<span>{m.common_error()}</span>
 		{:else}
 			<span>{m.common_offline()}</span>
 		{/if}

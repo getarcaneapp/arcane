@@ -385,28 +385,3 @@ func registerTestTunnel(tb testing.TB, registry *TunnelRegistry, tunnel *AgentTu
 	require.NoError(tb, err)
 	require.True(tb, result.Accepted, result.Reason)
 }
-
-func TestTunnelRegistryAcquireTimeout(t *testing.T) {
-	r := NewTunnelRegistry()
-	require.NoError(t, r.ExpectReconnect(t.Context(), []string{"expected"}))
-	require.NoError(t, r.history.Apply(t.Context(), "seed tunnel history", func(history map[string]TunnelHistory) (bool, error) {
-		history["just-dropped"] = TunnelHistory{LastDisconnectAt: time.Now()}
-		history["long-gone"] = TunnelHistory{LastDisconnectAt: time.Now().Add(-2 * tunnelReconnectWindow)}
-		return true, nil
-	}))
-
-	tests := []struct {
-		envID string
-		want  time.Duration
-	}{
-		{envID: "expected", want: DefaultTunnelAcquireTimeout},
-		{envID: "just-dropped", want: DefaultTunnelAcquireTimeout},
-		{envID: "long-gone"},
-		{envID: "never-seen"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.envID, func(t *testing.T) {
-			assert.Equal(t, tt.want, r.AcquireTimeout(tt.envID))
-		})
-	}
-}
