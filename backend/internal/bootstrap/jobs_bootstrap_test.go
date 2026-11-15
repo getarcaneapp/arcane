@@ -25,6 +25,10 @@ type (
 		rescheduled chan struct{}
 		jobs        []string
 	}
+
+	settingsSubscriptionKeysStub struct {
+		subscribedKeys [][]string
+	}
 )
 
 func (s *settingsSubscriptionStub) SubscribeSettingsChanges(keys []string, callback func([]types.SettingUpdate)) func() {
@@ -68,10 +72,6 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	require.NoError(t, lifecycle.Stop(stopCtx))
-}
-
-type settingsSubscriptionKeysStub struct {
-	subscribedKeys [][]string
 }
 
 func (s *settingsSubscriptionKeysStub) SubscribeSettingsChanges(keys []string, _ func([]types.SettingUpdate)) func() {
