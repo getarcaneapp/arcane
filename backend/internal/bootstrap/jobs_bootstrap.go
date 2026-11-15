@@ -239,13 +239,12 @@ func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams)
 }
 
 func registerJobs(params registerJobsParams) error {
-	for _, job := range []types.SchedulerJob{
+	jobs := []types.SchedulerJob{
 		params.AutoUpdate,
 		params.DockerClientRefresh,
 		params.Analytics,
 		params.EventCleanup,
 		params.PruningVolumeHelper,
-		params.ExpiredSessionsCleanup,
 		params.ScheduledPrune,
 		params.VulnerabilityScan,
 		params.VulnerabilityRisk,
@@ -256,8 +255,11 @@ func registerJobs(params registerJobsParams) error {
 		params.GitCloneCleanup,
 		params.BackupRepositoryPrune,
 		params.UpgradeLogCleanup,
-		params.ApnsOutbox,
-	} {
+	}
+	if !params.Config.AgentEnabled {
+		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox)
+	}
+	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err
 		}
@@ -332,11 +334,13 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		}
 	})
 
-	subscribe([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
-		params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
-			return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
+	if !params.Config.AgentEnabled {
+		subscribe([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
+			params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
+				return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
+			})
 		})
-	})
+	}
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 

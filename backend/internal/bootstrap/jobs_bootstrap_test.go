@@ -69,3 +69,55 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	defer cancel()
 	require.NoError(t, lifecycle.Stop(stopCtx))
 }
+
+type settingsSubscriptionKeysStub struct {
+	subscribedKeys [][]string
+}
+
+func (s *settingsSubscriptionKeysStub) SubscribeSettingsChanges(keys []string, _ func([]types.SettingUpdate)) func() {
+	s.subscribedKeys = append(s.subscribedKeys, keys)
+	return func() {}
+}
+
+func TestExpiredSessionsCleanupJobMetadata(t *testing.T) {
+	meta, ok := types.GetJobMetadata("expired-sessions-cleanup")
+	require.True(t, ok)
+	require.True(t, meta.ManagerOnly)
+}
+
+func TestSetupSettingsSubscriptions_AgentEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		agentEnabled bool
+	}{
+		{name: "agent", agentEnabled: true},
+		{name: "manager", agentEnabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lifecycle := fxtest.NewLifecycle(t)
+			settings := &settingsSubscriptionKeysStub{}
+			schedulerStub := &settingsSubscriptionSchedulerStub{}
+			require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
+				Lifecycle:    lifecycle,
+				LifecycleCtx: t.Context(),
+				Config:       &config.Config{AgentEnabled: tc.agentEnabled},
+				Scheduler:    schedulerStub,
+				Settings:     settings,
+			}))
+			hasApnsSub := false
+			for _, keys := range settings.subscribedKeys {
+				if slices.Contains(keys, "apnsEnabled") {
+					hasApnsSub = true
+				}
+			}
+			if tc.agentEnabled {
+				require.False(t, hasApnsSub)
+			} else {
+				require.True(t, hasApnsSub)
+			}
+			stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.NoError(t, lifecycle.Stop(stopCtx))
+		})
+	}
+}
