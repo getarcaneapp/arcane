@@ -1092,6 +1092,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 		}
 		wantErr    func(error) bool
 		name       string
+		platform   string
 		body       string
 		wantTitles []string
 		wantRows   [][]string
@@ -1127,6 +1128,14 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 		{name: "not found", status: http.StatusNotFound, body: `{"message":"No such container: container-1"}`, wantErr: errdefs.IsNotFound},
 		{name: "not running", status: http.StatusConflict, body: `{"message":"container container-1 is not running"}`, wantErr: errdefs.IsConflict},
 		{
+			name:       "windows lists without ps args",
+			platform:   "windows",
+			status:     http.StatusOK,
+			body:       `{"Titles":["Name","PID","CPU","Private Working Set"],"Processes":[["w3wp.exe","1234","00:00:01","10MB"]]}`,
+			wantTitles: []string{"Name", "PID", "CPU", "Private Working Set"},
+			wantRows:   [][]string{{"w3wp.exe", "1234", "00:00:01", "10MB"}},
+		},
+		{
 			name:   "busybox ps falls back",
 			status: http.StatusInternalServerError,
 			body:   `{"message":"ps: bad -o argument '%cpu', supported arguments: user,group,comm,args,pid,ppid,pgid,etime,nice,rgroup,ruser,time,tty,vsz,stat,rss"}`,
@@ -1142,6 +1151,19 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotArgs []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && dockerTestPath(r.URL.Path) == "/containers/container-1/json" {
+					// Only serve inspect when the case sets a platform; otherwise it
+					// behaves like a non-Windows daemon (IsWindowsContainer -> false).
+					if tt.platform == "" {
+						http.NotFound(w, r)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if _, err := io.WriteString(w, `{"Id":"container-1","Platform":"`+tt.platform+`","State":{"Running":true},"Config":{},"HostConfig":{},"NetworkSettings":{}}`); err != nil {
+						t.Error(err)
+					}
+					return
+				}
 				if r.Method != http.MethodGet || dockerTestPath(r.URL.Path) != "/containers/container-1/top" {
 					http.NotFound(w, r)
 					return
@@ -1174,6 +1196,9 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
 			if tt.fallback != nil {
 				wantArgs = append(wantArgs, strings.Join(containerProcessesPsArgs[1], " "))
+			}
+			if tt.platform == "windows" {
+				wantArgs = []string{""}
 			}
 			require.Equal(t, wantArgs, gotArgs)
 			if tt.wantErr != nil {
