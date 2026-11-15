@@ -56,7 +56,7 @@ agent:
     ARCANE_PROJECTS_DIRECTORY="${projects_directory}" \
     ARCANE_GIT_WORK_DIR="${git_work_dir}" \
     ARCANE_ENCRYPTION_KEY="${encryption_key}" \
-    go run ./backend/cmd
+    go run -ldflags='-w -s' ./backend/cmd
 
 # Backend and frontend together
 [script('bash')]

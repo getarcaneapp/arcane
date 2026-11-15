@@ -107,6 +107,13 @@
 					{/each}
 				</Select.Content>
 			</Select.Root>
+
+			{#if data.source}
+				<div class="flex items-center gap-2 text-xs text-muted-foreground sm:ml-auto">
+					<span>{m.source()}</span>
+					<Badge variant="outline">{data.source === 'daemon' ? m.local() : m.common_registry()}</Badge>
+				</div>
+			{/if}
 		</div>
 
 		{#if attestations.length === 0}

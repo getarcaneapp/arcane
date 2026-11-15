@@ -93,6 +93,7 @@ type (
 	TunnelRegistry struct {
 		tunnels    *concurrency.StateMap[string, *AgentTunnel]
 		history    *concurrency.StateMap[string, TunnelHistory]
+		expected   *concurrency.StateMap[string, time.Time]
 		registered *concurrency.Signal[string]
 		stopped    atomic.Bool
 	}

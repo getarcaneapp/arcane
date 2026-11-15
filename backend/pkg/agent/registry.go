@@ -138,8 +138,28 @@ func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
 		tunnels:    concurrency.NewStateMap[string, *AgentTunnel](),
 		history:    concurrency.NewStateMap[string, TunnelHistory](),
+		expected:   concurrency.NewStateMap[string, time.Time](),
 		registered: concurrency.NewSignal[string](),
 	}
+}
+
+func (r *TunnelRegistry) ExpectReconnect(ctx context.Context, envIDs []string) error {
+	deadline := time.Now().Add(tunnelReconnectWindow)
+	return r.expected.Apply(ctx, "expect agent tunnel reconnects", func(expected map[string]time.Time) (bool, error) {
+		for _, envID := range envIDs {
+			expected[envID] = deadline
+		}
+		return len(envIDs) > 0, nil
+	})
+}
+
+func (r *TunnelRegistry) AcquireTimeout(envID string) time.Duration {
+	history, _ := r.history.Get(envID)
+	deadline, _ := r.expected.Get(envID)
+	if time.Since(history.LastDisconnectAt) < tunnelReconnectWindow || time.Now().Before(deadline) {
+		return DefaultTunnelAcquireTimeout
+	}
+	return 0
 }
 
 func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {

@@ -99,6 +99,7 @@ type (
 		ImageRef      string             `json:"imageRef"`
 		SubjectDigest string             `json:"subjectDigest"`
 		Platform      string             `json:"platform,omitempty"`
+		Source        string             `json:"source,omitempty"`
 		Attestations  []ImageAttestation `json:"attestations"`
 	}
 
@@ -261,6 +262,9 @@ type (
 )
 
 const (
+	ImageAttestationSourceDaemon   = "daemon"
+	ImageAttestationSourceRegistry = "registry"
+
 	HardenedImageSupported      HardenedImageSupportStatus = "supported"
 	HardenedImageEndingSoon     HardenedImageSupportStatus = "ending_soon"
 	HardenedImageEndOfLife      HardenedImageSupportStatus = "end_of_life"

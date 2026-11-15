@@ -63,7 +63,11 @@ type (
 )
 
 const (
-	TablePrefix = "arcane_francis"
+	TablePrefix         = "arcane_francis"
+	ShutdownGracePeriod = 10 * time.Second
+
+	hostHealthCheckDeadline = 150 * time.Second
+	hostStartupTimeout      = hostHealthCheckDeadline + 30*time.Second
 )
 
 func New(cfg Config) (*Runtime, error) {
@@ -86,8 +90,8 @@ func New(cfg Config) (*Runtime, error) {
 		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address, storeURL: storeURL,
 		options: []local.HostOption{
 			local.WithAddress(address), providerOption(storeURL),
-			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(150 * time.Second),
-			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(10 * time.Second),
+			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(hostHealthCheckDeadline),
+			local.WithShutdownGracePeriod(ShutdownGracePeriod), local.WithAlarmsPollInterval(10 * time.Second),
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
 	}
@@ -204,7 +208,7 @@ func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) erro
 	if cleanupErr := removeOrphanedCancels(ctx, r.storeURL, r.workflows); cleanupErr != nil {
 		slog.WarnContext(ctx, "Failed to remove orphaned workflow cancel jobs", "error", cleanupErr)
 	}
-	startupCtx, startupCancel := context.WithTimeout(ctx, 120*time.Second)
+	startupCtx, startupCancel := context.WithTimeout(ctx, hostStartupTimeout)
 	defer startupCancel()
 	bindRetries := 0
 

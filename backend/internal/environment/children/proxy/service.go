@@ -189,7 +189,7 @@ func (s *Service) OpenRemoteStream(ctx context.Context, envID, path string) (*ht
 	for {
 		tunnel, ok := s.tunnels.WaitForActive(ctx, target.id, agent.WaitForActiveOptions{
 			Except:  lost,
-			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, agent.DefaultTunnelAcquireTimeout),
+			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, s.tunnels.AcquireTimeout(target.id)),
 		}).Get()
 		if !ok {
 			return nil, &agent.TransportError{Err: agent.ErrEnvironmentUnavailable}

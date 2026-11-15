@@ -52,6 +52,8 @@ type (
 const (
 	DefaultTunnelAcquireTimeout   = 4 * time.Second
 	DefaultTunnelReconnectTimeout = 10 * time.Second
+
+	tunnelReconnectWindow = 30 * time.Second
 )
 
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
@@ -69,7 +71,7 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 	for {
 		tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, WaitForActiveOptions{
 			Except:  lost,
-			Timeout: kit.Ternary(lost != nil, DefaultTunnelReconnectTimeout, DefaultTunnelAcquireTimeout),
+			Timeout: kit.Ternary(lost != nil, DefaultTunnelReconnectTimeout, r.AcquireTimeout(req.EnvironmentID)),
 		}).Get()
 		if !ok {
 			return nil, &TransportError{Err: ErrEnvironmentUnavailable}

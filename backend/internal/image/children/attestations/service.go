@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/klauspost/compress/zstd"
 	"github.com/moby/buildkit/util/attestation"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -51,8 +52,10 @@ type (
 	reference struct {
 		ImageRef      string
 		SubjectDigest string
+		Platform      string
 		Empty         bool
 		External      bool
+		Local         bool
 	}
 
 	subject struct {
@@ -107,14 +110,6 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 	if err != nil {
 		return nil, err
 	}
-	if resolution.Empty {
-		return &types.ImageAttestationList{
-			ImageRef:      resolution.ImageRef,
-			SubjectDigest: resolution.SubjectDigest,
-			Platform:      strings.TrimSpace(query.Platform),
-			Attestations:  []types.ImageAttestation{},
-		}, nil
-	}
 
 	platform, hasPlatform, err := func() (ocispec.Platform, bool, error) {
 		value := strings.TrimSpace(query.Platform)
@@ -129,6 +124,33 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 	}()
 	if err != nil {
 		return nil, err
+	}
+
+	if resolution.Local {
+		daemonAttestations, daemonErr := s.readDaemonAttestations(ctx, imageName, resolution, platform, hasPlatform, query)
+		switch {
+		case errors.Is(daemonErr, errAttestationLayerTooLarge):
+			return nil, errAttestationLayerTooLarge
+		case daemonErr != nil:
+			slog.DebugContext(ctx, "daemon attestation lookup failed, falling back to the registry", "image", imageName, "error", daemonErr)
+		case len(daemonAttestations) > 0:
+			return &types.ImageAttestationList{
+				ImageRef:      resolution.ImageRef,
+				SubjectDigest: resolution.SubjectDigest,
+				Platform:      kit.Ternary(hasPlatform, platforms.Format(platform), resolution.Platform),
+				Source:        types.ImageAttestationSourceDaemon,
+				Attestations:  daemonAttestations,
+			}, nil
+		}
+	}
+
+	if resolution.Empty {
+		return &types.ImageAttestationList{
+			ImageRef:      resolution.ImageRef,
+			SubjectDigest: resolution.SubjectDigest,
+			Platform:      strings.TrimSpace(query.Platform),
+			Attestations:  []types.ImageAttestation{},
+		}, nil
 	}
 
 	ref, err := name.ParseReference(resolution.ImageRef, name.WeakValidation)
@@ -206,6 +228,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 			}
 			return strings.TrimSpace(query.Platform)
 		}(),
+		Source: types.ImageAttestationSourceRegistry,
 		Attestations: slices.DeleteFunc(attestations, func(item types.ImageAttestation) bool {
 			key := strings.Join([]string{
 				item.Digest,
@@ -236,13 +259,29 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 			}
 			return ""
 		}()
+		localPlatform := ""
+		if inspect.Os != "" && inspect.Architecture != "" {
+			localPlatform = platforms.Format(ocispec.Platform{
+				Architecture: inspect.Architecture,
+				OS:           inspect.Os,
+				Variant:      inspect.Variant,
+			})
+		}
 		if imageRef == "" {
-			return reference{ImageRef: imageName, Empty: true}, nil
+			return reference{
+				ImageRef:      imageName,
+				SubjectDigest: inspect.ID,
+				Platform:      localPlatform,
+				Empty:         true,
+				Local:         true,
+			}, nil
 		}
 		_, subjectDigest, _ := strings.Cut(imageRef, "@")
 		return reference{
 			ImageRef:      imageRef,
 			SubjectDigest: subjectDigest,
+			Platform:      localPlatform,
+			Local:         true,
 		}, nil
 	}
 
@@ -260,6 +299,71 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 		SubjectDigest: subjectDigest,
 		External:      true,
 	}, nil
+}
+
+func (s *Service) readDaemonAttestations(
+	ctx context.Context,
+	imageName string,
+	resolution reference,
+	platform ocispec.Platform,
+	hasPlatform bool,
+	query Query,
+) ([]types.ImageAttestation, error) {
+	options := make([]client.ImageAttestationsOption, 0, 3)
+	if hasPlatform {
+		options = append(options, client.ImageAttestationsWithPlatform(platform))
+	}
+	if query.PredicateType != "" {
+		options = append(options, client.ImageAttestationsWithPredicateTypes(query.PredicateType))
+	}
+
+	summary, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageAttestationsResult, error) {
+		return dockerClient.ImageAttestations(ctx, imageName, options...)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list daemon attestations for %q: %w", imageName, err)
+	}
+	if len(summary.Items) == 0 {
+		return nil, nil
+	}
+	for _, item := range summary.Items {
+		if item.Descriptor.Size > maxAttestationLayerBytes {
+			return nil, fmt.Errorf("read attestation layer %s: %w", item.Descriptor.Digest.String(), errAttestationLayerTooLarge)
+		}
+	}
+
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageAttestationsResult, error) {
+		return dockerClient.ImageAttestations(ctx, imageName, append(options, client.ImageAttestationsWithStatement())...)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read daemon attestations for %q: %w", imageName, err)
+	}
+	return daemonStatementsToAttestations(result.Items, kit.Ternary(hasPlatform, platforms.Format(platform), resolution.Platform), query)
+}
+
+func daemonStatementsToAttestations(items []image.AttestationStatement, platform string, query Query) ([]types.ImageAttestation, error) {
+	attestations := make([]types.ImageAttestation, 0, len(items))
+	for _, item := range items {
+		rawStatement := []byte(kit.FromPtr(item.Statement))
+
+		var statement attestationStatementEnvelope
+		if err := json.Unmarshal(rawStatement, &statement); err != nil {
+			return nil, fmt.Errorf("parse attestation statement %s: %w", item.Descriptor.Digest.String(), err)
+		}
+
+		attestations = append(attestations, types.ImageAttestation{
+			Digest:        item.Descriptor.Digest.String(),
+			MediaType:     item.Descriptor.MediaType,
+			ArtifactType:  item.Descriptor.ArtifactType,
+			PredicateType: cmp.Or(statement.PredicateType, item.PredicateType),
+			StatementType: statement.Type,
+			Platform:      platform,
+			Subject:       statement.Subject,
+			Statement:     kit.Ternary(query.IncludeStatement, rawStatement, nil),
+			Size:          cmp.Or(item.Descriptor.Size, int64(len(rawStatement))),
+		})
+	}
+	return attestations, nil
 }
 
 func (s *Service) remoteOptionsForImageRef(ctx context.Context, resolution reference) ([]remote.Option, error) {

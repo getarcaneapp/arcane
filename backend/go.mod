@@ -90,7 +90,7 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
-	kit.getarcane.app v0.7.3
+	kit.getarcane.app v0.7.4
 	kit.getarcane.app/acfs v0.10.3
 	kit.getarcane.app/builds v0.5.4
 	kit.getarcane.app/docker v0.3.3

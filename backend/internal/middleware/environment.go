@@ -147,7 +147,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
 	}
 
-	acquireTimeout := kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)
+	acquireTimeout := kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, m.registry.AcquireTimeout(envID))
 	var lost *agent.AgentTunnel
 	for {
 		tunnel, connected := m.registry.WaitForActive(ctx, envID, agent.WaitForActiveOptions{
@@ -163,7 +163,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 			accessToken: accessToken,
 			envID:       envID,
 			suffix:      suffix,
-			canRetry:    lost == nil && acquireTimeout > 0,
+			canRetry:    lost == nil && !httpx.IsEnvironmentFanOutRequest(ctx),
 		})
 		if !retry {
 			return forwardErr

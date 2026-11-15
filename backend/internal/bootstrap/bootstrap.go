@@ -46,6 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
@@ -346,7 +347,7 @@ func applicationOptions(
 			return logger
 		}),
 		fx.StartTimeout(5*time.Minute),
-		fx.StopTimeout(7*time.Second),
+		fx.StopTimeout(francis.ShutdownGracePeriod+3*time.Second),
 	)
 }
 

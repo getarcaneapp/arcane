@@ -77,6 +77,7 @@ export interface ImageAttestationList {
 	imageRef: string;
 	subjectDigest: string;
 	platform?: string;
+	source?: 'daemon' | 'registry';
 	attestations: ImageAttestation[];
 }
 
