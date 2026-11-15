@@ -752,6 +752,11 @@ func loadClientCertificate(certPath, keyPath string, now time.Time, renewBefore 
 	case renewBefore > 0 && now.Add(renewBefore).After(cert.Leaf.NotAfter):
 		return tls.Certificate{}, "certificate expires soon at " + cert.Leaf.NotAfter.UTC().Format(time.RFC3339)
 	}
+	for _, uri := range cert.Leaf.URIs {
+		if strings.EqualFold(uri.Scheme, "spiffe") && strings.HasPrefix(uri.Path, "/edge/") {
+			return tls.Certificate{}, "certificate uses legacy identity " + uri.String()
+		}
+	}
 	return cert, ""
 }
 

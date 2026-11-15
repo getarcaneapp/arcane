@@ -29,6 +29,7 @@ FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-builder
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG BUILD_TAGS
+ARG ENABLED_FEATURES=""
 ARG VERSION="dev"
 ARG REVISION="unknown"
 ARG BUILD_TIME="unknown"
@@ -63,8 +64,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     fi && \
     CGO_ENABLED=0 GOOS=linux \
     go build \
-    -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME} -X getarcane.dev/arcane/v3/internal/config.NodeVersion=${NODE_VERSION} -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
+    -tags "${BUILD_TAGS}${ENABLED_FEATURES:+,buildables}" \
+    -ldflags "-w -s -X 'getarcane.dev/arcane/v3/buildables.EnabledFeatures=${ENABLED_FEATURES}'-X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME} -X getarcane.dev/arcane/v3/internal/config.NodeVersion=${NODE_VERSION} -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go
