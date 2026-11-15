@@ -1137,9 +1137,9 @@ func TestGitOpsSyncService_SyncTarget_SwarmStackKeepsSavedEnvWithoutSyncVariable
 			_, _, _, syncErr := svc.syncTarget(ctx, ctx, sync, types.Actor{}, &types.GitOpsSyncResult{}, source, nil)
 			require.NoError(t, syncErr)
 
-			saved, sourceErr := svc.swarmService.GetStackSource(ctx, "0", "demo")
-			require.NoError(t, sourceErr)
-			assert.Equal(t, test.wantEnv, saved.EnvContent)
+			savedEnv, envErr := svc.swarmService.GetStackEnvContent(ctx, "0", "demo")
+			require.NoError(t, envErr)
+			assert.Equal(t, test.wantEnv, savedEnv)
 		})
 	}
 }

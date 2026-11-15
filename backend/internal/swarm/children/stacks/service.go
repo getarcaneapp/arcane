@@ -338,12 +338,9 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		return nil, fmt.Errorf("failed to read swarm stack override source: %w", err)
 	}
 
-	envContent := ""
-	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
-	if err == nil {
-		envContent = string(envBytes)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("failed to read swarm stack env source: %w", err)
+	envContent, err := readStackEnvContent(ctx, stackSourceDir)
+	if err != nil {
+		return nil, err
 	}
 
 	var files []types.SwarmSyncFile
@@ -381,6 +378,23 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 		EnvContent:      envContent,
 		Files:           files,
 	}, nil
+}
+
+// GetStackEnvContent returns the stack's saved .env, or "" when none is saved, without reading its other files.
+func (s *Service) GetStackEnvContent(ctx context.Context, environmentID, stackName string) (string, error) {
+	_, stackSourceDir, err := s.resolveSwarmStackSourceDir(ctx, environmentID, stackName)
+	if err != nil {
+		return "", err
+	}
+	return readStackEnvContent(ctx, stackSourceDir)
+}
+
+func readStackEnvContent(ctx context.Context, stackSourceDir string) (string, error) {
+	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("failed to read swarm stack env source: %w", err)
+	}
+	return string(envBytes), nil
 }
 
 func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackName string, change StackSourceUpdate) (*types.SwarmStackSource, error) {
