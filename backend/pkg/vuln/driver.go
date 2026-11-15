@@ -36,6 +36,7 @@ import (
 type (
 	RuntimeOptions struct {
 		NetworkMode  string
+		Isolation    string
 		ContainerEnv []string
 		Mounts       []mounttypes.Mount
 	}
@@ -136,6 +137,9 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 
 	return &containertypes.HostConfig{
 		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
+		// Carry the agent's isolation (e.g. process) so a Windows daemon defaulting to
+		// hyperv does not break the named-pipe mount; empty keeps the daemon default.
+		Isolation: containertypes.Isolation(strings.TrimSpace(opts.Runtime.Isolation)),
 		// Kept until explicit cleanup so completion and logs are reliable across Docker variants.
 		AutoRemove:  false,
 		Mounts:      windowsMountTargets(mounts),

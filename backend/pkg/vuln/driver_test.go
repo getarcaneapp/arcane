@@ -215,6 +215,18 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 	require.False(t, hostConfig.Privileged)
 }
 
+func TestBuildTrivyHostConfig_CarriesIsolation(t *testing.T) {
+	withIsolation := BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{NetworkMode: "nat", Isolation: "process"},
+	})
+	require.Equal(t, containertypes.Isolation("process"), withIsolation.Isolation)
+
+	withoutIsolation := BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{NetworkMode: "bridge"},
+	})
+	require.Equal(t, containertypes.Isolation(""), withoutIsolation.Isolation)
+}
+
 func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
 	resources := containertypes.Resources{
 		NanoCPUs:   int64(2_000_000_000),
