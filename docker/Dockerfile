@@ -65,7 +65,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux \
     go build \
     -tags "${BUILD_TAGS}${ENABLED_FEATURES:+,buildables}" \
-    -ldflags "-w -s -X getarcane.dev/arcane/v3/buildables.EnabledFeatures=${ENABLED_FEATURES} -X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME} -X getarcane.dev/arcane/v3/internal/config.NodeVersion=${NODE_VERSION} -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
+    -ldflags "-w -s -X 'getarcane.dev/arcane/v3/buildables.EnabledFeatures=${ENABLED_FEATURES}'-X getarcane.dev/arcane/v3/internal/config.Version=${VERSION} -X getarcane.dev/arcane/v3/internal/config.Revision=${REVISION} -X getarcane.dev/arcane/v3/internal/config.BuildTime=${BUILD_TIME} -X getarcane.dev/arcane/v3/internal/config.NodeVersion=${NODE_VERSION} -X getarcane.dev/arcane/v3/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go
