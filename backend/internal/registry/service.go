@@ -123,6 +123,7 @@ const (
 	OCIImageURLLabel                    = "org.opencontainers.image.url"
 	OCIImageDocumentationLabel          = "org.opencontainers.image.documentation"
 	versionLabelCacheTTL                = 3 * time.Hour
+	digestRetryInitialInterval          = 500 * time.Millisecond
 	digestRetryMaxInterval              = 10 * time.Second
 )
 
@@ -816,7 +817,13 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		}
 		if daemonErr != nil && IsRateLimitErrorString(daemonErr.Error()) {
 			slog.DebugContext(ctx, "rate limited by registry", "registry", parts.RegistryHost, "imageRef", parts.NormalizedRef)
-			return nil, waitRegistryRetryAfter(ctx, daemonErr)
+			_, retryAfter, _ := strings.Cut(strings.ToLower(daemonErr.Error()), "retry-after:")
+			retryAfter, _, _ = strings.Cut(retryAfter, ",")
+			wait, parseErr := time.ParseDuration(strings.TrimSpace(retryAfter))
+			if parseErr == nil && wait <= digestRetryMaxInterval {
+				return nil, &backoff.RetryAfterError{Duration: max(wait, digestRetryInitialInterval)}
+			}
+			return nil, backoff.Permanent(daemonErr)
 		}
 		if !registry.IsFallbackEligibleDaemonError(daemonErr) &&
 			(browse.IsUnauthorizedRegistryError(daemonErr) || !slices.ContainsFunc([]string{
@@ -867,7 +874,7 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		}
 		return nil, backoff.Permanent(lastErr)
 	}, backoff.WithBackOff(&backoff.ExponentialBackOff{
-		InitialInterval:     500 * time.Millisecond,
+		InitialInterval:     digestRetryInitialInterval,
 		RandomizationFactor: 0.3,
 		Multiplier:          backoff.DefaultMultiplier,
 		MaxInterval:         digestRetryMaxInterval,
@@ -882,21 +889,6 @@ func (s *ContainerRegistryService) InspectImageDigest(
 		return lastResult, common.Classify(common.ErrTimeout, retryErr)
 	default:
 		return lastResult, classifyDigestError(lastErr)
-	}
-}
-
-func waitRegistryRetryAfter(ctx context.Context, err error) error {
-	_, retryAfter, _ := strings.Cut(strings.ToLower(err.Error()), "retry-after:")
-	retryAfter, _, _ = strings.Cut(retryAfter, ",")
-	wait, parseErr := time.ParseDuration(strings.TrimSpace(retryAfter))
-	if parseErr != nil || wait > digestRetryMaxInterval {
-		return backoff.Permanent(err)
-	}
-	select {
-	case <-time.After(wait):
-		return err
-	case <-ctx.Done():
-		return backoff.Permanent(context.Cause(ctx))
 	}
 }
 
