@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -110,6 +111,15 @@ func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 			require.Equal(t, tt.wantTarget, got.Target)
 			require.Equal(t, tt.wantReadOnly, got.ReadOnly)
 		})
+	}
+}
+
+func TestBackupStorageDestination(t *testing.T) {
+	got := backupStorageDestination("/backups")
+	if runtime.GOOS == "windows" {
+		require.Equal(t, `C:\backups`, got)
+	} else {
+		require.Equal(t, "/backups", got)
 	}
 }
 
