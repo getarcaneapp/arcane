@@ -175,8 +175,8 @@ const (
 	upgradeJobManagerWatchTimeout                = 15 * time.Minute
 	upgradeJobManagerNoRestartGrace              = 15 * time.Second
 
-	// windowsAgentBinaryPath is where the Windows agent image ships the agent.
 	windowsAgentBinaryPath = `C:\app\arcane-agent.exe`
+	windowsAgentDataDir    = `C:\app\data`
 )
 
 var (
@@ -350,10 +350,6 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 
 	containerName := strings.TrimPrefix(current.Name, "/")
 	config := kit.FromPtr(current.Config)
-	binaryPath := kit.Ternary(labels.IsArcaneAgentContainer(config.Labels), "/app/arcane-agent", "/app/arcane")
-	if strings.EqualFold(current.Platform, "windows") {
-		binaryPath = windowsAgentBinaryPath
-	}
 
 	info := kit.FromPtr(s.versionService.GetAppVersionInfo(ctx))
 	targetImage := strings.TrimSpace(target.NewImageRef)
@@ -391,12 +387,15 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 		dockerClient:  dockerClient,
 		current:       current,
 		containerName: containerName,
-		binaryPath:    binaryPath,
-		targetImage:   targetImage,
-		pullImage:     pullImage,
-		fromVersion:   info.CurrentVersion,
-		toVersion:     toVersion,
-		saveCompose:   saveCompose,
+		binaryPath: cmp.Or(
+			kit.Ternary(strings.EqualFold(current.Platform, "windows"), windowsAgentBinaryPath, ""),
+			kit.Ternary(labels.IsArcaneAgentContainer(config.Labels), "/app/arcane-agent", "/app/arcane"),
+		),
+		targetImage: targetImage,
+		pullImage:   pullImage,
+		fromVersion: info.CurrentVersion,
+		toVersion:   toVersion,
+		saveCompose: saveCompose,
 	}, nil
 }
 
@@ -441,11 +440,11 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	// Mount /app/data from the current container so upgrade logs persist.
-	appDataMount := upgradeLogMount(prepared.current)
-	if appDataMount == nil {
+	dataBinds, dataMounts := upgradeDataMounts(prepared.current)
+	if len(dataBinds)+len(dataMounts) == 0 {
 		slog.WarnContext(ctx, "Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
-		slog.DebugContext(ctx, "Mounting /app/data into upgrader container", "type", appDataMount.Type, "source", appDataMount.Source)
+		slog.DebugContext(ctx, "Mounting /app/data into upgrader container", "binds", dataBinds, "mounts", dataMounts)
 	}
 
 	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(
@@ -473,19 +472,6 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 	if prepared.pullImage != prepared.targetImage {
 		upgradeCmd = append(upgradeCmd, "--pull-image", prepared.pullImage)
-	}
-
-	mounts := append([]mount.Mount{}, runtimeMounts...)
-	var binds []string
-	switch {
-	case appDataMount == nil:
-	case strings.EqualFold(prepared.current.Platform, "windows"):
-		// Docker on Windows matches -v binds against the image's declared VOLUME paths but not
-		// Mounts targets spelled with another case, and Windows refuses two mounts on one path.
-		// Write the volume as a -v bind in short syntax (source:target[:ro]).
-		binds = append(binds, appDataMount.Source+":"+appDataMount.Target+kit.Ternary(appDataMount.ReadOnly, ":ro", ""))
-	default:
-		mounts = append(mounts, *appDataMount)
 	}
 
 	if s.keepUpgrader {
@@ -524,8 +510,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 			},
 			HostConfig: &container.HostConfig{
 				AutoRemove:  !s.keepUpgrader,
-				Binds:       binds,
-				Mounts:      mounts,
+				Binds:       dataBinds,
+				Mounts:      slices.Concat(runtimeMounts, dataMounts),
 				NetworkMode: networkMode,
 				SecurityOpt: securityOpt,
 				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
@@ -1735,17 +1721,25 @@ func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time
 	return removed, errors.Join(failures...)
 }
 
-// upgradeLogMount returns the current container's /app/data mount for the upgrader.
-// On Windows the CLI's /app/data resolves to C:\app\data; Docker may report it with another case.
-func upgradeLogMount(current container.InspectResponse) *mount.Mount {
+// upgradeDataMounts mirrors the current container's data mount into the upgrader.
+// Windows gets a -v bind: Docker matches binds, not Mounts targets, against image VOLUME paths case-insensitively.
+func upgradeDataMounts(current container.InspectResponse) ([]string, []mount.Mount) {
 	if !strings.EqualFold(current.Platform, "windows") {
-		return docker.MountForDestination(current.Mounts, selfcontainer.UpgradeLogDirectory, selfcontainer.UpgradeLogDirectory)
-	}
-	const windowsDataDir = `C:\app\data`
-	for _, m := range current.Mounts {
-		if strings.EqualFold(strings.TrimRight(m.Destination, `\`), windowsDataDir) {
-			return docker.MountForDestination(current.Mounts, m.Destination, windowsDataDir)
+		dataMount := docker.MountForDestination(current.Mounts, selfcontainer.UpgradeLogDirectory, selfcontainer.UpgradeLogDirectory)
+		if dataMount == nil {
+			return nil, nil
 		}
+		return nil, []mount.Mount{*dataMount}
 	}
-	return nil
+	for _, m := range current.Mounts {
+		if !strings.EqualFold(strings.TrimRight(m.Destination, `\`), windowsAgentDataDir) {
+			continue
+		}
+		dataMount := docker.MountForDestination(current.Mounts, m.Destination, windowsAgentDataDir)
+		if dataMount == nil {
+			return nil, nil
+		}
+		return []string{dataMount.Source + ":" + dataMount.Target + kit.Ternary(dataMount.ReadOnly, ":ro", "")}, nil
+	}
+	return nil, nil
 }

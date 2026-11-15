@@ -8,12 +8,12 @@ import (
 	"github.com/moby/moby/api/types/mount"
 )
 
-// preserveWindowsVolumeBindsInternal pins the volumes of a Windows container like
+// preserveWindowsVolumeBinds pins the volumes of a Windows container like
 // docker.PreserveVolumeMounts does on Linux. That helper splits binds on ':', which
 // breaks drive letters, so it misses name:C:\path binds and adds a second mount on
 // the same path, which Windows refuses. Volumes are kept as -v binds here, which
 // Docker also matches against VOLUME paths declared by the image.
-func preserveWindowsVolumeBindsInternal(binds []string, mounts []mount.Mount, mountPoints []container.MountPoint) ([]string, []mount.Mount) {
+func preserveWindowsVolumeBinds(binds []string, mounts []mount.Mount, mountPoints []container.MountPoint) ([]string, []mount.Mount) {
 	binds = slices.Clone(binds)
 	mounts = slices.Clone(mounts)
 
@@ -42,10 +42,11 @@ func preserveWindowsVolumeBindsInternal(binds []string, mounts []mount.Mount, mo
 			continue
 		}
 		if i := slices.IndexFunc(binds, func(bind string) bool {
-			return strings.EqualFold(strings.TrimRight(windowsBindDestinationInternal(bind), `\/`), strings.TrimRight(mp.Destination, `\/`))
+			parts := splitWindowsBind(bind)
+			return strings.EqualFold(strings.TrimRight(parts[min(1, len(parts)-1)], `\/`), strings.TrimRight(mp.Destination, `\/`))
 		}); i >= 0 {
 			// An anonymous volume bind holds only the destination.
-			if len(splitWindowsBindInternal(binds[i])) == 1 {
+			if len(splitWindowsBind(binds[i])) == 1 {
 				binds[i] = volumeName + ":" + binds[i]
 			}
 			continue
@@ -56,8 +57,8 @@ func preserveWindowsVolumeBindsInternal(binds []string, mounts []mount.Mount, mo
 	return binds, mounts
 }
 
-// splitWindowsBindInternal splits source:destination[:mode], keeping drive letters (C:\...) whole.
-func splitWindowsBindInternal(bind string) []string {
+// splitWindowsBind splits source:destination[:mode], keeping drive letters (C:\...) whole.
+func splitWindowsBind(bind string) []string {
 	raw := strings.Split(bind, ":")
 	parts := make([]string, 0, len(raw))
 	for i := 0; i < len(raw); i++ {
@@ -69,12 +70,4 @@ func splitWindowsBindInternal(bind string) []string {
 		parts = append(parts, raw[i])
 	}
 	return parts
-}
-
-func windowsBindDestinationInternal(bind string) string {
-	parts := splitWindowsBindInternal(bind)
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	return parts[1]
 }

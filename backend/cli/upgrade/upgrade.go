@@ -477,7 +477,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		hostConfig = &container.HostConfig{}
 	}
 	if strings.EqualFold(oldContainer.Platform, "windows") {
-		hostConfig.Binds, hostConfig.Mounts = preserveWindowsVolumeBindsInternal(hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
+		hostConfig.Binds, hostConfig.Mounts = preserveWindowsVolumeBinds(hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
 	} else {
 		hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(ctx, hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
 	}

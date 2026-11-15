@@ -1584,10 +1584,8 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 	// arguments to top"), so there the processes are listed with no ps arguments.
 	// Select by the container's platform, not the agent's OS: a Windows agent can
 	// manage a Linux daemon over DOCKER_HOST and vice versa.
-	psArgsAttempts := containerProcessesPsArgs
-	if s.IsWindowsContainer(ctx, containerID) {
-		psArgsAttempts = [][]string{nil}
-	}
+	info, _ := s.GetContainerByReference(ctx, containerID)
+	psArgsAttempts := kit.Ternary(strings.EqualFold(kit.FromPtr(info).Platform, "windows"), [][]string{nil}, containerProcessesPsArgs)
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
 		var result client.ContainerTopResult
 		var err error
@@ -1608,13 +1606,16 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 	}, nil
 }
 
-// IsWindowsContainer reports whether the container runs on a Windows daemon, so
-// platform-specific commands (the ps arguments of top, the interactive exec shell)
-// match the target container rather than the agent's own OS. Best-effort: any error
-// (unreachable daemon, missing container, non-Windows platform) reports false.
-func (s *ContainerService) IsWindowsContainer(ctx context.Context, containerID string) bool {
-	info, err := s.GetContainerByReference(ctx, containerID)
-	return err == nil && info != nil && strings.EqualFold(info.Platform, "windows")
+func (s *ContainerService) ExecShell(ctx context.Context, containerID, requested string) string {
+	requested = strings.TrimSpace(requested)
+	info, _ := s.GetContainerByReference(ctx, containerID)
+	if !strings.EqualFold(kit.FromPtr(info).Platform, "windows") {
+		return cmp.Or(requested, "/bin/sh")
+	}
+	if requested == "sh" || requested == "bash" || strings.HasPrefix(requested, "/") {
+		return "cmd.exe"
+	}
+	return cmp.Or(requested, "cmd.exe")
 }
 
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {

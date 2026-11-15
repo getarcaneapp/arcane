@@ -843,28 +843,29 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }
 
-func TestUpgradeLogMountWindowsContainer(t *testing.T) {
+func TestUpgradeDataMountsWindowsContainer(t *testing.T) {
 	current := container.InspectResponse{
 		Platform: "windows",
 		Mounts: []container.MountPoint{
 			{Type: mount.TypeNamedPipe, Source: `\\.\pipe\docker_engine`, Destination: `\\.\pipe\docker_engine`},
-			{Type: mount.TypeVolume, Name: "arcane-agent-data", Destination: `c:\app\data`},
+			{Type: mount.TypeVolume, Name: "arcane-agent-data", Destination: `c:\app\data`, RW: true},
 		},
 	}
-	got := upgradeLogMount(current)
-	require.NotNil(t, got)
-	require.Equal(t, mount.TypeVolume, got.Type)
-	require.Equal(t, "arcane-agent-data", got.Source)
-	require.Equal(t, `C:\app\data`, got.Target)
+	binds, mounts := upgradeDataMounts(current)
+	require.Equal(t, []string{`arcane-agent-data:C:\app\data`}, binds)
+	require.Empty(t, mounts)
 }
 
-func TestUpgradeLogMountLinuxContainer(t *testing.T) {
+func TestUpgradeDataMountsLinuxContainer(t *testing.T) {
 	current := container.InspectResponse{
 		Platform: "linux",
-		Mounts:   []container.MountPoint{{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data"}},
+		Mounts:   []container.MountPoint{{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}},
 	}
-	got := upgradeLogMount(current)
-	require.NotNil(t, got)
-	require.Equal(t, "arcane-data", got.Source)
-	require.Equal(t, "/app/data", got.Target)
+	binds, mounts := upgradeDataMounts(current)
+	require.Empty(t, binds)
+	require.Equal(t, []mount.Mount{{
+		Type:   mount.TypeVolume,
+		Source: "arcane-data",
+		Target: "/app/data",
+	}}, mounts)
 }
