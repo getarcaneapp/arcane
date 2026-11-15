@@ -575,6 +575,11 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 	defer s.envFileMu.Unlock()
 
 	envRoot := acfs.Root{Path: projectsDirectory}
+	existing, readErr := envRoot.ReadFile(ctx, "/"+projects.GlobalEnvFileName)
+	if (readErr == nil && string(existing) == builder.String()) || (errors.Is(readErr, fs.ErrNotExist) && len(vars) == 0) {
+		return nil
+	}
+
 	mode := kitfs.FilePerm
 	if entry, statErr := envRoot.Stat(ctx, "/"+projects.GlobalEnvFileName, acfstypes.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
@@ -585,6 +590,10 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 			Mode:    mode,
 			InPlace: true,
 		})
+	}
+	if errors.Is(writeErr, syscall.EROFS) {
+		slog.WarnContext(ctx, "Skipping global variables file because the projects directory is read-only", "path", envPath, "count", len(vars))
+		return nil
 	}
 	if writeErr != nil {
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
