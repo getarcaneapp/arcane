@@ -417,19 +417,13 @@ func initializeStartupState(p initializeStartupStateParams) error {
 	)
 	startup.CleanupUnknownSettings(p.AppCtx, p.Settings)
 
-	if err := p.Role.EnsureBuiltInRoles(p.AppCtx); err != nil {
-		slog.ErrorContext(p.AppCtx, "Failed to reconcile built-in roles", "error", err)
-	}
-	if err := p.Role.BackfillLegacyRoleAssignments(p.AppCtx); err != nil {
-		slog.ErrorContext(p.AppCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
-	}
-	if err := p.ApiKey.BackfillApiKeyPermissions(p.AppCtx); err != nil {
-		slog.WarnContext(p.AppCtx, "Failed to backfill API key permissions", "error", err)
-	}
-	if err := p.Role.ReconcileEnvOidcMappings(p.AppCtx, p.Config.OidcRoleMappings); err != nil {
-		slog.ErrorContext(p.AppCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
-	}
 	if !p.Config.AgentEnabled {
+		if err := p.ApiKey.BackfillApiKeyPermissions(p.AppCtx); err != nil {
+			slog.WarnContext(p.AppCtx, "Failed to backfill API key permissions", "error", err)
+		}
+		if err := p.Role.ReconcileEnvOidcMappings(p.AppCtx, p.Config.OidcRoleMappings); err != nil {
+			slog.ErrorContext(p.AppCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
+		}
 		if err := p.Role.AssertGlobalAdminExists(p.AppCtx, p.DB.WithContext(p.AppCtx)); err != nil {
 			slog.ErrorContext(p.AppCtx, "RBAC global admin guard failed", "error", err)
 		}
