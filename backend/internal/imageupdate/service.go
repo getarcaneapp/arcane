@@ -777,19 +777,33 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 		return s.savePreparedUpdateResult(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
+	checked := refs.NormalizeImageUpdateRef(imageRef)
+	realTags := make([]string, 0, len(local.RepoTags))
+	for _, repoTag := range local.RepoTags {
+		if !refs.IsDigestPinnedReference(repoTag) {
+			realTags = append(realTags, refs.NormalizeImageUpdateRef(repoTag))
+		}
+	}
+	tagID := fmt.Sprintf("tag::%s::%s@%s", local.ImageID, strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(parts.Tag))
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if !slices.ContainsFunc(local.RepoTags, func(repoTag string) bool {
-			return !refs.IsDigestPinnedReference(repoTag) && refs.NormalizeImageUpdateRef(repoTag) == refs.NormalizeImageUpdateRef(imageRef)
-		}) || refs.NormalizeImageUpdateRef(local.Repository+":"+local.Tag) == refs.NormalizeImageUpdateRef(imageRef) {
-			if saveErr := savePreparedUpdateResultWithTx(tx, local.ImageID, local.Repository, local.Tag, result); saveErr != nil {
+		var stored ImageUpdateRecord
+		if findErr := tx.Where("id = ?", local.ImageID).Limit(1).Find(&stored).Error; findErr != nil {
+			return findErr
+		}
+		primaryRepo, primaryTag := local.Repository, local.Tag
+		if slices.Contains(realTags, refs.NormalizeImageUpdateRef(stored.Repository+":"+stored.Tag)) {
+			primaryRepo, primaryTag = stored.Repository, stored.Tag
+		}
+		if !slices.Contains(realTags, checked) || refs.NormalizeImageUpdateRef(primaryRepo+":"+primaryTag) == checked {
+			if saveErr := savePreparedUpdateResultWithTx(tx, local.ImageID, primaryRepo, primaryTag, result); saveErr != nil {
 				return saveErr
 			}
-			return tx.Where("id = ? AND image_id <> ?", syntheticID, "").Delete(&ImageUpdateRecord{}).Error
+			return tx.Where("id = ?", tagID).Delete(&ImageUpdateRecord{}).Error
 		}
-		if saveErr := savePreparedUpdateResultWithTx(tx, syntheticID, repository, parts.Tag, result); saveErr != nil {
+		if saveErr := savePreparedUpdateResultWithTx(tx, tagID, repository, parts.Tag, result); saveErr != nil {
 			return saveErr
 		}
-		return tx.Model(&ImageUpdateRecord{}).Where("id = ?", syntheticID).Update("image_id", local.ImageID).Error
+		return tx.Model(&ImageUpdateRecord{}).Where("id = ?", tagID).Update("image_id", local.ImageID).Error
 	}); transactionErr != nil {
 		return transactionErr
 	}
@@ -1789,7 +1803,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		dockerImageIDs = append(dockerImageIDs, img.ID)
 	}
 
-	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND (id NOT LIKE 'ref::%' OR image_id <> ?)", "", "", "")
+	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT LIKE 'ref::%'", "", "")
 	if len(dockerImageIDs) > 0 {
 		imageScoped = imageScoped.Where("id NOT IN ? AND image_id NOT IN ?", dockerImageIDs, dockerImageIDs)
 	}
