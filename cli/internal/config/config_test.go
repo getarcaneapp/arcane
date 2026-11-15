@@ -53,8 +53,6 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 	require.Equal(t, "http://localhost:3552", cfg.ServerURL,
 		"ServerURL=%q, want %q", cfg.ServerURL, "http://localhost:3552")
 
-	require.False(t, cfg.Previews.NewSelfUpdater)
-
 	require.Equal(t, "info", cfg.LogLevel,
 		"LogLevel=%q, want %q", cfg.LogLevel, "info")
 
@@ -75,7 +73,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.NoError(t, SetConfigPath(path))
 
 			cfg := DefaultConfig()
-			cfg.Previews.NewSelfUpdater = true
 			cfg.APIKey = "k_test"
 			cfg.FederatedAudience = "audience_test"
 			cfg.CLIUpdateChannel = "next"
@@ -102,7 +99,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Contains(t, text, "gitops-syncs:")
 			require.NotContains(t, text, "GitOps:")
 
-			require.Contains(t, text, "previews:\n    newSelfUpdater: true")
 			require.Contains(t, text, "pagination:",
 				"expected saved YAML to include pagination block:\n%s", text)
 
@@ -127,7 +123,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			cfg.SetResourceLimit("images", 99)
 			cached, cacheErr := Load(t.Context())
 			require.NoError(t, cacheErr)
-			require.True(t, cached.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", cached.APIKey)
 			require.Equal(t, 17, cached.LimitFor("images"))
 			require.Equal(t, 8, cached.LimitFor("gitops-syncs"))
@@ -156,7 +151,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 
 			require.Equal(t, "next", loaded.CLIUpdateChannel,
 				"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
-			require.True(t, loaded.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", loaded.APIKey)
 			require.Equal(t, "audience_test", loaded.FederatedAudience)
 			require.Equal(t, 8, loaded.LimitFor("gitops-syncs"))
@@ -172,7 +166,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			}))
 			omittedRaw, omittedErr := os.ReadFile(path)
 			require.NoError(t, omittedErr)
-			require.Equal(t, "server_url: https://short.test\npreviews:\n    newSelfUpdater: false\n", string(omittedRaw))
+			require.Equal(t, "server_url: https://short.test\n", string(omittedRaw))
 			securedInfo, securedErr := os.Stat(path)
 			require.NoError(t, securedErr)
 			require.Equal(t, os.FileMode(0o600), securedInfo.Mode().Perm())
@@ -259,6 +253,8 @@ pagination:
   resources:
     networks:
       limit: 4
+previews:
+  newSelfUpdater: true
 unknown_key: ignored
 `, serverURL: "http://localhost:3552", logLevel: "info", limit: 13, resourceLimit: 4},
 		{name: "explicit empty and zero", content: `server_url: ""
@@ -329,7 +325,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		"failed to read config file: %v", err)
 
 	text := string(raw)
-	require.Contains(t, text, "previews:\n    newSelfUpdater: false")
 	var values map[string]any
 	require.NoError(t, yaml.Unmarshal(raw, &values))
 	for _, key := range []string{"api_key", "federated_audience"} {
