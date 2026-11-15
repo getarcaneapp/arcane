@@ -266,24 +266,19 @@ func (s *Service) syncTarget(
 				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to write sync environment variables", writeErr)
 			}
 		}
-		envContent := kit.FromPtr(source.envContent)
-		// Neither the repository nor the sync supplies variables, so the stack's saved .env stays in effect.
-		if source.envContent == nil {
-			if envContent, err = s.swarmService.GetStackEnvContent(stageCtx, sync.EnvironmentID, sync.ProjectName); err != nil {
-				return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to read saved swarm stack environment", err)
-			}
-		}
 		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
 		request := types.SwarmStackDeployRequest{
 			Name:             sync.ProjectName,
 			ComposeContent:   source.composeContent,
 			OverrideContent:  kit.FromPtr(source.overrideContent),
-			EnvContent:       envContent,
+			EnvContent:       kit.FromPtr(source.envContent),
 			Files:            swarmFiles,
 			Prune:            true,
 			WithRegistryAuth: true,
 			// Directory syncs deploy from the saved stack source, which outlives the temporary clone; "" selects it.
 			WorkingDir: kit.Ternary(sync.SyncDirectory, "", filepath.Join(source.repoPath, filepath.FromSlash(composeDir))),
+			// Neither the repository nor the sync supplies variables, so the stack's saved .env stays in effect.
+			KeepSavedEnv: source.envContent == nil,
 		}
 		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return nil, nil, false, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)

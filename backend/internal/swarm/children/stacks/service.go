@@ -233,6 +233,11 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 
 	overrideContent := reservedFileContent(req.OverrideContent, swarmStackOverrideFilename, req.Files)
 	envContent := reservedFileContent(req.EnvContent, swarmStackEnvFilename, req.Files)
+	if req.KeepSavedEnv && envContent == "" {
+		if envContent, err = readStackEnvContent(ctx, stackSourceDir); err != nil {
+			return nil, err
+		}
+	}
 	if upsertStackSourceErr := s.upsertStackSource(ctx, environmentID, stackName, req.ComposeContent, overrideContent, envContent, req.Files); upsertStackSourceErr != nil {
 		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", cmp.Or(strings.TrimSpace(environmentID), "0"), "stackName", stackName, "error", upsertStackSourceErr)
 	}
@@ -380,15 +385,7 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	}, nil
 }
 
-// GetStackEnvContent returns the stack's saved .env, or "" when none is saved, without reading its other files.
-func (s *Service) GetStackEnvContent(ctx context.Context, environmentID, stackName string) (string, error) {
-	_, stackSourceDir, err := s.resolveSwarmStackSourceDir(ctx, environmentID, stackName)
-	if err != nil {
-		return "", err
-	}
-	return readStackEnvContent(ctx, stackSourceDir)
-}
-
+// readStackEnvContent returns the stack's saved .env, or "" when none is saved, without reading its other files.
 func readStackEnvContent(ctx context.Context, stackSourceDir string) (string, error) {
 	envBytes, err := acfs.Root{Path: stackSourceDir}.ReadFile(ctx, "/"+swarmStackEnvFilename)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

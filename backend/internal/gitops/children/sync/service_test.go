@@ -1112,7 +1112,8 @@ func TestGitOpsSyncService_SyncTarget_SwarmStackKeepsSavedEnvWithoutSyncVariable
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	require.NoError(t, settingsService.UpdateSetting(ctx, "swarmStackSourcesDirectory", t.TempDir()))
+	sourcesDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "swarmStackSourcesDirectory", sourcesDir))
 	svc.swarmService = swarm.NewSwarmService(swarm.SwarmServiceParams{
 		DockerService:   dockerInternal.NewDockerClientService(ctx, db, settingsService, bus.Config{}).WithClient(cli),
 		SettingsService: settingsService,
@@ -1137,9 +1138,9 @@ func TestGitOpsSyncService_SyncTarget_SwarmStackKeepsSavedEnvWithoutSyncVariable
 			_, _, _, syncErr := svc.syncTarget(ctx, ctx, sync, types.Actor{}, &types.GitOpsSyncResult{}, source, nil)
 			require.NoError(t, syncErr)
 
-			savedEnv, envErr := svc.swarmService.GetStackEnvContent(ctx, "0", "demo")
-			require.NoError(t, envErr)
-			assert.Equal(t, test.wantEnv, savedEnv)
+			// A removed .env reads as empty, the same as the stack having no variables.
+			savedEnv, _ := os.ReadFile(filepath.Join(sourcesDir, "0", "demo", ".env"))
+			assert.Equal(t, test.wantEnv, string(savedEnv))
 		})
 	}
 }

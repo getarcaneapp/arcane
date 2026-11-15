@@ -391,6 +391,8 @@ type (
 		Files            []SwarmSyncFile `json:"files,omitempty" doc:"Extra files the compose file uses, such as env files, configs and secrets"`
 		WithRegistryAuth bool            `json:"withRegistryAuth,omitempty" doc:"Send the credentials of Arcane's registries with the service specs"`
 		Prune            bool            `json:"prune,omitempty" doc:"Remove stack services the compose file no longer defines"`
+		// KeepSavedEnv deploys with the stack's saved .env when EnvContent is empty, for callers that supply no variables of their own.
+		KeepSavedEnv bool `json:"-"`
 	}
 
 	SwarmSyncFile struct {
