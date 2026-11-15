@@ -108,6 +108,9 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	if !ok || len(suffix) <= 1 || suffix[0] != '/' || IsManagerLocalPath(req.Method, suffix) {
 		return next(c)
 	}
+	if escaped, found := strings.CutPrefix(req.URL.EscapedPath(), apiEnvironmentsPrefix+envID); found && strings.HasPrefix(escaped, "/") {
+		suffix = escaped
+	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
 	perms, user, authenticated := m.authValidator(ctx, c)
