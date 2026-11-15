@@ -1,3 +1,5 @@
+//go:build !exclude_frontend
+
 package resources
 
 import "embed"
