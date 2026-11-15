@@ -122,7 +122,7 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancelCause(ctx)
 	appCtx = activitylib.WithAppLifecycleContext(appCtx)
 
-	db, err := database.Initialize(appCtx, cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
+	db, err := database.Initialize(appCtx, cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade, AgentMode: cfg.AgentEnabled})
 	if err != nil {
 		cancelApp(nil)
 		return fmt.Errorf("failed to initialize database: %w", err)

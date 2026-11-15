@@ -36,6 +36,7 @@ type (
 
 	MigrationOptions struct {
 		AllowDowngrade bool
+		AgentMode      bool
 	}
 )
 
@@ -98,7 +99,9 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 				break
 			}
 		}
-		readDSN = sqliteReadDSN(connString)
+		if !options.AgentMode {
+			readDSN = sqliteReadDSN(connString)
+		}
 		dialector = sqlite.Open(connString)
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = dbProviderPostgres
@@ -121,7 +124,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
 			},
-			PrepareStmt:                      true,
+			PrepareStmt:                      readDSN == "",
 			PrepareStmtMaxSize:               preparedStmtMaxSize,
 			PrepareStmtTTL:                   preparedStmtTTL,
 			SkipDefaultTransaction:           true,
@@ -186,7 +189,15 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	} else {
-		conns := kit.Ternary(readDSN == "", 10, sqliteWriteConns)
+		var conns int
+		switch {
+		case options.AgentMode:
+			conns = 1
+		case readDSN == "":
+			conns = 10
+		default:
+			conns = sqliteWriteConns
+		}
 		sqlDB.SetMaxIdleConns(conns)
 		sqlDB.SetMaxOpenConns(conns)
 		sqlDB.SetConnMaxLifetime(0)
