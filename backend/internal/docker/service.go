@@ -391,7 +391,9 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 
 func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
 	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
-		return dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
+		usageCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerDiskUsage)
+		defer cancel()
+		return dockerClient.DiskUsage(usageCtx, client.DiskUsageOptions{
 			Containers: true,
 			Images:     true,
 			Volumes:    true,
