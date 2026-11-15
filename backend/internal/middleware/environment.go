@@ -194,7 +194,7 @@ func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunn
 		req.Header.Set(HeaderForwardedPermissions, string(forwarded))
 	}
 
-	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", route.envID, "path", req.URL.Path)
+	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", route.envID, "path", strings.ReplaceAll(strings.ReplaceAll(req.URL.Path, "\n", ""), "\r", ""))
 	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + route.suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
 	if httpx.IsWebSocketUpgradeRequest(req) {
 		wsHeaders := http.Header{HeaderForwardedPermissions: req.Header.Values(HeaderForwardedPermissions)}

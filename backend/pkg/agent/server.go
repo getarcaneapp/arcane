@@ -287,7 +287,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, registerMsg *T
 		Conn:          cfg.Conn,
 		Host:          registerMsg.Host,
 		EnvironmentID: cfg.EnvironmentID,
-		AgentInstance: strings.TrimSpace(registerMsg.AgentInstance),
+		AgentInstance: strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(registerMsg.AgentInstance), "\n", ""), "\r", ""),
 		SecurityMode:  cfg.SecurityMode,
 		RemoteAddr:    cfg.RemoteAddr,
 		Capabilities:  registerMsg.Capabilities,
