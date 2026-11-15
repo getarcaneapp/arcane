@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"io/fs"
 	"maps"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -272,7 +274,13 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 		Security:    []map[string][]string{},
 		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
 	}, middleware.EchoHandler(func(c *echo.Context) error {
-		return c.FileFS("scalar/standalone.js", resources.FS)
+		if _, err := fs.Stat(resources.FS, "scalar/standalone.js"); err == nil {
+			return c.FileFS("scalar/standalone.js", resources.FS)
+		}
+		if _, err := os.Stat("resources/scalar/standalone.js"); err == nil {
+			return c.File("resources/scalar/standalone.js")
+		}
+		return c.Redirect(http.StatusTemporaryRedirect, "https://cdn.jsdelivr.net/npm/@scalar/api-reference")
 	}))
 
 	return api
