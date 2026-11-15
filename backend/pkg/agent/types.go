@@ -21,6 +21,7 @@ type (
 	TunnelClient struct {
 		handler                http.Handler
 		cfg                    *Config
+		readinessProbe         func(context.Context) error
 		streamWindowMiB        func() int
 		errCh                  chan error
 		conn                   atomic.Pointer[connBox]
@@ -88,13 +89,15 @@ type (
 		Capabilities  []string
 		mu            sync.RWMutex
 		closeOnce     sync.Once
+		leaseMu       sync.Mutex
+		leaseLapsed   bool
 	}
 
 	TunnelRegistry struct {
 		tunnels    *concurrency.StateMap[string, *AgentTunnel]
 		history    *concurrency.StateMap[string, TunnelHistory]
-		expected   *concurrency.StateMap[string, time.Time]
 		registered *concurrency.Signal[string]
+		leases     sync.Map
 		stopped    atomic.Bool
 	}
 
@@ -185,6 +188,7 @@ type (
 		Handler         http.Handler
 		Errors          chan error
 		StreamWindowMiB func() int
+		ReadinessProbe  func(context.Context) error
 	}
 
 	MTLSConfig struct {

@@ -272,7 +272,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegistry, s
 	agentDone := make(chan struct{})
 	go func() {
 		defer close(agentDone)
-		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx), testStreamWindowMiB())
+		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx), testStreamWindowMiB(), false)
 	}()
 
 	waitForBenchmarkTunnel(b, tunnels, envID)
@@ -299,7 +299,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB())
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB(), false)
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -316,7 +316,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*TunnelRegist
 	serveDone := make(chan struct{})
 	go func() {
 		defer close(serveDone)
-		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
+		_ = (&TunnelServer{registry: tunnels, streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 	}()
 
 	return tunnels, tunnel.EnvironmentID, func() {

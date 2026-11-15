@@ -57,6 +57,7 @@ func NewTunnelClient(cfg TunnelClientConfig) *TunnelClient {
 		errCh:                  cfg.Errors,
 		handler:                cfg.Handler,
 		streamWindowMiB:        cfg.StreamWindowMiB,
+		readinessProbe:         cfg.ReadinessProbe,
 		reconnectInterval:      reconnectInterval,
 		registrationTimeout:    DefaultGRPCRegistrationTimeout,
 		websocketPreferenceTTL: DefaultWebSocketPreferenceTTL,
@@ -291,6 +292,7 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 			TunnelCapabilityForwardedPermissions,
 			TunnelCapabilityForwardedGlobalAdmin,
 			tunnelCapabilityMuxWindowPrefix + strconv.Itoa(streamWindowMiB),
+			tunnelCapabilityReadinessLease,
 		},
 		ResumeSession: sessionID,
 		Host:          &c.cfg.HostInfo,
@@ -328,7 +330,8 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		})
 	}
 
-	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, conn.muxConn(connCtx), streamWindowMiB))
+	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded,
+		c.serveMuxSession(connCtx, conn.muxConn(connCtx), streamWindowMiB, slices.Contains(registerResp.Capabilities, tunnelCapabilityReadinessLease)))
 }
 
 func agentAuthCredentials(token string) map[string]string {

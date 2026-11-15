@@ -50,10 +50,7 @@ type (
 )
 
 const (
-	DefaultTunnelAcquireTimeout   = 4 * time.Second
 	DefaultTunnelReconnectTimeout = 10 * time.Second
-
-	tunnelReconnectWindow = 30 * time.Second
 )
 
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
@@ -69,12 +66,9 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 
 	var lost *AgentTunnel
 	for {
-		tunnel, ok := r.WaitForActive(ctx, req.EnvironmentID, WaitForActiveOptions{
-			Except:  lost,
-			Timeout: kit.Ternary(lost != nil, DefaultTunnelReconnectTimeout, r.AcquireTimeout(req.EnvironmentID)),
-		}).Get()
-		if !ok {
-			return nil, &TransportError{Err: ErrEnvironmentUnavailable}
+		tunnel, err := r.Acquire(ctx, req.EnvironmentID, AcquireOptions{Except: lost})
+		if err != nil {
+			return nil, &TransportError{Err: err}
 		}
 		httpReq, err := http.NewRequestWithContext(ctx, req.Method, MuxAgentBaseURL+req.Path, bytes.NewReader(req.Body))
 		if err != nil {
@@ -139,7 +133,7 @@ func (e *TransportError) Unavailable() bool {
 	if e == nil || errors.Is(e.Err, context.Canceled) {
 		return false
 	}
-	if errors.Is(e.Err, context.DeadlineExceeded) || errors.Is(e.Err, ErrEnvironmentUnavailable) {
+	if errors.Is(e.Err, context.DeadlineExceeded) || errors.Is(e.Err, ErrEnvironmentUnavailable) || errors.Is(e.Err, ErrAgentNotResponding) {
 		return true
 	}
 	networkErr, ok := errors.AsType[net.Error](e.Err)

@@ -195,6 +195,8 @@ func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 		ApiUrl: env.ApiUrl,
 		Status: func() string {
 			switch {
+			case connected && l.tunnels.Readiness(env.ID).State == agent.ReadinessNotReady:
+				return string(EnvironmentStatusError)
 			case connected:
 				return string(EnvironmentStatusOnline)
 			case env.Status != string(EnvironmentStatusPending):

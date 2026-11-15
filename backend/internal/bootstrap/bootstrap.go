@@ -41,6 +41,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/internal/variable"
 	"getarcane.dev/arcane/v3/internal/volume"
@@ -241,7 +242,7 @@ func applicationOptions(
 			initializeStartupState,
 			startJobScheduler,
 			registerJobs,
-			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, _ *http.Server) {
+			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {
 				if !cfg.AgentEnabled {
 					return
 				}
@@ -254,6 +255,7 @@ func applicationOptions(
 							StreamWindowMiB: func() int {
 								return settingsService.GetSettingsOrDefaults(appCtx).AgentTunnelStreamWindowMb.AsInt()
 							},
+							ReadinessProbe: systemService.PingDocker,
 						}).Start(appCtx)
 						if err != nil {
 							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)

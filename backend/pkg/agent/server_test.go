@@ -41,8 +41,8 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	}
 
 	statusCallbackCalled := make(chan struct{}, 1)
-	callback := func(ctx context.Context, envID string, connected bool) {
-		if envID == "env-connected" && connected {
+	callback := func(ctx context.Context, envID string, state ConnectionState) {
+		if envID == "env-connected" && state == ConnectionStateOnline {
 			select {
 			case statusCallbackCalled <- struct{}{}:
 			default:

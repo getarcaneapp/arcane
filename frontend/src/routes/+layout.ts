@@ -26,6 +26,7 @@ import type { PermissionsManifest } from '#lib/types/role.js';
 import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/ui/podman.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
+import { SWARM_STATUS_DEPENDENCY } from '#lib/types/ui/swarm.js';
 import type { User } from '#lib/types/user.js';
 import type { VersionInfo } from '#lib/types/version.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
@@ -75,6 +76,8 @@ const EMPTY_PODMAN_STATUS: PodmanStatus = {
 	systemdAvailable: false
 };
 let knownPodmanStatuses: Record<string, PodmanStatus> = {};
+let knownSwarmEnabled: boolean | undefined;
+let knownSwarmScope = '';
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
@@ -92,6 +95,7 @@ function afterDiscoveryTimeout(): Promise<undefined> {
 
 export const load: LayoutLoad = async ({ url, depends }) => {
 	depends(PODMAN_STATUS_DEPENDENCY);
+	depends(SWARM_STATUS_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
 	if (url.pathname === '/logout') {
 		return {
@@ -248,6 +252,12 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 						})
 					)
 				: Promise.resolve(null);
+		const swarmScope = `${user.id}:${swarmEnvironments.map((env) => env.id).join(',')}`;
+		if (swarmScope !== knownSwarmScope) {
+			knownSwarmScope = swarmScope;
+			knownSwarmEnabled = undefined;
+		}
+		const swarmStatusDiscovery = Promise.race([swarmStatusRequest, afterDiscoveryTimeout()]);
 		const podmanEnvironments = passwordChangePending ? [] : readableEnvironments('podman:read');
 		const podmanStatusRequest = (
 			podmanEnvironments.length > 0
@@ -272,12 +282,19 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			)
 		);
 		const podmanStatusDiscovery = Promise.race([podmanStatusRequest, afterDiscoveryTimeout()]);
-		const [loadedSettings, loadedSwarmStatus, discoveredPodmanStatuses, loadedPermissionsManifest] = await Promise.all([
+		const [loadedSettings, discoveredSwarmStatus, discoveredPodmanStatuses, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
-			swarmStatusRequest,
+			swarmStatusDiscovery,
 			podmanStatusDiscovery,
 			permissionsManifestRequest
 		]);
+		if (discoveredSwarmStatus === undefined) {
+			void swarmStatusRequest.then((status) => {
+				if (swarmScope !== knownSwarmScope || status?.enabled === knownSwarmEnabled) return;
+				knownSwarmEnabled = status?.enabled;
+				void invalidate(SWARM_STATUS_DEPENDENCY);
+			});
+		}
 		if (discoveredPodmanStatuses === undefined) {
 			void podmanStatusRequest.then((statuses) => {
 				if (JSON.stringify(statuses) === JSON.stringify(knownPodmanStatuses)) return;
@@ -295,7 +312,14 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 				})
 			));
 		await featuresRequest;
-		swarmEnabled = loadedSwarmStatus?.enabled;
+		if (discoveredSwarmStatus === undefined) {
+			swarmEnabled = swarmScope === knownSwarmScope ? knownSwarmEnabled : undefined;
+		} else {
+			swarmEnabled = discoveredSwarmStatus?.enabled;
+			if (swarmScope === knownSwarmScope) {
+				knownSwarmEnabled = swarmEnabled;
+			}
+		}
 		knownPodmanStatuses = discoveredPodmanStatuses ?? knownPodmanStatuses;
 		podmanStatuses = Object.fromEntries(Object.entries(knownPodmanStatuses).filter(([, status]) => status.detected));
 		podmanUnavailableReasons = Object.fromEntries(

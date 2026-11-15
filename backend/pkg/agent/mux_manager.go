@@ -102,10 +102,13 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 	}
 
 	callbackCtx := context.WithoutCancel(ctx)
-	s.updateConnectionStatus(callbackCtx, tunnel, true)
+	s.updateConnectionStatus(callbackCtx, tunnel, ConnectionStateOnline)
 
+	handlers := http.NewServeMux()
+	handlers.Handle(muxEventsPath, s.muxEventHandler(callbackCtx, tunnel.EnvironmentID))
+	handlers.Handle("POST "+muxLeasePath, s.muxLeaseHandler(callbackCtx, tunnel))
 	events := &http.Server{
-		Handler:           s.muxEventHandler(callbackCtx, tunnel.EnvironmentID),
+		Handler:           handlers,
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 	}
@@ -138,6 +141,7 @@ func (s *TunnelServer) serveMuxTunnel(ctx context.Context, tunnel *AgentTunnel, 
 			}
 			tunnel.mux.recordRTT(rtt)
 			tunnel.UpdateHeartbeat()
+			s.checkLease(callbackCtx, tunnel)
 		}
 	}
 }

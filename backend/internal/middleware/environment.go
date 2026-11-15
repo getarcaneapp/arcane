@@ -147,14 +147,14 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
 	}
 
-	acquireTimeout := kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, m.registry.AcquireTimeout(envID))
 	var lost *agent.AgentTunnel
 	for {
-		tunnel, connected := m.registry.WaitForActive(ctx, envID, agent.WaitForActiveOptions{
-			Except:  lost,
-			Timeout: kit.Ternary(lost != nil, agent.DefaultTunnelReconnectTimeout, acquireTimeout),
-		}).Get()
-		if !connected {
+		tunnel, acquireErr := m.registry.Acquire(ctx, envID, agent.AcquireOptions{Except: lost})
+		if errors.Is(acquireErr, agent.ErrAgentNotResponding) {
+			slog.WarnContext(ctx, "Agent tunnel is up but its readiness lease expired", "environmentId", envID)
+			return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not responding")
+		}
+		if acquireErr != nil {
 			slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
 			return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 		}

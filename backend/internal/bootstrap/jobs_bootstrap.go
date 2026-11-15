@@ -311,9 +311,6 @@ func registerDynamicJobs(params dynamicJobsParams) {
 			return params.Environment.RunHealthChecksNow(ctx)
 		}
 		params.Environment.RescheduleHealthJobs(params.AppCtx)
-		if err := params.Environment.ExpectAgentReconnects(params.AppCtx); err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to mark agents expected to reconnect", "error", err)
-		}
 	}
 }
 

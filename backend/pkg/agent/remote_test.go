@@ -22,7 +22,7 @@ func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Ser
 		if err != nil {
 			return
 		}
-		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB())
+		_ = agent.serveMuxSession(r.Context(), NewWebSocketTunnelConn(conn).muxConn(r.Context()), testStreamWindowMiB(), false)
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -31,7 +31,7 @@ func setupMockAgentServer(t *testing.T, handler http.HandlerFunc) (*httptest.Ser
 
 	tunnel := newWebSocketAgentTunnel("env-1", conn)
 	go func() {
-		_ = (&TunnelServer{streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
+		_ = (&TunnelServer{registry: NewTunnelRegistry(), streamWindowMiB: testStreamWindowMiB}).serveMuxTunnel(t.Context(), tunnel, tunnel.Conn.muxConn(t.Context()))
 	}()
 
 	return server, tunnel
@@ -95,6 +95,7 @@ func TestTransportErrorUnavailable(t *testing.T) {
 		unavailable bool
 	}{
 		{name: "not connected", cause: ErrEnvironmentUnavailable, unavailable: true},
+		{name: "not responding", cause: ErrAgentNotResponding, unavailable: true},
 		{name: "deadline", cause: context.DeadlineExceeded, unavailable: true},
 		{name: "response truncated", cause: io.ErrUnexpectedEOF},
 		{name: "invalid request", cause: errors.New("invalid URL")},

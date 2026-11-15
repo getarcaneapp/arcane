@@ -942,6 +942,9 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 				StreamWindowMiB: func() int {
 					return 16
 				},
+				ReadinessProbe: func(context.Context) error {
+					return nil
+				},
 				Config: &agent.Config{
 					MTLS:           agent.NewMTLS(agent.MTLSConfig{ManagerURL: managerServer.URL}),
 					AgentEnabled:   true,

@@ -142,6 +142,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	errCh := make(chan error, 4)
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config:          cfg,
 		Handler:         localHandler,
 		Errors:          errCh,
@@ -180,6 +181,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 	t.Run("agent mode required", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
 			StreamWindowMiB: testStreamWindowMiB,
+			ReadinessProbe:  testReadinessProbe,
 			Config:          &Config{MTLS: NewMTLS(MTLSConfig{})},
 			Handler:         http.NotFoundHandler(),
 		}).Start(ctx)
@@ -190,6 +192,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
 			StreamWindowMiB: testStreamWindowMiB,
+			ReadinessProbe:  testReadinessProbe,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{}),
 				AgentEnabled:   true,
@@ -205,6 +208,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 	t.Run("agent token required", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
 			StreamWindowMiB: testStreamWindowMiB,
+			ReadinessProbe:  testReadinessProbe,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{ManagerURL: "https://manager.example.com/arcane/api"}),
 				AgentEnabled:   true,
@@ -219,6 +223,7 @@ func TestTunnelClientStart_GRPCValidation(t *testing.T) {
 	t.Run("mtls requires https manager url", func(t *testing.T) {
 		_, err := NewTunnelClient(TunnelClientConfig{
 			StreamWindowMiB: testStreamWindowMiB,
+			ReadinessProbe:  testReadinessProbe,
 			Config: &Config{
 				MTLS:           NewMTLS(MTLSConfig{Mode: MTLSModeRequired, ManagerURL: "http://manager.example.com/api"}),
 				AgentEnabled:   true,
@@ -236,6 +241,7 @@ func TestTunnelClient_Run_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
 	errCh := make(chan error, 1)
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS: NewMTLS(MTLSConfig{
 				Mode:       MTLSModeRequired,
@@ -272,6 +278,7 @@ func TestTunnelClient_Run_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
 func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{}),
 			AgentTransport: TransportGRPC,
@@ -312,6 +319,7 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:                   NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport:         TransportGRPC,
@@ -337,6 +345,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -458,6 +467,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config:          cfg,
 		Handler:         http.NotFoundHandler(),
 	})
@@ -474,6 +484,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWeb
 func TestTunnelClient_managedTunnelTransports_AutoEnablesGRPCAndWebSocket(t *testing.T) {
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: "http://manager.example.com"}),
 			AgentTransport: TransportAuto,
@@ -496,6 +507,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportAuto,
@@ -541,6 +553,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportAuto,
@@ -581,6 +594,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_GRPCDoesNotFallbackToWebSocke
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -630,6 +644,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_OpensGRPCWhenAvailable(t *tes
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: managerURL}),
 			AgentTransport: TransportGRPC,
@@ -844,6 +859,7 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config: &Config{
 			MTLS:           NewMTLS(MTLSConfig{ManagerURL: wsManagerURL}),
 			AgentTransport: TransportAuto,
@@ -934,6 +950,7 @@ func TestTunnelClient_serveTunnelSession_GRPCSendEOFSurfacesRegistrationError(t 
 	}
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config:          &Config{MTLS: NewMTLS(MTLSConfig{})},
 		Handler:         http.NotFoundHandler(),
 	})
@@ -980,6 +997,7 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 	}
 	client := NewTunnelClient(TunnelClientConfig{
 		StreamWindowMiB: testStreamWindowMiB,
+		ReadinessProbe:  testReadinessProbe,
 		Config:          cfg,
 		Handler:         http.NotFoundHandler(),
 	})
