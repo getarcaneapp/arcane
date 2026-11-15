@@ -1,3 +1,29 @@
+## v3.0.1
+
+### Bug fixes
+
+- strip CR and LF from agent tunnel values in logs ([\#4771](https://github.com/getarcaneapp/arcane/pull/4771) by @kmendell)
+- match digest-strategy containers to tag update records ([\#4772](https://github.com/getarcaneapp/arcane/pull/4772) by @kmendell)
+- time out docker disk usage requests ([\#4774](https://github.com/getarcaneapp/arcane/pull/4774) by @kmendell)
+- skip manager-only RBAC and OIDC backfills on agent startup ([\#4776](https://github.com/getarcaneapp/arcane/pull/4776) by @gongloo)
+- skip global env file writes when unchanged or read-only ([\#4794](https://github.com/getarcaneapp/arcane/pull/4794) by @kmendell)
+- reject legacy edge SPIFFE client certificates ([\#4795](https://github.com/getarcaneapp/arcane/pull/4795) by @kmendell)
+- pass enabled features into Docker backend builds ([\#4793](https://github.com/getarcaneapp/arcane/pull/4793) by @kmendell)
+- keep stack .env across git syncs and editor saves ([\#4783](https://github.com/getarcaneapp/arcane/pull/4783) by @NullishUsername)
+- bump kit.getarcane.app/acfs to v0.10.3 ([\#4796](https://github.com/getarcaneapp/arcane/pull/4796) by @kmendell)
+- copy Rustic CA bundle into container before start ([\#4797](https://github.com/getarcaneapp/arcane/pull/4797) by @kmendell)
+
+### Performance improvements
+
+- exclude embedded Scalar bundle when building without frontend ([\#4777](https://github.com/getarcaneapp/arcane/pull/4777) by @gongloo)
+- avoid redundant SQLite prepared statement cache and read pool on agent ([\#4778](https://github.com/getarcaneapp/arcane/pull/4778) by @gongloo)
+- skip manager-only scheduled jobs in agent mode ([\#4779](https://github.com/getarcaneapp/arcane/pull/4779) by @gongloo)
+
+### Other
+
+- remove newSelfUpdater preview and always verify updates ([\#4773](https://github.com/getarcaneapp/arcane/pull/4773) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.0.0...v3.0.1
 ## v3.0.0
 
 ### New features
