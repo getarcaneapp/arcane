@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -45,8 +46,20 @@ const (
 	systemRecoverySnapshotLabel = "arcane-system-recovery"
 )
 
+// backupStorageDestination is where the host backup storage (and restores) are
+// mounted inside the Arcane container: a Linux path on Linux, its C:\ form on a
+// Windows agent. Only the Docker-reported mount destination needs the Windows
+// spelling; helper mount targets and in-container command paths keep the Linux
+// form, which Windows resolves against the current drive (e.g. /backups -> C:\backups).
+func backupStorageDestination(linuxPath string) string {
+	if runtime.GOOS == "windows" {
+		return volumes.WindowsContainerPath(linuxPath)
+	}
+	return linuxPath
+}
+
 func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
-	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
+	mirroredMount := docker.MountForDestination(mounts, backupStorageDestination("/backups"), target)
 	if mirroredMount == nil {
 		return nil
 	}
@@ -59,7 +72,7 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 
 func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
-	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
+	if err != nil || docker.MountForDestination(inspect.Mounts, backupStorageDestination("/backups"), "/backups") == nil {
 		return true
 	}
 	_, err = acfs.Host{}.Stat(ctx, path.Join("/backups", path.Base(volumeRusticRepositoryPath), "config"), acfstypes.StatOptions{FollowFinal: true})
@@ -67,8 +80,8 @@ func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerCl
 }
 
 func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
-	restoresMounted := slices.ContainsFunc(mounts, func(m container.MountPoint) bool { return m.Destination == "/restores" })
-	if docker.MountForDestination(mounts, "/backups", "/backups") != nil || restoresMounted {
+	restoresMounted := slices.ContainsFunc(mounts, func(m container.MountPoint) bool { return m.Destination == backupStorageDestination("/restores") })
+	if docker.MountForDestination(mounts, backupStorageDestination("/backups"), "/backups") != nil || restoresMounted {
 		return ""
 	}
 	return backupMountMissingWarning

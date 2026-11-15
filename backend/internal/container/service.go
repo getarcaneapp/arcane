@@ -1580,10 +1580,18 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 }
 
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
+	// Windows containers reject any arguments to top ("Windows does not support
+	// arguments to top"), so there the processes are listed with no ps arguments.
+	// Select by the container's platform, not the agent's OS: a Windows agent can
+	// manage a Linux daemon over DOCKER_HOST and vice versa.
+	psArgsAttempts := containerProcessesPsArgs
+	if s.IsWindowsContainer(ctx, containerID) {
+		psArgsAttempts = [][]string{nil}
+	}
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
 		var result client.ContainerTopResult
 		var err error
-		for _, args := range containerProcessesPsArgs {
+		for _, args := range psArgsAttempts {
 			result, err = dockerClient.ContainerTop(ctx, containerID, client.ContainerTopOptions{Arguments: args})
 			if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || ctx.Err() != nil {
 				break
@@ -1598,6 +1606,15 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
 		Processes: kit.Ternary(result.Processes == nil, [][]string{}, result.Processes),
 	}, nil
+}
+
+// IsWindowsContainer reports whether the container runs on a Windows daemon, so
+// platform-specific commands (the ps arguments of top, the interactive exec shell)
+// match the target container rather than the agent's own OS. Best-effort: any error
+// (unreachable daemon, missing container, non-Windows platform) reports false.
+func (s *ContainerService) IsWindowsContainer(ctx context.Context, containerID string) bool {
+	info, err := s.GetContainerByReference(ctx, containerID)
+	return err == nil && info != nil && strings.EqualFold(info.Platform, "windows")
 }
 
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {

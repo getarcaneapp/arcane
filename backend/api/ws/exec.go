@@ -27,7 +27,18 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
+	// Windows containers have no /bin/sh; pick the default from the target container's
+	// platform, not the agent's OS (a Windows agent can manage a Linux daemon over
+	// DOCKER_HOST and vice versa).
+	shell := strings.TrimSpace(c.QueryParam("shell"))
+	if h.containerService.IsWindowsContainer(c.Request().Context(), containerID) {
+		// Fall back to cmd.exe unless a Windows shell was requested explicitly.
+		if shell == "" || shell == "sh" || shell == "bash" || strings.HasPrefix(shell, "/") {
+			shell = "cmd.exe"
+		}
+	} else {
+		shell = cmp.Or(shell, "/bin/sh")
+	}
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(c.QueryParam("rows"), 10, 16)
 

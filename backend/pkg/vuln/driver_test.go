@@ -215,6 +215,18 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 	require.False(t, hostConfig.Privileged)
 }
 
+func TestBuildTrivyHostConfig_CarriesIsolation(t *testing.T) {
+	withIsolation := BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{NetworkMode: "nat", Isolation: "process"},
+	})
+	require.Equal(t, containertypes.Isolation("process"), withIsolation.Isolation)
+
+	withoutIsolation := BuildHostConfig(HostConfigOptions{
+		Runtime: RuntimeOptions{NetworkMode: "bridge"},
+	})
+	require.Equal(t, containertypes.Isolation(""), withoutIsolation.Isolation)
+}
+
 func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
 	resources := containertypes.Resources{
 		NanoCPUs:   int64(2_000_000_000),
@@ -485,4 +497,13 @@ func TestAwaitContainerWaitResponseInternal_NoStatus(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ended without status")
 	require.Equal(t, int64(0), status)
+}
+
+func TestNamedPipeMount(t *testing.T) {
+	got, ok := NamedPipeMount("npipe:////./pipe/docker_engine")
+	require.True(t, ok)
+	require.Equal(t, mounttypes.Mount{Type: mounttypes.TypeNamedPipe, Source: `\\.\pipe\docker_engine`, Target: `\\.\pipe\docker_engine`}, got)
+
+	_, ok = NamedPipeMount("unix:///var/run/docker.sock")
+	require.False(t, ok)
 }
