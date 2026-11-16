@@ -270,6 +270,8 @@ func newRouter(p RouterParams) *echo.Echo {
 		Registry:      p.TunnelRegistry,
 		CheckOrigin:   httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
 	})
+	// Compress before scope assignment so outer aggregates are compressed while fan-out children are skipped.
+	apiGroup.Use(middleware.NewCompressionMiddleware())
 	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
 		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
