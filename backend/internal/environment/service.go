@@ -184,10 +184,11 @@ const (
 	legacyLocalEnvironmentName   = "Local Docker"
 	SyncDeliveryExpiry           = time.Hour
 
-	agentTokenCacheTTL   = time.Minute
-	environmentCacheTTL  = 30 * time.Second
-	remoteSyncTimeout    = time.Minute
-	maxAccessTokenLength = 128
+	agentTokenCacheTTL     = time.Minute
+	environmentCacheTTL    = 30 * time.Second
+	environmentLoadTimeout = 10 * time.Second
+	remoteSyncTimeout      = time.Minute
+	maxAccessTokenLength   = 128
 
 	defaultEnvironmentHealthInterval = "*/2 * * * *"
 	environmentHealthCheckTimeout    = 90 * time.Second
@@ -366,14 +367,6 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 		return DisplayName(environmentID, "")
 	}
 	return DisplayName(env.ID, env.Name)
-}
-
-func (s *EnvironmentService) PeekEnvironmentName(id string) (string, bool) {
-	env, found, _ := s.environmentCache.GetOrLoad(environmentCacheKey{
-		gen: s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Load(),
-		id:  id,
-	}, nil)
-	return DisplayName(env.ID, env.Name), found
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
@@ -898,8 +891,10 @@ func (s *EnvironmentService) AggregateVersions(ctx context.Context) (types.ApiRe
 
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
 	key := environmentCacheKey{gen: s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Load(), id: id}
+	loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), environmentLoadTimeout)
+	defer cancel()
 	envRecord, found, err := s.environmentCache.GetOrLoad(key, func(k environmentCacheKey) (Environment, bool, error) {
-		loaded, loadErr := s.GetEnvironmentByID(ctx, k.id)
+		loaded, loadErr := s.GetEnvironmentByID(loadCtx, k.id)
 		if errors.Is(loadErr, ErrEnvironmentNotFound) {
 			return Environment{}, false, nil
 		}

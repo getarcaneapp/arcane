@@ -47,7 +47,6 @@ const (
 	latestMigrationVersion int64 = -1
 	// Bound prepared statements so variable SQL does not retain an unbounded cache.
 	preparedStmtMaxSize = 256
-	preparedStmtTTL     = 15 * time.Minute
 )
 
 var (
@@ -206,9 +205,9 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
 	if readDSN == "" {
-		pool := &stmtCachePool{
-			PreparedStmtDB: gorm.NewPreparedStmtDB(sqlDB, preparedStmtMaxSize, preparedStmtTTL),
-			db:             sqlDB,
+		var pool *stmtCachePool
+		if pool, err = newStmtCachePool(sqlDB); err != nil {
+			return nil, err
 		}
 		gormDB.ConnPool = pool
 		gormDB.Statement.ConnPool = pool

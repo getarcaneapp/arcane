@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v5"
 	"go.opentelemetry.io/otel"
@@ -14,6 +15,8 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/types/v3"
 )
+
+const environmentNameTimeout = 250 * time.Millisecond
 
 var authenticatedRequests = func() metric.Int64Counter {
 	counter, err := otel.Meter(logging.InstrumentationName).Int64Counter("arcane.auth.requests",
@@ -42,7 +45,7 @@ func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *t
 	authenticatedRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("arcane.auth.method", method)))
 }
 
-func SpanEnvironment(environmentName func(id string) (string, bool)) echo.MiddlewareFunc {
+func SpanEnvironment(environmentName func(ctx context.Context, id string) string, displayName func(id, storedName string) string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			ctx := c.Request().Context()
@@ -57,9 +60,17 @@ func SpanEnvironment(environmentName func(id string) (string, bool)) echo.Middle
 			}
 			span.SetAttributes(attribute.String("arcane.environment.id", id))
 			err := next(c)
-			resp, unwrapErr := echo.UnwrapResponse(c.Response())
-			if name, ok := environmentName(id); ok && err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {
-				span.SetAttributes(attribute.String("arcane.environment.name", name))
+			if resp, unwrapErr := echo.UnwrapResponse(c.Response()); err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {
+				names := make(chan string, 1)
+				go func() {
+					names <- environmentName(ctx, id)
+				}()
+				select {
+				case name := <-names:
+					span.SetAttributes(attribute.String("arcane.environment.name", name))
+				case <-time.After(environmentNameTimeout):
+					span.SetAttributes(attribute.String("arcane.environment.name", displayName(id, "")))
+				}
 			}
 			return err
 		}
