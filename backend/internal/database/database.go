@@ -124,9 +124,6 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
 			},
-			PrepareStmt:                      readDSN == "",
-			PrepareStmtMaxSize:               preparedStmtMaxSize,
-			PrepareStmtTTL:                   preparedStmtTTL,
 			SkipDefaultTransaction:           true,
 			IgnoreRelationshipsWhenMigrating: true,
 		})
@@ -209,6 +206,12 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
 	if readDSN == "" {
+		pool := &stmtCachePool{
+			PreparedStmtDB: gorm.NewPreparedStmtDB(sqlDB, preparedStmtMaxSize, preparedStmtTTL),
+			db:             sqlDB,
+		}
+		gormDB.ConnPool = pool
+		gormDB.Statement.ConnPool = pool
 		return db, nil
 	}
 	if db.reader, err = attachSQLiteReadPool(gormDB, sqlDB, readDSN); err != nil {

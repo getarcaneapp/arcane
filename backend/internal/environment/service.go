@@ -368,6 +368,14 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 	return DisplayName(env.ID, env.Name)
 }
 
+func (s *EnvironmentService) PeekEnvironmentName(id string) (string, bool) {
+	env, found, _ := s.environmentCache.GetOrLoad(environmentCacheKey{
+		gen: s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Load(),
+		id:  id,
+	}, nil)
+	return DisplayName(env.ID, env.Name), found
+}
+
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
 	hostName := func() string {
 		info, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {

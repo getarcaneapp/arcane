@@ -42,7 +42,7 @@ func RecordAuthenticatedRequest(ctx context.Context, header http.Header, user *t
 	authenticatedRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("arcane.auth.method", method)))
 }
 
-func SpanEnvironment(environmentName func(ctx context.Context, id string) string) echo.MiddlewareFunc {
+func SpanEnvironment(environmentName func(id string) (string, bool)) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			ctx := c.Request().Context()
@@ -57,8 +57,9 @@ func SpanEnvironment(environmentName func(ctx context.Context, id string) string
 			}
 			span.SetAttributes(attribute.String("arcane.environment.id", id))
 			err := next(c)
-			if resp, unwrapErr := echo.UnwrapResponse(c.Response()); err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {
-				span.SetAttributes(attribute.String("arcane.environment.name", environmentName(ctx, id)))
+			resp, unwrapErr := echo.UnwrapResponse(c.Response())
+			if name, ok := environmentName(id); ok && err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {
+				span.SetAttributes(attribute.String("arcane.environment.name", name))
 			}
 			return err
 		}
