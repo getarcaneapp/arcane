@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -16,13 +17,15 @@ type (
 	stmtCachePool struct {
 		*sql.DB
 		stmts     *lru.Cache[string, *sql.Stmt]
-		mu        sync.Mutex
 		preparing map[string]struct{}
+		mu        sync.Mutex
 	}
 
 	stmtCacheTx struct {
 		*sql.Tx
-		pool *stmtCachePool
+		pool  *stmtCachePool
+		stmts map[string]*sql.Stmt
+		mu    sync.Mutex
 	}
 )
 
@@ -44,6 +47,9 @@ func newStmtCachePool(db *sql.DB) (*stmtCachePool, error) {
 }
 
 func closeEvictedStmt(_ string, stmt *sql.Stmt) {
+	if stmt == nil {
+		return
+	}
 	go func() {
 		time.Sleep(evictedStmtCloseDelay)
 		_ = stmt.Close()
@@ -51,21 +57,32 @@ func closeEvictedStmt(_ string, stmt *sql.Stmt) {
 }
 
 func (p *stmtCachePool) stmt(ctx context.Context, query string) (*sql.Stmt, error) {
-	if stmt, ok := p.stmts.Get(query); ok {
+	if stmt, ok := p.stmts.Get(query); ok && stmt != nil {
 		return stmt, nil
 	}
-	stmt, err := p.DB.PrepareContext(ctx, query)
+	stmt, err := p.PrepareContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	if cached, ok, _ := p.stmts.PeekOrAdd(query, stmt); ok {
+	cached, exists, _ := p.stmts.PeekOrAdd(query, stmt)
+	if !exists {
+		return stmt, nil
+	}
+	if cached == nil {
+		p.mu.Lock()
+		if cached, _ = p.stmts.Peek(query); cached == nil {
+			p.stmts.Add(query, stmt)
+		}
+		p.mu.Unlock()
+	}
+	if cached != nil {
 		_ = stmt.Close()
 		return cached, nil
 	}
 	return stmt, nil
 }
 
-func (p *stmtCachePool) warm(query string) {
+func (p *stmtCachePool) warm(ctx context.Context, query string) {
 	p.mu.Lock()
 	if _, busy := p.preparing[query]; busy {
 		p.mu.Unlock()
@@ -74,10 +91,11 @@ func (p *stmtCachePool) warm(query string) {
 	p.preparing[query] = struct{}{}
 	p.mu.Unlock()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), stmtWarmTimeout)
+		warmCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stmtWarmTimeout)
 		defer cancel()
-		if _, err := p.stmt(ctx, query); err != nil {
-			slog.DebugContext(ctx, "Failed to prepare cached statement", "error", err)
+		if _, err := p.stmt(warmCtx, query); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			slog.DebugContext(warmCtx, "Statement cannot be cached outside a transaction", "error", err)
+			p.stmts.PeekOrAdd(query, nil)
 		}
 		p.mu.Lock()
 		delete(p.preparing, query)
@@ -114,38 +132,72 @@ func (p *stmtCachePool) BeginTx(ctx context.Context, opts *sql.TxOptions) (gorm.
 	if err != nil {
 		return nil, err
 	}
-	return &stmtCacheTx{Tx: tx, pool: p}, nil
+	return &stmtCacheTx{
+		Tx:    tx,
+		pool:  p,
+		stmts: make(map[string]*sql.Stmt),
+	}, nil
 }
 
 func (p *stmtCachePool) GetDBConn() (*sql.DB, error) {
 	return p.DB, nil
 }
 
-func (t *stmtCacheTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	stmt, ok := t.pool.stmts.Get(query)
+func (t *stmtCacheTx) stmt(ctx context.Context, query string) (*sql.Stmt, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if stmt, ok := t.stmts[query]; ok {
+		return stmt, true
+	}
+	parent, ok := t.pool.stmts.Get(query)
 	if !ok {
-		t.pool.warm(query)
+		t.pool.warm(ctx, query)
+		return nil, false
+	}
+	if parent == nil {
+		return nil, false
+	}
+	stmt := t.StmtContext(ctx, parent)
+	t.stmts[query] = stmt
+	return stmt, true
+}
+
+func (t *stmtCacheTx) forget(query string) {
+	t.mu.Lock()
+	delete(t.stmts, query)
+	t.mu.Unlock()
+}
+
+func (t *stmtCacheTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	stmt, ok := t.stmt(ctx, query)
+	if !ok {
 		return t.Tx.ExecContext(ctx, query, args...)
 	}
-	return t.Tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+	result, err := stmt.ExecContext(ctx, args...)
+	if err != nil {
+		t.forget(query)
+	}
+	return result, err
 }
 
 func (t *stmtCacheTx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	stmt, ok := t.pool.stmts.Get(query)
+	stmt, ok := t.stmt(ctx, query)
 	if !ok {
-		t.pool.warm(query)
 		return t.Tx.QueryContext(ctx, query, args...)
 	}
-	return t.Tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
+	rows, err := stmt.QueryContext(ctx, args...)
+	if err != nil {
+		t.forget(query)
+	}
+	return rows, err
 }
 
 func (t *stmtCacheTx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	stmt, ok := t.pool.stmts.Get(query)
+	stmt, ok := t.stmt(ctx, query)
 	if !ok {
-		t.pool.warm(query)
 		return t.Tx.QueryRowContext(ctx, query, args...)
 	}
-	return t.Tx.StmtContext(ctx, stmt).QueryRowContext(ctx, args...)
+	return stmt.QueryRowContext(ctx, args...)
 }
 
 func (t *stmtCacheTx) GetDBConn() (*sql.DB, error) {
