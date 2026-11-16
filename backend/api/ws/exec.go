@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -27,7 +26,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
+	shell := h.containerService.ExecShell(c.Request().Context(), containerID, c.QueryParam("shell"))
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(c.QueryParam("rows"), 10, 16)
 

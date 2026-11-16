@@ -12,3 +12,8 @@ frontend:
 
 backend:
     cd backend && go build ./...
+
+# Cross-compile and vet the backend for windows/amd64
+windows:
+    cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags exclude_frontend -o /dev/null ./cmd/main.go
+    cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet -tags exclude_frontend ./...

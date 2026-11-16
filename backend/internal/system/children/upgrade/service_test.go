@@ -12,6 +12,7 @@ import (
 
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -840,4 +841,31 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
+func TestUpgradeDataMountsWindowsContainer(t *testing.T) {
+	current := container.InspectResponse{
+		Platform: "windows",
+		Mounts: []container.MountPoint{
+			{Type: mount.TypeNamedPipe, Source: `\\.\pipe\docker_engine`, Destination: `\\.\pipe\docker_engine`},
+			{Type: mount.TypeVolume, Name: "arcane-agent-data", Destination: `c:\app\data`, RW: true},
+		},
+	}
+	binds, mounts := upgradeDataMounts(current)
+	require.Equal(t, []string{`arcane-agent-data:C:\app\data`}, binds)
+	require.Empty(t, mounts)
+}
+
+func TestUpgradeDataMountsLinuxContainer(t *testing.T) {
+	current := container.InspectResponse{
+		Platform: "linux",
+		Mounts:   []container.MountPoint{{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}},
+	}
+	binds, mounts := upgradeDataMounts(current)
+	require.Empty(t, binds)
+	require.Equal(t, []mount.Mount{{
+		Type:   mount.TypeVolume,
+		Source: "arcane-data",
+		Target: "/app/data",
+	}}, mounts)
 }

@@ -80,6 +80,10 @@ jobs:
         if: matrix.module.name == 'backend'
         run: just lint proto
 
+      - name: Cross-compile for Windows
+        if: matrix.module.name == 'backend'
+        run: just build single windows
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

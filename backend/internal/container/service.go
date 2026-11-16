@@ -1580,10 +1580,16 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 }
 
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
+	// Windows containers reject any arguments to top ("Windows does not support
+	// arguments to top"), so there the processes are listed with no ps arguments.
+	// Select by the container's platform, not the agent's OS: a Windows agent can
+	// manage a Linux daemon over DOCKER_HOST and vice versa.
+	info, _ := s.GetContainerByReference(ctx, containerID)
+	psArgsAttempts := kit.Ternary(strings.EqualFold(kit.FromPtr(info).Platform, "windows"), [][]string{nil}, containerProcessesPsArgs)
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
 		var result client.ContainerTopResult
 		var err error
-		for _, args := range containerProcessesPsArgs {
+		for _, args := range psArgsAttempts {
 			result, err = dockerClient.ContainerTop(ctx, containerID, client.ContainerTopOptions{Arguments: args})
 			if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || ctx.Err() != nil {
 				break
@@ -1598,6 +1604,18 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
 		Processes: kit.Ternary(result.Processes == nil, [][]string{}, result.Processes),
 	}, nil
+}
+
+func (s *ContainerService) ExecShell(ctx context.Context, containerID, requested string) string {
+	requested = strings.TrimSpace(requested)
+	info, _ := s.GetContainerByReference(ctx, containerID)
+	if !strings.EqualFold(kit.FromPtr(info).Platform, "windows") {
+		return cmp.Or(requested, "/bin/sh")
+	}
+	if requested == "sh" || requested == "bash" || strings.HasPrefix(requested, "/") {
+		return "cmd.exe"
+	}
+	return cmp.Or(requested, "cmd.exe")
 }
 
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
