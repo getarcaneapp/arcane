@@ -58,7 +58,8 @@ export function jobNameLabel(job: JobStatus): string {
 		'event-cleanup': m.event_cleanup,
 		'upgrade-log-cleanup': m.upgrade_log_cleanup,
 		'expired-sessions-cleanup': m.expired_sessions_cleanup,
-		'filesystem-watcher': m.filesystem_watcher
+		'filesystem-watcher': m.filesystem_watcher,
+		'ldap-sync': m.ldap_sync
 	};
 	if (group === 'environment-health' && target.length) return m.jobs_health_check();
 	const label = labels[group]?.();

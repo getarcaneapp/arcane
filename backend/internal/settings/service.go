@@ -443,40 +443,82 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 	}
 
 	for _, target := range []struct {
-		key  string
-		name string
+		key    string
+		name   string
+		secret string
 	}{
-		{key: "oidcIssuerUrl", name: "OIDC issuer URL"},
-		{key: "oidcAuthorizationEndpoint", name: "OIDC authorization endpoint"},
-		{key: "oidcTokenEndpoint", name: "OIDC token endpoint"},
-		{key: "oidcUserinfoEndpoint", name: "OIDC userinfo endpoint"},
-		{key: "oidcJwksEndpoint", name: "OIDC JWKS endpoint"},
-		{key: "oidcDeviceAuthorizationEndpoint", name: "OIDC device authorization endpoint"},
+		{
+			key:    "oidcIssuerUrl",
+			name:   "OIDC issuer URL",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "oidcAuthorizationEndpoint",
+			name:   "OIDC authorization endpoint",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "oidcTokenEndpoint",
+			name:   "OIDC token endpoint",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "oidcUserinfoEndpoint",
+			name:   "OIDC userinfo endpoint",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "oidcJwksEndpoint",
+			name:   "OIDC JWKS endpoint",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "oidcDeviceAuthorizationEndpoint",
+			name:   "OIDC device authorization endpoint",
+			secret: "oidcClientSecret",
+		},
+		{
+			key:    "ldapUrl",
+			name:   "LDAP URL",
+			secret: "ldapBindPassword",
+		},
 	} {
 		current, _, _, _ := cfg.FieldByKey(target.key)
+		storedSecret, _, _, _ := cfg.FieldByKey(target.secret)
 		if err := validation.ValidateCredentialTargetChange(
 			target.name,
 			current,
 			submittedValue(target.key),
 			normalizeTargetURL,
-			map[string]bool{"oidcClientSecret": cfg.OidcClientSecret.Value != ""},
-			map[string]bool{"oidcClientSecret": submittedValue("oidcClientSecret") != nil},
+			map[string]bool{target.secret: storedSecret != ""},
+			map[string]bool{target.secret: submittedValue(target.secret) != nil},
 		); err != nil {
 			return err
 		}
 	}
 
-	if (submittedValue("authLocalEnabled") != nil || submittedValue("oidcEnabled") != nil) &&
-		effectiveValue("authLocalEnabled") != "true" && effectiveValue("oidcEnabled") != "true" {
-		return fieldErr(kit.Ternary(submittedValue("authLocalEnabled") != nil, "authLocalEnabled", "oidcEnabled"),
-			errors.New("local authentication and OIDC cannot both be disabled"))
+	for _, key := range []string{"authLocalEnabled", "oidcEnabled", "ldapEnabled"} {
+		if submittedValue(key) != nil &&
+			effectiveValue("authLocalEnabled") != "true" && effectiveValue("oidcEnabled") != "true" && effectiveValue("ldapEnabled") != "true" {
+			return fieldErr(key, errors.New("local authentication, OIDC, and LDAP cannot all be disabled"))
+		}
 	}
 
-	if effectiveValue("oidcEnabled") == "true" {
-		for _, key := range []string{"oidcClientId", "oidcClientSecret", "oidcIssuerUrl"} {
-			if strings.TrimSpace(effectiveValue(key)) == "" {
-				return fieldErr(key, fmt.Errorf("enabling OIDC requires %s", key))
-			}
+	for _, required := range []struct {
+		toggle string
+		key    string
+	}{
+		{toggle: "oidcEnabled", key: "oidcClientId"},
+		{toggle: "oidcEnabled", key: "oidcClientSecret"},
+		{toggle: "oidcEnabled", key: "oidcIssuerUrl"},
+		{toggle: "ldapEnabled", key: "ldapUrl"},
+		{toggle: "ldapEnabled", key: "ldapBindDn"},
+		{toggle: "ldapEnabled", key: "ldapBase"},
+		{toggle: "ldapEnabled", key: "ldapAttributeUserUniqueIdentifier"},
+		{toggle: "ldapEnabled", key: "ldapAttributeUserUsername"},
+	} {
+		if effectiveValue(required.toggle) == "true" && strings.TrimSpace(effectiveValue(required.key)) == "" {
+			return fieldErr(required.key, fmt.Errorf("%s is required when %s is on", required.key, required.toggle))
 		}
 	}
 

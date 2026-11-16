@@ -176,6 +176,50 @@ func TestSettingsServiceUpdateSettingsRejectsDisablingEveryLoginMethod(t *testin
 	require.Equal(t, "false", svc.GetSettingsConfig().OidcEnabled.Value)
 }
 
+func TestSettingsServiceUpdateSettingsLdapValidation(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"ldapEnabled": "true",
+		"ldapUrl":     "ldaps://ldap.example.com",
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "ldapBindDn", fieldErr.Field)
+	require.Equal(t, "false", svc.GetSettingsConfig().LdapEnabled.Value)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"ldapEnabled":                       "true",
+		"ldapUrl":                           "ldaps://ldap.example.com",
+		"ldapBindDn":                        "cn=arcane,dc=example,dc=com",
+		"ldapBindPassword":                  "bind-secret",
+		"ldapBase":                          "dc=example,dc=com",
+		"ldapAttributeUserUniqueIdentifier": "entryUUID",
+		"ldapAttributeUserUsername":         "uid",
+		"authLocalEnabled":                  "false",
+	}))
+	require.Equal(t, "false", svc.GetSettingsConfig().AuthLocalEnabled.Value)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"ldapEnabled": "false"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok = errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "ldapEnabled", fieldErr.Field)
+
+	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"ldapUrl": "ldaps://attacker.example.com"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Equal(t, "ldaps://ldap.example.com", svc.GetSettingsConfig().LdapUrl.Value)
+
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"ldapUrl":          "ldaps://replacement.example.com",
+		"ldapBindPassword": "new-bind-secret",
+	}))
+	require.Equal(t, "ldaps://replacement.example.com", svc.GetSettingsConfig().LdapUrl.Value)
+}
+
 func TestSettingsServiceUpdateSettingsRejectsDisablingLocalAuthWhenEnvLocksOIDCOff(t *testing.T) {
 	t.Setenv("ARCANE_OIDC_ENABLED", "false")
 

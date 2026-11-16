@@ -879,6 +879,31 @@ func TestMigration115_GrantsGitOpsBidirectional(t *testing.T) {
 	assert.Zero(t, keyGrants)
 }
 
+func TestMigration116_AddsLdapUserColumns(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-ldap-users.db")
+	schemaObjects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM pragma_table_info('users') WHERE name IN ('ldap_id', 'disabled')) +
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_ldap_id')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 116))
+	assert.Equal(t, 3, schemaObjects())
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO users (id, username, password_hash, ldap_id) VALUES ('l1', 'alice', '', 'uuid-1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO users (id, username, password_hash, ldap_id) VALUES ('l2', 'bob', '', 'uuid-1')`)
+	require.Error(t, err)
+	var disabled bool
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT disabled FROM users WHERE id = 'l1'`).Scan(&disabled))
+	assert.False(t, disabled)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 115))
+	assert.Zero(t, schemaObjects())
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

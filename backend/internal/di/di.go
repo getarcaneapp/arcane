@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/job"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/internal/oidc"
@@ -133,6 +134,7 @@ var (
 			health.NewService,
 			fx.Annotate(auth.NewTokenCache, fx.OnStop((*auth.TokenCache).Stop)),
 			auth.NewAuthService,
+			ldap.NewLdapService,
 			settings.NewSettingsSearchService,
 			fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
 			provideVolumeService,
@@ -238,6 +240,7 @@ var (
 		fx.Provide(
 			event.New,
 			role.New,
+			ldap.New,
 			apikey.New,
 			template.New,
 			gitrepo.New,
@@ -323,6 +326,7 @@ var (
 			scheduler.NewBackupRepositoryPruneJob,
 			fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
 			scheduler.NewApnsOutboxJob,
+			scheduler.NewLdapSyncJob,
 		),
 	)
 )

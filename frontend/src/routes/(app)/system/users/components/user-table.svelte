@@ -14,6 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import type { Role } from '#lib/types/role.js';
 	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/role.js';
@@ -45,8 +46,10 @@
 		removing: false
 	});
 
+	const ldapEnabled = $derived(settingsStore.current?.ldapEnabled === true);
+
 	function canDeleteUser(user: User) {
-		return user.canDelete !== false;
+		return user.canDelete !== false && !(ldapEnabled && user.ldapId && !user.disabled);
 	}
 
 	const selectedUsers = $derived.by(() =>
@@ -178,7 +181,15 @@
 </script>
 
 {#snippet UsernameCell({ item }: { item: User })}
-	<span class="font-medium">{item.username}</span>
+	<div class="flex flex-wrap items-center gap-2">
+		<span class="font-medium">{item.username}</span>
+		{#if item.ldapId}
+			<Badge variant="blue">{m.ldap()}</Badge>
+		{/if}
+		{#if item.disabled}
+			<Badge variant="gray">{m.common_disabled()}</Badge>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet DisplayNameCell({ value }: { value: unknown })}
@@ -226,7 +237,9 @@
 					return { variant: head.variant, text: head.text };
 				}
 				return { variant: head.variant, text: `${head.text} +${rest.length}` };
-			}
+			},
+			(item: User) => (item.ldapId ? { variant: 'blue' as const, text: m.ldap() } : null),
+			(item: User) => (item.disabled ? { variant: 'gray' as const, text: m.common_disabled() } : null)
 		]}
 		fields={[
 			{

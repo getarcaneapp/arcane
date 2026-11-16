@@ -151,14 +151,6 @@ type (
 )
 
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
-	localAuthEnabled, err := h.authService.IsLocalAuthEnabled(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to check authentication settings")
-	}
-	if !localAuthEnabled {
-		return nil, huma.Error400BadRequest("Local authentication is disabled")
-	}
-
 	meta := handlerutil.SessionMetaFromContext(ctx, input.UserAgent)
 	userModel, err := h.authService.AuthenticateLocalPrimary(ctx, input.Body.Username, input.Body.Password)
 	if err != nil {
@@ -167,6 +159,8 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 			return nil, huma.Error401Unauthorized("Invalid username or password")
 		case errors.Is(err, ErrLocalAuthDisabled):
 			return nil, huma.Error400BadRequest("Local authentication is disabled")
+		case errors.Is(err, ErrUserDisabled):
+			return nil, handlerutil.APIError(err)
 		default:
 			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
@@ -437,6 +431,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		}
 		if errors.Is(err, userdomain.ErrEmailChangeBlocked) {
 			return nil, huma.Error403Forbidden(userdomain.ErrEmailChangeBlocked.Error())
+		}
+		if errors.Is(err, userdomain.ErrLdapManaged) {
+			return nil, handlerutil.APIError(err)
 		}
 		if errors.Is(err, common.ErrValidation) {
 			return nil, handlerutil.APIError(err)

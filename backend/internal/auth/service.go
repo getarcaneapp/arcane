@@ -30,6 +30,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -58,6 +59,7 @@ type (
 		eventService      *event.EventService
 		sessionService    *session.SessionService
 		roleService       *role.RoleService
+		ldapService       *ldap.LdapService
 		environmentLister *environment.Lister
 		versionService    *version.VersionService
 		signingKey        *mldsa.PrivateKey
@@ -78,6 +80,7 @@ type (
 		EventService      *event.EventService
 		SessionService    *session.SessionService
 		RoleService       *role.RoleService
+		LdapService       *ldap.LdapService
 		EnvironmentLister *environment.Lister
 		TokenCache        *TokenCache
 		VersionService    *version.VersionService
@@ -101,6 +104,7 @@ var (
 	ErrLocalAuthDisabled  = errors.New("local authentication is disabled")
 	ErrOidcAuthDisabled   = errors.New("OIDC authentication is disabled")
 	ErrMFARequired        = errors.New("multi-factor authentication is required")
+	ErrUserDisabled       = common.Classify(common.ErrForbidden, errors.New("user account is disabled"))
 
 	ErrPasswordChangeRequired = common.Classify(common.ErrForbidden, errors.New("password change required"))
 
@@ -135,6 +139,7 @@ func NewAuthService(p AuthServiceParams) *AuthService {
 		eventService:      p.EventService,
 		sessionService:    p.SessionService,
 		roleService:       p.RoleService,
+		ldapService:       p.LdapService,
 		environmentLister: p.EnvironmentLister,
 		versionService:    p.VersionService,
 		refreshExpiry:     p.Config.JWTRefreshExpiry,
@@ -259,11 +264,13 @@ func (s *AuthService) GetOidcConfig(ctx context.Context) (*settings.OidcConfig, 
 }
 
 func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, password string) (*user.User, error) {
-	localEnabled, err := s.IsLocalAuthEnabled(ctx)
+	localSettings, err := s.settingsService.GetSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !localEnabled {
+	localEnabled := localSettings.AuthLocalEnabled.IsTrue()
+	ldapEnabled := localSettings.LdapEnabled.IsTrue()
+	if !localEnabled && !ldapEnabled {
 		return nil, ErrLocalAuthDisabled
 	}
 
@@ -286,24 +293,25 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 			localUser = emailUser
 		}
 	}
-	if localUser == nil {
-		dummyHash, dummyErr := s.dummyPasswordHash(ctx)
-		if dummyErr != nil {
-			return nil, dummyErr
+
+	ldapID := kit.Ternary(ldapEnabled, kit.FromPtr(localUser).LdapID, nil)
+	localHash := kit.Ternary(localEnabled && ldapID == nil, kit.FromPtr(localUser).PasswordHash, "")
+	dummyHash, err := s.dummyPasswordHash(ctx)
+	if err != nil {
+		return nil, err
+	}
+	passwordErr := s.userService.ValidatePassword(ctx, cmp.Or(localHash, dummyHash), password)
+	if ldapID != nil {
+		passwordErr = s.ldapService.Authenticate(ctx, *ldapID, password)
+		if passwordErr != nil && !errors.Is(passwordErr, ldap.ErrInvalidCredentials) {
+			slog.ErrorContext(ctx, "LDAP login failed", "username", localUser.Username, "error", passwordErr)
 		}
-		_ = s.userService.ValidatePassword(ctx, dummyHash, password)
+	}
+	if passwordErr != nil || (ldapID == nil && localHash == "") {
 		return nil, ErrInvalidCredentials
 	}
-	passwordHash := localUser.PasswordHash
-	if passwordHash == "" {
-		dummyHash, dummyErr := s.dummyPasswordHash(ctx)
-		if dummyErr != nil {
-			return nil, dummyErr
-		}
-		passwordHash = dummyHash
-	}
-	if validatePasswordErr := s.userService.ValidatePassword(ctx, passwordHash, password); validatePasswordErr != nil {
-		return nil, ErrInvalidCredentials
+	if localUser.Disabled {
+		return nil, ErrUserDisabled
 	}
 
 	userID := localUser.ID
@@ -329,6 +337,9 @@ func (s *AuthService) PrepareOidcLogin(ctx context.Context, userInfo types.OidcU
 func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, meta types.SessionMeta, source, mfaMethod string, eventMetadata ...database.JSON) (*TokenPair, error) {
 	if localUser == nil {
 		return nil, common.ErrUserNotFound
+	}
+	if localUser.Disabled {
+		return nil, ErrUserDisabled
 	}
 	if strings.TrimSpace(source) == "" {
 		source = session.UserSessionSourceLocal
@@ -589,32 +600,7 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 		return fmt.Errorf("list oidc mappings: %w", err)
 	}
 
-	groupSet := make(map[string]struct{}, len(groups))
-	for _, g := range groups {
-		groupSet[g] = struct{}{}
-	}
-
-	var desired []role.UserRoleAssignment
-	seen := make(map[string]struct{})
-	for _, m := range mappings {
-		if _, ok := groupSet[m.ClaimValue]; !ok {
-			continue
-		}
-		key := m.RoleID + "|"
-		if m.EnvironmentID != nil {
-			key += *m.EnvironmentID
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		desired = append(desired, role.UserRoleAssignment{
-			RoleID:        m.RoleID,
-			EnvironmentID: m.EnvironmentID,
-		})
-	}
-
-	err = s.roleService.ReplaceUserAssignments(ctx, localUser.ID, role.RoleAssignmentSourceOidc, desired)
+	err = s.roleService.ReplaceUserAssignments(ctx, localUser.ID, role.RoleAssignmentSourceOidc, role.MappedAssignments(mappings, groups))
 	if errors.Is(err, common.ErrNoGlobalAdminRemains) {
 		slog.WarnContext(ctx, "OIDC role sync would remove the last global admin; keeping existing assignments", "userId", localUser.ID)
 		return nil
@@ -737,6 +723,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	if err != nil {
 		return nil, err
 	}
+	if localUser.Disabled {
+		return nil, common.ErrInvalidToken
+	}
 
 	rotatedSession, refreshJTI, err := s.sessionService.RotateRefreshToken(ctx, claims.SessionID, claims.ID, meta)
 	if err != nil {
@@ -799,6 +788,9 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 	dbUser, err := s.userService.GetUserByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, "", kit.Ternary[error](errors.Is(err, common.ErrUserNotFound), common.ErrInvalidToken, err)
+	}
+	if dbUser.Disabled {
+		return nil, "", common.ErrInvalidToken
 	}
 
 	userSession, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)

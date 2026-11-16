@@ -57,6 +57,7 @@
 	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));
 
 	const settings = settingsStore;
+	const isProfileManaged = $derived(isOidcUser || (Boolean(currentUser?.ldapId) && settings.current?.ldapEnabled === true));
 	const gravatarEnabled = $derived(Boolean(settings.current?.enableGravatar));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settings.current?.avatarMaxUploadSizeMb) > 0 ? Number(settings.current?.avatarMaxUploadSizeMb) : 2
@@ -304,7 +305,7 @@
 								bind:value={() => profileDisplayName, (value) => updateProfileField('displayName', value)}
 								label={m.common_display_name()}
 								placeholder={m.account_display_name_placeholder()}
-								disabled={isOidcUser}
+								disabled={isProfileManaged}
 							/>
 							<TextInputWithLabel
 								id="account-email"
@@ -312,10 +313,10 @@
 								bind:value={() => profileEmail, (value) => updateProfileField('email', value)}
 								label={m.common_email()}
 								placeholder={m.account_email_placeholder()}
-								disabled={isOidcUser}
+								disabled={isProfileManaged}
 							/>
 						</div>
-						{#if !isOidcUser}
+						{#if !isProfileManaged}
 							<div class="flex justify-end gap-2">
 								<ArcaneButton
 									action="cancel"
@@ -349,6 +350,8 @@
 												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
 												{#if ra.source === 'oidc'}
 													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
+												{:else if ra.source === 'ldap'}
+													<span class="ml-1 opacity-70">{m.via_ldap()}</span>
 												{/if}
 											</span>
 										</li>

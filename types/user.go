@@ -98,7 +98,7 @@ type (
 	RoleAssignmentSummary struct {
 		RoleID        string  `json:"roleId" doc:"Role ID granted by this assignment"`
 		EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
-		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
+		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc,ldap"`
 	}
 
 	User struct {
@@ -108,6 +108,7 @@ type (
 		AvatarURL              *string                 `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
 		BackdropURL            *string                 `json:"backdropUrl,omitempty" readOnly:"true" doc:"URL to the user's uploaded background image; omitted when none is uploaded"`
 		OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
+		LdapID                 *string                 `json:"ldapId,omitempty" readOnly:"true" doc:"LDAP unique identifier for users synced from a directory"`
 		Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
 		LastLogin              *string                 `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
 		PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" readOnly:"true" doc:"Permissions by environment ID; 'global' applies to all environments and organization endpoints"`
@@ -122,6 +123,7 @@ type (
 		IsGlobalAdmin          bool                    `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
 		CanDelete              bool                    `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
 		RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
+		Disabled               bool                    `json:"disabled" readOnly:"true" doc:"Whether the user is disabled and cannot sign in"`
 	}
 
 	Actor struct {

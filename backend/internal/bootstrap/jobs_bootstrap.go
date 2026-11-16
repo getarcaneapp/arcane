@@ -62,6 +62,7 @@ type (
 		GitCloneCleanup        *scheduler.GitCloneCleanupJob
 		BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
 		ApnsOutbox             *scheduler.ApnsOutboxJob
+		LdapSync               *scheduler.LdapSyncJob
 	}
 
 	dynamicJobsParams struct {
@@ -108,6 +109,7 @@ type (
 		AutoHeal           *scheduler.AutoHealJob
 		Apns               *apns.ApnsService
 		ApnsOutbox         *scheduler.ApnsOutboxJob
+		LdapSync           *scheduler.LdapSyncJob
 	}
 
 	settingsChangeSubscriber interface {
@@ -257,7 +259,7 @@ func registerJobs(params registerJobsParams) error {
 		params.UpgradeLogCleanup,
 	}
 	if !params.Config.AgentEnabled {
-		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox)
+		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)
 	}
 	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
@@ -291,6 +293,7 @@ func registerJobs(params registerJobsParams) error {
 		AutoHeal:           params.AutoHeal,
 		Apns:               params.Apns,
 		ApnsOutbox:         params.ApnsOutbox,
+		LdapSync:           params.LdapSync,
 	}); err != nil {
 		return err
 	}
@@ -340,6 +343,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 				return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
 			})
 		})
+		rescheduleOn([]string{"ldapEnabled", "ldapSyncInterval"}, params.LdapSync)
 	}
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)

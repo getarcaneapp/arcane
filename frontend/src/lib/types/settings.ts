@@ -126,6 +126,24 @@ export type Settings = {
 	oidcMergeAccounts: boolean;
 	oidcProviderName: string;
 	oidcProviderLogoUrl: string;
+	ldapEnabled: boolean;
+	ldapUrl: string;
+	ldapBindDn: string;
+	ldapBindPassword?: string;
+	ldapBase: string;
+	ldapUserSearchFilter: string;
+	ldapUserGroupSearchFilter: string;
+	ldapSkipCertVerify: boolean;
+	ldapAttributeUserUniqueIdentifier: string;
+	ldapAttributeUserUsername: string;
+	ldapAttributeUserEmail: string;
+	ldapAttributeUserDisplayName: string;
+	ldapAttributeUserProfilePicture: string;
+	ldapAttributeGroupMember: string;
+	ldapAttributeGroupUniqueIdentifier: string;
+	ldapAttributeGroupName: string;
+	ldapSoftDeleteUsers: boolean;
+	ldapSyncInterval: string;
 
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;

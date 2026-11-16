@@ -206,6 +206,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		if errors.Is(err, ErrEmailChangeBlocked) {
 			return nil, huma.Error403Forbidden(ErrEmailChangeBlocked.Error())
 		}
+		if errors.Is(err, ErrLdapManaged) {
+			return nil, handlerutil.APIError(err)
+		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")
 		}
@@ -220,6 +223,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
 		exceptSessionID := kit.Ternary(caller != nil && caller.ID == updatedUser.ID, currentSessionID, "")
 		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, input.Body.Password, exceptSessionID, callerPerms); setPasswordErr != nil {
+			if errors.Is(setPasswordErr, ErrLdapManaged) {
+				return nil, handlerutil.APIError(setPasswordErr)
+			}
 			return nil, huma.Error500InternalServerError("Failed to update password")
 		}
 	}
@@ -258,6 +264,9 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 		}
 		if errors.Is(err, ErrCannotRemoveLastAdmin) {
 			return nil, huma.Error409Conflict(ErrCannotRemoveLastAdmin.Error())
+		}
+		if errors.Is(err, ErrLdapUserNotDisabled) {
+			return nil, handlerutil.APIError(err)
 		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")

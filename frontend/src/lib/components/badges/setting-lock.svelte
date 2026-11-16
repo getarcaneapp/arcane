@@ -14,16 +14,18 @@
 
 {#if active}
 	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger>
-			<Badge variant="amber">
-				<LockIcon />
-				{#if envName}
-					{m.setting_lock_env_label({ envName })}
-				{:else}
+		{#if envName}
+			<ArcaneTooltip.Trigger class="inline-flex items-center" aria-label={m.setting_lock_env_label({ envName })}>
+				<LockIcon class="size-3.5 shrink-0 text-warning" />
+			</ArcaneTooltip.Trigger>
+		{:else}
+			<ArcaneTooltip.Trigger>
+				<Badge variant="amber">
+					<LockIcon />
 					{m.read_only_label()}
-				{/if}
-			</Badge>
-		</ArcaneTooltip.Trigger>
+				</Badge>
+			</ArcaneTooltip.Trigger>
+		{/if}
 		<ArcaneTooltip.Content side="bottom" class="max-w-xs">
 			<div class="space-y-1">
 				{#if envName}

@@ -1,3 +1,5 @@
+import type { RoleAssignmentSource } from './user';
+
 export type RoleScope = 'global' | 'env';
 
 export type Role = {
@@ -16,7 +18,7 @@ export type RoleAssignment = {
 	userId: string;
 	roleId: string;
 	environmentId?: string;
-	source: 'manual' | 'oidc';
+	source: RoleAssignmentSource;
 	createdAt: string;
 };
 
