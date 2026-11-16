@@ -407,7 +407,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 
 	var credentials []FederatedCredential
 	if findErr := s.db.WithContext(ctx).
-		Where("issuer_url = ? AND enabled = ?", issuer, true).
+		Where("issuer_url = ? AND enabled = ?", strings.TrimSuffix(issuer, "/"), true).
 		Order("created_at ASC").
 		Order("id ASC").
 		Find(&credentials).Error; findErr != nil {
