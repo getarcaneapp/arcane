@@ -2,6 +2,7 @@ package prune
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/volume"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -335,4 +337,54 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 		defer mu.Unlock()
 		return slices.Clone(deleted)
 	}
+}
+
+func diskUsageScopeContext(t *testing.T, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/system/df", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateDiskUsageSumsEnvironments(t *testing.T) {
+	ctx := diskUsageScopeContext(t, map[string]any{
+		"a": types.ApiResponse[types.SystemDiskUsage]{Success: true, Data: types.SystemDiskUsage{
+			UnusedImagesBytes:      1,
+			BuildCacheBytes:        2,
+			UnusedVolumesBytes:     3,
+			StoppedContainersBytes: 4,
+		}},
+		"b": types.ApiResponse[types.SystemDiskUsage]{Success: true, Data: types.SystemDiskUsage{
+			UnusedImagesBytes:      10,
+			BuildCacheBytes:        20,
+			UnusedVolumesBytes:     30,
+			StoppedContainersBytes: 40,
+		}},
+	})
+
+	body, err := (&Service{}).AggregateDiskUsage(ctx)
+	require.NoError(t, err)
+
+	require.True(t, body.Success)
+	require.Equal(t, types.SystemDiskUsage{
+		UnusedImagesBytes:      11,
+		BuildCacheBytes:        22,
+		UnusedVolumesBytes:     33,
+		StoppedContainersBytes: 44,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 }
