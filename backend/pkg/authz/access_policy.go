@@ -53,6 +53,7 @@ var (
 			"settings.category.webhooks",
 			"settings.category.diagnostics",
 			"settings.category.branding",
+			"settings.category.connectivity",
 		}, 125),
 
 		routeSurface("route.projects", "/projects", "Projects", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
@@ -121,6 +122,7 @@ var (
 		settingsCategorySurface("webhooks", "/system/webhooks", "Webhooks", AccessScopeModeEnvPlusGlobal, []string{PermWebhooksList}),
 		settingsCategorySurface("diagnostics", "/system/diagnostics", "Diagnostics", AccessScopeModeGlobalOnly, []string{PermDiagnosticsRead}),
 		settingsCategorySurface("branding", "/system/branding", "Branding", AccessScopeModeGlobalOnly, []string{PermSettingsUpdate}),
+		settingsCategorySurface("connectivity", "/system/connectivity", "Connectivity", AccessScopeModeGlobalOnly, []string{PermSettingsUpdate}),
 		settingsCategorySurface("storage", "/settings/storage", "Storage & Limits", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("docker", "/settings/docker", "Docker", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("security", "/settings/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),

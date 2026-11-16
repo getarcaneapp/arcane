@@ -2,7 +2,7 @@ import { browser } from '$app/env';
 import { invalidate } from '$app/navigation';
 import { page } from '$app/state';
 import { redirect } from '@sveltejs/kit';
-import { QueryClient } from '@tanstack/svelte-query';
+import { QueryClient, type QueryKey } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { isSessionCancelledError } from '#lib/services/api-service.js';
@@ -41,12 +41,14 @@ import type { LayoutLoad } from './$types';
 
 export const ssr = false;
 
+const DEFAULT_CACHE_MINUTES = 10;
+
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
 			enabled: browser,
 			staleTime: 15_000,
-			gcTime: 60 * 1000,
+			gcTime: DEFAULT_CACHE_MINUTES * 60_000,
 			refetchOnMount: true,
 			refetchOnWindowFocus: true,
 			refetchOnReconnect: 'always',
@@ -63,6 +65,7 @@ let telemetryAwaited = false;
 
 // Navigations reuse root data for this long; a refresh of the page on screen always refetches.
 const ROOT_STALE_TIME = 30_000;
+const ROOT_DEPENDENCY = 'app:root';
 const SECONDARY_DISCOVERY_TIMEOUT = 1_500;
 const ENVIRONMENT_LIST_OPTIONS = { pagination: { page: 1, limit: -1 } };
 const EMPTY_SWARM_STATUS: SwarmRuntimeStatus = { enabled: false };
@@ -84,6 +87,21 @@ let appliedEnvironments: Environment[] | undefined;
 let appliedSettings: ResolvedSettings | undefined;
 let appliedVersion: VersionInfo | undefined;
 let seededBootstrap: SessionBootstrap | undefined;
+let rootRevalidated = false;
+
+type RootQuery<T> = { queryKey: QueryKey; queryFn: () => Promise<T>; staleTime: number; retry: false };
+
+function rootData<T>(options: RootQuery<T>, navigating: boolean): Promise<T> {
+	const cached = navigating ? queryClient.getQueryData<T>(options.queryKey) : undefined;
+	if (cached === undefined) return queryClient.query(options);
+	void tryCatch(queryClient.query(options)).then((result) => {
+		const rejected = result.error !== null && (isAuthRejectionError(result.error) || isSessionCancelledError(result.error));
+		if (!rejected && (result.error !== null || result.data === cached)) return;
+		rootRevalidated = true;
+		void invalidate(ROOT_DEPENDENCY);
+	});
+	return Promise.resolve(cached);
+}
 
 function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {
 	return tryCatch(promise).then((result) => (result.error ? null : result.data));
@@ -96,6 +114,7 @@ function afterDiscoveryTimeout(): Promise<undefined> {
 export const load: LayoutLoad = async ({ url, depends }) => {
 	depends(PODMAN_STATUS_DEPENDENCY);
 	depends(SWARM_STATUS_DEPENDENCY);
+	depends(ROOT_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
 	if (url.pathname === '/logout') {
 		return {
@@ -112,16 +131,21 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	}
 
 	// Explicit refreshes (refreshAll, invalidateAll) re-run this load for the page on screen; navigations change the URL.
-	const rootQuery = { staleTime: url.href === page.url.href ? 0 : ROOT_STALE_TIME, retry: false };
+	const navigating = url.href !== page.url.href;
+	const rootQuery = { staleTime: navigating || rootRevalidated ? ROOT_STALE_TIME : 0, retry: false as const };
+	if (!navigating) rootRevalidated = false;
 	const sessionResult = await tryCatch(
-		queryClient.query({
-			...rootQuery,
-			queryKey: queryKeys.auth.sessionBootstrap(),
-			queryFn: async () => {
-				const loaded = await authService.getSessionBootstrap();
-				return { ...loaded, version: toAppVersionInformation(loaded.version) };
-			}
-		})
+		rootData(
+			{
+				...rootQuery,
+				queryKey: queryKeys.auth.sessionBootstrap(),
+				queryFn: async () => {
+					const loaded = await authService.getSessionBootstrap();
+					return { ...loaded, version: toAppVersionInformation(loaded.version) };
+				}
+			},
+			navigating
+		)
 	);
 	// Only an explicit rejection signs the user out; transient check failures keep the known user.
 	const sessionRejected =
@@ -220,11 +244,14 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		const settingsRequest = passwordChangePending
 			? Promise.resolve(null)
 			: dataOrNull(
-					queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
-						queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
-					})
+					rootData(
+						{
+							...rootQuery,
+							queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+							queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
+						},
+						navigating
+					)
 				);
 		const featuresRequest = Promise.race([
 			Promise.all(
@@ -240,16 +267,19 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		const swarmStatusRequest =
 			swarmEnvironments.length > 0
 				? dataOrNull(
-						queryClient.query({
-							...rootQuery,
-							queryKey: queryKeys.swarm.status(swarmEnvironments.map((env) => env.id).join(',')),
-							queryFn: () =>
-								sumAcrossEnvironments(
-									swarmEnvironments,
-									(scope, config) => swarmService.getSwarmStatus(scope, config),
-									EMPTY_SWARM_STATUS
-								)
-						})
+						rootData(
+							{
+								...rootQuery,
+								queryKey: queryKeys.swarm.status(swarmEnvironments.map((env) => env.id).join(',')),
+								queryFn: () =>
+									sumAcrossEnvironments(
+										swarmEnvironments,
+										(scope, config) => swarmService.getSwarmStatus(scope, config),
+										EMPTY_SWARM_STATUS
+									)
+							},
+							navigating
+						)
 					)
 				: Promise.resolve(null);
 		const swarmScope = `${user.id}:${swarmEnvironments.map((env) => env.id).join(',')}`;
@@ -262,16 +292,19 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		const podmanStatusRequest = (
 			podmanEnvironments.length > 0
 				? dataOrNull(
-						queryClient.query({
-							...rootQuery,
-							queryKey: queryKeys.podman.status(podmanEnvironments.map((env) => env.id).join(',')),
-							queryFn: () =>
-								sumAcrossEnvironments(
-									podmanEnvironments,
-									(scope, config) => podmanService.getStatus(scope, config),
-									EMPTY_PODMAN_STATUS
-								)
-						})
+						rootData(
+							{
+								...rootQuery,
+								queryKey: queryKeys.podman.status(podmanEnvironments.map((env) => env.id).join(',')),
+								queryFn: () =>
+									sumAcrossEnvironments(
+										podmanEnvironments,
+										(scope, config) => podmanService.getStatus(scope, config),
+										EMPTY_PODMAN_STATUS
+									)
+							},
+							navigating
+						)
 					)
 				: Promise.resolve(null)
 		).then((loaded) =>
@@ -346,6 +379,12 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		settingsStore.set(settings);
 		appliedSettings = settings;
 	}
+	queryClient.setDefaultOptions({
+		queries: {
+			...queryClient.getDefaultOptions().queries,
+			gcTime: (Number(settingsStore.current?.frontendCacheMinutes) || DEFAULT_CACHE_MINUTES) * 60_000
+		}
+	});
 	if (versionInformation !== appliedVersion) {
 		versionStore.seed(versionInformation);
 		appliedVersion = versionInformation;

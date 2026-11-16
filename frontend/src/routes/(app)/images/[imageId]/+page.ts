@@ -20,7 +20,10 @@ export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDeta
 	const [{ queryClient }, envId] = await Promise.all([parent(), resolveDetailEnvironmentId(url)]);
 
 	const operationResult = await tryCatch(
-		Promise.all([queryClient.query(imageDetailQuery(envId, params.imageId)), featureStore.load(envId)])
+		Promise.all([
+			queryClient.ensureQueryData({ ...imageDetailQuery(envId, params.imageId), revalidateIfStale: true }),
+			featureStore.load(envId)
+		])
 	);
 	if (operationResult.error !== null) {
 		const err = operationResult.error;

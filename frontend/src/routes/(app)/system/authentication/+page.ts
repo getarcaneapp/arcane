@@ -2,7 +2,9 @@ import { environmentListQuery } from '#lib/query/environments.js';
 import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
 import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
 import { roleAllQuery } from '#lib/query/roles.js';
+import settingsStore from '#lib/stores/config-store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
@@ -30,7 +32,8 @@ export const load: PageLoad = async ({ parent }) => {
 				pagination: { page: 1, limit: 1000 },
 				sort: { column: 'name', direction: 'asc' }
 			})
-		)
+		),
+		settingsStore.reload().catch((err: unknown) => throwPageLoadError(err, 'Failed to load settings'))
 	]);
 
 	return {

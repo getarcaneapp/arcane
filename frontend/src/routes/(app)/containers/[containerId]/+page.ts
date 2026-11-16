@@ -12,7 +12,9 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
 
-	const containerResult = await tryCatch(queryClient.query(containerDetailQuery(envId, containerId)));
+	const containerResult = await tryCatch(
+		queryClient.ensureQueryData({ ...containerDetailQuery(envId, containerId), revalidateIfStale: true })
+	);
 	if (containerResult.error !== null) {
 		throwPageLoadError(containerResult.error, 'Failed to load container details');
 	}

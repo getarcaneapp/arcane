@@ -37,7 +37,8 @@ import {
 	CodeIcon,
 	MonitorIcon,
 	AgentIcon,
-	PaletteIcon
+	PaletteIcon,
+	ConnectionIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -337,6 +338,12 @@ export const navigationItems: NavigationSections = {
 					url: resolve('/(app)/system/branding'),
 					icon: PaletteIcon,
 					accessSurfaceId: 'settings.category.branding'
+				},
+				{
+					title: m.connectivity(),
+					url: resolve('/(app)/system/connectivity'),
+					icon: ConnectionIcon,
+					accessSurfaceId: 'settings.category.connectivity'
 				},
 				{
 					title: m.diagnostics(),
