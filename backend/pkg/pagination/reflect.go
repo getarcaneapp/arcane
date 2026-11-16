@@ -17,8 +17,14 @@ func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (
 	sortDirection := cmp.Or(string(params.Order), "asc")
 
 	modelType := reflect.TypeFor[M]()
-	capitalizedSortColumn := kit.Capitalize(sortColumn)
-	sortField, sortFieldFound := modelType.FieldByName(capitalizedSortColumn)
+	sortField, sortFieldFound := modelType.FieldByName(kit.Capitalize(sortColumn))
+	if !sortFieldFound && sortColumn != "" {
+		sortField, sortFieldFound = modelType.FieldByNameFunc(func(name string) bool {
+			field, _ := modelType.FieldByName(name)
+			jsonName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			return jsonName == sortColumn
+		})
+	}
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
 	sortDirection = kit.Ternary(sortDirection != "asc" && sortDirection != "desc", "asc", sortDirection)
