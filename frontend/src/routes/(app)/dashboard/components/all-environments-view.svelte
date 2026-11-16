@@ -64,6 +64,7 @@
 	import {
 		readableEnvironments,
 		readAcrossEnvironments,
+		readEachEnvironment,
 		sumAcrossEnvironments,
 		type EnvironmentFailure
 	} from '#lib/utils/environments.js';
@@ -657,7 +658,7 @@
 		pruneDefaultsLoadingId = environmentId;
 		try {
 			const operationResult = await tryCatch(
-				sumAcrossEnvironments(
+				readEachEnvironment(
 					prunableEnvironments.map((item) => item.environment).filter((env) => targetIds.includes(env.id)),
 					(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
 					emptySettings

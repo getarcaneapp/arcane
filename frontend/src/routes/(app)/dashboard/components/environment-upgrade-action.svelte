@@ -11,7 +11,7 @@
 	import type { Environment } from '#lib/types/environment.js';
 	import type { VersionInfo } from '#lib/types/version.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { sumAcrossEnvironments } from '#lib/utils/environments.js';
+	import { readEachEnvironment } from '#lib/utils/environments.js';
 
 	import { shouldLoadEnvironment } from '../overview.helpers';
 
@@ -52,7 +52,7 @@
 		return {
 			queryKey: queryKeys.system.environmentUpgradeAvailable(environments.map((env) => env.id).join(',')),
 			queryFn: () =>
-				sumAcrossEnvironments(environments, (scope, config) => systemUpgradeService.checkUpgradeAvailable(scope, config), {
+				readEachEnvironment(environments, (scope, config) => systemUpgradeService.checkUpgradeAvailable(scope, config), {
 					canUpgrade: false,
 					error: false,
 					message: ''

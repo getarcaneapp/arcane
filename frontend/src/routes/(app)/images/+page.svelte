@@ -35,8 +35,8 @@
 		hasShownPermission,
 		listScopes,
 		readableEnvironments,
+		readEachEnvironment,
 		settleAcrossEnvironments,
-		sumAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -204,12 +204,12 @@
 		const settingsReadable = environments.filter((env) => hasPermission('environment-settings:read', env.id));
 		const result = await tryCatch(
 			Promise.all([
-				sumAcrossEnvironments(
+				readEachEnvironment(
 					settingsReadable,
 					(environmentScope, config) => settingsService.getSettingsForEnvironment(environmentScope, config),
 					emptySettings
 				),
-				sumAcrossEnvironments(
+				readEachEnvironment(
 					environments.filter((env) => !settingsReadable.includes(env)),
 					(environmentScope, config) => settingsService.getPublicSettingsForEnvironment(environmentScope, config),
 					emptySettings

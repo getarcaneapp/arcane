@@ -28,7 +28,7 @@
 		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
-	import { listScopes, settleAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+	import { listScopes, readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
 
@@ -68,7 +68,7 @@
 	const scheduleQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.schedules(environments.map((environment) => environment.id).join(',')),
 		queryFn: () =>
-			sumAcrossEnvironments(environments, (scope, config) => jobScheduleService.getJobSchedules(scope, config), EMPTY_SCHEDULES)
+			readEachEnvironment(environments, (scope, config) => jobScheduleService.getJobSchedules(scope, config), EMPTY_SCHEDULES)
 	}));
 	const schedulesByEnvironment = $derived(
 		new Map((scheduleQuery.data?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]))
@@ -78,7 +78,7 @@
 	const jobListQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.automations(jobListEnvironments.map((environment) => environment.id).join(',')),
 		queryFn: ({ signal }) =>
-			sumAcrossEnvironments<Pick<JobListResponse, 'timezone'>>(
+			readEachEnvironment<Pick<JobListResponse, 'timezone'>>(
 				jobListEnvironments,
 				(scope, config) => jobScheduleService.listJobs(scope, { ...config, signal }),
 				{}

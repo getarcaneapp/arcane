@@ -5,7 +5,7 @@ import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { userHasPermission } from '#lib/utils/auth.js';
-import { sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { readEachEnvironment } from '#lib/utils/environments.js';
 
 export function useEasyJoinCandidates() {
 	const user = userStore;
@@ -19,7 +19,7 @@ export function useEasyJoinCandidates() {
 			queryKey: queryKeys.swarm.joinCandidates(environments.map((env) => env.id).join(','), user.current),
 			enabled: environments.length > 0,
 			queryFn: async ({ signal }): Promise<Record<string, string>> => {
-				const { byEnvironment } = await sumAcrossEnvironments(
+				const { byEnvironment } = await readEachEnvironment(
 					environments,
 					(scope, config) => swarmService.getSwarmJoinCandidates(scope, { ...config, signal }),
 					[]

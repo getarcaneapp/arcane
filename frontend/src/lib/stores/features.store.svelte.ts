@@ -87,7 +87,9 @@ async function fetchFeatures(client: QueryClient, environmentIds: string[], forc
 			included,
 			(scope, config) => settingsService.getPublicSettingsForEnvironment(scope, config),
 			emptySettings
-		));
+		).finally(() => {
+			aggregate = undefined;
+		}));
 	await Promise.all([
 		...included.map(({ id }) =>
 			client

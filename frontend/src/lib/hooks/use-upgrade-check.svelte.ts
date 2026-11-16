@@ -7,7 +7,7 @@ import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/envir
 import type { VersionInfo } from '#lib/types/version.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { readEachEnvironment } from '#lib/utils/environments.js';
 
 type UseUpgradeCheckOptions = {
 	queryScope: 'mobile-nav' | 'sidebar';
@@ -21,14 +21,17 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
 	const canInstallUpdates = $derived(hasPermission('system:upgrade', LOCAL_DOCKER_ENVIRONMENT_ID));
 	const queryClient = useQueryClient();
-	const agentVersionsQuery = createQuery(() => {
-		const environments = environmentStore.available.filter(
+	const agentEnvironments = $derived(
+		environmentStore.available.filter(
 			(env) => env.id !== LOCAL_DOCKER_ENVIRONMENT_ID && isEnvironmentOnline(env) && hasPermission('environments:read', env.id)
-		);
+		)
+	);
+	const agentVersionsQuery = createQuery(() => {
+		const environments = agentEnvironments;
 		return {
 			queryKey: queryKeys.system.environmentVersions(environments.map((env) => env.id).join(',')),
 			queryFn: async () => {
-				const versions = await sumAcrossEnvironments<Partial<VersionInfo>>(
+				const versions = await readEachEnvironment<Partial<VersionInfo>>(
 					environments,
 					(scope, config) => environmentManagementService.getVersion(scope, config),
 					{}
@@ -46,7 +49,9 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 		};
 	});
 	const agentUpdates = $derived(
-		(agentVersionsQuery.data?.byEnvironment ?? []).flatMap(({ data }) => (data.updateAvailable ? [data] : []))
+		(agentVersionsQuery.data?.byEnvironment ?? []).flatMap(({ environment, data }) =>
+			data.updateAvailable && agentEnvironments.some((env) => env.id === environment.id) ? [data] : []
+		)
 	);
 	const updateCount = $derived(agentUpdates.length + (getVersionInformation()?.updateAvailable ? 1 : 0));
 	const shouldCheckUpgrade = $derived(

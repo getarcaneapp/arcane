@@ -440,7 +440,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 func (s *EventService) ListRecentEnvironmentEvents(ctx context.Context, environmentID string, typeFilters []string, limit int) ([]types.Event, error) {
 	var recent []types.Event
 	for _, typeFilter := range kit.Ternary(len(typeFilters) > 0, typeFilters, []string{""}) {
-		events, _, err := s.ListEventsPaginated(ctx, pagination.QueryParams{
+		matched, _, err := s.ListEventsPaginated(ctx, pagination.QueryParams{
 			Filters:    map[string]string{"environmentId": environmentID, "type": typeFilter},
 			SortParams: pagination.SortParams{Sort: "timestamp", Order: pagination.SortDesc},
 			Params:     pagination.Params{Limit: limit, SkipCount: true},
@@ -448,7 +448,7 @@ func (s *EventService) ListRecentEnvironmentEvents(ctx context.Context, environm
 		if err != nil {
 			return nil, err
 		}
-		recent = append(recent, events...)
+		recent = append(recent, matched...)
 	}
 	return recent, nil
 }

@@ -90,9 +90,16 @@ function activity(
 	};
 }
 
-function activityEnvironmentIdFromPath(pathname: string): string | null {
+function activityEnvironmentIdsFromPath(pathname: string): string[] {
 	const match = pathname.match(/^\/api\/agents\/([^/]+)\/activities$/);
-	return match ? decodeURIComponent(match[1]) : null;
+	return match ? decodeURIComponent(match[1]).split(',') : [];
+}
+
+function environmentNameFor(environmentId: string): string {
+	return (
+		[localEnvironment, remoteEnvironment].find((environment) => environment.id === environmentId)
+			?.name ?? environmentId
+	);
 }
 
 async function mockSession(
@@ -191,30 +198,52 @@ async function mockActivityReads(
 
 	await page.context().route(/\/api\/agents\/[^/]+\/activities(?:\?.*)?$/, async (route: Route) => {
 		const url = new URL(route.request().url());
-		const environmentId = activityEnvironmentIdFromPath(url.pathname);
-		if (!environmentId) {
+		const environmentIds = activityEnvironmentIdsFromPath(url.pathname);
+		if (environmentIds.length === 0) {
 			await route.continue();
 			return;
 		}
-		readEnvironmentIds?.push(environmentId);
+		readEnvironmentIds?.push(...environmentIds);
 
-		if (failedEnvironmentIds.has(environmentId)) {
+		const failure = {
+			success: false,
+			message: 'environment unavailable',
+			detail: 'permission denied: activities:read'
+		};
+
+		if (environmentIds.length === 1) {
+			const [environmentId] = environmentIds;
 			await route.fulfill({
-				status: failedActivityStatus,
+				status: failedEnvironmentIds.has(environmentId) ? failedActivityStatus : 200,
 				contentType: 'application/json',
-				body: JSON.stringify({
-					success: false,
-					message: 'environment unavailable',
-					detail: 'permission denied: activities:read'
-				})
+				body: JSON.stringify(
+					failedEnvironmentIds.has(environmentId)
+						? failure
+						: paginated(activitiesByEnvironment[environmentId] ?? [])
+				)
 			});
 			return;
 		}
 
+		const rows = environmentIds
+			.filter((environmentId) => !failedEnvironmentIds.has(environmentId))
+			.flatMap((environmentId) =>
+				(activitiesByEnvironment[environmentId] ?? []).map((row) => ({
+					...row,
+					environmentId,
+					environmentName: environmentNameFor(environmentId)
+				}))
+			);
+		const failedEnvironments = environmentIds
+			.filter((environmentId) => failedEnvironmentIds.has(environmentId))
+			.map((environmentId) => ({
+				environment: { id: environmentId, name: environmentId },
+				message: failure.detail
+			}));
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(paginated(activitiesByEnvironment[environmentId] ?? []))
+			body: JSON.stringify({ ...paginated(rows), failedEnvironments })
 		});
 	});
 }
@@ -224,7 +253,7 @@ function waitForActivityRead(page: Page, environmentId: string) {
 		const url = new URL(response.url());
 		return (
 			response.request().method() === 'GET' &&
-			activityEnvironmentIdFromPath(url.pathname) === environmentId
+			activityEnvironmentIdsFromPath(url.pathname).includes(environmentId)
 		);
 	});
 }

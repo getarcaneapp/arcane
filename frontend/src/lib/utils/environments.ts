@@ -223,6 +223,34 @@ export async function sumAcrossEnvironments<C extends object>(
 	return { ...value, failedEnvironments: failures, excludedEnvironments: excluded, byEnvironment: breakdown ?? single };
 }
 
+export async function readEachEnvironment<C extends object>(
+	environments: EnvironmentRef[],
+	fetch: (scope: string, config: APIRequestConfig) => Promise<C>,
+	empty: C
+): Promise<{ byEnvironment: { environment: EnvironmentRef; data: C }[]; failedEnvironments: EnvironmentFailure[] }> {
+	const chunks: EnvironmentRef[][] = [];
+	for (let rest = environments; rest.length > 0;) {
+		const { included, excluded } = limitEnvironments(rest);
+		chunks.push(included);
+		rest = excluded;
+	}
+	const sums = await Promise.all(
+		chunks.map(async (chunk) => ({ chunk, result: await tryCatch(sumAcrossEnvironments(chunk, fetch, empty)) }))
+	);
+	const failures = sums.flatMap(({ chunk, result }) => {
+		if (result.error === null) return result.data.failedEnvironments;
+		const message = extractApiErrorMessage(result.error);
+		return chunk.map((environment) => ({ environment, message }));
+	});
+	if (failures.length > 0 && failures.length === environments.length) {
+		throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
+	}
+	return {
+		byEnvironment: sums.flatMap(({ result }) => (result.error === null ? result.data.byEnvironment : [])),
+		failedEnvironments: failures
+	};
+}
+
 /** Adds failures from related reads, such as counts or tags, to a list's inline alert, once per environment. */
 export function withFailedEnvironments<P extends { failedEnvironments?: EnvironmentFailure[] }>(
 	page: P,

@@ -9,7 +9,7 @@ import type { SettingKey, Settings } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { settleAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	const queryClient = useQueryClient();
@@ -32,7 +32,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 		return {
 			queryKey: queryKeys.environments.settingsAcross(onlineScope),
 			queryFn: async () => {
-				const sum = await sumAcrossEnvironments(
+				const sum = await readEachEnvironment(
 					environments,
 					(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
 					emptySettings

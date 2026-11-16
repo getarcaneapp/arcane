@@ -83,7 +83,7 @@ func (h *SettingsHandler) runtimeSettings(ctx context.Context, authenticated boo
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	_, authenticated := middleware.GetUserIDFromContext(ctx)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		return h.aggregateSnapshots(ctx)
+		return h.aggregateEnvironmentSettings(ctx)
 	}
 	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(authenticated, SettingVisibilityNonAdmin, SettingVisibilityPublic))
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
@@ -95,7 +95,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, _ *types.Enviro
 
 func (h *SettingsHandler) GetEnvironmentSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		return h.aggregateSnapshots(ctx)
+		return h.aggregateEnvironmentSettings(ctx)
 	}
 	if input.EnvironmentID != "0" {
 		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/agents/0/settings", nil)
@@ -123,12 +123,12 @@ func (h *SettingsHandler) UpdateEnvironmentSettings(ctx context.Context, input *
 	return h.scopedSnapshot(ctx, SettingScopeEnvironment), nil
 }
 
-func (h *SettingsHandler) aggregateSnapshots(ctx context.Context) (*SettingsSnapshotOutput, error) {
-	snapshot, err := h.settingsService.AggregateSnapshots(ctx)
+func (h *SettingsHandler) aggregateEnvironmentSettings(ctx context.Context) (*SettingsSnapshotOutput, error) {
+	aggregate, err := h.settingsService.AggregateEnvironmentSettings(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get settings: " + err.Error())
 	}
-	return &SettingsSnapshotOutput{Body: snapshot}, nil
+	return &SettingsSnapshotOutput{Body: aggregate}, nil
 }
 
 func (h *SettingsHandler) GetManagerSettings(ctx context.Context, _ *struct{}) (*SettingsSnapshotOutput, error) {

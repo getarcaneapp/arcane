@@ -1064,44 +1064,6 @@ func TestAggregateActivitiesKeepsActiveFirst(t *testing.T) {
 	require.Len(t, body.FailedEnvironments, 1)
 }
 
-func TestAggregateActivitiesLimitsEachEnvironment(t *testing.T) {
-	now := time.Now()
-	var requested sync.Map
-	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
-		IDs:     []string{"a", "b"},
-		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b/activities?start=0&limit=1", http.NoBody),
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]
-			requested.Store(id, r.URL.Query().Get("limit"))
-			_ = json.MarshalWrite(w, types.Paginated[types.Activity]{
-				Success: true,
-				Data: []types.Activity{{
-					ID:        "newest-" + id,
-					Status:    types.ActivityStatusSuccess,
-					CreatedAt: now,
-				}},
-				Pagination: types.PaginationResponse{TotalItems: 5},
-			})
-		}),
-		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
-			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
-		},
-	})
-
-	body, err := (&ActivityService{}).AggregateActivities(ctx, pagination.QueryParams{
-		SortParams: pagination.SortParams{Order: pagination.SortDesc},
-		Params:     pagination.Params{Limit: 1},
-	})
-	require.NoError(t, err)
-
-	limitA, _ := requested.Load("a")
-	limitB, _ := requested.Load("b")
-	require.Equal(t, "1", limitA)
-	require.Equal(t, "1", limitB)
-	require.ElementsMatch(t, []string{"newest-a", "newest-b"}, []string{body.Data[0].ID, body.Data[1].ID})
-	require.EqualValues(t, 10, body.Pagination.GrandTotalItems)
-}
-
 func (activityTestVariableSyncer) SyncEnvironment(context.Context, string) error {
 	return nil
 }

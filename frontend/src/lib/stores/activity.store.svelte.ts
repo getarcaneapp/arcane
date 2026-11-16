@@ -304,7 +304,8 @@ function createActivityStore() {
 		};
 	}
 
-	async function fetchSnapshotsInternal(environmentIds: string[], signal: AbortSignal): Promise<void> {
+	async function fetchSnapshotsInternal(requestedIds: string[], signal: AbortSignal): Promise<void> {
+		const environmentIds = requestedIds.filter((id) => core.environmentState(id));
 		if (environmentIds.length === 0) return;
 		for (const environmentId of environmentIds) {
 			core.updateEnvironmentState(environmentId, (environmentState) => ({ ...environmentState, loading: true }));

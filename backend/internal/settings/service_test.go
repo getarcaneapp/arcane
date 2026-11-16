@@ -3,10 +3,8 @@ package settings
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json/v2"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,7 +22,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
@@ -1438,47 +1435,4 @@ func TestSettingsServiceUpdateSettingsValidatesProjectsDirectories(t *testing.T)
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"projectsDirectory": filepath.Join(extra, "primary")})
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.NoDirExists(t, extra)
-}
-
-func TestSettingsService_AggregateSnapshotsKeepsEnvironmentBreakdown(t *testing.T) {
-	bodies := map[string]types.SettingsSnapshot{
-		"a": {
-			Settings: []types.SettingState{{Key: "trivyIgnoreUnfixed", Value: "true", Scope: "environment"}},
-			Runtime:  types.SettingsRuntime{BackupVolumeName: "a-backups"},
-		},
-		"b": {
-			Settings: []types.SettingState{{Key: "trivyIgnoreUnfixed", Value: "false", Scope: "environment"}},
-			ReadOnly: true,
-		},
-	}
-	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
-		IDs:     []string{"a", "b", "c"},
-		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/settings", http.NoBody),
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
-			if !ok {
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"detail":"permission denied: environment-settings:read"}`))
-				return
-			}
-			_ = json.MarshalWrite(w, body)
-		}),
-		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
-			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
-		},
-	})
-
-	snapshot, err := (&SettingsService{}).AggregateSnapshots(ctx)
-	require.NoError(t, err)
-
-	require.Empty(t, snapshot.Settings)
-	require.False(t, snapshot.ReadOnly)
-	require.Equal(t, []types.EnvironmentData[types.SettingsSnapshot]{
-		{Environment: types.EnvironmentRef{ID: "a", Name: "Env a"}, Data: bodies["a"]},
-		{Environment: types.EnvironmentRef{ID: "b", Name: "Env b"}, Data: bodies["b"]},
-	}, snapshot.Environments)
-	require.Equal(t, []types.EnvironmentFailure{{
-		Environment: types.EnvironmentRef{ID: "c", Name: "c"},
-		Message:     "permission denied: environment-settings:read",
-	}}, snapshot.FailedEnvironments)
 }

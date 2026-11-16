@@ -720,7 +720,7 @@ func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility, scopes 
 	}
 }
 
-func (s *SettingsService) AggregateSnapshots(ctx context.Context) (types.SettingsSnapshot, error) {
+func (s *SettingsService) AggregateEnvironmentSettings(ctx context.Context) (types.SettingsSnapshot, error) {
 	collection, err := httpx.CollectEnvironments[types.SettingsSnapshot](ctx, nil)
 	if err != nil {
 		return types.SettingsSnapshot{}, err

@@ -596,11 +596,47 @@ test.describe('Volumes shift-select', () => {
 					: ''
 			});
 		});
-		await page.context().route(/\/api\/agents\/remote-shift-test\/settings$/, async (route) => {
+		const remoteSettings = { settings: [], runtime: {}, readOnly: false };
+		await page.context().route(/\/api\/agents\/[^/]+\/settings(?:\/public)?$/, async (route) => {
+			const url = new URL(route.request().url());
+			const [, , , scope, ...rest] = url.pathname.split('/');
+			const environmentIds = decodeURIComponent(scope).split(',');
+			if (route.request().method() !== 'GET' || !environmentIds.includes(remoteEnvironment.id)) {
+				await route.continue();
+				return;
+			}
+			if (environmentIds.length === 1) {
+				await route.fulfill({ json: remoteSettings });
+				return;
+			}
+			const environmentData = await Promise.all(
+				environmentIds.map(async (environmentId) => {
+					const environment = environments.find(({ id }) => id === environmentId);
+					const data =
+						environmentId === remoteEnvironment.id
+							? remoteSettings
+							: await (
+									await route.fetch({
+										url: new URL(`/api/agents/${environmentId}/${rest.join('/')}`, url).toString()
+									})
+								).json();
+					return {
+						environment: { id: environmentId, name: environment?.name ?? environmentId },
+						data
+					};
+				})
+			);
 			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
+				json: {
+					settings: [],
+					runtime: {
+						frontendTracingEnabled: false,
+						frontendMetricsEnabled: false,
+						frontendLogsEnabled: false
+					},
+					environments: environmentData,
+					readOnly: false
+				}
 			});
 		});
 		const remoteVolumes = Array.from({ length: 8 }, (_, index) => mockVolume(index + 101));

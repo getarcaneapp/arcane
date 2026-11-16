@@ -113,7 +113,7 @@ export const queryKeys = {
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
 		detail: (environmentId: string) => ['environment', environmentId] as const,
 		settings: (environmentId: string) => ['environment-settings', environmentId] as const,
-		settingsAcross: (scope: string) => ['environment-settings-across', scope] as const,
+		settingsAcross: (scope: string) => ['environment-settings', scope, 'across'] as const,
 		enrollmentTokens: ['enrollment-tokens'] as const
 	},
 	gitRepositories: {

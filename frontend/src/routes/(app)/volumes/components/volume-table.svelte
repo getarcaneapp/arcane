@@ -41,8 +41,8 @@
 		parseRowKey,
 		readableEnvironments,
 		readAcrossEnvironments,
+		readEachEnvironment,
 		rowKey,
-		sumAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -126,7 +126,7 @@
 		fetch: (environmentScope: string, config: APIRequestConfig) => Promise<ResolvedSettings>
 	): Promise<{ names: [string, string][]; failures: EnvironmentFailure[] }> {
 		if (environments.length === 0) return { names: [], failures: [] };
-		const result = await tryCatch(sumAcrossEnvironments(environments, fetch, emptySettings));
+		const result = await tryCatch(readEachEnvironment(environments, fetch, emptySettings));
 		if (result.error !== null) {
 			const message = extractApiErrorMessage(result.error);
 			return { names: [], failures: environments.map((environment) => ({ environment, message })) };
