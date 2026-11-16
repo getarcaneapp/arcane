@@ -82,7 +82,7 @@ func sqliteReadDSN(connString string) string {
 	}).String()
 }
 
-func attachSQLiteReadPool(gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql.DB, error) {
+func attachSQLiteReadPool(ctx context.Context, gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql.DB, error) {
 	readerGorm, err := gorm.Open(sqlite.Open(readDSN), &gorm.Config{
 		Logger: customGormLogger,
 	})
@@ -99,11 +99,11 @@ func attachSQLiteReadPool(gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql
 	reader.SetConnMaxLifetime(0)
 	reader.SetConnMaxIdleTime(sqliteConnMaxIdleTime)
 	metrics.ReportDBStatsMetrics(reader, metric.WithAttributes(attribute.String("db.pool", "read")))
-	writerPool, err := newStmtCachePool(writer)
+	writerPool, err := newStmtCachePool(ctx, writer)
 	if err != nil {
 		return nil, err
 	}
-	readerPool, err := newStmtCachePool(reader)
+	readerPool, err := newStmtCachePool(ctx, reader)
 	if err != nil {
 		return nil, err
 	}

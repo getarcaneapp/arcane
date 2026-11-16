@@ -59,14 +59,14 @@ func SpanEnvironment(environmentName func(ctx context.Context, id string) string
 				return next(c)
 			}
 			span.SetAttributes(attribute.String("arcane.environment.id", id))
-			names := make(chan string, 1)
-			go func() {
-				names <- environmentName(ctx, id)
-			}()
-			timeout := time.NewTimer(environmentNameTimeout)
-			defer timeout.Stop()
 			err := next(c)
 			if resp, unwrapErr := echo.UnwrapResponse(c.Response()); err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {
+				names := make(chan string, 1)
+				go func() {
+					names <- environmentName(ctx, id)
+				}()
+				timeout := time.NewTimer(environmentNameTimeout)
+				defer timeout.Stop()
 				select {
 				case name := <-names:
 					span.SetAttributes(attribute.String("arcane.environment.name", name))

@@ -34,8 +34,12 @@ const (
 	stmtWarmTimeout       = 30 * time.Second
 )
 
-func newStmtCachePool(db *sql.DB) (*stmtCachePool, error) {
-	stmts, err := lru.NewWithEvict(preparedStmtMaxSize, closeEvictedStmt)
+func newStmtCachePool(ctx context.Context, db *sql.DB) (*stmtCachePool, error) {
+	ctx = context.WithoutCancel(ctx)
+	evict := func(_ string, stmt *sql.Stmt) {
+		closeEvictedStmt(ctx, stmt)
+	}
+	stmts, err := lru.NewWithEvict(preparedStmtMaxSize, evict)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create statement cache: %w", err)
 	}
@@ -46,13 +50,15 @@ func newStmtCachePool(db *sql.DB) (*stmtCachePool, error) {
 	}, nil
 }
 
-func closeEvictedStmt(_ string, stmt *sql.Stmt) {
+func closeEvictedStmt(ctx context.Context, stmt *sql.Stmt) {
 	if stmt == nil {
 		return
 	}
 	go func() {
 		time.Sleep(evictedStmtCloseDelay)
-		_ = stmt.Close()
+		if err := stmt.Close(); err != nil {
+			slog.WarnContext(ctx, "Failed to close evicted cached statement", "error", err)
+		}
 	}()
 }
 
@@ -76,7 +82,9 @@ func (p *stmtCachePool) stmt(ctx context.Context, query string) (*sql.Stmt, erro
 		p.mu.Unlock()
 	}
 	if cached != nil {
-		_ = stmt.Close()
+		if closeErr := stmt.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "Failed to close duplicate prepared statement", "error", closeErr)
+		}
 		return cached, nil
 	}
 	return stmt, nil

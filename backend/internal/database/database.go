@@ -206,14 +206,14 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	}
 	if readDSN == "" {
 		var pool *stmtCachePool
-		if pool, err = newStmtCachePool(sqlDB); err != nil {
+		if pool, err = newStmtCachePool(ctx, sqlDB); err != nil {
 			return nil, err
 		}
 		gormDB.ConnPool = pool
 		gormDB.Statement.ConnPool = pool
 		return db, nil
 	}
-	if db.reader, err = attachSQLiteReadPool(gormDB, sqlDB, readDSN); err != nil {
+	if db.reader, err = attachSQLiteReadPool(ctx, gormDB, sqlDB, readDSN); err != nil {
 		return nil, err
 	}
 	return db, nil
