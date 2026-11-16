@@ -513,6 +513,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.Sett
 		{toggle: "oidcEnabled", key: "oidcIssuerUrl"},
 		{toggle: "ldapEnabled", key: "ldapUrl"},
 		{toggle: "ldapEnabled", key: "ldapBindDn"},
+		{toggle: "ldapEnabled", key: "ldapBindPassword"},
 		{toggle: "ldapEnabled", key: "ldapBase"},
 		{toggle: "ldapEnabled", key: "ldapAttributeUserUniqueIdentifier"},
 		{toggle: "ldapEnabled", key: "ldapAttributeUserUsername"},

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -51,6 +52,8 @@ type (
 		httpClient      *http.Client
 		invalidateUser  environment.UserInvalidator
 		connect         func(*settings.Settings) (directory, error)
+		// syncMu keeps the directory read and its reconciliation together across scheduled and manual syncs.
+		syncMu sync.Mutex
 	}
 
 	LdapServiceParams struct {
@@ -71,6 +74,13 @@ type (
 		displayName *string
 		picture     string
 		dn          string
+	}
+
+	directorySnapshot struct {
+		// present holds the ID of every entry read, including entries skipped as unusable.
+		present     map[string]struct{}
+		memberships map[string][]string
+		users       []desiredUser
 	}
 
 	syncedUser struct {
@@ -131,6 +141,8 @@ func connectDirectory(cfg *settings.Settings) (directory, error) {
 }
 
 func (s *LdapService) SyncAll(ctx context.Context) error {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
 	cfg := s.settingsService.GetSettingsConfig()
 	if !cfg.LdapEnabled.IsTrue() {
 		return ErrLdapDisabled
@@ -146,7 +158,7 @@ func (s *LdapService) SyncAll(ctx context.Context) error {
 		_ = conn.Close()
 	}()
 
-	desired, memberships, err := fetchDesiredUsers(ctx, conn, cfg)
+	snapshot, err := fetchDirectory(ctx, conn, cfg)
 	if err != nil {
 		return err
 	}
@@ -154,12 +166,16 @@ func (s *LdapService) SyncAll(ctx context.Context) error {
 	if countErr := s.db.WithContext(ctx).Model(&user.User{}).Where("ldap_id IS NOT NULL").Count(&managed).Error; countErr != nil {
 		return fmt.Errorf("failed to count LDAP users: %w", countErr)
 	}
-	if len(desired) == 0 && managed > 0 {
+	if len(snapshot.users) == 0 && managed > 0 {
 		return ErrNoDirectoryUsers
 	}
 	mappings, err := s.roleService.ListOidcMappings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list role mappings: %w", err)
+	}
+	roles, err := s.roleService.ListAllRoles(ctx)
+	if err != nil {
+		return err
 	}
 
 	var synced []syncedUser
@@ -173,15 +189,15 @@ func (s *LdapService) SyncAll(ctx context.Context) error {
 			return fmt.Errorf("failed to load LDAP users: %w", findErr)
 		}
 		var stageErr error
-		if synced, stageErr = upsertUsers(ctx, tx, desired, existing, memberships); stageErr != nil {
+		if synced, stageErr = upsertUsers(ctx, tx, snapshot.users, existing, snapshot.memberships); stageErr != nil {
 			return stageErr
 		}
-		if memberships != nil {
-			if rolesErr := s.assignRoles(ctx, tx, synced, mappings); rolesErr != nil {
+		if snapshot.memberships != nil {
+			if rolesErr := s.assignRoles(ctx, tx, synced, mappings, roles); rolesErr != nil {
 				return rolesErr
 			}
 		}
-		removed, stageErr = s.deprovisionUsers(ctx, tx, cfg, desired, existing)
+		removed, stageErr = s.deprovisionUsers(ctx, tx, cfg, snapshot.present, existing)
 		return stageErr
 	})
 	if err != nil {
@@ -263,7 +279,7 @@ func (s *LdapService) Authenticate(ctx context.Context, ldapID, password string)
 	}
 }
 
-func fetchDesiredUsers(ctx context.Context, conn directory, cfg *settings.Settings) ([]desiredUser, map[string][]string, error) {
+func fetchDirectory(ctx context.Context, conn directory, cfg *settings.Settings) (directorySnapshot, error) {
 	idAttr := cfg.LdapAttributeUserUniqueIdentifier.Value
 	usernameAttr := cfg.LdapAttributeUserUsername.Value
 	result, err := conn.SearchWithPaging(&ldap.SearchRequest{
@@ -279,12 +295,17 @@ func fetchDesiredUsers(ctx context.Context, conn directory, cfg *settings.Settin
 		}),
 	}, searchPageSize)
 	if err != nil {
-		return nil, nil, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to query LDAP users: %w", err))
+		return directorySnapshot{}, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to query LDAP users: %w", err))
 	}
 
 	desired := make([]desiredUser, 0, len(result.Entries))
+	present := make(map[string]struct{}, len(result.Entries))
 	for _, entry := range result.Entries {
 		rawID := entry.GetAttributeValue(idAttr)
+		if rawID == "" {
+			slog.WarnContext(ctx, "Skipping LDAP user without a unique identifier", "dn", entry.DN)
+			continue
+		}
 		ldapID := base64.StdEncoding.EncodeToString([]byte(rawID))
 		switch {
 		case isTextID(rawID):
@@ -292,9 +313,10 @@ func fetchDesiredUsers(ctx context.Context, conn directory, cfg *settings.Settin
 		case len(rawID) == len(uuid.UUID{}):
 			ldapID = uuid.UUID([]byte(rawID)).String()
 		}
+		present[ldapID] = struct{}{}
 		username := strings.TrimSpace(entry.GetAttributeValue(usernameAttr))
-		if username == "" || rawID == "" {
-			slog.WarnContext(ctx, "Skipping LDAP user without a username or unique identifier", "dn", entry.DN)
+		if username == "" {
+			slog.WarnContext(ctx, "Skipping LDAP user without a username", "dn", entry.DN)
 			continue
 		}
 		email := strings.TrimSpace(entry.GetAttributeValue(cfg.LdapAttributeUserEmail.Value))
@@ -312,13 +334,13 @@ func fetchDesiredUsers(ctx context.Context, conn directory, cfg *settings.Settin
 	}
 
 	if strings.TrimSpace(cfg.LdapAttributeGroupName.Value) == "" || strings.TrimSpace(cfg.LdapAttributeGroupMember.Value) == "" {
-		return desired, nil, nil
+		return directorySnapshot{users: desired, present: present}, nil
 	}
 	memberships, err := fetchMemberships(ctx, conn, cfg, desired)
 	if err != nil {
-		return nil, nil, err
+		return directorySnapshot{}, err
 	}
-	return desired, memberships, nil
+	return directorySnapshot{users: desired, present: present, memberships: memberships}, nil
 }
 
 func fetchMemberships(ctx context.Context, conn directory, cfg *settings.Settings, desired []desiredUser) (map[string][]string, error) {
@@ -424,12 +446,7 @@ func upsertUsers(ctx context.Context, tx *gorm.DB, desired []desiredUser, existi
 	return synced, nil
 }
 
-func (s *LdapService) deprovisionUsers(ctx context.Context, tx *gorm.DB, cfg *settings.Settings, desired []desiredUser, existing []user.User) ([]string, error) {
-	inDirectory := make(map[string]struct{}, len(desired))
-	for _, d := range desired {
-		inDirectory[d.ldapID] = struct{}{}
-	}
-
+func (s *LdapService) deprovisionUsers(ctx context.Context, tx *gorm.DB, cfg *settings.Settings, inDirectory map[string]struct{}, existing []user.User) ([]string, error) {
 	softDelete := cfg.LdapSoftDeleteUsers.IsTrue()
 	removed := make([]string, 0, len(existing))
 	for _, u := range existing {
@@ -465,15 +482,22 @@ func (s *LdapService) deprovisionUsers(ctx context.Context, tx *gorm.DB, cfg *se
 	return removed, nil
 }
 
-func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syncedUser, mappings []role.OidcRoleMapping) error {
+func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syncedUser, mappings []role.OidcRoleMapping, roles []role.Role) error {
+	permissions := make(map[string][]string, len(roles))
+	for _, r := range roles {
+		permissions[r.ID] = r.Permissions
+	}
+	// Grant new global admins before revoking old ones so a handoff passes the last-admin guard.
 	admins := make([]syncedUser, 0, len(synced))
 	others := make([]syncedUser, 0, len(synced))
 	for _, u := range synced {
-		grantsAdmin := false
+		granted := authz.NewPermissionSet()
 		for _, a := range role.MappedAssignments(mappings, u.groups) {
-			grantsAdmin = grantsAdmin || (a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil)
+			if a.EnvironmentID == nil {
+				granted.AddGlobal(permissions[a.RoleID]...)
+			}
 		}
-		if grantsAdmin {
+		if granted.IsGlobalAdmin() {
 			admins = append(admins, u)
 			continue
 		}

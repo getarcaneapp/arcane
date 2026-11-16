@@ -93,7 +93,6 @@
 			ldapAttributeUserDisplayName: z.string(),
 			ldapAttributeUserProfilePicture: z.string(),
 			ldapAttributeGroupMember: z.string(),
-			ldapAttributeGroupUniqueIdentifier: z.string(),
 			ldapAttributeGroupName: z.string(),
 			ldapSoftDeleteUsers: z.boolean(),
 			ldapSyncInterval: z.string()
@@ -175,7 +174,6 @@
 			ldapAttributeUserDisplayName: source.ldapAttributeUserDisplayName,
 			ldapAttributeUserProfilePicture: source.ldapAttributeUserProfilePicture,
 			ldapAttributeGroupMember: source.ldapAttributeGroupMember,
-			ldapAttributeGroupUniqueIdentifier: source.ldapAttributeGroupUniqueIdentifier,
 			ldapAttributeGroupName: source.ldapAttributeGroupName,
 			ldapSoftDeleteUsers: source.ldapSoftDeleteUsers,
 			ldapSyncInterval: source.ldapSyncInterval

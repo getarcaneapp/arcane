@@ -140,7 +140,6 @@ export type Settings = {
 	ldapAttributeUserDisplayName: string;
 	ldapAttributeUserProfilePicture: string;
 	ldapAttributeGroupMember: string;
-	ldapAttributeGroupUniqueIdentifier: string;
 	ldapAttributeGroupName: string;
 	ldapSoftDeleteUsers: boolean;
 	ldapSyncInterval: string;

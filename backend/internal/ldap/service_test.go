@@ -37,12 +37,16 @@ type (
 		binds    []string
 	}
 
-	testEnv struct {
-		service      *LdapService
-		db           *database.DB
-		roles        *role.RoleService
+	syncRecorder struct {
 		invalidated  []string
 		connectCalls int
+	}
+
+	testEnv struct {
+		service  *LdapService
+		db       *database.DB
+		roles    *role.RoleService
+		recorder *syncRecorder
 	}
 )
 
@@ -145,34 +149,35 @@ func newTestEnv(t *testing.T, fake *fakeDirectory, overrides map[string]string) 
 
 	httpClient, err := httpx.NewSafeOutboundHTTPClient(nil, nil)
 	require.NoError(t, err)
-	env := &testEnv{
-		db:    db,
-		roles: roles,
+	recorder := &syncRecorder{}
+	return &testEnv{
+		service: &LdapService{
+			db:              db,
+			settingsService: settingsSvc,
+			userService: user.NewUserService(user.UserServiceParams{
+				DB:                   db,
+				RoleService:          roles,
+				SettingsService:      settingsSvc,
+				RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+			}),
+			roleService:    roles,
+			httpClient:     httpClient,
+			invalidateUser: recorder.recordInvalidation,
+			connect:        recorder.connectFake(fake),
+		},
+		db:       db,
+		roles:    roles,
+		recorder: recorder,
 	}
-	env.service = &LdapService{
-		db:              db,
-		settingsService: settingsSvc,
-		userService: user.NewUserService(user.UserServiceParams{
-			DB:                   db,
-			RoleService:          roles,
-			SettingsService:      settingsSvc,
-			RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
-		}),
-		roleService:    roles,
-		httpClient:     httpClient,
-		invalidateUser: env.recordInvalidation,
-		connect:        env.connectFake(fake),
-	}
-	return env
 }
 
-func (e *testEnv) recordInvalidation(userID string) {
-	e.invalidated = append(e.invalidated, userID)
+func (r *syncRecorder) recordInvalidation(userID string) {
+	r.invalidated = append(r.invalidated, userID)
 }
 
-func (e *testEnv) connectFake(fake *fakeDirectory) func(*settings.Settings) (directory, error) {
+func (r *syncRecorder) connectFake(fake *fakeDirectory) func(*settings.Settings) (directory, error) {
 	return func(*settings.Settings) (directory, error) {
-		e.connectCalls++
+		r.connectCalls++
 		return fake, nil
 	}
 }
@@ -325,8 +330,8 @@ func TestSyncAllReconcilesUsersAndRoles(t *testing.T) {
 	assert.NotNil(t, missingSession.RevokedAt)
 
 	assert.Equal(t, []string{"manual:" + authz.BuiltInRoleAdmin}, env.assignments(t, "root"))
-	assert.Contains(t, env.invalidated, "missing-id")
-	assert.Contains(t, env.invalidated, alice.ID)
+	assert.Contains(t, env.recorder.invalidated, "missing-id")
+	assert.Contains(t, env.recorder.invalidated, alice.ID)
 
 	require.NoError(t, env.service.SyncAll(ctx))
 	assert.Equal(t, alice.ID, env.findUser(t, "ldap_id = ?", "u-alice").ID)
@@ -368,14 +373,14 @@ func TestSyncAllRequiresLdapEnabled(t *testing.T) {
 	env := newTestEnv(t, &fakeDirectory{}, map[string]string{"ldapEnabled": "false"})
 
 	require.ErrorIs(t, env.service.SyncAll(t.Context()), ErrLdapDisabled)
-	assert.Zero(t, env.connectCalls)
+	assert.Zero(t, env.recorder.connectCalls)
 }
 
 func TestSyncAllRequiresIdentifierAttributes(t *testing.T) {
 	env := newTestEnv(t, &fakeDirectory{}, map[string]string{"ldapAttributeUserUsername": ""})
 
 	require.ErrorIs(t, env.service.SyncAll(t.Context()), ErrMissingAttributes)
-	assert.Zero(t, env.connectCalls)
+	assert.Zero(t, env.recorder.connectCalls)
 }
 
 func TestSyncAllRefusesEmptyDirectoryWithManagedUsers(t *testing.T) {

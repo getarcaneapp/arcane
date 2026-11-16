@@ -107,7 +107,7 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		EnabledKey:     "ldapEnabled",
 		ManagerOnly:    true,
 		IsContinuous:   false,
-		CanRunManually: true,
+		CanRunManually: false,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
 				SettingKey: "ldapEnabled",

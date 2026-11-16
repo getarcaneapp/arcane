@@ -236,7 +236,7 @@
 							>
 						</p>
 						<div class="mt-2 flex flex-wrap gap-2">
-							{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
+							{#each oidcAssignments as assignment (`${assignment.source}-${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
 								<Badge variant="outline">
 									{roles.find((r) => r.id === assignment.roleId)?.name ?? assignment.roleId}
 									·

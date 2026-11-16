@@ -15,7 +15,6 @@
 		| 'ldapAttributeUserDisplayName'
 		| 'ldapAttributeUserProfilePicture'
 		| 'ldapAttributeGroupMember'
-		| 'ldapAttributeGroupUniqueIdentifier'
 		| 'ldapAttributeGroupName'
 		| 'ldapSoftDeleteUsers'
 		| 'ldapSyncInterval'
@@ -136,12 +135,6 @@
 			placeholder: m.group_member_attribute_placeholder()
 		},
 		{
-			key: 'ldapAttributeGroupUniqueIdentifier',
-			label: m.group_unique_identifier(),
-			description: m.unique_identifier_description(),
-			placeholder: m.unique_identifier_placeholder()
-		},
-		{
 			key: 'ldapAttributeGroupName',
 			label: m.group_name_attribute(),
 			description: m.group_name_attribute_description(),
@@ -176,6 +169,7 @@
 	);
 
 	async function syncNow() {
+		syncing = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(userService.syncLdap()),
 			message: m.ldap_sync_failed(),
