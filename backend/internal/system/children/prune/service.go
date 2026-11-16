@@ -31,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -619,6 +620,21 @@ func (s *Service) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, erro
 		UnusedVolumesBytes:     total(s.selectPruneVolumes(req, usage, nil)),
 		StoppedContainersBytes: total(containers),
 	}, nil
+}
+
+func (s *Service) AggregateDiskUsage(ctx context.Context) (types.ApiResponse[types.SystemDiskUsage], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.SystemDiskUsage]) types.SystemDiskUsage {
+		var usage types.SystemDiskUsage
+		for _, environment := range environments {
+			usage = types.SystemDiskUsage{
+				UnusedImagesBytes:      usage.UnusedImagesBytes + environment.Data.UnusedImagesBytes,
+				BuildCacheBytes:        usage.BuildCacheBytes + environment.Data.BuildCacheBytes,
+				UnusedVolumesBytes:     usage.UnusedVolumesBytes + environment.Data.UnusedVolumesBytes,
+				StoppedContainersBytes: usage.StoppedContainersBytes + environment.Data.StoppedContainersBytes,
+			}
+		}
+		return usage
+	})
 }
 
 func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllRequest) (prunePlan, error) {

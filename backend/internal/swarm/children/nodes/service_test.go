@@ -310,6 +310,31 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }
 
+func TestAggregateJoinCandidatesKeepsManagerBreakdown(t *testing.T) {
+	ctx := nodesScopeContext(t, "/api/agents/a,b,c/swarm/join/candidates", map[string]any{
+		"a": types.ApiResponse[[]types.SwarmJoinCandidate]{
+			Success: true,
+			Data:    []types.SwarmJoinCandidate{{EnvironmentID: "x"}},
+		},
+		"b": types.ApiResponse[[]types.SwarmJoinCandidate]{
+			Success: true,
+			Data:    []types.SwarmJoinCandidate{{EnvironmentID: "y"}},
+		},
+	})
+
+	body, err := (&Service{}).AggregateJoinCandidates(ctx)
+	require.NoError(t, err)
+
+	require.Empty(t, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Equal(t, "a", body.Environments[0].Environment.ID)
+	require.Equal(t, "x", body.Environments[0].Data[0].EnvironmentID)
+	require.Equal(t, "b", body.Environments[1].Environment.ID)
+	require.Equal(t, "y", body.Environments[1].Data[0].EnvironmentID)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
 func TestService_EnrollNodeAgent(t *testing.T) {
 	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()

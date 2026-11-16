@@ -212,6 +212,67 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 	require.Equal(t, int64(3), userQueryCounts[5])
 }
 
+func TestListApiKeysFiltersByExpiryWindow(t *testing.T) {
+	db := setupAPIKeyServiceTestDB(t)
+	service := NewApiKeyService(db, user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	}), role.NewRoleService(db))
+
+	now := time.Now()
+	apiKeys := []ApiKey{
+		{
+			ID:        "never",
+			Name:      "never",
+			KeyHash:   "hash",
+			KeyPrefix: "arc_0001",
+			Kind:      ApiKeyKindScoped,
+		},
+		{
+			ID:        "expired",
+			Name:      "expired",
+			KeyHash:   "hash",
+			KeyPrefix: "arc_0002",
+			Kind:      ApiKeyKindScoped,
+			ExpiresAt: new(now.Add(-time.Hour)),
+		},
+		{
+			ID:        "soon",
+			Name:      "soon",
+			KeyHash:   "hash",
+			KeyPrefix: "arc_0003",
+			Kind:      ApiKeyKindScoped,
+			ExpiresAt: new(now.AddDate(0, 0, 3)),
+		},
+		{
+			ID:        "later",
+			Name:      "later",
+			KeyHash:   "hash",
+			KeyPrefix: "arc_0004",
+			Kind:      ApiKeyKindScoped,
+			ExpiresAt: new(now.AddDate(0, 0, 30)),
+		},
+	}
+	require.NoError(t, db.Create(&apiKeys).Error)
+
+	listIDs := func(filters map[string]string) []string {
+		result, _, err := service.ListApiKeys(t.Context(), pagination.QueryParams{
+			Filters: filters,
+			Params:  pagination.Params{Limit: -1},
+		})
+		require.NoError(t, err)
+		ids := make([]string, len(result))
+		for i, apiKey := range result {
+			ids[i] = apiKey.ID
+		}
+		return ids
+	}
+
+	require.ElementsMatch(t, []string{"expired", "soon"}, listIDs(map[string]string{"expiresWithinDays": "14"}))
+	require.ElementsMatch(t, []string{"never", "expired", "soon", "later"}, listIDs(map[string]string{"expiresWithinDays": "0"}))
+	require.ElementsMatch(t, []string{"never", "expired", "soon", "later"}, listIDs(nil))
+}
+
 func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)

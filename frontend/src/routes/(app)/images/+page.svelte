@@ -17,10 +17,10 @@
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentSettingsQuery } from '#lib/query/environments.js';
 	import { imageListQuery, imageUsageCountsQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
+	import { emptySettings, settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageUsageCounts } from '#lib/types/image.js';
 	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
@@ -36,6 +36,7 @@
 		listScopes,
 		readableEnvironments,
 		settleAcrossEnvironments,
+		sumAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -199,14 +200,26 @@
 	}
 
 	async function openPruneDialog() {
+		const environments = actionEnvironments('images:prune');
+		const settingsReadable = environments.filter((env) => hasPermission('environment-settings:read', env.id));
 		const result = await tryCatch(
-			Promise.all(
-				actionEnvironments('images:prune').map((env) =>
-					queryClient.fetchQuery(environmentSettingsQuery(env.id, hasPermission('environment-settings:read', env.id)))
+			Promise.all([
+				sumAcrossEnvironments(
+					settingsReadable,
+					(environmentScope, config) => settingsService.getSettingsForEnvironment(environmentScope, config),
+					emptySettings
+				),
+				sumAcrossEnvironments(
+					environments.filter((env) => !settingsReadable.includes(env)),
+					(environmentScope, config) => settingsService.getPublicSettingsForEnvironment(environmentScope, config),
+					emptySettings
 				)
-			)
+			])
 		);
-		const [first, ...rest] = (result.data ?? []).map((settings) => settings.values);
+		const complete = result.data?.every((sum) => sum.failedEnvironments.length === 0) === true;
+		const [first, ...rest] = complete
+			? (result.data ?? []).flatMap((sum) => sum.byEnvironment.map(({ data }) => data.values))
+			: [];
 		const agreed = rest.every(
 			(values) => values.pruneImageMode === first?.pruneImageMode && values.pruneImageUntil === first?.pruneImageUntil
 		);

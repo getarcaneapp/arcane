@@ -19,7 +19,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 				await featureStore.markUnavailable(params.id);
 				return { environment, settings: null, swarmActive: false };
 			}
-			await featureStore.load(params.id);
+			await featureStore.load([params.id]);
 			// An unknown status only leaves the Swarm toggle unlocked; nothing else depends on it.
 			const swarmActiveRequest = userHasPermission(user, 'swarm:read', params.id)
 				? tryCatch(

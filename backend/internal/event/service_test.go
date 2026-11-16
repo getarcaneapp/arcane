@@ -29,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event/children/correlation"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
@@ -995,4 +996,75 @@ func TestWaitForChangesReturnsOnPublish(t *testing.T) {
 		require.Equal(t, changeWaitCoalesce, time.Since(started))
 		require.ElementsMatch(t, []string{"container", "image"}, slices.Collect(maps.Keys(changes.Kinds)))
 	})
+}
+
+func eventScopeContext(t *testing.T, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/events", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestEventService_ListRecentEnvironmentEventsLimitsEachTypeFilter(t *testing.T) {
+	ctx := t.Context()
+	svc := NewEventService(setupEventServiceTestDB(t), &config.Config{}, nil)
+	for _, request := range []CreateEventRequest{
+		{Type: EventTypeContainerStart, Title: "start one", EnvironmentID: new("env-1")},
+		{Type: EventTypeContainerStart, Title: "start two", EnvironmentID: new("env-1")},
+		{Type: EventTypeContainerDie, Title: "die", EnvironmentID: new("env-1")},
+		{Type: EventTypeContainerStart, Title: "other environment", EnvironmentID: new("env-2")},
+		{Type: EventTypeImagePull, Title: "pull", EnvironmentID: new("env-1")},
+	} {
+		_, err := svc.CreateEvent(ctx, request)
+		require.NoError(t, err)
+	}
+
+	events, err := svc.ListRecentEnvironmentEvents(ctx, "env-1", []string{"container.start,container.restart", "container.die"}, 1)
+	require.NoError(t, err)
+
+	titles := make([]string, 0, len(events))
+	for _, event := range events {
+		require.Equal(t, "env-1", kit.FromPtr(event.EnvironmentID))
+		titles = append(titles, event.Title)
+	}
+	require.Len(t, titles, 2)
+	require.Contains(t, []string{"start one", "start two"}, titles[0])
+	require.Equal(t, "die", titles[1])
+}
+
+func TestEventService_AggregateRecentEnvironmentEventsMergesNewestFirst(t *testing.T) {
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	ctx := eventScopeContext(t, map[string]any{
+		"a": types.ApiResponse[[]types.Event]{Success: true, Data: []types.Event{
+			{ID: "a-old", Timestamp: base},
+			{ID: "a-new", Timestamp: base.Add(2 * time.Hour)},
+		}},
+		"b": types.ApiResponse[[]types.Event]{Success: true, Data: []types.Event{
+			{ID: "b-mid", Timestamp: base.Add(time.Hour)},
+		}},
+	})
+
+	body, err := (&EventService{}).AggregateRecentEnvironmentEvents(ctx)
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(body.Data))
+	for _, event := range body.Data {
+		ids = append(ids, event.ID)
+	}
+	require.True(t, body.Success)
+	require.Equal(t, []string{"a-new", "b-mid", "a-old"}, ids)
+	require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 }

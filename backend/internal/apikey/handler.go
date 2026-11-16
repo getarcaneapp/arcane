@@ -3,6 +3,7 @@ package apikey
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -20,11 +21,12 @@ type (
 	}
 
 	ListApiKeysInput struct {
-		Search string `query:"search" doc:"Search query for filtering by name or description"`
-		Sort   string `query:"sort" doc:"Column to sort by"`
-		Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-		Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
-		Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
+		Search            string `query:"search" doc:"Search query for filtering by name or description"`
+		Sort              string `query:"sort" doc:"Column to sort by"`
+		Order             string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+		Start             int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit             int    `query:"limit" default:"20" doc:"Number of items per page"`
+		ExpiresWithinDays int    `query:"expiresWithinDays" minimum:"0" default:"0" doc:"Only return keys that have expired or expire within this many days; 0 disables the filter"`
 	}
 
 	CreateApiKeyInput struct {
@@ -51,6 +53,7 @@ type (
 
 func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*handlerutil.Page[types.ApiKey], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.Filters["expiresWithinDays"] = strconv.Itoa(input.ExpiresWithinDays)
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {

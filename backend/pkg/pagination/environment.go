@@ -16,6 +16,7 @@ type (
 	EnvironmentPage[T any] struct {
 		Environment    types.EnvironmentRef
 		Items          []T
+		Total          int64
 		TotalAvailable int64
 	}
 )
@@ -48,16 +49,17 @@ func MergeEnvironmentPages[T Environmental, PT interface {
 	SetEnvironment(types.EnvironmentRef)
 }](config Config[T], pages []EnvironmentPage[T], params QueryParams) ([]T, Response) {
 	all := make([]T, 0)
-	var totalAvailable int64
+	var total, totalAvailable int64
 	for _, page := range pages {
 		for _, item := range page.Items {
 			PT(&item).SetEnvironment(page.Environment)
 			all = append(all, item)
 		}
+		total += cmp.Or(page.Total, int64(len(page.Items)))
 		totalAvailable += page.TotalAvailable
 	}
-	if params.Limit > 0 && params.Start >= len(all) {
-		params.Start = max(len(all)-1, 0) / params.Limit * params.Limit
+	if params.Limit > 0 && int64(params.Start) >= total {
+		params.Start = int(max(total-1, 0)) / params.Limit * params.Limit
 	}
-	return WithEnvironment(config).OrderAndPaginate(all, params), BuildResponse(int64(len(all)), totalAvailable, params)
+	return WithEnvironment(config).OrderAndPaginate(all, params), BuildResponse(total, totalAvailable, params)
 }

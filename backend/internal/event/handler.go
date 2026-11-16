@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -44,6 +45,12 @@ type (
 		Start         int    `query:"start" default:"0" doc:"Start index"`
 		Limit         int    `query:"limit" default:"20" doc:"Limit"`
 		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+	}
+
+	ListRecentEnvironmentEventsInput struct {
+		EnvironmentID string   `path:"id" doc:"Environment ID"`
+		Type          []string `query:"type,explode" doc:"Event type filter (exact type or category prefix, comma-separated); repeat to get the most recent events for each filter"`
+		Limit         int      `query:"limit" default:"20" doc:"Maximum number of events per type filter"`
 	}
 
 	WaitForEnvironmentChangesInput struct {
@@ -124,6 +131,21 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 			Pagination: handlerutil.PaginationResponse(paginationResp),
 		},
 	}, nil
+}
+
+func (h *EventHandler) ListRecentEnvironmentEvents(ctx context.Context, input *ListRecentEnvironmentEventsInput) (*handlerutil.Out[[]types.Event], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.eventService.AggregateRecentEnvironmentEvents(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.Event]{Body: body}, nil
+	}
+	events, err := h.eventService.ListRecentEnvironmentEvents(ctx, input.EnvironmentID, input.Type, input.Limit)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
+	}
+	return &handlerutil.Out[[]types.Event]{Body: types.ApiResponse[[]types.Event]{Success: true, Data: events}}, nil
 }
 
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[types.MessageResponse], error) {

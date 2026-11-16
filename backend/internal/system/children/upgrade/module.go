@@ -22,6 +22,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Description: "Check if a system upgrade is available",
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermSystemRead, h.CheckUpgradeAvailable)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

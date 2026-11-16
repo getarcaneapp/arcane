@@ -294,9 +294,11 @@ type (
 	}
 
 	UpgradeCheckResult struct {
-		Message    string `json:"message"`
-		CanUpgrade bool   `json:"canUpgrade"`
-		Error      bool   `json:"error"`
+		Message            string                                `json:"message"`
+		Environments       []EnvironmentData[UpgradeCheckResult] `json:"environments,omitempty" doc:"Per-environment upgrade checks behind a multi-environment response"`
+		FailedEnvironments []EnvironmentFailure                  `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		CanUpgrade         bool                                  `json:"canUpgrade"`
+		Error              bool                                  `json:"error"`
 	}
 
 	UpgradeJobResult struct {

@@ -11,7 +11,7 @@ import type {
 } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 const brandImagePaths: Record<BrandImageSlot, string> = {
 	mark: '/app/images/logo/mark',
@@ -34,6 +34,8 @@ export function parseSettingValue(type: string, value: string): string | number 
 	}
 }
 
+export const emptySettings: ResolvedSettings = { values: {} as Settings, meta: {}, runtime: {}, readOnly: false };
+
 class SettingsService extends BaseAPIService {
 	async getSettingsForEnvironmentMerged(environmentId: string): Promise<ResolvedSettings> {
 		const publicMain = this.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID);
@@ -46,8 +48,8 @@ class SettingsService extends BaseAPIService {
 		return this.merge(environment, main, manager, authentication);
 	}
 
-	async getSettingsForEnvironment(environmentId: string): Promise<ResolvedSettings> {
-		const res = await this.api.get<SettingsSnapshot>(`/agents/${environmentId}/settings`);
+	async getSettingsForEnvironment(scope: string, config: APIRequestConfig = {}): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>(`/agents/${scope}/settings`, this.normalizeEnvironments(config));
 		return this.normalize(res.data);
 	}
 
@@ -61,8 +63,8 @@ class SettingsService extends BaseAPIService {
 		return this.normalize(res.data);
 	}
 
-	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<ResolvedSettings> {
-		const res = await this.api.get<SettingsSnapshot>(`/agents/${environmentId}/settings/public`, { signal });
+	async getPublicSettingsForEnvironment(scope: string, config: APIRequestConfig = {}): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>(`/agents/${scope}/settings/public`, this.normalizeEnvironments(config));
 		return this.normalize(res.data);
 	}
 
@@ -132,6 +134,16 @@ class SettingsService extends BaseAPIService {
 			},
 			readOnly: [environment, main, manager, authentication].some((source) => source?.readOnly)
 		});
+	}
+
+	private normalizeEnvironments(config: APIRequestConfig): APIRequestConfig {
+		const { onEnvironments } = config;
+		if (!onEnvironments) return config;
+		return {
+			...config,
+			onEnvironments: (entries) =>
+				onEnvironments(entries.map(({ environment, data }) => ({ environment, data: this.normalize(data as SettingsSnapshot) })))
+		};
 	}
 
 	private normalize(snapshot: SettingsSnapshot): ResolvedSettings {

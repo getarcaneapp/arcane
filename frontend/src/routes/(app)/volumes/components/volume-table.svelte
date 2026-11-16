@@ -20,10 +20,12 @@
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { settingsService } from '#lib/services/settings-service.js';
+	import type { APIRequestConfig } from '#lib/services/api-service.js';
+	import { emptySettings, settingsService } from '#lib/services/settings-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 	import type { VolumesPaginatedResponse } from '#lib/types/ui/volume.js';
 	import type { VolumeSizeInfo, Volume } from '#lib/types/volume.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -31,7 +33,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
-		collectAcrossEnvironments,
+		type EnvironmentFailure,
 		type EnvironmentPage,
 		type EnvironmentRow,
 		environmentRows,
@@ -40,6 +42,7 @@
 		readableEnvironments,
 		readAcrossEnvironments,
 		rowKey,
+		sumAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -118,21 +121,45 @@
 	let tablePreferencesReady = $state(false);
 	const queryClient = useQueryClient();
 
+	async function readBackupVolumeNames(
+		environments: EnvironmentRef[],
+		fetch: (environmentScope: string, config: APIRequestConfig) => Promise<ResolvedSettings>
+	): Promise<{ names: [string, string][]; failures: EnvironmentFailure[] }> {
+		if (environments.length === 0) return { names: [], failures: [] };
+		const result = await tryCatch(sumAcrossEnvironments(environments, fetch, emptySettings));
+		if (result.error !== null) {
+			const message = extractApiErrorMessage(result.error);
+			return { names: [], failures: environments.map((environment) => ({ environment, message })) };
+		}
+		return {
+			names: result.data.byEnvironment.map(({ environment, data }) => [
+				environment.id,
+				data.runtime.backupVolumeName || 'arcane-backups'
+			]),
+			failures: result.data.failedEnvironments
+		};
+	}
+
 	const backupVolumeNamesQuery = createQuery(() => {
 		const environments = readableEnvironments('volumes:list');
 		return {
 			queryKey: queryKeys.volumes.backupVolumeNames(scope),
 			queryFn: async () => {
-				const { values, failures } = await collectAcrossEnvironments(environments, (id) =>
-					queryClient.ensureQueryData({
-						queryKey: queryKeys.settings.byEnvironment(id),
-						queryFn: () => settingsService.getSettingsForEnvironmentMerged(id)
-					})
-				);
-				const names = new Map(
-					values.map(({ environment, value }) => [environment.id, value.runtime.backupVolumeName || 'arcane-backups'])
-				);
-				return { names, failures };
+				const settingsReadable = environments.filter((env) => hasPermission('environment-settings:read', env.id));
+				const reads = await Promise.all([
+					readBackupVolumeNames(settingsReadable, (environmentScope, config) =>
+						settingsService.getSettingsForEnvironment(environmentScope, config)
+					),
+					readBackupVolumeNames(
+						environments.filter((env) => !settingsReadable.includes(env)),
+						(environmentScope, config) => settingsService.getPublicSettingsForEnvironment(environmentScope, config)
+					)
+				]);
+				const failures = reads.flatMap((read) => read.failures);
+				if (failures.length > 0 && failures.length === environments.length) {
+					throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
+				}
+				return { names: new Map(reads.flatMap((read) => read.names)), failures };
 			},
 			enabled: environments.length > 0,
 			refetchOnWindowFocus: false

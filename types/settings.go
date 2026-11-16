@@ -44,9 +44,11 @@ type (
 	}
 
 	SettingsSnapshot struct {
-		Settings []SettingState  `json:"settings"`
-		Runtime  SettingsRuntime `json:"runtime"`
-		ReadOnly bool            `json:"readOnly"`
+		Settings           []SettingState                      `json:"settings"`
+		Runtime            SettingsRuntime                     `json:"runtime"`
+		Environments       []EnvironmentData[SettingsSnapshot] `json:"environments,omitempty" doc:"Per-environment settings behind a multi-environment response"`
+		FailedEnvironments []EnvironmentFailure                `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		ReadOnly           bool                                `json:"readOnly"`
 	}
 )
 

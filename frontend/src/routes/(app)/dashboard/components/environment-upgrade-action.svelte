@@ -7,8 +7,13 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { VersionInfo } from '#lib/types/version.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { sumAcrossEnvironments } from '#lib/utils/environments.js';
+
+	import { shouldLoadEnvironment } from '../overview.helpers';
 
 	// open/upgrading have no $bindable fallback: they bind to per-environment
 	// record entries that start out undefined, and binding undefined to a
@@ -36,16 +41,30 @@
 	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && canUpgradePermission && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
 
-	const upgradeAvailabilityQuery = createQuery(() => ({
-		queryKey: queryKeys.system.environmentUpgradeAvailable(environment.id),
-		queryFn: () => systemUpgradeService.checkUpgradeAvailable(environment.id),
-		enabled: shouldCheckUpgrade,
-		staleTime: 0
-	}));
+	const upgradeCheckEnvironments = $derived(
+		environmentStore.available.filter(
+			(env) => shouldLoadEnvironment(env) && hasPermission('environments:update', env.id) && hasPermission('system:read', env.id)
+		)
+	);
+
+	const upgradeAvailabilityQuery = createQuery(() => {
+		const environments = upgradeCheckEnvironments;
+		return {
+			queryKey: queryKeys.system.environmentUpgradeAvailable(environments.map((env) => env.id).join(',')),
+			queryFn: () =>
+				sumAcrossEnvironments(environments, (scope, config) => systemUpgradeService.checkUpgradeAvailable(scope, config), {
+					canUpgrade: false,
+					error: false,
+					message: ''
+				}),
+			enabled: shouldCheckUpgrade,
+			staleTime: 0
+		};
+	});
 
 	const upgradeIsAvailable = $derived.by(() => {
 		if (debug) return true;
-		const result = upgradeAvailabilityQuery.data;
+		const result = upgradeAvailabilityQuery.data?.byEnvironment.find((entry) => entry.environment.id === environment.id)?.data;
 		return !!result?.canUpgrade && !result?.error;
 	});
 

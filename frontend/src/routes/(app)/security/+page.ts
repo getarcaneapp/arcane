@@ -46,7 +46,7 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	await Promise.all(environmentStore.shown.map((env) => featureStore.load(env.id)));
+	await featureStore.load(environmentStore.shown.map((env) => env.id));
 	if (vulnerabilityOverviewEnvironments().length === 0) {
 		return {
 			featureDisabled: true,

@@ -64,8 +64,10 @@ export const queryKeys = {
 		kubeGenerateSources: (environmentId: string) => ['podman', environmentId, 'kube', 'generate-sources'] as const
 	},
 	jobs: {
+		all: ['environment-jobs'] as const,
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
 		schedules: (environmentId: string) => ['environment-jobs', environmentId, 'schedules'] as const,
+		automations: (environmentId: string) => ['environment-jobs', environmentId, 'automations'] as const,
 		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,
 		run: (environmentId: string, jobId: string, runId: string | undefined) => ['job-run', environmentId, jobId, runId] as const
 	},
@@ -84,7 +86,8 @@ export const queryKeys = {
 	settings: {
 		all: ['settings'] as const,
 		byEnvironment: (environmentId: string) => ['settings', environmentId] as const,
-		public: (environmentId: string) => ['settings', environmentId, 'public'] as const
+		public: (environmentId: string) => ['settings', environmentId, 'public'] as const,
+		publicAcross: ['settings-public-across'] as const
 	},
 	roles: {
 		root: ['roles'] as const,
@@ -110,6 +113,7 @@ export const queryKeys = {
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
 		detail: (environmentId: string) => ['environment', environmentId] as const,
 		settings: (environmentId: string) => ['environment-settings', environmentId] as const,
+		settingsAcross: (scope: string) => ['environment-settings-across', scope] as const,
 		enrollmentTokens: ['enrollment-tokens'] as const
 	},
 	gitRepositories: {
@@ -166,8 +170,6 @@ export const queryKeys = {
 		global: ['events', 'global'] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
 		statsGlobal: () => ['events', 'global', 'stats'] as const,
-		environmentList: (environmentId: string, options: SearchPaginationSortRequest) =>
-			['events', environmentId, stableSerialize(options)] as const,
 		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
 	system: {
@@ -176,8 +178,8 @@ export const queryKeys = {
 		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
 		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
 		versionInfo: (environmentId: string) => ['system', environmentId, 'version-info'] as const,
-		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const,
-		diskUsage: (environmentId: string) => ['system', environmentId, 'disk-usage'] as const
+		environmentVersions: (scope: string) => ['system', scope, 'environment-versions'] as const,
+		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const
 	},
 	containers: {
 		all: ['containers'] as const,

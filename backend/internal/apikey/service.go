@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -750,6 +751,9 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 			"name LIKE ? OR COALESCE(description, '') LIKE ?",
 			searchPattern, searchPattern,
 		)
+	}
+	if days, _ := strconv.Atoi(params.Filters["expiresWithinDays"]); days > 0 {
+		query = query.Where("expires_at IS NOT NULL AND expires_at <= ?", time.Now().AddDate(0, 0, days))
 	}
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &apiKeys)

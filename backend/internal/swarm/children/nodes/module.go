@@ -208,6 +208,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmJoin,
 		h.GetJoinCandidates,

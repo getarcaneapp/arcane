@@ -1286,7 +1286,7 @@ func (s *ActivityService) ListRemoteActivities(
 }
 
 func (s *ActivityService) AggregateActivities(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Activity], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.Activity]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "includeTotal": {"true"}})
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.Activity]](ctx, url.Values{"includeTotal": {"true"}})
 	if err != nil {
 		return types.Paginated[types.Activity]{}, err
 	}
@@ -1312,7 +1312,7 @@ func (s *ActivityService) AggregateActivities(ctx context.Context, params pagina
 			Sort:  params.Sort,
 			Order: kit.Ternary(params.Sort == "", pagination.SortAsc, params.Order),
 		},
-		Params:  params.Params,
+		Params:  pagination.Params{Limit: -1},
 		Filters: params.Filters,
 	})
 

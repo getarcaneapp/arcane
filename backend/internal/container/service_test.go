@@ -1797,10 +1797,41 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 			require.True(t, ok)
 			query := stored.(url.Values)
 			require.Equal(t, "0", query.Get("start"))
-			require.Equal(t, "-1", query.Get("limit"))
+			require.Equal(t, "4", query.Get("limit"))
 			require.Equal(t, "name", query.Get("sort"))
 			require.False(t, query.Has("groupBy"))
 		}
+	})
+
+	t.Run("limits each environment to the requested top rows and sums their totals", func(t *testing.T) {
+		ctx, queries := containerScopeContext(t, "/api/agents/a,b,c/containers?limit=1&sort=name&order=asc", map[string]any{
+			"a": ContainerPaginatedResponse{
+				Success:    true,
+				Data:       []types.ContainerSummary{newGroupedContainerSummary("bravo", "")},
+				Pagination: types.PaginationResponse{TotalItems: 7},
+			},
+			"b": ContainerPaginatedResponse{
+				Success:    true,
+				Data:       []types.ContainerSummary{newGroupedContainerSummary("alpha", "")},
+				Pagination: types.PaginationResponse{TotalItems: 5},
+			},
+		})
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 1}}, "")
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"b/alpha"}, rowLabels(body.Data))
+		require.Equal(t, int64(12), body.Pagination.TotalItems)
+		require.Equal(t, int64(12), body.Pagination.TotalPages)
+		stored, _ := queries.Load("a")
+		require.Equal(t, "1", stored.(url.Values).Get("limit"))
+	})
+
+	t.Run("keeps every row when sorting by environment", func(t *testing.T) {
+		ctx, queries := containerScopeContext(t, "/api/agents/a,b,c/containers?limit=1&sort=environment", bodies)
+		_, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 1}}, "")
+		require.NoError(t, err)
+		stored, _ := queries.Load("a")
+		require.Equal(t, "-1", stored.(url.Values).Get("limit"))
 	})
 
 	t.Run("sorts by name descending ignoring case", func(t *testing.T) {

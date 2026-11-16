@@ -292,6 +292,9 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 			Offline:     false,
 			Jobs:        catalog.Jobs,
 			IsAgent:     catalog.IsAgent,
+
+			Environments:       nil,
+			FailedEnvironments: nil,
 		}
 		raw, err := json.Marshal(observed)
 		if err != nil {
@@ -328,6 +331,9 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 		Offline:     true,
 		Jobs:        jobs,
 		IsAgent:     catalog.IsAgent || !found,
+
+		Environments:       nil,
+		FailedEnvironments: nil,
 	}, nil
 }
 

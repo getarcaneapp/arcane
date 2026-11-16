@@ -36,6 +36,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/types/v3"
 )
@@ -747,6 +748,53 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 		Offline:     catalog.Offline,
 		Jobs:        jobs,
 		IsAgent:     catalog.IsAgent,
+
+		Environments:       nil,
+		FailedEnvironments: nil,
+	}, nil
+}
+
+func (s *JobService) AggregateJobs(ctx context.Context) (types.JobListResponse, error) {
+	collection, err := httpx.CollectEnvironments[types.JobListResponse](ctx, nil)
+	if err != nil {
+		return types.JobListResponse{}, err
+	}
+	environments := make([]types.EnvironmentData[types.JobListResponse], 0, len(collection.Results))
+	var observedAt time.Time
+	durableRuns := len(collection.Results) > 0
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[types.JobListResponse]{
+			Environment: result.Environment,
+			Data:        result.Value,
+		})
+		if result.Value.ObservedAt.After(observedAt) {
+			observedAt = result.Value.ObservedAt
+		}
+		durableRuns = durableRuns && result.Value.DurableRuns
+	}
+	return types.JobListResponse{
+		ObservedAt:         observedAt,
+		DurableRuns:        durableRuns,
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *JobService) AggregateJobSchedules(ctx context.Context) (types.JobScheduleConfig, error) {
+	collection, err := httpx.CollectEnvironments[types.JobScheduleConfig](ctx, nil)
+	if err != nil {
+		return types.JobScheduleConfig{}, err
+	}
+	environments := make([]types.EnvironmentData[types.JobScheduleConfig], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[types.JobScheduleConfig]{
+			Environment: result.Environment,
+			Data:        result.Value,
+		})
+	}
+	return types.JobScheduleConfig{
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
 	}, nil
 }
 

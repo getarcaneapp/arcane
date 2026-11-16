@@ -142,13 +142,17 @@ export async function settleAcrossEnvironments<T>(
 	run: (environmentId: string) => Promise<T>
 ): Promise<{ environment: EnvironmentRef; value: T }[]> {
 	const { values, failures } = await collectAcrossEnvironments(environments, (id) => run(id), environments.length > 1);
+	toastEnvironmentFailures(failures);
+	return values;
+}
+
+export function toastEnvironmentFailures(failures: EnvironmentFailure[]) {
 	for (const { environment, message } of failures) {
 		toast.error(m.all_environments_request_failed({ environment: environment.name }), {
 			id: `environment-request-failed-${environment.id}`,
 			description: message
 		});
 	}
-	return values;
 }
 
 export function limitEnvironments(environments: EnvironmentRef[]): { included: EnvironmentRef[]; excluded: EnvironmentRef[] } {

@@ -437,6 +437,41 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
 }
 
+func (s *EventService) ListRecentEnvironmentEvents(ctx context.Context, environmentID string, typeFilters []string, limit int) ([]types.Event, error) {
+	var recent []types.Event
+	for _, typeFilter := range kit.Ternary(len(typeFilters) > 0, typeFilters, []string{""}) {
+		events, _, err := s.ListEventsPaginated(ctx, pagination.QueryParams{
+			Filters:    map[string]string{"environmentId": environmentID, "type": typeFilter},
+			SortParams: pagination.SortParams{Sort: "timestamp", Order: pagination.SortDesc},
+			Params:     pagination.Params{Limit: limit, SkipCount: true},
+		})
+		if err != nil {
+			return nil, err
+		}
+		recent = append(recent, events...)
+	}
+	return recent, nil
+}
+
+func (s *EventService) AggregateRecentEnvironmentEvents(ctx context.Context) (types.ApiResponse[[]types.Event], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.Event]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[[]types.Event]{}, err
+	}
+	var recent []types.Event
+	for _, result := range collection.Results {
+		recent = append(recent, result.Value.Data...)
+	}
+	slices.SortStableFunc(recent, func(left, right types.Event) int {
+		return right.Timestamp.Compare(left.Timestamp)
+	})
+	return types.ApiResponse[[]types.Event]{
+		Success:            true,
+		Data:               recent,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
 func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
