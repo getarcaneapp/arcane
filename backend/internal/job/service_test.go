@@ -2,7 +2,11 @@ package job
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -23,6 +27,7 @@ import (
 	userdomain "getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -875,4 +880,56 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	require.Equal(t, "interrupted before applying updates", persisted.Outcome.Message)
 	require.NotNil(t, persisted.FinishedAt)
 	require.Equal(t, run.ActivityID, persisted.ActivityID)
+}
+
+func jobScopeContext(t *testing.T, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/jobs", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestJobService_AggregateJobsKeepsEnvironmentBreakdown(t *testing.T) {
+	older := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	ctx := jobScopeContext(t, map[string]any{
+		"a": types.JobListResponse{
+			Jobs:        []types.JobStatus{{ID: "prune"}},
+			ObservedAt:  older,
+			DurableRuns: true,
+		},
+		"b": types.JobListResponse{
+			Jobs:        []types.JobStatus{{ID: "auto-heal"}},
+			ObservedAt:  newer,
+			DurableRuns: false,
+		},
+	})
+
+	body, err := (&JobService{}).AggregateJobs(ctx)
+	require.NoError(t, err)
+
+	require.Empty(t, body.Jobs)
+	require.True(t, body.ObservedAt.Equal(newer))
+	require.False(t, body.DurableRuns)
+	require.Len(t, body.Environments, 2)
+	byEnvironment := map[string][]types.JobStatus{}
+	for _, environment := range body.Environments {
+		byEnvironment[environment.Environment.ID] = environment.Data.Jobs
+	}
+	require.Equal(t, "prune", byEnvironment["a"][0].ID)
+	require.Equal(t, "auto-heal", byEnvironment["b"][0].ID)
+	require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 }

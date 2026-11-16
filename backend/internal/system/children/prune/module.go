@@ -29,5 +29,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Description: "Get the disk space held by unused images, build cache, unused volumes, and stopped containers",
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermSystemRead, h.GetDiskUsage)
 }

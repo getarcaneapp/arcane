@@ -73,7 +73,12 @@
 	let showIgnored = $state(false);
 	let fixAvailable = $state(false);
 	const ignoreUnfixed = createQueries(() => ({
-		queries: vulnerabilityEnvironments().map((env) => publicSettingsQuery(env.id)),
+		queries: vulnerabilityEnvironments().map((env) => ({
+			...publicSettingsQuery(env.id),
+			refetchOnMount: false,
+			refetchOnWindowFocus: false,
+			refetchOnReconnect: false
+		})),
 		combine: (results) => ({
 			everywhere: results.length > 0 && results.every((result) => result.data?.values.trivyIgnoreUnfixed === true)
 		})
@@ -161,7 +166,7 @@
 	async function refreshAll(reset = false) {
 		const requestedScope = scopeKey();
 		selectedVulnerabilityIds = [];
-		await Promise.all(environmentStore.shown.map((env) => featureStore.refresh(env.id)));
+		await featureStore.refresh(environmentStore.shown.map((env) => env.id));
 		if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
 		const overviewRefresh = refreshOverview();
 		await parallelRefresh(

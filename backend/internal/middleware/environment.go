@@ -329,7 +329,7 @@ func IsManagerLocalPath(method, suffix string) bool {
 	}
 
 	switch method + " " + suffix {
-	case "GET /swarm/join/candidates", "GET /swarm/nodes", "POST /swarm/join/agents", "POST /swarm/nodes/agents/reconcile",
+	case "GET /events", "GET /swarm/join/candidates", "GET /swarm/nodes", "POST /swarm/join/agents", "POST /swarm/nodes/agents/reconcile",
 		"POST /system/upgrade/jobs", "GET /system/upgrade/jobs/current", "POST /tunnel/restart":
 		return true
 	}

@@ -944,9 +944,12 @@ test.describe('Agents', () => {
 			page.on('request', (request) => {
 				if (!createdEnvironmentId) return;
 				const pathname = new URL(request.url()).pathname;
+				const [, , , scope = '', ...rest] = pathname.split('/');
+				const suffix = rest.join('/');
 				if (
-					pathname === `/api/agents/${createdEnvironmentId}/settings` ||
-					pathname === `/api/agents/${createdEnvironmentId}/settings/public`
+					pathname.startsWith('/api/agents/') &&
+					decodeURIComponent(scope).split(',').includes(createdEnvironmentId) &&
+					(suffix === 'settings' || suffix === 'settings/public')
 				) {
 					agentSettingsRequests.push(pathname);
 				}

@@ -51,6 +51,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermJobsRead, h.Get)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -71,6 +72,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 		Description: "Get status, schedule, and metadata for all background jobs",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermJobsList, h.ListJobs)
 
 	middleware.RegisterWithActionPermissions(api, huma.Operation{

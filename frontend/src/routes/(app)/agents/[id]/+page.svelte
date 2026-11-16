@@ -271,7 +271,7 @@
 				settings,
 				Object.fromEntries(changedFeatures.map((feature) => [feature.settingKey, formData[feature.settingKey]]))
 			);
-			await featureStore.refresh(environmentId);
+			await featureStore.refresh([environmentId]);
 			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
 			const overridden = changedFeatures.find(
 				(feature) => featureStore.isEnabled(feature.id, environmentId) !== formData[feature.settingKey]
@@ -331,7 +331,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isRefreshing = true;
-					await featureStore.refresh(environment.id);
+					await featureStore.refresh([environment.id]);
 					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
 				})()

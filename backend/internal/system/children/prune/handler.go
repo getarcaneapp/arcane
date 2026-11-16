@@ -8,6 +8,7 @@ import (
 
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -28,6 +29,13 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 }
 
 func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SystemDiskUsage], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregateDiskUsage(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get disk usage: " + err.Error())
+		}
+		return &handlerutil.Out[types.SystemDiskUsage]{Body: body}, nil
+	}
 	usage, err := h.service.GetDiskUsage(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get disk usage: " + err.Error())

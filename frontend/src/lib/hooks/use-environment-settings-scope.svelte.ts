@@ -1,16 +1,15 @@
 import { refreshAll } from '$app/navigation';
 import { page } from '$app/state';
-import { createQueries, useQueryClient } from '@tanstack/svelte-query';
+import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
-import { environmentSettingsQuery } from '#lib/query/environments.js';
 import { queryKeys } from '#lib/query/query-keys.js';
-import { settingsService } from '#lib/services/settings-service.js';
+import { emptySettings, settingsService } from '#lib/services/settings-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SettingKey, Settings } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { settleAcrossEnvironments } from '#lib/utils/environments.js';
+import { readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	const queryClient = useQueryClient();
@@ -27,16 +26,31 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 		)
 	);
 	const online = $derived(candidates.filter(isEnvironmentOnline));
-	const results = createQueries(() => ({
-		queries: online.map((env) => ({
-			...environmentSettingsQuery(env.id, true),
+	const onlineScope = $derived(online.map((env) => env.id).join(','));
+	const results = createQuery(() => {
+		const environments = online;
+		return {
+			queryKey: queryKeys.environments.settingsAcross(onlineScope),
+			queryFn: async () => {
+				const sum = await readEachEnvironment(
+					environments,
+					(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
+					emptySettings
+				);
+				for (const { environment, data } of sum.byEnvironment) {
+					queryClient.setQueryData(queryKeys.environments.settings(environment.id), data);
+				}
+				return sum;
+			},
+			enabled: environments.length > 0,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false
-		}))
-	}));
+		};
+	});
+	const pending = $derived(online.length > 0 && results.isPending);
 	const entries = $derived(
-		online.flatMap((environment, index) => {
-			const settings = results[index]?.data;
+		online.flatMap((environment) => {
+			const settings = results.data?.byEnvironment.find((entry) => entry.environment.id === environment.id)?.data;
 			return settings ? [{ environment, settings }] : [];
 		})
 	);
@@ -71,11 +85,12 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 			}
 		);
 		await Promise.all(
-			entries.flatMap(({ environment }) => [
-				queryClient.invalidateQueries({ queryKey: queryKeys.environments.settings(environment.id) }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(environment.id) })
-			])
+			entries.map(({ environment }) =>
+				queryClient.invalidateQueries({ queryKey: queryKeys.environments.settings(environment.id) })
+			)
 		);
+		await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.all });
+		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.settingsAcross(onlineScope) });
 		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 		await refreshAll();
 		revision++;
@@ -92,10 +107,10 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 			return entries;
 		},
 		get isLoading() {
-			return results.some((result) => result.isPending);
+			return pending;
 		},
 		get offlineCount() {
-			return candidates.length - entries.length - results.filter((result) => result.isPending).length;
+			return candidates.length - entries.length - (pending ? online.length : 0);
 		},
 		get primaryId() {
 			return entries[0]?.environment.id ?? selectedId;

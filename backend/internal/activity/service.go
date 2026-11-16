@@ -29,7 +29,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/sqlite"
@@ -1286,18 +1285,23 @@ func (s *ActivityService) ListRemoteActivities(
 }
 
 func (s *ActivityService) AggregateActivities(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Activity], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.Activity]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "includeTotal": {"true"}})
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.Activity]](ctx, url.Values{"includeTotal": {"true"}})
 	if err != nil {
 		return types.Paginated[types.Activity]{}, err
 	}
 
 	pages := make([]pagination.EnvironmentPage[types.Activity], 0, len(collection.Results))
+	var totalPages int64
+	var hasNextPage bool
 	for _, result := range collection.Results {
 		pages = append(pages, pagination.EnvironmentPage[types.Activity]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
+			Total:          result.Value.Pagination.TotalItems,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
 		})
+		totalPages = max(totalPages, result.Value.Pagination.TotalPages)
+		hasNextPage = hasNextPage || result.Value.Pagination.HasNextPage
 	}
 	data, resp := pagination.MergeEnvironmentPages(pagination.Config[types.Activity]{
 		SortBindings: []pagination.SortBinding[types.Activity]{{
@@ -1312,14 +1316,22 @@ func (s *ActivityService) AggregateActivities(ctx context.Context, params pagina
 			Sort:  params.Sort,
 			Order: kit.Ternary(params.Sort == "", pagination.SortAsc, params.Order),
 		},
-		Params:  params.Params,
+		Params:  pagination.Params{Limit: -1},
 		Filters: params.Filters,
 	})
+	page := pagination.BuildResponse(resp.TotalItems, resp.GrandTotalItems, params)
 
 	return types.Paginated[types.Activity]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
+		Success: true,
+		Data:    data,
+		Pagination: types.PaginationResponse{
+			TotalPages:      max(totalPages, 1),
+			TotalItems:      page.TotalItems,
+			CurrentPage:     page.CurrentPage,
+			ItemsPerPage:    page.ItemsPerPage,
+			GrandTotalItems: page.GrandTotalItems,
+			HasNextPage:     hasNextPage,
+		},
 		FailedEnvironments: collection.Failures,
 	}, nil
 }

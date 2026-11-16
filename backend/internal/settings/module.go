@@ -70,6 +70,7 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 		Description: "Get the settings the UI needs for an environment. Anonymous callers receive public settings; signed-in callers of any role also receive the non-admin settings",
 		Tags:        []string{"Settings"},
 		Security:    []map[string][]string{},
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, h.GetPublicSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -80,6 +81,7 @@ func RegisterSettings(api huma.API, h *SettingsHandler) {
 		Description: "Get the environment-scoped settings for an environment",
 		Tags:        []string{"Settings"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermEnvironmentSettingsRead, h.GetEnvironmentSettings)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

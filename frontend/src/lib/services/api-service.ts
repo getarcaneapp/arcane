@@ -315,6 +315,8 @@ class APIClient {
 				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
 				if (session?.aborted) throw new SessionCancelledError();
 				const parsedRecord = asRecord(parsed);
+				const failedEnvironmentsHeader = response.headers.get('X-Arcane-Failed-Environments');
+				if (failedEnvironmentsHeader) config.onFailedEnvironments?.(JSON.parse(decodeURIComponent(failedEnvironmentsHeader)));
 				if (Array.isArray(parsedRecord?.['failedEnvironments']))
 					config.onFailedEnvironments?.(parsedRecord['failedEnvironments']);
 				if (Array.isArray(parsedRecord?.['environments'])) config.onEnvironments?.(parsedRecord['environments']);

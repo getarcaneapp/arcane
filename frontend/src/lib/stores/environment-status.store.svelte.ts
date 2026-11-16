@@ -41,10 +41,9 @@ function createEnvironmentStatusStoreInternal() {
 								if (event.type !== 'snapshot' || !event.environments) {
 									return;
 								}
-								for (const environmentId of environmentStore.applyLiveEnvironments(event.environments)) {
-									void featureStore.refresh(environmentId);
-									clientStream.invalidateEnvironment(environmentId);
-								}
+								const changed = environmentStore.applyLiveEnvironments(event.environments);
+								if (changed.length > 0) void featureStore.refresh(changed);
+								for (const environmentId of changed) clientStream.invalidateEnvironment(environmentId);
 							}
 						}),
 						clientStream.watchChanges()

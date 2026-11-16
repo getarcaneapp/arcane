@@ -22,7 +22,7 @@ export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDeta
 	const operationResult = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageDetailQuery(envId, params.imageId), revalidateIfStale: true }),
-			featureStore.load(envId)
+			featureStore.load([envId])
 		])
 	);
 	if (operationResult.error !== null) {

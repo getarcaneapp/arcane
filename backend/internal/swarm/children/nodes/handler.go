@@ -339,6 +339,13 @@ func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksIn
 }
 
 func (h *Handler) GetJoinCandidates(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregateJoinCandidates(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list Easy Join candidates: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.SwarmJoinCandidate]{Body: body}, nil
+	}
 	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}

@@ -818,6 +818,12 @@ func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode]
 	}
 }
 
+func (s *Service) AggregateJoinCandidates(ctx context.Context) (types.ApiResponse[[]types.SwarmJoinCandidate], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[[]types.SwarmJoinCandidate]) []types.SwarmJoinCandidate {
+		return nil
+	})
+}
+
 func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) ([]types.SwarmJoinCandidate, error) {
 	var identity *SwarmNodeIdentity
 	var err error

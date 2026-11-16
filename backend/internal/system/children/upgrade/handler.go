@@ -14,6 +14,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -53,6 +54,13 @@ func NewHandler(service *Service, cfg *config.Config, appCtx context.Context) *H
 }
 
 func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *types.EnvironmentInput) (*CheckUpgradeOutput, error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregateUpgradeChecks(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to check for updates: " + err.Error())
+		}
+		return &CheckUpgradeOutput{Body: body}, nil
+	}
 	canUpgrade, err := h.service.CanUpgrade(ctx)
 	if err != nil {
 		slog.DebugContext(ctx, "System upgrade check failed", "error", err)

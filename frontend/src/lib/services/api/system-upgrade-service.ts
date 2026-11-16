@@ -1,7 +1,7 @@
 import type { UpgradeCheckResult, UpgradeJob } from '#lib/types/system.js';
 import type { VersionInfo } from '#lib/types/version.js';
 
-import { apiClient } from '../api-service';
+import { apiClient, type APIRequestConfig } from '../api-service';
 
 type ApiResponse<T> = {
 	success: boolean;
@@ -9,8 +9,8 @@ type ApiResponse<T> = {
 	message?: string;
 };
 
-async function checkUpgradeAvailable(environmentId: string = '0'): Promise<UpgradeCheckResult> {
-	const res = await apiClient.get<UpgradeCheckResult>(`/agents/${environmentId}/system/upgrade/check`);
+async function checkUpgradeAvailable(environmentId: string = '0', config?: APIRequestConfig): Promise<UpgradeCheckResult> {
+	const res = await apiClient.get<UpgradeCheckResult>(`/agents/${environmentId}/system/upgrade/check`, config);
 	return res.data;
 }
 

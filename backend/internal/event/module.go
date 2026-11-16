@@ -90,6 +90,17 @@ func RegisterEvents(api huma.API, eventService *EventService, resolveEnvironment
 	}, authz.PermEventsList, h.GetEventsByEnvironment)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "listRecentEnvironmentEvents",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/events",
+		Summary:     "List recent environment events",
+		Description: "Get the most recent events of an environment, newest first, for each type filter",
+		Tags:        []string{"Events"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+	}, authz.PermEventsList, h.ListRecentEnvironmentEvents)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "waitForEnvironmentChanges",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/events/changes",

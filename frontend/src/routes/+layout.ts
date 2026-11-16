@@ -253,14 +253,15 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 						navigating
 					)
 				);
+		const featureEnvironments = environmentStore.available.filter((env) => env.enabled && !passwordChangePending);
 		const featuresRequest = Promise.race([
-			Promise.all(
-				environmentStore.available
-					.filter((env) => env.enabled && !passwordChangePending)
-					.map((env) =>
-						isEnvironmentOnline(env) ? featureStore.load(env.id, rootQuery.staleTime === 0) : featureStore.markUnavailable(env.id)
-					)
-			),
+			Promise.all([
+				featureStore.load(
+					featureEnvironments.filter(isEnvironmentOnline).map((env) => env.id),
+					rootQuery.staleTime === 0
+				),
+				...featureEnvironments.filter((env) => !isEnvironmentOnline(env)).map((env) => featureStore.markUnavailable(env.id))
+			]),
 			afterDiscoveryTimeout()
 		]);
 		const swarmEnvironments = passwordChangePending ? [] : readableEnvironments('swarm:read');

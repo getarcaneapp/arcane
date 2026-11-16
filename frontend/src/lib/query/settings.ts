@@ -6,7 +6,7 @@ import { settingsService } from '#lib/services/settings-service.js';
 export function publicSettingsQuery(environmentId: string) {
 	return queryOptions({
 		queryKey: queryKeys.settings.public(environmentId),
-		queryFn: ({ signal }) => settingsService.getPublicSettingsForEnvironment(environmentId, signal),
+		queryFn: ({ signal }) => settingsService.getPublicSettingsForEnvironment(environmentId, { signal }),
 		retry: false,
 		retryOnMount: false
 	});

@@ -15,6 +15,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -66,6 +67,13 @@ type (
 )
 
 func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.jobService.AggregateJobs(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list jobs: " + err.Error())
+		}
+		return &GetJobsOutput{Body: body}, nil
+	}
 	jobs, err := func() (*types.JobListResponse, error) {
 		if input.ID != "0" {
 			return h.jobService.ListRemoteJobs(ctx, input.ID)
@@ -113,6 +121,13 @@ func (h *JobSchedulesHandler) runJob(ctx context.Context, input *JobActionInput)
 }
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.jobService.AggregateJobSchedules(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get job schedules: " + err.Error())
+		}
+		return &GetJobSchedulesOutput{Body: body}, nil
+	}
 	if input.ID != "0" {
 		cfg, err := h.proxyRemoteJSON.JSON[types.JobScheduleConfig](ctx, input.ID, http.MethodGet, "/api/agents/0/jobs/schedules", nil)
 		if err != nil {

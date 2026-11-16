@@ -12,14 +12,13 @@ class EventService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getEnvironmentEvents(
-		environmentId: string,
-		options?: SearchPaginationSortRequest,
+	async getRecentEnvironmentEvents(
+		scope: string,
+		request: { types: string[]; limit: number },
 		config?: APIRequestConfig
-	): Promise<Paginated<Event>> {
-		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/events/agent/${environmentId}`, { ...config, params });
-		return res.data;
+	): Promise<Event[]> {
+		const params = new URLSearchParams([...request.types.map((type) => ['type', type]), ['limit', String(request.limit)]]);
+		return this.handleResponse(this.api.get(`/agents/${scope}/events`, { ...config, params }));
 	}
 
 	async getEventStats(): Promise<EventSeverityCounts> {

@@ -55,6 +55,7 @@ import (
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -218,6 +219,24 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environme
 		},
 	})
 	return err
+}
+
+func (s *Service) AggregateUpgradeChecks(ctx context.Context) (types.UpgradeCheckResult, error) {
+	collection, err := httpx.CollectEnvironments[types.UpgradeCheckResult](ctx, nil)
+	if err != nil {
+		return types.UpgradeCheckResult{}, err
+	}
+	environments := make([]types.EnvironmentData[types.UpgradeCheckResult], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[types.UpgradeCheckResult]{
+			Environment: result.Environment,
+			Data:        result.Value,
+		})
+	}
+	return types.UpgradeCheckResult{
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {

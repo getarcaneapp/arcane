@@ -40,7 +40,7 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	channel: string;
 	/** Handles every event type except 'heartbeat' (core owns connection state). */
 	applyEvent(environmentId: string, event: TEvent): void;
-	fetchSnapshot(environmentId: string, signal: AbortSignal): Promise<void>;
+	fetchSnapshots(environmentIds: string[], signal: AbortSignal): Promise<void>;
 	refreshOnStart?: boolean;
 	/** Limits aggregate stream state and REST snapshots to caller-authorized environments. */
 	includeEnvironment?(environment: Pick<Environment, 'id' | 'name'>): boolean;
@@ -129,9 +129,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 	}
 
 	async function refresh(signal = lifecycleSignal) {
-		// The Promise.all below fetches every environment, including new ones.
+		// fetchSnapshots below fetches every environment, including new ones.
 		reconcileEnvironments(false);
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, signal)));
+		await config.fetchSnapshots(Object.keys(_environmentStates), signal);
 	}
 
 	function reconcileEnvironments(fetchNew = true) {
@@ -166,7 +166,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			// up on its server-side reconcile tick; fetch once so the first
 			// snapshot doesn't take up to that interval to appear.
 			if (fetchNew && clientStream.hasActiveStream) {
-				void config.fetchSnapshot(environmentId, lifecycleSignal);
+				void config.fetchSnapshots([environmentId], lifecycleSignal);
 			}
 			return;
 		}

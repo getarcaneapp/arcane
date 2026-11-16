@@ -55,8 +55,8 @@ type (
 		Status        string `query:"status" doc:"Filter by activity status"`
 		Type          string `query:"type" doc:"Filter by activity type"`
 		ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
-		Start         int    `query:"start" default:"0" doc:"Start index"`
-		Limit         int    `query:"limit" default:"50" doc:"Limit"`
+		Start         int    `query:"start" default:"0" doc:"Start index; on a multi-environment request it applies to each environment"`
+		Limit         int    `query:"limit" default:"50" doc:"Limit; on a multi-environment request it applies to each environment"`
 		IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 	}
 

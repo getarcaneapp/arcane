@@ -28,6 +28,7 @@ type (
 		Handler http.Handler  // the Echo instance, for in-process re-dispatch
 		Request *http.Request // clone of the outer request captured before auth; carries no scope
 		Resolve EnvironmentResolver
+		Path    string
 		IDs     []string
 	}
 
@@ -61,6 +62,7 @@ const (
 	environmentRequestTimeout = 20 * time.Second
 	environmentResponseLimit  = 64 << 20
 	EnvironmentConcurrency    = 8
+	FailedEnvironmentsHeader  = "X-Arcane-Failed-Environments"
 )
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
@@ -157,7 +159,7 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 		query.Del("sort")
 		query.Del("order")
 	}
-	target, err := url.Parse(environmentsPathPrefix + url.PathEscape(id) + kit.Ternary(hasSuffix, "/"+suffix, "") +
+	target, err := url.Parse(environmentsPathPrefix + url.PathEscape(id) + cmp.Or(scope.Path, kit.Ternary(hasSuffix, "/"+suffix, "")) +
 		kit.Ternary(len(query) > 0, "?", "") + query.Encode())
 	if err != nil {
 		return value, fmt.Errorf("invalid environment path: %w", err)

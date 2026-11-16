@@ -2,8 +2,11 @@ package upgrade
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/version"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -840,4 +844,38 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
+func TestAggregateUpgradeChecksKeepsEnvironmentBreakdown(t *testing.T) {
+	bodies := map[string]types.UpgradeCheckResult{
+		"a": {CanUpgrade: true, Message: "System can be upgraded"},
+		"b": {Error: true, Message: "Failed to check for updates: docker socket is not accessible"},
+	}
+	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/system/upgrade/check", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+
+	body, err := (&Service{}).AggregateUpgradeChecks(ctx)
+	require.NoError(t, err)
+
+	require.False(t, body.CanUpgrade)
+	require.False(t, body.Error)
+	require.Equal(t, []types.EnvironmentData[types.UpgradeCheckResult]{
+		{Environment: types.EnvironmentRef{ID: "a", Name: "Env a"}, Data: bodies["a"]},
+		{Environment: types.EnvironmentRef{ID: "b", Name: "Env b"}, Data: bodies["b"]},
+	}, body.Environments)
+	require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 }

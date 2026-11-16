@@ -16,6 +16,9 @@ type (
 		VulnerabilityScanInterval      string `json:"vulnerabilityScanInterval" required:"false"`
 		ImageAutoPatchInterval         string `json:"imageAutoPatchInterval" required:"false"`
 		AutoHealInterval               string `json:"autoHealInterval" required:"false"`
+
+		Environments       []EnvironmentData[JobScheduleConfig] `json:"environments,omitempty" doc:"Per-environment job schedules behind a multi-environment response"`
+		FailedEnvironments []EnvironmentFailure                 `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 	}
 
 	JobStatus struct {
@@ -46,12 +49,14 @@ type (
 	}
 
 	JobListResponse struct {
-		ObservedAt  time.Time   `json:"observedAt"`
-		Timezone    string      `json:"timezone,omitempty"`
-		Jobs        []JobStatus `json:"jobs"`
-		DurableRuns bool        `json:"durableRuns"`
-		Offline     bool        `json:"offline,omitempty"`
-		IsAgent     bool        `json:"isAgent"`
+		ObservedAt         time.Time                          `json:"observedAt"`
+		Timezone           string                             `json:"timezone,omitempty"`
+		Jobs               []JobStatus                        `json:"jobs"`
+		Environments       []EnvironmentData[JobListResponse] `json:"environments,omitempty" doc:"Per-environment job lists behind a multi-environment response"`
+		FailedEnvironments []EnvironmentFailure               `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+		DurableRuns        bool                               `json:"durableRuns"`
+		Offline            bool                               `json:"offline,omitempty"`
+		IsAgent            bool                               `json:"isAgent"`
 	}
 
 	JobRunResponse struct {

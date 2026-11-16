@@ -16,7 +16,7 @@
 		<p>{m.features_vulnerability_disabled()}</p>
 	{:else}
 		<p>{m.features_unavailable()}</p>
-		<ArcaneButton action="base" customLabel={m.common_retry()} onclick={() => void featureStore.refresh(environmentId)} />
+		<ArcaneButton action="base" customLabel={m.common_retry()} onclick={() => void featureStore.refresh([environmentId])} />
 	{/if}
 	{#if hasAnyPermission(['environment-settings:read', 'environment-settings:update'], environmentId) && hasAnyPermission(['environments:list', 'environments:read'], '*')}
 		<ArcaneButton

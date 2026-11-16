@@ -763,6 +763,24 @@ func (s *SettingsService) SettingsSnapshot(visibility SettingVisibility, scopes 
 	}
 }
 
+func (s *SettingsService) AggregateEnvironmentSettings(ctx context.Context) (types.SettingsSnapshot, error) {
+	collection, err := httpx.CollectEnvironments[types.SettingsSnapshot](ctx, nil)
+	if err != nil {
+		return types.SettingsSnapshot{}, err
+	}
+	environments := make([]types.EnvironmentData[types.SettingsSnapshot], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[types.SettingsSnapshot]{
+			Environment: result.Environment,
+			Data:        result.Value,
+		})
+	}
+	return types.SettingsSnapshot{
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
 func (s *SettingsService) settingValue[T any](ctx context.Context, key string, parse func(string) (T, error)) T {
 	_, byKey := settingsFields()
 	value, _, _, lookupErr := s.GetSettingsConfig().FieldByKey(key)

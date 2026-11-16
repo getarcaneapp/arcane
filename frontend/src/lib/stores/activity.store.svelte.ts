@@ -28,6 +28,7 @@ import type {
 	ActivityGroup
 } from '#lib/types/ui/activity.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
+import { limitEnvironments, readAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
 import { instantEpochMilliseconds, parseInstant } from '#lib/utils/formatting.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -253,34 +254,7 @@ function createActivityStore() {
 					break;
 			}
 		},
-		async fetchSnapshot(environmentId, signal) {
-			core.updateEnvironmentState(environmentId, (environmentState) => ({
-				...environmentState,
-				loading: true
-			}));
-
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await activityService.getActivities(
-						{ pagination: { page: 1, limit: ACTIVITY_LIST_LIMIT } },
-						environmentId
-					);
-					if (signal.aborted || !core.environmentState(environmentId)) {
-						return;
-					}
-					replaceEnvironmentSnapshotInternal(environmentId, result.data ?? []);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				if (!signal.aborted && core.environmentState(environmentId)) {
-					console.warn('Failed to refresh activities:', error);
-					core.setEnvironmentError(environmentId, error);
-				}
-			} else {
-				return operationResult.data;
-			}
-		},
+		fetchSnapshots: fetchSnapshotsInternal,
 		onEnvironmentRemoved(environmentId) {
 			state = {
 				...state,
@@ -328,6 +302,62 @@ function createActivityStore() {
 			sourceEnvironmentId: activity.sourceEnvironmentId || environmentId,
 			sourceEnvironmentName: activity.sourceEnvironmentName || environmentState?.name || environmentId
 		};
+	}
+
+	async function fetchSnapshotsInternal(requestedIds: string[], signal: AbortSignal): Promise<void> {
+		const environmentIds = requestedIds.filter((id) => core.environmentState(id));
+		if (environmentIds.length === 0) return;
+		for (const environmentId of environmentIds) {
+			core.updateEnvironmentState(environmentId, (environmentState) => ({ ...environmentState, loading: true }));
+		}
+		const { included, excluded } = limitEnvironments(
+			environmentIds.map((id) => ({ id, name: core.environmentState(id)?.name ?? id }))
+		);
+		let reported: EnvironmentFailure[] = [];
+		const result = await tryCatch(
+			readAcrossEnvironments(
+				included,
+				(scope, config) =>
+					activityService.getActivities({ pagination: { page: 1, limit: ACTIVITY_LIST_LIMIT } }, scope, {
+						...config,
+						onFailedEnvironments: (failures) => {
+							reported = failures;
+							config.onFailedEnvironments?.(failures);
+						}
+					}),
+				false
+			)
+		);
+		if (signal.aborted) return;
+
+		if (result.error !== null) {
+			for (const environment of included) {
+				const failure = reported.find((entry) => entry.environment.id === environment.id);
+				setSnapshotErrorInternal(environment.id, failure ? new Error(failure.message) : result.error);
+			}
+		} else {
+			const rows = result.data.value.data ?? [];
+			for (const environment of included) {
+				const failure = result.data.failures.find((entry) => entry.environment.id === environment.id);
+				if (failure) {
+					setSnapshotErrorInternal(environment.id, new Error(failure.message));
+					continue;
+				}
+				const environmentRows = included.length > 1 ? rows.filter((row) => row.environmentId === environment.id) : rows;
+				replaceEnvironmentSnapshotInternal(environment.id, environmentRows);
+			}
+		}
+
+		await fetchSnapshotsInternal(
+			excluded.map((environment) => environment.id),
+			signal
+		);
+	}
+
+	function setSnapshotErrorInternal(environmentId: string, error: unknown) {
+		if (!core.environmentState(environmentId)) return;
+		console.warn('Failed to refresh activities:', error);
+		core.setEnvironmentError(environmentId, error);
 	}
 
 	function replaceEnvironmentSnapshotInternal(environmentId: string, activities: Activity[]) {

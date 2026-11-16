@@ -14,6 +14,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2058,7 +2059,11 @@ func (s *ContainerService) AggregateContainerCounts(ctx context.Context) (types.
 }
 
 func (s *ContainerService) AggregateContainers(ctx context.Context, params pagination.QueryParams, groupBy string) (ContainerPaginatedResponse, error) {
-	collection, err := httpx.CollectEnvironments[ContainerPaginatedResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "groupBy": nil})
+	environmentLimit := -1
+	if groupBy != containerGroupByProject && params.Limit > 0 && params.Sort != "" && params.Sort != "environment" {
+		environmentLimit = params.Start + params.Limit
+	}
+	collection, err := httpx.CollectEnvironments[ContainerPaginatedResponse](ctx, url.Values{"start": {"0"}, "limit": {strconv.Itoa(environmentLimit)}, "groupBy": nil})
 	if err != nil {
 		return ContainerPaginatedResponse{}, err
 	}
@@ -2070,6 +2075,7 @@ func (s *ContainerService) AggregateContainers(ctx context.Context, params pagin
 		pages = append(pages, pagination.EnvironmentPage[types.ContainerSummary]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
+			Total:          result.Value.Pagination.TotalItems,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
 		})
 		running += result.Value.Counts.RunningContainers

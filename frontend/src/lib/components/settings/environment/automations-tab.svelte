@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQueries, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import JobScheduleDialog from '#lib/components/job-card/job-schedule-dialog.svelte';
 	import MixedValuesPopover from '#lib/components/settings/mixed-values-popover.svelte';
@@ -18,7 +18,7 @@
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
-	import type { JobScheduleConfig } from '#lib/types/jobschedule.js';
+	import type { JobListResponse, JobScheduleConfig } from '#lib/types/jobschedule.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -28,7 +28,7 @@
 		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
-	import { settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import { listScopes, readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
 
@@ -52,22 +52,43 @@
 		environments.some((environment) => featureStore.isEnabled('vulnerabilityManagement', environment.id))
 	);
 
-	const scheduleResults = createQueries(() => ({
-		queries: environments.map((environment) => ({
-			queryKey: queryKeys.jobs.schedules(environment.id),
-			queryFn: () => jobScheduleService.getJobSchedules(environment.id)
-		}))
-	}));
+	const EMPTY_SCHEDULES: JobScheduleConfig = {
+		environmentHealthInterval: '',
+		eventCleanupInterval: '',
+		expiredSessionsCleanupInterval: '',
+		autoUpdateInterval: '',
+		dockerClientRefreshInterval: '',
+		pollingInterval: '',
+		scheduledPruneInterval: '',
+		vulnerabilityScanInterval: '',
+		imageAutoPatchInterval: '',
+		autoHealInterval: ''
+	};
 
-	const jobListResults = createQueries(() => ({
-		queries: environments.map((environment) => ({
-			queryKey: queryKeys.jobs.list(environment.id),
-			queryFn: ({ signal }) => jobScheduleService.listJobs(environment.id, { signal, suppressAccessDeniedToast: true }),
-			enabled: hasPermission('jobs:list', environment.id)
-		}))
+	const scheduleQuery = createQuery(() => ({
+		queryKey: queryKeys.jobs.schedules(environments.map((environment) => environment.id).join(',')),
+		queryFn: () =>
+			readEachEnvironment(environments, (scope, config) => jobScheduleService.getJobSchedules(scope, config), EMPTY_SCHEDULES)
+	}));
+	const schedulesByEnvironment = $derived(
+		new Map((scheduleQuery.data?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]))
+	);
+
+	const jobListEnvironments = $derived(environments.filter((environment) => hasPermission('jobs:list', environment.id)));
+	const jobListQuery = createQuery(() => ({
+		queryKey: queryKeys.jobs.automations(jobListEnvironments.map((environment) => environment.id).join(',')),
+		queryFn: ({ signal }) =>
+			readEachEnvironment<Pick<JobListResponse, 'timezone'>>(
+				jobListEnvironments,
+				(scope, config) => jobScheduleService.listJobs(scope, { ...config, signal }),
+				{}
+			),
+		enabled: jobListEnvironments.length > 0
 	}));
 	const scheduleTimezone = $derived(
-		[...new Set(jobListResults.flatMap((result) => (result.data?.timezone ? [result.data.timezone] : [])))].join(', ')
+		[...new Set((jobListQuery.data?.byEnvironment ?? []).flatMap(({ data }) => (data.timezone ? [data.timezone] : [])))].join(
+			', '
+		)
 	);
 
 	const canEditSchedules = $derived(environments.every((environment) => hasPermission('jobs:update', environment.id)));
@@ -100,13 +121,13 @@
 	}
 
 	function scheduleValues(key: ScheduleKey): string[] {
-		return [...new Set(scheduleResults.flatMap((result) => (result.data ? [result.data[key]] : [])))];
+		return [...new Set(environments.flatMap((environment) => schedulesByEnvironment.get(environment.id)?.[key] ?? []))];
 	}
 
 	function mixedSchedules(key: ScheduleKey, name: string): MixedSettingValue[] {
 		const groups = Map.groupBy(
-			environments.flatMap((environment, index) => {
-				const value = scheduleResults[index]?.data?.[key];
+			environments.flatMap((environment) => {
+				const value = schedulesByEnvironment.get(environment.id)?.[key];
 				return value ? [{ value, name: environment.name }] : [];
 			}),
 			(entry) => entry.value
@@ -126,7 +147,9 @@
 	async function saveSchedule(update: Record<string, string>) {
 		await settleAcrossEnvironments(environments, (environmentId) => jobScheduleService.updateJobSchedules(update, environmentId));
 		await Promise.all(
-			environments.map((environment) => queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(environment.id) }))
+			listScopes(environments.map((environment) => environment.id)).map((scope) =>
+				queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(scope) })
+			)
 		);
 	}
 </script>

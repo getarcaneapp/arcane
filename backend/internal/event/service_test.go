@@ -29,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event/children/correlation"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
@@ -995,4 +996,48 @@ func TestWaitForChangesReturnsOnPublish(t *testing.T) {
 		require.Equal(t, changeWaitCoalesce, time.Since(started))
 		require.ElementsMatch(t, []string{"container", "image"}, slices.Collect(maps.Keys(changes.Kinds)))
 	})
+}
+
+func eventScopeContext(t *testing.T, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/agents/a,b,c/events", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/agents/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestEventService_AggregateRecentEnvironmentEventsMergesNewestFirst(t *testing.T) {
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	ctx := eventScopeContext(t, map[string]any{
+		"a": types.ApiResponse[[]types.Event]{Success: true, Data: []types.Event{
+			{ID: "a-old", Timestamp: base},
+			{ID: "a-new", Timestamp: base.Add(2 * time.Hour)},
+		}},
+		"b": types.ApiResponse[[]types.Event]{Success: true, Data: []types.Event{
+			{ID: "b-mid", Timestamp: base.Add(time.Hour)},
+		}},
+	})
+
+	body, err := (&EventService{}).AggregateRecentEnvironmentEvents(ctx)
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(body.Data))
+	for _, event := range body.Data {
+		ids = append(ids, event.ID)
+	}
+	require.True(t, body.Success)
+	require.Equal(t, []string{"a-new", "b-mid", "a-old"}, ids)
+	require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 }

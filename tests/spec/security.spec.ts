@@ -566,24 +566,39 @@ test.describe('Security Page', () => {
 test.describe('Disabled vulnerability management', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route(/\/api\/agents\/[^/]+\/settings\/public$/, async (route) => {
+			const snapshot = {
+				settings: [
+					{
+						key: 'featureVulnerabilityManagementEnabled',
+						value: 'false',
+						type: 'boolean',
+						default: 'true',
+						source: 'db',
+						locked: false,
+						sensitive: false,
+						scope: 'environment',
+						envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
+					}
+				],
+				runtime: {},
+				readOnly: false
+			};
+			const environmentIds = decodeURIComponent(
+				new URL(route.request().url()).pathname.split('/')[3]
+			).split(',');
 			await route.fulfill({
-				json: {
-					settings: [
-						{
-							key: 'featureVulnerabilityManagementEnabled',
-							value: 'false',
-							type: 'boolean',
-							default: 'true',
-							source: 'db',
-							locked: false,
-							sensitive: false,
-							scope: 'environment',
-							envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
-						}
-					],
-					runtime: {},
-					readOnly: false
-				}
+				json:
+					environmentIds.length === 1
+						? snapshot
+						: {
+								settings: [],
+								runtime: {},
+								environments: environmentIds.map((id) => ({
+									environment: { id, name: id },
+									data: snapshot
+								})),
+								readOnly: false
+							}
 			});
 		});
 	});

@@ -5,29 +5,31 @@ import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { userHasPermission } from '#lib/utils/auth.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
+import { readEachEnvironment } from '#lib/utils/environments.js';
 
 export function useEasyJoinCandidates() {
 	const user = userStore;
-	const managerEnvironmentIds = $derived(
-		environmentStore.shown.map((env) => env.id).filter((id) => userHasPermission(user.current, 'swarm:join', id))
+	const managerEnvironments = $derived(
+		environmentStore.shown.filter((env) => userHasPermission(user.current, 'swarm:join', env.id))
 	);
+	const managerEnvironmentIds = $derived(managerEnvironments.map((env) => env.id));
 	const candidatesQuery = createQuery(() => {
-		const environmentIds = managerEnvironmentIds;
+		const environments = managerEnvironments;
 		return {
-			queryKey: queryKeys.swarm.joinCandidates(environmentIds.join(','), user.current),
-			enabled: environmentIds.length > 0,
+			queryKey: queryKeys.swarm.joinCandidates(environments.map((env) => env.id).join(','), user.current),
+			enabled: environments.length > 0,
 			queryFn: async ({ signal }): Promise<Record<string, string>> => {
-				const managers = await Promise.all(
-					environmentIds.map(async (managerId) => {
-						const result = await tryCatch(
-							swarmService.getSwarmJoinCandidates(managerId, { signal, suppressAccessDeniedToast: true })
-						);
-						return (result.data ?? []).map((candidate) => [candidate.environmentId, managerId] as const);
-					})
+				const { byEnvironment } = await readEachEnvironment(
+					environments,
+					(scope, config) => swarmService.getSwarmJoinCandidates(scope, { ...config, signal }),
+					[]
 				);
 				signal.throwIfAborted();
-				return Object.fromEntries(managers.flat());
+				return Object.fromEntries(
+					byEnvironment.flatMap(({ environment, data }) =>
+						data.map((candidate) => [candidate.environmentId, environment.id] as const)
+					)
+				);
 			},
 			retry: false,
 			throwOnError: false,

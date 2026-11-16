@@ -21,7 +21,7 @@ export const load: PageLoad = async ({ parent }) => {
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageListQuery(scope, environments, imageRequestOptions), revalidateIfStale: true }),
 			queryClient.ensureQueryData({ ...imageUsageCountsQuery(scope, environments), revalidateIfStale: true }),
-			...environments.map((env) => featureStore.load(env.id))
+			featureStore.load(environments.map((env) => env.id))
 		])
 	);
 	if (result.error !== null) throwPageLoadError(result.error, 'Failed to load images');

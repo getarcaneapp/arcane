@@ -5,8 +5,8 @@ import type { JobScheduleConfigUpdate } from '#lib/types/ui/jobschedule.js';
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class JobScheduleService extends BaseAPIService {
-	async getJobSchedules(environmentId: string = '0'): Promise<JobScheduleConfig> {
-		return this.handleResponse(this.api.get(`/agents/${environmentId}/jobs/schedules`));
+	async getJobSchedules(environmentId: string = '0', config?: APIRequestConfig): Promise<JobScheduleConfig> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/jobs/schedules`, config));
 	}
 
 	async updateJobSchedules(update: JobScheduleConfigUpdate, environmentId: string = '0'): Promise<JobScheduleConfig> {
