@@ -72,6 +72,7 @@ export type Settings = {
 	notificationsIncludeReleaseLinks?: boolean;
 	avatarMaxUploadSizeMb: number;
 	allEnvironmentsLimit: number;
+	frontendCacheMinutes: number;
 	defaultShell: string;
 	dockerHost: string;
 	autoInjectEnv: boolean;

@@ -4606,5 +4606,10 @@
   "git_sync_project_description": "Pull changes from a repository, push edits made in Arcane, or both.",
   "git_two_way_notice": "Edits saved here are committed to Git, and changes in the repository are pulled in.",
   "project_name_locked_git": "The project name is set by the Git sync and cannot be changed here.",
-  "save_or_discard_changes_before_sync": "Save or discard your changes before syncing with Git."
+  "save_or_discard_changes_before_sync": "Save or discard your changes before syncing with Git.",
+  "cached_data_lifetime": "Cached data lifetime",
+  "cached_data_lifetime_description": "Minutes the browser keeps page data after you leave a page. Defaults to 10.",
+  "cached_data_lifetime_help": "Enter a whole number from 1 to 120.",
+  "connectivity": "Connectivity",
+  "connectivity_description": "Agent limits, parallel upgrades, and cached data lifetime."
 }

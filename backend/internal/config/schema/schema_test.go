@@ -119,6 +119,7 @@ var (
 		"featureSwarmEnabled",
 		"featureVulnerabilityManagementEnabled",
 		"followProjectSymlinks",
+		"frontendCacheMinutes",
 		"gitOperationTimeout",
 		"gitSyncMaxBinarySizeMb",
 		"gitSyncMaxFiles",

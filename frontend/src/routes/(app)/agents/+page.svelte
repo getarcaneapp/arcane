@@ -12,7 +12,7 @@
 	import { TabBar } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { ApiKeyIcon, DownloadIcon, EnvironmentsIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
+	import { ApiKeyIcon, DownloadIcon, EnvironmentsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentListQuery } from '#lib/query/environments.js';
@@ -22,14 +22,13 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { downloadFromUrl } from '#lib/utils/browser-download.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
 	import EnrollmentTokensTab from './components/enrollment-tokens-tab.svelte';
-	import EnvironmentSettingsDialog from './components/environment-settings-dialog.svelte';
 	import EnvironmentTable from './components/environment-table.svelte';
 
 	let { data } = $props();
@@ -48,7 +47,6 @@
 	});
 	let environmentSession = $state(0);
 	let showUpdateAllDialog = $state(false);
-	let showSettingsDialog = $state(false);
 	let isDeleting = $state(false);
 	const isRefreshing = $derived(environmentsQuery.isFetching && !environmentsQuery.isPending);
 
@@ -178,19 +176,6 @@
 					}
 				]
 			: []),
-		...(isGlobalAdmin()
-			? [
-					{
-						id: 'settings',
-						action: 'edit' as const,
-						placement: 'secondary' as const,
-						iconOnly: true,
-						label: m.settings(),
-						icon: SettingsIcon,
-						onclick: () => (showSettingsDialog = true)
-					}
-				]
-			: []),
 		{
 			id: 'refresh',
 			action: 'refresh' as const,
@@ -237,6 +222,5 @@
 			{/key}
 		{/if}
 		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />
-		<EnvironmentSettingsDialog bind:open={showSettingsDialog} />
 	{/snippet}
 </ResourcePageLayout>
