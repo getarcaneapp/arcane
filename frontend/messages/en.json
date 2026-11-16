@@ -4615,7 +4615,7 @@
   "ldap_authentication": "LDAP Authentication",
   "ldap_authentication_description": "Sign in and sync users from an LDAP or Active Directory server",
   "server_url": "Server URL",
-  "server_url_description": "Address of the LDAP server. Use ldaps:// to encrypt credentials; ldap:// sends passwords in plain text.",
+  "server_url_description": "Address of the LDAP or LDAPS server.",
   "server_url_placeholder": "ldaps://ldap.example.com:636",
   "bind_dn": "Bind DN",
   "bind_dn_description": "Account Arcane uses to search the directory.",
@@ -4667,5 +4667,7 @@
   "filters": "Filters",
   "attributes": "Attributes",
   "sync": "Sync",
-  "ldap_sync": "LDAP Sync"
+  "ldap_sync": "LDAP Sync",
+  "use_starttls": "Use StartTLS",
+  "use_starttls_description": "Upgrade ldap:// connections to TLS before sending passwords. Turn off only if the server does not support StartTLS; passwords are then sent in plain text."
 }

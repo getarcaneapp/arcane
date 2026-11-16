@@ -9,6 +9,7 @@
 		| 'ldapUserSearchFilter'
 		| 'ldapUserGroupSearchFilter'
 		| 'ldapSkipCertVerify'
+		| 'ldapStartTls'
 		| 'ldapAttributeUserUniqueIdentifier'
 		| 'ldapAttributeUserUsername'
 		| 'ldapAttributeUserEmail'
@@ -44,7 +45,7 @@
 
 	type TextFieldKey = Exclude<
 		keyof LdapSettingsFormValues,
-		'ldapBindPassword' | 'ldapClearBindPassword' | 'ldapSkipCertVerify' | 'ldapSoftDeleteUsers'
+		'ldapBindPassword' | 'ldapClearBindPassword' | 'ldapSkipCertVerify' | 'ldapStartTls' | 'ldapSoftDeleteUsers'
 	>;
 
 	type TextField = {
@@ -255,6 +256,17 @@
 					{/snippet}
 				</SettingsRow>
 			{/if}
+			<SettingsRow
+				for="ldapStartTls"
+				label={m.use_starttls()}
+				description={m.use_starttls_description()}
+				layout="switch"
+				lock={settingsStore.lock('ldapStartTls')}
+			>
+				{#snippet children({ describedBy })}
+					<Switch id="ldapStartTls" bind:checked={formInputs.ldapStartTls.value} aria-describedby={describedBy} />
+				{/snippet}
+			</SettingsRow>
 			<SettingsRow
 				for="ldapSkipCertVerify"
 				label={m.skip_certificate_verification()}

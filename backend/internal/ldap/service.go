@@ -125,14 +125,26 @@ func NewLdapService(p LdapServiceParams) (*LdapService, error) {
 }
 
 func connectDirectory(cfg *settings.Settings) (directory, error) {
-	conn, err := ldap.DialURL(cfg.LdapUrl.Value, ldap.DialWithTLSConfig(&tls.Config{
+	target, err := url.Parse(cfg.LdapUrl.Value)
+	if err != nil {
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("invalid LDAP URL: %w", err))
+	}
+	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: cfg.LdapSkipCertVerify.IsTrue(),
-	}))
+		ServerName:         target.Hostname(),
+	}
+	conn, err := ldap.DialURL(cfg.LdapUrl.Value, ldap.DialWithTLSConfig(tlsConfig))
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to connect to LDAP: %w", err))
 	}
 	conn.SetTimeout(directoryTimeout)
+	if target.Scheme == "ldap" && cfg.LdapStartTls.IsTrue() {
+		if tlsErr := conn.StartTLS(tlsConfig); tlsErr != nil {
+			_ = conn.Close()
+			return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to start TLS with LDAP; use ldaps:// or turn off StartTLS: %w", tlsErr))
+		}
+	}
 	if bindErr := conn.Bind(cfg.LdapBindDn.Value, cfg.LdapBindPassword.Value); bindErr != nil {
 		_ = conn.Close()
 		return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("failed to bind to LDAP as the service account: %w", bindErr))

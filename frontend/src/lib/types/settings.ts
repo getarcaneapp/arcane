@@ -134,6 +134,7 @@ export type Settings = {
 	ldapUserSearchFilter: string;
 	ldapUserGroupSearchFilter: string;
 	ldapSkipCertVerify: boolean;
+	ldapStartTls: boolean;
 	ldapAttributeUserUniqueIdentifier: string;
 	ldapAttributeUserUsername: string;
 	ldapAttributeUserEmail: string;
