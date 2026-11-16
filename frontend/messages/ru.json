@@ -4663,7 +4663,7 @@
   "ldap": "LDAP",
   "directory_manages_user": "The directory manages this user's username, email, display name, and password.",
   "via_ldap": "· via LDAP",
-  "connection": "Connection",
+  "connection": "Подключение",
   "filters": "Filters",
   "attributes": "Attributes",
   "sync": "Sync",
