@@ -126,7 +126,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		if errors.Is(err, ErrApiKeyPermissionEscalation) {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
-		if errors.Is(err, ErrApiKeyPersonalNoGrants) {
+		if errors.Is(err, ErrApiKeyPersonalNoGrants) || errors.Is(err, common.ErrValidation) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("Failed to update API key")

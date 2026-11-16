@@ -391,6 +391,14 @@ func IsDuplicateKeyError(db *gorm.DB, err error) bool {
 	return ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey)
 }
 
+func IsForeignKeyError(db *gorm.DB, err error) bool {
+	if errors.Is(err, gorm.ErrForeignKeyViolated) {
+		return true
+	}
+	translator, ok := db.Dialector.(gorm.ErrorTranslator)
+	return ok && errors.Is(translator.Translate(err), gorm.ErrForeignKeyViolated)
+}
+
 func (db *DB) Close() error {
 	sqlDB, err := db.DB.DB()
 	if err != nil {
