@@ -20,7 +20,8 @@
 		'system-backup',
 		'gitops-sync',
 		'auto-heal',
-		'auto-patch'
+		'auto-patch',
+		'ldap-sync'
 	]);
 
 	let {

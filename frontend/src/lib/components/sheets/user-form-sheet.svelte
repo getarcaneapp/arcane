@@ -10,6 +10,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Role } from '#lib/types/role.js';
 	import type { UserUpdate } from '#lib/types/ui/user.js';
@@ -49,17 +50,25 @@
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
+	const isDirectoryUser = $derived(!!userToEdit?.ldapId && settingsStore.current?.ldapEnabled === true);
+	const isExternallyManaged = $derived(isOidcUser || isDirectoryUser);
+	const sheetDescription = $derived.by(() => {
+		if (isDirectoryUser) return m.directory_manages_user();
+		if (isEditMode) return m.users_edit_description({ username: userToEdit?.username ?? m.common_unknown() });
+		return m.users_create_description();
+	});
 	const passwordPlaceholder = $derived.by(() => {
-		if (isOidcUser) return m.users_password_managed_oidc();
+		if (isExternallyManaged) return m.users_password_managed_oidc();
 		if (isEditMode) return m.users_password_leave_empty();
 		return m.users_password_enter();
 	});
 	const passwordDescription = $derived.by(() => {
 		if (isOidcUser) return m.users_password_description_oidc();
+		if (isDirectoryUser) return undefined;
 		if (isEditMode) return m.users_password_description_edit();
 		return m.users_password_description_create();
 	});
-	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
+	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source !== 'manual') ?? []);
 	const userFieldMaxLength = 255;
 	const passwordMinLength = 8;
 
@@ -92,7 +101,7 @@
 					environmentId: z.string().optional()
 				})
 			)
-			.refine((assignments) => isOidcUser || assignments.length >= 1, m.users_role_assignments_required())
+			.refine((assignments) => isExternallyManaged || assignments.length >= 1, m.users_role_assignments_required())
 	});
 
 	const form = createForm<typeof formSchema>(
@@ -117,7 +126,7 @@
 		const data = form.validate();
 		if (!data) return;
 
-		if (isOidcUser) {
+		if (isExternallyManaged) {
 			await submitUser({
 				user: { roleAssignments: data.roleAssignments },
 				isEditMode,
@@ -178,9 +187,7 @@
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={isEditMode ? m.users_edit_title() : m.users_create_new_title()}
-	description={isEditMode
-		? m.users_edit_description({ username: userToEdit?.username ?? m.common_unknown() })
-		: m.users_create_description()}
+	description={sheetDescription}
 	contentClass="sm:max-w-160"
 >
 	<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
@@ -188,7 +195,7 @@
 			label={m.common_username()}
 			type="text"
 			description={m.users_username_description()}
-			disabled={!canEditUsername || isOidcUser}
+			disabled={!canEditUsername || isExternallyManaged}
 			bind:input={form.inputs.username}
 		/>
 		<FormInput
@@ -196,7 +203,7 @@
 			type="password"
 			placeholder={passwordPlaceholder}
 			description={passwordDescription}
-			disabled={isOidcUser}
+			disabled={isExternallyManaged}
 			bind:input={form.inputs.password}
 		/>
 		<FormInput
@@ -204,7 +211,7 @@
 			type="text"
 			placeholder={m.users_display_name_placeholder()}
 			description={m.users_display_name_description()}
-			disabled={isOidcUser}
+			disabled={isExternallyManaged}
 			bind:input={form.inputs.displayName}
 		/>
 		<FormInput
@@ -213,7 +220,7 @@
 			placeholder={m.user_example_com_placeholder()}
 			description={m.users_email_description()}
 			autocomplete="email"
-			disabled={isOidcUser}
+			disabled={isExternallyManaged}
 			bind:input={form.inputs.email}
 		/>
 		<IfPermitted adminOnly>
@@ -229,7 +236,7 @@
 							>
 						</p>
 						<div class="mt-2 flex flex-wrap gap-2">
-							{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
+							{#each oidcAssignments as assignment (`${assignment.source}-${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
 								<Badge variant="outline">
 									{roles.find((r) => r.id === assignment.roleId)?.name ?? assignment.roleId}
 									·

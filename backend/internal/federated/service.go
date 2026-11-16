@@ -475,6 +475,10 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req type
 		logReason = "identity_user_missing"
 		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, fmt.Errorf("invalid federated token grant: %w", err))
 	}
+	if identityUser.Disabled {
+		logReason = "identity_user_disabled"
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant: identity user is disabled"))
+	}
 	userID, username = identityUser.ID, identityUser.Username
 
 	tokenPair, err := s.authService.IssueFederatedToken(ctx, identityUser, credential.ID, credential.TokenTTLSeconds)

@@ -14,7 +14,9 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	const currentUser = $derived(userStore.current);
-	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));
+	const isPasswordManaged = $derived(
+		Boolean(currentUser?.oidcSubjectId) || (Boolean(currentUser?.ldapId) && settingsStore.current?.ldapEnabled === true)
+	);
 	const autoLogin = settingsStore.autoLoginEnabled;
 	const autoLoginEnabled = $derived(autoLogin.current);
 
@@ -75,7 +77,7 @@
 	}
 </script>
 
-{#if !isOidcUser}
+{#if !isPasswordManaged}
 	<section class="space-y-5">
 		<div>
 			<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.common_password()}</h2>

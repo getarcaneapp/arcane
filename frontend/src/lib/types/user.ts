@@ -109,10 +109,12 @@ export type UserPreferences = {
 	codeFont?: string;
 };
 
+export type RoleAssignmentSource = 'manual' | 'oidc' | 'ldap';
+
 export type RoleAssignmentSummary = {
 	roleId: string;
 	environmentId?: string;
-	source: 'manual' | 'oidc';
+	source: RoleAssignmentSource;
 };
 
 export type User = {
@@ -131,6 +133,8 @@ export type User = {
 	lastLogin?: string;
 	updatedAt?: string;
 	oidcSubjectId?: string;
+	ldapId?: string;
+	disabled: boolean;
 	locale?: Locale | null;
 	timeFormat: TimeFormat;
 	fontSize?: number;

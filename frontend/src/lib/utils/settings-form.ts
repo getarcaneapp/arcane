@@ -16,6 +16,7 @@ export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload>> {
 	getCurrentSettings?: () => z.infer<T>;
 	onSave?: (data: z.infer<T>) => Promise<void>;
 	onSuccess?: () => void;
+	onInvalid?: () => void;
 	onReset?: () => void;
 	successMessage?: string;
 	errorMessage?: string;
@@ -29,6 +30,7 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 		getCurrentSettings,
 		onSave,
 		onSuccess,
+		onInvalid,
 		onReset,
 		successMessage = m.common_update_success({ resource: m.settings() }),
 		errorMessage = m.common_update_failed({ resource: m.settings() }),
@@ -48,6 +50,7 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 		const data = form.validate();
 		if (!data) {
 			toast.error(m.security_form_validation_error());
+			onInvalid?.();
 			return;
 		}
 		settingsForm.setLoading(true);

@@ -410,46 +410,9 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 }
 
 func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source string, desired []UserRoleAssignment) error {
-	seen := make(map[string]struct{}, len(desired))
-	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
-		key := assignmentKey(a)
-		if _, dup := seen[key]; dup {
-			return true
-		}
-		seen[key] = struct{}{}
-		return false
-	})
-	for i := range desired {
-		desired[i].UserID = userID
-		desired[i].Source = source
-	}
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.LockGlobalAdminGuard(tx); err != nil {
+		if err := s.ReplaceUserAssignmentsInDB(ctx, tx, userID, source, desired); err != nil {
 			return err
-		}
-		// Lock the user row so assignment swaps serialize with user-domain privilege checks.
-		var locked struct{ ID string }
-		if err := tx.Table("users").
-			Select("id").
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", userID).
-			Take(&locked).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return common.ErrUserNotFound
-			}
-			return fmt.Errorf("failed to lock user for assignment update: %w", err)
-		}
-		if err := validateAssignmentsExist(tx, desired); err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ? AND source = ?", userID, source).
-			Delete(&UserRoleAssignment{}).Error; err != nil {
-			return fmt.Errorf("failed to clear %s assignments: %w", source, err)
-		}
-		if len(desired) > 0 {
-			if err := tx.Create(&desired).Error; err != nil {
-				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
-			}
 		}
 		return s.AssertGlobalAdminExists(ctx, tx)
 	})
@@ -460,12 +423,64 @@ func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source
 	return nil
 }
 
-func assignmentKey(a UserRoleAssignment) string {
-	envID := ""
-	if a.EnvironmentID != nil {
-		envID = *a.EnvironmentID
+func (s *RoleService) ReplaceUserAssignmentsInDB(ctx context.Context, tx *gorm.DB, userID, source string, desired []UserRoleAssignment) error {
+	seen := make(map[string]struct{}, len(desired))
+	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
+		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
+		if _, dup := seen[key]; dup {
+			return true
+		}
+		seen[key] = struct{}{}
+		return false
+	})
+	for i := range desired {
+		desired[i].UserID = userID
+		desired[i].Source = source
 	}
-	return a.RoleID + "\x00" + envID
+	tx = tx.WithContext(ctx)
+	if err := s.LockGlobalAdminGuard(tx); err != nil {
+		return err
+	}
+	// Lock the user row so assignment swaps serialize with user-domain privilege checks.
+	var locked struct{ ID string }
+	if err := tx.Table("users").
+		Select("id").
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", userID).
+		Take(&locked).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrUserNotFound
+		}
+		return fmt.Errorf("failed to lock user for assignment update: %w", err)
+	}
+	if err := validateAssignmentsExist(tx, desired); err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ? AND source = ?", userID, source).
+		Delete(&UserRoleAssignment{}).Error; err != nil {
+		return fmt.Errorf("failed to clear %s assignments: %w", source, err)
+	}
+	if len(desired) == 0 {
+		return nil
+	}
+	if err := tx.Create(&desired).Error; err != nil {
+		return fmt.Errorf("failed to insert %s assignments: %w", source, err)
+	}
+	return nil
+}
+
+func MappedAssignments(mappings []OidcRoleMapping, groups []string) []UserRoleAssignment {
+	desired := make([]UserRoleAssignment, 0, len(mappings))
+	for _, m := range mappings {
+		if !slices.Contains(groups, m.ClaimValue) {
+			continue
+		}
+		desired = append(desired, UserRoleAssignment{
+			RoleID:        m.RoleID,
+			EnvironmentID: m.EnvironmentID,
+		})
+	}
+	return desired
 }
 
 func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
@@ -526,7 +541,7 @@ func (s *RoleService) CountGlobalAdmins(ctx context.Context, tx *gorm.DB, exclud
 		Select("u.id AS user_id, r.permissions AS permissions").
 		Joins("INNER JOIN user_role_assignments ura ON ura.user_id = u.id AND ura.environment_id IS NULL").
 		Joins("INNER JOIN roles r ON r.id = ura.role_id").
-		Where("u.is_service_account = ?", false)
+		Where("u.is_service_account = ? AND u.disabled = ?", false, false)
 	if strings.TrimSpace(excludedUserID) != "" {
 		query = query.Where("u.id <> ?", excludedUserID)
 	}

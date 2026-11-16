@@ -954,6 +954,9 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get user for API key: %w", err)
 	}
+	if localUser.Disabled {
+		return nil, nil, ErrApiKeyInvalid
+	}
 
 	return localUser, apiKey, nil
 }

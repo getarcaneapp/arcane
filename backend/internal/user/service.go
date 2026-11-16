@@ -85,6 +85,8 @@ var (
 	ErrEmailTaken            = common.Classify(common.ErrConflict, errors.New("email already in use"))
 	ErrEmailChangeBlocked    = common.Classify(common.ErrForbidden, errors.New("email cannot be changed while OIDC account merging is enabled"))
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
+	ErrLdapManaged           = common.Classify(common.ErrForbidden, errors.New("this account is managed by LDAP; change it in the directory"))
+	ErrLdapUserNotDisabled   = common.Classify(common.ErrForbidden, errors.New("LDAP users must be disabled before they can be deleted"))
 	ErrBackdropTooLarge      = common.Classify(common.ErrValidation, fmt.Errorf("background image must be %d MB or smaller", BackdropMaxBytes>>20))
 	ErrBackdropUnsupported   = common.Classify(common.ErrValidation, errors.New("unsupported image format: only PNG, JPEG and WebP are accepted"))
 )
@@ -325,6 +327,12 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 			return fmt.Errorf("failed to load user: %w", err)
 		}
 		trimmedEmail := strings.TrimSpace(kit.FromPtr(localUser.Email))
+		profileChanged := localUser.Username != current.Username ||
+			kit.FromPtr(localUser.DisplayName) != kit.FromPtr(current.DisplayName) ||
+			!strings.EqualFold(kit.FromPtr(current.Email), trimmedEmail)
+		if profileChanged && current.LdapID != nil && s.settingsService.GetBoolSetting(ctx, "ldapEnabled") {
+			return ErrLdapManaged
+		}
 		if strings.EqualFold(kit.FromPtr(current.Email), trimmedEmail) {
 			localUser.Email = kit.Ternary(trimmedEmail == "", nil, &trimmedEmail)
 		} else {
@@ -482,6 +490,9 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 				return common.ErrUserNotFound
 			}
 			return fmt.Errorf("failed to load user for password reset: %w", loadPasswordResetUserErr)
+		}
+		if updatedUser.LdapID != nil && s.settingsService.GetBoolSetting(ctx, "ldapEnabled") {
+			return ErrLdapManaged
 		}
 
 		updatedUser.PasswordHash = hashedPassword
@@ -674,6 +685,13 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 		if err := s.checkTargetPrivilege(ctx, tx, actorPerms, id); err != nil {
 			return err
 		}
+		target, err := s.getUser(ctx, id, tx)
+		if err != nil {
+			return fmt.Errorf("failed to load user: %w", err)
+		}
+		if target.LdapID != nil && !target.Disabled && s.settingsService.GetBoolSetting(ctx, "ldapEnabled") {
+			return ErrLdapUserNotDisabled
+		}
 		targetPerms, err := s.roleService.ResolveUserPermissionsInDB(ctx, tx, id)
 		if err != nil {
 			return fmt.Errorf("failed to resolve target permissions: %w", err)
@@ -751,11 +769,13 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 		Email:                  u.Email,
 		CanDelete:              true,
 		OidcSubjectId:          u.OidcSubjectId,
+		LdapID:                 u.LdapID,
 		Locale:                 u.Locale,
 		TimeFormat:             u.TimeFormat,
 		FontSize:               u.FontSize,
 		Preferences:            u.Preferences,
 		RequiresPasswordChange: u.RequiresPasswordChange,
+		Disabled:               u.Disabled,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		RoleAssignments:        []types.RoleAssignmentSummary{},

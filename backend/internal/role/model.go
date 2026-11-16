@@ -43,6 +43,7 @@ type (
 const (
 	RoleAssignmentSourceManual = "manual"
 	RoleAssignmentSourceOidc   = "oidc"
+	RoleAssignmentSourceLdap   = "ldap"
 	OidcMappingSourceManual    = "manual"
 	OidcMappingSourceEnv       = "env"
 )

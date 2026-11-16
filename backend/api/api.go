@@ -35,6 +35,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/job"
+	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/notification"
@@ -112,6 +113,7 @@ type (
 		Variable          *variable.Module
 		Upload            *upload.Module
 		Health            *health.Module
+		Ldap              *ldap.Module
 	}
 
 	SetupParams struct {
@@ -250,6 +252,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 
 	if !p.Config.AgentEnabled {
 		telemetry.RegisterRoutes(api, telemetry.NewService())
+		p.Deps.Ldap.RegisterRoutes(api)
 	}
 	for _, register := range featureRoutes {
 		register(api, p)

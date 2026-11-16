@@ -98,6 +98,23 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
+	"ldap-sync": {
+		ID:             "ldap-sync",
+		Name:           "LDAP Sync",
+		Description:    "Synchronizes users and role assignments from the configured LDAP directory",
+		Category:       "security",
+		SettingsKey:    "ldapSyncInterval",
+		EnabledKey:     "ldapEnabled",
+		ManagerOnly:    true,
+		IsContinuous:   false,
+		CanRunManually: false,
+		Prerequisites: []JobPrerequisiteMetadata{
+			{
+				SettingKey: "ldapEnabled",
+				Label:      "LDAP authentication enabled",
+			},
+		},
+	},
 	"analytics-heartbeat": {
 		ID:             "analytics-heartbeat",
 		Name:           "Analytics Heartbeat",

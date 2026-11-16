@@ -28,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -1148,4 +1149,137 @@ func TestGetSessionBootstrap(t *testing.T) {
 
 		require.Error(t, err)
 	})
+}
+
+func TestAuthenticateLocalPrimary_LdapUsers(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	roles := role.NewRoleService(db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
+	require.NoError(t, err)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          roles,
+		SettingsService:      settingsSvc,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
+	s := newTestAuthService()
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.ldapService, err = ldap.NewLdapService(ldap.LdapServiceParams{
+		DB:              db,
+		SettingsService: settingsSvc,
+		UserService:     userSvc,
+		RoleService:     roles,
+		HTTPClient:      &http.Client{},
+		InvalidateUser:  s.tokens.InvalidateUser,
+	})
+	require.NoError(t, err)
+
+	hash, err := userSvc.HashPassword(t.Context(), "hunter22!")
+	require.NoError(t, err)
+	for _, u := range []*user.User{
+		{ID: "u-ldap", Username: "ldapuser", LdapID: new("uuid-ldap")},
+		{ID: "u-local", Username: "local", PasswordHash: hash},
+		{ID: "u-disabled", Username: "disabled", PasswordHash: hash, Disabled: true},
+	} {
+		require.NoError(t, db.Create(u).Error)
+	}
+
+	tests := []struct {
+		wantErr  error
+		settings map[string]string
+		name     string
+		login    string
+		password string
+		wantID   string
+	}{
+		{
+			name:     "ldap user with empty password is rejected before binding",
+			settings: map[string]string{"authLocalEnabled": "false", "ldapEnabled": "true", "ldapUrl": "ldap://127.0.0.1:1"},
+			login:    "ldapuser",
+			wantErr:  ErrInvalidCredentials,
+		},
+		{
+			name:     "unreachable directory looks like a wrong password",
+			settings: map[string]string{"authLocalEnabled": "false", "ldapEnabled": "true", "ldapUrl": "ldap://127.0.0.1:1"},
+			login:    "ldapuser",
+			password: "secret",
+			wantErr:  ErrInvalidCredentials,
+		},
+		{
+			name:     "local user is rejected while local auth is disabled",
+			settings: map[string]string{"authLocalEnabled": "false", "ldapEnabled": "true"},
+			login:    "local",
+			password: "hunter22!",
+			wantErr:  ErrInvalidCredentials,
+		},
+		{
+			name:     "local and ldap disabled",
+			settings: map[string]string{"authLocalEnabled": "false", "ldapEnabled": "false"},
+			login:    "local",
+			password: "hunter22!",
+			wantErr:  ErrLocalAuthDisabled,
+		},
+		{
+			name:     "ldap user cannot use a local password while ldap is disabled",
+			settings: map[string]string{"authLocalEnabled": "true", "ldapEnabled": "false"},
+			login:    "ldapuser",
+			password: "secret",
+			wantErr:  ErrInvalidCredentials,
+		},
+		{
+			name:     "local user still logs in",
+			settings: map[string]string{"authLocalEnabled": "true", "ldapEnabled": "true"},
+			login:    "local",
+			password: "hunter22!",
+			wantID:   "u-local",
+		},
+		{
+			name:     "disabled user is rejected after valid credentials",
+			settings: map[string]string{"authLocalEnabled": "true", "ldapEnabled": "false"},
+			login:    "disabled",
+			password: "hunter22!",
+			wantErr:  ErrUserDisabled,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			updates := make([]types.SettingUpdate, 0, len(tc.settings))
+			for key, value := range tc.settings {
+				updates = append(updates, types.SettingUpdate{Key: key, Value: value})
+			}
+			require.NoError(t, settingsSvc.UpdateSettingValues(t.Context(), updates))
+
+			got, authErr := s.AuthenticateLocalPrimary(t.Context(), tc.login, tc.password)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, authErr, tc.wantErr)
+				return
+			}
+			require.NoError(t, authErr)
+			require.Equal(t, tc.wantID, got.ID)
+		})
+	}
+}
+
+func TestVerifyToken_RejectsDisabledUser(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := user.NewUserService(user.UserServiceParams{
+		DB:                   db,
+		RoleService:          role.NewRoleService(db),
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
+	s := newTestAuthService()
+	s.userService = userSvc
+	s.sessionService = session.NewSessionService(db)
+	require.NoError(t, db.Create(&user.User{ID: "u-off", Username: "off", Disabled: true}).Error)
+
+	exp := time.Now().Add(5 * time.Minute)
+	localSession, refreshJTI := createTestSession(t, db, "u-off", exp)
+	token := makeAccessToken(t, s.signingKey, "access", "u-off", "off", nil, "", "", exp, localSession.ID)
+
+	_, _, err := s.VerifyToken(t.Context(), token)
+	require.ErrorIs(t, err, common.ErrInvalidToken)
+
+	_, err = s.RefreshToken(t.Context(), makeRefreshToken(t, s.signingKey, refreshJTI, exp, "u-off", localSession.ID), types.SessionMeta{})
+	require.ErrorIs(t, err, common.ErrInvalidToken)
 }

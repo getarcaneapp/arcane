@@ -57,7 +57,7 @@
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
 
 	const localAuthEnabledBySettings = $derived(data.settings?.authLocalEnabled !== false);
-	const showLocalLoginForm = $derived(localAuthEnabledBySettings);
+	const showLocalLoginForm = $derived(localAuthEnabledBySettings || data.settings?.ldapEnabled === true);
 
 	const oidcAutoRedirect = $derived(data.settings?.oidcAutoRedirectToProvider === true);
 	const shouldAutoRedirect = $derived(oidcAutoRedirect && oidcEnabledBySettings && !data.error && !data.isBackupLogin);

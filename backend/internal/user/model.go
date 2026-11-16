@@ -22,6 +22,7 @@ type (
 		OidcRefreshToken         *string    `json:"-" gorm:"type:text"`
 		OidcAccessTokenExpiresAt *time.Time `json:"-"`
 		BackdropHash             *string    `json:"-" gorm:"column:backdrop_hash"`
+		LdapID                   *string    `json:"ldapId,omitempty" gorm:"column:ldap_id;uniqueIndex:idx_users_ldap_id"`
 
 		Username               string           `json:"username" sortable:"true"`
 		PasswordHash           string           `json:"-" gorm:"column:password_hash"`
@@ -30,6 +31,7 @@ type (
 		IsServiceAccount       bool             `json:"isServiceAccount" gorm:"column:is_service_account;not null;default:false"`
 		PasskeyMFAEnabled      bool             `json:"passkeyMfaEnabled" gorm:"column:passkey_mfa_enabled;not null;default:false"`
 		HasAvatar              bool             `json:"hasAvatar" gorm:"column:has_avatar;not null;default:false"`
+		Disabled               bool             `json:"disabled" gorm:"column:disabled;not null;default:false"`
 	}
 
 	UserAvatar struct {

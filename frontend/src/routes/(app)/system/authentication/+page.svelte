@@ -1,118 +1,51 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { SettingLock } from '#lib/components/badges/index.js';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import OidcMappingFormSheet from '#lib/components/sheets/oidc-mapping-form-sheet.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { InfoIcon, ArrowDownIcon } from '#lib/icons/index.js';
+	import { InfoIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { OidcRoleMapping } from '#lib/types/role.js';
 	import type { Settings } from '#lib/types/settings.js';
-	import type { OidcRoleMappingWritable } from '#lib/types/ui/role.js';
-	import { cn } from '#lib/utils.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import type { PageProps } from './$types';
 	import FederatedCredentialsTab from './components/federated-credentials-tab.svelte';
-	import OidcMappingTable from './components/oidc-mapping-table.svelte';
+	import GeneralSettings from './components/general-settings.svelte';
+	import LdapSettings from './components/ldap-settings.svelte';
+	import OidcSettings from './components/oidc-settings.svelte';
+	import RoleMappingsTab from './components/role-mappings-tab.svelte';
 
 	let { data }: PageProps = $props();
-	type AuthenticationTab = 'settings' | 'federated';
+	type AuthenticationTab = 'general' | 'oidc' | 'ldap' | 'mappings' | 'federated';
+	const formTabs: AuthenticationTab[] = ['general', 'oidc', 'ldap'];
 
-	const authenticationTabItems = $derived.by(
-		() =>
-			[
-				{
-					value: 'settings',
-					label: m.authentication()
-				},
-				{
-					value: 'federated',
-					label: m.federated_credential_page_title()
-				}
-			] satisfies TabItem[]
-	);
+	const authenticationTabItems: TabItem[] = $derived([
+		{ value: 'general', label: m.common_general() },
+		{ value: 'oidc', label: m.common_oidc() },
+		{ value: 'ldap', label: m.ldap() },
+		{ value: 'mappings', label: m.oidc_role_mappings_title() },
+		{ value: 'federated', label: m.federated_credential_page_title() }
+	]);
 	const urlTab = useUrlTab<AuthenticationTab>({
 		validTabs: () => authenticationTabItems.map((tab) => tab.value as AuthenticationTab),
-		defaultTab: () => 'settings'
+		defaultTab: () => 'general'
 	});
 	const activeTab = $derived(urlTab.value);
+	const isFormTab = $derived(formTabs.includes(activeTab));
 
-	const queryClient = useQueryClient();
-	const oidcMappingsQuery = createQuery(() => oidcMappingListQuery());
-	const oidcMappings = $derived(oidcMappingsQuery.data ?? data.oidcMappings);
-	let mappingSheetOpen = $state(false);
-	let editingMapping: OidcRoleMapping | null = $state(null);
-	let mappingSaving = $state(false);
-
-	function openCreateMapping() {
-		editingMapping = null;
-		mappingSheetOpen = true;
-	}
-
-	function openEditMapping(mapping: OidcRoleMapping) {
-		editingMapping = mapping;
-		mappingSheetOpen = true;
-	}
-
-	async function submitMapping(formData: Required<Pick<OidcRoleMapping, OidcRoleMappingWritable>>) {
-		mappingSaving = true;
-
-		if (editingMapping) {
-			const id = editingMapping.id;
-			await handleApiResultWithCallbacks({
-				result: await tryCatch(
-					oidcMappingService.update(
-						id,
-						changedFields({ ...editingMapping, environmentId: editingMapping.environmentId ?? null }, formData)
-					)
-				),
-				message: m.common_update_failed({ resource: m.resource_oidc_mapping() }),
-				setLoadingState: (v) => (mappingSaving = v),
-				onSuccess: async () => {
-					toast.success(m.common_update_success({ resource: m.resource_oidc_mapping_cap() }));
-					await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
-					mappingSheetOpen = false;
-				}
-			});
-		} else {
-			await handleApiResultWithCallbacks({
-				result: await tryCatch(oidcMappingService.create({ ...formData, environmentId: formData.environmentId ?? undefined })),
-				message: m.common_create_failed({ resource: m.resource_oidc_mapping() }),
-				setLoadingState: (v) => (mappingSaving = v),
-				onSuccess: async () => {
-					toast.success(m.common_create_success({ resource: m.resource_oidc_mapping_cap() }));
-					await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
-					mappingSheetOpen = false;
-				}
-			});
-		}
-	}
 	const currentSettings = $derived<Settings>(settingsStore.current || data.settings!);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const isOidcLocked = $derived(settingsStore.isLocked('oidcEnabled'));
+	const isLdapLocked = $derived(settingsStore.isLocked('ldapEnabled'));
 	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.current);
 
 	const formSchema = z
@@ -144,11 +77,31 @@
 			oidcScopes: z.string(),
 			oidcGroupsClaim: z.string(),
 			oidcProviderName: z.string(),
-			oidcProviderLogoUrl: z.string()
+			oidcProviderLogoUrl: z.string(),
+			ldapEnabled: z.boolean(),
+			ldapUrl: z.string(),
+			ldapBindDn: z.string(),
+			ldapBindPassword: z.string(),
+			ldapClearBindPassword: z.boolean(),
+			ldapBase: z.string(),
+			ldapUserSearchFilter: z.string(),
+			ldapUserGroupSearchFilter: z.string(),
+			ldapSkipCertVerify: z.boolean(),
+			ldapStartTls: z.boolean(),
+			ldapAttributeUserUniqueIdentifier: z.string(),
+			ldapAttributeUserUsername: z.string(),
+			ldapAttributeUserEmail: z.string(),
+			ldapAttributeUserDisplayName: z.string(),
+			ldapAttributeUserProfilePicture: z.string(),
+			ldapAttributeGroupMember: z.string(),
+			ldapAttributeGroupName: z.string(),
+			ldapSoftDeleteUsers: z.boolean(),
+			ldapSyncInterval: z.string()
 		})
 		.superRefine((formData, ctx) => {
 			const oidcEnabledForAuthValidation = isOidcLocked ? currentSettings.oidcEnabled : formData.oidcEnabled;
-			if (!oidcEnabledForAuthValidation && !formData.authLocalEnabled) {
+			const ldapEnabledForAuthValidation = isLdapLocked ? currentSettings.ldapEnabled : formData.ldapEnabled;
+			if (!oidcEnabledForAuthValidation && !ldapEnabledForAuthValidation && !formData.authLocalEnabled) {
 				ctx.addIssue({
 					code: 'custom',
 					message: m.security_enable_one_provider(),
@@ -165,9 +118,24 @@
 					ctx.addIssue({ code: 'custom', message: m.security_oidc_required_fields(), path: ['oidcClientSecret'] });
 				}
 			}
+			if (formData.ldapEnabled && !isLdapLocked) {
+				for (const field of [
+					'ldapUrl',
+					'ldapBindDn',
+					'ldapBase',
+					'ldapAttributeUserUniqueIdentifier',
+					'ldapAttributeUserUsername',
+					'ldapSyncInterval'
+				] as const) {
+					if (!formData[field].trim()) {
+						ctx.addIssue({ code: 'custom', message: m.required_when_ldap_is_enabled(), path: [field] });
+					}
+				}
+				if ((!currentSettings.ldapBindPassword || formData.ldapClearBindPassword) && !formData.ldapBindPassword.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.required_when_ldap_is_enabled(), path: ['ldapBindPassword'] });
+				}
+			}
 		});
-
-	let showMergeAccountsAlert = $state(false);
 
 	function readFormValues() {
 		const source = settingsStore.current || data.settings!;
@@ -191,8 +159,42 @@
 			oidcScopes: source.oidcScopes,
 			oidcGroupsClaim: source.oidcGroupsClaim,
 			oidcProviderName: source.oidcProviderName,
-			oidcProviderLogoUrl: source.oidcProviderLogoUrl
+			oidcProviderLogoUrl: source.oidcProviderLogoUrl,
+			ldapEnabled: source.ldapEnabled,
+			ldapUrl: source.ldapUrl,
+			ldapBindDn: source.ldapBindDn,
+			ldapBindPassword: '',
+			ldapClearBindPassword: false,
+			ldapBase: source.ldapBase,
+			ldapUserSearchFilter: source.ldapUserSearchFilter,
+			ldapUserGroupSearchFilter: source.ldapUserGroupSearchFilter,
+			ldapSkipCertVerify: source.ldapSkipCertVerify,
+			ldapStartTls: source.ldapStartTls,
+			ldapAttributeUserUniqueIdentifier: source.ldapAttributeUserUniqueIdentifier,
+			ldapAttributeUserUsername: source.ldapAttributeUserUsername,
+			ldapAttributeUserEmail: source.ldapAttributeUserEmail,
+			ldapAttributeUserDisplayName: source.ldapAttributeUserDisplayName,
+			ldapAttributeUserProfilePicture: source.ldapAttributeUserProfilePicture,
+			ldapAttributeGroupMember: source.ldapAttributeGroupMember,
+			ldapAttributeGroupName: source.ldapAttributeGroupName,
+			ldapSoftDeleteUsers: source.ldapSoftDeleteUsers,
+			ldapSyncInterval: source.ldapSyncInterval
 		};
+	}
+
+	function tabForField(key: string): AuthenticationTab {
+		if (key.startsWith('oidc')) return 'oidc';
+		if (key.startsWith('ldap')) return 'ldap';
+		return 'general';
+	}
+
+	function showFirstInvalidTab() {
+		const invalidTabs = Object.entries(formInputs)
+			.filter(([, input]) => input.error)
+			.map(([key]) => tabForField(key));
+		if (invalidTabs.includes(activeTab)) return;
+		const target = formTabs.find((tab) => invalidTabs.includes(tab));
+		if (target) urlTab.select(target);
 	}
 
 	const { formInputs } = untrack(() =>
@@ -200,34 +202,37 @@
 			schema: formSchema,
 			currentSettings: readFormValues(),
 			getCurrentSettings: readFormValues,
-			onSave: async ({ oidcClientSecret, oidcClearClientSecret, ...rest }) => {
+			onSave: async ({ oidcClientSecret, oidcClearClientSecret, ldapBindPassword, ldapClearBindPassword, ...rest }) => {
 				const payload: Partial<Settings> = rest;
 				if (oidcClearClientSecret) payload.oidcClientSecret = '';
 				else if (oidcClientSecret) payload.oidcClientSecret = oidcClientSecret;
+				if (ldapClearBindPassword) payload.ldapBindPassword = '';
+				else if (ldapBindPassword) payload.ldapBindPassword = ldapBindPassword;
 				await settingsStore.save(payload);
 			},
 			onSuccess: () => {
 				formInputs.oidcClientSecret.value = '';
 				formInputs.oidcClearClientSecret.value = false;
+				formInputs.ldapBindPassword.value = '';
+				formInputs.ldapClearBindPassword.value = false;
 			},
+			onInvalid: showFirstInvalidTab,
 			successMessage: m.security_settings_saved(),
 			errorMessage: m.security_settings_save_failed()
 		})
 	);
 
-	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
 	const isOidcEnabledForAuthValidation = $derived.by(() =>
 		isOidcLocked ? currentSettings.oidcEnabled : formInputs.oidcEnabled.value
 	);
-	const showOidcDetails = $derived(formInputs.oidcEnabled.value || (isOidcLocked && currentSettings.oidcEnabled));
-	const hasStoredClientSecret = $derived(!!currentSettings.oidcClientSecret);
-
-	let oidcConfigOpen = $derived(
-		!!(formInputs.oidcClientId.error || formInputs.oidcClientSecret.error || formInputs.oidcIssuerUrl.error)
+	const isLdapEnabledForAuthValidation = $derived.by(() =>
+		isLdapLocked ? currentSettings.ldapEnabled : formInputs.ldapEnabled.value
 	);
+	const showLdapDetails = $derived(formInputs.ldapEnabled.value || (isLdapLocked && currentSettings.ldapEnabled));
+	const showOidcDetails = $derived(formInputs.oidcEnabled.value || (isOidcLocked && currentSettings.oidcEnabled));
 
 	function handleLocalSwitchChange(checked: boolean) {
-		if (!checked && !isOidcEnabledForAuthValidation) {
+		if (!checked && !isOidcEnabledForAuthValidation && !isLdapEnabledForAuthValidation) {
 			formInputs.authLocalEnabled.value = true;
 			toast.error(m.security_enable_one_provider_error());
 			return;
@@ -236,442 +241,127 @@
 	}
 
 	function handleOidcEnabledChange(checked: boolean) {
-		if (!checked && !formInputs.authLocalEnabled.value && !isOidcLocked) {
+		if (!checked && !formInputs.authLocalEnabled.value && !isOidcLocked && !isLdapEnabledForAuthValidation) {
 			formInputs.authLocalEnabled.value = true;
 			toast.info(m.security_local_enabled_info());
 		}
 		formInputs.oidcEnabled.value = checked;
 	}
 
-	function handleMergeAccountsChange(checked: boolean) {
-		if (checked && !currentSettings.oidcMergeAccounts) {
-			showMergeAccountsAlert = true;
-		} else {
-			formInputs.oidcMergeAccounts.value = checked;
+	function handleLdapEnabledChange(checked: boolean) {
+		if (!checked && !formInputs.authLocalEnabled.value && !isLdapLocked && !isOidcEnabledForAuthValidation) {
+			formInputs.authLocalEnabled.value = true;
+			toast.info(m.security_local_enabled_info());
 		}
-	}
-
-	function confirmMergeAccounts() {
-		formInputs.oidcMergeAccounts.value = true;
-		showMergeAccountsAlert = false;
-	}
-
-	function cancelMergeAccounts() {
-		formInputs.oidcMergeAccounts.value = false;
-		showMergeAccountsAlert = false;
+		formInputs.ldapEnabled.value = checked;
 	}
 </script>
+
+{#snippet autoLoginAlert()}
+	<Alert.Root variant="warning-subtle">
+		<InfoIcon class="h-4 w-4 text-warning" />
+		<Alert.Title>{m.security_auto_login_enabled_title()}</Alert.Title>
+		<Alert.Description>{m.security_auto_login_enabled_description()}</Alert.Description>
+	</Alert.Root>
+{/snippet}
 
 <SettingsPageLayout
 	title={m.authentication()}
 	description={m.authentication_description()}
-	pageType={activeTab === 'settings' ? 'form' : 'management'}
-	showReadOnlyTag={activeTab === 'settings' && isReadOnly}
+	pageType={isFormTab ? 'form' : 'management'}
+	showReadOnlyTag={isFormTab && isReadOnly}
 >
 	{#snippet mainContent()}
 		<Tabs.Root value={activeTab}>
 			<TabBar items={authenticationTabItems} onValueChange={urlTab.select} />
 
-			<Tabs.Content value="settings" class="mt-6">
+			<Tabs.Content value="general" class="mt-6">
 				<fieldset disabled={isReadOnly} class="relative space-y-8">
-					<SettingsSection title={m.authentication()}>
-						{#if isAutoLoginEnabled}
-							<div class="px-5 py-4">
-								<Alert.Root variant="warning-subtle">
-									<InfoIcon class="h-4 w-4 text-warning" />
-									<Alert.Title>{m.security_auto_login_enabled_title()}</Alert.Title>
-									<Alert.Description>{m.security_auto_login_enabled_description()}</Alert.Description>
-								</Alert.Root>
-							</div>
-						{:else}
-							<SettingsRow
-								for="localAuthSwitch"
-								label={m.security_local_auth_label()}
-								description={m.security_local_auth_description()}
-								layout="switch"
-								lock={settingsStore.lock('authLocalEnabled')}
-							>
-								{#snippet children({ describedBy })}
-									<Switch
-										id="localAuthSwitch"
-										bind:checked={formInputs.authLocalEnabled.value}
-										onCheckedChange={handleLocalSwitchChange}
-										aria-describedby={describedBy}
-									/>
-								{/snippet}
-							</SettingsRow>
+					{#if isAutoLoginEnabled}
+						{@render autoLoginAlert()}
+					{/if}
+					<GeneralSettings {formInputs} showLocalAuth={!isAutoLoginEnabled} onLocalAuthChange={handleLocalSwitchChange} />
+				</fieldset>
+			</Tabs.Content>
 
+			<Tabs.Content value="oidc" class="mt-6">
+				{#if isAutoLoginEnabled}
+					{@render autoLoginAlert()}
+				{:else}
+					<fieldset disabled={isReadOnly} class="relative space-y-8">
+						<SettingsSection title={m.common_oidc()}>
 							<SettingsRow
 								for="oidcEnabledSwitch"
 								label={m.security_oidc_auth_label()}
 								description={m.security_oidc_auth_description()}
 								layout="switch"
+								lock={settingsStore.lock('oidcEnabled')}
 							>
 								{#snippet children({ describedBy })}
-									<div class="flex flex-col items-end gap-2">
-										<Switch
-											id="oidcEnabledSwitch"
-											disabled={isOidcLocked}
-											bind:checked={formInputs.oidcEnabled.value}
-											onCheckedChange={handleOidcEnabledChange}
-											aria-describedby={describedBy}
-										/>
-										{#if showOidcDetails}
-											<button
-												type="button"
-												class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-												aria-expanded={oidcConfigOpen}
-												onclick={() => (oidcConfigOpen = !oidcConfigOpen)}
-											>
-												<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
-												<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
-											</button>
-										{/if}
-									</div>
-								{/snippet}
-								{#snippet labelExtra()}
-									{#if isOidcLocked}
-										<div class="mt-2">
-											<SettingLock lock={settingsStore.lock('oidcEnabled')} />
-										</div>
-									{/if}
+									<Switch
+										id="oidcEnabledSwitch"
+										disabled={isOidcLocked}
+										bind:checked={formInputs.oidcEnabled.value}
+										onCheckedChange={handleOidcEnabledChange}
+										aria-describedby={describedBy}
+									/>
 								{/snippet}
 							</SettingsRow>
+						</SettingsSection>
 
-							{#if showOidcDetails && oidcConfigOpen}
-								<SettingsRow
-									for="oidcClientId"
-									label={m.oidc_client_id_label()}
-									error={formInputs.oidcClientId.error}
-									lock={settingsStore.lock('oidcClientId')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcClientId"
-											placeholder={m.oidc_client_id_placeholder()}
-											bind:value={formInputs.oidcClientId.value}
-											aria-invalid={!!formInputs.oidcClientId.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcClientSecret"
-									label={m.oidc_client_secret_label()}
-									helpText={m.security_oidc_client_secret_help()}
-									error={formInputs.oidcClientSecret.error}
-									lock={settingsStore.lock('oidcClientSecret')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcClientSecret"
-											type="password"
-											placeholder={m.oidc_client_secret_placeholder()}
-											disabled={formInputs.oidcClearClientSecret.value}
-											bind:value={formInputs.oidcClientSecret.value}
-											aria-invalid={!!formInputs.oidcClientSecret.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								{#if hasStoredClientSecret && !settingsStore.isLocked('oidcClientSecret')}
-									<SettingsRow for="clearOidcClientSecret" label={m.security_oidc_clear_client_secret()} layout="switch">
-										{#snippet children({ describedBy })}
-											<Switch
-												id="clearOidcClientSecret"
-												bind:checked={formInputs.oidcClearClientSecret.value}
-												aria-describedby={describedBy}
-											/>
-										{/snippet}
-									</SettingsRow>
-								{/if}
-								<SettingsRow
-									for="oidcIssuerUrl"
-									label={m.oidc_issuer_url_label()}
-									description={m.oidc_issuer_url_description()}
-									error={formInputs.oidcIssuerUrl.error}
-									lock={settingsStore.lock('oidcIssuerUrl')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcIssuerUrl"
-											placeholder={m.oidc_issuer_url_placeholder()}
-											bind:value={formInputs.oidcIssuerUrl.value}
-											aria-invalid={!!formInputs.oidcIssuerUrl.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcProviderName"
-									label={m.oidc_provider_name_label()}
-									description={m.oidc_provider_name_description()}
-									error={formInputs.oidcProviderName.error}
-									lock={settingsStore.lock('oidcProviderName')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcProviderName"
-											placeholder={m.oidc_provider_name_placeholder()}
-											bind:value={formInputs.oidcProviderName.value}
-											aria-invalid={!!formInputs.oidcProviderName.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcProviderLogoUrl"
-									label={m.oidc_provider_logo_url_label()}
-									description={m.oidc_provider_logo_url_description()}
-									error={formInputs.oidcProviderLogoUrl.error}
-									lock={settingsStore.lock('oidcProviderLogoUrl')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcProviderLogoUrl"
-											placeholder={m.oidc_provider_logo_url_placeholder()}
-											bind:value={formInputs.oidcProviderLogoUrl.value}
-											aria-invalid={!!formInputs.oidcProviderLogoUrl.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcScopes"
-									label={m.oidc_scopes_label()}
-									error={formInputs.oidcScopes.error}
-									lock={settingsStore.lock('oidcScopes')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcScopes"
-											placeholder={m.oidc_scopes_placeholder()}
-											bind:value={formInputs.oidcScopes.value}
-											aria-invalid={!!formInputs.oidcScopes.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcGroupsClaim"
-									label={m.oidc_groups_claim_label()}
-									helpText={m.oidc_groups_claim_help()}
-									error={formInputs.oidcGroupsClaim.error}
-									lock={settingsStore.lock('oidcGroupsClaim')}
-								>
-									{#snippet children({ describedBy, errorId })}
-										<Input
-											id="oidcGroupsClaim"
-											placeholder={m.oidc_groups_claim_placeholder()}
-											bind:value={formInputs.oidcGroupsClaim.value}
-											aria-invalid={!!formInputs.oidcGroupsClaim.error}
-											aria-describedby={describedBy}
-											aria-errormessage={errorId}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcMergeAccountsSwitch"
-									label={m.security_oidc_merge_accounts_label()}
-									description={m.security_oidc_merge_accounts_description()}
-									layout="switch"
-									lock={settingsStore.lock('oidcMergeAccounts')}
-								>
-									{#snippet children({ describedBy })}
-										<Switch
-											id="oidcMergeAccountsSwitch"
-											bind:checked={formInputs.oidcMergeAccounts.value}
-											onCheckedChange={handleMergeAccountsChange}
-											aria-describedby={describedBy}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcSkipTlsVerifySwitch"
-									label={m.oidc_skip_tls_verify_label()}
-									description={m.oidc_skip_tls_verify_description()}
-									layout="switch"
-									lock={settingsStore.lock('oidcSkipTlsVerify')}
-								>
-									{#snippet children({ describedBy })}
-										<Switch
-											id="oidcSkipTlsVerifySwitch"
-											bind:checked={formInputs.oidcSkipTlsVerify.value}
-											aria-describedby={describedBy}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow
-									for="oidcAutoRedirectSwitch"
-									label={m.oidc_auto_redirect_label()}
-									description={m.oidc_auto_redirect_description()}
-									layout="switch"
-									lock={settingsStore.lock('oidcAutoRedirectToProvider')}
-								>
-									{#snippet children({ describedBy })}
-										<Switch
-											id="oidcAutoRedirectSwitch"
-											bind:checked={formInputs.oidcAutoRedirectToProvider.value}
-											aria-describedby={describedBy}
-										/>
-									{/snippet}
-								</SettingsRow>
-								<SettingsRow label={m.oidc_redirect_uri_title()} description={m.oidc_redirect_uri_description()} layout="wide">
-									<div class="flex items-center gap-2">
-										<code class="flex-1 rounded-md bg-muted/60 p-2 font-mono text-xs break-all">{redirectUri}</code>
-										<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
-									</div>
-								</SettingsRow>
-							{/if}
+						{#if showOidcDetails}
+							<OidcSettings
+								{formInputs}
+								hasStoredClientSecret={!!currentSettings.oidcClientSecret}
+								storedMergeAccounts={currentSettings.oidcMergeAccounts}
+							/>
 						{/if}
-					</SettingsSection>
+					</fieldset>
+				{/if}
+			</Tabs.Content>
 
-					{#if !isAutoLoginEnabled}
-						<IfPermitted adminOnly>
-							<SettingsSection
-								title={m.oidc_role_mappings_title()}
-								description={m.oidc_role_mappings_description()}
-								variant="plain"
+			<Tabs.Content value="ldap" class="mt-6">
+				{#if isAutoLoginEnabled}
+					{@render autoLoginAlert()}
+				{:else}
+					<fieldset disabled={isReadOnly} class="relative space-y-8">
+						<SettingsSection title={m.ldap()}>
+							<SettingsRow
+								for="ldapEnabledSwitch"
+								label={m.ldap_authentication()}
+								description={m.ldap_authentication_description()}
+								layout="switch"
+								lock={settingsStore.lock('ldapEnabled')}
 							>
-								{#snippet actions()}
-									<ArcaneButton
-										action="create"
-										tone="outline"
-										onclick={openCreateMapping}
-										customLabel={m.common_create_button({ resource: m.resource_oidc_mapping_cap() })}
+								{#snippet children({ describedBy })}
+									<Switch
+										id="ldapEnabledSwitch"
+										disabled={isLdapLocked}
+										bind:checked={formInputs.ldapEnabled.value}
+										onCheckedChange={handleLdapEnabledChange}
+										aria-describedby={describedBy}
 									/>
 								{/snippet}
-								{#if oidcMappings.length > 0}
-									<OidcMappingTable
-										mappings={oidcMappings}
-										roles={data.roles}
-										environments={data.environments}
-										onRetry={() => oidcMappingsQuery.refetch()}
-										onEdit={openEditMapping}
-									/>
-								{:else}
-									<div class="rounded-xl border border-dashed border-border/60 p-6 text-center">
-										<p class="text-sm text-muted-foreground">{m.oidc_mappings_empty_body()}</p>
-									</div>
-								{/if}
-							</SettingsSection>
-						</IfPermitted>
-					{/if}
+							</SettingsRow>
+						</SettingsSection>
 
-					<SettingsSection title={m.security_session_heading()}>
-						<SettingsRow
-							for="authSessionTimeout"
-							label={m.security_session_timeout_label()}
-							description={m.security_session_timeout_description()}
-							error={formInputs.authSessionTimeout.error}
-						>
-							{#snippet children({ describedBy, errorId })}
-								<Input
-									id="authSessionTimeout"
-									type="number"
-									bind:value={formInputs.authSessionTimeout.value}
-									aria-invalid={!!formInputs.authSessionTimeout.error}
-									aria-describedby={describedBy}
-									aria-errormessage={errorId}
-								/>
-							{/snippet}
-						</SettingsRow>
-						<SettingsRow
-							for="hstsEnabledSwitch"
-							label={m.hsts_label()}
-							description={m.hsts_description()}
-							layout="switch"
-							lock={settingsStore.lock('hstsEnabled')}
-						>
-							{#snippet children({ describedBy })}
-								<Switch id="hstsEnabledSwitch" bind:checked={formInputs.hstsEnabled.value} aria-describedby={describedBy} />
-							{/snippet}
-						</SettingsRow>
-					</SettingsSection>
+						{#if showLdapDetails}
+							<LdapSettings
+								{formInputs}
+								hasStoredBindPassword={!!currentSettings.ldapBindPassword}
+								canSync={currentSettings.ldapEnabled}
+							/>
+						{/if}
+					</fieldset>
+				{/if}
+			</Tabs.Content>
 
-					<SettingsSection title={m.security_password_policy_label()} description={m.security_password_policy_description()}>
-						<SettingsRow
-							for="authPasswordMinLength"
-							label={m.minimum_length()}
-							description={m.minimum_length_description()}
-							error={formInputs.authPasswordMinLength.error}
-							lock={settingsStore.lock('authPasswordMinLength')}
-						>
-							{#snippet children({ describedBy, errorId })}
-								<Input
-									id="authPasswordMinLength"
-									type="number"
-									bind:value={formInputs.authPasswordMinLength.value}
-									aria-invalid={!!formInputs.authPasswordMinLength.error}
-									aria-describedby={describedBy}
-									aria-errormessage={errorId}
-								/>
-							{/snippet}
-						</SettingsRow>
-						<SettingsRow
-							for="authPasswordRequireUppercaseSwitch"
-							label={m.require_uppercase_letter()}
-							layout="switch"
-							lock={settingsStore.lock('authPasswordRequireUppercase')}
-						>
-							{#snippet children({ describedBy })}
-								<Switch
-									id="authPasswordRequireUppercaseSwitch"
-									bind:checked={formInputs.authPasswordRequireUppercase.value}
-									aria-describedby={describedBy}
-								/>
-							{/snippet}
-						</SettingsRow>
-						<SettingsRow
-							for="authPasswordRequireLowercaseSwitch"
-							label={m.require_lowercase_letter()}
-							layout="switch"
-							lock={settingsStore.lock('authPasswordRequireLowercase')}
-						>
-							{#snippet children({ describedBy })}
-								<Switch
-									id="authPasswordRequireLowercaseSwitch"
-									bind:checked={formInputs.authPasswordRequireLowercase.value}
-									aria-describedby={describedBy}
-								/>
-							{/snippet}
-						</SettingsRow>
-						<SettingsRow
-							for="authPasswordRequireNumberSwitch"
-							label={m.require_number()}
-							layout="switch"
-							lock={settingsStore.lock('authPasswordRequireNumber')}
-						>
-							{#snippet children({ describedBy })}
-								<Switch
-									id="authPasswordRequireNumberSwitch"
-									bind:checked={formInputs.authPasswordRequireNumber.value}
-									aria-describedby={describedBy}
-								/>
-							{/snippet}
-						</SettingsRow>
-						<SettingsRow
-							for="authPasswordRequireSymbolSwitch"
-							label={m.require_symbol()}
-							layout="switch"
-							lock={settingsStore.lock('authPasswordRequireSymbol')}
-						>
-							{#snippet children({ describedBy })}
-								<Switch
-									id="authPasswordRequireSymbolSwitch"
-									bind:checked={formInputs.authPasswordRequireSymbol.value}
-									aria-describedby={describedBy}
-								/>
-							{/snippet}
-						</SettingsRow>
-					</SettingsSection>
-				</fieldset>
+			<Tabs.Content value="mappings" class="mt-6">
+				{#if isAutoLoginEnabled}
+					{@render autoLoginAlert()}
+				{:else}
+					<RoleMappingsTab initialMappings={data.oidcMappings} roles={data.roles} environments={data.environments} />
+				{/if}
 			</Tabs.Content>
 
 			<Tabs.Content value="federated" class="mt-6">
@@ -683,32 +373,5 @@
 				/>
 			</Tabs.Content>
 		</Tabs.Root>
-	{/snippet}
-	{#snippet additionalContent()}
-		<AlertDialog.Root bind:open={showMergeAccountsAlert}>
-			<AlertDialog.Content>
-				<AlertDialog.Header>
-					<AlertDialog.Title>{m.security_oidc_merge_accounts_alert_title()}</AlertDialog.Title>
-					<AlertDialog.Description>
-						{m.security_oidc_merge_accounts_alert_description()}
-					</AlertDialog.Description>
-				</AlertDialog.Header>
-				<AlertDialog.Footer>
-					<AlertDialog.Cancel onclick={cancelMergeAccounts}>{m.common_cancel()}</AlertDialog.Cancel>
-					<AlertDialog.Action onclick={confirmMergeAccounts}>{m.common_confirm()}</AlertDialog.Action>
-				</AlertDialog.Footer>
-			</AlertDialog.Content>
-		</AlertDialog.Root>
-
-		{#key editingMapping?.id ?? 'new'}
-			<OidcMappingFormSheet
-				bind:open={mappingSheetOpen}
-				mappingToEdit={editingMapping}
-				isLoading={mappingSaving}
-				roles={data.roles}
-				environments={data.environments}
-				onSubmit={submitMapping}
-			/>
-		{/key}
 	{/snippet}
 </SettingsPageLayout>

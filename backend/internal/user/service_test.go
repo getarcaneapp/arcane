@@ -18,6 +18,7 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
@@ -926,4 +927,63 @@ func TestBackdropUploadRejectsInvalidImages(t *testing.T) {
 
 	_, _, err = userSvc.GetBackdrop(ctx, "u-invalid")
 	require.ErrorIs(t, err, common.ErrNotFound)
+}
+
+func TestLdapManagedUserGuards(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	ctx := t.Context()
+	roleSvc := role.NewRoleService(db)
+	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	settingsSvc, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settingsEnv,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context())))
+	})
+	userSvc := userdomain.NewUserService(userdomain.UserServiceParams{
+		DB:                   db,
+		RoleService:          roleSvc,
+		SettingsService:      settingsSvc,
+		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+	})
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	ldapUser, err := userSvc.CreateUser(ctx, &userdomain.User{
+		ID:          "ldap-1",
+		Username:    "alice",
+		DisplayName: new("Alice"),
+		LdapID:      new("uuid-alice"),
+	})
+	require.NoError(t, err)
+	setLdapEnabled := func(enabled bool) {
+		require.NoError(t, settingsSvc.SetBoolSetting(ctx, "ldapEnabled", enabled))
+	}
+
+	setLdapEnabled(true)
+	_, err = userSvc.UpdateUser(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel, Username: "renamed", DisplayName: ldapUser.DisplayName}, nil)
+	require.ErrorIs(t, err, userdomain.ErrLdapManaged)
+	_, err = userSvc.UpdateUser(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel, Username: "alice", DisplayName: new("Someone")}, nil)
+	require.ErrorIs(t, err, userdomain.ErrLdapManaged)
+	_, err = userSvc.UpdateUser(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel, Username: "alice", DisplayName: ldapUser.DisplayName, Email: new("a@example.com")}, nil)
+	require.ErrorIs(t, err, userdomain.ErrLdapManaged)
+	updated, err := userSvc.UpdateUser(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel, Username: "alice", DisplayName: ldapUser.DisplayName, Locale: new("de")}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "de", kit.FromPtr(updated.Locale))
+	_, err = userSvc.SetPasswordAndRevokeSessionsExcept(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel}, "Sup3r-secret!", "", nil)
+	require.ErrorIs(t, err, userdomain.ErrLdapManaged)
+	require.ErrorIs(t, userSvc.DeleteUser(ctx, ldapUser.ID, nil), userdomain.ErrLdapUserNotDisabled)
+
+	setLdapEnabled(false)
+	_, err = userSvc.UpdateUser(ctx, &userdomain.User{BaseModel: ldapUser.BaseModel, Username: "renamed", DisplayName: ldapUser.DisplayName}, nil)
+	require.NoError(t, err)
+
+	setLdapEnabled(true)
+	require.NoError(t, db.Model(&userdomain.User{}).Where("id = ?", ldapUser.ID).Update("disabled", true).Error)
+	require.NoError(t, userSvc.DeleteUser(ctx, ldapUser.ID, nil))
 }

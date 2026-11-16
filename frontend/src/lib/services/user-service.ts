@@ -33,6 +33,10 @@ class UserAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/users/${id}`)) as Promise<void>;
 	}
 
+	async syncLdap(): Promise<void> {
+		await this.api.post('/ldap/sync');
+	}
+
 	async changePassword(data: { currentPassword: string; newPassword: string }): Promise<void> {
 		return this.handleResponse(this.api.post('/auth/password', data)) as Promise<void>;
 	}

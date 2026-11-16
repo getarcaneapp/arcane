@@ -1,3 +1,5 @@
 # Build artifacts
 *.txt
 *.log
+# Francis test runtime databases (pkg/francis/testing)
+actor-test-unused.*
