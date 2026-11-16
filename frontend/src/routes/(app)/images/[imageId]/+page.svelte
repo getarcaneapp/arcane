@@ -33,6 +33,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageDetailQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { APIError } from '#lib/services/api-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -57,7 +58,9 @@
 
 	const queryClient = useQueryClient();
 	const detailQuery = createQuery(() => imageDetailQuery(data.envId, data.imageId));
-	const image = $derived(detailQuery.data ?? data.image);
+	const image = $derived(
+		detailQuery.error instanceof APIError && detailQuery.error.status === 404 ? undefined : (detailQuery.data ?? data.image)
+	);
 
 	const currentEnvId = $derived(data.envId);
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
@@ -67,7 +70,7 @@
 			{ value: 'overview', label: m.common_overview(), icon: ImagesIcon },
 			{ value: 'history', label: m.images_history_title(), icon: LayersIcon },
 			{ value: 'attestations', label: m.images_attestations_title(), icon: InspectIcon },
-			{ value: 'hardened', label: m.docker_hardened_image(), icon: ShieldCheckIcon, visible: !!image.hardened },
+			{ value: 'hardened', label: m.docker_hardened_image(), icon: ShieldCheckIcon, visible: !!image?.hardened },
 			{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldCheckIcon, visible: vulnerabilityManagementEnabled }
 		],
 		defaultTab: () => 'overview'
@@ -258,7 +261,7 @@
 	const pullableTag = $derived(pullableTags.find((tag) => !tag.includes('@')) ?? pullableTags[0]);
 
 	async function handlePullImage() {
-		if (!pullableTag || isLoading.pulling) return;
+		if (!image || !pullableTag || isLoading.pulling) return;
 		const repoTag = pullableTag;
 		const environmentId = currentEnvId;
 		const routeImageId = data.imageId;
@@ -303,6 +306,7 @@
 
 	const actions: ActionButton[] = $derived.by(() => {
 		const list: ActionButton[] = [];
+		if (!image) return list;
 		if (canTagImage) {
 			list.push({
 				id: 'tag',
