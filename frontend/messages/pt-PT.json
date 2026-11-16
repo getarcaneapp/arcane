@@ -4606,5 +4606,10 @@
   "git_sync_project_description": "Obtenha alterações de um repositório, envie as feitas no Arcane ou mantenha a sincronização nos dois sentidos.",
   "git_two_way_notice": "As alterações guardadas aqui são registadas em commits Git, e as alterações do repositório são obtidas automaticamente.",
   "project_name_locked_git": "O nome do projeto é definido pela sincronização Git e não pode ser alterado aqui.",
-  "save_or_discard_changes_before_sync": "Guarde ou descarte as alterações antes de sincronizar com o Git."
+  "save_or_discard_changes_before_sync": "Guarde ou descarte as alterações antes de sincronizar com o Git.",
+  "cached_data_lifetime": "Cached data lifetime",
+  "cached_data_lifetime_description": "Minutes the browser keeps page data after you leave a page. Defaults to 10.",
+  "cached_data_lifetime_help": "Enter a whole number from 1 to 120.",
+  "connectivity": "Connectivity",
+  "connectivity_description": "Agent limits, parallel upgrades, and cached data lifetime."
 }
