@@ -47,7 +47,6 @@ const (
 	latestMigrationVersion int64 = -1
 	// Bound prepared statements so variable SQL does not retain an unbounded cache.
 	preparedStmtMaxSize = 256
-	preparedStmtTTL     = 15 * time.Minute
 )
 
 var (
@@ -124,9 +123,6 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
 			},
-			PrepareStmt:                      readDSN == "",
-			PrepareStmtMaxSize:               preparedStmtMaxSize,
-			PrepareStmtTTL:                   preparedStmtTTL,
 			SkipDefaultTransaction:           true,
 			IgnoreRelationshipsWhenMigrating: true,
 		})
@@ -209,9 +205,15 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
 	if readDSN == "" {
+		var pool *stmtCachePool
+		if pool, err = newStmtCachePool(ctx, sqlDB); err != nil {
+			return nil, err
+		}
+		gormDB.ConnPool = pool
+		gormDB.Statement.ConnPool = pool
 		return db, nil
 	}
-	if db.reader, err = attachSQLiteReadPool(gormDB, sqlDB, readDSN); err != nil {
+	if db.reader, err = attachSQLiteReadPool(ctx, gormDB, sqlDB, readDSN); err != nil {
 		return nil, err
 	}
 	return db, nil

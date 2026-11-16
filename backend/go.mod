@@ -37,6 +37,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/gofrs/flock v0.13.2
 	github.com/google/go-containerregistry v0.22.1
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/yamux v0.1.2
 	github.com/italypaleale/francis v0.2.2
 	github.com/jwx-go/jwkfetch/v4 v4.0.4

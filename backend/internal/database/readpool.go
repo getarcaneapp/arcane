@@ -20,8 +20,8 @@ import (
 
 type (
 	sqliteReadRouter struct {
-		*gorm.PreparedStmtDB
-		reader *gorm.PreparedStmtDB
+		*stmtCachePool
+		reader *stmtCachePool
 	}
 )
 
@@ -42,15 +42,15 @@ func (r *sqliteReadRouter) BeginTx(ctx context.Context, opts *sql.TxOptions) (go
 	if opts != nil && opts.ReadOnly {
 		return r.reader.BeginTx(ctx, opts)
 	}
-	return r.PreparedStmtDB.BeginTx(ctx, opts)
+	return r.stmtCachePool.BeginTx(ctx, opts)
 }
 
-func (r *sqliteReadRouter) route(query string) *gorm.PreparedStmtDB {
+func (r *sqliteReadRouter) route(query string) *stmtCachePool {
 	trimmed := strings.TrimLeft(query, " \t\r\n(")
 	if len(trimmed) >= len("select") && strings.EqualFold(trimmed[:len("select")], "select") {
 		return r.reader
 	}
-	return r.PreparedStmtDB
+	return r.stmtCachePool
 }
 
 func sqliteReadDSN(connString string) string {
@@ -82,7 +82,7 @@ func sqliteReadDSN(connString string) string {
 	}).String()
 }
 
-func attachSQLiteReadPool(gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql.DB, error) {
+func attachSQLiteReadPool(ctx context.Context, gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql.DB, error) {
 	readerGorm, err := gorm.Open(sqlite.Open(readDSN), &gorm.Config{
 		Logger: customGormLogger,
 	})
@@ -99,9 +99,17 @@ func attachSQLiteReadPool(gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql
 	reader.SetConnMaxLifetime(0)
 	reader.SetConnMaxIdleTime(sqliteConnMaxIdleTime)
 	metrics.ReportDBStatsMetrics(reader, metric.WithAttributes(attribute.String("db.pool", "read")))
+	writerPool, err := newStmtCachePool(ctx, writer)
+	if err != nil {
+		return nil, err
+	}
+	readerPool, err := newStmtCachePool(ctx, reader)
+	if err != nil {
+		return nil, err
+	}
 	router := &sqliteReadRouter{
-		PreparedStmtDB: gorm.NewPreparedStmtDB(writer, preparedStmtMaxSize, preparedStmtTTL),
-		reader:         gorm.NewPreparedStmtDB(reader, preparedStmtMaxSize, preparedStmtTTL),
+		stmtCachePool: writerPool,
+		reader:        readerPool,
 	}
 	gormDB.ConnPool = router
 	gormDB.Statement.ConnPool = router

@@ -170,7 +170,7 @@ func newRouter(p RouterParams) *echo.Echo {
 			strings.HasPrefix(p, "/api/telemetry/") || strings.HasPrefix(p, "/api/tunnel/") ||
 			httpx.IsWebSocketUpgradeRequest(req) || strings.Contains(req.Header.Get("Accept"), "text/event-stream")
 	}}))
-	e.Use(middleware.SpanEnvironment(p.HandlerDeps.Environment.Service().ResolveEnvironmentName))
+	e.Use(middleware.SpanEnvironment(p.HandlerDeps.Environment.Service().ResolveEnvironmentName, environment.DisplayName))
 	requestLogger := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
 		DefaultLevel:     slog.LevelInfo,
 		ClientErrorLevel: slog.LevelWarn,
