@@ -429,7 +429,7 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.U
 	case len(requested) == 0, scope == "", scope == "container":
 		return requested, nil, nil, nil, nil
 	case scope != "project" && scope != "image":
-		return nil, nil, nil, nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
+		return nil, nil, nil, nil, common.Classify(common.ErrBadRequest, fmt.Errorf("unsupported scoped update type %q", options.Type))
 	}
 	// Projects match by lowercase Compose project name; images by ID or normalized reference.
 	wanted := make(map[string]bool, len(requested)*2)
