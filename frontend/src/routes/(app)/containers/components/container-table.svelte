@@ -700,7 +700,12 @@
 
 {#snippet PortsCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
 	{#if view === 'list' || (item.ports?.length ?? 0) > 0}
-		<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
+		<PortBadge
+			ports={item.ports ?? []}
+			environmentId={item.environmentId}
+			hideExposed={hideExposedPorts}
+			wrap={view === 'grid'}
+		/>
 	{/if}
 {/snippet}
 

@@ -100,7 +100,7 @@
 
 		{#if footer}
 			<footer
-				class="mt-auto grid auto-cols-fr grid-flow-col items-center gap-x-4 py-2 text-xs text-muted-foreground tabular-nums"
+				class="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 py-2 text-xs text-muted-foreground tabular-nums"
 			>
 				{@render footer()}
 			</footer>
