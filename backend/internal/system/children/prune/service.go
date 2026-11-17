@@ -1000,6 +1000,7 @@ func (s *Service) removePruneResource(ctx context.Context, resource pruneResourc
 		})
 		return err
 	case "image":
+		untagged := false
 		for _, name := range resource.Names {
 			inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
 				return cli.ImageInspect(ctx, name)
@@ -1018,10 +1019,14 @@ func (s *Service) removePruneResource(ctx context.Context, resource pruneResourc
 			}); err != nil {
 				return err
 			}
+			untagged = true
 		}
 		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageRemoveResult, error) {
 			return cli.ImageRemove(ctx, resource.ID, client.ImageRemoveOptions{PruneChildren: false})
 		})
+		if untagged && errdefs.IsNotFound(err) {
+			return nil
+		}
 		return err
 	case "volume":
 		return s.volumeService.DeleteVolume(ctx, resource.ID, false, types.SystemUser)
