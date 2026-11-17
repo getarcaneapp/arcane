@@ -62,6 +62,10 @@ func SetComposeProjectName(source []byte, name string) ([]byte, error) {
 // project loads and COMPOSE_PROJECT_NAME in its .env, when present, to the
 // requested name. Files outside the project directory are left alone.
 func RewriteComposeProjectName(ctx context.Context, rewrite ComposeProjectNameRewrite) error {
+	projectRoot, err := filepath.EvalSymlinks(rewrite.ProjectPath)
+	if err != nil {
+		return fmt.Errorf("resolve project path: %w", err)
+	}
 	files, err := ComposeFileEnvSelection(ctx, rewrite.ProjectsDirectory, rewrite.ProjectPath)
 	if err != nil {
 		return err
@@ -78,7 +82,14 @@ func RewriteComposeProjectName(ctx context.Context, rewrite ComposeProjectNameRe
 		if !IsSafeSubdirectory(rewrite.ProjectPath, file) {
 			continue
 		}
-		source, readErr := acfs.Host{}.ReadFile(ctx, file)
+		resolvedFile, resolveErr := filepath.EvalSymlinks(file)
+		if resolveErr != nil {
+			return fmt.Errorf("read %s: %w", filepath.Base(file), resolveErr)
+		}
+		if resolvedFile == projectRoot || !IsSafeSubdirectory(projectRoot, resolvedFile) {
+			continue
+		}
+		source, readErr := acfs.Host{}.ReadFile(ctx, resolvedFile)
 		if readErr != nil {
 			return fmt.Errorf("read %s: %w", filepath.Base(file), readErr)
 		}
@@ -89,15 +100,22 @@ func RewriteComposeProjectName(ctx context.Context, rewrite ComposeProjectNameRe
 		if bytes.Equal(updated, source) {
 			continue
 		}
-		if writeErr := WriteProjectFile(ctx, rewrite.ProjectPath, filepath.Dir(file), filepath.Base(file), string(updated)); writeErr != nil {
+		if writeErr := WriteProjectFile(ctx, projectRoot, filepath.Dir(resolvedFile), filepath.Base(resolvedFile), string(updated)); writeErr != nil {
 			return writeErr
 		}
 	}
 
-	envContent, err := acfs.Host{}.ReadFile(ctx, filepath.Join(rewrite.ProjectPath, EffectiveEnvFileName))
+	resolvedEnv, err := filepath.EvalSymlinks(filepath.Join(rewrite.ProjectPath, EffectiveEnvFileName))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", EffectiveEnvFileName, err)
+	}
+	if resolvedEnv == projectRoot || !IsSafeSubdirectory(projectRoot, resolvedEnv) {
+		return nil
+	}
+	envContent, err := acfs.Host{}.ReadFile(ctx, resolvedEnv)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", EffectiveEnvFileName, err)
 	}
@@ -112,5 +130,5 @@ func RewriteComposeProjectName(ctx context.Context, rewrite ComposeProjectNameRe
 	if err != nil {
 		return fmt.Errorf("rewrite %s: %w", EffectiveEnvFileName, err)
 	}
-	return WriteProjectFile(ctx, rewrite.ProjectPath, rewrite.ProjectPath, EffectiveEnvFileName, updated)
+	return WriteProjectFile(ctx, projectRoot, filepath.Dir(resolvedEnv), filepath.Base(resolvedEnv), updated)
 }

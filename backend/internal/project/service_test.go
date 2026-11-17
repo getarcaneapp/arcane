@@ -3175,11 +3175,18 @@ func TestProjectService_CreateProject_ArchiveAppliesRequestedName(t *testing.T) 
 		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	archive := func(t *testing.T, files map[string]string) io.Reader {
+	archive := func(t *testing.T, files, symlinks map[string]string) io.Reader {
 		t.Helper()
 		source := t.TempDir()
 		for name, content := range files {
-			require.NoError(t, os.WriteFile(filepath.Join(source, name), []byte(content), 0o600))
+			targetPath := filepath.Join(source, name)
+			require.NoError(t, os.MkdirAll(filepath.Dir(targetPath), 0o750))
+			require.NoError(t, os.WriteFile(targetPath, []byte(content), 0o600))
+		}
+		for name, target := range symlinks {
+			linkPath := filepath.Join(source, name)
+			require.NoError(t, os.MkdirAll(filepath.Dir(linkPath), 0o750))
+			require.NoError(t, os.Symlink(target, linkPath))
 		}
 		var buf strings.Builder
 		require.NoError(t, projects.PackProjectDirectory(ctx, source, &buf))
@@ -3189,8 +3196,11 @@ func TestProjectService_CreateProject_ArchiveAppliesRequestedName(t *testing.T) 
 
 	created, err := svc.CreateProject(ctx, CreateProjectOptions{
 		Archive: archive(t, map[string]string{
-			"compose.yaml": "# copied\nname: app\nservices:\n  web:\n    image: nginx:alpine\n",
-			".env":         "COMPOSE_PROJECT_NAME=app\nOTHER=value\n",
+			"config/app.yaml": "# copied\nname: app\nservices:\n  web:\n    image: nginx:alpine\n",
+			"config/app.env":  "COMPOSE_PROJECT_NAME=app\nOTHER=value\n",
+		}, map[string]string{
+			"compose.yaml": "config/app.yaml",
+			".env":         "config/app.env",
 		}),
 		Actor:     user,
 		Name:      "app-copy",
@@ -3198,10 +3208,13 @@ func TestProjectService_CreateProject_ArchiveAppliesRequestedName(t *testing.T) 
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "app-copy", created.Name)
-	compose, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", "compose.yaml"))
+	composeLink, err := os.Readlink(filepath.Join(projectsDir, "app-copy", "compose.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "config/app.yaml", composeLink)
+	compose, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", "config", "app.yaml"))
 	require.NoError(t, err)
 	assert.Equal(t, "# copied\nname: app-copy\nservices:\n  web:\n    image: nginx:alpine\n", string(compose))
-	env, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", ".env"))
+	env, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", "config", "app.env"))
 	require.NoError(t, err)
 	assert.Equal(t, "COMPOSE_PROJECT_NAME=app-copy\nOTHER=value\n", string(env))
 	var stored Project
@@ -3213,7 +3226,7 @@ func TestProjectService_CreateProject_ArchiveAppliesRequestedName(t *testing.T) 
 			"compose.yaml": "services:\n  web:\n    image: nginx:alpine\n",
 			".env":         "COMPOSE_ENV_FILES=name.env\n",
 			"name.env":     "COMPOSE_PROJECT_NAME=app\n",
-		}),
+		}, nil),
 		Actor:     user,
 		Name:      "unsupported-copy",
 		ExactName: true,

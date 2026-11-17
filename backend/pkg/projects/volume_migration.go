@@ -26,6 +26,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+const ArcaneProjectIDLabel = "com.getarcaneapp.arcane.project-id"
+
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
 	if composeProject == nil || len(composeProject.Volumes) == 0 {
 		return nil, nil

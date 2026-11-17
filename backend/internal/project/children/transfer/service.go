@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -93,6 +94,7 @@ type (
 		TargetCompose   string                        `json:"targetCompose,omitempty"`
 		Volumes         []types.ProjectTransferVolume `json:"volumes,omitempty"`
 		CreatedVolumes  []string                      `json:"createdVolumes,omitempty"`
+		DeployVolumes   []string                      `json:"deployVolumes,omitempty"`
 		CopiedVolumes   []string                      `json:"copiedVolumes,omitempty"`
 		Leftovers       []string                      `json:"leftovers,omitempty"`
 		WebhooksKept    int64                         `json:"webhooksKept,omitempty"`
@@ -235,7 +237,9 @@ func (s *Service) Start(ctx context.Context, opts Options) (types.ProjectTransfe
 	}
 	go func() {
 		background := context.WithoutCancel(ctx)
-		_, _ = s.flow.Wait(background, s.workflow, activityID)
+		if _, waitErr := s.flow.Wait(background, s.workflow, activityID); waitErr != nil {
+			slog.WarnContext(background, "Stopped waiting for project transfer workflow", "activityId", activityID, "error", waitErr)
+		}
 		release(background)
 	}()
 	return types.ProjectTransferStarted{ActivityID: activityID}, nil
@@ -570,10 +574,12 @@ func (s *Service) save(ctx context.Context, r *run) error {
 }
 
 func (s *Service) report(ctx context.Context, r *run, level types.ActivityMessageLevel, message string) {
-	_, _ = s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), r.activityID, activity.AppendMessageRequest{
+	if _, err := s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), r.activityID, activity.AppendMessageRequest{
 		Level:   level,
 		Message: message,
-	})
+	}); err != nil {
+		slog.WarnContext(ctx, "Failed to append project transfer activity message", "activityId", r.activityID, "level", level, "error", err)
+	}
 }
 
 func (s *Service) prepare(ctx context.Context, r *run) error {
@@ -700,11 +706,13 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 
 func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composetypes.VolumeConfig, composeName string) error {
 	artifact := "volume " + volume.Key
+	ownerProjectID := cmp.Or(r.state.TargetProjectID, r.input.TargetProjectID)
 	labels, exists, err := r.target.VolumeLabels(ctx, config.Name)
 	if err != nil {
 		return fmt.Errorf("inspect target volume %s: %w", config.Name, err)
 	}
-	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || docker.ComposeProjectLabel(labels) != composeName) {
+	owned := ownerProjectID != "" && labels[projects.ArcaneProjectIDLabel] == ownerProjectID
+	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || !owned) {
 		return s.disown(ctx, r, config.Name, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created on the target environment by something other than this transfer", config.Name)))
 	}
 	if exists {
@@ -739,10 +747,11 @@ func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTr
 	defer cancel()
 	restoreErr := r.target.RestoreVolume(restoreCtx, config.Name, types.RestoreVolumeUploadRequest{
 		ComposeVolume: &types.ComposeVolumeTarget{
-			Labels:  config.Labels,
-			Project: composeName,
-			Key:     volume.Key,
-			Driver:  config.Driver,
+			Labels:    config.Labels,
+			ProjectID: ownerProjectID,
+			Project:   composeName,
+			Key:       volume.Key,
+			Driver:    config.Driver,
 		},
 		UploadID: uploadID,
 	}, r.input.User)
@@ -762,7 +771,7 @@ func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTr
 // disown records that a target volume is not this run's before failing, so cleanup never deletes it.
 func (s *Service) disown(ctx context.Context, r *run, name string, cause error) error {
 	r.state.CreatedVolumes = slices.DeleteFunc(r.state.CreatedVolumes, func(created string) bool { return created == name })
-	return errors.Join(cause, s.save(ctx, r))
+	return errors.Join(cause, s.save(context.WithoutCancel(ctx), r))
 }
 
 func (s *Service) restartSource(ctx context.Context, r *run) error {
@@ -790,7 +799,7 @@ func (s *Service) deployTarget(ctx context.Context, r *run) error {
 	}
 	for _, key := range slices.Sorted(maps.Keys(targetProject.Volumes)) {
 		config := targetProject.Volumes[key]
-		if bool(config.External) || slices.Contains(r.state.CreatedVolumes, config.Name) {
+		if bool(config.External) || slices.Contains(r.state.CreatedVolumes, config.Name) || slices.Contains(r.state.DeployVolumes, config.Name) {
 			continue
 		}
 		_, exists, existsErr := r.target.VolumeLabels(ctx, config.Name)
@@ -798,7 +807,7 @@ func (s *Service) deployTarget(ctx context.Context, r *run) error {
 			return fmt.Errorf("inspect target volume %s: %w", config.Name, existsErr)
 		}
 		if !exists {
-			r.state.CreatedVolumes = append(r.state.CreatedVolumes, config.Name)
+			r.state.DeployVolumes = append(r.state.DeployVolumes, config.Name)
 		}
 	}
 	if saveErr := s.save(ctx, r); saveErr != nil {
@@ -1029,16 +1038,31 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
 		}
 	}
-	for _, volume := range kit.Ternary(keep, nil, r.state.CreatedVolumes) {
+	ownerProjectID := cmp.Or(r.state.TargetProjectID, r.input.TargetProjectID)
+	removedVolume := false
+	deleteVolume := func(volume string, owned func(map[string]string) bool) {
 		labels, exists, err := r.target.VolumeLabels(ctx, volume)
-		if err == nil && exists && docker.ComposeProjectLabel(labels) == r.state.TargetCompose {
+		if err == nil && exists && owned(labels) {
+			removedVolume = true
 			err = r.target.DeleteVolume(ctx, volume, r.input.User)
 		}
 		if err != nil {
 			leftover = append(leftover, fmt.Sprintf("volume %s (%v)", volume, err))
 		}
 	}
-	created := targetProjectID != "" || len(r.state.CreatedVolumes) > 0
+	if !keep {
+		for _, volume := range r.state.CreatedVolumes {
+			deleteVolume(volume, func(labels map[string]string) bool {
+				return ownerProjectID != "" && labels[projects.ArcaneProjectIDLabel] == ownerProjectID
+			})
+		}
+		for _, volume := range r.state.DeployVolumes {
+			deleteVolume(volume, func(labels map[string]string) bool {
+				return r.state.TargetCompose != "" && docker.ComposeProjectLabel(labels) == r.state.TargetCompose
+			})
+		}
+	}
+	created := targetProjectID != "" || removedVolume
 	switch {
 	case len(leftover) > 0:
 		notes = append(notes, "Could not clean up: "+strings.Join(leftover, ", ")+".")

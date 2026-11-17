@@ -621,10 +621,14 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if !errdefs.IsNotFound(inspectErr) {
 		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 	}
-	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
+	config := projects.ComposeVolumeConfig(composetypes.VolumeConfig{
 		Driver: target.Driver,
 		Labels: target.Labels,
-	}, target.Key, volumeName, target.Project), nil)
+	}, target.Key, volumeName, target.Project)
+	if target.ProjectID != "" {
+		config.CustomLabels[projects.ArcaneProjectIDLabel] = target.ProjectID
+	}
+	createOptions, err := projects.ComposeVolumeCreateOptions(config, nil)
 	if err != nil {
 		return err
 	}
