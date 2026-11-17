@@ -20,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
@@ -164,6 +165,24 @@ func (c *fileCollector) add(ctx context.Context, entry types.Entry) error {
 	c.seen[relative] = struct{}{}
 	c.files = append(c.files, CommitFile{Path: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0})
 	return nil
+}
+
+func ExecutableFiles(repoPath string) (map[string]bool, error) {
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read index: %w", err)
+	}
+	executable := make(map[string]bool)
+	for _, entry := range idx.Entries {
+		if entry.Mode == filemode.Executable {
+			executable[entry.Name] = true
+		}
+	}
+	return executable, nil
 }
 
 func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
@@ -324,6 +343,20 @@ func stageCommitFiles(ctx context.Context, checkout *WriteCheckout, worktree *gi
 		if _, err := worktree.Add(file.Path); err != nil {
 			return fmt.Errorf("failed to stage %s: %w", file.Path, err)
 		}
+	}
+	idx, indexErr := checkout.repo.Storer.Index()
+	if indexErr != nil {
+		return fmt.Errorf("failed to read index: %w", indexErr)
+	}
+	for _, file := range req.Files {
+		entry, entryErr := idx.Entry(filepath.ToSlash(file.Path))
+		if entryErr != nil {
+			return fmt.Errorf("failed to stage %s: %w", file.Path, entryErr)
+		}
+		entry.Mode = kit.Ternary(file.Executable, filemode.Executable, filemode.Regular)
+	}
+	if setIndexErr := checkout.repo.Storer.SetIndex(idx); setIndexErr != nil {
+		return fmt.Errorf("failed to write index: %w", setIndexErr)
 	}
 	for _, removed := range req.Remove {
 		if err := ValidatePath(checkout.RepoPath, removed); err != nil {
