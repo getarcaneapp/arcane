@@ -1,0 +1,90 @@
+name: Crowdin Download
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      commit:
+        description: Commit on main that contains the latest translations
+        value: ${{ jobs.download.outputs.commit }}
+    secrets:
+      CROWDIN_PERSONAL_TOKEN:
+        required: true
+      ARCANE_APP_CLIENT_ID:
+        required: true
+      ARCANE_APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: depot-ubuntu-latest
+    concurrency:
+      group: crowdin-download
+      cancel-in-progress: false
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+
+    steps:
+      - name: Require the main branch
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Translations can only be downloaded from main."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download translations
+        uses: crowdin/github-action@9c23991700c0ec5256fd41089b9d9d7d540e424e # v3.3.0
+        with:
+          upload_sources: false
+          upload_translations: false
+          download_translations: true
+          push_translations: false
+          create_pull_request: false
+          crowdin_branch_name: main
+          user: auto
+        env:
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-contents: write
+
+      - name: Commit translations to main
+        id: commit
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          bot_name="$APP_SLUG[bot]"
+          bot_id=$(gh api "users/$bot_name" --jq .id)
+          git config user.name "$bot_name"
+          git config user.email "$bot_id+$bot_name@users.noreply.github.com"
+          gh auth setup-git
+
+          git add frontend/messages/*.json
+          if git diff --cached --quiet; then
+            echo "Translations are already up to date." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git commit -m "chore(translations): update translations via Crowdin"
+            git push origin HEAD:refs/heads/main
+            echo "Committed updated translations to main." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

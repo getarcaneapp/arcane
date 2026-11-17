@@ -25,8 +25,17 @@ defaults:
     shell: bash
 
 jobs:
+  translations:
+    name: Download translations
+    uses: ./.github/workflows/crowdin-download.yml
+    secrets:
+      CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+      ARCANE_APP_CLIENT_ID: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+      ARCANE_APP_PRIVATE_KEY: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+
   prepare:
     name: Prepare release
+    needs: translations
     runs-on: depot-ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -44,7 +53,7 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.translations.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -67,7 +76,7 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "Preparing release v$version from $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          echo "Preparing release v$version from $(git rev-parse HEAD)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Update version files and changelog
         if: steps.version.outputs.tag != ''
@@ -77,7 +86,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           build_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          jq --arg version "$VERSION" --arg revision "$GITHUB_SHA" --arg build_time "$build_time" \
+          jq --arg version "$VERSION" --arg revision "$(git rev-parse HEAD)" --arg build_time "$build_time" \
             '.version = $version | .revision = $revision | .buildTime = $build_time' .arcane.json > "$RUNNER_TEMP/arcane.json"
           mv "$RUNNER_TEMP/arcane.json" .arcane.json
           jq --tab --arg version "$VERSION" '.version = $version' frontend/package.json > "$RUNNER_TEMP/package.json"
