@@ -1290,7 +1290,7 @@ func TestConfigureSQLiteConnectionPool_AgentMode(t *testing.T) {
 	dbAgent, err := Initialize(t.Context(), dsn, MigrationOptions{AgentMode: true})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dbAgent.Close()) })
-	assert.Nil(t, dbAgent.reader)
+	assert.NotNil(t, dbAgent.reader)
 	sqlDBAgent, err := dbAgent.DB.DB()
 	require.NoError(t, err)
 	assert.Equal(t, 1, sqlDBAgent.Stats().MaxOpenConnections)
