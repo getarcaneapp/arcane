@@ -265,6 +265,7 @@ func row(roots []types.ProjectsDirectoryStatus, catalog string, p types.ProjectR
 		ArchivedAt:      p.ArchivedAt,
 		Status:          LiveStatus(p.Status, snapshot.Err, services),
 		DirName:         mo.PointerToOption(p.DirName).OrEmpty(),
+		ComposeName:     mo.PointerToOption(p.ComposeProjectName).OrEmpty(),
 		Name:            p.Name,
 		RelativePath:    RelativePath(root, p.Path),
 		ProjectsRoot:    root,

@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/environment"
@@ -86,6 +87,11 @@ func (e remoteEnvironment) VolumeLabels(ctx context.Context, name string) (map[s
 
 func (e remoteEnvironment) NetworkExists(ctx context.Context, name string) (bool, error) {
 	return e.exists(ctx, "/networks/"+url.PathEscape(name))
+}
+
+func (e remoteEnvironment) ComposeProjectInUse(ctx context.Context, name string) (bool, error) {
+	response, err := e.decode[types.Paginated[struct{}]](ctx, http.MethodGet, "/containers?limit=1&includeInternal=true&includeHidden=true&label="+url.QueryEscape(docker.ComposeProjectLabelKey+"="+name), nil)
+	return len(response.Data) > 0, err
 }
 
 func (e remoteEnvironment) ExportProject(ctx context.Context, projectID string) (types.UploadSession, error) {

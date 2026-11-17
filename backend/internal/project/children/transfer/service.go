@@ -41,6 +41,7 @@ type (
 		Projects(ctx context.Context, search string) ([]types.Project, error)
 		VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error)
 		NetworkExists(ctx context.Context, name string) (bool, error)
+		ComposeProjectInUse(ctx context.Context, name string) (bool, error)
 		ExportProject(ctx context.Context, projectID string) (types.UploadSession, error)
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
 		CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error)
@@ -261,6 +262,7 @@ func requesters(ctx context.Context, opts Options, webhooks bool) []types.Backup
 		backup.NewRequester(ctx, opts.User, target, authz.PermProjectsRead),
 		backup.NewRequester(ctx, opts.User, target, authz.PermVolumesRead),
 		backup.NewRequester(ctx, opts.User, target, authz.PermNetworksRead),
+		backup.NewRequester(ctx, opts.User, target, authz.PermContainersList),
 	}
 	if request.IncludeVolumes {
 		required = append(required,
@@ -412,19 +414,27 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 }
 
 func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment, request types.ProjectTransferRequest, externalVolumes []string) error {
-	existing, err := target.Projects(ctx, request.Name)
+	existing, err := target.Projects(ctx, "")
 	if err != nil {
 		return fmt.Errorf("list target projects: %w", err)
 	}
+	composeName := projects.NormalizeProjectName(request.Name)
+	conflict, err := target.ComposeProjectInUse(ctx, composeName)
+	if err != nil {
+		return fmt.Errorf("list target containers of Compose project %s: %w", composeName, err)
+	}
 	for _, candidate := range existing {
-		if strings.EqualFold(candidate.Name, request.Name) || strings.EqualFold(candidate.DirName, projects.SanitizeProjectName(request.Name)) {
-			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
-				Code:     types.ProjectTransferNameConflict,
-				Severity: types.ProjectTransferSeverityError,
-				Message:  fmt.Sprintf("A project named %s already exists on the target environment.", candidate.Name),
-			})
-			break
+		if strings.EqualFold(candidate.Name, request.Name) || strings.EqualFold(candidate.DirName, projects.SanitizeProjectName(request.Name)) ||
+			projects.NormalizeProjectName(candidate.Name) == composeName || projects.NormalizeProjectName(candidate.ComposeName) == composeName {
+			conflict = true
 		}
+	}
+	if conflict {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferNameConflict,
+			Severity: types.ProjectTransferSeverityError,
+			Message:  fmt.Sprintf("A project or Compose stack named %s already exists on the target environment.", request.Name),
+		})
 	}
 	for _, volume := range kit.Ternary(request.IncludeVolumes, plan.Volumes, nil) {
 		_, exists, existsErr := target.VolumeLabels(ctx, volume.TargetName)
@@ -965,7 +975,7 @@ func (s *Service) removeUpload(ctx context.Context, r *run, env Environment, sid
 }
 
 func (s *Service) settle(ctx context.Context, r *run, err error) error {
-	if errors.Is(ctx.Err(), context.Canceled) && !errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+	if ctx.Err() != nil && !errors.Is(context.Cause(ctx), activity.ErrCanceled) && !errors.Is(context.Cause(ctx), flow.ErrInstanceFinished) {
 		return err
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), operationTimeout)

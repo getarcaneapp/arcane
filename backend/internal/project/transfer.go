@@ -7,6 +7,8 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app/docker"
+
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/environment"
@@ -75,6 +77,18 @@ func (e localTransferEnvironment) NetworkExists(ctx context.Context, name string
 		return false, nil
 	}
 	return err == nil, err
+}
+
+func (e localTransferEnvironment) ComposeProjectInUse(ctx context.Context, name string) (bool, error) {
+	dockerClient, err := e.projects.dockerService.GetClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+name),
+	})
+	return len(found.Items) > 0, err
 }
 
 func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID string) (types.UploadSession, error) {

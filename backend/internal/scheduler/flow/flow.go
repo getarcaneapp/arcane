@@ -92,7 +92,7 @@ const (
 
 var (
 	ErrNotResumable     = errors.New("workflow instance cannot be resumed")
-	errInstanceFinished = errors.New("workflow instance finished")
+	ErrInstanceFinished = errors.New("workflow instance finished")
 )
 
 func New(appCtx context.Context, runtime *francis.Runtime, coordinator *runs.Coordinator, activities Activities) (*Engine, error) {
@@ -516,7 +516,7 @@ func (e *Engine) releaseRoot(rootID string) {
 	delete(e.submitted, rootID)
 	e.mu.Unlock()
 	if ok {
-		root.cancel(errInstanceFinished)
+		root.cancel(ErrInstanceFinished)
 	}
 }
 

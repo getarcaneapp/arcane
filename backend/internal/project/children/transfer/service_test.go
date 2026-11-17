@@ -149,6 +149,10 @@ func (f *fakeEnvironment) NetworkExists(context.Context, string) (bool, error) {
 	return false, nil
 }
 
+func (f *fakeEnvironment) ComposeProjectInUse(context.Context, string) (bool, error) {
+	return false, nil
+}
+
 func (f *fakeEnvironment) store(kind string, data []byte) types.UploadSession {
 	f.uploadCounter++
 	chunks := map[int][]byte{}
