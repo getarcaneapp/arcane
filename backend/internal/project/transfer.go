@@ -3,11 +3,14 @@ package project
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
+	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -28,6 +31,8 @@ type (
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
 		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
+		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
@@ -52,31 +57,54 @@ func (e localTransferEnvironment) Projects(ctx context.Context, search string) (
 	return found, err
 }
 
-func (e localTransferEnvironment) VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error) {
+func (e localTransferEnvironment) Volume(ctx context.Context, name string) (types.Volume, bool, error) {
 	dockerClient, err := e.projects.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, false, err
+		return types.Volume{}, false, err
 	}
 	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if errdefs.IsNotFound(err) {
-		return nil, false, nil
+		return types.Volume{}, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return types.Volume{}, false, err
 	}
-	return inspect.Volume.Labels, true, nil
+	return types.NewVolume(inspect.Volume), true, nil
 }
 
-func (e localTransferEnvironment) NetworkExists(ctx context.Context, name string) (bool, error) {
+func (e localTransferEnvironment) Network(ctx context.Context, name string) (types.NetworkInspect, bool, error) {
 	dockerClient, err := e.projects.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, err
+		return types.NetworkInspect{}, false, err
 	}
-	_, err = dockerClient.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	inspect, err := dockerClient.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
 	if errdefs.IsNotFound(err) {
-		return false, nil
+		return types.NetworkInspect{}, false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return types.NetworkInspect{}, false, err
+	}
+	found, err := mapping.MapOne[network.Inspect, types.NetworkInspect](inspect.Network)
+	return found, err == nil, err
+}
+
+func (e localTransferEnvironment) CreateVolume(ctx context.Context, volume types.Volume, user types.Actor) error {
+	_, err := e.deps.CreateVolume(ctx, client.VolumeCreateOptions{
+		Name:       volume.Name,
+		Driver:     volume.Driver,
+		DriverOpts: volume.Options,
+		Labels:     volume.Labels,
+	}, user)
+	return err
+}
+
+func (e localTransferEnvironment) CreateNetwork(ctx context.Context, created types.Network, user types.Actor) error {
+	options, err := mapping.MapOne[types.NetworkCreateOptions, client.NetworkCreateOptions](created.Options)
+	if err != nil {
+		return common.Classify(common.ErrBadRequest, fmt.Errorf("invalid options for network %s: %w", created.Name, err))
+	}
+	_, err = e.deps.CreateNetwork(ctx, created.Name, options, user)
+	return err
 }
 
 func (e localTransferEnvironment) ComposeProjectInUse(ctx context.Context, name string) (bool, error) {

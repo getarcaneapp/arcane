@@ -10,6 +10,7 @@ import type {
 	ProjectTagOption,
 	ProjectTransferPreflight,
 	ProjectTransferRequest,
+	ProjectTransferResource,
 	ProjectTransferStarted,
 	ProjectUpdateInfo
 } from '#lib/types/project.js';
@@ -263,6 +264,10 @@ class ProjectService extends BaseAPIService {
 		environmentId: string
 	): Promise<ProjectTransferStarted> {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer`, request));
+	}
+
+	async createTransferResource(projectId: string, resource: ProjectTransferResource, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer/resources`, resource));
 	}
 
 	async destroyProject(projectName: string, removeVolumes = false, environmentId: string): Promise<void> {

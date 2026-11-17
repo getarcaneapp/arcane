@@ -74,19 +74,36 @@ func (e remoteEnvironment) Projects(ctx context.Context, search string) ([]types
 	return response.Data, err
 }
 
-func (e remoteEnvironment) VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error) {
+func (e remoteEnvironment) Volume(ctx context.Context, name string) (types.Volume, bool, error) {
 	response, err := e.decode[types.ApiResponse[*types.Volume]](ctx, http.MethodGet, "/volumes/"+url.PathEscape(name), nil)
 	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
-		return nil, false, nil
+		return types.Volume{}, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return types.Volume{}, false, err
 	}
-	return kit.FromPtr(response.Data).Labels, true, nil
+	return kit.FromPtr(response.Data), true, nil
 }
 
-func (e remoteEnvironment) NetworkExists(ctx context.Context, name string) (bool, error) {
-	return e.exists(ctx, "/networks/"+url.PathEscape(name))
+func (e remoteEnvironment) Network(ctx context.Context, name string) (types.NetworkInspect, bool, error) {
+	response, err := e.decode[types.ApiResponse[types.NetworkInspect]](ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil)
+	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
+		return types.NetworkInspect{}, false, nil
+	}
+	if err != nil {
+		return types.NetworkInspect{}, false, err
+	}
+	return response.Data, true, nil
+}
+
+func (e remoteEnvironment) CreateVolume(ctx context.Context, volume types.Volume, _ types.Actor) error {
+	_, err := e.decode[types.ApiResponse[*types.Volume]](ctx, http.MethodPost, "/volumes", volume)
+	return err
+}
+
+func (e remoteEnvironment) CreateNetwork(ctx context.Context, network types.Network, _ types.Actor) error {
+	_, err := e.decode[types.ApiResponse[types.NetworkCreateResponse]](ctx, http.MethodPost, "/networks", network)
+	return err
 }
 
 func (e remoteEnvironment) ComposeProjectInUse(ctx context.Context, name string) (bool, error) {
@@ -191,14 +208,6 @@ func (e remoteEnvironment) DeleteVolume(ctx context.Context, name string, _ type
 		return nil
 	}
 	return err
-}
-
-func (e remoteEnvironment) exists(ctx context.Context, path string) (bool, error) {
-	_, err := e.call(ctx, http.MethodGet, path, nil)
-	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-	return err == nil, err
 }
 
 func (e remoteEnvironment) call(ctx context.Context, method, path string, body []byte) (*agent.RemoteResponse, error) {

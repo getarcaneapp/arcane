@@ -27,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/scheduler"
@@ -108,6 +109,7 @@ type (
 		Backups   *backup.Engine
 		Webhooks  *webhook.WebhookService
 		Volumes   *volume.VolumeService
+		Networks  *network.NetworkService
 	}
 
 	filesystemWatcherJobParams struct {
@@ -155,6 +157,8 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			ExportVolume:     p.Volumes.ExportVolumeArchive,
 			RestoreVolume:    p.Volumes.RestoreVolumeUpload,
 			DeleteVolume:     p.Volumes.DeleteVolume,
+			CreateVolume:     p.Volumes.CreateVolume,
+			CreateNetwork:    p.Networks.CreateNetwork,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {
