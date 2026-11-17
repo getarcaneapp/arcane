@@ -30,17 +30,10 @@ jobs:
       commit: ${{ steps.commit.outputs.commit }}
 
     steps:
-      - name: Require the main branch
-        run: |
-          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
-            echo "::error::Translations can only be downloaded from main."
-            exit 1
-          fi
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: main
           persist-credentials: false
 
       - name: Download translations
@@ -83,6 +76,7 @@ jobs:
             echo "Translations are already up to date." >> "$GITHUB_STEP_SUMMARY"
           else
             git commit -m "chore(translations): update translations via Crowdin"
+            git pull --rebase origin main
             git push origin HEAD:refs/heads/main
             echo "Committed updated translations to main." >> "$GITHUB_STEP_SUMMARY"
           fi
