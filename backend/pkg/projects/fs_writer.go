@@ -89,12 +89,23 @@ func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
 			composeFileName = write.FileName
 		}
 	}
+	logicalPath := "/" + composeFileName
 	mode := kitfs.FilePerm
-	if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, "/"+composeFileName, types.StatOptions{}); statErr == nil {
+	if entry, statErr := (acfs.Root{Path: dirPath}).Stat(ctx, logicalPath, types.StatOptions{}); statErr == nil {
 		mode = os.FileMode(entry.UnixMode).Perm()
+		// Symlinks and directories fall through so Write keeps rejecting them.
+		if !entry.IsSymlink && !entry.IsDirectory {
+			existingContent, readErr := (acfs.Root{Path: dirPath}).ReadFile(ctx, logicalPath)
+			if readErr == nil && string(existingContent) == write.Content {
+				return nil
+			}
+			if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
+				return fmt.Errorf("failed to read compose file %s: %w", filepath.Join(dirPath, composeFileName), readErr)
+			}
+		}
 	}
 
-	if err := (acfs.Root{Path: dirPath}).Write(ctx, "/"+composeFileName, []byte(write.Content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
+	if err := (acfs.Root{Path: dirPath}).Write(ctx, logicalPath, []byte(write.Content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			return fmt.Errorf(
 				"failed to write compose file %s: not writable by uid %d gid %d (check the file owner matches PUID/PGID): %w",
