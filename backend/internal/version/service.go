@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/distribution/reference"
@@ -27,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -61,6 +63,7 @@ type (
 		commitNotesCache         *cache.Cache[string, string]
 		containerRegistryService *registry.ContainerRegistryService
 		dockerService            *docker.DockerClientService
+		eventService             *event.EventService
 		imageUpdateService       *imageupdate.ImageUpdateService
 		settingsService          *settings.SettingsService
 		streamHub                *agg.Hub[types.VersionStreamEvent]
@@ -73,6 +76,7 @@ type (
 		HTTPClient               *http.Client
 		ContainerRegistryService *registry.ContainerRegistryService
 		DockerService            *docker.DockerClientService
+		EventService             *event.EventService
 		ImageUpdateService       *imageupdate.ImageUpdateService
 		SettingsService          *settings.SettingsService
 		AppVersion               string
@@ -123,6 +127,7 @@ func NewVersionService(p VersionServiceParams) *VersionService {
 		revision:                 p.Revision,
 		containerRegistryService: p.ContainerRegistryService,
 		dockerService:            p.DockerService,
+		eventService:             p.EventService,
 		imageUpdateService:       p.ImageUpdateService,
 		settingsService:          p.SettingsService,
 		streamHub:                &agg.Hub[types.VersionStreamEvent]{},
@@ -564,6 +569,20 @@ func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- ty
 				publish(types.VersionStreamEvent{Type: "snapshot", Info: info, Timestamp: time.Now()})
 			}
 
+			imageUpdated := make(chan struct{}, 1)
+			var lastImageUpdate atomic.Uint64
+			lastImageUpdate.Store(s.eventService.EnvironmentChanges("0").Kinds["image_update"])
+			unsubscribe := s.eventService.Changes.Subscribe(func(changes types.EnvironmentChanges) {
+				if changes.EnvironmentID != "0" || lastImageUpdate.Swap(changes.Kinds["image_update"]) == changes.Kinds["image_update"] {
+					return
+				}
+				select {
+				case imageUpdated <- struct{}{}:
+				default:
+				}
+			})
+			defer unsubscribe()
+
 			poll()
 
 			ticker := time.NewTicker(versionStreamPollInterval)
@@ -574,6 +593,8 @@ func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- ty
 				case <-runCtx.Done():
 					return
 				case <-ticker.C:
+					poll()
+				case <-imageUpdated:
 					poll()
 				}
 			}
