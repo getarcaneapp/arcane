@@ -121,12 +121,6 @@
 		return slots;
 	}
 
-	function footerJustify(index: number, count: number): string {
-		if (index === 0) return 'justify-self-start';
-		if (index === count - 1) return 'justify-self-end';
-		return 'justify-self-center';
-	}
-
 	function cellLabel(cell: ArcaneCell<TData>): string {
 		return cell.column.columnDef.meta?.title ?? cell.column.id;
 	}
@@ -331,9 +325,8 @@
 		{/each}
 	{/snippet}
 	{#snippet cardFooter()}
-		{@const footerCount = cells.footer.length + (cells.footerEnd.length > 0 ? 1 : 0)}
-		{#each cells.footer as cell, index (cell.id)}
-			<div class={cn('flex min-w-0', footerJustify(index, footerCount))}>
+		{#each cells.footer as cell (cell.id)}
+			<div class="flex min-w-0">
 				<ResourceCardMeta
 					label={cellLabel(cell)}
 					icon={cell.column.columnDef.meta?.cardIcon}
@@ -344,7 +337,7 @@
 			</div>
 		{/each}
 		{#if cells.footerEnd.length > 0}
-			<span class="inline-flex min-w-0 items-center justify-end gap-3 justify-self-end whitespace-nowrap text-foreground/70">
+			<span class="ml-auto inline-flex min-w-0 items-center justify-end gap-3 whitespace-nowrap text-foreground/70">
 				{#each cells.footerEnd as cell (cell.id)}
 					<FlexRender {cell} />
 				{/each}

@@ -9,7 +9,9 @@
 				env.enabled &&
 				env.id !== sourceEnvironmentId &&
 				isEnvironmentOnline(env) &&
-				['projects:create', 'projects:read', 'volumes:read', 'networks:read', 'containers:list'].every((perm) => hasPermission(perm, env.id))
+				['projects:create', 'projects:read', 'volumes:read', 'networks:read', 'containers:list'].every((perm) =>
+					hasPermission(perm, env.id)
+				)
 		);
 	}
 </script>
