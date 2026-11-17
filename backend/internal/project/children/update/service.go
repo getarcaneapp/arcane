@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
@@ -60,11 +59,6 @@ type (
 	SyncState struct {
 		SkipDiscoveredPaths map[string]struct{}
 		ProtectSeenPaths    map[string]struct{}
-	}
-
-	composeImageEdit struct {
-		text       []byte
-		start, end int
 	}
 
 	RenameRequest struct {
@@ -430,7 +424,7 @@ func PrepareProjectServiceImages(source []byte, effective *composetypes.Project,
 	}
 	serviceNames := make([]string, 0, len(changes))
 	// Rewrite image scalars in place; re-encoding the node tree drops blank lines and operator formatting.
-	edits := make([]composeImageEdit, 0, len(changes))
+	edits := make([]projects.ScalarEdit, 0, len(changes))
 	for name, change := range changes {
 		service, ok := effective.Services[name]
 		if !ok {
@@ -454,59 +448,15 @@ func PrepareProjectServiceImages(source []byte, effective *composetypes.Project,
 		if !strings.Contains(imageNode.Value, "$") && refs.NormalizeImageUpdateRef(imageNode.Value) != expected && refs.NormalizeImageUpdateRef(imageNode.Value) != target {
 			return nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
 		}
-		edit, err := composeImageSourceEdit(source, imageNode, refs.PreserveConfiguredRef(service.Image, change.TargetRef))
+		edit, err := projects.NewScalarEdit(source, imageNode, refs.PreserveConfiguredRef(service.Image, change.TargetRef))
 		if err != nil {
-			return nil, nil, fmt.Errorf("service %s: %w", name, err)
+			return nil, nil, fmt.Errorf("service %s image: %w", name, err)
 		}
 		edits = append(edits, edit)
 		serviceNames = append(serviceNames, name)
 	}
 	slices.Sort(serviceNames)
-	// Splice from the end so earlier spans keep their offsets; distinct scalars never overlap.
-	slices.SortFunc(edits, func(a, b composeImageEdit) int { return b.start - a.start })
-	updated := slices.Clone(source)
-	for _, edit := range edits {
-		updated = slices.Concat(updated[:edit.start], edit.text, updated[edit.end:])
-	}
-	return updated, serviceNames, nil
-}
-
-func composeImageSourceEdit(source []byte, node *yaml.Node, target string) (composeImageEdit, error) {
-	const lineBreaks = "\r\n\u0085\u2028\u2029"
-	start := len(source) - len(bytes.TrimPrefix(source, []byte("\xEF\xBB\xBF")))
-	for line, column := 1, 1; line < node.Line || (line == node.Line && column < node.Column); column++ {
-		if start >= len(source) {
-			return composeImageEdit{}, errors.New("image scalar position is outside the Compose source")
-		}
-		r, size := utf8.DecodeRune(source[start:])
-		start += size
-		if r == '\r' && bytes.HasPrefix(source[start:], []byte("\n")) {
-			start++
-		}
-		if strings.ContainsRune(lineBreaks, r) {
-			line, column = line+1, 0
-		}
-	}
-	// The shortest same-line span that decodes to the parsed value is the scalar's source text, including tags and escapes.
-	found := false
-	end := start
-	for !found && end < len(source) {
-		r, size := utf8.DecodeRune(source[end:])
-		if strings.ContainsRune(lineBreaks, r) {
-			break
-		}
-		end += size
-		var decoded string
-		found = yaml.Unmarshal(source[start:end], &decoded) == nil && decoded == node.Value
-	}
-	if !found {
-		return composeImageEdit{}, errors.New("tag updates require a single-line image scalar")
-	}
-	text, err := yaml.Marshal(&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Style: node.Style, Value: target})
-	if err != nil || bytes.ContainsAny(bytes.TrimSuffix(text, []byte("\n")), "\r\n") {
-		return composeImageEdit{}, fmt.Errorf("image %s cannot be written as a single-line scalar", target)
-	}
-	return composeImageEdit{start: start, end: end, text: bytes.TrimSuffix(text, []byte("\n"))}, nil
+	return projects.ApplyScalarEdits(source, edits), serviceNames, nil
 }
 
 func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPath string) error {

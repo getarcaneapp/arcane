@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strconv"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/pkg/agent"
@@ -71,8 +73,15 @@ func (e remoteEnvironment) Projects(ctx context.Context, search string) ([]types
 	return response.Data, err
 }
 
-func (e remoteEnvironment) VolumeExists(ctx context.Context, name string) (bool, error) {
-	return e.exists(ctx, "/volumes/"+url.PathEscape(name))
+func (e remoteEnvironment) VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error) {
+	response, err := e.decode[types.ApiResponse[*types.Volume]](ctx, http.MethodGet, "/volumes/"+url.PathEscape(name), nil)
+	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return kit.FromPtr(response.Data).Labels, true, nil
 }
 
 func (e remoteEnvironment) NetworkExists(ctx context.Context, name string) (bool, error) {

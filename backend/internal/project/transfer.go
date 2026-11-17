@@ -50,16 +50,19 @@ func (e localTransferEnvironment) Projects(ctx context.Context, search string) (
 	return found, err
 }
 
-func (e localTransferEnvironment) VolumeExists(ctx context.Context, name string) (bool, error) {
+func (e localTransferEnvironment) VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error) {
 	dockerClient, err := e.projects.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	_, err = dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if errdefs.IsNotFound(err) {
-		return false, nil
+		return nil, false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return nil, false, err
+	}
+	return inspect.Volume.Labels, true, nil
 }
 
 func (e localTransferEnvironment) NetworkExists(ctx context.Context, name string) (bool, error) {

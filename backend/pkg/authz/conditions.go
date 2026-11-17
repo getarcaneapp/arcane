@@ -100,6 +100,15 @@ var (
 		},
 	}
 
+	VolumeUploadRestoreConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "composeVolume",
+			Value:      "true",
+			Permission: PermVolumesCreate,
+		},
+	}
+
 	UploadKindConditions = PermissionConditions{
 		{
 			In:         ConditionInPath,

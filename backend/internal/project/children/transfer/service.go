@@ -18,13 +18,14 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
-	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -37,7 +38,7 @@ type (
 		Availability(ctx context.Context) Availability
 		Project(ctx context.Context, projectID string) (types.Project, error)
 		Projects(ctx context.Context, search string) ([]types.Project, error)
-		VolumeExists(ctx context.Context, name string) (bool, error)
+		VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error)
 		NetworkExists(ctx context.Context, name string) (bool, error)
 		ExportProject(ctx context.Context, projectID string) (types.UploadSession, error)
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
@@ -58,7 +59,7 @@ type (
 		Environment      func(environmentID string) Environment
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
-		Activities       activitylib.MessageAppender
+		Activities       activity.MessageAppender
 		Backups          *backup.Engine
 	}
 
@@ -77,28 +78,33 @@ type (
 
 	runInput struct {
 		User                types.Actor                  `json:"user"`
-		Requesters          []types.BackupRequester      `json:"requesters"`
-		RetargetWebhooks    bool                         `json:"retargetWebhooks"`
 		RunID               string                       `json:"runId"`
+		TargetProjectID     string                       `json:"targetProjectId"`
 		SourceEnvironmentID string                       `json:"sourceEnvironmentId"`
 		ProjectID           string                       `json:"projectId"`
 		Request             types.ProjectTransferRequest `json:"request"`
+		Requesters          []types.BackupRequester      `json:"requesters"`
+		RetargetWebhooks    bool                         `json:"retargetWebhooks"`
 	}
 
 	checkpoint struct {
+		Relay           relay                         `json:"relay"`
+		TargetProjectID string                        `json:"targetProjectId,omitempty"`
+		TargetCompose   string                        `json:"targetCompose,omitempty"`
 		Volumes         []types.ProjectTransferVolume `json:"volumes,omitempty"`
 		CreatedVolumes  []string                      `json:"createdVolumes,omitempty"`
 		CopiedVolumes   []string                      `json:"copiedVolumes,omitempty"`
-		Relay           relay                         `json:"relay"`
-		TargetProjectID string                        `json:"targetProjectId,omitempty"`
-		Webhooks        int64                         `json:"webhooks,omitempty"`
+		Leftovers       []string                      `json:"leftovers,omitempty"`
 		WebhooksKept    int64                         `json:"webhooksKept,omitempty"`
+		Webhooks        int64                         `json:"webhooks,omitempty"`
 		Prepared        bool                          `json:"prepared"`
 		Importing       bool                          `json:"importing"`
 		SourceRunning   bool                          `json:"sourceRunning"`
 		SourceStopped   bool                          `json:"sourceStopped"`
 		Restarted       bool                          `json:"restarted"`
 		Deployed        bool                          `json:"deployed"`
+		Retargeting     bool                          `json:"retargeting"`
+		Completed       bool                          `json:"completed"`
 	}
 
 	relay struct {
@@ -152,7 +158,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Fingerprint: "d7dfa4bd6563c744751e3ac9c4b8fd7bc0523b91483386d74be505a676eb21e6",
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
-		Activity:    activitylib.StartRequest{Type: types.ActivityTypeResourceAction},
+		Activity:    activity.StartRequest{Type: types.ActivityTypeResourceAction},
 		Steps: []workflow.StepSpec{
 			workflow.Step("transfer", engine.Handler(s.execute), workflow.WithMaxAttempts(1)),
 		},
@@ -202,10 +208,11 @@ func (s *Service) Start(ctx context.Context, opts Options) (types.ProjectTransfe
 		Requesters:          required,
 		RetargetWebhooks:    webhooks > 0,
 		RunID:               runID,
+		TargetProjectID:     uuid.New().String(),
 		SourceEnvironmentID: opts.SourceEnvironmentID,
 		ProjectID:           opts.ProjectID,
 		Request:             opts.Request,
-	}, activitylib.StartRequest{
+	}, activity.StartRequest{
 		EnvironmentID: opts.SourceEnvironmentID,
 		ResourceType:  new("project"),
 		ResourceID:    new(opts.ProjectID),
@@ -256,6 +263,7 @@ func requesters(ctx context.Context, opts Options, webhooks bool) []types.Backup
 		required = append(required,
 			backup.NewRequester(ctx, opts.User, source, authz.PermVolumesBackup),
 			backup.NewRequester(ctx, opts.User, target, authz.PermVolumesUpload),
+			backup.NewRequester(ctx, opts.User, target, authz.PermVolumesCreate),
 		)
 	}
 	if request.IncludeVolumes || request.Mode == types.ProjectTransferModeMove {
@@ -313,6 +321,14 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	}
 	plan.ProjectName = project.Name
 	plan.SourceRunning = project.RunningCount > 0
+	if project.ComposeName == "" {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferComposeInvalid,
+			Severity: types.ProjectTransferSeverityError,
+			Message:  fmt.Sprintf("The compose files of project %s cannot be loaded on the source environment; fix them before transferring the project.", project.Name),
+		})
+		return nil
+	}
 	if opts.SourceEnvironmentID == request.TargetEnvironmentID && projects.NormalizeProjectName(project.Name) == projects.NormalizeProjectName(request.Name) {
 		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
 			Code:     types.ProjectTransferSameProject,
@@ -335,11 +351,15 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Project %s is managed by a GitOps sync, but its copy %s on the target environment is not.", project.Name, request.Name),
 		})
 	}
-	var externalVolumes, sourceVolumes, built []string
+	var externalVolumes, hostVolumes, sourceVolumes, built []string
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		config := project.Volumes[key]
 		if config.External {
 			externalVolumes = append(externalVolumes, config.Name)
+			continue
+		}
+		if len(config.DriverOpts) > 0 {
+			hostVolumes = append(hostVolumes, config.Name)
 			continue
 		}
 		sourceVolumes = append(sourceVolumes, config.Name)
@@ -356,6 +376,17 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Volume data is not included, so these volumes of project %s start empty on the target environment: %s.", project.Name, strings.Join(sourceVolumes, ", ")),
 		})
 	}
+	if len(hostVolumes) > 0 {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferVolumeDataExternal,
+			Severity: types.ProjectTransferSeverityWarning,
+			Message: fmt.Sprintf(
+				"These volumes of project %s keep their data outside Docker through driver options, "+
+					"so their data is not copied and they are created from the same options on the target environment: %s.",
+				project.Name, strings.Join(hostVolumes, ", "),
+			),
+		})
+	}
 	for _, service := range project.Services {
 		if service.Build != nil {
 			built = append(built, service.Name)
@@ -365,7 +396,10 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
 			Code:     types.ProjectTransferBuildRequired,
 			Severity: types.ProjectTransferSeverityWarning,
-			Message:  fmt.Sprintf("These services of project %s are built from source, so their images must be rebuilt on the target environment: %s.", project.Name, strings.Join(slices.Sorted(slices.Values(built)), ", ")),
+			Message: fmt.Sprintf(
+				"These services of project %s are built from source, so their images must be rebuilt on the target environment: %s.",
+				project.Name, strings.Join(slices.Sorted(slices.Values(built)), ", "),
+			),
 		})
 	}
 	if !targetReady {
@@ -390,7 +424,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 		}
 	}
 	for _, volume := range kit.Ternary(request.IncludeVolumes, plan.Volumes, nil) {
-		exists, existsErr := target.VolumeExists(ctx, volume.TargetName)
+		_, exists, existsErr := target.VolumeLabels(ctx, volume.TargetName)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", volume.TargetName, existsErr)
 		}
@@ -403,7 +437,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 		}
 	}
 	for _, name := range externalVolumes {
-		exists, existsErr := target.VolumeExists(ctx, name)
+		_, exists, existsErr := target.VolumeLabels(ctx, name)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", name, existsErr)
 		}
@@ -490,14 +524,10 @@ func (s *Service) execute(ctx context.Context, t flow.Task) (any, error) {
 			return nil, fmt.Errorf("decode transfer checkpoint: %w", decodeErr)
 		}
 	}
-	err = s.authorize(ctx, input.Requesters)
-	for _, phase := range []func(context.Context, *run) error{s.prepare, s.copyFiles, s.copyVolumes, s.restartSource, s.deployTarget, s.completeMove} {
-		if err = cmp.Or(err, ctx.Err()); err == nil {
-			err = phase(ctx, r)
+	if !r.state.Completed {
+		if err = s.transfer(ctx, r); err != nil {
+			return nil, s.settle(ctx, r, err)
 		}
-	}
-	if err != nil {
-		return nil, s.settle(ctx, r, err)
 	}
 	message := summary(r)
 	s.report(ctx, r, types.ActivityMessageLevelSuccess, message)
@@ -506,6 +536,23 @@ func (s *Service) execute(ctx context.Context, t flow.Task) (any, error) {
 		Message:    message,
 		ActivityID: r.activityID,
 	}, nil
+}
+
+func (s *Service) transfer(ctx context.Context, r *run) error {
+	err := s.authorize(ctx, r.input.Requesters)
+	for _, phase := range []func(context.Context, *run) error{s.prepare, s.copyFiles, s.copyVolumes, s.restartSource, s.deployTarget, s.completeMove} {
+		if err = cmp.Or(err, ctx.Err()); err == nil {
+			err = phase(ctx, r)
+		}
+	}
+	if err == nil && r.state.Relay != (relay{}) {
+		err = s.finishRelay(ctx, r)
+	}
+	if err != nil {
+		return err
+	}
+	r.state.Completed = true
+	return s.save(ctx, r)
 }
 
 func (s *Service) save(ctx context.Context, r *run) error {
@@ -523,7 +570,7 @@ func (s *Service) save(ctx context.Context, r *run) error {
 }
 
 func (s *Service) report(ctx context.Context, r *run, level types.ActivityMessageLevel, message string) {
-	_, _ = s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), r.activityID, activitylib.AppendMessageRequest{
+	_, _ = s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), r.activityID, activity.AppendMessageRequest{
 		Level:   level,
 		Message: message,
 	})
@@ -560,11 +607,13 @@ func (s *Service) copyFiles(ctx context.Context, r *run) error {
 	}
 	name := r.input.Request.Name
 	if r.state.Importing {
-		imported, err := r.importedProject(ctx)
+		found, err := r.imported(ctx)
 		if err != nil {
 			return err
 		}
-		r.state.TargetProjectID = imported
+		if found {
+			r.state.TargetProjectID = r.input.TargetProjectID
+		}
 	}
 	if r.state.TargetProjectID == "" {
 		source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifactFiles)
@@ -591,8 +640,9 @@ func (s *Service) copyFiles(ctx context.Context, r *run) error {
 		importCtx, cancel := context.WithTimeout(ctx, operationTimeout)
 		defer cancel()
 		r.state.TargetProjectID, err = r.target.ImportProject(importCtx, types.ImportProjectArchive{
-			UploadID: uploadID,
-			Name:     name,
+			UploadID:  uploadID,
+			Name:      name,
+			ProjectID: r.input.TargetProjectID,
 		}, r.input.User)
 		if err != nil {
 			return fmt.Errorf("import project on the target environment: %w", err)
@@ -626,9 +676,9 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 	if current.RunningCount > 0 {
 		return fmt.Errorf("%d source container(s) are still running; volume data was not copied", current.RunningCount)
 	}
-	targetProject, err := r.target.Project(ctx, r.state.TargetProjectID)
+	targetProject, err := r.targetProject(ctx)
 	if err != nil {
-		return fmt.Errorf("load the imported project on the target environment: %w", err)
+		return err
 	}
 	for _, volume := range r.state.Volumes {
 		if slices.Contains(r.state.CopiedVolumes, volume.Key) {
@@ -638,8 +688,8 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 			return ctxErr
 		}
 		config, ok := targetProject.Volumes[volume.Key]
-		if !ok || bool(config.External) {
-			return fmt.Errorf("volume %s is not a named volume of the imported project on the target environment", volume.Key)
+		if !ok || bool(config.External) || len(config.DriverOpts) > 0 {
+			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project on the target environment", volume.Key)
 		}
 		if copyErr := s.copyVolume(ctx, r, volume, config, targetProject.ComposeName); copyErr != nil {
 			return copyErr
@@ -650,6 +700,18 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 
 func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composetypes.VolumeConfig, composeName string) error {
 	artifact := "volume " + volume.Key
+	labels, exists, err := r.target.VolumeLabels(ctx, config.Name)
+	if err != nil {
+		return fmt.Errorf("inspect target volume %s: %w", config.Name, err)
+	}
+	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || docker.ComposeProjectLabel(labels) != composeName) {
+		return s.disown(ctx, r, config.Name, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created on the target environment by something other than this transfer", config.Name)))
+	}
+	if exists {
+		if deleteErr := r.target.DeleteVolume(ctx, config.Name, r.input.User); deleteErr != nil {
+			return fmt.Errorf("remove the partly restored volume %s on the target environment: %w", config.Name, deleteErr)
+		}
+	}
 	source, err := s.resumedSource(ctx, r, types.UploadKindVolumeBackup, artifact)
 	if err != nil {
 		return err
@@ -667,11 +729,7 @@ func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTr
 	if err != nil {
 		return err
 	}
-	if slices.Contains(r.state.CreatedVolumes, config.Name) {
-		if deleteErr := r.target.DeleteVolume(ctx, config.Name, r.input.User); deleteErr != nil {
-			return fmt.Errorf("remove the partly restored volume %s on the target environment: %w", config.Name, deleteErr)
-		}
-	} else {
+	if !slices.Contains(r.state.CreatedVolumes, config.Name) {
 		r.state.CreatedVolumes = append(r.state.CreatedVolumes, config.Name)
 	}
 	if saveErr := s.save(ctx, r); saveErr != nil {
@@ -681,17 +739,15 @@ func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTr
 	defer cancel()
 	restoreErr := r.target.RestoreVolume(restoreCtx, config.Name, types.RestoreVolumeUploadRequest{
 		ComposeVolume: &types.ComposeVolumeTarget{
-			DriverOpts: config.DriverOpts,
-			Labels:     config.Labels,
-			Project:    composeName,
-			Key:        volume.Key,
-			Driver:     config.Driver,
+			Labels:  config.Labels,
+			Project: composeName,
+			Key:     volume.Key,
+			Driver:  config.Driver,
 		},
 		UploadID: uploadID,
 	}, r.input.User)
 	if errors.Is(restoreErr, common.ErrConflict) {
-		index := slices.Index(r.state.CreatedVolumes, config.Name)
-		r.state.CreatedVolumes = slices.Delete(r.state.CreatedVolumes, index, index+1)
+		return s.disown(ctx, r, config.Name, fmt.Errorf("restore volume %s on the target environment: %w", config.Name, restoreErr))
 	}
 	if restoreErr != nil {
 		return fmt.Errorf("restore volume %s on the target environment: %w", config.Name, restoreErr)
@@ -701,6 +757,12 @@ func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTr
 		return saveErr
 	}
 	return s.finishRelay(ctx, r)
+}
+
+// disown records that a target volume is not this run's before failing, so cleanup never deletes it.
+func (s *Service) disown(ctx context.Context, r *run, name string, cause error) error {
+	r.state.CreatedVolumes = slices.DeleteFunc(r.state.CreatedVolumes, func(created string) bool { return created == name })
+	return errors.Join(cause, s.save(ctx, r))
 }
 
 func (s *Service) restartSource(ctx context.Context, r *run) error {
@@ -722,16 +784,16 @@ func (s *Service) deployTarget(ctx context.Context, r *run) error {
 	if !r.input.Request.Start || r.state.Deployed {
 		return nil
 	}
-	targetProject, err := r.target.Project(ctx, r.state.TargetProjectID)
+	targetProject, err := r.targetProject(ctx)
 	if err != nil {
-		return fmt.Errorf("load the imported project on the target environment: %w", err)
+		return err
 	}
 	for _, key := range slices.Sorted(maps.Keys(targetProject.Volumes)) {
 		config := targetProject.Volumes[key]
 		if bool(config.External) || slices.Contains(r.state.CreatedVolumes, config.Name) {
 			continue
 		}
-		exists, existsErr := r.target.VolumeExists(ctx, config.Name)
+		_, exists, existsErr := r.target.VolumeLabels(ctx, config.Name)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", config.Name, existsErr)
 		}
@@ -745,8 +807,8 @@ func (s *Service) deployTarget(ctx context.Context, r *run) error {
 	s.report(ctx, r, types.ActivityMessageLevelInfo, "Deploying the project on the target environment")
 	deployCtx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	if err := r.target.DeployProject(deployCtx, r.state.TargetProjectID, r.input.User); err != nil {
-		return fmt.Errorf("deploy the project on the target environment: %w", err)
+	if deployErr := r.target.DeployProject(deployCtx, r.state.TargetProjectID, r.input.User); deployErr != nil {
+		return fmt.Errorf("deploy the project on the target environment: %w", deployErr)
 	}
 	r.state.Deployed = true
 	return s.save(ctx, r)
@@ -774,6 +836,10 @@ func (s *Service) completeMove(ctx context.Context, r *run) error {
 		}
 		return nil
 	}
+	r.state.Retargeting = true
+	if saveErr := s.save(ctx, r); saveErr != nil {
+		return saveErr
+	}
 	moved, err := s.deps.RetargetWebhooks(ctx, types.ProjectWebhookRetarget{
 		SourceEnvironmentID: r.input.SourceEnvironmentID,
 		SourceProjectID:     r.input.ProjectID,
@@ -783,13 +849,16 @@ func (s *Service) completeMove(ctx context.Context, r *run) error {
 	if err != nil {
 		return fmt.Errorf("re-point webhooks: %w", err)
 	}
-	r.state.Webhooks = moved
-	return nil
+	r.state.Webhooks += moved
+	return s.save(ctx, r)
 }
 
 func (s *Service) resumedSource(ctx context.Context, r *run, kind, artifact string) (types.UploadSession, error) {
-	if r.state.Relay.Artifact != artifact || r.state.Relay.SourceUploadID == "" {
+	if r.state.Relay == (relay{}) {
 		return types.UploadSession{}, nil
+	}
+	if r.state.Relay.Artifact != artifact || r.state.Relay.SourceUploadID == "" {
+		return types.UploadSession{}, s.finishRelay(ctx, r)
 	}
 	session, err := r.source.Upload(ctx, kind, r.state.Relay.SourceUploadID)
 	if err != nil || !session.Complete {
@@ -800,8 +869,13 @@ func (s *Service) resumedSource(ctx context.Context, r *run, kind, artifact stri
 
 func (s *Service) relay(ctx context.Context, r *run, kind, artifact string, source types.UploadSession) (string, error) {
 	var received types.UploadSession
-	if r.state.Relay.SourceUploadID == source.ID {
-		received, _ = r.target.Upload(ctx, kind, r.state.Relay.TargetUploadID)
+	if previous := r.state.Relay; previous.SourceUploadID == source.ID && previous.TargetUploadID != "" {
+		session, lookupErr := r.target.Upload(ctx, kind, previous.TargetUploadID)
+		if lookupErr == nil {
+			received = session
+		} else {
+			s.removeUpload(context.WithoutCancel(ctx), r, r.target, "target", kind, previous.TargetUploadID)
+		}
 	}
 	if received.ID == "" {
 		target, err := r.target.CreateUpload(ctx, kind, types.CreateUploadSessionRequest{
@@ -810,8 +884,12 @@ func (s *Service) relay(ctx context.Context, r *run, kind, artifact string, sour
 			ChunkSize: source.ChunkSize,
 		})
 		if err != nil {
-			_ = r.source.DeleteUpload(context.WithoutCancel(ctx), kind, source.ID)
-			return "", fmt.Errorf("create the %s upload on the target environment: %w", artifact, err)
+			r.state.Relay = relay{
+				Kind:           kind,
+				Artifact:       artifact,
+				SourceUploadID: source.ID,
+			}
+			return "", errors.Join(fmt.Errorf("create the %s upload on the target environment: %w", artifact, err), s.save(ctx, r))
 		}
 		r.state.Relay = relay{
 			Kind:           kind,
@@ -855,25 +933,41 @@ func (s *Service) relay(ctx context.Context, r *run, kind, artifact string, sour
 
 func (s *Service) finishRelay(ctx context.Context, r *run) error {
 	current := r.state.Relay
-	if current.SourceUploadID != "" {
-		_ = r.source.DeleteUpload(context.WithoutCancel(ctx), current.Kind, current.SourceUploadID)
-	}
-	if current.TargetUploadID != "" {
-		_ = r.target.DeleteUpload(context.WithoutCancel(ctx), current.Kind, current.TargetUploadID)
-	}
 	r.state.Relay = relay{}
+	s.removeUpload(context.WithoutCancel(ctx), r, r.source, "source", current.Kind, current.SourceUploadID)
+	s.removeUpload(context.WithoutCancel(ctx), r, r.target, "target", current.Kind, current.TargetUploadID)
 	return s.save(ctx, r)
 }
 
+// removeUpload retries like a chunk copy; an upload it cannot remove is kept in the checkpoint and reported.
+func (s *Service) removeUpload(ctx context.Context, r *run, env Environment, side, kind, uploadID string) {
+	if uploadID == "" {
+		return
+	}
+	err := env.DeleteUpload(ctx, kind, uploadID)
+	for attempt := 0; err != nil && attempt < maxChunkRetries; attempt++ {
+		if sleepErr := chunkBackoff.Sleep(ctx, attempt); sleepErr != nil {
+			break
+		}
+		err = env.DeleteUpload(ctx, kind, uploadID)
+	}
+	if err == nil {
+		return
+	}
+	leftover := fmt.Sprintf("%s upload %s on the %s environment (%v)", kind, uploadID, side, err)
+	r.state.Leftovers = append(r.state.Leftovers, leftover)
+	s.report(ctx, r, types.ActivityMessageLevelWarning, "Could not remove the temporary "+leftover)
+}
+
 func (s *Service) settle(ctx context.Context, r *run, err error) error {
-	if errors.Is(ctx.Err(), context.Canceled) && !errors.Is(context.Cause(ctx), activitylib.ErrCanceled) {
+	if errors.Is(ctx.Err(), context.Canceled) && !errors.Is(context.Cause(ctx), activity.ErrCanceled) {
 		return err
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), operationTimeout)
 	defer cancel()
 	cause := err
-	if errors.Is(context.Cause(ctx), activitylib.ErrCanceled) {
-		cause = activitylib.ErrCanceled
+	if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+		cause = activity.ErrCanceled
 	}
 	message := fmt.Sprintf("Transfer failed: %v. %s", cause, strings.Join(s.cleanup(cleanupCtx, r), " "))
 	s.report(cleanupCtx, r, types.ActivityMessageLevelError, message)
@@ -897,60 +991,87 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 		notes = append(notes, "The source project was not changed.")
 	}
 	current := r.state.Relay
-	var leftover []string
-	if current.SourceUploadID != "" {
-		if err := r.source.DeleteUpload(ctx, current.Kind, current.SourceUploadID); err != nil {
-			leftover = append(leftover, "source upload "+current.SourceUploadID)
-		}
-	}
-	if current.TargetUploadID != "" {
-		if err := r.target.DeleteUpload(ctx, current.Kind, current.TargetUploadID); err != nil {
-			leftover = append(leftover, "target upload "+current.TargetUploadID)
-		}
-	}
+	r.state.Relay = relay{}
+	s.removeUpload(ctx, r, r.source, "source", current.Kind, current.SourceUploadID)
+	s.removeUpload(ctx, r, r.target, "target", current.Kind, current.TargetUploadID)
+	leftover := slices.Clone(r.state.Leftovers)
+	name := r.input.Request.Name
 	targetProjectID := r.state.TargetProjectID
 	if targetProjectID == "" && r.state.Importing {
-		imported, err := r.importedProject(ctx)
+		found, err := r.imported(ctx)
 		if err != nil {
-			leftover = append(leftover, fmt.Sprintf("project %s (%v)", r.input.Request.Name, err))
+			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
 		}
-		targetProjectID = imported
+		if found {
+			targetProjectID = r.input.TargetProjectID
+		}
 	}
-	if targetProjectID != "" {
+	keep := false
+	if r.state.Retargeting {
+		if _, err := s.deps.RetargetWebhooks(ctx, types.ProjectWebhookRetarget{
+			SourceEnvironmentID: r.input.Request.TargetEnvironmentID,
+			SourceProjectID:     r.state.TargetProjectID,
+			TargetEnvironmentID: r.input.SourceEnvironmentID,
+			TargetProjectID:     r.input.ProjectID,
+		}); err != nil {
+			keep = true
+			notes = append(notes, fmt.Sprintf(
+				"Webhooks could not be pointed back at the source project (%v), "+
+					"so project %s and its volumes were kept on the target environment, where those webhooks point.",
+				err, name,
+			))
+		} else {
+			notes = append(notes, "Webhooks point at the source project again.")
+		}
+	}
+	if targetProjectID != "" && !keep {
 		if err := r.target.DestroyProject(ctx, targetProjectID, r.input.User); err != nil {
-			leftover = append(leftover, fmt.Sprintf("project %s (%v)", r.input.Request.Name, err))
+			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
 		}
 	}
-	for _, name := range r.state.CreatedVolumes {
-		if err := r.target.DeleteVolume(ctx, name, r.input.User); err != nil {
-			leftover = append(leftover, fmt.Sprintf("volume %s (%v)", name, err))
+	for _, volume := range kit.Ternary(keep, nil, r.state.CreatedVolumes) {
+		labels, exists, err := r.target.VolumeLabels(ctx, volume)
+		if err == nil && exists && docker.ComposeProjectLabel(labels) == r.state.TargetCompose {
+			err = r.target.DeleteVolume(ctx, volume, r.input.User)
+		}
+		if err != nil {
+			leftover = append(leftover, fmt.Sprintf("volume %s (%v)", volume, err))
 		}
 	}
 	created := targetProjectID != "" || len(r.state.CreatedVolumes) > 0
 	switch {
 	case len(leftover) > 0:
 		notes = append(notes, "Could not clean up: "+strings.Join(leftover, ", ")+".")
+	case keep:
 	case created:
 		notes = append(notes, "Everything this transfer created on the target environment was removed.")
 	case r.state.Importing:
-		notes = append(notes, fmt.Sprintf("Project %s was not found on the target environment; if its interrupted import still finishes there, remove it.", r.input.Request.Name))
+		notes = append(notes, fmt.Sprintf("Project %s was not found on the target environment; if its interrupted import still finishes there, remove it.", name))
 	default:
 		notes = append(notes, "Nothing was created on the target environment.")
 	}
 	return notes
 }
 
-func (r *run) importedProject(ctx context.Context) (string, error) {
-	existing, err := r.target.Projects(ctx, r.input.Request.Name)
+// imported reports whether the target holds the project this run imports, matched by the ID the run chose, never by name.
+func (r *run) imported(ctx context.Context) (bool, error) {
+	existing, err := r.target.Projects(ctx, "")
 	if err != nil {
-		return "", fmt.Errorf("look up project %s on the target environment: %w", r.input.Request.Name, err)
+		return false, fmt.Errorf("look up the imported project on the target environment: %w", err)
 	}
-	for _, candidate := range existing {
-		if candidate.Name == r.input.Request.Name {
-			return candidate.ID, nil
-		}
+	return slices.ContainsFunc(existing, func(candidate types.Project) bool { return candidate.ID == r.input.TargetProjectID }), nil
+}
+
+func (r *run) targetProject(ctx context.Context) (types.Project, error) {
+	project, err := r.target.Project(ctx, r.state.TargetProjectID)
+	if err != nil {
+		return types.Project{}, fmt.Errorf("load the imported project on the target environment: %w", err)
 	}
-	return "", nil
+	if project.ComposeName == "" {
+		return types.Project{}, fmt.Errorf("the compose files of project %s cannot be loaded on the target environment", r.input.Request.Name)
+	}
+	r.state.TargetCompose = project.ComposeName
+	return project, nil
 }
 
 func summary(r *run) string {
@@ -963,6 +1084,9 @@ func summary(r *run) string {
 		parts = append(parts, fmt.Sprintf("%d volume(s) copied", len(r.state.CopiedVolumes)))
 	}
 	parts = append(parts, "target "+kit.Ternary(r.state.Deployed, "running", "stopped"))
+	if len(r.state.Leftovers) > 0 {
+		parts = append(parts, "could not remove these temporary uploads: "+strings.Join(r.state.Leftovers, ", "))
+	}
 	if r.input.Request.Mode == types.ProjectTransferModeMove {
 		parts = append(parts, fmt.Sprintf("source stopped with files and volumes kept, %d webhook(s) re-pointed", r.state.Webhooks))
 		if r.state.WebhooksKept > 0 {

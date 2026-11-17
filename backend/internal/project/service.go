@@ -121,8 +121,18 @@ type (
 		ComposeContent string
 		Directory      string
 		Archive        io.Reader
+		ID             string
 		Tags           []string
 		ExactName      bool
+	}
+
+	projectArchiveUnpack struct {
+		Archive            io.Reader
+		ProjectsDirectory  string
+		GlobalEnvDirectory string
+		ProjectPath        string
+		DirName            string
+		Name               string
 	}
 
 	GitOpsProjectRequest struct {
@@ -1566,25 +1576,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 
 	composePath := filepath.Join(projectPath, projects.DefaultComposeFileName)
 	if opts.Archive != nil {
-		if unpackErr := projects.UnpackProjectDirectory(ctx, projectPath, opts.Archive); unpackErr != nil {
-			return nil, rollback(common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr)))
-		}
-		detected, detectErr := projects.DetectComposeFile(ctx, projectsDirectory, projectPath)
-		if detected == "" {
-			return nil, rollback(common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound))))
-		}
-		composeContent, readErr := acfs.Host{}.ReadFile(ctx, detected)
-		if readErr != nil {
-			return nil, rollback(fmt.Errorf("read imported compose file: %w", readErr))
-		}
-		if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
-			ProjectsDirectory: globalEnvDirectory,
-			ProjectPath:       projectPath,
-			ProjectName:       name,
-			ComposeContent:    string(composeContent),
-			Lenient:           true,
-		}); validateErr != nil {
-			return nil, rollback(common.Classify(common.ErrValidation, fmt.Errorf("invalid compose file: %w", validateErr)))
+		detected, unpackErr := s.unpackProjectArchive(ctx, projectArchiveUnpack{
+			Archive:            opts.Archive,
+			ProjectsDirectory:  projectsDirectory,
+			GlobalEnvDirectory: globalEnvDirectory,
+			ProjectPath:        projectPath,
+			DirName:            folderName,
+			Name:               name,
+		})
+		if unpackErr != nil {
+			return nil, rollback(unpackErr)
 		}
 		composePath = detected
 	} else {
@@ -1631,10 +1632,11 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	})
 
 	proj := &Project{
-		Name:    name,
-		DirName: &folderName,
-		Path:    projectPath,
-		Status:  ProjectStatusStopped,
+		BaseModel: database.BaseModel{ID: opts.ID},
+		Name:      name,
+		DirName:   &folderName,
+		Path:      projectPath,
+		Status:    ProjectStatusStopped,
 	}
 
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1666,6 +1668,52 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	return proj, nil
 }
 
+// unpackProjectArchive extracts an imported project, renames its Compose
+// identity to the requested name, and returns the compose file path.
+func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projectArchiveUnpack) (string, error) {
+	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
+	}
+	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
+	if detected == "" {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound)))
+	}
+	// The imported files must deploy under the requested name, not the source project's.
+	composeName := projects.NormalizeProjectName(unpack.Name)
+	if rewriteErr := projects.RewriteComposeProjectName(ctx, projects.ComposeProjectNameRewrite{
+		ProjectsDirectory: unpack.GlobalEnvDirectory,
+		ProjectPath:       unpack.ProjectPath,
+		ComposeFile:       detected,
+		Name:              composeName,
+	}); rewriteErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("apply project name to imported compose files: %w", rewriteErr))
+	}
+	composeContent, readErr := acfs.Host{}.ReadFile(ctx, detected)
+	if readErr != nil {
+		return "", fmt.Errorf("read imported compose file: %w", readErr)
+	}
+	if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+		ProjectsDirectory: unpack.GlobalEnvDirectory,
+		ProjectPath:       unpack.ProjectPath,
+		ProjectName:       unpack.Name,
+		ComposeContent:    string(composeContent),
+		Lenient:           true,
+	}); validateErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid compose file: %w", validateErr))
+	}
+	identity, identityErr := projectsync.LoadComposeMetadata(
+		ctx, s.composeIdentities, unpack.ProjectPath, unpack.DirName, unpack.GlobalEnvDirectory,
+		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"), s.projectPathMapper(ctx),
+	)
+	if identityErr == nil && identity.ExplicitProjectName && identity.ResolvedProjectName != composeName {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf(
+			"project archive declares Compose project name %q, which could not be changed to the requested name %q; use a literal top-level name or COMPOSE_PROJECT_NAME",
+			identity.ResolvedProjectName, composeName,
+		))
+	}
+	return detected, nil
+}
+
 func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
 	archive, _, cleanupSession, err := s.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
 	if err != nil {
@@ -1676,6 +1724,7 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 		Archive:   archive,
 		Actor:     user,
 		Name:      request.Name,
+		ID:        request.ProjectID,
 		Tags:      request.Tags,
 		ExactName: true,
 	})
@@ -2353,6 +2402,9 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			CreatedAt:             d.CreatedAt,
 			RuntimeServices:       runtimeByIndex[i],
 			Services:              d.Services,
+			ComposeName:           d.ComposeName,
+			Volumes:               d.Volumes,
+			Networks:              d.Networks,
 			URLs:                  d.URLs,
 			IncludeFiles:          d.IncludeFiles,
 			RunningCount:          d.RunningCount,

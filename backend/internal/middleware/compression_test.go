@@ -17,9 +17,9 @@ import (
 func TestCompressionMiddlewareMatchesContentLengthOverHTTP2(t *testing.T) {
 	large := `{"message":"` + strings.Repeat("arcane", 512) + `"}`
 	tests := []struct {
+		header     http.Header
 		name       string
 		body       string
-		header     http.Header
 		compressed bool
 	}{
 		{

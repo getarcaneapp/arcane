@@ -157,7 +157,10 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			DeleteVolume:     p.Volumes.DeleteVolume,
 		},
 	})
-	return module, module.RegisterWorkflows(p.Engine)
+	if err := module.RegisterWorkflows(p.Engine); err != nil {
+		return nil, err
+	}
+	return module, nil
 }
 
 func provideActorRuntime(p actorRuntimeParams) (*francis.Runtime, error) {

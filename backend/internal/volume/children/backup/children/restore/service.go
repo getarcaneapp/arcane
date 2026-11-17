@@ -622,9 +622,8 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 	}
 	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
-		Driver:     target.Driver,
-		DriverOpts: target.DriverOpts,
-		Labels:     target.Labels,
+		Driver: target.Driver,
+		Labels: target.Labels,
 	}, target.Key, volumeName, target.Project), nil)
 	if err != nil {
 		return err

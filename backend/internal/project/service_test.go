@@ -3153,6 +3153,76 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 	require.Zero(t, count)
 }
 
+func TestProjectService_CreateProject_ArchiveAppliesRequestedName(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := t.Context()
+	projectsDir := t.TempDir()
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ImageService: image.NewImageService(image.ImageServiceParams{
+			DB: db,
+		}),
+		DockerService:               newUnreachableDockerService(t),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newUnreachableDockerService(t), settingsService),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	archive := func(t *testing.T, files map[string]string) io.Reader {
+		t.Helper()
+		source := t.TempDir()
+		for name, content := range files {
+			require.NoError(t, os.WriteFile(filepath.Join(source, name), []byte(content), 0o600))
+		}
+		var buf strings.Builder
+		require.NoError(t, projects.PackProjectDirectory(ctx, source, &buf))
+		return strings.NewReader(buf.String())
+	}
+	user := types.Actor{ID: "u1", Username: "tester"}
+
+	created, err := svc.CreateProject(ctx, CreateProjectOptions{
+		Archive: archive(t, map[string]string{
+			"compose.yaml": "# copied\nname: app\nservices:\n  web:\n    image: nginx:alpine\n",
+			".env":         "COMPOSE_PROJECT_NAME=app\nOTHER=value\n",
+		}),
+		Actor:     user,
+		Name:      "app-copy",
+		ExactName: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "app-copy", created.Name)
+	compose, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", "compose.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "# copied\nname: app-copy\nservices:\n  web:\n    image: nginx:alpine\n", string(compose))
+	env, err := os.ReadFile(filepath.Join(projectsDir, "app-copy", ".env"))
+	require.NoError(t, err)
+	assert.Equal(t, "COMPOSE_PROJECT_NAME=app-copy\nOTHER=value\n", string(env))
+	var stored Project
+	require.NoError(t, db.First(&stored, "id = ?", created.ID).Error)
+	assert.Equal(t, "app-copy", stored.Name)
+
+	_, err = svc.CreateProject(ctx, CreateProjectOptions{
+		Archive: archive(t, map[string]string{
+			"compose.yaml": "services:\n  web:\n    image: nginx:alpine\n",
+			".env":         "COMPOSE_ENV_FILES=name.env\n",
+			"name.env":     "COMPOSE_PROJECT_NAME=app\n",
+		}),
+		Actor:     user,
+		Name:      "unsupported-copy",
+		ExactName: true,
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, `Compose project name "app", which could not be changed to the requested name "unsupported-copy"`)
+	require.NoDirExists(t, filepath.Join(projectsDir, "unsupported-copy"))
+}
+
 func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()

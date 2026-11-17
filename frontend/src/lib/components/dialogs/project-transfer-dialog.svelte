@@ -142,8 +142,10 @@
 	async function handleSubmit() {
 		if (!project || !canSubmit) return;
 		const startedMessage = mode === 'move' ? m.move_started() : m.copy_started();
+		submitting = true;
+		const result = await tryCatch(projectService.startTransfer(project.id, request, environmentId));
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.startTransfer(project.id, request, environmentId)),
+			result,
 			message: m.copy_or_move_failed(),
 			setLoadingState: (value) => (submitting = value),
 			onSuccess: (data) => {

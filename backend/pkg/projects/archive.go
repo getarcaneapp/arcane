@@ -17,7 +17,6 @@ import (
 	"github.com/docker/go-units"
 	"github.com/shirou/gopsutil/v4/disk"
 
-	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/acfs/types"
 )
@@ -28,9 +27,9 @@ const (
 )
 
 func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) error {
-	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
-	if err != nil {
-		return fmt.Errorf("resolve project directory: %w", err)
+	resolvedRoot, rootErr := filepath.EvalSymlinks(projectPath)
+	if rootErr != nil {
+		return fmt.Errorf("resolve project directory: %w", rootErr)
 	}
 	root := acfs.Root{Path: projectPath}
 	gzipWriter := gzip.NewWriter(w)
@@ -68,14 +67,14 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			if err != nil {
 				return err
 			}
-			if err := tarWriter.WriteHeader(&tar.Header{
+			if headerErr := tarWriter.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeReg,
 				Name:     relativePath,
 				Mode:     int64(perm),
 				Size:     int64(len(content)),
 				ModTime:  entry.ModTime,
-			}); err != nil {
-				return err
+			}); headerErr != nil {
+				return headerErr
 			}
 			_, err = tarWriter.Write(content)
 			return err
@@ -98,14 +97,14 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		defer func() {
 			_ = reader.Close()
 		}()
-		if err := tarWriter.WriteHeader(&tar.Header{
+		if headerErr := tarWriter.WriteHeader(&tar.Header{
 			Typeflag: tar.TypeReg,
 			Name:     relativePath,
 			Mode:     int64(mode.Perm()),
 			Size:     entry.Size,
 			ModTime:  entry.ModTime,
-		}); err != nil {
-			return err
+		}); headerErr != nil {
+			return headerErr
 		}
 		_, err = io.CopyN(tarWriter, reader, entry.Size)
 		return err
@@ -139,7 +138,7 @@ func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error
 	}()
 
 	tarReader := tar.NewReader(gzipReader)
-	var directories []tar.Header
+	var directories, symlinks []tar.Header
 	var entries, written int64
 	for {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -157,11 +156,15 @@ func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error
 			return fmt.Errorf("project archive has more than %d entries", maxArchiveEntries)
 		}
 		if header.Typeflag == tar.TypeReg && header.Size > budget-written {
-			return fmt.Errorf("project archive needs more than the %s that can be unpacked while keeping %s free on the destination filesystem", units.BytesSize(float64(max(budget, 0))), units.BytesSize(float64(reserve)))
+			return fmt.Errorf(
+				"project archive needs more than the %s that can be unpacked while keeping %s free on the destination filesystem",
+				units.BytesSize(float64(max(budget, 0))),
+				units.BytesSize(float64(reserve)),
+			)
 		}
-		relativePath, normalizeErr := kit.NormalizeRelativePath(header.Name)
-		if normalizeErr != nil {
-			return fmt.Errorf("unpack archive entry %q: %w", header.Name, normalizeErr)
+		relativePath, pathErr := archiveEntryPath(header)
+		if pathErr != nil {
+			return fmt.Errorf("unpack archive entry %q: %w", header.Name, pathErr)
 		}
 		size, unpackErr := unpackProjectEntry(ctx, destination, tarReader, header, relativePath)
 		if unpackErr != nil {
@@ -174,6 +177,24 @@ func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error
 				Mode: header.Mode,
 			})
 		}
+		if header.Typeflag == tar.TypeSymlink {
+			symlinks = append(symlinks, tar.Header{
+				Name:     relativePath,
+				Linkname: header.Linkname,
+			})
+		}
+	}
+
+	// A later link can change how an earlier target resolves, so recheck each
+	// link against the final tree.
+	for _, link := range symlinks {
+		logicalPath := "/" + link.Name
+		if removeErr := destination.Remove(ctx, logicalPath); removeErr != nil {
+			return fmt.Errorf("unpack archive entry %q: %w", link.Name, removeErr)
+		}
+		if linkErr := destination.Symlink(ctx, link.Linkname, logicalPath); linkErr != nil {
+			return fmt.Errorf("unpack archive entry %q: %w", link.Name, linkErr)
+		}
 	}
 
 	for _, directory := range slices.Backward(directories) {
@@ -182,6 +203,30 @@ func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error
 		}
 	}
 	return nil
+}
+
+// archiveEntryPath validates an entry name without rewriting it, so every
+// exported filename is imported unchanged.
+func archiveEntryPath(header *tar.Header) (string, error) {
+	name := header.Name
+	if header.Typeflag == tar.TypeDir {
+		name = strings.TrimSuffix(name, "/")
+	}
+	switch {
+	case name == "":
+		return "", errors.New("path is required")
+	case strings.ContainsRune(name, 0):
+		return "", errors.New("path contains a null byte")
+	case strings.Contains(name, `\`):
+		return "", errors.New("path must use forward slashes")
+	case path.IsAbs(name):
+		return "", errors.New("absolute paths are not allowed")
+	case slices.ContainsFunc(strings.Split(name, "/"), func(component string) bool { return component == "." || component == ".." }):
+		return "", errors.New("path traversal is not allowed")
+	case path.Clean(name) != name:
+		return "", errors.New("path is not in canonical form")
+	}
+	return name, nil
 }
 
 func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Reader, header *tar.Header, relativePath string) (int64, error) {
@@ -202,7 +247,7 @@ func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Re
 		if err := destination.MkdirAll(ctx, path.Dir(logicalPath), 0o755); err != nil {
 			return 0, err
 		}
-		return 0, destination.Symlink(ctx, path.Clean(header.Linkname), logicalPath)
+		return 0, destination.Symlink(ctx, header.Linkname, logicalPath)
 	case tar.TypeLink:
 		return 0, fmt.Errorf("hard links are not supported (target %q)", header.Linkname)
 	}

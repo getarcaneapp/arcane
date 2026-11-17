@@ -36,9 +36,10 @@ type (
 	}
 
 	ImportProjectArchive struct {
-		UploadID string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
-		Name     string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		Tags     []string `json:"tags,omitempty" doc:"Project tags"`
+		UploadID  string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
+		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
+		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
 	}
 
 	ProjectTransferMode string
@@ -496,23 +497,25 @@ const (
 	ProjectRenameJournalPhaseSourceCleanupPending   = "source_cleanup_pending"
 	ProjectRenameJournalPhaseProjectStateRolledBack = "project_state_rolled_back"
 
-	ProjectTransferModeCopy         ProjectTransferMode     = "copy"
-	ProjectTransferModeMove         ProjectTransferMode     = "move"
-	ProjectTransferSeverityError    ProjectTransferSeverity = "error"
-	ProjectTransferSeverityWarning  ProjectTransferSeverity = "warning"
-	ProjectTransferSourceOffline                            = "source_offline"
-	ProjectTransferTargetOffline                            = "target_offline"
-	ProjectTransferSourceOutdated                           = "source_unsupported"
-	ProjectTransferTargetOutdated                           = "target_unsupported"
-	ProjectTransferSameProject                              = "same_project"
-	ProjectTransferNameConflict                             = "name_conflict"
-	ProjectTransferVolumeExists                             = "volume_exists"
-	ProjectTransferNetworkMissing                           = "external_network_missing"
-	ProjectTransferExternalMissing                          = "external_volume_missing"
-	ProjectTransferGitOpsMove                               = "gitops_move"
-	ProjectTransferBuildRequired                            = "build_required"
-	ProjectTransferGitOpsCopy                               = "gitops_copy"
-	ProjectTransferVolumesNotCopied                         = "volume_data_not_copied"
+	ProjectTransferModeCopy           ProjectTransferMode     = "copy"
+	ProjectTransferModeMove           ProjectTransferMode     = "move"
+	ProjectTransferSeverityError      ProjectTransferSeverity = "error"
+	ProjectTransferSeverityWarning    ProjectTransferSeverity = "warning"
+	ProjectTransferSourceOffline                              = "source_offline"
+	ProjectTransferTargetOffline                              = "target_offline"
+	ProjectTransferSourceOutdated                             = "source_unsupported"
+	ProjectTransferTargetOutdated                             = "target_unsupported"
+	ProjectTransferSameProject                                = "same_project"
+	ProjectTransferNameConflict                               = "name_conflict"
+	ProjectTransferVolumeExists                               = "volume_exists"
+	ProjectTransferNetworkMissing                             = "external_network_missing"
+	ProjectTransferExternalMissing                            = "external_volume_missing"
+	ProjectTransferGitOpsMove                                 = "gitops_move"
+	ProjectTransferBuildRequired                              = "build_required"
+	ProjectTransferGitOpsCopy                                 = "gitops_copy"
+	ProjectTransferVolumesNotCopied                           = "volume_data_not_copied"
+	ProjectTransferVolumeDataExternal                         = "volume_data_external"
+	ProjectTransferComposeInvalid                             = "compose_invalid"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

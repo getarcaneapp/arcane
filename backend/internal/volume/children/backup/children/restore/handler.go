@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -11,8 +12,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -126,6 +129,13 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range authz.VolumeUploadRestoreConditions.Required("composeVolume", strconv.FormatBool(input.Body.ComposeVolume != nil)) {
+		if !ps.Allows(perm, input.EnvironmentID) {
+			return nil, huma.Error403Forbidden("permission denied: " + perm)
+		}
 	}
 
 	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
