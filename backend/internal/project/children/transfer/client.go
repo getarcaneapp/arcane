@@ -90,7 +90,11 @@ func (e remoteEnvironment) NetworkExists(ctx context.Context, name string) (bool
 }
 
 func (e remoteEnvironment) ComposeProjectInUse(ctx context.Context, name string) (bool, error) {
-	response, err := e.decode[types.Paginated[struct{}]](ctx, http.MethodGet, "/containers?limit=1&includeInternal=true&includeHidden=true&label="+url.QueryEscape(docker.ComposeProjectLabelKey+"="+name), nil)
+	response, err := e.decode[types.Paginated[struct{}]](
+		ctx, http.MethodGet,
+		"/containers?limit=1&includeInternal=true&includeHidden=true&label="+url.QueryEscape(docker.ComposeProjectLabelKey+"="+name),
+		nil,
+	)
 	return len(response.Data) > 0, err
 }
 
