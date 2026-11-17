@@ -51,7 +51,7 @@
 	};
 </script>
 
-<div class="flex min-w-0 flex-col gap-3 px-5 py-4 text-sm">
+<div class="flex min-w-0 flex-col gap-3 px-5 py-4 text-sm sm:min-h-0 sm:flex-1">
 	<div class="min-w-0">
 		<div class="flex items-center gap-1.5">
 			<h3 class="truncate font-semibold">{result.environmentName}</h3>
@@ -108,8 +108,8 @@
 	{/if}
 
 	{#if logs.length > 0}
-		<CodeBlock.Root size="sm" class="w-auto">
-			<CodeBlock.Content {@attach followLogTail} wrap code={logs.join('\n')} class="max-h-40" />
+		<CodeBlock.Root size="sm" class="w-auto sm:min-h-24 sm:flex-1">
+			<CodeBlock.Content {@attach followLogTail} wrap code={logs.join('\n')} class="max-h-40 sm:max-h-none sm:flex-1" />
 		</CodeBlock.Root>
 	{:else}
 		<p class="text-xs text-muted-foreground italic">{m.environments_update_all_no_logs()}</p>
