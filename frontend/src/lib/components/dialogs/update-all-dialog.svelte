@@ -463,7 +463,7 @@
 									<SuccessIcon class="size-4 shrink-0 text-success" />
 								{/if}
 							{/if}
-							<Dialog.Title><span class="block min-w-0 truncate">{title}</span></Dialog.Title>
+							<Dialog.Title class="min-w-0"><span class="block truncate leading-normal">{title}</span></Dialog.Title>
 						</div>
 						{#if totalCount > 0}
 							<span class="shrink-0 pr-6 text-xs text-muted-foreground tabular-nums">
