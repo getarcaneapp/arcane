@@ -411,7 +411,11 @@
 											</td>
 											<td class="py-2.5 text-right text-xs text-muted-foreground tabular-nums">
 												{version.displayVersion || version.currentVersion || version.currentTag}
-												{#if version.newestVersion}→ {version.newestVersion}{/if}
+												{#if version.newestVersion}
+													→ {version.newestVersion}
+												{:else if version.newestDigest}
+													· {(version.currentDigest ?? '').slice(0, 19)} → {version.newestDigest.slice(0, 19)}
+												{/if}
 											</td>
 										</tr>
 									{/each}
