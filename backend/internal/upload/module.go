@@ -2,6 +2,7 @@ package upload
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -50,16 +51,28 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	}, h.CreateSession)
 
 	huma.Register(api, huma.Operation{
-		OperationID:  "upload-chunk",
-		Method:       http.MethodPut,
-		Path:         "/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}",
-		Summary:      "Upload a chunk",
-		Description:  "Upload one chunk of an upload session; re-sending a chunk is idempotent",
-		Tags:         []string{"Uploads"},
-		Security:     handlerutil.DefaultOperationSecurity(),
-		Metadata:     map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
-		MaxBodyBytes: types.UploadMaxChunkSize,
+		OperationID:     "upload-chunk",
+		Method:          http.MethodPut,
+		Path:            "/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}",
+		Summary:         "Upload a chunk",
+		Description:     "Upload one chunk of an upload session; re-sending a chunk is idempotent",
+		Tags:            []string{"Uploads"},
+		Security:        handlerutil.DefaultOperationSecurity(),
+		Metadata:        map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
+		MaxBodyBytes:    types.UploadMaxChunkSize,
+		BodyReadTimeout: 10 * time.Minute,
 	}, h.UploadChunk)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "read-upload-chunk",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}",
+		Summary:     "Read a chunk",
+		Description: "Download the bytes of one received chunk of an upload session",
+		Tags:        []string{"Uploads"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
+	}, h.ReadChunk)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-upload-session",

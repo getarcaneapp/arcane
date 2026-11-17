@@ -15,6 +15,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
@@ -35,6 +36,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
 	userdomain "getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/browser"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
@@ -76,6 +78,7 @@ type (
 		Engine           *backup.Engine
 		S3Destinations   *s3.S3DestinationService
 		RecoveryKeys     *backup.RecoveryKeyStore
+		Uploads          *upload.UploadService
 		Locks            *concurrency.KeyedMutex
 		AlreadyRunning   error
 		StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
@@ -953,6 +956,51 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	}
 	s.logBackupEvent(ctx, event.EventTypeVolumeBackupDownload, entry.VolumeName, user, database.JSON{"action": "backup_download", "backup_id": backupID, "size": size})
 	return reader, size, nil
+}
+
+func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{}); errdefs.IsNotFound(err) {
+		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect volume for export: %w", err)
+	}
+	containerID, cleanup, err := s.createBackupTempContainerWithMount(ctx, mount.Mount{
+		Type:     mount.TypeVolume,
+		Source:   volumeName,
+		Target:   "/volume",
+		ReadOnly: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"tar", "-czf", "/tmp/volume.tar.gz", "-C", "/volume", "."}); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to package volume %s: %w", volumeName, err)
+	}
+	reader, size, err := volumes.DownloadFileFromContainer(ctx, dockerClient, containerID, "/tmp/volume.tar.gz", cleanup)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = reader.Close() }()
+	session, err := s.deps.Uploads.IngestSession(ctx, types.UploadKindVolumeBackup, volumeName+".tar.gz", size, reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store volume archive: %w", err)
+	}
+	return session, nil
+}
+
+func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
+	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)
 }
 
 // RestoreFile restores one backed-up file into the volume; legacy archives extract inside a helper that mounts backup storage at /backups.

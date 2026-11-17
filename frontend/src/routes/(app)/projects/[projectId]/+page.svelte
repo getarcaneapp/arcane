@@ -15,6 +15,7 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectTransferDialog, { projectTransferTargets } from '#lib/components/dialogs/project-transfer-dialog.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ProjectDirectorySelect from '#lib/components/form/project-directory-select.svelte';
@@ -49,7 +50,8 @@
 		ExternalLinkIcon,
 		SearchIcon,
 		ResetIcon,
-		GitBranchIcon
+		GitBranchIcon,
+		FolderMoveIcon
 	} from '#lib/icons/index.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -133,6 +135,7 @@
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
+	let transferOpen = $state(false);
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
@@ -1693,6 +1696,16 @@
 				onclick: handleArchiveToggle
 			});
 		}
+		if (projectTransferTargets(envId).length > 0) {
+			list.push({
+				id: 'copy-or-move',
+				action: 'base',
+				label: m.copy_or_move(),
+				icon: FolderMoveIcon,
+				group: 'manage',
+				onclick: () => (transferOpen = true)
+			});
+		}
 		list.push(
 			pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () =>
 				createDashboardWidget('resource', {
@@ -2593,3 +2606,5 @@
 		</div>
 	</div>
 {/if}
+
+<ProjectTransferDialog bind:open={transferOpen} {project} environmentId={envId} />

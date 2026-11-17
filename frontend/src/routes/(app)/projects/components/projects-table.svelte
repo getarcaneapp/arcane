@@ -13,6 +13,7 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import ProjectTransferDialog, { projectTransferTargets } from '#lib/components/dialogs/project-transfer-dialog.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
@@ -32,6 +33,7 @@
 		RedeployIcon
 	} from '#lib/icons/index.js';
 	import {
+		FolderMoveIcon,
 		FolderOpenIcon,
 		LayersIcon,
 		CalendarIcon,
@@ -92,6 +94,8 @@
 
 	const actionStatus = $state<Record<string, ActionStatus>>({});
 	let checkingProjectIds = $state<Record<string, boolean>>({});
+	let transferOpen = $state(false);
+	let transferProject = $state<ProjectRow | null>(null);
 	let tagCatalog = $derived(availableTags);
 
 	const isBulkLoading = $state({
@@ -613,6 +617,18 @@
 			{/if}
 		</IfPermitted>
 
+		{#if !item.isDiscovered && projectTransferTargets(envId).length > 0}
+			<ActionMenuItem
+				onclick={() => {
+					transferProject = item;
+					transferOpen = true;
+				}}
+				disabled={isBulkActionRunning || !!status}
+				icon={FolderMoveIcon}
+				label={m.copy_or_move()}
+			/>
+		{/if}
+
 		<IfPermitted perm="projects:delete" {envId}>
 			<ActionMenuItem
 				destructive
@@ -660,3 +676,5 @@
 	rowActions={RowActions}
 	mobileCard={ProjectMobileCardSnippet}
 />
+
+<ProjectTransferDialog bind:open={transferOpen} project={transferProject} environmentId={transferProject?.environmentId ?? ''} />

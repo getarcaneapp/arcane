@@ -27,27 +27,39 @@ type (
 
 	CreateUploadSessionInput struct {
 		EnvironmentID string `path:"id"`
-		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace,project-archive"`
 		Body          types.CreateUploadSessionRequest
 	}
 
 	UploadChunkInput struct {
 		EnvironmentID string `path:"id"`
-		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace,project-archive"`
 		UploadID      string `path:"uploadId"`
 		RawBody       []byte `contentType:"application/octet-stream"`
 		Index         int    `path:"index"`
 	}
 
+	ReadChunkInput struct {
+		EnvironmentID string `path:"id"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace,project-archive"`
+		UploadID      string `path:"uploadId"`
+		Index         int    `path:"index"`
+	}
+
+	ReadChunkOutput struct {
+		ContentType string `header:"Content-Type"`
+		Body        []byte
+	}
+
 	GetUploadSessionInput struct {
 		EnvironmentID string `path:"id"`
-		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace,project-archive"`
 		UploadID      string `path:"uploadId"`
 	}
 
 	DeleteUploadSessionInput struct {
 		EnvironmentID string `path:"id"`
-		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
+		Kind          string `path:"kind" enum:"image,volume-backup,build-workspace,project-archive"`
 		UploadID      string `path:"uploadId"`
 	}
 )
@@ -115,6 +127,23 @@ func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return sessionResponse(session), nil
+}
+
+func (h *UploadHandler) ReadChunk(ctx context.Context, input *ReadChunkInput) (*ReadChunkOutput, error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+		return nil, err
+	}
+	data, err := h.uploadService.ReadChunk(ctx, input.Kind, input.UploadID, input.Index)
+	if err != nil {
+		if httpErr := SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &ReadChunkOutput{
+		ContentType: "application/octet-stream",
+		Body:        data,
+	}, nil
 }
 
 func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*handlerutil.Out[types.UploadSession], error) {

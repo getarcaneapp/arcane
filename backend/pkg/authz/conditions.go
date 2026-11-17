@@ -119,6 +119,12 @@ var (
 			Value:      types.UploadKindBuildWorkspace,
 			Permission: PermBuildWorkspacesCreate,
 		},
+		{
+			In:         ConditionInPath,
+			Field:      "kind",
+			Value:      types.UploadKindProjectArchive,
+			Permission: PermProjectsCreate,
+		},
 	}
 
 	BuildWorkspaceConditions = PermissionConditions{

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -27,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/pkg/backupbrowser"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -480,7 +482,7 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user types.Actor) (err error) {
+func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
@@ -495,6 +497,11 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
+	if composeVolume != nil {
+		if createErr := s.createComposeVolume(ctx, volumeName, *composeVolume); createErr != nil {
+			return createErr
+		}
+	}
 	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
 	containersStopped := len(stopped) > 0
 	defer func() {
@@ -506,9 +513,12 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	if err != nil {
 		return err
 	}
-	preBackupID, err := s.deps.SafetyBackup(ctx, volumeName, user)
-	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
+	preBackupID := ""
+	if composeVolume == nil {
+		preBackupID, err = s.deps.SafetyBackup(ctx, volumeName, user)
+		if err != nil {
+			return fmt.Errorf("failed to create pre-restore backup: %w", err)
+		}
 	}
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
@@ -556,6 +566,11 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
+	if composeVolume != nil {
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `chown "$(stat -c %u:%g "$1")" /volume && chmod "$(stat -c %a "$1")" /volume`, "sh", tmpDir}); err != nil {
+			return fmt.Errorf("failed to restore volume root ownership: %w", err)
+		}
+	}
 
 	replaceStarted = true
 	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", replaceVolumeScript, "sh", tmpDir})
@@ -578,6 +593,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		"action":               "backup_upload_restore",
 		"filename":             filename,
 		"pre_restore_backupId": preBackupID,
+		"created_volume":       composeVolume != nil,
 	}
 	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          event.EventTypeVolumeBackupRestore,
@@ -592,5 +608,32 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 
+	return nil
+}
+
+func (s *Service) createComposeVolume(ctx context.Context, volumeName string, target types.ComposeVolumeTarget) error {
+	_, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	})
+	if inspectErr == nil {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", volumeName))
+	}
+	if !errdefs.IsNotFound(inspectErr) {
+		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
+	}
+	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
+		Driver:     target.Driver,
+		DriverOpts: target.DriverOpts,
+		Labels:     target.Labels,
+	}, target.Key, volumeName, target.Project), nil)
+	if err != nil {
+		return err
+	}
+	if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+		return dockerClient.VolumeCreate(ctx, createOptions)
+	}); createErr != nil {
+		return fmt.Errorf("failed to create compose volume %s: %w", volumeName, createErr)
+	}
+	slog.InfoContext(ctx, "Created compose volume for restore", "volume", volumeName, "project", target.Project, "key", target.Key)
 	return nil
 }

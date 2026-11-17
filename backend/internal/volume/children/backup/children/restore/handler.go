@@ -36,7 +36,7 @@ type (
 	UploadAndRestoreInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		VolumeName    string `path:"volumeName" doc:"Volume name"`
-		Body          types.UploadConsumeRequest
+		Body          types.RestoreVolumeUploadRequest
 	}
 )
 
@@ -153,10 +153,10 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 			"filename": session.Filename,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, *user)
+		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, input.Body.ComposeVolume, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Backup uploaded and restored successfully", activityID), nil
 }

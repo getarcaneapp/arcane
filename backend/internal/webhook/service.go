@@ -529,6 +529,31 @@ func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID s
 	return &wh, nil
 }
 
+func (s *WebhookService) CountProjectWebhooks(ctx context.Context, environmentID, projectID string) (int64, error) {
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Model(&Webhook{}).
+		Where("target_type = ? AND environment_id = ? AND target_id = ?", WebhookTargetTypeProject, environmentID, projectID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count project webhooks: %w", err)
+	}
+	return count, nil
+}
+
+func (s *WebhookService) RetargetProjectWebhooks(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error) {
+	result := s.db.WithContext(ctx).
+		Model(&Webhook{}).
+		Where("target_type = ? AND environment_id = ? AND target_id = ?", WebhookTargetTypeProject, retarget.SourceEnvironmentID, retarget.SourceProjectID).
+		Updates(map[string]any{
+			"environment_id": retarget.TargetEnvironmentID,
+			"target_id":      retarget.TargetProjectID,
+		})
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to retarget project webhooks: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
 func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID string, actor types.Actor) error {
 	wh, err := s.GetWebhookByID(ctx, id, environmentID)
 	if err != nil {

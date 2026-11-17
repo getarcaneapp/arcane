@@ -113,8 +113,8 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 		return types.VolumeRenameEntry{}, false, ensureRenameSourceDetachedErr
 	}
 
-	newConfig := buildProjectRenamedVolumeConfig(volumeConfig, key, newName, newComposeName)
-	createOptions, err := renamedVolumeCreateOptions(newConfig, oldVolume.Volume.Labels)
+	newConfig := ComposeVolumeConfig(volumeConfig, key, newName, newComposeName)
+	createOptions, err := ComposeVolumeCreateOptions(newConfig, oldVolume.Volume.Labels)
 	if err != nil {
 		return types.VolumeRenameEntry{}, false, err
 	}
@@ -127,7 +127,7 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-func buildProjectRenamedVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {
+func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {
 	newConfig := volumeConfig
 	newConfig.Name = newName
 	newConfig.CustomLabels = composetypes.Labels{
@@ -138,7 +138,7 @@ func buildProjectRenamedVolumeConfig(volumeConfig composetypes.VolumeConfig, key
 	return newConfig
 }
 
-func renamedVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
+func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
 	labels := map[string]string{}
 	maps.Copy(labels, oldLabels)
 	maps.Copy(labels, config.Labels)

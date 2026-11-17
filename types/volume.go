@@ -58,6 +58,19 @@ type (
 		S3DestinationID string `json:"s3DestinationId" doc:"S3 destination for the uploaded backup"`
 	}
 
+	RestoreVolumeUploadRequest struct {
+		ComposeVolume *ComposeVolumeTarget `json:"composeVolume,omitempty" doc:"Create the missing target volume with Docker Compose labels before restoring; fails when the volume already exists"`
+		UploadID      string               `json:"uploadId" required:"true" doc:"ID of a complete upload session"`
+	}
+
+	ComposeVolumeTarget struct {
+		DriverOpts map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver_opts"`
+		Labels     map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file"`
+		Project    string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
+		Key        string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
+		Driver     string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
+	}
+
 	DiscoverVolumeBackupsRequest struct {
 		S3DestinationID string `json:"s3DestinationId" doc:"S3 destination to scan for existing volume backups"`
 	}

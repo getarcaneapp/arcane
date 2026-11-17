@@ -41,6 +41,14 @@ type (
 		successMessage string
 	}
 
+	projectTransferOptions struct {
+		to      string
+		name    string
+		volumes bool
+		start   bool
+		force   bool
+	}
+
 	projectListOptions struct {
 		projectsUpdatesFilter  string
 		projectsStatusFilter   string
@@ -96,6 +104,8 @@ func Command() *cobra.Command {
 		newPullCmd(),
 		newCountsCmd(),
 		newDestroyCmd(),
+		newTransferCmd(types.ProjectTransferModeCopy),
+		newTransferCmd(types.ProjectTransferModeMove),
 		newCreateCmd(),
 		newUpdateCmd(),
 	)
@@ -177,6 +187,89 @@ func newDestroyCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.destroyRemoveFiles, "remove-files", true, "Remove the project's files from disk")
 	cmd.Flags().BoolVar(&opts.destroyRemoveVolumes, "remove-volumes", false, "Remove the project's volumes")
 	return cmd
+}
+
+func newTransferCmd(mode types.ProjectTransferMode) *cobra.Command {
+	var opts projectTransferOptions
+	cmd := &cobra.Command{
+		Use:          string(mode) + " <project-id|name>",
+		Short:        kit.Ternary(mode == types.ProjectTransferModeMove, "Move project to another agent", "Copy project to another agent"),
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runProjectTransfer(cmd, args[0], mode, opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.to, "to", "", "Target agent ID")
+	cmd.Flags().StringVar(&opts.name, "name", "", "Project name on the target agent (default: the source project's name)")
+	cmd.Flags().BoolVar(&opts.volumes, "volumes", mode == types.ProjectTransferModeMove, "Copy the data of the project's named volumes (stops the source while copying)")
+	cmd.Flags().BoolVar(&opts.start, "start", false, "Deploy the project on the target agent (default: whether the source is running)")
+	if mode == types.ProjectTransferModeMove {
+		cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Force move without confirmation")
+	}
+	_ = cmd.MarkFlagRequired("to")
+	return cmd
+}
+
+func runProjectTransfer(cmd *cobra.Command, identifier string, mode types.ProjectTransferMode, opts projectTransferOptions) error {
+	c, err := cmdutil.ClientFromCommand(cmd)
+	if err != nil {
+		return err
+	}
+
+	resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, identifier, false)
+	if err != nil {
+		return err
+	}
+
+	request := types.ProjectTransferRequest{
+		TargetEnvironmentID: opts.to,
+		Mode:                mode,
+		Name:                cmp.Or(opts.name, resolved.Name),
+		IncludeVolumes:      opts.volumes,
+		Start:               kit.Ternary(cmd.Flags().Changed("start"), opts.start, resolved.RunningCount > 0),
+	}
+	preflight, err := c.PostJSON[types.ProjectTransferPreflight](cmd.Context(), clitypes.ProjectTransferPreflight(c.EnvID(), resolved.ID), request)
+	if err != nil {
+		return fmt.Errorf("failed to check project %s: %w", mode, err)
+	}
+
+	if cmdutil.JSONOutputEnabled(cmd) && !preflight.Data.Allowed {
+		if printErr := cmdutil.PrintJSON(preflight.Data); printErr != nil {
+			return printErr
+		}
+	}
+	if !cmdutil.JSONOutputEnabled(cmd) {
+		for _, check := range preflight.Data.Checks {
+			output.Warning("%s: %s", check.Severity, check.Message)
+		}
+	}
+	if !preflight.Data.Allowed {
+		return fmt.Errorf("project %s %s blocked by preflight checks", mode, resolved.Name)
+	}
+
+	if mode == types.ProjectTransferModeMove {
+		confirmed, confirmErr := cmdutil.ConfirmOrCancel(cmd, cmdutil.ConfirmOptions{
+			Label: fmt.Sprintf("Are you sure you want to move project %s to agent %s? The source is stopped after the target succeeds; its files and volumes are kept.", resolved.Name, opts.to),
+			Force: opts.force,
+		})
+		if confirmErr != nil || !confirmed {
+			return confirmErr
+		}
+	}
+
+	return cmdutil.Run(cmd, c, cmdutil.Spec[types.ProjectTransferStarted]{
+		Method:         http.MethodPost,
+		Path:           clitypes.ProjectTransfer(c.EnvID(), resolved.ID),
+		Body:           request,
+		FailureMessage: fmt.Sprintf("failed to start project %s", mode),
+		Render: func(data types.ProjectTransferStarted) error {
+			output.Success("Started %s of project %s to agent %s", mode, resolved.Name, opts.to)
+			output.KeyValue("Activity", data.ActivityID)
+			output.Info("Progress is in the activity log: arcane activities get %s --agent %s", data.ActivityID, c.EnvID())
+			return nil
+		},
+	})
 }
 
 func newGetCmd() *cobra.Command {

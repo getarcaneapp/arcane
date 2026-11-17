@@ -51,7 +51,7 @@ func validFilenameForKind(kind, filename string) bool {
 	case types.UploadKindImage:
 		return strings.HasSuffix(lower, ".tar") || strings.HasSuffix(lower, ".tar.gz") ||
 			strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar.xz")
-	case types.UploadKindVolumeBackup:
+	case types.UploadKindVolumeBackup, types.UploadKindProjectArchive:
 		return strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz")
 	case types.UploadKindBuildWorkspace:
 		return true
@@ -181,6 +181,38 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 		}
 	}
 	return session, nil
+}
+
+func (s *UploadService) ReadChunk(ctx context.Context, kind, uploadID string, index int) ([]byte, error) {
+	defer s.locks.RLock(uploadID)()
+
+	session, err := s.loadMeta(ctx, kind, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	if index < 0 || index >= session.TotalChunks {
+		return nil, fmt.Errorf("%w: chunk index %d out of range [0,%d)", common.ErrUploadChunkInvalid, index, session.TotalChunks)
+	}
+	if !session.Complete {
+		return nil, fmt.Errorf("%w: %d of %d chunks received", common.ErrUploadSessionIncomplete, len(session.ReceivedChunks), session.TotalChunks)
+	}
+	dataPath, err := s.sessionPath(uploadID, sessionDataFilename)
+	if err != nil {
+		return nil, err
+	}
+	file, _, err := acfs.Root{Path: s.root}.OpenReadSeek(ctx, dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("open upload session data: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	if _, seekErr := file.Seek(int64(index)*session.ChunkSize, io.SeekStart); seekErr != nil {
+		return nil, fmt.Errorf("seek chunk %d: %w", index, seekErr)
+	}
+	data := make([]byte, min(session.ChunkSize, session.Size-int64(index)*session.ChunkSize))
+	if _, readErr := io.ReadFull(file, data); readErr != nil {
+		return nil, fmt.Errorf("read chunk %d: %w", index, readErr)
+	}
+	return data, nil
 }
 
 func (s *UploadService) GetSession(ctx context.Context, kind, uploadID string) (*types.UploadSession, error) {

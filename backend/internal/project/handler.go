@@ -84,6 +84,16 @@ type (
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 	}
 
+	ExportProjectArchiveInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+	}
+
+	ImportProjectArchiveInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          types.ImportProjectArchive
+	}
+
 	DestroyProjectInput struct {
 		Body          *types.ProjectDestroy
 		EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -526,7 +536,59 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		}
 		return nil, huma.Error500InternalServerError("Failed to create project: " + err.Error())
 	}
+	return h.createProjectResponse(ctx, proj, activityID)
+}
 
+func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *ImportProjectArchiveInput) (*handlerutil.Out[types.CreateProjectResponse], error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var proj *Project
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           types.ActivityTypeResourceAction,
+		ResourceType:   "project",
+		ResourceID:     input.Body.Name,
+		ResourceName:   input.Body.Name,
+		User:           user,
+		Step:           "Importing project",
+		Message:        "Importing project",
+		SuccessMessage: "Project imported successfully",
+		Metadata:       database.JSON{"action": "import_project", "uploadId": input.Body.UploadID},
+	}, func(runtimeCtx context.Context) error {
+		var importErr error
+		proj, importErr = h.projectService.ImportProjectArchive(runtimeCtx, input.Body, *user)
+		return importErr
+	})
+	if err != nil {
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		return nil, huma.Error500InternalServerError("Failed to import project: " + err.Error())
+	}
+	return h.createProjectResponse(ctx, proj, activityID)
+}
+
+func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
+		return nil, err
+	}
+	session, err := h.projectService.ExportProjectArchive(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[types.UploadSession]{
+		Body: types.ApiResponse[types.UploadSession]{
+			Success: true,
+			Data:    *session,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) createProjectResponse(ctx context.Context, proj *Project, activityID string) (*handlerutil.Out[types.CreateProjectResponse], error) {
 	projectTags, err := h.projectService.GetProjectTags(ctx, proj.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to load project tags: " + err.Error())

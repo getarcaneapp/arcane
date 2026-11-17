@@ -38,6 +38,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
+	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/arcane/v3/pkg/oidc"
@@ -96,6 +97,19 @@ type (
 		Config      *config.Config
 	}
 
+	projectModuleParams struct {
+		fx.In
+
+		Service   *project.ProjectService
+		Activity  *activity.ActivityService
+		Engine    *flow.Engine
+		Transport environment.RemoteTransport
+		Tunnels   *agent.TunnelRegistry
+		Backups   *backup.Engine
+		Webhooks  *webhook.WebhookService
+		Volumes   *volume.VolumeService
+	}
+
 	filesystemWatcherJobParams struct {
 		fx.In
 
@@ -126,6 +140,24 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 	})
 	p.Lifecycle.Append(fx.Hook{OnStop: engine.Stop})
 	return engine
+}
+
+func provideProjectModule(p projectModuleParams) (*project.Module, error) {
+	module := project.New(project.ModuleParams{
+		Service:  p.Service,
+		Activity: p.Activity,
+		Transfer: project.TransferDependencies{
+			Transport:        p.Transport,
+			Tunnels:          p.Tunnels,
+			Backups:          p.Backups,
+			RetargetWebhooks: p.Webhooks.RetargetProjectWebhooks,
+			CountWebhooks:    p.Webhooks.CountProjectWebhooks,
+			ExportVolume:     p.Volumes.ExportVolumeArchive,
+			RestoreVolume:    p.Volumes.RestoreVolumeUpload,
+			DeleteVolume:     p.Volumes.DeleteVolume,
+		},
+	})
+	return module, module.RegisterWorkflows(p.Engine)
 }
 
 func provideActorRuntime(p actorRuntimeParams) (*francis.Runtime, error) {
