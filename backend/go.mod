@@ -9,7 +9,7 @@ replace (
 
 require (
 	getarcane.dev/cli/v3 v3.0.0
-	getarcane.dev/copacetic v0.1.0
+	getarcane.dev/copacetic v0.2.0
 	getarcane.dev/types/v3 v3.0.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.48.0
@@ -202,7 +202,7 @@ require (
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/knqyf263/go-apk-version v0.0.0-20200609155635-041fdbb8563f // indirect
 	github.com/knqyf263/go-deb-version v0.0.0-20241115132648-6f4aee6ccd23 // indirect
-	github.com/knqyf263/go-rpm-version v0.0.0-20220614171824-631e686d1075 // indirect
+	github.com/knqyf263/go-rpm-version v0.0.0-20260811110310-1815e1f1b790 // indirect
 	github.com/labstack/echo/v4 v4.16.3 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
