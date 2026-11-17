@@ -214,6 +214,9 @@ func newRouter(p RouterParams) *echo.Echo {
 	e.Use(middleware.NewCSRFMiddleware(p.Config).Add())
 
 	apiGroup := e.Group("/api")
+	if !p.Config.AgentEnabled {
+		apiGroup.Use(middleware.NewCompressionMiddleware())
+	}
 
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{
