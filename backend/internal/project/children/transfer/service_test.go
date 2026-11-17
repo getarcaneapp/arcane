@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 	"uuid"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -26,7 +27,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
-	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
@@ -40,7 +40,7 @@ type (
 		projects      map[string]types.Project
 		uploads       map[string]*fakeUpload
 		volumes       map[string][]byte
-		volumeLabels  map[string]map[string]string
+		volumeOwners  map[string]string
 		restored      map[string]types.ComposeVolumeTarget
 		failDeploy    error
 		failImport    error
@@ -83,7 +83,7 @@ func newFakeEnvironment(tc transferCase, seeded ...types.Project) *fakeEnvironme
 		projects:     map[string]types.Project{},
 		uploads:      map[string]*fakeUpload{},
 		volumes:      map[string][]byte{},
-		volumeLabels: map[string]map[string]string{},
+		volumeOwners: map[string]string{},
 		restored:     map[string]types.ComposeVolumeTarget{},
 		failDeploy:   tc.failDeploy,
 		failImport:   tc.failImport,
@@ -97,10 +97,7 @@ func newFakeEnvironment(tc transferCase, seeded ...types.Project) *fakeEnvironme
 		for _, config := range project.Volumes {
 			if !config.External {
 				f.volumes[config.Name] = []byte("volume-data-bytes")
-				f.volumeLabels[config.Name] = map[string]string{
-					docker.ComposeProjectLabelKey: project.ComposeName,
-					projects.ArcaneProjectIDLabel: project.ID,
-				}
+				f.volumeOwners[config.Name] = project.ComposeName
 			}
 		}
 	}
@@ -145,7 +142,7 @@ func (f *fakeEnvironment) VolumeLabels(_ context.Context, name string) (map[stri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	_, ok := f.volumes[name]
-	return maps.Clone(f.volumeLabels[name]), ok, nil
+	return map[string]string{docker.ComposeProjectLabelKey: f.volumeOwners[name]}, ok, nil
 }
 
 func (f *fakeEnvironment) NetworkExists(context.Context, string) (bool, error) {
@@ -305,10 +302,7 @@ func (f *fakeEnvironment) RestoreVolume(ctx context.Context, name string, reques
 	}
 	f.calls = append(f.calls, "restore:"+name)
 	f.volumes[name] = data
-	f.volumeLabels[name] = map[string]string{
-		docker.ComposeProjectLabelKey: request.ComposeVolume.Project,
-		projects.ArcaneProjectIDLabel: request.ComposeVolume.ProjectID,
-	}
+	f.volumeOwners[name] = request.ComposeVolume.Project
 	f.restored[name] = *request.ComposeVolume
 	return nil
 }
@@ -320,9 +314,7 @@ func (f *fakeEnvironment) DeployProject(_ context.Context, projectID string, _ t
 	for _, config := range f.projects[projectID].Volumes {
 		if _, exists := f.volumes[config.Name]; !exists && !bool(config.External) {
 			f.volumes[config.Name] = []byte{}
-			f.volumeLabels[config.Name] = map[string]string{
-				docker.ComposeProjectLabelKey: f.projects[projectID].ComposeName,
-			}
+			f.volumeOwners[config.Name] = f.projects[projectID].ComposeName
 		}
 	}
 	if f.failDeploy != nil {
@@ -357,7 +349,7 @@ func (f *fakeEnvironment) DeleteVolume(_ context.Context, name string, _ types.A
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "delete-volume:"+name)
 	delete(f.volumes, name)
-	delete(f.volumeLabels, name)
+	delete(f.volumeOwners, name)
 	return nil
 }
 
@@ -441,11 +433,10 @@ func TestProjectTransfer(t *testing.T) {
 				require.Equal(t, []int{0, 1, 2, 2, 3, 4}, target.volumeWrites)
 				require.Equal(t, []byte("volume-data-bytes"), target.volumes["copy_data"])
 				require.Equal(t, types.ComposeVolumeTarget{
-					Labels:    map[string]string{"tier": "db"},
-					ProjectID: target.importedID,
-					Project:   "copy",
-					Key:       "data",
-					Driver:    "local",
+					Labels:  map[string]string{"tier": "db"},
+					Project: "copy",
+					Key:     "data",
+					Driver:  "local",
 				}, target.restored["copy_data"])
 				require.Empty(t, source.uploads)
 				require.Empty(t, target.uploads)
@@ -591,8 +582,10 @@ func TestProjectTransfer(t *testing.T) {
 				activities.RequestCancel(<-activityIDs)
 			},
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
+				require.Eventually(t, func() bool {
+					return slices.Equal([]string{"import:compose-archive", "restore:copy_data", "destroy:imported", "delete-volume:copy_data"}, target.callList())
+				}, time.Second, 10*time.Millisecond)
 				require.Equal(t, []string{"export-project", "down:volume", "export-volume:app_data", "deploy:volume"}, source.callList())
-				require.Equal(t, []string{"import:compose-archive", "restore:copy_data", "destroy:imported", "delete-volume:copy_data"}, target.callList())
 				require.Empty(t, target.projects)
 				require.Empty(t, target.volumes)
 				require.Equal(t, 1, source.projects["volume"].RunningCount)
@@ -617,13 +610,12 @@ func TestProjectTransfer(t *testing.T) {
 			source:  volumeProject,
 			targetProjects: []types.Project{
 				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
-				{ID: "other", Name: "other", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "other", Name: "other", ComposeName: "other", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
 			},
 			resume: &checkpoint{
 				Volumes:         []types.ProjectTransferVolume{{Key: "data", SourceName: "app_data", TargetName: "copy_data"}},
 				CreatedVolumes:  []string{"copy_data"},
 				TargetProjectID: "imported",
-				TargetCompose:   "copy",
 				Prepared:        true,
 				Importing:       true,
 				SourceRunning:   true,
@@ -643,7 +635,7 @@ func TestProjectTransfer(t *testing.T) {
 			denied:  []string{authz.PermProjectsCreate},
 			targetProjects: []types.Project{
 				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
-				{ID: "other", Name: "other", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "other", Name: "other", ComposeName: "other", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
 			},
 			resume: &checkpoint{
 				CreatedVolumes:  []string{"copy_data"},

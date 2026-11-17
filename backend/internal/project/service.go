@@ -1748,8 +1748,12 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		return nil, fmt.Errorf("failed to create project archive: %w", err)
 	}
 	defer func() {
-		_ = archive.Close()
-		_ = acfs.Root{Path: projectsDirectory}.Remove(context.WithoutCancel(ctx), archiveLogical)
+		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
+		}
+		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
+		}
 	}()
 	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)

@@ -64,11 +64,10 @@ type (
 	}
 
 	ComposeVolumeTarget struct {
-		Labels    map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file"`
-		ProjectID string            `json:"projectId,omitempty" doc:"Arcane project ID recorded on the created volume"`
-		Project   string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
-		Key       string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
-		Driver    string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
+		Labels  map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file"`
+		Project string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
+		Key     string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
+		Driver  string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
 	}
 
 	DiscoverVolumeBackupsRequest struct {
