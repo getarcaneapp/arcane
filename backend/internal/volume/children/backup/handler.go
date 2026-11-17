@@ -73,6 +73,11 @@ type (
 		BackupID      string `path:"backupId" doc:"Backup ID"`
 	}
 
+	ExportVolumeArchiveInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		VolumeName    string `path:"volumeName" doc:"Volume name"`
+	}
+
 	UploadBackupInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		BackupID      string `path:"backupId" doc:"Backup ID"`
@@ -231,4 +236,20 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 	}
 	uploaded.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &handlerutil.Out[*types.VolumeBackup]{Body: types.ApiResponse[*types.VolumeBackup]{Success: true, Data: uploaded}}, nil
+}
+
+func (h *Handler) ExportVolumeArchive(ctx context.Context, input *ExportVolumeArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
+		return nil, err
+	}
+	session, err := h.service.ExportVolumeArchive(ctx, input.VolumeName)
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[types.UploadSession]{
+		Body: types.ApiResponse[types.UploadSession]{
+			Success: true,
+			Data:    *session,
+		},
+	}, nil
 }

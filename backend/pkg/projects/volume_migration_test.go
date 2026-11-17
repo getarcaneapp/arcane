@@ -27,7 +27,7 @@ func TestBuildProjectRenamedVolumeConfig(t *testing.T) {
 		},
 	}
 
-	got := buildProjectRenamedVolumeConfig(source, "data", "web_data", "web")
+	got := ComposeVolumeConfig(source, "data", "web_data", "web")
 
 	require.Equal(t, "web_data", got.Name)
 	require.Equal(t, "local", got.Driver)
@@ -58,7 +58,7 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 		},
 	}
 
-	options, err := renamedVolumeCreateOptions(entry.NewConfig, entry.OldVolume.Labels)
+	options, err := ComposeVolumeCreateOptions(entry.NewConfig, entry.OldVolume.Labels)
 	require.NoError(t, err)
 	require.Equal(t, "web_data", options.Name)
 	require.Equal(t, "new-driver", options.Driver)
@@ -102,7 +102,7 @@ func TestRenamedVolumeCreateOptions_ConfigHashMatchesCompose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			options, err := renamedVolumeCreateOptions(tt.config, nil)
+			options, err := ComposeVolumeCreateOptions(tt.config, nil)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, options.Labels[api.ConfigHashLabel])
 		})

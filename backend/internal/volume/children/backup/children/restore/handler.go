@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -11,8 +12,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -36,7 +39,7 @@ type (
 	UploadAndRestoreInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		VolumeName    string `path:"volumeName" doc:"Volume name"`
-		Body          types.UploadConsumeRequest
+		Body          types.RestoreVolumeUploadRequest
 	}
 )
 
@@ -128,6 +131,13 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 		return nil, err
 	}
 
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range authz.VolumeUploadRestoreConditions.Required("composeVolume", strconv.FormatBool(input.Body.ComposeVolume != nil)) {
+		if !ps.Allows(perm, input.EnvironmentID) {
+			return nil, huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+
 	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
@@ -153,10 +163,10 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 			"filename": session.Filename,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, *user)
+		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, input.Body.ComposeVolume, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Backup uploaded and restored successfully", activityID), nil
 }

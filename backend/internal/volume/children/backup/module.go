@@ -41,6 +41,16 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Security:      handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesBackup, h.CreateBackup)
 
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "export-volume-archive",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/volumes/{volumeName}/export",
+		Summary:     "Export volume archive",
+		Description: "Package the volume's contents as a tar.gz into a complete volume-backup upload session",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.ExportVolumeArchive)
+
 	restore.RegisterRoutes(api, restore.NewHandler(restoreService, h.activityService, h.uploadService, h.appCtx))
 
 	middleware.RegisterWithPermission(api, huma.Operation{

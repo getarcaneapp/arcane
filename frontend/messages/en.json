@@ -4669,5 +4669,20 @@
   "sync": "Sync",
   "ldap_sync": "LDAP Sync",
   "use_starttls": "Use StartTLS",
-  "use_starttls_description": "Upgrade ldap:// connections to TLS before sending passwords. Turn off only if the server does not support StartTLS; passwords are then sent in plain text."
+  "use_starttls_description": "Upgrade ldap:// connections to TLS before sending passwords. Turn off only if the server does not support StartTLS; passwords are then sent in plain text.",
+  "copy_or_move": "Copy or Move",
+  "copy_or_move_project": "Copy or Move Project",
+  "copy_or_move_project_description": "Copy or move this project to another environment.",
+  "target_environment": "Target Environment",
+  "project_name": "Project Name",
+  "include_volume_data": "Include Volume Data",
+  "include_volume_data_description": "The source project is stopped while volume data is copied.",
+  "start_on_target": "Start on Target",
+  "copy_project_summary": "Copy {project} to {environment} as {name}.",
+  "move_project_summary": "Move {project} to {environment} as {name}.",
+  "volume_data_not_copied": "Volume data will not be copied.",
+  "move_source_kept": "The source project is stopped after the target starts, and its files and volumes are kept on the source.",
+  "copy_or_move_failed": "Failed to start the copy or move",
+  "copy_started": "Copy started",
+  "move_started": "Move started"
 }

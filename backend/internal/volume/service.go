@@ -39,6 +39,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
 	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
 	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -82,6 +83,7 @@ type (
 		S3Destinations   *s3.S3DestinationService
 		Config           *config.Config
 		RecoveryKeys     *backup.RecoveryKeyStore
+		Uploads          *upload.UploadService
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
 		Admission        *runs.Admission
@@ -125,6 +127,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		Engine:           p.Engine,
 		S3Destinations:   p.S3Destinations,
 		RecoveryKeys:     p.RecoveryKeys,
+		Uploads:          p.Uploads,
 		Locks:            &service.workspaceLocks,
 		AlreadyRunning:   ErrVolumeBackupAlreadyRunning,
 		HelperImage:      service.getVolumeHelperImage,
@@ -182,6 +185,14 @@ func (s *VolumeService) CreateSystemManagedBackup(
 		return nil, err
 	}
 	return volumeBackupFromRecord(entry), err
+}
+
+func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
+	return s.backup.ExportVolumeArchive(ctx, volumeName)
+}
+
+func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
+	return s.backup.RestoreUpload(ctx, volumeName, request, user)
 }
 
 func (s *VolumeService) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {

@@ -1,4 +1,4 @@
-export type UploadKind = 'image' | 'volume-backup' | 'build-workspace';
+export type UploadKind = 'image' | 'volume-backup' | 'build-workspace' | 'project-archive';
 
 export interface UploadSession {
 	createdAt: string;

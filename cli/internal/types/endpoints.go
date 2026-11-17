@@ -300,6 +300,14 @@ func ProjectBuild(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/build", envID, projectID)
 }
 
+func ProjectTransfer(envID, projectID string) string {
+	return pathf("/api/agents/%s/projects/%s/transfer", envID, projectID)
+}
+
+func ProjectTransferPreflight(envID, projectID string) string {
+	return pathf("/api/agents/%s/projects/%s/transfer/preflight", envID, projectID)
+}
+
 func ProjectWorkspace(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/workspace", envID, projectID)
 }

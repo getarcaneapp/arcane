@@ -8,6 +8,9 @@ import type {
 	ProjectTag,
 	ProjectTagColor,
 	ProjectTagOption,
+	ProjectTransferPreflight,
+	ProjectTransferRequest,
+	ProjectTransferStarted,
 	ProjectUpdateInfo
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
@@ -244,6 +247,22 @@ class ProjectService extends BaseAPIService {
 			startFailed: (status) => `Failed to start project build (${status})`,
 			streamFailed: () => m.build_failed()
 		});
+	}
+
+	async preflightTransfer(
+		projectId: string,
+		request: ProjectTransferRequest,
+		environmentId: string
+	): Promise<ProjectTransferPreflight> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer/preflight`, request));
+	}
+
+	async startTransfer(
+		projectId: string,
+		request: ProjectTransferRequest,
+		environmentId: string
+	): Promise<ProjectTransferStarted> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer`, request));
 	}
 
 	async destroyProject(projectName: string, removeVolumes = false, environmentId: string): Promise<void> {

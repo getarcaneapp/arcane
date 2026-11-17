@@ -172,3 +172,37 @@ export interface ProjectsDirectoryStatus {
 	exists: boolean;
 	error?: string;
 }
+
+export type ProjectTransferMode = 'copy' | 'move';
+
+export interface ProjectTransferRequest {
+	targetEnvironmentId: string;
+	mode: ProjectTransferMode;
+	name: string;
+	includeVolumes: boolean;
+	start: boolean;
+}
+
+export interface ProjectTransferVolume {
+	key: string;
+	sourceName: string;
+	targetName: string;
+}
+
+export interface ProjectTransferCheck {
+	code: string;
+	severity: 'error' | 'warning';
+	message: string;
+}
+
+export interface ProjectTransferPreflight {
+	projectName: string;
+	volumes: ProjectTransferVolume[];
+	checks: ProjectTransferCheck[];
+	sourceRunning: boolean;
+	allowed: boolean;
+}
+
+export interface ProjectTransferStarted {
+	activityId: string;
+}

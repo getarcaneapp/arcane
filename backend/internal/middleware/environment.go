@@ -338,6 +338,9 @@ func IsManagerLocalPath(method, suffix string) bool {
 	if len(parts) == 4 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backups" && parts[3] == "policy" {
 		return method == http.MethodGet || method == http.MethodPut
 	}
+	if len(parts) >= 3 && parts[0] == "projects" && parts[1] != "" && parts[2] == "transfer" {
+		return method == http.MethodPost && (len(parts) == 3 || (len(parts) == 4 && parts[3] == "preflight"))
+	}
 	if len(parts) < 3 || parts[0] != "swarm" || parts[1] != "nodes" {
 		return false
 	}

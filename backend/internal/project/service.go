@@ -60,6 +60,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -97,6 +98,7 @@ type (
 		deployment                  *deployment.Service
 		updates                     *update.Service
 		containerRegistryService    *registry.ContainerRegistryService
+		uploads                     *upload.UploadService
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
@@ -118,8 +120,19 @@ type (
 		Name           string
 		ComposeContent string
 		Directory      string
+		Archive        io.Reader
+		ID             string
 		Tags           []string
 		ExactName      bool
+	}
+
+	projectArchiveUnpack struct {
+		Archive            io.Reader
+		ProjectsDirectory  string
+		GlobalEnvDirectory string
+		ProjectPath        string
+		DirName            string
+		Name               string
 	}
 
 	GitOpsProjectRequest struct {
@@ -138,6 +151,7 @@ type (
 		BuildService                builder
 		LifecycleService            *LifecycleService
 		ContainerRegistryService    *registry.ContainerRegistryService
+		Uploads                     *upload.UploadService
 		Config                      *config.Config
 		KVService                   *kv.KVService
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
@@ -432,6 +446,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 			},
 		}),
 		containerRegistryService:    p.ContainerRegistryService,
+		uploads:                     p.Uploads,
 		config:                      p.Config,
 		RegistryCredentialsProvider: p.RegistryCredentialsProvider,
 		parsedCompose:               projects.NewComposeCache(2048, projects.CloneComposeProject),
@@ -1559,36 +1574,52 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		return cause
 	}
 
-	if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, opts.Manifest.FileChanges, opts.Uploads, workspacepkg.Options{
-		ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
-		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
-	}); applyProjectWorkspaceChangesErr != nil {
-		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
-	}
+	composePath := filepath.Join(projectPath, projects.DefaultComposeFileName)
+	if opts.Archive != nil {
+		detected, unpackErr := s.unpackProjectArchive(ctx, projectArchiveUnpack{
+			Archive:            opts.Archive,
+			ProjectsDirectory:  projectsDirectory,
+			GlobalEnvDirectory: globalEnvDirectory,
+			ProjectPath:        projectPath,
+			DirName:            folderName,
+			Name:               name,
+		})
+		if unpackErr != nil {
+			return nil, rollback(unpackErr)
+		}
+		composePath = detected
+	} else {
+		if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, opts.Manifest.FileChanges, opts.Uploads, workspacepkg.Options{
+			ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
+			MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
+		}); applyProjectWorkspaceChangesErr != nil {
+			return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
+		}
 
-	// GitOps creates tolerate unset ${VAR} references like git sync updates; interactive creates stay strict.
-	if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
-		ProjectsDirectory: globalEnvDirectory,
-		ProjectPath:       projectPath,
-		ProjectName:       name,
-		ComposeContent:    opts.ComposeContent,
-		EnvContent:        envContent,
-		Lenient:           opts.ExactName,
-	}); validateComposeContentForUpdateErr != nil {
-		return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
-	}
+		// GitOps creates tolerate unset ${VAR} references like git sync updates; interactive creates stay strict.
+		if validateComposeContentForUpdateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+			ProjectsDirectory: globalEnvDirectory,
+			ProjectPath:       projectPath,
+			ProjectName:       name,
+			ComposeContent:    opts.ComposeContent,
+			EnvContent:        envContent,
+			Lenient:           opts.ExactName,
+		}); validateComposeContentForUpdateErr != nil {
+			return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
+		}
 
-	if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projects.ComposeFileWrite{
-		ProjectsRoot:       projectsDirectory,
-		GlobalEnvDirectory: globalEnvDirectory,
-		DirPath:            projectPath,
-		Content:            opts.ComposeContent,
-	}, envContent); writeProjectFilesErr != nil {
-		return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
+		if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projects.ComposeFileWrite{
+			ProjectsRoot:       projectsDirectory,
+			GlobalEnvDirectory: globalEnvDirectory,
+			DirPath:            projectPath,
+			Content:            opts.ComposeContent,
+		}, envContent); writeProjectFilesErr != nil {
+			return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
+		}
 	}
 	composeMeta, err := projects.ParseArcaneComposeMetadata(
 		ctx,
-		filepath.Join(projectPath, projects.DefaultComposeFileName),
+		composePath,
 		globalEnvDirectory,
 		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
 	)
@@ -1601,10 +1632,11 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	})
 
 	proj := &Project{
-		Name:    name,
-		DirName: &folderName,
-		Path:    projectPath,
-		Status:  ProjectStatusStopped,
+		BaseModel: database.BaseModel{ID: opts.ID},
+		Name:      name,
+		DirName:   &folderName,
+		Path:      projectPath,
+		Status:    ProjectStatusStopped,
 	}
 
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1634,6 +1666,110 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	)
 
 	return proj, nil
+}
+
+// unpackProjectArchive extracts an imported project, renames its Compose
+// identity to the requested name, and returns the compose file path.
+func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projectArchiveUnpack) (string, error) {
+	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
+	}
+	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
+	if detected == "" {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound)))
+	}
+	// The imported files must deploy under the requested name, not the source project's.
+	composeName := projects.NormalizeProjectName(unpack.Name)
+	if rewriteErr := projects.RewriteComposeProjectName(ctx, projects.ComposeProjectNameRewrite{
+		ProjectsDirectory: unpack.GlobalEnvDirectory,
+		ProjectPath:       unpack.ProjectPath,
+		ComposeFile:       detected,
+		Name:              composeName,
+	}); rewriteErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("apply project name to imported compose files: %w", rewriteErr))
+	}
+	composeContent, readErr := acfs.Host{}.ReadFile(ctx, detected)
+	if readErr != nil {
+		return "", fmt.Errorf("read imported compose file: %w", readErr)
+	}
+	if validateErr := projects.ValidateComposeContentForUpdate(ctx, projects.ValidateComposeRequest{
+		ProjectsDirectory: unpack.GlobalEnvDirectory,
+		ProjectPath:       unpack.ProjectPath,
+		ProjectName:       unpack.Name,
+		ComposeContent:    string(composeContent),
+		Lenient:           true,
+	}); validateErr != nil {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid compose file: %w", validateErr))
+	}
+	identity, identityErr := projectsync.LoadComposeMetadata(
+		ctx, s.composeIdentities, unpack.ProjectPath, unpack.DirName, unpack.GlobalEnvDirectory,
+		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"), s.projectPathMapper(ctx),
+	)
+	if identityErr == nil && identity.ExplicitProjectName && identity.ResolvedProjectName != composeName {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf(
+			"project archive declares Compose project name %q, which could not be changed to the requested name %q; use a literal top-level name or COMPOSE_PROJECT_NAME",
+			identity.ResolvedProjectName, composeName,
+		))
+	}
+	return detected, nil
+}
+
+func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
+	archive, _, cleanupSession, err := s.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupSession()
+	proj, err := s.CreateProject(ctx, CreateProjectOptions{
+		Archive:   archive,
+		Actor:     user,
+		Name:      request.Name,
+		ID:        request.ProjectID,
+		Tags:      request.Tags,
+		ExactName: true,
+	})
+	if errors.Is(err, projects.ErrProjectDirExists) {
+		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
+	}
+	return proj, err
+}
+
+func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	projectsDirectory, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	}
+	archive, archiveLogical, err := acfs.Root{Path: projectsDirectory}.CreateTemp(ctx, "/", ".project-export-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create project archive: %w", err)
+	}
+	defer func() {
+		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
+		}
+		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
+		}
+	}()
+	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
+		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
+	}
+	info, err := archive.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
+	}
+	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
+		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
+	}
+	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", info.Size(), archive)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store project archive: %w", err)
+	}
+	return session, nil
 }
 
 func (s *ProjectService) createRootDirectory(ctx context.Context, directory string) (string, error) {
@@ -2047,17 +2183,18 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		}
 		composeFile = kit.Ternary(detectErr != nil && (!errors.Is(detectErr, common.ErrProjectEnvUnreadable) || identified == ""), "", identified)
 	}
-	composeServices := func() []composetypes.ServiceConfig {
+	composeProj := func() *composetypes.Project {
 		if composeErr != nil || (!opts.IncludeServiceConfigs && !opts.IncludeUpdateInfo) {
 			return nil
 		}
-		composeProj, loadErr := s.getCachedComposeProject(ctx, proj, nil)
+		loaded, loadErr := s.getCachedComposeProject(ctx, proj, nil)
 		if loadErr != nil {
 			slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)
 			return nil
 		}
-		return slices.Collect(maps.Values(composeProj.Services))
+		return loaded
 	}()
+	composeServices := slices.Collect(maps.Values(kit.FromPtr(composeProj).Services))
 
 	var syncRecord GitOpsSync
 	if strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)) != "" {
@@ -2124,6 +2261,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		CreatedAt:             proj.CreatedAt.Format(time.RFC3339),
 		RuntimeServices:       kit.Ternary(opts.IncludeRuntimeServices, runtimeServices, nil),
 		Services:              kit.Ternary(opts.IncludeServiceConfigs, composeServices, nil),
+		ComposeName:           kit.FromPtr(composeProj).Name,
+		Volumes:               kit.Ternary(opts.IncludeServiceConfigs, kit.FromPtr(composeProj).Volumes, nil),
+		Networks:              kit.Ternary(opts.IncludeServiceConfigs, kit.FromPtr(composeProj).Networks, nil),
 		URLs:                  meta.ProjectURLS,
 		IncludeFiles: func() []types.ProjectIncludeFile {
 			if composeErr != nil || !opts.IncludeIncludeFiles {
@@ -2266,6 +2406,9 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			CreatedAt:             d.CreatedAt,
 			RuntimeServices:       runtimeByIndex[i],
 			Services:              d.Services,
+			ComposeName:           d.ComposeName,
+			Volumes:               d.Volumes,
+			Networks:              d.Networks,
 			URLs:                  d.URLs,
 			IncludeFiles:          d.IncludeFiles,
 			RunningCount:          d.RunningCount,

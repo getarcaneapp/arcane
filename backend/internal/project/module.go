@@ -7,6 +7,8 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/transfer"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
@@ -15,11 +17,35 @@ type (
 	Module struct {
 		service  *ProjectService
 		activity *activity.ActivityService
+		transfer *transfer.Service
+	}
+
+	ModuleParams struct {
+		Service  *ProjectService
+		Activity *activity.ActivityService
+		Transfer TransferDependencies
 	}
 )
 
-func New(service *ProjectService, activityService *activity.ActivityService) *Module {
-	return &Module{service: service, activity: activityService}
+func New(p ModuleParams) *Module {
+	return &Module{
+		service:  p.Service,
+		activity: p.Activity,
+		transfer: transfer.NewService(transfer.Dependencies{
+			Environment: transfer.Environments{
+				Local: localTransferEnvironment{
+					projects: p.Service,
+					deps:     p.Transfer,
+				},
+				Transport: p.Transfer.Transport,
+				Tunnels:   p.Transfer.Tunnels,
+			}.Get,
+			RetargetWebhooks: p.Transfer.RetargetWebhooks,
+			CountWebhooks:    p.Transfer.CountWebhooks,
+			Activities:       p.Activity,
+			Backups:          p.Transfer.Backups,
+		}),
+	}
 }
 
 func (m *Module) Service() *ProjectService {
@@ -29,12 +55,18 @@ func (m *Module) Service() *ProjectService {
 	return m.service
 }
 
+func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
+	return m.transfer.RegisterWorkflows(engine)
+}
+
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterProjects(api, nil, nil, appCtx)
+		transfer.RegisterRoutes(api, transfer.NewHandler(nil))
 		return
 	}
 	RegisterProjects(api, m.service, m.activity, appCtx)
+	transfer.RegisterRoutes(api, transfer.NewHandler(m.transfer))
 }
 
 func RegisterProjects(api huma.API, projectService *ProjectService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
@@ -201,6 +233,26 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 			},
 		},
 	}, authz.PermProjectsCreate, h.CreateProject)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "import-project-archive",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/import",
+		Summary:     "Import project archive",
+		Description: "Create a project, without deploying it, from a complete project-archive upload session",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "export-project-archive",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/{projectId}/export",
+		Summary:     "Export project archive",
+		Description: "Package the project's directory as a tar.gz into a complete project-archive upload session",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsRead, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",

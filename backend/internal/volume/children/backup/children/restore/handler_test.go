@@ -21,7 +21,7 @@ func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",
 		VolumeName:    "vol-1",
-		Body:          types.UploadConsumeRequest{UploadID: "missing"},
+		Body:          types.RestoreVolumeUploadRequest{UploadID: "missing"},
 	})
 
 	require.Error(t, err)

@@ -161,6 +161,7 @@ var (
 				localKv *kv.KVService,
 				localRegistry *registry.ContainerRegistryService,
 				localEnvironment *environment.EnvironmentService,
+				localUploads *upload.UploadService,
 				cfg *config.Config,
 			) *project.ProjectService {
 				return project.NewProjectService(project.ProjectServiceParams{
@@ -172,6 +173,7 @@ var (
 					BuildService:                localBuild,
 					LifecycleService:            lifecycleService,
 					ContainerRegistryService:    localRegistry,
+					Uploads:                     localUploads,
 					Config:                      cfg,
 					KVService:                   localKv,
 					RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
@@ -258,7 +260,7 @@ var (
 			apns.New,
 			notification.New,
 			vulnerability.New,
-			project.New,
+			provideProjectModule,
 			gitops.New,
 			variable.New,
 			upload.New,

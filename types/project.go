@@ -35,6 +35,56 @@ type (
 		Tags           []string                   `json:"tags,omitempty"`
 	}
 
+	ImportProjectArchive struct {
+		UploadID  string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
+		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
+		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
+	}
+
+	ProjectTransferMode string
+
+	ProjectTransferSeverity string
+
+	ProjectTransferRequest struct {
+		TargetEnvironmentID string              `json:"targetEnvironmentId" required:"true" minLength:"1" doc:"Environment that receives the project"`
+		Mode                ProjectTransferMode `json:"mode" required:"true" enum:"copy,move" doc:"copy keeps the source running as before; move stops the source after the target succeeds"`
+		Name                string              `json:"name" required:"true" minLength:"1" doc:"Project name on the target environment"`
+		IncludeVolumes      bool                `json:"includeVolumes,omitempty" doc:"Copy the data of the project's named volumes; the source is stopped while it is copied"`
+		Start               bool                `json:"start,omitempty" doc:"Deploy the project on the target after the copy"`
+	}
+
+	ProjectTransferCheck struct {
+		Code     string                  `json:"code" doc:"Stable check code"`
+		Severity ProjectTransferSeverity `json:"severity" enum:"error,warning" doc:"error blocks the transfer; warning does not"`
+		Message  string                  `json:"message" doc:"Human-readable description"`
+	}
+
+	ProjectTransferVolume struct {
+		Key        string `json:"key" doc:"Volume key in the compose file"`
+		SourceName string `json:"sourceName" doc:"Docker volume name on the source environment"`
+		TargetName string `json:"targetName" doc:"Expected Docker volume name on the target environment"`
+	}
+
+	ProjectTransferPreflight struct {
+		ProjectName   string                  `json:"projectName"`
+		Volumes       []ProjectTransferVolume `json:"volumes" doc:"Named, non-external volumes whose data is copied when includeVolumes is set"`
+		Checks        []ProjectTransferCheck  `json:"checks"`
+		SourceRunning bool                    `json:"sourceRunning"`
+		Allowed       bool                    `json:"allowed" doc:"True when no check has severity error"`
+	}
+
+	ProjectTransferStarted struct {
+		ActivityID string `json:"activityId" doc:"Activity that reports the transfer's progress on the source environment"`
+	}
+
+	ProjectWebhookRetarget struct {
+		SourceEnvironmentID string
+		SourceProjectID     string
+		TargetEnvironmentID string
+		TargetProjectID     string
+	}
+
 	ProjectsDirectoryStatus struct {
 		Path          string `json:"path"`
 		ContainerPath string `json:"containerPath"`
@@ -198,6 +248,9 @@ type (
 		ComposeFiles    []string                     `json:"composeFiles,omitempty" readOnly:"true"`
 		RuntimeServices []ProjectRuntimeService      `json:"runtimeServices,omitempty" readOnly:"true"`
 		Services        []composetypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
+		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
+		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
+		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
 		URLs            []string                     `json:"urls,omitempty" readOnly:"true"`
 		IncludeFiles    []ProjectIncludeFile         `json:"includeFiles,omitempty" readOnly:"true"`
 		RunningCount    int                          `json:"runningCount" readOnly:"true"`
@@ -443,6 +496,26 @@ const (
 	ProjectRenameJournalPhaseProjectStateCommitted  = "project_state_committed"
 	ProjectRenameJournalPhaseSourceCleanupPending   = "source_cleanup_pending"
 	ProjectRenameJournalPhaseProjectStateRolledBack = "project_state_rolled_back"
+
+	ProjectTransferModeCopy           ProjectTransferMode     = "copy"
+	ProjectTransferModeMove           ProjectTransferMode     = "move"
+	ProjectTransferSeverityError      ProjectTransferSeverity = "error"
+	ProjectTransferSeverityWarning    ProjectTransferSeverity = "warning"
+	ProjectTransferSourceOffline                              = "source_offline"
+	ProjectTransferTargetOffline                              = "target_offline"
+	ProjectTransferSourceOutdated                             = "source_unsupported"
+	ProjectTransferTargetOutdated                             = "target_unsupported"
+	ProjectTransferSameProject                                = "same_project"
+	ProjectTransferNameConflict                               = "name_conflict"
+	ProjectTransferVolumeExists                               = "volume_exists"
+	ProjectTransferNetworkMissing                             = "external_network_missing"
+	ProjectTransferExternalMissing                            = "external_volume_missing"
+	ProjectTransferGitOpsMove                                 = "gitops_move"
+	ProjectTransferBuildRequired                              = "build_required"
+	ProjectTransferGitOpsCopy                                 = "gitops_copy"
+	ProjectTransferVolumesNotCopied                           = "volume_data_not_copied"
+	ProjectTransferVolumeDataExternal                         = "volume_data_external"
+	ProjectTransferComposeInvalid                             = "compose_invalid"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(
