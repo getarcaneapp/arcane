@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import { createQueries } from '@tanstack/svelte-query';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
@@ -9,6 +10,7 @@
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, AlertIcon, ArrowRightIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { clientStream } from '#lib/stores/client-stream.svelte.js';
@@ -158,11 +160,29 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
-	const planOfflineCount = $derived(environmentStore.available.filter((env) => !isEnvironmentOnline(env)).length);
 	const planOpen = $derived(foldToggles['plan'] ?? false);
+	const onlineEnvironments = $derived(environmentStore.available.filter((env) => isEnvironmentOnline(env)));
+	const versionQueries = createQueries(() => ({
+		queries: onlineEnvironments.map((env) => ({
+			queryKey: queryKeys.system.versionInfo(env.id),
+			queryFn: () => systemUpgradeService.getVersionInfo(env.id),
+			enabled: !!open,
+			staleTime: 5 * 60_000,
+			retry: false
+		})),
+		combine: (results) => ({
+			versions: results.map((result) => result.data)
+		})
+	}));
+	const planUpdates = $derived(
+		onlineEnvironments.flatMap((env, index) => {
+			const version = versionQueries.versions[index];
+			return version?.updateAvailable ? [{ env, version }] : [];
+		})
+	);
 	const planEnvironments = $derived([
-		...environmentStore.available.filter((env) => env.id !== MANAGER_ENVIRONMENT_ID),
-		...environmentStore.available.filter((env) => env.id === MANAGER_ENVIRONMENT_ID)
+		...planUpdates.filter(({ env }) => env.id !== MANAGER_ENVIRONMENT_ID),
+		...planUpdates.filter(({ env }) => env.id === MANAGER_ENVIRONMENT_ID)
 	]);
 
 	const results = $derived(job?.results ?? []);
@@ -367,9 +387,6 @@
 						onclick={() => (foldToggles = { ...foldToggles, plan: !planOpen })}
 					>
 						<span class="font-medium">{m.all_environments_count({ count: planEnvironments.length })}</span>
-						{#if planOfflineCount > 0}
-							<span class="text-xs text-warning">{m.environments_update_all_legend_skipped({ count: planOfflineCount })}</span>
-						{/if}
 						<ArrowRightIcon class={cn('ml-auto size-3.5 text-muted-foreground transition-transform', planOpen && 'rotate-90')} />
 					</button>
 					{#if planOpen}
@@ -378,11 +395,11 @@
 								<thead>
 									<tr class="text-left text-xs text-muted-foreground">
 										<th class="pb-2 font-normal">{m.agent()}</th>
-										<th class="pb-2 text-right font-normal">{m.common_status()}</th>
+										<th class="pb-2 text-right font-normal">{m.common_version()}</th>
 									</tr>
 								</thead>
 								<tbody>
-									{#each planEnvironments as env (env.id)}
+									{#each planEnvironments as { env, version } (env.id)}
 										<tr class="border-t border-border/50">
 											<td class="py-2.5">
 												<span class="flex items-center gap-1.5">
@@ -392,12 +409,9 @@
 													{/if}
 												</span>
 											</td>
-											<td class="py-2.5 text-right text-xs">
-												{#if isEnvironmentOnline(env)}
-													<span class="text-muted-foreground">{m.common_online()}</span>
-												{:else}
-													<span class="text-warning">{m.environments_update_all_status_skipped_offline()}</span>
-												{/if}
+											<td class="py-2.5 text-right text-xs text-muted-foreground tabular-nums">
+												{version.displayVersion || version.currentVersion || version.currentTag}
+												{#if version.newestVersion}→ {version.newestVersion}{/if}
 											</td>
 										</tr>
 									{/each}
@@ -492,7 +506,7 @@
 			</div>
 
 			{#if totalCount > 0}
-				<div class="flex min-h-0 flex-col border-t border-border/60 sm:h-104 sm:flex-row">
+				<div class="flex min-h-0 flex-col border-t border-border/60 sm:h-136 sm:flex-row">
 					<!-- Native scroller: ScrollArea's percentage-height viewport resolves to auto
 					     under a max-height-only parent, so it never clips (#3655). -->
 					<div
@@ -533,7 +547,7 @@
 							{/each}
 						</ul>
 					</div>
-					<div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+					<div class="min-h-0 min-w-0 flex-1 overflow-y-auto sm:flex sm:flex-col">
 						{#if selectedResult}
 							<UpgradeJobDetail result={selectedResult} />
 						{/if}
@@ -552,7 +566,7 @@
 				<p class="text-xs text-muted-foreground sm:mr-auto sm:self-center">{m.manager_updates_last()}</p>
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
-					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>
+					<Button onclick={() => handleConfirm(planEnvironments.map(({ env }) => env.id))}>{m.update_all()}</Button>
 				{/if}
 			{:else}
 				{#if phase === 'finished' && canConfirm && !debugDemo && failedIds.length > 0}
