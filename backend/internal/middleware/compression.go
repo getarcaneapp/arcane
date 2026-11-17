@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,13 +11,15 @@ import (
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
+const compressionMinSize = 1 << 10
+
 func NewCompressionMiddleware() echo.MiddlewareFunc {
 	compress, err := gzhttp.NewWrapper(
-		gzhttp.MinSize(1024),
+		gzhttp.MinSize(compressionMinSize),
 		gzhttp.ContentTypes([]string{"application/json", "application/problem+json", "text/plain"}),
 	)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("configure API compression: %w", err))
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		compressed := echo.WrapMiddleware(func(handler http.Handler) http.Handler {
@@ -24,11 +27,7 @@ func NewCompressionMiddleware() echo.MiddlewareFunc {
 		})(next)
 		return func(c *echo.Context) error {
 			req := c.Request()
-			path := req.URL.Path
-			if httpx.IsEnvironmentFanOutRequest(req.Context()) || httpx.IsWebSocketUpgradeRequest(req) ||
-				(req.Method == http.MethodGet && path == "/api/stream") || strings.Contains(path, "/ws/") ||
-				strings.HasSuffix(path, "/logs") || strings.Contains(path, "/logs/") ||
-				strings.HasSuffix(path, "/terminal") || strings.Contains(path, "/terminal/") {
+			if httpx.IsWebSocketUpgradeRequest(req) || strings.Contains(req.Header.Get("Accept"), "text/event-stream") {
 				return next(c)
 			}
 			response := c.Response()
