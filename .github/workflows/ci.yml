@@ -164,7 +164,6 @@ jobs:
 
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
-    if: ${{ github.head_ref != 'l10n_crowdin' }}
     runs-on: depot-ubuntu-24.04-4
     # Passing runs finish in about 17 minutes; a broken stack must not grind through retries for hours.
     timeout-minutes: 45
@@ -242,7 +241,6 @@ jobs:
 
   cli-e2e-tests:
     name: CLI E2E Tests
-    if: ${{ github.head_ref != 'l10n_crowdin' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 20
     permissions:
