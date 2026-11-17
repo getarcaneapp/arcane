@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -510,6 +509,10 @@ func (s *Service) readRemoteBackup(ctx context.Context, localSync *projectpkg.Gi
 	maxFiles, maxTotalSize, _ := s.limits(ctx, localSync)
 	files := make(map[string]projects.SyncFile)
 	var totalSize int64
+	executable, executableErr := git.ExecutableFiles(repoPath)
+	if executableErr != nil {
+		return nil, executableErr
+	}
 	_, err := acfs.Root{Path: repoPath}.Walk(ctx, root, acfstypes.WalkOptions{}, func(entry acfstypes.Entry) error {
 		relative := strings.TrimPrefix(entry.Path, prefix)
 		switch {
@@ -532,7 +535,7 @@ func (s *Service) readRemoteBackup(ctx context.Context, localSync *projectpkg.Gi
 		if maxTotalSize > 0 && totalSize > maxTotalSize {
 			return fmt.Errorf("total size limit exceeded (max %d bytes): %w", maxTotalSize, git.ErrSelectionLimits)
 		}
-		files[relative] = projects.SyncFile{RelativePath: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0}
+		files[relative] = projects.SyncFile{RelativePath: relative, Content: content, Executable: executable[strings.TrimPrefix(entry.Path, "/")]}
 		return nil
 	})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -962,23 +965,23 @@ func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *ba
 	occupied := err == nil && len(entries) > 0
 	remote := make(map[string]string)
 	if occupied {
+		executable, executableErr := git.ExecutableFiles(repoPath)
+		if executableErr != nil {
+			return analysis, executableErr
+		}
 		for _, owned := range []map[string]string{baseline, snapshot.hashes} {
 			for file := range owned {
 				if _, done := remote[file]; done {
 					continue
 				}
-				entry, statErr := acfs.Root{Path: repoPath}.Stat(ctx, "/"+path.Join(directory, file), acfstypes.StatOptions{})
-				if errors.Is(statErr, fs.ErrNotExist) {
+				content, readErr := acfs.Root{Path: repoPath}.ReadFile(ctx, "/"+path.Join(directory, file))
+				if errors.Is(readErr, fs.ErrNotExist) {
 					continue
 				}
-				if statErr != nil {
-					return analysis, fmt.Errorf("failed to inspect remote backup file %s: %w", file, statErr)
-				}
-				content, readErr := acfs.Root{Path: repoPath}.ReadFile(ctx, "/"+path.Join(directory, file))
 				if readErr != nil {
 					return analysis, fmt.Errorf("failed to read remote backup file %s: %w", file, readErr)
 				}
-				remote[file] = kit.SHA256Hex(content) + kit.Ternary(os.FileMode(entry.UnixMode)&0o111 != 0, BackupModeExecutable, BackupModeRegular)
+				remote[file] = kit.SHA256Hex(content) + kit.Ternary(executable[path.Join(directory, file)], BackupModeExecutable, BackupModeRegular)
 			}
 		}
 	}
