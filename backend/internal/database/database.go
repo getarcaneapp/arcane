@@ -98,9 +98,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 				break
 			}
 		}
-		if !options.AgentMode {
-			readDSN = sqliteReadDSN(connString)
-		}
+		readDSN = sqliteReadDSN(connString)
 		dialector = sqlite.Open(connString)
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = dbProviderPostgres
