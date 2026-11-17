@@ -193,6 +193,13 @@ export interface ProjectTransferCheck {
 	code: string;
 	severity: 'error' | 'warning';
 	message: string;
+	resource?: string;
+}
+
+export interface ProjectTransferResource {
+	targetEnvironmentId: string;
+	kind: 'volume' | 'network';
+	name: string;
 }
 
 export interface ProjectTransferPreflight {

@@ -39,8 +39,10 @@ type (
 		Availability(ctx context.Context) Availability
 		Project(ctx context.Context, projectID string) (types.Project, error)
 		Projects(ctx context.Context, search string) ([]types.Project, error)
-		VolumeLabels(ctx context.Context, name string) (map[string]string, bool, error)
-		NetworkExists(ctx context.Context, name string) (bool, error)
+		Volume(ctx context.Context, name string) (types.Volume, bool, error)
+		Network(ctx context.Context, name string) (types.NetworkInspect, bool, error)
+		CreateVolume(ctx context.Context, volume types.Volume, user types.Actor) error
+		CreateNetwork(ctx context.Context, network types.Network, user types.Actor) error
 		ComposeProjectInUse(ctx context.Context, name string) (bool, error)
 		ExportProject(ctx context.Context, projectID string) (types.UploadSession, error)
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
@@ -70,6 +72,13 @@ type (
 		SourceEnvironmentID string
 		ProjectID           string
 		Request             types.ProjectTransferRequest
+	}
+
+	ResourceOptions struct {
+		User                types.Actor
+		SourceEnvironmentID string
+		ProjectID           string
+		Request             types.ProjectTransferResource
 	}
 
 	Service struct {
@@ -243,6 +252,87 @@ func (s *Service) Start(ctx context.Context, opts Options) (types.ProjectTransfe
 		release(background)
 	}()
 	return types.ProjectTransferStarted{ActivityID: activityID}, nil
+}
+
+func (s *Service) CreateResource(ctx context.Context, opts ResourceOptions) error {
+	request := opts.Request
+	volume := request.Kind == types.ProjectTransferResourceVolume
+	if authErr := s.authorize(ctx, []types.BackupRequester{
+		backup.NewRequester(ctx, opts.User, opts.SourceEnvironmentID, authz.PermProjectsRead),
+		backup.NewRequester(ctx, opts.User, opts.SourceEnvironmentID, kit.Ternary(volume, authz.PermVolumesRead, authz.PermNetworksRead)),
+		backup.NewRequester(ctx, opts.User, request.TargetEnvironmentID, kit.Ternary(volume, authz.PermVolumesCreate, authz.PermNetworksCreate)),
+	}); authErr != nil {
+		return authErr
+	}
+	source := s.deps.Environment(opts.SourceEnvironmentID)
+	target := s.deps.Environment(request.TargetEnvironmentID)
+	project, err := source.Project(ctx, opts.ProjectID)
+	if err != nil {
+		return fmt.Errorf("load source project: %w", err)
+	}
+	if volume {
+		return createVolume(ctx, project, source, target, request.Name, opts.User)
+	}
+	return createNetwork(ctx, project, source, target, request.Name, opts.User)
+}
+
+func createVolume(ctx context.Context, project types.Project, source, target Environment, name string, user types.Actor) error {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Volumes)), func(config composetypes.VolumeConfig) bool {
+		return bool(config.External) && config.Name == name
+	}) {
+		return common.Classify(common.ErrBadRequest, fmt.Errorf("project %s has no external volume %s", project.Name, name))
+	}
+	found, exists, err := source.Volume(ctx, name)
+	if err != nil {
+		return fmt.Errorf("inspect source volume %s: %w", name, err)
+	}
+	if !exists {
+		return common.Classify(common.ErrNotFound, fmt.Errorf("external volume %s does not exist on the source environment either", name))
+	}
+	_, exists, err = target.Volume(ctx, name)
+	if err != nil {
+		return fmt.Errorf("inspect target volume %s: %w", name, err)
+	}
+	if exists {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists on the target environment", name))
+	}
+	return target.CreateVolume(ctx, types.Volume{
+		Name:    found.Name,
+		Driver:  found.Driver,
+		Options: found.Options,
+		Labels:  found.Labels,
+	}, user)
+}
+
+func createNetwork(ctx context.Context, project types.Project, source, target Environment, name string, user types.Actor) error {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Networks)), func(config composetypes.NetworkConfig) bool {
+		return bool(config.External) && config.Name == name
+	}) {
+		return common.Classify(common.ErrBadRequest, fmt.Errorf("project %s has no external network %s", project.Name, name))
+	}
+	found, exists, err := source.Network(ctx, name)
+	if err != nil {
+		return fmt.Errorf("inspect source network %s: %w", name, err)
+	}
+	if !exists {
+		return common.Classify(common.ErrNotFound, fmt.Errorf("external network %s does not exist on the source environment either", name))
+	}
+	if found.ConfigFrom.Network != "" {
+		return common.Classify(common.ErrBadRequest, fmt.Errorf("network %s takes its configuration from network %s; create both on the target environment manually", name, found.ConfigFrom.Network))
+	}
+	return target.CreateNetwork(ctx, types.Network{
+		Name: found.Name,
+		Options: types.NetworkCreateOptions{
+			IPAM:       &found.IPAM,
+			Options:    found.Options,
+			Labels:     found.Labels,
+			Driver:     found.Driver,
+			Internal:   found.Internal,
+			Attachable: found.Attachable,
+			Ingress:    found.Ingress,
+			EnableIPv6: found.EnableIPv6,
+		},
+	}, user)
 }
 
 func (s *Service) authorize(ctx context.Context, required []types.BackupRequester) error {
@@ -437,7 +527,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 		})
 	}
 	for _, volume := range kit.Ternary(request.IncludeVolumes, plan.Volumes, nil) {
-		_, exists, existsErr := target.VolumeLabels(ctx, volume.TargetName)
+		_, exists, existsErr := target.Volume(ctx, volume.TargetName)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", volume.TargetName, existsErr)
 		}
@@ -450,7 +540,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 		}
 	}
 	for _, name := range externalVolumes {
-		_, exists, existsErr := target.VolumeLabels(ctx, name)
+		_, exists, existsErr := target.Volume(ctx, name)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", name, existsErr)
 		}
@@ -459,6 +549,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 				Code:     types.ProjectTransferExternalMissing,
 				Severity: types.ProjectTransferSeverityError,
 				Message:  fmt.Sprintf("External volume %s does not exist on the target environment.", name),
+				Resource: name,
 			})
 		}
 	}
@@ -467,7 +558,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 		if !config.External {
 			continue
 		}
-		exists, existsErr := target.NetworkExists(ctx, config.Name)
+		_, exists, existsErr := target.Network(ctx, config.Name)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target network %s: %w", config.Name, existsErr)
 		}
@@ -476,6 +567,7 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 				Code:     types.ProjectTransferNetworkMissing,
 				Severity: types.ProjectTransferSeverityError,
 				Message:  fmt.Sprintf("External network %s does not exist on the target environment.", config.Name),
+				Resource: config.Name,
 			})
 		}
 	}
@@ -715,11 +807,11 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 
 func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composetypes.VolumeConfig, composeName string) error {
 	artifact := "volume " + volume.Key
-	labels, exists, err := r.target.VolumeLabels(ctx, config.Name)
+	existing, exists, err := r.target.Volume(ctx, config.Name)
 	if err != nil {
 		return fmt.Errorf("inspect target volume %s: %w", config.Name, err)
 	}
-	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || composeName == "" || docker.ComposeProjectLabel(labels) != composeName) {
+	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || composeName == "" || docker.ComposeProjectLabel(existing.Labels) != composeName) {
 		return s.disown(ctx, r, config.Name, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created on the target environment by something other than this transfer", config.Name)))
 	}
 	if exists {
@@ -808,7 +900,7 @@ func (s *Service) deployTarget(ctx context.Context, r *run) error {
 		if bool(config.External) || slices.Contains(r.state.CreatedVolumes, config.Name) {
 			continue
 		}
-		_, exists, existsErr := r.target.VolumeLabels(ctx, config.Name)
+		_, exists, existsErr := r.target.Volume(ctx, config.Name)
 		if existsErr != nil {
 			return fmt.Errorf("inspect target volume %s: %w", config.Name, existsErr)
 		}
@@ -1046,8 +1138,8 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	}
 	removedVolume := false
 	for _, volume := range kit.Ternary(keep, nil, r.state.CreatedVolumes) {
-		labels, exists, err := r.target.VolumeLabels(ctx, volume)
-		if err == nil && exists && r.state.TargetCompose != "" && docker.ComposeProjectLabel(labels) == r.state.TargetCompose {
+		existing, exists, err := r.target.Volume(ctx, volume)
+		if err == nil && exists && r.state.TargetCompose != "" && docker.ComposeProjectLabel(existing.Labels) == r.state.TargetCompose {
 			removedVolume = true
 			err = r.target.DeleteVolume(ctx, volume, r.input.User)
 		}

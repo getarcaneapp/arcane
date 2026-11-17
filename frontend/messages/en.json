@@ -4684,5 +4684,6 @@
   "move_source_kept": "The source project is stopped after the target starts, and its files and volumes are kept on the source.",
   "copy_or_move_failed": "Failed to start the copy or move",
   "copy_started": "Copy started",
-  "move_started": "Move started"
+  "move_started": "Move started",
+  "resource_created_on_target": "Created {name} on the target environment"
 }

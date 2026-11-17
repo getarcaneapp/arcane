@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -19,6 +20,12 @@ type (
 		EnvironmentID string `path:"id" doc:"Source environment ID"`
 		ProjectID     string `path:"projectId" doc:"Source project ID"`
 		Body          types.ProjectTransferRequest
+	}
+
+	ResourceInput struct {
+		EnvironmentID string `path:"id" doc:"Source environment ID"`
+		ProjectID     string `path:"projectId" doc:"Source project ID"`
+		Body          types.ProjectTransferResource
 	}
 )
 
@@ -66,6 +73,28 @@ func (h *Handler) Start(ctx context.Context, input *TransferInput) (*handlerutil
 		Body: types.ApiResponse[types.ProjectTransferStarted]{
 			Success: true,
 			Data:    started,
+		},
+	}, nil
+}
+
+func (h *Handler) CreateResource(ctx context.Context, input *ResourceInput) (*handlerutil.Out[types.MessageResponse], error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if createErr := h.service.CreateResource(ctx, ResourceOptions{
+		User:                *user,
+		SourceEnvironmentID: input.EnvironmentID,
+		ProjectID:           input.ProjectID,
+		Request:             input.Body,
+	}); createErr != nil {
+		apiErr := common.ToAPIError(common.ClassifyDockerError(createErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), createErr.Error())
+	}
+	return &handlerutil.Out[types.MessageResponse]{
+		Body: types.ApiResponse[types.MessageResponse]{
+			Success: true,
+			Data:    types.MessageResponse{Message: fmt.Sprintf("Created %s %s on the target environment", input.Body.Kind, input.Body.Name)},
 		},
 	}, nil
 }

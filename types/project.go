@@ -46,6 +46,8 @@ type (
 
 	ProjectTransferSeverity string
 
+	ProjectTransferResourceKind string
+
 	ProjectTransferRequest struct {
 		TargetEnvironmentID string              `json:"targetEnvironmentId" required:"true" minLength:"1" doc:"Environment that receives the project"`
 		Mode                ProjectTransferMode `json:"mode" required:"true" enum:"copy,move" doc:"copy keeps the source running as before; move stops the source after the target succeeds"`
@@ -58,6 +60,13 @@ type (
 		Code     string                  `json:"code" doc:"Stable check code"`
 		Severity ProjectTransferSeverity `json:"severity" enum:"error,warning" doc:"error blocks the transfer; warning does not"`
 		Message  string                  `json:"message" doc:"Human-readable description"`
+		Resource string                  `json:"resource,omitempty" doc:"Name of the missing external volume or network the check is about"`
+	}
+
+	ProjectTransferResource struct {
+		TargetEnvironmentID string                      `json:"targetEnvironmentId" required:"true" minLength:"1" doc:"Environment to create the resource on"`
+		Kind                ProjectTransferResourceKind `json:"kind" required:"true" enum:"volume,network" doc:"Kind of external resource to create"`
+		Name                string                      `json:"name" required:"true" minLength:"1" doc:"Name of the project's external volume or network"`
 	}
 
 	ProjectTransferVolume struct {
@@ -497,25 +506,27 @@ const (
 	ProjectRenameJournalPhaseSourceCleanupPending   = "source_cleanup_pending"
 	ProjectRenameJournalPhaseProjectStateRolledBack = "project_state_rolled_back"
 
-	ProjectTransferModeCopy           ProjectTransferMode     = "copy"
-	ProjectTransferModeMove           ProjectTransferMode     = "move"
-	ProjectTransferSeverityError      ProjectTransferSeverity = "error"
-	ProjectTransferSeverityWarning    ProjectTransferSeverity = "warning"
-	ProjectTransferSourceOffline                              = "source_offline"
-	ProjectTransferTargetOffline                              = "target_offline"
-	ProjectTransferSourceOutdated                             = "source_unsupported"
-	ProjectTransferTargetOutdated                             = "target_unsupported"
-	ProjectTransferSameProject                                = "same_project"
-	ProjectTransferNameConflict                               = "name_conflict"
-	ProjectTransferVolumeExists                               = "volume_exists"
-	ProjectTransferNetworkMissing                             = "external_network_missing"
-	ProjectTransferExternalMissing                            = "external_volume_missing"
-	ProjectTransferGitOpsMove                                 = "gitops_move"
-	ProjectTransferBuildRequired                              = "build_required"
-	ProjectTransferGitOpsCopy                                 = "gitops_copy"
-	ProjectTransferVolumesNotCopied                           = "volume_data_not_copied"
-	ProjectTransferVolumeDataExternal                         = "volume_data_external"
-	ProjectTransferComposeInvalid                             = "compose_invalid"
+	ProjectTransferModeCopy           ProjectTransferMode         = "copy"
+	ProjectTransferModeMove           ProjectTransferMode         = "move"
+	ProjectTransferSeverityError      ProjectTransferSeverity     = "error"
+	ProjectTransferSeverityWarning    ProjectTransferSeverity     = "warning"
+	ProjectTransferResourceVolume     ProjectTransferResourceKind = "volume"
+	ProjectTransferResourceNetwork    ProjectTransferResourceKind = "network"
+	ProjectTransferSourceOffline                                  = "source_offline"
+	ProjectTransferTargetOffline                                  = "target_offline"
+	ProjectTransferSourceOutdated                                 = "source_unsupported"
+	ProjectTransferTargetOutdated                                 = "target_unsupported"
+	ProjectTransferSameProject                                    = "same_project"
+	ProjectTransferNameConflict                                   = "name_conflict"
+	ProjectTransferVolumeExists                                   = "volume_exists"
+	ProjectTransferNetworkMissing                                 = "external_network_missing"
+	ProjectTransferExternalMissing                                = "external_volume_missing"
+	ProjectTransferGitOpsMove                                     = "gitops_move"
+	ProjectTransferBuildRequired                                  = "build_required"
+	ProjectTransferGitOpsCopy                                     = "gitops_copy"
+	ProjectTransferVolumesNotCopied                               = "volume_data_not_copied"
+	ProjectTransferVolumeDataExternal                             = "volume_data_external"
+	ProjectTransferComposeInvalid                                 = "compose_invalid"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

@@ -32,7 +32,14 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { Project, ProjectTransferMode, ProjectTransferPreflight, ProjectTransferRequest } from '#lib/types/project.js';
+	import type {
+		Project,
+		ProjectTransferCheck,
+		ProjectTransferMode,
+		ProjectTransferPreflight,
+		ProjectTransferRequest,
+		ProjectTransferResource
+	} from '#lib/types/project.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -56,7 +63,13 @@
 	let preflightLoading = $state(false);
 	let preflightError = $state<string | null>(null);
 	let submitting = $state(false);
+	let creatingResource = $state<string | null>(null);
 	let preflightSeq = 0;
+
+	const missingResourceKinds: Record<string, ProjectTransferResource['kind']> = {
+		external_volume_missing: 'volume',
+		external_network_missing: 'network'
+	};
 
 	const sourceRunning = $derived(project?.status === 'running' || project?.status === 'partially running');
 	const name = $derived(nameOverride ?? project?.name ?? '');
@@ -101,6 +114,29 @@
 		preflightKey = key;
 	}
 
+	function missingResource(check: ProjectTransferCheck): ProjectTransferResource | null {
+		const kind: ProjectTransferResource['kind'] | undefined = missingResourceKinds[check.code];
+		if (!kind || !check.resource || !hasPermission(`${kind}s:create`, targetEnvironmentId)) {
+			return null;
+		}
+		return { targetEnvironmentId, kind, name: check.resource };
+	}
+
+	async function handleCreateResource(resource: ProjectTransferResource) {
+		if (!project) return;
+		creatingResource = resource.name;
+		const result = await tryCatch(projectService.createTransferResource(project.id, resource, environmentId));
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.common_create_failed({ resource: resource.name }),
+			setLoadingState: (value) => (creatingResource = value ? resource.name : null),
+			onSuccess: () => {
+				toast.success(m.resource_created_on_target({ name: resource.name }));
+				void runPreflight();
+			}
+		});
+	}
+
 	function handleModeChange(next: string) {
 		mode = next === 'move' ? 'move' : 'copy';
 		includeVolumesOverride = null;
@@ -138,6 +174,7 @@
 		preflightLoading = false;
 		preflightError = null;
 		submitting = false;
+		creatingResource = null;
 		open = false;
 	}
 
@@ -244,9 +281,21 @@
 				{/if}
 			</div>
 			{#each sortedChecks as check (check.code + check.message)}
+				{@const resource = missingResource(check)}
 				<Alert.Root variant={check.severity === 'error' ? 'destructive' : 'warning'} size="sm">
 					<AlertIcon class="size-4" />
-					<Alert.Description>{check.message}</Alert.Description>
+					<div class="flex items-center justify-between gap-3">
+						<Alert.Description>{check.message}</Alert.Description>
+						{#if resource}
+							<ArcaneButton
+								action="create"
+								class="shrink-0"
+								onclick={() => handleCreateResource(resource)}
+								loading={creatingResource === resource.name}
+								disabled={creatingResource !== null}
+							/>
+						{/if}
+					</div>
 				</Alert.Root>
 			{/each}
 		{/if}

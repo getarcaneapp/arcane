@@ -31,4 +31,14 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Tags:          []string{"Projects"},
 		Security:      handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsRead, h.Start)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "create-project-transfer-resource",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/{projectId}/transfer/resources",
+		Summary:     "Create a missing external resource for a project transfer",
+		Description: "Create an external volume or network of the project on the target environment with the same driver, options, and labels it has on the source environment",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsRead, h.CreateResource)
 }

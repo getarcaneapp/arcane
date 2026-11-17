@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -42,6 +43,8 @@ type (
 		volumes       map[string][]byte
 		volumeOwners  map[string]string
 		restored      map[string]types.ComposeVolumeTarget
+		external      map[string]types.Volume
+		networks      map[string]types.NetworkInspect
 		failDeploy    error
 		failImport    error
 		raceImport    *types.Project
@@ -85,6 +88,8 @@ func newFakeEnvironment(tc transferCase, seeded ...types.Project) *fakeEnvironme
 		volumes:      map[string][]byte{},
 		volumeOwners: map[string]string{},
 		restored:     map[string]types.ComposeVolumeTarget{},
+		external:     map[string]types.Volume{},
+		networks:     map[string]types.NetworkInspect{},
 		failDeploy:   tc.failDeploy,
 		failImport:   tc.failImport,
 		raceImport:   tc.raceImport,
@@ -138,15 +143,49 @@ func (f *fakeEnvironment) Projects(context.Context, string) ([]types.Project, er
 	return slices.Collect(maps.Values(f.projects)), nil
 }
 
-func (f *fakeEnvironment) VolumeLabels(_ context.Context, name string) (map[string]string, bool, error) {
+func (f *fakeEnvironment) Volume(_ context.Context, name string) (types.Volume, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if volume, ok := f.external[name]; ok {
+		return volume, true, nil
+	}
 	_, ok := f.volumes[name]
-	return map[string]string{docker.ComposeProjectLabelKey: f.volumeOwners[name]}, ok, nil
+	return types.Volume{
+		Name:   name,
+		Labels: map[string]string{docker.ComposeProjectLabelKey: f.volumeOwners[name]},
+	}, ok, nil
 }
 
-func (f *fakeEnvironment) NetworkExists(context.Context, string) (bool, error) {
-	return false, nil
+func (f *fakeEnvironment) Network(_ context.Context, name string) (types.NetworkInspect, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	network, ok := f.networks[name]
+	return network, ok, nil
+}
+
+func (f *fakeEnvironment) CreateVolume(_ context.Context, volume types.Volume, _ types.Actor) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "create-volume:"+volume.Name)
+	f.external[volume.Name] = volume
+	return nil
+}
+
+func (f *fakeEnvironment) CreateNetwork(_ context.Context, network types.Network, _ types.Actor) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "create-network:"+network.Name)
+	f.networks[network.Name] = types.NetworkInspect{
+		Name:       network.Name,
+		Driver:     network.Options.Driver,
+		IPAM:       kit.FromPtr(network.Options.IPAM),
+		Options:    network.Options.Options,
+		Labels:     network.Options.Labels,
+		EnableIPv6: network.Options.EnableIPv6,
+		Internal:   network.Options.Internal,
+		Attachable: network.Options.Attachable,
+	}
+	return nil
 }
 
 func (f *fakeEnvironment) ComposeProjectInUse(context.Context, string) (bool, error) {
@@ -779,6 +818,123 @@ func TestProjectTransfer(t *testing.T) {
 			recorded := slices.Clone(webhooks)
 			mu.Unlock()
 			tc.verify(t, source, target, recorded)
+		})
+	}
+}
+
+func TestCreateTransferResource(t *testing.T) {
+	nfs := types.Volume{
+		Name:    "media",
+		Driver:  "local",
+		Options: map[string]string{"type": "nfs", "o": "addr=10.0.0.5,rw", "device": ":/export/media"},
+		Labels:  map[string]string{"tier": "storage"},
+	}
+	vlan := types.NetworkInspect{
+		Name:    "vlan25",
+		Driver:  "macvlan",
+		Options: map[string]string{"parent": "eth0.25"},
+		IPAM: types.NetworkIPAM{
+			Driver: "default",
+			Config: []types.NetworkIPAMConfig{{Subnet: "192.168.25.0/24", Gateway: "192.168.25.1", IPRange: "192.168.25.128/25"}},
+		},
+		Labels: map[string]string{"site": "lab"},
+	}
+	project := types.Project{
+		ID:          "app",
+		Name:        "app",
+		ComposeName: "app",
+		Volumes: composetypes.Volumes{
+			"media": {Name: "media", External: true},
+			"data":  {Name: "app_data"},
+		},
+		Networks: composetypes.Networks{
+			"vlan25": {Name: "vlan25", External: true},
+			"ghost":  {Name: "ghost", External: true},
+		},
+	}
+	tests := []struct {
+		wantErr  error
+		verify   func(t *testing.T, target *fakeEnvironment)
+		request  types.ProjectTransferResource
+		name     string
+		denied   []string
+		onTarget bool
+	}{
+		{
+			name:    "volume keeps driver, options, and labels",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceVolume, Name: "media"},
+			verify: func(t *testing.T, target *fakeEnvironment) {
+				t.Helper()
+				require.Equal(t, nfs, target.external["media"])
+			},
+		},
+		{
+			name:    "macvlan network keeps parent and IPAM",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceNetwork, Name: "vlan25"},
+			verify: func(t *testing.T, target *fakeEnvironment) {
+				t.Helper()
+				require.Equal(t, vlan, target.networks["vlan25"])
+			},
+		},
+		{
+			name:    "rejects a resource the project does not reference as external",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceVolume, Name: "app_data"},
+			wantErr: common.ErrBadRequest,
+		},
+		{
+			name:    "rejects a resource missing on the source",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceNetwork, Name: "ghost"},
+			wantErr: common.ErrNotFound,
+		},
+		{
+			name:     "rejects a volume that already exists on the target",
+			request:  types.ProjectTransferResource{Kind: types.ProjectTransferResourceVolume, Name: "media"},
+			onTarget: true,
+			wantErr:  common.ErrConflict,
+		},
+		{
+			name:    "requires create permission on the target",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceNetwork, Name: "vlan25"},
+			denied:  []string{authz.PermNetworksCreate},
+			wantErr: common.ErrForbidden,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			source, target := newFakeEnvironment(transferCase{}, project), newFakeEnvironment(transferCase{})
+			source.external["media"] = nfs
+			source.networks["vlan25"] = vlan
+			if tc.onTarget {
+				target.external["media"] = types.Volume{Name: "media"}
+			}
+			service := NewService(Dependencies{
+				Environment: func(environmentID string) Environment {
+					return kit.Ternary(environmentID == "remote", target, source)
+				},
+				Backups: backup.NewEngine(nil, nil, func(_ context.Context, requester types.BackupRequester) error {
+					if slices.Contains(tc.denied, requester.Permission) {
+						return errors.New("permission denied")
+					}
+					return nil
+				}),
+			})
+			err := service.CreateResource(t.Context(), ResourceOptions{
+				User:                types.Actor{ID: "user-1", Username: "admin"},
+				SourceEnvironmentID: "0",
+				ProjectID:           project.ID,
+				Request: types.ProjectTransferResource{
+					TargetEnvironmentID: "remote",
+					Kind:                tc.request.Kind,
+					Name:                tc.request.Name,
+				},
+			})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				require.Empty(t, target.callList())
+				return
+			}
+			require.NoError(t, err)
+			tc.verify(t, target)
 		})
 	}
 }
