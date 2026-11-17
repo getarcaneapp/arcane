@@ -185,8 +185,7 @@ func PersistUpdatedProjectFiles(ctx context.Context, req ProjectFilesUpdate) err
 	}
 
 	// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE
-	// base the updated .env selects. A non-nil composeContent is an explicit
-	// submission and is always written.
+	// base the updated .env selects. Identical compose bytes are left on disk.
 	if req.EnvContent != nil {
 		if persistErr := PersistEffectiveEnvContent(ctx, req.ProjectPath, req.ProjectRoot, *req.EnvContent); persistErr != nil {
 			return fmt.Errorf("failed to save project files: %w", persistErr)

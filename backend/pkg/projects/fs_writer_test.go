@@ -232,6 +232,89 @@ func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
 	}
 }
 
+func TestWriteProjectFiles_SkipsUnchangedReadOnlyCompose(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not represented on Windows FS")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits are ignored when running as root")
+	}
+
+	// 0444 is the reported read-only compose mode. Setgid is included because
+	// WriteComposeFile reapplied only the 0777 bits, so an otherwise identical
+	// file was still opened for rewrite.
+	for _, mode := range []os.FileMode{0o444, 0o444 | os.ModeSetgid} {
+		t.Run(mode.String(), func(t *testing.T) {
+			projectsRoot := t.TempDir()
+			projectDir := filepath.Join(projectsRoot, "test-project")
+			require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+			composeContent := "services:\n  app:\n    image: nginx:alpine\n"
+			composePath := filepath.Join(projectDir, "docker-compose.yml")
+			require.NoError(t, os.WriteFile(composePath, []byte(composeContent), 0o644))
+			require.NoError(t, os.Chmod(composePath, mode))
+			t.Cleanup(func() { _ = os.Chmod(composePath, 0o644) })
+			created, err := os.Stat(composePath)
+			require.NoError(t, err)
+			if created.Mode().Perm() != 0o444 || created.Mode()&os.ModeSetgid != mode&os.ModeSetgid {
+				t.Skip("filesystem did not preserve the requested compose mode")
+			}
+
+			envPath := filepath.Join(projectDir, ".env")
+			require.NoError(t, os.WriteFile(envPath, []byte("VALUE=old\n"), 0o644))
+
+			fixedTime := time.Unix(1_700_000_000, 0)
+			require.NoError(t, os.Chtimes(composePath, fixedTime, fixedTime))
+			original, err := os.Stat(composePath)
+			require.NoError(t, err)
+
+			updatedEnv := "VALUE=new\n"
+			require.NoError(t, WriteProjectFiles(t.Context(), ComposeFileWrite{
+				ProjectsRoot: projectsRoot,
+				DirPath:      projectDir,
+				Content:      composeContent,
+				FileName:     "docker-compose.yml",
+			}, &updatedEnv))
+
+			info, err := os.Stat(composePath)
+			require.NoError(t, err)
+			assert.True(t, info.ModTime().Equal(fixedTime), "unchanged compose should not be rewritten")
+			assert.True(t, os.SameFile(original, info))
+			assert.Equal(t, original.Mode(), info.Mode())
+			actualCompose, err := os.ReadFile(composePath)
+			require.NoError(t, err)
+			assert.Equal(t, composeContent, string(actualCompose))
+
+			actualEnv, err := os.ReadFile(envPath)
+			require.NoError(t, err)
+			assert.Equal(t, updatedEnv, string(actualEnv))
+
+			changedCompose := "services:\n  app:\n    image: nginx:latest\n"
+			changedEnv := "VALUE=newer\n"
+			err = WriteProjectFiles(t.Context(), ComposeFileWrite{
+				ProjectsRoot: projectsRoot,
+				DirPath:      projectDir,
+				Content:      changedCompose,
+				FileName:     "docker-compose.yml",
+			}, &changedEnv)
+			require.ErrorIs(t, err, os.ErrPermission)
+			assert.Contains(t, err.Error(), "not writable")
+
+			after, err := os.ReadFile(composePath)
+			require.NoError(t, err)
+			assert.Equal(t, composeContent, string(after))
+			unchanged, err := os.Stat(composePath)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(original, unchanged))
+			assert.Equal(t, original.Mode(), unchanged.Mode())
+
+			envAfter, err := os.ReadFile(envPath)
+			require.NoError(t, err)
+			assert.Equal(t, updatedEnv, string(envAfter))
+		})
+	}
+}
+
 func TestWriteProjectFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	projectsRoot := tmpDir
