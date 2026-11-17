@@ -3,7 +3,7 @@ import type { Activity, ActivityStatus } from '#lib/types/activity.js';
 import type { ActivityGroup } from '#lib/types/ui/activity.js';
 import { formatDate, plainDateFromInstant } from '#lib/utils/formatting.js';
 
-import { activityTitle } from './activity-labels';
+import { activityTarget, activityTitle } from './activity-labels';
 
 export type ActivitySection = {
 	id: string;
@@ -35,11 +35,7 @@ export function activityGroupTitle(group: ActivityGroup): string {
 }
 
 export function activityGroupTarget(group: ActivityGroup): string {
-	const lead = activityGroupLead(group);
-	if (group.kind === 'batch') {
-		return lead.type === 'job_run' && lead.resourceName ? lead.resourceName : m.activity_batch_items({ count: group.total });
-	}
-	return lead.resourceName || lead.resourceId || '';
+	return group.kind === 'batch' ? m.activity_batch_items({ count: group.total }) : activityTarget(group.activity);
 }
 
 export function activityGroupEnvironment(group: ActivityGroup): string {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { activityStatusAccentClass, activityTitle } from '#lib/components/activity/activity-labels.js';
+	import { activityStatusAccentClass, activityTarget, activityTitle } from '#lib/components/activity/activity-labels.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -62,6 +62,7 @@
 			{#each visibleActivities as { key, activity, ids } (key)}
 				{@const environmentId = activity.sourceEnvironmentId || activity.environmentId}
 				{@const title = activityTitle(activity)}
+				{@const target = activityTarget(activity)}
 				<li>
 					<button
 						type="button"
@@ -73,7 +74,7 @@
 							<span class="flex min-w-0 items-center gap-1.5 text-sm">
 								<span class="line-clamp-2 wrap-break-word sm:line-clamp-1">
 									<span class="font-medium">{activity.status === 'failed' ? m.job_failed({ job: title }) : title}</span>
-									{#if activity.resourceName}<span class="text-muted-foreground"> {activity.resourceName}</span>{/if}
+									{#if target}<span class="text-muted-foreground"> {target}</span>{/if}
 								</span>
 								{#if ids.length > 1}
 									<Badge variant="gray" size="xs">{m.times_count({ count: ids.length })}</Badge>

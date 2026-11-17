@@ -1,6 +1,6 @@
 import { resolve } from '$app/paths';
 
-import { activityTitle } from '#lib/components/activity/activity-labels.js';
+import { activityTarget, activityTitle } from '#lib/components/activity/activity-labels.js';
 import { jobNameLabel } from '#lib/components/job-card/job-status.js';
 import * as m from '#lib/paraglide/messages.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
@@ -292,12 +292,13 @@ function failedJobAndRepeatedFailureItems(sources: AttentionSources): AttentionI
 			.map(({ key, activity, ids }): AttentionItem => {
 				const environmentId = activity.sourceEnvironmentId || activity.environmentId;
 				const title = activityTitle(activity);
+				const target = activityTarget(activity);
 				const timestamp = activity.endedAt || activity.startedAt;
 				return {
 					key: `failing:${key}`,
 					severity: 'critical',
 					environmentId,
-					title: m.job_failed({ job: activity.resourceName ? `${title} ${activity.resourceName}` : title }),
+					title: m.job_failed({ job: target ? `${title} ${target}` : title }),
 					detail: activity.error || formatRelativeTime(timestamp),
 					timestamp,
 					actionLabel: m.common_view(),

@@ -4685,5 +4685,10 @@
   "copy_or_move_failed": "Failed to start the copy or move",
   "copy_started": "Copy started",
   "move_started": "Move started",
-  "resource_created_on_target": "Created {name} on the target environment"
+  "resource_created_on_target": "Created {name} on the target environment",
+  "move_project": "Move Project",
+  "copy_project": "Copy Project",
+  "import_project": "Import Project",
+  "connect_container": "Connect Container",
+  "disconnect_container": "Disconnect Container"
 }
