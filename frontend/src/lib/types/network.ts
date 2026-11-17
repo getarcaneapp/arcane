@@ -104,6 +104,7 @@ export interface NetworkCreateOptions {
 	attachable?: boolean;
 	ingress?: boolean;
 	enableIPv6?: boolean;
+	enableIPv4?: boolean;
 }
 
 export type NetworkTopologyNodeType = 'network' | 'container';

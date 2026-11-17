@@ -182,6 +182,7 @@ func (f *fakeEnvironment) CreateNetwork(_ context.Context, network types.Network
 		Options:    network.Options.Options,
 		Labels:     network.Options.Labels,
 		EnableIPv6: network.Options.EnableIPv6,
+		EnableIPv4: kit.FromPtr(network.Options.EnableIPv4),
 		Internal:   network.Options.Internal,
 		Attachable: network.Options.Attachable,
 	}
@@ -830,14 +831,24 @@ func TestCreateTransferResource(t *testing.T) {
 		Labels:  map[string]string{"tier": "storage"},
 	}
 	vlan := types.NetworkInspect{
-		Name:    "vlan25",
-		Driver:  "macvlan",
-		Options: map[string]string{"parent": "eth0.25"},
+		Name:       "vlan25",
+		Driver:     "macvlan",
+		EnableIPv4: true,
+		Options:    map[string]string{"parent": "eth0.25"},
 		IPAM: types.NetworkIPAM{
 			Driver: "default",
 			Config: []types.NetworkIPAMConfig{{Subnet: "192.168.25.0/24", Gateway: "192.168.25.1", IPRange: "192.168.25.128/25"}},
 		},
 		Labels: map[string]string{"site": "lab"},
+	}
+	v6only := types.NetworkInspect{
+		Name:       "v6only",
+		Driver:     "bridge",
+		EnableIPv6: true,
+		IPAM: types.NetworkIPAM{
+			Driver: "default",
+			Config: []types.NetworkIPAMConfig{{Subnet: "fd00:25::/64"}},
+		},
 	}
 	project := types.Project{
 		ID:          "app",
@@ -849,6 +860,7 @@ func TestCreateTransferResource(t *testing.T) {
 		},
 		Networks: composetypes.Networks{
 			"vlan25": {Name: "vlan25", External: true},
+			"v6only": {Name: "v6only", External: true},
 			"ghost":  {Name: "ghost", External: true},
 		},
 	}
@@ -874,6 +886,14 @@ func TestCreateTransferResource(t *testing.T) {
 			verify: func(t *testing.T, target *fakeEnvironment) {
 				t.Helper()
 				require.Equal(t, vlan, target.networks["vlan25"])
+			},
+		},
+		{
+			name:    "IPv6-only network keeps IPv4 disabled",
+			request: types.ProjectTransferResource{Kind: types.ProjectTransferResourceNetwork, Name: "v6only"},
+			verify: func(t *testing.T, target *fakeEnvironment) {
+				t.Helper()
+				require.Equal(t, v6only, target.networks["v6only"])
 			},
 		},
 		{
@@ -904,6 +924,7 @@ func TestCreateTransferResource(t *testing.T) {
 			source, target := newFakeEnvironment(transferCase{}, project), newFakeEnvironment(transferCase{})
 			source.external["media"] = nfs
 			source.networks["vlan25"] = vlan
+			source.networks["v6only"] = v6only
 			if tc.onTarget {
 				target.external["media"] = types.Volume{Name: "media"}
 			}

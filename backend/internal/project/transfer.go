@@ -103,9 +103,6 @@ func (e localTransferEnvironment) CreateNetwork(ctx context.Context, created typ
 	if err != nil {
 		return common.Classify(common.ErrBadRequest, fmt.Errorf("invalid options for network %s: %w", created.Name, err))
 	}
-	if !created.Options.EnableIPv6 {
-		options.EnableIPv6 = nil
-	}
 	_, err = e.deps.CreateNetwork(ctx, created.Name, options, user)
 	return err
 }

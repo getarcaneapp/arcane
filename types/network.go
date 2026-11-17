@@ -86,6 +86,7 @@ type (
 		IPAM           *NetworkIPAM      `json:"ipam,omitempty" doc:"IP Address Management configuration"`
 		Options        map[string]string `json:"options,omitempty" doc:"Driver-specific options"`
 		Labels         map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
+		EnableIPv4     *bool             `json:"enableIPv4,omitempty" doc:"Enable IPv4 networking; omitted keeps the Docker default of enabled"`
 		Driver         string            `json:"driver,omitempty" doc:"Network driver (e.g., bridge, overlay)"`
 		CheckDuplicate bool              `json:"checkDuplicate,omitempty" doc:"Check for duplicate network names"`
 		Internal       bool              `json:"internal,omitempty" doc:"Restrict external access to the network"`

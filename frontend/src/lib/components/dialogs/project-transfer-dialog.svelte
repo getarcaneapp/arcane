@@ -65,6 +65,7 @@
 	let submitting = $state(false);
 	let creatingResource = $state<string | null>(null);
 	let preflightSeq = 0;
+	let createSeq = 0;
 
 	const missingResourceKinds: Record<string, ProjectTransferResource['kind']> = {
 		external_volume_missing: 'volume',
@@ -124,15 +125,18 @@
 
 	async function handleCreateResource(resource: ProjectTransferResource) {
 		if (!project) return;
+		const seq = ++createSeq;
 		creatingResource = resource.name;
 		const result = await tryCatch(projectService.createTransferResource(project.id, resource, environmentId));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_create_failed({ resource: resource.name }),
-			setLoadingState: (value) => (creatingResource = value ? resource.name : null),
+			setLoadingState: (value) => {
+				if (seq === createSeq) creatingResource = value ? resource.name : null;
+			},
 			onSuccess: () => {
 				toast.success(m.resource_created_on_target({ name: resource.name }));
-				void runPreflight();
+				if (seq === createSeq) void runPreflight();
 			}
 		});
 	}
@@ -164,6 +168,7 @@
 
 	function handleClose() {
 		preflightSeq++;
+		createSeq++;
 		mode = 'copy';
 		targetEnvironmentId = '';
 		nameOverride = null;

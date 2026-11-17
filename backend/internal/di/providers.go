@@ -157,6 +157,8 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			ExportVolume:     p.Volumes.ExportVolumeArchive,
 			RestoreVolume:    p.Volumes.RestoreVolumeUpload,
 			DeleteVolume:     p.Volumes.DeleteVolume,
+			CreateVolume:     p.Volumes.CreateVolume,
+			CreateNetwork:    p.Networks.CreateNetwork,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

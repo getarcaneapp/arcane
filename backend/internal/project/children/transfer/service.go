@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -331,6 +332,10 @@ func createNetwork(ctx context.Context, project types.Project, source, target En
 			Attachable: found.Attachable,
 			Ingress:    found.Ingress,
 			EnableIPv6: found.EnableIPv6,
+			EnableIPv4: new(found.EnableIPv4 || slices.ContainsFunc(found.IPAM.Config, func(config types.NetworkIPAMConfig) bool {
+				prefix, parseErr := netip.ParsePrefix(config.Subnet)
+				return parseErr == nil && prefix.Addr().Is4()
+			})),
 		},
 	}, user)
 }
