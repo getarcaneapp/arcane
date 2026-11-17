@@ -566,7 +566,7 @@
 				<p class="text-xs text-muted-foreground sm:mr-auto sm:self-center">{m.manager_updates_last()}</p>
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
-					<Button onclick={() => handleConfirm(planEnvironments.map(({ env }) => env.id))}>{m.update_all()}</Button>
+					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>
 				{/if}
 			{:else}
 				{#if phase === 'finished' && canConfirm && !debugDemo && failedIds.length > 0}
