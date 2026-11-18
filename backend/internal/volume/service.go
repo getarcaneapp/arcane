@@ -103,6 +103,8 @@ const (
 
 var (
 	ErrVolumeBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup is already running for this volume"))
+	// ErrVolumeBackupPolicyOverridden reports that a volume-level policy took over a scheduled system-managed backup.
+	ErrVolumeBackupPolicyOverridden = common.Classify(common.ErrConflict, errors.New("a volume-level backup policy covers this volume"))
 
 	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
@@ -130,6 +132,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		Uploads:          p.Uploads,
 		Locks:            &service.workspaceLocks,
 		AlreadyRunning:   ErrVolumeBackupAlreadyRunning,
+		PolicyOverridden: ErrVolumeBackupPolicyOverridden,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
 		Exec:             service.execInContainer,

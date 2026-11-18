@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
@@ -234,6 +235,10 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID)
+	// The backup re-reads the policy once admitted, so a wait can still find it disabled or deleted.
+	if errors.Is(err, common.ErrVolumeBackupPolicyNotFound) {
+		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
 		return nil, err

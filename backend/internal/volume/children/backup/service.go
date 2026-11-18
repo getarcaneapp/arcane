@@ -81,6 +81,7 @@ type (
 		Uploads          *upload.UploadService
 		Locks            *concurrency.KeyedMutex
 		AlreadyRunning   error
+		PolicyOverridden error
 		StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
 		StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
 		HelperImage      func(ctx context.Context) (string, error)
@@ -278,7 +279,8 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 		if policy, err = s.policies.Policy(ctx, volumeName, request.PolicyID); err != nil {
 			return backupPlan{}, err
 		}
-		if request.PolicyID != "" && policy == nil {
+		// A scheduled run resolves under its admission, after its policy may have been disabled.
+		if request.PolicyID != "" && (policy == nil || (trigger == types.VolumeBackupTriggerScheduled && !policy.Enabled)) {
 			return backupPlan{}, common.ErrVolumeBackupPolicyNotFound
 		}
 	}
@@ -310,11 +312,9 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 
 func (s *Service) CreateBackup(ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest) (*types.VolumeBackup, error) {
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
-	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, request, nil)
-	if err != nil {
-		return nil, err
-	}
-	entry, lease, err := s.prepareBackup(ctx, volumeName, trigger, request.PolicyID, &plan)
+	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, request.PolicyID, func() (backupPlan, error) {
+		return s.resolveBackupPlan(ctx, volumeName, trigger, request, nil)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +339,19 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		S3Enabled:       policy.S3Enabled,
 		S3DestinationID: policy.S3DestinationID,
 	}
-	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, types.CreateVolumeBackupRequest{}, transient)
-	if err != nil {
-		return nil, err
-	}
-	entry, lease, err := s.prepareBackup(ctx, volumeName, trigger, policyID, &plan)
+	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, policyID, func() (backupPlan, error) {
+		// A volume-level policy enabled while a scheduled run waited takes precedence over it.
+		if trigger == types.VolumeBackupTriggerScheduled {
+			overridden, err := s.policies.HasEnabledBackupPolicy(ctx, volumeName)
+			if err != nil {
+				return backupPlan{}, err
+			}
+			if overridden {
+				return backupPlan{}, s.deps.PolicyOverridden
+			}
+		}
+		return s.resolveBackupPlan(ctx, volumeName, trigger, types.CreateVolumeBackupRequest{}, transient)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -351,17 +359,28 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 	return entry, s.completeBackup(ctx, entry, s.executeBackup(ctx, entry, user, plan))
 }
 
-// prepareBackup admits the run, persists its row, and records plan (now carrying the row ID) as the checkpoint.
-func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policyID string, plan *backupPlan) (*types.VolumeBackup, *runs.Lease, error) {
-	lease, err := func() (*runs.Lease, error) {
-		// Scheduled backups of a busy volume run in turn. Manual starts park their admission, so they fail fast.
-		if trigger == types.VolumeBackupTriggerScheduled {
-			return s.deps.Engine.AwaitRun(ctx, backup.VolumeAdmissionScope, volumeName)
+// prepareBackup admits the run around resolve, persists its row, and records the plan (now carrying the row ID) as the checkpoint.
+func (s *Service) prepareBackup(
+	ctx context.Context, volumeName, trigger, policyID string, resolve func() (backupPlan, error),
+) (*types.VolumeBackup, backupPlan, *runs.Lease, error) {
+	var lease *runs.Lease
+	// Scheduled backups of a busy volume run in turn and resolve once admitted, so a wait never runs stale settings.
+	// Other triggers fail fast, after their validation errors.
+	if trigger == types.VolumeBackupTriggerScheduled {
+		var err error
+		if lease, err = s.deps.Engine.AwaitRun(ctx, backup.VolumeAdmissionScope, volumeName); err != nil {
+			return nil, backupPlan{}, nil, err
 		}
-		return s.acquireVolumeRun(ctx, volumeName)
-	}()
+	}
+	plan, err := resolve()
 	if err != nil {
-		return nil, nil, err
+		lease.Release(ctx)
+		return nil, backupPlan{}, nil, err
+	}
+	if lease == nil {
+		if lease, err = s.acquireVolumeRun(ctx, volumeName); err != nil {
+			return nil, backupPlan{}, nil, err
+		}
 	}
 	entry := &types.VolumeBackup{
 		ID:              fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8]),
@@ -377,18 +396,18 @@ func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policy
 	}
 	if createBackupErr := s.deps.Store.Create(ctx, entry); createBackupErr != nil {
 		lease.Release(ctx)
-		return nil, nil, createBackupErr
+		return nil, backupPlan{}, nil, createBackupErr
 	}
 	plan.BackupID = entry.ID
-	checkpoint, err := json.Marshal(*plan)
+	checkpoint, err := json.Marshal(plan)
 	if err == nil {
 		err = jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "volume_backup", ID: volumeName, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 	}
 	if err != nil {
 		lease.Release(ctx)
-		return nil, nil, err
+		return nil, backupPlan{}, nil, err
 	}
-	return entry, lease, nil
+	return entry, plan, lease, nil
 }
 
 func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
@@ -1163,15 +1182,14 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, n
 }
 
 func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
-	plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
-	if err != nil {
-		return types.VolumeBackupEntry{}, err
-	}
 	requester := backup.NewRequester(ctx, user, environmentID, authz.PermVolumesBackup)
-	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
-		return types.VolumeBackupEntry{}, authorizeErr
-	}
-	entry, lease, err := s.prepareBackup(ctx, volumeName, types.VolumeBackupTriggerManual, request.PolicyID, &plan)
+	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, types.VolumeBackupTriggerManual, request.PolicyID, func() (backupPlan, error) {
+		plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
+		if err != nil {
+			return backupPlan{}, err
+		}
+		return plan, s.deps.Engine.Authorize(ctx, requester)
+	})
 	if err != nil {
 		return types.VolumeBackupEntry{}, err
 	}
