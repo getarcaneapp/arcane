@@ -1,4 +1,4 @@
-import { jobStatusLabel } from '#lib/components/job-card/job-status.js';
+import { jobNameLabel, jobStatusLabel } from '#lib/components/job-card/job-status.js';
 import type { IconType } from '#lib/icons/index.js';
 import {
 	ActivityIcon,
@@ -96,13 +96,28 @@ const resourceActionDisplay = new Map<string, () => string>(
 		set_system_backup_recovery_key: m.set_recovery_key,
 		update_system_backup_policies: m.update_system_backup_policies,
 		run_system_volume_backups: m.back_up_volumes,
-		scheduled_system_volume_backups: m.scheduled_volume_backups
+		scheduled_system_volume_backups: m.scheduled_volume_backups,
+		transfer_project_move: m.move_project,
+		transfer_project_copy: m.copy_project,
+		import_project: m.import_project,
+		connect_network: m.connect_container,
+		disconnect_network: m.disconnect_container
 	})
 );
 
 export function activityTitle(activity: Activity): string {
-	const action = activity.type === 'resource_action' ? activity.metadata?.['action'] : undefined;
-	return (typeof action === 'string' ? resourceActionDisplay.get(action)?.() : undefined) ?? activityTypeLabel(activity.type);
+	const metadata = activity.metadata ?? {};
+	const jobId = metadata['jobId'];
+	if (activity.type === 'job_run' && typeof jobId === 'string') {
+		return jobNameLabel({ id: jobId, name: activity.resourceName || jobId });
+	}
+	const action = activity.type === 'resource_action' ? metadata['action'] : undefined;
+	const key = action === 'transfer_project' ? `${action}_${String(metadata['mode'])}` : action;
+	return (typeof key === 'string' ? resourceActionDisplay.get(key)?.() : undefined) ?? activityTypeLabel(activity.type);
+}
+
+export function activityTarget(activity: Activity): string {
+	return activity.type === 'job_run' ? '' : activity.resourceName || activity.resourceId || '';
 }
 
 export function activityStatusLabel(status: ActivityStatus): string {

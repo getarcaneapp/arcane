@@ -10,6 +10,7 @@
 	import ActivityDetailHeader from './activity-detail-header.svelte';
 	import ActivityDetailPanel from './activity-detail-panel.svelte';
 	import { activityGroupLead, activityGroupTarget, activityGroupTitle, findActivityGroup } from './activity-groups';
+	import { activityTarget } from './activity-labels';
 
 	let {
 		focusKey,
@@ -72,7 +73,7 @@
 			<ActivityDetailHeader
 				activity={resolved.activity}
 				status={resolved.activity.status}
-				target={resolved.activity.resourceName || resolved.activity.resourceId || ''}
+				target={activityTarget(resolved.activity)}
 				{compact}
 			/>
 		{/if}

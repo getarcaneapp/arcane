@@ -4,7 +4,7 @@ import { toast } from 'svelte-sonner';
 import { m } from '#lib/paraglide/messages.js';
 import type { Activity, ActivityType } from '#lib/types/activity.js';
 
-import { activityTypeLabel } from './activity-labels';
+import { activityTarget, activityTitle } from './activity-labels';
 
 export const activityCompletionToastsEnabled = new PersistedState<boolean>('arcane-activity-toasts', true);
 
@@ -132,8 +132,8 @@ function emitGroupToastInternal(members: PendingActivityToast[]) {
 	}
 
 	if (members.length === 1) {
-		const rawName = first.resourceName || first.resourceId || '';
-		const name = rawName ? shortenDockerIdInternal(rawName) : activityTypeLabel(first.type);
+		const rawName = activityTarget(first);
+		const name = rawName ? shortenDockerIdInternal(rawName) : activityTitle(first);
 		const action = viewActionInternal(first.id, first.batchId, firstItem.navigate);
 		if (first.status === 'failed') {
 			toast.error(m.activity_toast_failed({ name }), { action });
@@ -143,7 +143,7 @@ function emitGroupToastInternal(members: PendingActivityToast[]) {
 		return;
 	}
 
-	const type = activityTypeLabel(first.type);
+	const type = activityTitle(first);
 	const failed = members.filter(({ activity }) => activity.status === 'failed').length;
 	const action = viewActionInternal(undefined, first.batchId, firstItem.navigate);
 	if (failed > 0) {

@@ -39,7 +39,7 @@ export function jobStepLabel(name: string): string {
 	return labels[name]?.() ?? name;
 }
 
-export function jobNameLabel(job: JobStatus): string {
+export function jobNameLabel(job: Pick<JobStatus, 'id' | 'name'>): string {
 	const [group = '', ...target] = job.id.split(':');
 	const labels: Record<string, () => string> = {
 		'gitops-sync': m.gitops,
