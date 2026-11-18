@@ -32,6 +32,8 @@ const (
 
 	// LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
 	LocalBuildRegistry = "arcane.local"
+
+	PodmanLocalRegistry = "localhost"
 )
 
 // IsUpdateCheckDisabled reports whether labels opt the resource out of update
