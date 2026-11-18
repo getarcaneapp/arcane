@@ -10,6 +10,7 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
+	import { secretSourceService } from '#lib/services/secret-source-service.js';
 	import type { WebhookCreate } from '#lib/types/ui/webhook.js';
 	import type { WebhookActionType, WebhookTargetType } from '#lib/types/webhook.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
@@ -28,7 +29,8 @@
 		{ value: 'container', label: m.container(), description: m.webhook_target_type_container_description() },
 		{ value: 'project', label: m.project(), description: m.webhook_target_type_project_description() },
 		{ value: 'updater', label: m.updater(), description: m.webhook_target_type_updater_description() },
-		{ value: 'gitops', label: m.gitops(), description: m.webhook_target_type_gitops_description() }
+		{ value: 'gitops', label: m.gitops(), description: m.webhook_target_type_gitops_description() },
+		{ value: 'secretsource', label: m.external_secret(), description: m.refresh_external_secret_target_description() }
 	]);
 
 	function getDefaultActionType(targetType: WebhookTargetType): WebhookActionType {
@@ -40,6 +42,8 @@
 				return 'run';
 			case 'gitops':
 				return 'sync';
+			case 'secretsource':
+				return 'refresh';
 			default:
 				return 'update';
 		}
@@ -77,6 +81,8 @@
 				return [{ value: 'run', label: m.webhook_action_type_run(), description: m.webhook_action_type_run_description() }];
 			case 'gitops':
 				return [{ value: 'sync', label: m.resource_sync_cap(), description: m.webhook_action_type_sync_description() }];
+			case 'secretsource':
+				return [{ value: 'refresh', label: m.common_refresh(), description: m.refresh_external_secret_action_description() }];
 			default:
 				return [];
 		}
@@ -94,6 +100,7 @@
 	const targetLabel = $derived.by(() => {
 		if (selectedTargetType === 'container') return m.container();
 		if (selectedTargetType === 'project') return m.project();
+		if (selectedTargetType === 'secretsource') return m.external_secret();
 		return m.webhook_target_resource_label_gitops();
 	});
 
@@ -125,6 +132,9 @@
 					} else if (type === 'gitops') {
 						const res = await gitOpsSyncService.getSyncs(envId, { pagination: { page: 1, limit: 200 } });
 						options = res.data.map((s) => ({ value: s.id, label: s.name }));
+					} else if (type === 'secretsource' && envId === '0') {
+						const sources = await secretSourceService.list();
+						options = sources.map((s) => ({ value: s.id, label: s.name }));
 					}
 					if (generation === loadGeneration) {
 						targetOptions = options;

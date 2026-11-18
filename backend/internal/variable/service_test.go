@@ -25,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/variable/children/source"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -65,6 +66,7 @@ func setupVariableServiceTest(t *testing.T, environments environment.RemoteProxy
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&GlobalVariable{},
+		&source.SecretSource{},
 		&environment.Environment{},
 		&kv.KVEntry{},
 		&settings.SettingVariable{},

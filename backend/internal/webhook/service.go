@@ -33,6 +33,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/updater"
+	"getarcane.dev/arcane/v3/internal/variable"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -54,6 +55,7 @@ type (
 		gitOpsSyncService  *gitops.GitOpsSyncService
 		eventService       *event.EventService
 		environmentService *environment.EnvironmentService
+		variableService    *variable.VariableService
 
 		actions      sync.WaitGroup
 		tokenMu      sync.RWMutex
@@ -70,6 +72,7 @@ type (
 		GitOpsSyncService  *gitops.GitOpsSyncService
 		EventService       *event.EventService
 		EnvironmentService *environment.EnvironmentService
+		VariableService    *variable.VariableService
 	}
 )
 
@@ -85,10 +88,11 @@ var (
 	ErrWebhookNotFound           = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
 	ErrWebhookInvalid            = errors.New("invalid webhook token")
 	ErrWebhookDisabled           = errors.New("webhook is disabled")
-	ErrWebhookInvalidType        = common.Classify(common.ErrValidation, errors.New("invalid target type, must be 'container', 'project', 'updater', or 'gitops'"))
+	ErrWebhookInvalidType        = common.Classify(common.ErrValidation, errors.New("invalid target type, must be 'container', 'project', 'updater', 'gitops', or 'secretsource'"))
 	ErrWebhookInvalidAction      = common.Classify(common.ErrValidation, errors.New("invalid action type for target type"))
 	ErrWebhookMissingName        = common.Classify(common.ErrValidation, errors.New("webhook name is required"))
-	ErrWebhookMissingTarget      = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, and gitops webhook types"))
+	ErrWebhookMissingTarget      = common.Classify(common.ErrValidation, errors.New("target ID is required for container, project, gitops, and secretsource webhook types"))
+	ErrWebhookSecretSourceLocal  = common.Classify(common.ErrValidation, errors.New("secret source webhooks run on the manager; create them on the local environment"))
 	ErrWebhookForbidden          = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
 	remoteWebhookTargetListPaths = map[string]string{
 		WebhookTargetTypeProject: "/api/agents/" + types.LocalDockerEnvironmentID + "/projects/references",
@@ -116,6 +120,9 @@ var (
 		WebhookTargetTypeGitOps: {
 			WebhookActionTypeSync: authz.PermGitOpsSync,
 		},
+		WebhookTargetTypeSecretSource: {
+			WebhookActionTypeRefresh: authz.PermSecretSourcesRefresh,
+		},
 	}
 )
 
@@ -128,6 +135,7 @@ func NewWebhookService(p WebhookServiceParams) *WebhookService {
 		gitOpsSyncService:  p.GitOpsSyncService,
 		eventService:       p.EventService,
 		environmentService: p.EnvironmentService,
+		variableService:    p.VariableService,
 	}
 }
 
@@ -197,6 +205,8 @@ func defaultWebhookActionType(targetType string) (string, error) {
 		return WebhookActionTypeRun, nil
 	case WebhookTargetTypeGitOps:
 		return WebhookActionTypeSync, nil
+	case WebhookTargetTypeSecretSource:
+		return WebhookActionTypeRefresh, nil
 	default:
 		return "", ErrWebhookInvalidType
 	}
@@ -204,7 +214,7 @@ func defaultWebhookActionType(targetType string) (string, error) {
 
 func resolveWebhookActionType(targetType, actionType string) (string, error) {
 	switch targetType {
-	case WebhookTargetTypeContainer, WebhookTargetTypeProject, WebhookTargetTypeUpdater, WebhookTargetTypeGitOps:
+	case WebhookTargetTypeContainer, WebhookTargetTypeProject, WebhookTargetTypeUpdater, WebhookTargetTypeGitOps, WebhookTargetTypeSecretSource:
 	default:
 		return "", ErrWebhookInvalidType
 	}
@@ -235,6 +245,10 @@ func resolveWebhookActionType(targetType, actionType string) (string, error) {
 		}
 	case WebhookTargetTypeGitOps:
 		if normalizedActionType == WebhookActionTypeSync {
+			return normalizedActionType, nil
+		}
+	case WebhookTargetTypeSecretSource:
+		if normalizedActionType == WebhookActionTypeRefresh {
 			return normalizedActionType, nil
 		}
 	}
@@ -321,6 +335,14 @@ func (s *WebhookService) CreateWebhook(
 		targetID = ""
 	} else if strings.TrimSpace(targetID) == "" {
 		return nil, "", ErrWebhookMissingTarget
+	}
+	if targetType == WebhookTargetTypeSecretSource {
+		if environmentID != "" && environmentID != types.LocalDockerEnvironmentID {
+			return nil, "", ErrWebhookSecretSourceLocal
+		}
+		if _, sourceErr := s.variableService.GetSecretSource(ctx, targetID); sourceErr != nil {
+			return nil, "", sourceErr
+		}
 	}
 	if targetType == WebhookTargetTypeGitOps {
 		if modeErr := s.authorizeGitOpsSyncMode(ctx, callerPerms, environmentID, targetID); modeErr != nil {
@@ -510,6 +532,9 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 			return ""
 		}
 		return localSync.Name
+	case WebhookTargetTypeSecretSource:
+		secretSource, err := s.variableService.GetSecretSource(ctx, wh.TargetID)
+		return kit.Ternary(err != nil, "", secretSource.Name)
 	default:
 		return ""
 	}
@@ -718,6 +743,8 @@ func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, 
 		return s.executeUpdaterWebhookAction(ctx, wh, actionType)
 	case WebhookTargetTypeGitOps:
 		return s.executeGitOpsWebhookAction(ctx, wh, actionType)
+	case WebhookTargetTypeSecretSource:
+		return s.executeSecretSourceWebhookAction(ctx, wh, actionType)
 	default:
 		return nil, ErrWebhookInvalidType
 	}
@@ -942,6 +969,18 @@ func (s *WebhookService) executeGitOpsWebhookAction(ctx context.Context, wh *Web
 		Actor:         types.SystemUser,
 	}); err != nil {
 		return nil, s.wrapWebhookActionError(ctx, wh, "gitops", actionType, err)
+	}
+
+	return nil, nil
+}
+
+func (s *WebhookService) executeSecretSourceWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
+	if actionType != WebhookActionTypeRefresh {
+		return nil, ErrWebhookInvalidAction
+	}
+
+	if err := s.variableService.RefreshSecretSource(ctx, wh.TargetID); err != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, "secretsource", actionType, err)
 	}
 
 	return nil, nil

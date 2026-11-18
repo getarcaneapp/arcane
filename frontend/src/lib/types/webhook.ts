@@ -1,5 +1,5 @@
-export type WebhookTargetType = 'container' | 'project' | 'updater' | 'gitops';
-export type WebhookActionType = 'update' | 'start' | 'stop' | 'restart' | 'redeploy' | 'up' | 'down' | 'run' | 'sync';
+export type WebhookTargetType = 'container' | 'project' | 'updater' | 'gitops' | 'secretsource';
+export type WebhookActionType = 'update' | 'start' | 'stop' | 'restart' | 'redeploy' | 'up' | 'down' | 'run' | 'sync' | 'refresh';
 
 export type Webhook = {
 	id: string;

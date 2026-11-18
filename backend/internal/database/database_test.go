@@ -356,7 +356,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional {
+		if permission == authz.PermGitOpsBidirectional || strings.HasPrefix(permission, "secret-sources:") {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 115))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -902,6 +902,92 @@ func TestMigration116_AddsLdapUserColumns(t *testing.T) {
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 115))
 	assert.Zero(t, schemaObjects())
+}
+
+func TestMigration117_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-secret-sources.db")
+	schemaObjects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master
+			WHERE (type = 'table' AND name IN ('secret_sources', 'secret_source_environments'))
+				OR (type = 'index' AND name IN ('idx_secret_sources_name', 'idx_secret_source_environments_env'))`).Scan(&count))
+		return count
+	}
+	secretSourcePermissions := slices.DeleteFunc(authz.AllPermissions(), func(permission string) bool {
+		return !strings.HasPrefix(permission, "secret-sources:")
+	})
+	priorPermissions := slices.DeleteFunc(authz.AllPermissions(), func(permission string) bool {
+		return strings.HasPrefix(permission, "secret-sources:")
+	})
+	require.Len(t, secretSourcePermissions, 6)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 116))
+	priorJSON, err := json.Marshal(priorPermissions)
+	require.NoError(t, err)
+	almostPermissions := append(slices.Clone(priorPermissions[1:]), "unknown:one")
+	almostJSON, err := json.Marshal(almostPermissions)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('admin', 'Custom admin', ?),
+		('almost', 'Almost admin', ?),
+		('editor', 'Editor-like', '["variables:list","variables:read","variables:create"]')`, string(priorJSON), string(almostJSON))
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('ka', 'Admin key', 'hash-ka', 'ka'),
+		('kn', 'Almost admin key', 'hash-kn', 'kn'),
+		('kv', 'Variables key', 'hash-kv', 'kv')`)
+	require.NoError(t, err)
+	for i, permission := range priorPermissions {
+		_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES (?, 'ka', ?)`, fmt.Sprintf("ka%d", i), permission)
+		require.NoError(t, err)
+	}
+	for i, permission := range almostPermissions {
+		_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES (?, 'kn', ?)`, fmt.Sprintf("kn%d", i), permission)
+		require.NoError(t, err)
+	}
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission) VALUES ('kv1', 'kv', 'variables:create')`)
+	require.NoError(t, err)
+	state := func() (admin, editor []string, adminKeyGrants, variablesKeyGrants int) {
+		for id, target := range map[string]*[]string{"admin": &admin, "editor": &editor} {
+			var raw string
+			require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = ?`, id).Scan(&raw))
+			require.NoError(t, json.Unmarshal([]byte(raw), target))
+		}
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'ka' AND permission LIKE 'secret-sources:%'`).Scan(&adminKeyGrants))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kv' AND permission LIKE 'secret-sources:%'`).Scan(&variablesKeyGrants))
+		return admin, editor, adminKeyGrants, variablesKeyGrants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	assert.Equal(t, 4, schemaObjects())
+	admin, editor, adminKeyGrants, variablesKeyGrants := state()
+	assert.ElementsMatch(t, authz.AllPermissions(), admin, "full admins keep global admin status")
+	assert.NotContains(t, editor, "secret-sources:list")
+	assert.Equal(t, 6, adminKeyGrants)
+	assert.Zero(t, variablesKeyGrants)
+	var almostRole string
+	var almostKeyGrants int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'almost'`).Scan(&almostRole))
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kn' AND permission LIKE 'secret-sources:%'`).Scan(&almostKeyGrants))
+	assert.NotContains(t, almostRole, "secret-sources:", "a role missing one prior permission is not a full admin")
+	assert.Zero(t, almostKeyGrants, "an API key missing one prior permission is not a full admin")
+
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO secret_sources (id, created_at, name, kind, definition) VALUES ('s1', CURRENT_TIMESTAMP, 'vault', 'http', '{}')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO secret_sources (id, created_at, name, kind, definition) VALUES ('s2', CURRENT_TIMESTAMP, 'vault', 'http', '{}')`)
+	require.Error(t, err, "source names are unique")
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO webhooks (id, name, token_hash, token_prefix, target_type, target_id) VALUES ('w1', 'refresh', 'h1', 'p1', 'secretsource', 's1')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 116))
+	assert.Zero(t, schemaObjects())
+	admin, _, adminKeyGrants, _ = state()
+	assert.ElementsMatch(t, priorPermissions, admin)
+	assert.Zero(t, adminKeyGrants)
+	var webhooks int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM webhooks WHERE target_type = 'secretsource'`).Scan(&webhooks))
+	assert.Zero(t, webhooks)
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

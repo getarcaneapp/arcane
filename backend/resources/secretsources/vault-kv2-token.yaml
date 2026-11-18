@@ -1,0 +1,31 @@
+apiVersion: arcane.secretsource/v1
+id: vault-kv2-token
+name: Vault / OpenBao KV v2 (token)
+description: Read one KV v2 secret from HashiCorp Vault or OpenBao with a token. Set the source path to the secret path.
+kind: http
+pathRequired: true
+inputs:
+  baseUrl:
+    label: URL
+    placeholder: https://vault.example.com:8200
+    required: true
+  mount:
+    label: KV mount
+    default: secret
+    required: true
+  namespace:
+    label: Namespace
+    description: Vault Enterprise namespace; leave empty otherwise.
+credentials:
+  token:
+    label: Token
+    required: true
+fetch:
+  method: GET
+  path: "/v1/{{ .inputs.mount }}/data/{{ .path }}"
+  headers:
+    X-Vault-Token: "{{ .credentials.token }}"
+    X-Vault-Namespace: "{{ .inputs.namespace }}"
+extract:
+  - from: data.data
+    object: true

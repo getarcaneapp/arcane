@@ -57,6 +57,8 @@
 				return m.updater();
 			case 'gitops':
 				return m.gitops();
+			case 'secretsource':
+				return m.external_secret();
 			default:
 				return type;
 		}
@@ -82,6 +84,8 @@
 				return m.webhook_action_type_run();
 			case 'sync':
 				return m.resource_sync_cap();
+			case 'refresh':
+				return m.common_refresh();
 			default:
 				return type;
 		}

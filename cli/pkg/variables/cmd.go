@@ -36,7 +36,15 @@ func Command() *cobra.Command {
 	command.AddCommand(newUpdateCmd())
 	command.AddCommand(newDeleteCmd())
 	command.AddCommand(newSyncCmd())
+	command.AddCommand(newSourcesCmd())
 	return command
+}
+
+func scopeLabel(allEnvironments bool, envIDs []string) string {
+	if allEnvironments {
+		return "all agents"
+	}
+	return cmp.Or(strings.Join(envIDs, ","), "-")
 }
 
 func printMutationResult(result types.GlobalVariableMutationResponse, message string) error {
@@ -46,14 +54,7 @@ func printMutationResult(result types.GlobalVariableMutationResponse, message st
 		output.KeyValue("Key", result.Variable.Key)
 		output.KeyValue("Secret", strconv.FormatBool(result.Variable.IsSecret))
 		output.KeyValue("Inject", strconv.FormatBool(result.Variable.InjectIntoContainers))
-		scope := "-"
-		switch {
-		case result.Variable.AllEnvironments:
-			scope = "all agents"
-		case len(result.Variable.EnvironmentIDs) > 0:
-			scope = strings.Join(result.Variable.EnvironmentIDs, ",")
-		}
-		output.KeyValue("Scope", scope)
+		output.KeyValue("Scope", scopeLabel(result.Variable.AllEnvironments, result.Variable.EnvironmentIDs))
 	}
 	return nil
 }
@@ -83,17 +84,10 @@ func newListCmd() *cobra.Command {
 						if variable.IsSecret {
 							value = secretMask
 						}
-						scope := "-"
-						switch {
-						case variable.AllEnvironments:
-							scope = "all agents"
-						case len(variable.EnvironmentIDs) > 0:
-							scope = strings.Join(variable.EnvironmentIDs, ",")
-						}
 						rows[i] = []string{
 							variable.ID,
 							variable.Key,
-							scope,
+							scopeLabel(variable.AllEnvironments, variable.EnvironmentIDs),
 							strconv.FormatBool(variable.IsSecret),
 							strconv.FormatBool(variable.InjectIntoContainers),
 							value,

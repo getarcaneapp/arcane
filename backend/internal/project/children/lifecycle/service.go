@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -49,8 +48,6 @@ const (
 	LifecycleStatusFailed       = "failed"
 	LifecycleStatusTimeout      = "timeout"
 )
-
-var lifecycleEnvKeyRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func New(dockerService *dockerInternal.DockerClientService, imageService *image.ImageService) *Service {
 	return &Service{
@@ -114,7 +111,7 @@ func ParseKeyValueEnv(stdout string) (map[string]string, error) {
 		if !found || key == "" {
 			return nil, fmt.Errorf("line %d: expected KEY=VALUE, got %q", lineNum, line)
 		}
-		if !lifecycleEnvKeyRegex.MatchString(key) {
+		if !projects.EnvKeyPattern.MatchString(key) {
 			return nil, fmt.Errorf("line %d: invalid env key %q", lineNum, key)
 		}
 		env[key] = value

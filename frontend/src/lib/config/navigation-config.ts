@@ -135,6 +135,12 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'route.gitops.repositories'
 				}
 			]
+		},
+		{
+			title: m.external_secrets(),
+			url: resolve('/(app)/secrets'),
+			icon: ApiKeyIcon,
+			accessSurfaceId: 'route.secrets'
 		}
 	],
 	resourceItems: [

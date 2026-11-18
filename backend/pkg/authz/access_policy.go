@@ -109,6 +109,7 @@ var (
 		allOfRouteSurface("route.images.registries.browse", "/images/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
 		routeSurface("route.projects.variables", "/projects/variables", "Variables", AccessScopeModeGlobalOnly, []string{PermVariablesList, PermVariablesRead}, 42),
 		routeSurface("route.gitops.repositories", "/gitops/repositories", "Git Repositories", AccessScopeModeGlobalOnly, []string{PermGitReposList, PermGitReposRead}, 43),
+		routeSurface("route.secrets", "/secrets", "External Secrets", AccessScopeModeGlobalOnly, []string{PermSecretSourcesList, PermSecretSourcesRead}, 44),
 
 		settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
 		allOfSettingsCategorySurface("authentication", "/system/authentication", "Authentication", AccessScopeModeGlobalOnly, AllPermissions()),

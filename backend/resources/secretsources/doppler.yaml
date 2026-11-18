@@ -1,0 +1,32 @@
+apiVersion: arcane.secretsource/v1
+id: doppler
+name: Doppler
+description: Doppler config secrets through a service token.
+kind: http
+inputs:
+  baseUrl:
+    label: URL
+    default: https://api.doppler.com
+    required: true
+  project:
+    label: Project
+    description: Leave empty when the token is a config-scoped service token.
+  config:
+    label: Config
+    description: Leave empty when the token is a config-scoped service token.
+credentials:
+  token:
+    label: Service Token
+    required: true
+fetch:
+  method: GET
+  path: /v3/configs/config/secrets/download
+  query:
+    format: json
+    project: "{{ .inputs.project }}"
+    config: "{{ .inputs.config }}"
+  headers:
+    Authorization: "Bearer {{ .credentials.token }}"
+extract:
+  - from: .
+    object: true

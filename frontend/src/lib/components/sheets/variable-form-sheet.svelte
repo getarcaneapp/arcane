@@ -3,12 +3,11 @@
 	import { z } from 'zod/v4';
 
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
-	import EnvironmentMultiSelect from '#lib/components/sheets/environment-multi-select.svelte';
+	import EnvironmentScopeSelect from '#lib/components/sheets/environment-scope-select.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as m from '#lib/paraglide/messages.js';
@@ -262,7 +261,7 @@
 				bind:checked={bulkInject}
 			/>
 
-			{@render scopeSelector()}
+			<EnvironmentScopeSelect {environments} bind:scope bind:selected={selectedEnvIds} bind:error={scopeError} />
 		{:else}
 			<div>
 				<Label for="variable-key">{m.key()}</Label>
@@ -309,7 +308,7 @@
 				bind:checked={inputs.injectIntoContainers.value}
 			/>
 
-			{@render scopeSelector()}
+			<EnvironmentScopeSelect {environments} bind:scope bind:selected={selectedEnvIds} bind:error={scopeError} />
 		{/if}
 	</form>
 
@@ -325,42 +324,3 @@
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>
-
-{#snippet scopeSelector()}
-	<div>
-		<Label class="mb-0">{m.common_scope()}</Label>
-		<RadioGroup.Root
-			class="mt-2"
-			value={scope}
-			onValueChange={(value) => {
-				scope = value as 'all' | 'specific';
-				scopeError = null;
-			}}
-		>
-			<div class="grid gap-2">
-				<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
-					<RadioGroup.Item value="all" class="mt-0.5" />
-					<div class="grid gap-1 leading-none">
-						<span class="text-sm font-medium">{m.all_environments()}</span>
-						<span class="text-xs text-muted-foreground">{m.all_environments_description()}</span>
-					</div>
-				</label>
-				<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
-					<RadioGroup.Item value="specific" class="mt-0.5" />
-					<div class="grid gap-1 leading-none">
-						<span class="text-sm font-medium">{m.specific_environments()}</span>
-						<span class="text-xs text-muted-foreground">{m.specific_environments_description()}</span>
-					</div>
-				</label>
-			</div>
-		</RadioGroup.Root>
-		{#if scope === 'specific'}
-			<div class="mt-2">
-				<EnvironmentMultiSelect {environments} bind:selected={selectedEnvIds} />
-			</div>
-		{/if}
-		{#if scopeError}
-			<p class="mt-1 text-sm text-destructive">{scopeError}</p>
-		{/if}
-	</div>
-{/snippet}
