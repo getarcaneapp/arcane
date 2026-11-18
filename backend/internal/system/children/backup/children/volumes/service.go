@@ -337,7 +337,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemVolumeBackupOp
 	return options, nil
 }
 
-// prepareSystemVolumeBackups resolves the requested policy, takes the system admission through acquire, and selects the live volumes.
+// prepareSystemVolumeBackups takes the system admission through acquire, resolves the requested policy, and selects the live volumes.
 func (s *Service) prepareSystemVolumeBackups(
 	ctx context.Context, request types.RunSystemVolumeBackupsRequest, acquire func(context.Context) (*runs.Lease, error),
 ) (selectionInput, *runs.Lease, error) {
@@ -349,6 +349,10 @@ func (s *Service) prepareSystemVolumeBackups(
 		request.Custom.Destination,
 	) {
 		return selectionInput{}, nil, common.Classify(common.ErrValidation, errors.New("destination must be local, s3, or local_s3"))
+	}
+	lease, err := acquire(ctx)
+	if err != nil {
+		return selectionInput{}, nil, err
 	}
 	policy, err := func() (*types.SystemVolumeBackupPolicy, error) {
 		if request.PolicyID != "" {
@@ -387,10 +391,7 @@ func (s *Service) prepareSystemVolumeBackups(
 		return &normalized, normalizeErr
 	}()
 	if err != nil {
-		return selectionInput{}, nil, err
-	}
-	lease, err := acquire(ctx)
-	if err != nil {
+		lease.Release(ctx)
 		return selectionInput{}, nil, err
 	}
 	options, err := s.volumes.ListBackupVolumeOptions(ctx)
@@ -519,6 +520,12 @@ func (s *Service) executeSystemVolumeBackups(
 }
 
 func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, activityID string) (types.SchedulerOutcome, error) {
+	// The policy is read under the admission so a wait never runs stale settings.
+	lease, err := s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	defer lease.Release(ctx)
 	policy, err := s.systemVolumeBackupPolicy(policyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
@@ -577,14 +584,11 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	result, err := func() (*types.SystemVolumeBackupRunResult, error) {
-		input, lease, prepareErr := s.prepareSystemVolumeBackups(ctx, types.RunSystemVolumeBackupsRequest{PolicyID: policyID},
-			func(ctx context.Context) (*runs.Lease, error) {
-				return s.engine.AwaitScheduledRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
-			})
+		input, _, prepareErr := s.prepareSystemVolumeBackups(ctx, types.RunSystemVolumeBackupsRequest{PolicyID: policyID},
+			func(context.Context) (*runs.Lease, error) { return lease, nil })
 		if prepareErr != nil {
 			return nil, prepareErr
 		}
-		defer lease.Release(ctx)
 		frozen, marshalErr := json.Marshal(input)
 		if marshalErr != nil {
 			return nil, marshalErr
@@ -630,11 +634,12 @@ func (s *Service) resumeSelection(ctx context.Context, previous types.SchedulerR
 // backUpSelection takes over the system admission, resumes the selection's interrupted volumes, and backs up the rest.
 func (s *Service) backUpSelection(ctx context.Context, input selectionInput, trigger volume.VolumeBackupTrigger, activityID string) (*types.SystemVolumeBackupRunResult, error) {
 	lease, admitted, err := s.engine.AcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID, input.Claim)
+	if err == nil && !admitted {
+		// Without a parked claim, a resumed run waits rather than abandoning its interrupted backups.
+		lease, err = s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if !admitted {
-		return nil, s.alreadyRunning
 	}
 	defer lease.Release(ctx)
 	if input.Requester != nil {

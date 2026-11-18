@@ -203,7 +203,7 @@ func TestExpiredUnmanagedRunIDs(t *testing.T) {
 	require.Nil(t, orphanedAt("orphan-stale"))
 }
 
-func TestAwaitScheduledRunWaitsForConflictingRun(t *testing.T) {
+func TestAwaitRunWaitsForConflictingRun(t *testing.T) {
 	runtime := francistest.New(t)
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(runtime))
@@ -217,12 +217,12 @@ func TestAwaitScheduledRunWaitsForConflictingRun(t *testing.T) {
 
 	canceled, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
-	_, err = engine.AwaitScheduledRun(canceled, SystemAdmissionScope, SystemAdmissionID)
+	_, err = engine.AwaitRun(canceled, SystemAdmissionScope, SystemAdmissionID)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	acquired := make(chan *runs.Lease, 1)
 	go func() {
-		lease, awaitErr := engine.AwaitScheduledRun(ctx, SystemAdmissionScope, SystemAdmissionID)
+		lease, awaitErr := engine.AwaitRun(ctx, SystemAdmissionScope, SystemAdmissionID)
 		assert.NoError(t, awaitErr)
 		acquired <- lease
 	}()
