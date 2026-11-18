@@ -412,8 +412,9 @@ func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, err
 	return key, nil
 }
 
+// CreateBackup runs a scheduled backup once any running system backup finishes.
 func (s *Service) CreateBackup(ctx context.Context, user types.Actor, trigger string, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
-	lease, err := s.acquireRun(ctx)
+	lease, err := s.engine.AwaitScheduledRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1490,10 +1491,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	run, runErr := s.CreateBackup(ctx, types.SystemUser, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
-	if errors.Is(runErr, ErrSystemBackupAlreadyRunning) {
-		slog.InfoContext(ctx, "Scheduled Arcane system backup skipped; another backup is running", "policyId", policy.ID)
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: "Skipped: another system backup is running"}, nil
-	}
 	if runErr != nil {
 		slog.ErrorContext(ctx, "Scheduled Arcane system backup failed", "policyId", policy.ID, "error", runErr)
 		if policy.RetentionCount > 0 {

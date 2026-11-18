@@ -1,17 +1,21 @@
 package backup
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
 
@@ -197,4 +201,42 @@ func TestExpiredUnmanagedRunIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"safety-old"}, expired)
 	require.Nil(t, orphanedAt("orphan-stale"))
+}
+
+func TestAwaitScheduledRunWaitsForConflictingRun(t *testing.T) {
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
+	engine := NewEngine(gate, nil, nil)
+	ctx := t.Context()
+
+	held, admitted, err := engine.TryAcquireRun(ctx, SystemAdmissionScope, SystemAdmissionID)
+	require.NoError(t, err)
+	require.True(t, admitted)
+
+	canceled, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	_, err = engine.AwaitScheduledRun(canceled, SystemAdmissionScope, SystemAdmissionID)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	acquired := make(chan *runs.Lease, 1)
+	go func() {
+		lease, awaitErr := engine.AwaitScheduledRun(ctx, SystemAdmissionScope, SystemAdmissionID)
+		assert.NoError(t, awaitErr)
+		acquired <- lease
+	}()
+	select {
+	case <-acquired:
+		t.Fatal("scheduled run was admitted while another run held the admission")
+	case <-time.After(500 * time.Millisecond):
+	}
+	held.Release(ctx)
+	select {
+	case lease := <-acquired:
+		require.NotNil(t, lease)
+		lease.Release(ctx)
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduled run was not admitted after the conflicting run finished")
+	}
 }
