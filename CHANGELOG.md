@@ -1,3 +1,53 @@
+## v3.1.0
+
+### New features
+
+- read image attestations from local daemon first ([28f9491](https://github.com/getarcaneapp/arcane/commit/28f949184f1c464f22135e27af00bfb728655b30) by @kmendell)
+- track agent readiness with renewable leases ([\#4804](https://github.com/getarcaneapp/arcane/pull/4804) by @kmendell)
+- add LDAP login and user sync ([\#4822](https://github.com/getarcaneapp/arcane/pull/4822) by @kmendell)
+- aggregate environment data for remaining endpoints ([\#4829](https://github.com/getarcaneapp/arcane/pull/4829) by @kmendell)
+- add project copy and move between environments ([\#4838](https://github.com/getarcaneapp/arcane/pull/4838) by @kmendell)
+- create missing external resources during project transfer ([\#4858](https://github.com/getarcaneapp/arcane/pull/4858) by @kmendell)
+- add adjustable background image blur ([\#4865](https://github.com/getarcaneapp/arcane/pull/4865) by @kmendell)
+
+### Bug fixes
+
+- re-enable goreleaser announce step on release ([\#4798](https://github.com/getarcaneapp/arcane/pull/4798) by @kmendell)
+- retry short registry rate limits and drop schedule jitter ([\#4802](https://github.com/getarcaneapp/arcane/pull/4802) by @kmendell)
+- return 400 for malformed references in the image update check ([\#4815](https://github.com/getarcaneapp/arcane/pull/4815) by @jmrplens)
+- return 400 for unknown updater scope types ([\#4814](https://github.com/getarcaneapp/arcane/pull/4814) by @jmrplens)
+- return 400 for invalid swarm address pools and specs ([\#4816](https://github.com/getarcaneapp/arcane/pull/4816) by @jmrplens)
+- match federated issuers whose iss ends with a slash ([\#4811](https://github.com/getarcaneapp/arcane/pull/4811) by @jmrplens)
+- return 400 for API key grants on unknown environments ([\#4813](https://github.com/getarcaneapp/arcane/pull/4813) by @jmrplens)
+- sort database lists by json field names ([\#4809](https://github.com/getarcaneapp/arcane/pull/4809) by @jmrplens)
+- keep encoded path segments when proxying to agent environments ([\#4807](https://github.com/getarcaneapp/arcane/pull/4807) by @jmrplens)
+- unblock agent requests stalled by DB cursors and env lookups ([\#4832](https://github.com/getarcaneapp/arcane/pull/4832) by @kmendell)
+- preserve executable mode in gitops backups ([\#4833](https://github.com/getarcaneapp/arcane/pull/4833) by @kmendell)
+- tolerate already-removed images during prune ([\#4834](https://github.com/getarcaneapp/arcane/pull/4834) by @kmendell)
+- fall back to KEV mirror when CISA feed fails ([\#4835](https://github.com/getarcaneapp/arcane/pull/4835) by @kmendell)
+- compress JSON API responses with gzip ([\#4827](https://github.com/getarcaneapp/arcane/pull/4827) by @zichen0116)
+- list only environments with updates in update-all plan ([\#4836](https://github.com/getarcaneapp/arcane/pull/4836) by @kmendell)
+- prevent update-all dialog title text overlap ([\#4853](https://github.com/getarcaneapp/arcane/pull/4853) by @kmendell)
+- skip rewriting unchanged compose on env-only project save ([\#4850](https://github.com/getarcaneapp/arcane/pull/4850) by @MaxWang007)
+- wrap resource card footer metadata in grid view ([\#4854](https://github.com/getarcaneapp/arcane/pull/4854) by @kmendell)
+- open SQLite read pool in agent mode ([\#4855](https://github.com/getarcaneapp/arcane/pull/4855) by @kmendell)
+- show specific labels for activity center entries ([\#4859](https://github.com/getarcaneapp/arcane/pull/4859) by @kmendell)
+- refresh version stream on image update events ([\#4860](https://github.com/getarcaneapp/arcane/pull/4860) by @kmendell)
+- resume unsettled auto-update targets on retry ([\#4864](https://github.com/getarcaneapp/arcane/pull/4864) by @kmendell)
+
+### Performance improvements
+
+- reuse cached data for instant detail navigation ([\#4818](https://github.com/getarcaneapp/arcane/pull/4818) by @kmendell)
+
+### Documentation
+
+- describe GitOps sync and Git repository request fields ([\#4805](https://github.com/getarcaneapp/arcane/pull/4805) by @jmrplens)
+
+### Other
+
+- sync Crowdin translations through main before release ([\#4839](https://github.com/getarcaneapp/arcane/pull/4839) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.0.1...v3.1.0
 ## v3.0.1
 
 ### Bug fixes
