@@ -16,11 +16,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/user.js';
+	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition } from '#lib/types/user.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/user.js';
 	import { applyAccentColor, applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
-	import { debounced } from '#lib/utils/ws.js';
 
 	import AccountBackdropSettings from './account-backdrop-settings.svelte';
 	import AllEnvironmentsPreferences from './all-environments-preferences.svelte';
@@ -79,18 +78,6 @@
 		const current = preferences.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 		return landingPageOptions.some((option) => option.value === current) ? current : DEFAULT_LANDING_PAGE;
 	});
-
-	let pendingPreferences: Partial<UserPreferences> = {};
-	const flushPreferences = debounced(() => {
-		const patch = pendingPreferences;
-		pendingPreferences = {};
-		void saveUserPreferences(patch);
-	}, 400);
-
-	function savePreferencesDebounced(patch: Partial<UserPreferences>) {
-		pendingPreferences = { ...pendingPreferences, ...patch };
-		flushPreferences();
-	}
 </script>
 
 <div class="space-y-8">
@@ -105,7 +92,7 @@
 				<ApplicationThemePicker
 					selectedTheme={applicationThemeValue}
 					accentColor={accentColorValue}
-					onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
+					onSelect={(value) => void saveUserPreferences({ applicationTheme: value })}
 					aria-describedby={describedBy}
 				/>
 			{/snippet}
@@ -117,7 +104,7 @@
 					selectedColor={accentColorValue}
 					onSelect={(value) => {
 						applyAccentColor(value);
-						savePreferencesDebounced({ accentColor: value });
+						void saveUserPreferences({ accentColor: value });
 					}}
 					aria-describedby={describedBy}
 				/>
@@ -163,7 +150,7 @@
 	</SettingsSection>
 
 	<SettingsSection title={m.background_and_effects()}>
-		<AccountBackdropSettings {savePreferencesDebounced} />
+		<AccountBackdropSettings />
 		<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="switch">
 			{#snippet children({ describedBy })}
 				<Switch

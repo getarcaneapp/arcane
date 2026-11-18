@@ -18,17 +18,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { UserPreferences } from '#lib/types/user.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
-
-	interface Props {
-		savePreferencesDebounced: (patch: Partial<UserPreferences>) => void;
-	}
-
-	let { savePreferencesDebounced }: Props = $props();
 
 	const currentUser = $derived(userStore.current);
 	const backdropUrl = $derived(currentUser?.backdropUrl);
@@ -189,7 +182,7 @@
 				disabled={selected === BACKDROP_NONE}
 				onValueChange={(value) => (blurDraft = value)}
 				onValueCommit={(value) => {
-					savePreferencesDebounced({ backdropBlur: value });
+					void saveUserPreferences({ backdropBlur: value });
 					blurDraft = null;
 				}}
 				aria-label={m.background_blur()}
@@ -213,7 +206,7 @@
 				disabled={selected === BACKDROP_NONE}
 				onValueChange={(value) => (dimDraft = value)}
 				onValueCommit={(value) => {
-					savePreferencesDebounced({ backdropDim: value });
+					void saveUserPreferences({ backdropDim: value });
 					dimDraft = null;
 				}}
 				aria-label={m.background_dim()}
