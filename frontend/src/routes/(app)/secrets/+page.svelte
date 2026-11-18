@@ -118,12 +118,12 @@
 
 	async function handleRefresh(source: SecretSource) {
 		if (refreshingIds[source.id]) return;
+		refreshingIds[source.id] = true;
+		const result = await tryCatch(secretSourceService.refresh(source.id));
+		refreshingIds[source.id] = false;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(secretSourceService.refresh(source.id)),
+			result,
 			message: m.common_refresh_failed({ resource: source.name }),
-			setLoadingState: (value) => {
-				refreshingIds[source.id] = value;
-			},
 			onSuccess: (response) => {
 				toast.success(m.common_refresh_success({ resource: source.name }));
 				reportSyncResults(response.syncResults);

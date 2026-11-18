@@ -4718,5 +4718,6 @@
   "count_keys_found": "{count} keys found",
   "count_keys_skipped": "{count} keys skipped because they are not valid variable names",
   "refresh_external_secret_target_description": "Refresh an external secret on this manager.",
-  "refresh_external_secret_action_description": "Fetch the source and sync its keys to agents."
+  "refresh_external_secret_action_description": "Fetch the source and sync its keys to agents.",
+  "clear_saved_value": "Clear saved value"
 }

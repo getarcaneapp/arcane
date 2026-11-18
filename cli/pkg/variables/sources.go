@@ -389,22 +389,28 @@ func newSourcesTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[types.SecretSourceTestResult]{
-				Method:         http.MethodPost,
-				Path:           clitypes.VariableSourcesTest(),
-				FailureMessage: "failed to test secret source",
-				Body:           req,
-				Render: func(data types.SecretSourceTestResult) error {
-					if !data.Success {
-						return fmt.Errorf("secret source test failed: %s", data.Error)
-					}
-					output.Success("Secret source returned %d keys (%d skipped)", data.KeyCount, data.SkippedKeyCount)
-					for _, key := range data.Keys {
-						_, _ = fmt.Fprintln(output.Stdout(), key)
-					}
-					return nil
-				},
-			})
+			result, err := c.DoEnvelope[types.SecretSourceTestResult](cmd.Context(), http.MethodPost, clitypes.VariableSourcesTest(), req)
+			if err != nil {
+				return fmt.Errorf("failed to test secret source: %w", err)
+			}
+			if cmdutil.JSONOutputEnabled(cmd) {
+				if printErr := cmdutil.PrintJSON(result.Data); printErr != nil {
+					return printErr
+				}
+			}
+			if !result.Data.Success {
+				return fmt.Errorf("secret source test failed: %s", result.Data.Error)
+			}
+			if cmdutil.JSONOutputEnabled(cmd) {
+				return nil
+			}
+			output.Success("Secret source returned %d keys (%d skipped)", result.Data.KeyCount, result.Data.SkippedKeyCount)
+			for _, key := range result.Data.Keys {
+				if _, writeErr := fmt.Fprintln(output.Stdout(), key); writeErr != nil {
+					return writeErr
+				}
+			}
+			return nil
 		},
 	}
 	bindSourceFlags(command, &opts)

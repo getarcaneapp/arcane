@@ -72,7 +72,8 @@ const presetsDir = "secretsources"
 var (
 	ErrSecretSourceNotFound   = common.Classify(common.ErrNotFound, errors.New("secret source not found"))
 	ErrSecretSourceConflict   = common.Classify(common.ErrConflict, errors.New("a secret source with this name already exists"))
-	ErrDefinitionChangeDenied = common.Classify(common.ErrForbidden, fmt.Errorf("testing a saved secret source with a different definition or preset requires %s", authz.PermSecretSourcesUpdate))
+	ErrDefinitionChangeDenied = common.Classify(common.ErrForbidden, fmt.Errorf("testing a saved secret source with changed settings requires %s", authz.PermSecretSourcesUpdate))
+	ErrUnsavedTestDenied      = common.Classify(common.ErrForbidden, fmt.Errorf("testing an unsaved secret source requires %s", authz.PermSecretSourcesCreate))
 )
 
 func NewService(p ServiceParams) *Service {
@@ -238,8 +239,12 @@ func (s *Service) Update(ctx context.Context, id string, input types.SecretSourc
 		if uniqueErr := ensureUniqueName(tx, name, id); uniqueErr != nil {
 			return uniqueErr
 		}
-		if saveErr := tx.Omit("Environments").Save(&updated).Error; saveErr != nil {
-			return fmt.Errorf("failed to update secret source: %w", saveErr)
+		result := tx.Model(&SecretSource{}).Where("id = ?", id).Select("*").Omit("Environments").Updates(&updated)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update secret source: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrSecretSourceNotFound
 		}
 		return environment.ReplaceScopeRows(tx, environment.ScopeRows{
 			Table:          "secret_source_environments",
@@ -296,7 +301,10 @@ func (s *Service) Test(ctx context.Context, req TestRequest) (types.SecretSource
 	if err != nil {
 		return types.SecretSourceTestResult{}, err
 	}
-	if id != "" && !sameDefinition(base, config) && !req.Permissions.Allows(authz.PermSecretSourcesUpdate, "") {
+	if id == "" && !req.Permissions.Allows(authz.PermSecretSourcesCreate, "") {
+		return types.SecretSourceTestResult{}, ErrUnsavedTestDenied
+	}
+	if id != "" && !sameFetch(base, config) && !req.Permissions.Allows(authz.PermSecretSourcesUpdate, "") {
 		return types.SecretSourceTestResult{}, ErrDefinitionChangeDenied
 	}
 

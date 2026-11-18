@@ -62,6 +62,7 @@
 	let validating = $state(false);
 	let inputValues = $state<Record<string, string>>(untrack(() => ({ ...sourceToEdit?.inputs })));
 	let credentialValues = $state<Record<string, string>>({});
+	let clearedCredentials = $state<Record<string, boolean>>({});
 	let path = $state(untrack(() => sourceToEdit?.path ?? ''));
 	let keyPrefix = $state(untrack(() => sourceToEdit?.keyPrefix ?? ''));
 	let enabled = $state(untrack(() => sourceToEdit?.enabled ?? true));
@@ -168,8 +169,8 @@
 			inputs: Object.fromEntries(definition.inputs.map((field) => [field.key, (inputValues[field.key] ?? '').trim()])),
 			credentials: Object.fromEntries(
 				definition.credentials
-					.filter((field) => (credentialValues[field.key] ?? '') !== '')
-					.map((field) => [field.key, credentialValues[field.key] ?? ''])
+					.filter((field) => (credentialValues[field.key] ?? '') !== '' || clearedCredentials[field.key])
+					.map((field) => [field.key, clearedCredentials[field.key] ? '' : (credentialValues[field.key] ?? '')])
 			),
 			path: path.trim(),
 			keyPrefix: keyPrefix.trim(),
@@ -249,7 +250,7 @@
 			id: sourceToEdit.id,
 			source: {
 				...changedFields(sourceToEdit, rest),
-				...(presetId && presetId !== sourceToEdit.presetId ? { presetId } : {}),
+				...(presetId !== (sourceToEdit.presetId ?? '') ? { presetId } : {}),
 				...(yaml.trim() !== '' ? { definition: yaml } : {}),
 				...(Object.keys(credentials).length > 0 ? { credentials } : {})
 			}
@@ -409,8 +410,18 @@
 				class="mt-2"
 				autocomplete="off"
 				placeholder={credentialIsSet(field) ? m.secret_value_placeholder() : (field.placeholder ?? field.default ?? '')}
+				disabled={clearedCredentials[field.key] ?? false}
 				bind:value={() => credentialValues[field.key] ?? '', (value) => (credentialValues[field.key] = value)}
 			/>
+			{#if credentialIsSet(field) && !field.required}
+				<div class="mt-2">
+					<SwitchWithLabel
+						id={`${id}-clear`}
+						label={m.clear_saved_value()}
+						bind:checked={() => clearedCredentials[field.key] ?? false, (value) => (clearedCredentials[field.key] = value)}
+					/>
+				</div>
+			{/if}
 		{:else if field.multiline}
 			<Textarea
 				{id}
