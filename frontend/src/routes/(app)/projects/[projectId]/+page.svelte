@@ -104,6 +104,7 @@
 	} from '#lib/utils/workspace-files.js';
 
 	import EditableName from '../components/editable-name.svelte';
+	import ProjectJobsPanel from '../components/project-jobs-panel.svelte';
 	import ProjectsLogsPanel from '../components/project-logs-panel.svelte';
 	import ProjectServicesPanel from '../components/project-services-panel.svelte';
 	import {
@@ -2059,6 +2060,25 @@
 	</Tabs.Content>
 {/snippet}
 
+{#snippet projectServiceAndJobPanels(project: Project)}
+	<div class="flex h-full min-h-0 flex-col">
+		<div class="flex min-h-0 flex-1 flex-col">
+			<ProjectServicesPanel
+				services={project.runtimeServices}
+				{projectId}
+				environmentId={envId}
+				updateInfoByRef={project.updateInfo?.updateInfoByRef}
+				onRefresh={() => refreshProjectDetails()}
+			/>
+		</div>
+		{#if project.jobs?.length}
+			<div class="flex max-h-1/2 min-h-0 shrink-0 flex-col">
+				<ProjectJobsPanel jobs={project.jobs} {projectId} environmentId={envId} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet projectServicesTab(project: Project)}
 	<Tabs.Content value="services" class="h-full min-h-0">
 		<div class="flex h-full min-h-0 flex-col">
@@ -2081,13 +2101,7 @@
 						persistStorage="local"
 					>
 						{#snippet first()}
-							<ProjectServicesPanel
-								services={project.runtimeServices}
-								{projectId}
-								environmentId={envId}
-								updateInfoByRef={project.updateInfo?.updateInfoByRef}
-								onRefresh={() => refreshProjectDetails()}
-							/>
+							{@render projectServiceAndJobPanels(project)}
 						{/snippet}
 						{#snippet second()}
 							<div class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2100,13 +2114,7 @@
 				</div>
 			{:else}
 				<div class="flex min-h-0 flex-1 flex-col">
-					<ProjectServicesPanel
-						services={project.runtimeServices}
-						{projectId}
-						environmentId={envId}
-						updateInfoByRef={project.updateInfo?.updateInfoByRef}
-						onRefresh={() => refreshProjectDetails()}
-					/>
+					{@render projectServiceAndJobPanels(project)}
 				</div>
 			{/if}
 		</div>

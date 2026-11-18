@@ -3,6 +3,7 @@ package projects
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -151,6 +152,28 @@ func ComposePs(ctx context.Context, opts types.ComposePsOptions) ([]api.Containe
 	})
 }
 
+func ComposeRunJob(ctx context.Context, opts types.ComposeRunJobOptions) (int, error) {
+	materialized, err := MaterializeJob(opts.Project, opts.Job)
+	if err != nil {
+		return 0, err
+	}
+	composeCtx, c, done, err := openCompose(ctx, ClientConfig{
+		AuthConfigs: opts.AuthConfigs,
+		DockerHost:  opts.DockerHost,
+		Timeout:     opts.Timeout,
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer done()
+
+	exitCode, err := c.svc.RunJob(composeCtx, materialized, opts.Job, api.RunOptions{Service: opts.Job})
+	if err != nil && errors.Is(composeCtx.Err(), context.DeadlineExceeded) {
+		return exitCode, composeCtx.Err()
+	}
+	return exitCode, err
+}
+
 func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (string, error) {
 	c, err := plainComposeClient(dockerHost)
 	if err != nil {
@@ -229,7 +252,7 @@ func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName,
 	}
 	var firstMatch string
 	for _, c := range containers {
-		if c.Service != serviceName {
+		if c.Service != serviceName || c.Labels[JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
 			continue
 		}
 		firstMatch = cmp.Or(firstMatch, c.ID)

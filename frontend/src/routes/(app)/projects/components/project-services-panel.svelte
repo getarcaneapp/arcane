@@ -23,7 +23,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
-	import type { ProjectRuntimeService } from '#lib/types/project.js';
+	import type { ProjectPreStartHook, ProjectRuntimeService } from '#lib/types/project.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -44,6 +44,11 @@
 
 	function serviceImageRef(service: ProjectRuntimeService): string {
 		return service.serviceConfig?.image || service.image || '';
+	}
+
+	function preStartHookSummary(hook: ProjectPreStartHook, service: ProjectRuntimeService): string {
+		const command = Array.isArray(hook.command) ? hook.command.join(' ') : (hook.command ?? '');
+		return [hook.image || serviceImageRef(service), command].filter(Boolean).join(' ');
 	}
 
 	const currentEnvId = $derived(environmentId);
@@ -270,6 +275,13 @@
 						{/if}
 					</div>
 				{/if}
+				{#each item.serviceConfig?.pre_start ?? [] as hook, idx (idx)}
+					{@const summary = preStartHookSummary(hook, item)}
+					<div class="mt-1 flex min-w-0 items-center gap-1.5 pl-11 text-xs text-muted-foreground">
+						<span class="shrink-0">{m.pre_start()}</span>
+						<span class="truncate font-mono" title={summary}>{summary}</span>
+					</div>
+				{/each}
 			</div>
 		{/each}
 		{#if servicesWithIds.length === 0}

@@ -236,6 +236,17 @@ class ProjectService extends BaseAPIService {
 		await this.readProjectStream(res.body, onLine, () => m.images_pull_failed());
 	}
 
+	async runProjectJob(projectId: string, jobName: string, onLine: (data: unknown) => void, environmentId: string): Promise<void> {
+		const url = `/api/agents/${environmentId}/projects/${projectId}/jobs/${encodeURIComponent(jobName)}/run`;
+
+		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
+		if (!res.ok || !res.body) {
+			throw new Error(m.failed_to_start_job_run({ status: String(res.status) }));
+		}
+
+		await this.readProjectStream(res.body, onLine, () => m.job_run_failed());
+	}
+
 	async buildProjectImages(
 		projectId: string,
 		options: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean } | undefined,

@@ -92,6 +92,7 @@ func Command() *cobra.Command {
 		newArchiveCmd(),
 		newUnarchiveCmd(),
 		newBuildCmd(),
+		newRunJobCmd(),
 		newUpdateServicesCmd(),
 		newWorkspaceCmd(),
 		newListCmd(),

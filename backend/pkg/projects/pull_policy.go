@@ -108,6 +108,19 @@ func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep 
 			}
 		}
 	}
+	for _, job := range project.Jobs {
+		if job.Build == nil {
+			record(job.Image, ResolveServiceImagePullMode(composetypes.ServiceConfig{
+				ContainerSpec: job.ContainerSpec,
+				WorkloadSpec:  job.WorkloadSpec,
+			}))
+		}
+		for _, vol := range job.Volumes {
+			if vol.Type == composetypes.VolumeTypeImage {
+				record(vol.Source, ImagePullStep{Mode: ImagePullModeIfMissing})
+			}
+		}
+	}
 	return plan
 }
 

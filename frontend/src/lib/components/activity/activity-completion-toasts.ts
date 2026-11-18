@@ -23,6 +23,7 @@ const LONG_RUNNING_TYPES = new Set<ActivityType>([
 	'project_build',
 	'project_deploy',
 	'project_redeploy',
+	'project_job_run',
 	'container_redeploy',
 	'vulnerability_scan',
 	'image_patch',

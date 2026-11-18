@@ -83,6 +83,7 @@ export const environmentSettingsSchema = z.object({
 	dockerApiTimeout: z.coerce.number().int().nonnegative(),
 	dockerImagePullTimeout: z.coerce.number().int().nonnegative(),
 	deployWaitTimeout: z.coerce.number().int().nonnegative(),
+	jobRunTimeout: z.coerce.number().int().nonnegative(),
 	trivyScanTimeout: z.coerce.number().int().nonnegative(),
 	gitOperationTimeout: z.coerce.number().int().nonnegative(),
 	httpClientTimeout: z.coerce.number().int().nonnegative(),
