@@ -38,6 +38,7 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text)").Error)
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
@@ -115,6 +116,20 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
 
 	err = service.DeleteS3Destination(ctx, destination.ID)
+	require.ErrorIs(t, err, ErrS3DestinationInUse)
+
+	projectDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
+		Name:            "Project backups",
+		Bucket:          "project-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.Exec("INSERT INTO project_backups (s3_destination_id, remote_snapshot_id) VALUES (?, ?)", projectDestination.ID, "snapshot-1").Error)
+
+	err = service.DeleteS3Destination(ctx, projectDestination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 }
 

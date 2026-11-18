@@ -771,6 +771,7 @@ func (s *Service) Delete(ctx context.Context, projectID, backupID string) error 
 	}
 	if entry.RemoteSnapshotID != "" {
 		if forgetErr := s.forget(ctx, dockerClient, entry, true); forgetErr != nil {
+			entry.Destination = destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
 			return errors.Join(fmt.Errorf("failed to delete the S3 project snapshot: %w", forgetErr), s.deps.DB.WithContext(ctx).Save(entry).Error)
 		}
 	}

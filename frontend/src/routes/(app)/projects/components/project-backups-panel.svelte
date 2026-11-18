@@ -34,7 +34,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		backupDestinationDisplay,
@@ -64,6 +64,7 @@
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
 	let s3Destinations = $state<S3Destination[]>([]);
+	let s3DestinationsError = $state<string | null>(null);
 	let creating = $state(false);
 
 	const selectable = (volume: ProjectVolume) => volume.kind === 'named' && !volume.missing;
@@ -109,7 +110,8 @@
 	onMount(async () => {
 		if (!canBackup || !canListS3Destinations) return;
 		const result = await tryCatch(s3DestinationService.listAll());
-		if (result.error === null) s3Destinations = result.data;
+		if (result.error !== null) s3DestinationsError = extractApiErrorMessage(result.error);
+		else s3Destinations = result.data;
 	});
 
 	async function openDialog() {
@@ -131,27 +133,28 @@
 	async function handleCreate() {
 		if (!options || creating) return;
 		creating = true;
-		const result = await tryCatch(
-			projectService.createBackup(
-				projectId,
-				{
-					volumes: selectedVolumes.map((volume) => volume.key),
-					stopContainers,
-					destination,
-					s3DestinationId: needsS3Destination ? s3DestinationId : undefined
-				},
-				environmentId
-			)
-		);
-		creating = false;
-		if (result.error !== null) {
-			toast.error(m.project_backup_failed(), { description: extractApiErrorMessage(result.error) });
-			return;
-		}
-		dialogOpen = false;
-		backupActivity.accepted(result.data.activityId);
-		toast.success(m.backups_started(), canReadActivities ? activityToastOptions(result.data.activityId, false) : undefined);
-		void invalidateBackups();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(
+				projectService.createBackup(
+					projectId,
+					{
+						volumes: selectedVolumes.map((volume) => volume.key),
+						stopContainers,
+						destination,
+						s3DestinationId: needsS3Destination ? s3DestinationId : undefined
+					},
+					environmentId
+				)
+			),
+			message: m.project_backup_failed(),
+			setLoadingState: (value) => (creating = value),
+			onSuccess: (data) => {
+				dialogOpen = false;
+				backupActivity.accepted(data.activityId);
+				toast.success(m.backups_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
+				void invalidateBackups();
+			}
+		});
 	}
 
 	function handleDelete(backup: ProjectBackup) {
@@ -162,9 +165,13 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
-					const result = await tryCatch(projectService.deleteBackup(projectId, backup.id, environmentId));
-					if (result.error !== null) toast.error(extractApiErrorMessage(result.error));
-					else toast.success(m.common_delete_success({ resource: m.project_backup() }));
+					await handleApiResultWithCallbacks({
+						result: await tryCatch(projectService.deleteBackup(projectId, backup.id, environmentId)),
+						message: m.common_remove_failed({ resource: m.project_backup() }),
+						onSuccess: () => {
+							toast.success(m.common_delete_success({ resource: m.project_backup() }));
+						}
+					});
 					await invalidateBackups();
 				}
 			}
@@ -235,20 +242,6 @@
 	{/if}
 {/snippet}
 
-{#snippet ToolbarActions()}
-	{#if canBackup}
-		<ArcaneButton
-			action="create"
-			customLabel={m.back_up_now()}
-			icon={AddIcon}
-			loading={creating}
-			disabled={creating || backupActivity.activeIds.length > 0}
-			onclick={openDialog}
-			data-testid="project-backup-create"
-		/>
-	{/if}
-{/snippet}
-
 {#snippet BackupMobileCard({
 	item,
 	mobileFieldVisibility
@@ -310,10 +303,24 @@
 			</Alert.Description>
 		</Alert.Root>
 	{/each}
-	<Alert.Root size="sm">
-		<InfoIcon class="size-4" />
-		<Alert.Description>{m.project_backups_description()}</Alert.Description>
-	</Alert.Root>
+	<div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+		<Alert.Root size="sm" class="min-w-0 flex-1">
+			<InfoIcon class="size-4" />
+			<Alert.Description>{m.project_backups_description()}</Alert.Description>
+		</Alert.Root>
+		{#if canBackup}
+			<ArcaneButton
+				action="create"
+				customLabel={m.back_up_now()}
+				icon={AddIcon}
+				loading={creating}
+				disabled={creating || backupActivity.activeIds.length > 0}
+				onclick={openDialog}
+				class="shrink-0 self-end sm:self-auto"
+				data-testid="project-backup-create"
+			/>
+		{/if}
+	</div>
 	<ArcaneTable
 		persistKey="arcane-project-backup-table"
 		items={backups}
@@ -325,7 +332,6 @@
 		{mobileFields}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCard}
-		customToolbarActions={ToolbarActions}
 	/>
 </div>
 
@@ -384,6 +390,12 @@
 				disabled={creating}
 				onCheckedChange={(next) => (stopContainers = next)}
 			/>
+			{#if s3DestinationsError}
+				<Alert.Root variant="destructive" size="sm">
+					<AlertIcon class="size-4" />
+					<Alert.Description>{m.s3_destinations_load_failed()}: {s3DestinationsError}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			<SelectWithLabel
 				id="project-backup-destination"
 				value={destination}
