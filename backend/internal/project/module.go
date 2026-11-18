@@ -330,6 +330,16 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 	}, authz.PermProjectsUpdate, h.UpdateProject)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "run-project-job",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/{projectId}/jobs/{jobName}/run",
+		Summary:     "Run a project job",
+		Description: "Stream a manual run of a Compose job (docker compose run <job>). Requires an engine with the jobs extension enabled.",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsJobsRun, h.RunProjectJob)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-project-images",
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/projects/{projectId}/build",

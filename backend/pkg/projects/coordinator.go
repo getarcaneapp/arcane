@@ -338,6 +338,28 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 		}
 	}
 
+	for name, job := range project.Jobs {
+		if job.Build != nil {
+			continue
+		}
+		jobSvc := composetypes.ServiceConfig{
+			Name:          name,
+			ContainerSpec: job.ContainerSpec,
+			WorkloadSpec:  job.WorkloadSpec,
+		}
+		jobImages := []string{job.Image}
+		for _, vol := range job.Volumes {
+			if vol.Type == composetypes.VolumeTypeImage {
+				jobImages = append(jobImages, vol.Source)
+			}
+		}
+		for _, img := range kit.TrimNonEmpty(jobImages) {
+			if err := c.ensureDeployServiceImageReady(ctx, projectID, project, name, jobSvc, img, DecideDeployImageAction(jobSvc, pullPolicyOverride), progressWriter, operations); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 

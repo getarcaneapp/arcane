@@ -20,6 +20,7 @@ const (
 	DefaultAgentProxy      = 5 * time.Minute
 	DefaultBuildTimeout    = 30 * time.Minute
 	DefaultDeployWait      = 10 * time.Minute
+	DefaultJobRun          = 30 * time.Minute
 	DefaultImageUpdateScan = 15 * time.Minute
 	// DefaultActivitySlotWait bounds how long a queued activity waits for a
 	// per-environment concurrency slot before failing loudly instead of

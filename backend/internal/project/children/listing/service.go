@@ -351,6 +351,7 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 			CreatedAt:             d.CreatedAt,
 			RuntimeServices:       services,
 			Services:              d.Services,
+			Jobs:                  d.Jobs,
 			ComposeName:           d.ComposeName,
 			Volumes:               d.Volumes,
 			Networks:              d.Networks,
@@ -403,7 +404,7 @@ func (s *Service) DiscoveredUpdateRows(
 ) []types.Project {
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range composeContainers {
-		if docker.ComposeServiceLabel(c.Labels) == "" {
+		if docker.ComposeServiceLabel(c.Labels) == "" || c.Labels[api.HookLabel] != "" || c.Labels[projects.JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
 			continue
 		}
 		projectName := docker.ComposeProjectLabel(c.Labels)
@@ -515,7 +516,7 @@ func IndexComposeContainers(containers []container.Summary) ContainerIndex {
 	}
 	for _, c := range containers {
 		projectName := docker.ComposeProjectLabel(c.Labels)
-		if projectName == "" {
+		if projectName == "" || c.Labels[api.HookLabel] != "" || c.Labels[projects.JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
 			continue
 		}
 		index.byProject[projectName] = append(index.byProject[projectName], c)

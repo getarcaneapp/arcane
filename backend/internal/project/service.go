@@ -21,6 +21,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
@@ -2325,6 +2326,72 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	return errors.Join(pullErrs...)
 }
 
+func (s *ProjectService) RunProjectJob(ctx context.Context, projectID, jobName string, user types.Actor) error {
+	unlock, err := s.LockProject(ctx, "run project job", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	compProj, err := s.loadComposeProjectForProject(ctx, proj, deployment.PrepareProjectBindDirectories(proj.Path))
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	for name, svc := range compProj.Services {
+		compProj.Services[name], _, _ = projects.PrepareDeployServiceConfig(projectID, compProj.Name, name, svc)
+	}
+
+	authConfigs, authErr := s.containerRegistryService.GetAllRegistryAuthConfigs(ctx)
+	if authErr != nil {
+		slog.WarnContext(ctx, "failed to load registry auth for compose pulls", "error", authErr)
+	}
+
+	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
+
+	jobTimeout := timeouts.GetDuration(s.settingsService.GetSettingsConfig().JobRunTimeout.AsInt(), timeouts.DefaultJobRun)
+	exitCode, runErr := projects.ComposeRunJob(ctx, types.ComposeRunJobOptions{
+		AuthConfigs: authConfigs,
+		Project:     compProj,
+		DockerHost:  s.dockerService.DockerHost(),
+		Job:         jobName,
+		Timeout:     jobTimeout,
+	})
+	if errors.Is(runErr, composeapi.ErrJobsNotSupported) {
+		return common.Classify(common.ErrValidation, runErr)
+	}
+	if errors.Is(runErr, context.DeadlineExceeded) {
+		runErr = fmt.Errorf("job %q did not finish within the job run timeout of %s", jobName, jobTimeout)
+	}
+	if runErr == nil && exitCode != 0 {
+		runErr = fmt.Errorf("job %q exited with code %d", jobName, exitCode)
+	}
+	metadata := database.JSON{
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"job":         jobName,
+		"exitCode":    exitCode,
+	}
+	if runErr != nil {
+		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
+			Metadata:      metadata,
+			Type:          event.EventTypeProjectJobRun,
+			ResourceType:  "project",
+			ResourceID:    projectID,
+			ResourceName:  proj.Name,
+			UserID:        user.ID,
+			Username:      user.Username,
+			EnvironmentID: "0",
+		}, runErr)
+		return runErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectJobRun, projectID, proj.Name, user, metadata, "could not log project job run")
+	return nil
+}
+
 func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options types.ProjectBuildOptions, progressWriter io.Writer, user *types.Actor) error {
 	projectFromDb, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
@@ -2629,6 +2696,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		CreatedAt:             proj.CreatedAt.Format(time.RFC3339),
 		RuntimeServices:       kit.Ternary(opts.IncludeRuntimeServices, runtimeServices, nil),
 		Services:              kit.Ternary(opts.IncludeServiceConfigs, composeServices, nil),
+		Jobs:                  kit.Ternary(opts.IncludeServiceConfigs, projects.ProjectJobs(composeProj), nil),
 		ComposeName:           kit.FromPtr(composeProj).Name,
 		Volumes:               kit.Ternary(opts.IncludeServiceConfigs, kit.FromPtr(composeProj).Volumes, nil),
 		Networks:              kit.Ternary(opts.IncludeServiceConfigs, kit.FromPtr(composeProj).Networks, nil),
@@ -2774,6 +2842,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			CreatedAt:             d.CreatedAt,
 			RuntimeServices:       runtimeByIndex[i],
 			Services:              d.Services,
+			Jobs:                  d.Jobs,
 			ComposeName:           d.ComposeName,
 			Volumes:               d.Volumes,
 			Networks:              d.Networks,

@@ -108,6 +108,12 @@ type (
 		types.Update[types.Project]
 	}
 
+	RunProjectJobInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+		JobName       string `path:"jobName" doc:"Compose job name"`
+	}
+
 	BuildProjectInput struct {
 		Body          *types.ProjectBuildRequest
 		EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -842,6 +848,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 				CreatedAt:             details.CreatedAt,
 				RuntimeServices:       details.RuntimeServices,
 				Services:              details.Services,
+				Jobs:                  details.Jobs,
 				ComposeName:           details.ComposeName,
 				Volumes:               details.Volumes,
 				Networks:              details.Networks,
@@ -966,6 +973,27 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 		Metadata:       database.JSON{"projectID": input.ProjectID, "services": options.Services},
 		Action: func(opCtx context.Context, writer io.Writer) error {
 			return h.projectService.BuildProjectServices(opCtx, input.ProjectID, options, writer, user)
+		},
+	}), nil
+}
+
+func (h *ProjectHandler) RunProjectJob(ctx context.Context, input *RunProjectJobInput) (*huma.StreamResponse, error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	//nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
+	return h.streamProjectOperation(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfig{
+		ActivityType:   types.ActivityTypeProjectJobRun,
+		Step:           "Running project job",
+		StartMessage:   "Project job run started",
+		WriterStep:     "Running job " + input.JobName,
+		FailureMessage: "Project job run failed",
+		SuccessMessage: "Project job run completed",
+		Metadata:       database.JSON{"projectID": input.ProjectID, "job": input.JobName},
+		Action: func(opCtx context.Context, _ io.Writer) error {
+			return h.projectService.RunProjectJob(opCtx, input.ProjectID, input.JobName, *user)
 		},
 	}), nil
 }

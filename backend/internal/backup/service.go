@@ -150,7 +150,6 @@ const (
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 
-	// admissionWait bounds how long a backup waits for a conflicting run.
 	admissionWait = 6 * time.Hour
 )
 

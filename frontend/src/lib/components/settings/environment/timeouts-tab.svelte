@@ -75,6 +75,27 @@
 			{/snippet}
 		</SettingsRow>
 		<SettingsRow
+			for="job-run-timeout"
+			label={m.job_run_timeout()}
+			description={m.job_run_timeout_description()}
+			helpText={m.timeouts_seconds_help({ range: '30-14400' })}
+			error={formInputs.jobRunTimeout.error}
+			lock={lock('jobRunTimeout')}
+			mixed={mixed('jobRunTimeout')}
+		>
+			{#snippet children({ describedBy, errorId })}
+				<Input
+					id="job-run-timeout"
+					type="number"
+					placeholder={mixed('jobRunTimeout') ? m.mixed() : '1800'}
+					bind:value={formInputs.jobRunTimeout.value}
+					aria-invalid={!!formInputs.jobRunTimeout.error}
+					aria-describedby={describedBy}
+					aria-errormessage={errorId}
+				/>
+			{/snippet}
+		</SettingsRow>
+		<SettingsRow
 			for="trivy-scan-timeout"
 			label={m.trivy_scan_timeout()}
 			description={m.trivy_scan_timeout_description()}

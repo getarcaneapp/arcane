@@ -114,6 +114,7 @@ var (
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.destroy"},
 		{Method: http.MethodPatch, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.update"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/build", CommandName: "project.build"},
+		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/jobs/{jobName}/run", CommandName: "project.job.run"},
 		{Method: http.MethodPatch, PathPattern: "/api/agents/{id}/projects/{projectId}/tags", CommandName: "project.tags.update"},
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/gitops/syncs", CommandName: "gitops_sync.list"},

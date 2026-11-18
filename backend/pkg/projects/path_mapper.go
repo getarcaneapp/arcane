@@ -211,6 +211,23 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		project.Services[si] = service
 	}
 
+	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+		for _, job := range jobs {
+			for vi := range job.Volumes {
+				volume := &job.Volumes[vi]
+				if volume.Type != composetypes.VolumeTypeBind {
+					continue
+				}
+
+				hostPath, _, err := pm.ContainerToHost(volume.Source)
+				if err != nil {
+					return fmt.Errorf("failed to translate volume source %q: %w", volume.Source, err)
+				}
+				volume.Source = hostPath
+			}
+		}
+	}
+
 	if !translateFileResources {
 		return nil
 	}
@@ -329,6 +346,24 @@ func remapTargets(project *composetypes.Project, includeFileResources bool) []re
 				current: volume.Source,
 				apply:   func(hostPath string) { volume.Source = hostPath },
 			})
+		}
+	}
+
+	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+		for name, job := range jobs {
+			for i := range job.Volumes {
+				volume := &job.Volumes[i]
+				if volume.Type != composetypes.VolumeTypeBind {
+					continue
+				}
+				targets = append(targets, remapTarget{
+					kind:    "job_volume",
+					name:    name,
+					key:     ("job_volume:" + name + "\x00" + filepath.Clean(volume.Target)),
+					current: volume.Source,
+					apply:   func(hostPath string) { volume.Source = hostPath },
+				})
+			}
 		}
 	}
 

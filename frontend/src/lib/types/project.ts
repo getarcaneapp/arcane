@@ -24,6 +24,13 @@ export interface ServiceVolume {
 	bind?: Record<string, unknown>;
 }
 
+export interface ProjectPreStartHook {
+	image?: string;
+	command?: string[] | string | null;
+	per_replica?: boolean;
+	[key: string]: unknown;
+}
+
 export interface ProjectService {
 	name?: string;
 	image?: string;
@@ -41,7 +48,23 @@ export interface ProjectService {
 	labels?: Record<string, string>;
 	healthcheck?: Record<string, unknown>;
 	deploy?: Record<string, unknown>;
+	pre_start?: ProjectPreStartHook[];
 	[key: string]: unknown;
+}
+
+export interface ProjectJobSchedule {
+	cron: string;
+	timezone?: string;
+}
+
+export interface ProjectJob {
+	name: string;
+	image?: string;
+	profiles?: string[];
+	schedules: ProjectJobSchedule[];
+	manualAllowed: boolean;
+	disabled: boolean;
+	hasBuild: boolean;
 }
 
 export type ProjectTagSource = 'ui' | 'compose';
@@ -135,6 +158,7 @@ export interface Project {
 	updateInfo?: ProjectUpdateInfo;
 	services?: ProjectService[];
 	runtimeServices?: ProjectRuntimeService[];
+	jobs?: ProjectJob[];
 	composeContent?: string;
 	composeFileName?: string;
 	composeFiles?: string[];

@@ -201,6 +201,25 @@ func newBuildCmd() *cobra.Command {
 	return cmd
 }
 
+func newRunJobCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:          "run-job <project-id|name> <job>",
+		Short:        "Run a Compose job and stream its output",
+		Args:         cobra.ExactArgs(2),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectJobRun(envID, projectID, args[1])
+				},
+				failureMessage: "failed to run job " + args[1],
+				successMessage: "Job " + args[1] + " completed successfully in project %s",
+				unbounded:      true,
+			})
+		},
+	}
+}
+
 func newUpdateServicesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "upgrade <project-id|name> [services...]",
