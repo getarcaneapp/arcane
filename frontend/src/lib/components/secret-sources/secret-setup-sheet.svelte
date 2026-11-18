@@ -15,29 +15,20 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import {
-		AlertIcon,
-		AlertTriangleIcon,
-		ClockIcon,
-		CloseIcon,
-		FilterIcon,
-		SuccessIcon,
-		VariableIcon,
-		ZapIcon
-	} from '#lib/icons/index.js';
+	import { AlertIcon, ClockIcon, CloseIcon, FilterIcon, SuccessIcon, VariableIcon, ZapIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
 	import type {
 		SecretSource,
-		SetupEnvFile,
-		SetupMode,
-		SetupResult,
-		SetupStep,
-		SetupTarget,
-		SetupValues,
-		SetupVariable
-	} from '#lib/types/secret-source.js';
+		SecretSourceSetupEnvFile,
+		SecretSourceSetupMode,
+		SecretSourceSetupResult,
+		SecretSourceSetupStep,
+		SecretSourceSetupTarget,
+		SecretSourceSetupValues,
+		SecretSourceSetupVariable
+	} from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -68,12 +59,14 @@
 		)
 	);
 	const provider = $derived(sources.find((source) => source.id === sourceId)?.provider ?? 'infisical');
-	function defaultMode(sourceProvider: string | undefined): SetupMode {
+	function defaultMode(sourceProvider: string | undefined): SecretSourceSetupMode {
 		if (sourceProvider === 'bitwarden') return 'new-folder';
 		if (sourceProvider === 'vault') return 'kv-path';
 		return 'new-project';
 	}
-	let mode = $state<SetupMode>(untrack(() => defaultMode(sources.find((source) => source.id === sourceId)?.provider)));
+	let mode = $state<SecretSourceSetupMode>(
+		untrack(() => defaultMode(sources.find((source) => source.id === sourceId)?.provider))
+	);
 	const createsContainer = $derived(mode === 'new-project' || mode === 'new-folder');
 	let projectName = $state('');
 	let folderName = $state('');
@@ -85,8 +78,8 @@
 	let vaultKv = $state(2);
 
 	// Typing in the name or path waits a moment before asking Infisical again.
-	let debouncedTarget = $state<SetupTarget | null>(null);
-	const target = $derived.by<SetupTarget | null>(() => {
+	let debouncedTarget = $state<SecretSourceSetupTarget | null>(null);
+	const target = $derived.by<SecretSourceSetupTarget | null>(() => {
 		if (mode === 'kv-path') {
 			return { mode, mount: vaultMount.trim(), kvVersion: vaultKv, secretPath: secretPath.trim() };
 		}
@@ -153,7 +146,7 @@
 		});
 	});
 
-	function changeMode(next: SetupMode) {
+	function changeMode(next: SecretSourceSetupMode) {
 		mode = next;
 		if (next === 'shared-folder') {
 			secretPath = plan?.suggestedSecretPath ?? '';
@@ -169,7 +162,7 @@
 	let onlyEnv = $state(false);
 	let onlySecretLike = $state(false);
 
-	function applyDefaultSelection(variables: SetupVariable[]) {
+	function applyDefaultSelection(variables: SecretSourceSetupVariable[]) {
 		selected.clear();
 		for (const variable of variables) {
 			const needed = variable.inEnvFile || (variable.inCompose && !variable.composeDefault);
@@ -194,8 +187,8 @@
 	}
 
 	// ---- How ----
-	let values = $state<SetupValues>('import');
-	let envFile = $state<SetupEnvFile>('remove');
+	let values = $state<SecretSourceSetupValues>('import');
+	let envFile = $state<SecretSourceSetupEnvFile>('remove');
 	let keepBackup = $state(true);
 	let grantDeployIdentity = $state(true);
 	let required = $state(true);
@@ -208,7 +201,7 @@
 	// ---- Apply ----
 	let applying = $state(false);
 	let applyError = $state<string | null>(null);
-	let result = $state<SetupResult | null>(null);
+	let result = $state<SecretSourceSetupResult | null>(null);
 
 	const selectedKeys = $derived(variables.filter((variable) => selected.has(variable.key)).map((variable) => variable.key));
 	const canApply = $derived(
@@ -283,7 +276,7 @@
 		];
 	}
 
-	function stepLabel(step: SetupStep): string {
+	function stepLabel(step: SecretSourceSetupStep): string {
 		switch (step.id) {
 			case 'project':
 				return m.secret_setup_step_project();
@@ -302,7 +295,9 @@
 		}
 	}
 
-	function remoteBadge(variable: SetupVariable): { variant: 'green' | 'gray' | 'amber' | 'blue'; text: string } | null {
+	function remoteBadge(
+		variable: SecretSourceSetupVariable
+	): { variant: 'green' | 'gray' | 'amber' | 'blue'; text: string } | null {
 		switch (variable.remote) {
 			case 'missing':
 				return { variant: 'blue', text: m.secret_setup_remote_missing() };
@@ -401,7 +396,7 @@
 		{:else if plan && !plan.canWrite}
 			<Alert.Root
 				variant="warning-subtle"
-				icon={AlertTriangleIcon}
+				icon={AlertIcon}
 				heading={m.secret_setup_no_setup_identity()}
 				description={provider === 'vault'
 					? m.secret_setup_no_setup_token_description()
@@ -423,7 +418,7 @@
 
 		<section class="grid gap-4">
 			<h3 class="text-sm font-semibold">{m.secret_setup_where()}</h3>
-			<RadioGroup.Root value={mode} onValueChange={(value) => changeMode(value as SetupMode)}>
+			<RadioGroup.Root value={mode} onValueChange={(value) => changeMode(value as SecretSourceSetupMode)}>
 				<div class="grid gap-2">
 					{#each modeOptions(provider) as option (option.value)}
 						<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
@@ -520,12 +515,12 @@
 			{/if}
 
 			{#if createsContainer && plan.projectNameTaken}
-				<Alert.Root variant="warning-subtle" icon={AlertTriangleIcon} description={m.secret_setup_name_taken()} />
+				<Alert.Root variant="warning-subtle" icon={AlertIcon} description={m.secret_setup_name_taken()} />
 			{/if}
 			{#if plan.remoteError}
 				<Alert.Root
 					variant="warning-subtle"
-					icon={AlertTriangleIcon}
+					icon={AlertIcon}
 					heading={m.secret_setup_remote_error()}
 					description={plan.remoteError}
 				/>
@@ -560,7 +555,7 @@
 
 		<section class="grid gap-4">
 			<h3 class="text-sm font-semibold">{m.secret_setup_values()}</h3>
-			<RadioGroup.Root value={values} onValueChange={(value) => (values = value as SetupValues)}>
+			<RadioGroup.Root value={values} onValueChange={(value) => (values = value as SecretSourceSetupValues)}>
 				<div class="grid gap-2 sm:grid-cols-2">
 					{@render choice('import', m.secret_setup_values_import(), m.secret_setup_values_import_description())}
 					{@render choice('placeholder', m.secret_setup_values_placeholder(), m.secret_setup_values_placeholder_description())}
@@ -570,7 +565,7 @@
 			<h3 class="text-sm font-semibold">{m.secret_setup_env_file()}</h3>
 			<RadioGroup.Root
 				value={envFile}
-				onValueChange={(value) => (envFile = value as SetupEnvFile)}
+				onValueChange={(value) => (envFile = value as SecretSourceSetupEnvFile)}
 				disabled={values !== 'import'}
 			>
 				<div class="grid gap-2 sm:grid-cols-2">
@@ -645,7 +640,7 @@
 	</label>
 {/snippet}
 
-{#snippet variableRow(variable: SetupVariable)}
+{#snippet variableRow(variable: SecretSourceSetupVariable)}
 	{@const remote = remoteBadge(variable)}
 	<div class="flex flex-wrap items-center gap-2 px-3 py-2">
 		<Checkbox
@@ -687,10 +682,10 @@
 	</div>
 {/snippet}
 
-{#snippet resultView(current: SetupResult)}
+{#snippet resultView(current: SecretSourceSetupResult)}
 	<Alert.Root
 		variant={current.ok ? 'primary-subtle' : 'warning-subtle'}
-		icon={current.ok ? SuccessIcon : AlertTriangleIcon}
+		icon={current.ok ? SuccessIcon : AlertIcon}
 		heading={current.ok ? m.secret_setup_done() : m.secret_setup_partial()}
 		description={current.ok ? m.secret_setup_done_description() : m.secret_setup_partial_description()}
 	/>

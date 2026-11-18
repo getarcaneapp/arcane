@@ -13,7 +13,12 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { BindingTarget, BitwardenTarget, InfisicalTarget, SecretProvider } from '#lib/types/secret-source.js';
+	import type {
+		SecretSourceBindingTarget,
+		SecretSourceBitwardenTarget,
+		SecretSourceInfisicalTarget,
+		SecretSourceProvider
+	} from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -48,20 +53,20 @@
 	const sources = $derived(sourcesQuery.data ?? []);
 
 	let sourceId = $state('');
-	let infisicalTarget = $state<InfisicalTarget>({
+	let infisicalTarget = $state<SecretSourceInfisicalTarget>({
 		projectId: '',
 		environment: '',
 		secretPath: '/',
 		includeImports: true,
 		expandReferences: true
 	});
-	let bitwardenTarget = $state<BitwardenTarget>({ scope: 'folder', id: '', name: '' });
-	let genericTarget = $state<BindingTarget>({});
+	let bitwardenTarget = $state<SecretSourceBitwardenTarget>({ scope: 'folder', id: '', name: '' });
+	let genericTarget = $state<SecretSourceBindingTarget>({});
 	let required = $state(true);
 	let autoRedeploy = $state(false);
 
-	const provider = $derived<SecretProvider | undefined>(sources.find((source) => source.id === sourceId)?.provider);
-	const target = $derived<BindingTarget | null>(
+	const provider = $derived<SecretSourceProvider | undefined>(sources.find((source) => source.id === sourceId)?.provider);
+	const target = $derived<SecretSourceBindingTarget | null>(
 		provider === 'infisical' && infisicalTarget.projectId && infisicalTarget.environment
 			? { infisical: infisicalTarget }
 			: provider === 'bitwarden' && bitwardenTarget.id

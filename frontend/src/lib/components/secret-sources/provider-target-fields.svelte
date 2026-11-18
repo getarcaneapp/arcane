@@ -12,7 +12,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { BindingTarget, OnePasswordScope } from '#lib/types/secret-source.js';
+	import type { SecretSourceBindingTarget, SecretSourceOnePasswordScope } from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import { type GenericProvider, withDefaultTarget } from './providers.js';
@@ -25,7 +25,7 @@
 	}: {
 		sourceId: string;
 		provider: GenericProvider;
-		target: BindingTarget;
+		target: SecretSourceBindingTarget;
 	} = $props();
 
 	$effect.pre(() => {
@@ -107,7 +107,7 @@
 	// ---- 1Password and Proton Pass (same target shape) ----
 	const vaultKey = $derived<'onepassword' | 'protonpass'>(provider === 'protonpass' ? 'protonpass' : 'onepassword');
 	const isVaultProvider = $derived(provider === 'onepassword' || provider === 'protonpass');
-	const scopes = $derived<{ value: OnePasswordScope; label: () => string; description: () => string }[]>([
+	const scopes = $derived<{ value: SecretSourceOnePasswordScope; label: () => string; description: () => string }[]>([
 		{
 			value: 'vault',
 			label: m.onepassword_scope_vault,
@@ -264,7 +264,8 @@
 			class="mt-2"
 			value={target[vaultKey].scope}
 			onValueChange={(value) =>
-				target[vaultKey] && (target[vaultKey] = { ...target[vaultKey]!, scope: value as OnePasswordScope, itemId: '', name: '' })}
+				target[vaultKey] &&
+				(target[vaultKey] = { ...target[vaultKey]!, scope: value as SecretSourceOnePasswordScope, itemId: '', name: '' })}
 		>
 			<div class="grid gap-2">
 				{#each scopes as scope (scope.value)}

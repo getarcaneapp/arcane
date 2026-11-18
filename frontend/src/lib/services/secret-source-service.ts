@@ -1,23 +1,23 @@
 import type {
-	BindingTarget,
-	ComposeRefsResult,
-	ComposeService,
-	ProjectSecretBinding,
-	ProjectSecretBindingDto,
-	ProjectSecretsCheck,
-	SecretBrowseItem,
-	SecretBrowseQuery,
+	SecretSourceBindingTarget,
+	SecretSourceComposeRefsResult,
+	SecretSourceComposeService,
+	SecretSourceBinding,
+	SecretSourceBindingUpsertRequest,
+	SecretSourceProjectCheckResult,
+	SecretSourceBrowseItem,
+	SecretSourceBrowseQuery,
 	SecretSource,
-	SecretSourceCreateDto,
-	SecretSourceTestDto,
+	SecretSourceCreateRequest,
+	SecretSourceTestRequest,
 	SecretSourceTestResult,
-	SecretSourceUpdateDto,
-	SetupApplyRequest,
-	SetupPlan,
-	SetupPlanRequest,
-	SetupResult,
-	TargetKeys
-} from '#lib/types/secret-source.js';
+	SecretSourceUpdateRequest,
+	SecretSourceSetupApplyRequest,
+	SecretSourceSetupPlan,
+	SecretSourceSetupPlanRequest,
+	SecretSourceSetupResult,
+	SecretSourceTargetKeys
+} from '#lib/types/secretsource.js';
 
 import BaseAPIService from './api-service';
 
@@ -27,11 +27,11 @@ class SecretSourceService extends BaseAPIService {
 		return response.data?.data ?? [];
 	}
 
-	async create(dto: SecretSourceCreateDto): Promise<SecretSource> {
+	async create(dto: SecretSourceCreateRequest): Promise<SecretSource> {
 		return this.handleResponse(this.api.post('/secret-sources', dto));
 	}
 
-	async update(id: string, dto: SecretSourceUpdateDto): Promise<SecretSource> {
+	async update(id: string, dto: SecretSourceUpdateRequest): Promise<SecretSource> {
 		return this.handleResponse(this.api.put(`/secret-sources/${encodeURIComponent(id)}`, dto));
 	}
 
@@ -39,11 +39,11 @@ class SecretSourceService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/secret-sources/${encodeURIComponent(id)}`));
 	}
 
-	async test(dto: SecretSourceTestDto): Promise<SecretSourceTestResult> {
+	async test(dto: SecretSourceTestRequest): Promise<SecretSourceTestResult> {
 		return this.handleResponse(this.api.post('/secret-sources/test', dto));
 	}
 
-	async browse(id: string, query: SecretBrowseQuery): Promise<SecretBrowseItem[]> {
+	async browse(id: string, query: SecretSourceBrowseQuery): Promise<SecretSourceBrowseItem[]> {
 		const params = {
 			kind: query.kind,
 			projectId: query.projectId || undefined,
@@ -57,11 +57,11 @@ class SecretSourceService extends BaseAPIService {
 		return response.data?.data ?? [];
 	}
 
-	async targetKeys(sourceId: string, target: BindingTarget): Promise<TargetKeys> {
+	async targetKeys(sourceId: string, target: SecretSourceBindingTarget): Promise<SecretSourceTargetKeys> {
 		return this.handleResponse(this.api.post(`/secret-sources/${encodeURIComponent(sourceId)}/keys`, { target }));
 	}
 
-	async composeServices(compose: string): Promise<ComposeService[]> {
+	async composeServices(compose: string): Promise<SecretSourceComposeService[]> {
 		return this.handleResponse(this.api.post('/secret-sources/compose/services', { compose }));
 	}
 
@@ -70,26 +70,38 @@ class SecretSourceService extends BaseAPIService {
 		compose: string,
 		assignments: Record<string, string[]>,
 		env?: { content: string; keys: string[] }
-	): Promise<ComposeRefsResult> {
+	): Promise<SecretSourceComposeRefsResult> {
 		const body =
 			env && env.keys.length > 0 ? { compose, assignments, env: env.content, envKeys: env.keys } : { compose, assignments };
 		return this.handleResponse(this.api.post('/secret-sources/compose/refs', body));
 	}
 
-	async planSetup(environmentId: string, projectId: string, request: SetupPlanRequest): Promise<SetupPlan> {
+	async planSetup(
+		environmentId: string,
+		projectId: string,
+		request: SecretSourceSetupPlanRequest
+	): Promise<SecretSourceSetupPlan> {
 		return this.handleResponse(this.api.post(`${this.bindingPath(environmentId, projectId)}/setup/plan`, request));
 	}
 
-	async applySetup(environmentId: string, projectId: string, request: SetupApplyRequest): Promise<SetupResult> {
+	async applySetup(
+		environmentId: string,
+		projectId: string,
+		request: SecretSourceSetupApplyRequest
+	): Promise<SecretSourceSetupResult> {
 		return this.handleResponse(this.api.post(`${this.bindingPath(environmentId, projectId)}/setup`, request));
 	}
 
-	async listBindings(environmentId: string, projectId: string): Promise<ProjectSecretBinding[]> {
+	async listBindings(environmentId: string, projectId: string): Promise<SecretSourceBinding[]> {
 		const response = await this.api.get(this.bindingPath(environmentId, projectId));
 		return response.data?.data ?? [];
 	}
 
-	async createBinding(environmentId: string, projectId: string, dto: ProjectSecretBindingDto): Promise<ProjectSecretBinding> {
+	async createBinding(
+		environmentId: string,
+		projectId: string,
+		dto: SecretSourceBindingUpsertRequest
+	): Promise<SecretSourceBinding> {
 		return this.handleResponse(this.api.post(this.bindingPath(environmentId, projectId), dto));
 	}
 
@@ -97,8 +109,8 @@ class SecretSourceService extends BaseAPIService {
 		environmentId: string,
 		projectId: string,
 		bindingId: string,
-		dto: ProjectSecretBindingDto
-	): Promise<ProjectSecretBinding> {
+		dto: SecretSourceBindingUpsertRequest
+	): Promise<SecretSourceBinding> {
 		return this.handleResponse(
 			this.api.put(`${this.bindingPath(environmentId, projectId)}/${encodeURIComponent(bindingId)}`, dto)
 		);
@@ -108,7 +120,7 @@ class SecretSourceService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`${this.bindingPath(environmentId, projectId)}/${encodeURIComponent(bindingId)}`));
 	}
 
-	async checkBindings(environmentId: string, projectId: string): Promise<ProjectSecretsCheck> {
+	async checkBindings(environmentId: string, projectId: string): Promise<SecretSourceProjectCheckResult> {
 		return this.handleResponse(this.api.post(`${this.bindingPath(environmentId, projectId)}/check`, {}));
 	}
 

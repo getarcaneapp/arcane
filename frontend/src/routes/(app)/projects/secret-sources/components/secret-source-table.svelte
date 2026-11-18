@@ -55,11 +55,32 @@
 
 	// Where Arcane connects for this source. An empty Infisical site URL means Infisical Cloud.
 	function endpointOf(source: SecretSource): string {
-		return source.settings.infisical?.siteUrl || 'https://app.infisical.com';
+		switch (source.provider) {
+			case 'bitwarden':
+				return source.settings.bitwarden?.serveUrl ?? '';
+			case 'vault':
+				return source.settings.vault?.address ?? '';
+			case 'doppler':
+				return source.settings.doppler?.apiUrl || 'https://api.doppler.com';
+			case 'onepassword':
+				return source.settings.onepassword?.serverUrl ?? '';
+			case 'protonpass':
+				return source.settings.protonpass?.kitUrl ?? '';
+			case 'http':
+				return source.settings.http?.baseUrl ?? '';
+			default:
+				return source.settings.infisical?.siteUrl || 'https://app.infisical.com';
+		}
 	}
 
 	const providerBadges: Record<SecretSource['provider'], BadgeVariant> = {
-		infisical: 'violet'
+		infisical: 'violet',
+		bitwarden: 'blue',
+		vault: 'amber',
+		doppler: 'green',
+		onepassword: 'sky',
+		protonpass: 'purple',
+		http: 'teal'
 	};
 
 	function testLabel(source: SecretSource): string {

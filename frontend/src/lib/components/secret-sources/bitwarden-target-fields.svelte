@@ -10,7 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { BitwardenScope, BitwardenTarget } from '#lib/types/secret-source.js';
+	import type { SecretSourceBitwardenScope, SecretSourceBitwardenTarget } from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
@@ -18,10 +18,10 @@
 		target = $bindable()
 	}: {
 		sourceId: string;
-		target: BitwardenTarget;
+		target: SecretSourceBitwardenTarget;
 	} = $props();
 
-	const scopes: { value: BitwardenScope; label: () => string; description: () => string }[] = [
+	const scopes: { value: SecretSourceBitwardenScope; label: () => string; description: () => string }[] = [
 		{ value: 'folder', label: m.bitwarden_scope_folder, description: m.bitwarden_scope_folder_description },
 		{ value: 'collection', label: m.bitwarden_scope_collection, description: m.bitwarden_scope_collection_description },
 		{ value: 'item', label: m.bitwarden_scope_item, description: m.bitwarden_scope_item_description }
@@ -37,7 +37,7 @@
 	const options = $derived(optionsQuery.data ?? []);
 	const selected = $derived(options.find((option) => option.id === target.id));
 
-	function pickerLabel(scope: BitwardenScope): string {
+	function pickerLabel(scope: SecretSourceBitwardenScope): string {
 		switch (scope) {
 			case 'collection':
 				return m.bitwarden_select_collection();
@@ -55,7 +55,7 @@
 		class="mt-2"
 		value={target.scope}
 		onValueChange={(value) => {
-			target = { scope: value as BitwardenScope, id: '', name: '' };
+			target = { scope: value as SecretSourceBitwardenScope, id: '', name: '' };
 		}}
 	>
 		<div class="grid gap-2">

@@ -1,11 +1,11 @@
 import { m } from '#lib/paraglide/messages.js';
-import type { BindingTarget, SecretProvider, SourceSettings } from '#lib/types/secret-source.js';
+import type { SecretSourceBindingTarget, SecretSourceProvider, SecretSourceSettings } from '#lib/types/secretsource.js';
 
 // Provider metadata shared by the source sheet, the binding forms, and the
 // summaries. Infisical and Bitwarden keep their own target components; the
 // providers below use ProviderTargetFields.
 
-export const providerOptions: { value: SecretProvider; label: () => string; description: () => string }[] = [
+const providerOptions: { value: SecretSourceProvider; label: () => string; description: () => string }[] = [
 	{
 		value: 'infisical',
 		label: m.secret_sources_provider_infisical,
@@ -41,7 +41,7 @@ export function sortedProviderOptions() {
 
 export type GenericProvider = 'vault' | 'doppler' | 'onepassword' | 'protonpass' | 'http';
 
-export function isGenericProvider(provider: SecretProvider | undefined): provider is GenericProvider {
+export function isGenericProvider(provider: SecretSourceProvider | undefined): provider is GenericProvider {
 	return (
 		provider === 'vault' ||
 		provider === 'doppler' ||
@@ -51,17 +51,17 @@ export function isGenericProvider(provider: SecretProvider | undefined): provide
 	);
 }
 
-export function providerLabel(provider: SecretProvider | undefined): string {
+export function providerLabel(provider: SecretSourceProvider | undefined): string {
 	return (providerOptions.find((option) => option.value === provider) ?? providerOptions[0]!).label();
 }
 
 // Providers whose guided setup can write secrets.
-export function providerCanSetUp(provider: SecretProvider): boolean {
+export function providerCanSetUp(provider: SecretSourceProvider): boolean {
 	return provider === 'infisical' || provider === 'bitwarden' || provider === 'vault';
 }
 
 // Fills in the target of a generic provider so its fields have values to bind.
-export function withDefaultTarget(provider: GenericProvider, target: BindingTarget): BindingTarget {
+export function withDefaultTarget(provider: GenericProvider, target: SecretSourceBindingTarget): SecretSourceBindingTarget {
 	switch (provider) {
 		case 'vault':
 			return { vault: target.vault ?? { mount: 'secret', path: '', kvVersion: 2 } };
@@ -76,7 +76,7 @@ export function withDefaultTarget(provider: GenericProvider, target: BindingTarg
 	}
 }
 
-export function isGenericTargetComplete(provider: GenericProvider, target: BindingTarget): boolean {
+export function isGenericTargetComplete(provider: GenericProvider, target: SecretSourceBindingTarget): boolean {
 	switch (provider) {
 		case 'vault': {
 			// A path ending in "/" is a folder, not a secret.
@@ -104,13 +104,13 @@ export function isGenericTargetComplete(provider: GenericProvider, target: Bindi
 }
 
 // Keeps only the selected provider's target, as the API expects.
-export function pickGenericTarget(provider: GenericProvider, target: BindingTarget): BindingTarget {
+export function pickGenericTarget(provider: GenericProvider, target: SecretSourceBindingTarget): SecretSourceBindingTarget {
 	return withDefaultTarget(provider, target);
 }
 
 // Where a source's credential is sent; the backend asks for the credential
 // again when this changes.
-export function endpointKey(settings: SourceSettings): string {
+export function endpointKey(settings: SecretSourceSettings): string {
 	if (settings.infisical) return `infisical|${settings.infisical.siteUrl}`;
 	if (settings.vault) {
 		const vault = settings.vault;
@@ -123,7 +123,7 @@ export function endpointKey(settings: SourceSettings): string {
 	return '';
 }
 
-export function describeGenericTarget(target: BindingTarget): string {
+export function describeGenericTarget(target: SecretSourceBindingTarget): string {
 	if (target.vault) {
 		return `${target.vault.mount}/${target.vault.path} · KV v${target.vault.kvVersion}`;
 	}

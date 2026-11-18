@@ -1,6 +1,7 @@
 import type { PaginatedWithCounts } from './base';
 import type { ContainerRegistryCredential } from './containerregistry';
 import type { HardenedImageInfo, ImageUpdateInfo } from './image';
+import type { SecretSourceTargetRef } from './secretsource';
 
 export interface ContainerRestartPolicyCreate {
 	name?: 'no' | 'always' | 'on-failure' | 'unless-stopped';
@@ -89,6 +90,8 @@ export interface Container {
 	memory?: number;
 	cpus?: number;
 	credentials?: ContainerRegistryCredential[];
+	/** Secret source targets that fill variables env does not set, once, at create. */
+	secretSources?: SecretSourceTargetRef[];
 }
 
 export interface ContainerCommitRequest {

@@ -16,21 +16,21 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
 	import type {
-		SecretProvider,
-		VaultAuthMethod,
+		SecretSourceProvider,
+		SecretSourceVaultAuthMethod,
 		SecretSource,
-		SecretSourceCreateDto,
+		SecretSourceCreateRequest,
 		SecretSourceTestResult,
-		SecretSourceUpdateDto,
-		SourceSettings
-	} from '#lib/types/secret-source.js';
+		SecretSourceUpdateRequest,
+		SecretSourceSettings
+	} from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type SecretSourceFormPayload =
-		| { mode: 'create'; source: SecretSourceCreateDto }
-		| { mode: 'edit'; id: string; source: SecretSourceUpdateDto };
+		| { mode: 'create'; source: SecretSourceCreateRequest }
+		| { mode: 'edit'; id: string; source: SecretSourceUpdateRequest };
 
 	let {
 		open = $bindable(false),
@@ -50,11 +50,11 @@
 	const hasStoredSetupSecret = untrack(() => !!sourceToEdit?.hasSetupCredential);
 
 	// The provider is fixed once a source exists; bindings depend on it.
-	let provider = $state<SecretProvider>(untrack(() => sourceToEdit?.provider ?? 'infisical'));
+	let provider = $state<SecretSourceProvider>(untrack(() => sourceToEdit?.provider ?? 'infisical'));
 
 	const providers = sortedProviderOptions();
 	const storedVault = untrack(() => sourceToEdit?.settings.vault);
-	let vaultAuth = $state<VaultAuthMethod>(storedVault?.authMethod ?? 'token');
+	let vaultAuth = $state<SecretSourceVaultAuthMethod>(storedVault?.authMethod ?? 'token');
 	let vaultSetupToken = $state(!!storedVault?.setupToken);
 	const storedVaultSetupToken = !!storedVault?.setupToken && untrack(() => !!sourceToEdit?.hasSetupCredential);
 
@@ -69,7 +69,7 @@
 	const optionalToken = $derived(provider === 'http' || provider === 'protonpass');
 	const credentialRequired = $derived(provider !== 'bitwarden' && !optionalToken);
 
-	function credentialLabel(current: SecretProvider): string {
+	function credentialLabel(current: SecretSourceProvider): string {
 		switch (current) {
 			case 'vault':
 				return vaultAuth === 'approle' ? m.vault_secret_id() : m.vault_token();
@@ -195,7 +195,7 @@
 	let testing = $state(false);
 	let testResult = $state<SecretSourceTestResult | null>(null);
 
-	function currentSettings(): SourceSettings {
+	function currentSettings(): SecretSourceSettings {
 		switch (provider) {
 			case 'bitwarden':
 				return { bitwarden: { serveUrl: inputs.serveUrl.value.trim() } };
@@ -337,7 +337,7 @@
 					value={provider}
 					disabled={isEditMode}
 					onValueChange={(value) => {
-						provider = value as SecretProvider;
+						provider = value as SecretSourceProvider;
 						testResult = null;
 					}}
 				>
@@ -383,7 +383,7 @@
 						class="mt-2"
 						value={vaultAuth}
 						onValueChange={(value) => {
-							vaultAuth = value as VaultAuthMethod;
+							vaultAuth = value as SecretSourceVaultAuthMethod;
 							testResult = null;
 						}}
 					>

@@ -8,7 +8,7 @@
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { ComposeRefsResult } from '#lib/types/secret-source.js';
+	import type { SecretSourceComposeRefsResult } from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -30,7 +30,7 @@
 		env?: string | null;
 		composeLocked?: boolean;
 		// Receives the updated content; saving it is up to the caller.
-		onApply: (result: ComposeRefsResult) => Promise<void> | void;
+		onApply: (result: SecretSourceComposeRefsResult) => Promise<void> | void;
 	} = $props();
 
 	const selection = new SvelteSet<string>();

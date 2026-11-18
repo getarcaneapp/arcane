@@ -12,7 +12,12 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { BindingTarget, BitwardenTarget, InfisicalTarget, SecretProvider } from '#lib/types/secret-source.js';
+	import type {
+		SecretSourceBindingTarget,
+		SecretSourceBitwardenTarget,
+		SecretSourceInfisicalTarget,
+		SecretSourceProvider
+	} from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -46,19 +51,19 @@
 	const sources = $derived(sourcesQuery.data ?? []);
 
 	let sourceId = $state('');
-	let infisicalTarget = $state<InfisicalTarget>({
+	let infisicalTarget = $state<SecretSourceInfisicalTarget>({
 		projectId: '',
 		environment: '',
 		secretPath: '/',
 		includeImports: true,
 		expandReferences: true
 	});
-	let bitwardenTarget = $state<BitwardenTarget>({ scope: 'folder', id: '', name: '' });
-	let genericTarget = $state<BindingTarget>({});
+	let bitwardenTarget = $state<SecretSourceBitwardenTarget>({ scope: 'folder', id: '', name: '' });
+	let genericTarget = $state<SecretSourceBindingTarget>({});
 
 	const source = $derived(sources.find((candidate) => candidate.id === sourceId));
-	const provider = $derived<SecretProvider | undefined>(source?.provider);
-	const target = $derived<BindingTarget | null>(
+	const provider = $derived<SecretSourceProvider | undefined>(source?.provider);
+	const target = $derived<SecretSourceBindingTarget | null>(
 		provider === 'infisical' && infisicalTarget.projectId && infisicalTarget.environment
 			? { infisical: infisicalTarget }
 			: provider === 'bitwarden' && bitwardenTarget.id
@@ -85,7 +90,7 @@
 		keys = result.data.keys;
 	}
 
-	function describe(current: BindingTarget): string {
+	function describe(current: SecretSourceBindingTarget): string {
 		if (current.infisical) return `${current.infisical.environment} · ${current.infisical.secretPath}`;
 		if (current.bitwarden) return current.bitwarden.name || current.bitwarden.id;
 		return describeGenericTarget(current);

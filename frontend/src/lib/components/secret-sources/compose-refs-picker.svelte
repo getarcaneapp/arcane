@@ -5,7 +5,7 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertIcon, AlertTriangleIcon, CheckIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -164,7 +164,7 @@
 	{#if blocked.length > 0}
 		<Alert.Root
 			variant="warning-subtle"
-			icon={AlertTriangleIcon}
+			icon={AlertIcon}
 			heading={m.compose_refs_blocked()}
 			description={blocked.map((service) => `${service.name}: ${service.reason ?? ''}`).join(' · ')}
 		/>

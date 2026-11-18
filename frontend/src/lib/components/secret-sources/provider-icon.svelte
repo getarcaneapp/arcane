@@ -12,13 +12,13 @@
 	import ProtonPassIcon from 'virtual:icons/selfhst/proton-pass';
 
 	import { ConnectionIcon } from '#lib/icons/index.js';
-	import type { SecretProvider } from '#lib/types/secret-source.js';
+	import type { SecretSourceProvider } from '#lib/types/secretsource.js';
 	import { cn } from '#lib/utils.js';
 
-	let { provider, class: className }: { provider: SecretProvider | undefined; class?: string } = $props();
+	let { provider, class: className }: { provider: SecretSourceProvider | undefined; class?: string } = $props();
 
 	// `dark` replaces marks that are too dark to see on the dark theme.
-	const brandIcons: Partial<Record<SecretProvider, { light: Component; dark?: Component }>> = {
+	const brandIcons: Partial<Record<SecretSourceProvider, { light: Component; dark?: Component }>> = {
 		bitwarden: { light: BitwardenIcon },
 		doppler: { light: DopplerIcon },
 		infisical: { light: InfisicalIcon, dark: InfisicalLightIcon },

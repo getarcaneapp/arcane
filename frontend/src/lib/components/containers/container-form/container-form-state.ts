@@ -15,6 +15,7 @@ import type {
 	ContainerMountCreate,
 	ContainerPortBindingCreate
 } from '#lib/types/container.js';
+import type { SecretSourceProvider, SecretSourceTargetRef } from '#lib/types/secretsource.js';
 import type { ContainerCreate } from '#lib/types/ui/container.js';
 
 export const LINUX_CAPABILITIES = [
@@ -97,6 +98,15 @@ export type ContainerFormRows = {
 	networks: NetworkAttachmentRow[];
 	capAdd: string[];
 	capDrop: string[];
+	// Create only: secret source targets that fill the environment once.
+	secretSources: ContainerSecretFill[];
+};
+
+export type ContainerSecretFill = SecretSourceTargetRef & {
+	sourceName: string;
+	provider: SecretSourceProvider;
+	description: string;
+	keys: string[];
 };
 
 function splitShellWords(input: string): string[] {
@@ -141,7 +151,7 @@ export function emptyContainerFormValues(): ContainerFormValues {
 }
 
 export function emptyContainerFormRows(): ContainerFormRows {
-	return { env: [], labels: [], ports: [], volumes: [], networks: [], capAdd: [], capDrop: [] };
+	return { env: [], labels: [], ports: [], volumes: [], networks: [], capAdd: [], capDrop: [], secretSources: [] };
 }
 
 function healthModeFromConfig(hc: ContainerHealthcheckCreate | undefined): ContainerFormValues['healthMode'] {
@@ -374,6 +384,8 @@ export function toCreateRequest(values: ContainerFormValues, rows: ContainerForm
 		user: values.user.trim() || undefined,
 		hostname: values.hostname.trim() || undefined,
 		env: env.length > 0 ? env : undefined,
+		secretSources:
+			rows.secretSources.length > 0 ? rows.secretSources.map(({ sourceId, target }) => ({ sourceId, target })) : undefined,
 		labels: Object.keys(labels).length > 0 ? labels : undefined,
 		healthcheck: buildHealthcheck(values),
 		hostConfig,

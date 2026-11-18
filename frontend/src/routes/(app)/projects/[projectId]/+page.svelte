@@ -24,6 +24,7 @@
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import type { SecretRefsEditor } from '#lib/components/secret-sources/compose-refs.js';
 	import ProjectSecretsPanel from '#lib/components/secret-sources/project-secrets-panel.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -1583,6 +1584,43 @@
 		}
 	};
 
+	// Add to compose on the Secrets tab writes into the drafts here, so the user
+	// reviews the references next to their other edits and saves them together.
+	const secretRefsEditor = $derived<SecretRefsEditor>({
+		compose: inputs.composeContent.value,
+		env: inputs.envContent.value,
+		canEditCompose,
+		canEditEnv,
+		dirty: composeHasChanges || envHasChanges,
+		apply: (changes) => {
+			if (changes.compose !== undefined) inputs.composeContent.value = changes.compose;
+			if (changes.env !== undefined) {
+				inputs.envContent.value = changes.env;
+				envOpen = true;
+			}
+			userSelectedTabProjectId = project?.id ?? null;
+			selectedTab = 'compose';
+			urlTab.select('compose');
+			persistPrefs();
+		},
+		reload: reloadSecretFilesInternal
+	});
+
+	// Guided setup rewrites .env (and can touch compose) on the server. It only
+	// runs while both drafts are clean, so take the server's copies of those two
+	// and leave every other draft alone.
+	async function reloadSecretFilesInternal() {
+		if (!projectId) return;
+		const result = await tryCatch(projectService.getProjectForEnvironment(envId, projectId));
+		if (result.error) {
+			toast.error(m.common_refresh_failed({ resource: m.project() }), { description: extractApiErrorMessage(result.error) });
+			return;
+		}
+		await syncProjectQueries(result.data);
+		inputs.composeContent.value = result.data.composeContent || '';
+		inputs.envContent.value = result.data.envContent || '';
+	}
+
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;
 		await handleApiResultWithCallbacks({
@@ -2065,7 +2103,7 @@
 
 {#snippet projectSecretsTab(project: Project)}
 	<Tabs.Content value="secrets" class="h-full min-h-0">
-		<ProjectSecretsPanel environmentId={envId} projectId={project.id} projectName={project.name} />
+		<ProjectSecretsPanel environmentId={envId} projectId={project.id} projectName={project.name} drafts={secretRefsEditor} />
 	</Tabs.Content>
 {/snippet}
 

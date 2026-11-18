@@ -1,4 +1,4 @@
-import type { ProjectSecretBindingDto } from '#lib/types/secret-source.js';
+import type { SecretSourceBindingUpsertRequest } from '#lib/types/secretsource.js';
 
 // A selection is a set of "service\u0000key" pairs: add KEY to that service.
 const separator = '\u0000';
@@ -56,7 +56,7 @@ export type SecretRefsEditor = {
 
 // Secrets chosen while creating a project, bound once the project exists.
 export type NewProjectSecrets = {
-	binding: ProjectSecretBindingDto;
+	binding: SecretSourceBindingUpsertRequest;
 	sourceName: string;
 	keyCount: number;
 };

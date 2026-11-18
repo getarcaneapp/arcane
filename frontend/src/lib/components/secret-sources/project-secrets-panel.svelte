@@ -13,7 +13,6 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		AlertIcon,
-		AlertTriangleIcon,
 		ArrowDownIcon,
 		ArrowUpIcon,
 		CheckIcon,
@@ -26,17 +25,18 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
+	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type {
-		BindingTarget,
-		BitwardenTarget,
-		ComposeRefsResult,
-		InfisicalTarget,
-		ProjectSecretBinding,
-		ProjectSecretCheckResult,
-		ProjectSecretsCheck,
-		SecretProvider,
+		SecretSourceBindingTarget,
+		SecretSourceBitwardenTarget,
+		SecretSourceComposeRefsResult,
+		SecretSourceInfisicalTarget,
+		SecretSourceBinding,
+		SecretSourceCheckResult,
+		SecretSourceProjectCheckResult,
+		SecretSourceProvider,
 		SecretSource
-	} from '#lib/types/secret-source.js';
+	} from '#lib/types/secretsource.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -76,17 +76,19 @@
 	const queryClient = useQueryClient();
 
 	// Binding delivers whatever the source can read, so it also needs secret-sources:use.
-	const canEdit = $derived(hasPermission('projects:update', environmentId) && hasPermission('secret-sources:use'));
+	const canEdit = $derived(hasPermission('projects:update', environmentId) && hasPermission('secret-sources:use', GLOBAL_SCOPE));
 	const canRemove = $derived(hasPermission('projects:update', environmentId));
 	const canCheck = $derived(hasPermission('projects:deploy', environmentId));
-	const canListSources = $derived(hasPermission('secret-sources:list') && hasPermission('secret-sources:read'));
+	const canListSources = $derived(
+		hasPermission('secret-sources:list', GLOBAL_SCOPE) && hasPermission('secret-sources:read', GLOBAL_SCOPE)
+	);
 
 	const bindingsQuery = createQuery(() => ({
 		queryKey: queryKeys.secretSources.bindings(environmentId, projectId),
 		queryFn: () => secretSourceService.listBindings(environmentId, projectId),
 		enabled: !!environmentId && !!projectId
 	}));
-	const bindings = $derived<ProjectSecretBinding[]>(bindingsQuery.data ?? []);
+	const bindings = $derived<SecretSourceBinding[]>(bindingsQuery.data ?? []);
 
 	const sourcesQuery = createQuery(() => ({
 		queryKey: queryKeys.secretSources.list(),
@@ -96,11 +98,11 @@
 	const sources = $derived(sourcesQuery.data ?? []);
 	// Setup writes to Infisical and Vault/OpenBao (with a setup identity or token) and to Bitwarden through bw serve.
 	const setupSources = $derived(sources.filter((source) => providerCanSetUp(source.provider)));
-	const canSetup = $derived(canEdit && hasPermission('secret-sources:update'));
+	const canSetup = $derived(canEdit && hasPermission('secret-sources:update', GLOBAL_SCOPE));
 
 	// A binding can take more variables when its provider writes and its target
 	// holds more than one item: a single Bitwarden item cannot.
-	function canMoveMoreInto(binding: ProjectSecretBinding): boolean {
+	function canMoveMoreInto(binding: SecretSourceBinding): boolean {
 		if (!providerCanSetUp(binding.provider)) return false;
 		if (binding.provider === 'bitwarden' && binding.target.bitwarden?.scope === 'item') return false;
 		return setupSources.some((source) => source.id === binding.sourceId);
@@ -112,7 +114,7 @@
 	let setupChoices = $state<SecretSource[]>([]);
 
 	// Without a binding, setup offers every writable source; from a binding, only its own.
-	function openSetup(binding?: ProjectSecretBinding) {
+	function openSetup(binding?: SecretSourceBinding) {
 		// Setup rewrites .env on the server, which would collide with unsaved edits.
 		if (drafts?.dirty) {
 			toast.warning(m.secret_setup_save_first());
@@ -138,7 +140,7 @@
 
 	// Opens the picker for keys, or for every key of a binding. It works on the
 	// editor's drafts when there are drafts, so unsaved edits are kept.
-	async function openComposeRefs(keys?: string[], binding?: ProjectSecretBinding) {
+	async function openComposeRefs(keys?: string[], binding?: SecretSourceBinding) {
 		composeRefsLoading = binding?.id ?? 'setup';
 		let compose = drafts?.compose ?? '';
 		let env: string | null = drafts?.canEditEnv ? drafts.env : null;
@@ -169,7 +171,7 @@
 		composeRefsOpen = true;
 	}
 
-	async function saveComposeRefs(result: ComposeRefsResult) {
+	async function saveComposeRefs(result: SecretSourceComposeRefsResult) {
 		const composeAdded = Object.values(result.added).reduce((total, keys) => total + keys.length, 0);
 		const envAdded = result.envAdded.length;
 		const added = composeAdded + envAdded;
@@ -183,7 +185,9 @@
 			toast.success(m.compose_refs_in_editor({ count: added }));
 			return;
 		}
-		const saved = await tryCatch(projectService.updateProject(projectId, undefined, compose, env));
+		const saved = await tryCatch(
+			projectService.updateProject(projectId, { composeContent: compose, envContent: env }, environmentId)
+		);
 		if (saved.error) {
 			toast.error(m.compose_refs_failed(), { description: extractApiErrorMessage(saved.error) });
 			return;
@@ -212,22 +216,22 @@
 	let required = $state(true);
 	let enabled = $state(true);
 	let autoRedeploy = $state(false);
-	let infisicalTarget = $state<InfisicalTarget>(emptyInfisicalTarget());
-	let bitwardenTarget = $state<BitwardenTarget>(emptyBitwardenTarget());
+	let infisicalTarget = $state<SecretSourceInfisicalTarget>(emptyInfisicalTarget());
+	let bitwardenTarget = $state<SecretSourceBitwardenTarget>(emptyBitwardenTarget());
 	// Vault/OpenBao, Doppler, 1Password, Proton Pass, and HTTP targets.
-	let genericTarget = $state<BindingTarget>({});
+	let genericTarget = $state<SecretSourceBindingTarget>({});
 
-	function emptyInfisicalTarget(): InfisicalTarget {
+	function emptyInfisicalTarget(): SecretSourceInfisicalTarget {
 		return { projectId: '', environment: '', secretPath: '/', includeImports: true, expandReferences: true };
 	}
 
-	function emptyBitwardenTarget(): BitwardenTarget {
+	function emptyBitwardenTarget(): SecretSourceBitwardenTarget {
 		return { scope: 'folder', id: '', name: '' };
 	}
 
-	const draftProvider = $derived<SecretProvider | undefined>(sources.find((source) => source.id === sourceId)?.provider);
+	const draftProvider = $derived<SecretSourceProvider | undefined>(sources.find((source) => source.id === sourceId)?.provider);
 
-	function startEditing(binding?: ProjectSecretBinding) {
+	function startEditing(binding?: SecretSourceBinding) {
 		sourceId = binding?.sourceId ?? (sources.length === 1 ? (sources[0]?.id ?? '') : '');
 		required = binding?.required ?? true;
 		enabled = binding?.enabled ?? true;
@@ -271,7 +275,7 @@
 		retry: false
 	}));
 
-	function describeTarget(current: ProjectSecretBinding): string {
+	function describeTarget(current: SecretSourceBinding): string {
 		const infisical = current.target.infisical;
 		if (infisical) {
 			const name = infisicalProjectsQuery.data?.get(`${current.sourceId}/${infisical.projectId}`);
@@ -284,7 +288,7 @@
 		return describeGenericTarget(current.target);
 	}
 
-	function scopeLabel(scope: BitwardenTarget['scope']): string {
+	function scopeLabel(scope: SecretSourceBitwardenTarget['scope']): string {
 		switch (scope) {
 			case 'collection':
 				return m.bitwarden_scope_collection();
@@ -300,7 +304,7 @@
 		await queryClient.invalidateQueries({ queryKey: queryKeys.secretSources.list() });
 	}
 
-	function targetForSave(): BindingTarget {
+	function targetForSave(): SecretSourceBindingTarget {
 		if (draftProvider === 'bitwarden') return { bitwarden: bitwardenTarget };
 		if (isGenericProvider(draftProvider)) return pickGenericTarget(draftProvider, genericTarget);
 		return { infisical: infisicalTarget };
@@ -328,7 +332,7 @@
 
 	let reordering = $state(false);
 
-	async function move(binding: ProjectSecretBinding, offset: number) {
+	async function move(binding: SecretSourceBinding, offset: number) {
 		const index = bindings.findIndex((candidate) => candidate.id === binding.id);
 		const position = index + offset;
 		if (index < 0 || position < 0 || position >= bindings.length) return;
@@ -353,7 +357,7 @@
 		});
 	}
 
-	function detach(binding: ProjectSecretBinding) {
+	function detach(binding: SecretSourceBinding) {
 		confirmAndRun({
 			title: m.project_secrets_detach_one_title({ source: binding.sourceName, name: projectName }),
 			message: m.project_secrets_detach_message(),
@@ -371,7 +375,7 @@
 
 	// ---- Check ----
 	let checking = $state(false);
-	let checkResult = $state<ProjectSecretsCheck | null>(null);
+	let checkResult = $state<SecretSourceProjectCheckResult | null>(null);
 	const checksById = $derived(new Map((checkResult?.bindings ?? []).map((check) => [check.bindingId, check])));
 
 	async function checkNow() {
@@ -493,7 +497,7 @@
 				{/each}
 			</div>
 			{#if checkResult?.redeployNeeded}
-				<Badge variant="amber" size="sm"><AlertTriangleIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
+				<Badge variant="amber" size="sm"><AlertIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
 			{/if}
 			<div class="ml-auto flex flex-wrap items-center gap-2">
 				{#if canCheck}
@@ -545,7 +549,7 @@
 	</div>
 {/snippet}
 
-{#snippet bindingCard(current: ProjectSecretBinding, index: number)}
+{#snippet bindingCard(current: SecretSourceBinding, index: number)}
 	{@const check = checksById.get(current.id)}
 	<div class="space-y-3 rounded-xl border border-border/70 bg-card/60 p-4 backdrop-blur-md">
 		<div class="flex flex-wrap items-center gap-4">
@@ -564,7 +568,7 @@
 						<Badge variant="violet" size="sm">{m.project_secrets_auto_redeploy()}</Badge>
 					{/if}
 					{#if current.redeployNeeded}
-						<Badge variant="amber" size="sm"><AlertTriangleIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
+						<Badge variant="amber" size="sm"><AlertIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
 					{/if}
 				</div>
 				<p class="truncate font-mono text-xs text-muted-foreground">
@@ -663,7 +667,7 @@
 	</div>
 {/snippet}
 
-{#snippet checkDetails(result: ProjectSecretCheckResult, current: ProjectSecretBinding)}
+{#snippet checkDetails(result: SecretSourceCheckResult, current: SecretSourceBinding)}
 	{@const overridden = new Set(result.overriddenKeys)}
 	{@const shadowed = new Set(result.shadowedKeys)}
 	{@const unused = new Set(result.unusedKeys)}
@@ -689,7 +693,7 @@
 			{#if result.neverDeployed}
 				<Badge variant="gray" size="sm">{m.project_secrets_never_deployed()}</Badge>
 			{:else if result.redeployNeeded}
-				<Badge variant="amber" size="sm"><AlertTriangleIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
+				<Badge variant="amber" size="sm"><AlertIcon class="size-3" />{m.project_secrets_redeploy_needed()}</Badge>
 				<span class="text-xs text-muted-foreground">{m.project_secrets_redeploy_needed_description()}</span>
 			{:else}
 				<Badge variant="green" size="sm"><CheckIcon class="size-3" />{m.project_secrets_in_sync()}</Badge>
@@ -760,7 +764,7 @@
 		{#if result.overriddenKeys.length > 0}
 			<Alert.Root
 				variant="warning-subtle"
-				icon={AlertTriangleIcon}
+				icon={AlertIcon}
 				heading={m.project_secrets_overrides()}
 				description={m.project_secrets_overrides_description()}
 			/>
@@ -769,7 +773,7 @@
 		{#if result.invalidKeys.length > 0}
 			<Alert.Root
 				variant="warning-subtle"
-				icon={AlertTriangleIcon}
+				icon={AlertIcon}
 				heading={m.project_secrets_invalid_keys()}
 				description={`${m.project_secrets_invalid_keys_description()} ${result.invalidKeys.join(', ')}`}
 			/>
