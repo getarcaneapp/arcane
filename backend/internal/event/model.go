@@ -67,6 +67,7 @@ const (
 	EventTypeProjectCreate                EventType     = "project.create"
 	EventTypeProjectUpdate                EventType     = "project.update"
 	EventTypeProjectError                 EventType     = "project.error"
+	EventTypeProjectJobRun                EventType     = "project.job.run"
 	EventTypeGitRepositoryCreate          EventType     = "git.repository.create"
 	EventTypeGitRepositoryUpdate          EventType     = "git.repository.update"
 	EventTypeGitRepositoryDelete          EventType     = "git.repository.delete"

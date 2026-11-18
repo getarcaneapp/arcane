@@ -13,6 +13,7 @@ export type ActivityType =
 	| 'project_down'
 	| 'project_restart'
 	| 'project_destroy'
+	| 'project_job_run'
 	| 'container_start'
 	| 'container_stop'
 	| 'container_restart'

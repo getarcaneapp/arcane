@@ -501,6 +501,14 @@ func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, load
 		}
 	}
 
+	for name, job := range project.AllJobs() {
+		for _, volume := range job.Volumes {
+			if volume.Type == composetypes.VolumeTypeBind && volume.Source != "" {
+				rawSources[("job_volume:" + name + "\x00" + filepath.Clean(volume.Target))] = volume.Source
+			}
+		}
+	}
+
 	for name, volume := range project.Volumes {
 		if device, ok := bindVolumeDevice(volume); ok {
 			rawSources["volume_device:"+name] = device
@@ -570,6 +578,22 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 		}
 
 		project.Services[i] = s
+	}
+
+	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+		for name, job := range jobs {
+			if job.Environment == nil {
+				job.Environment = make(composetypes.MappingWithEquals)
+			}
+
+			for k, v := range injectionVars {
+				if _, exists := job.Environment[k]; !exists {
+					job.Environment[k] = new(v)
+				}
+			}
+
+			jobs[name] = job
+		}
 	}
 }
 

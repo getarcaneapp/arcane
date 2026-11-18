@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"go.uber.org/fx"
@@ -28,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/types/v3"
 )
@@ -209,6 +211,10 @@ func (j *AutoHealJob) filterCandidates(containers []container.Summary, excludedC
 		}
 
 		if internal, _ := kit.ParseBool(c.Labels[selfcontainer.InternalResourceLabel]); internal {
+			continue
+		}
+
+		if c.Labels[api.HookLabel] != "" || c.Labels[projects.JobRunLabel] != "" {
 			continue
 		}
 

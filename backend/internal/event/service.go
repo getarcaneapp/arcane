@@ -155,6 +155,7 @@ var (
 		EventTypeProjectCreate: {"Project created: %s", "Project '%s' has been created", EventSeveritySuccess},
 		EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", EventSeverityInfo},
 		EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
+		EventTypeProjectJobRun: {"Project job run: %s", "A job was run in project '%s'", EventSeveritySuccess},
 
 		EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
 		EventTypeVolumeRename:             {"Volume renamed: %s", "Volume '%s' has been renamed", EventSeveritySuccess},
