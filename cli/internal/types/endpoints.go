@@ -308,6 +308,12 @@ func ProjectTransferPreflight(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/transfer/preflight", envID, projectID)
 }
 
+func ProjectExport(envID, projectID string) string {
+	return pathf("/api/agents/%s/projects/%s/export", envID, projectID)
+}
+
+func ProjectImport(envID string) string { return pathf("/api/agents/%s/projects/import", envID) }
+
 func ProjectWorkspace(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/workspace", envID, projectID)
 }

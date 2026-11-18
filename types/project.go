@@ -40,6 +40,48 @@ type (
 		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
 		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
 		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
+		Start     bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
+	}
+
+	ExportProjectArchive struct {
+		Volumes     []string `json:"volumes,omitempty" doc:"Compose keys of the named volumes whose data the export includes; empty exports only the project files"`
+		StopProject bool     `json:"stopProject,omitempty" doc:"Stop a running project while its volumes are exported and start it again afterwards"`
+	}
+
+	ProjectExportOptions struct {
+		Volumes []ProjectVolume `json:"volumes" doc:"The project's volumes; kind explains why external and driverOpts volumes cannot be included"`
+		Running bool            `json:"running" doc:"True when the project has running containers"`
+	}
+
+	ProjectVolumeKind string
+
+	ProjectVolume struct {
+		Labels     map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
+		DriverOpts map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
+		Key        string            `json:"key" doc:"Volume key in the compose file"`
+		Name       string            `json:"name" doc:"Docker volume name"`
+		Kind       ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named volumes hold Docker-managed data; external and driverOpts volumes keep their data outside the project"`
+		Driver     string            `json:"driver,omitempty" doc:"Compose volume driver"`
+		Archive    string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle"`
+		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default only named volumes are"`
+	}
+
+	ProjectManifestProject struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ComposeName string `json:"composeName"`
+	}
+
+	ProjectManifest struct {
+		CreatedAt     time.Time              `json:"createdAt"`
+		Kind          string                 `json:"kind"`
+		ArcaneVersion string                 `json:"arcaneVersion"`
+		Project       ProjectManifestProject `json:"project"`
+		ComposeFiles  []string               `json:"composeFiles,omitempty"`
+		IncludeFiles  []string               `json:"includeFiles,omitempty"`
+		Volumes       []ProjectVolume        `json:"volumes"`
+		FormatVersion int                    `json:"formatVersion"`
+		Consistent    bool                   `json:"consistent" doc:"True when no project container ran while the volumes were exported"`
 	}
 
 	ProjectTransferMode string
@@ -527,6 +569,13 @@ const (
 	ProjectTransferVolumesNotCopied                               = "volume_data_not_copied"
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
+
+	ProjectVolumeNamed      ProjectVolumeKind = "named"
+	ProjectVolumeExternal   ProjectVolumeKind = "external"
+	ProjectVolumeDriverOpts ProjectVolumeKind = "driverOpts"
+
+	ProjectManifestFormatVersion = 1
+	ProjectManifestKindExport    = "export"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

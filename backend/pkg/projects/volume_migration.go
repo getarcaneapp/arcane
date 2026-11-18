@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
@@ -125,6 +126,41 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 		OldVolume:     oldVolume.Volume,
 		CreateOptions: createOptions,
 	}, true, nil
+}
+
+// ClassifyProjectVolumes sorts a project's Compose volumes by key and includes only named volumes by default;
+// external volumes and driver_opts volumes keep their data outside Docker's volume storage.
+func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
+	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
+	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
+		config := project.Volumes[key]
+		kind := types.ProjectVolumeNamed
+		switch {
+		case bool(config.External):
+			kind = types.ProjectVolumeExternal
+		case len(config.DriverOpts) > 0:
+			kind = types.ProjectVolumeDriverOpts
+		}
+		classified = append(classified, types.ProjectVolume{
+			Labels:     config.Labels,
+			DriverOpts: config.DriverOpts,
+			Key:        key,
+			Name:       config.Name,
+			Kind:       kind,
+			Driver:     config.Driver,
+			Included:   kind == types.ProjectVolumeNamed,
+		})
+	}
+	return classified
+}
+
+// ComposeVolumeTargetName names a volume of a project recreated as targetProject: Compose's default
+// <project>_<key> name follows the project, while an explicit name is kept.
+func ComposeVolumeTargetName(sourceProject, key, sourceName, targetProject string) string {
+	if sourceName == NormalizeProjectName(sourceProject)+"_"+key {
+		return NormalizeProjectName(targetProject) + "_" + key
+	}
+	return sourceName
 }
 
 func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {

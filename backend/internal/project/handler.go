@@ -32,6 +32,7 @@ type (
 		projectService  *ProjectService
 		activityService *activity.ActivityService
 		appCtx          context.Context
+		bundles         projectBundles
 	}
 
 	ListProjectsDirectoriesInput struct {
@@ -85,6 +86,7 @@ type (
 	}
 
 	ExportProjectArchiveInput struct {
+		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 	}
@@ -560,7 +562,11 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		Metadata:       database.JSON{"action": "import_project", "uploadId": input.Body.UploadID},
 	}, func(runtimeCtx context.Context) error {
 		var importErr error
-		proj, importErr = h.projectService.ImportProjectArchive(runtimeCtx, input.Body, *user)
+		proj, importErr = h.bundles.Import(runtimeCtx, ImportBundleOptions{
+			User:          *user,
+			EnvironmentID: input.EnvironmentID,
+			Request:       input.Body,
+		})
 		return importErr
 	})
 	if err != nil {
@@ -573,17 +579,69 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 }
 
 func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
-	if _, err := handlerutil.RequireUser(ctx); err != nil {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	session, err := h.projectService.ExportProjectArchive(ctx, input.ProjectID)
+	if input.Body == nil || len(input.Body.Volumes) == 0 {
+		session, exportErr := h.projectService.ExportProjectArchive(ctx, input.ProjectID)
+		if exportErr != nil {
+			return nil, huma.NewError(common.ToAPIError(exportErr).HTTPStatus(), exportErr.Error())
+		}
+		return &handlerutil.Out[types.UploadSession]{
+			Body: types.ApiResponse[types.UploadSession]{
+				Success: true,
+				Data:    *session,
+			},
+		}, nil
+	}
+
+	var session *types.UploadSession
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	_, err = activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           types.ActivityTypeResourceAction,
+		ResourceType:   "project",
+		ResourceID:     input.ProjectID,
+		ResourceName:   h.projectActivityName(runtimeCtx, input.ProjectID),
+		User:           user,
+		Step:           "Exporting project",
+		Message:        "Exporting project",
+		SuccessMessage: "Project exported successfully",
+		Metadata:       database.JSON{"action": "export_project", "volumes": input.Body.Volumes, "stopProject": input.Body.StopProject},
+	}, func(runtimeCtx context.Context) error {
+		var exportErr error
+		session, exportErr = h.bundles.Export(runtimeCtx, ExportBundleOptions{
+			User:          *user,
+			EnvironmentID: input.EnvironmentID,
+			ProjectID:     input.ProjectID,
+			Request:       *input.Body,
+		})
+		return exportErr
+	})
 	if err != nil {
-		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		return nil, huma.Error500InternalServerError("Failed to export project: " + err.Error())
 	}
 	return &handlerutil.Out[types.UploadSession]{
 		Body: types.ApiResponse[types.UploadSession]{
 			Success: true,
 			Data:    *session,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectExportOptions(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.ProjectExportOptions], error) {
+	options, err := h.bundles.ExportOptions(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[types.ProjectExportOptions]{
+		Body: types.ApiResponse[types.ProjectExportOptions]{
+			Success: true,
+			Data:    options,
 		},
 	}, nil
 }

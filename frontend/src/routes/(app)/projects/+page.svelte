@@ -6,10 +6,19 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
+	import { displaySize, FileDropZone, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
+	import { CloseIcon, ContainersIcon, ProjectsIcon, PlayIcon, StopIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
@@ -19,17 +28,22 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ProjectStatusCounts } from '#lib/types/project.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import {
 		acrossEnvironmentsNote,
 		actionEnvironments,
+		destinationEnvironmentId,
 		hasShownPermission,
 		listScopes,
 		readableEnvironments,
 		settleAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ProjectsTable from './components/projects-table.svelte';
 	import { fetchProjectTags } from './projects-table.helpers';
@@ -224,6 +238,68 @@
 	const canCreateProject = $derived(hasShownPermission('projects:create'));
 	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
 
+	let importOpen = $state(false);
+	let importFile = $state<File | null>(null);
+	let importNameOverride = $state<string | null>(null);
+	let importStart = $state(false);
+	let importing = $state(false);
+	let importProgress = $state<ChunkedUploadProgress | null>(null);
+	let pickedImportEnvironmentId = $state('');
+	const importEnvironmentId = $derived(destinationEnvironmentId(pickedImportEnvironmentId, 'projects:create'));
+	const canStartImport = $derived(hasPermission('projects:deploy', importEnvironmentId));
+	const importName = $derived(importNameOverride ?? importFile?.name.replace(/(\.arcane)?\.(tar\.gz|tgz)$/i, '') ?? '');
+	const importPercent = $derived(
+		importProgress && importProgress.totalBytes > 0 ? Math.round((importProgress.bytesDone / importProgress.totalBytes) * 100) : 0
+	);
+
+	const onImportFile: FileDropZoneProps['onUpload'] = async (files) => {
+		importFile = files[0] ?? importFile;
+	};
+
+	const onImportFileRejected: FileDropZoneProps['onFileRejected'] = async ({ reason, file }) => {
+		toast.error(m.project_import_failed(), { description: `${file.name}: ${reason}` });
+	};
+
+	function resetImport() {
+		importFile = null;
+		importNameOverride = null;
+		importStart = false;
+		importProgress = null;
+		pickedImportEnvironmentId = '';
+		importOpen = false;
+	}
+
+	async function handleImport() {
+		if (!importFile || !importName.trim() || importing) return;
+		const requestedEnvId = importEnvironmentId;
+		importing = true;
+		const result = await tryCatch(
+			projectService.importProject(
+				importFile,
+				{ name: importName.trim(), start: importStart && canStartImport },
+				requestedEnvId,
+				(progress) => (importProgress = progress)
+			)
+		);
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.project_import_failed(),
+			setLoadingState: (value) => (importing = value),
+			onSuccess: async (project) => {
+				toast.success(m.project_imported({ name: project.name }));
+				resetImport();
+				await Promise.all(
+					listScopes([requestedEnvId]).map((listScope) =>
+						queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) })
+					)
+				);
+			},
+			onError: () => {
+				importProgress = null;
+			}
+		});
+	}
+
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
 		if (canCreateProject) {
@@ -233,6 +309,13 @@
 				placement: 'primary',
 				label: m.compose_create_project(),
 				onclick: () => goto(resolve('/(app)/projects/new'))
+			});
+			buttons.push({
+				id: 'import',
+				action: 'base',
+				label: m.import(),
+				icon: UploadIcon,
+				onclick: () => (importOpen = true)
 			});
 		}
 		if (canDeployProject) {
@@ -290,6 +373,93 @@
 {#snippet projectsEmptyState()}
 	<EmptyState icon={ProjectsIcon} title={m.projects_empty_title()} description={m.projects_empty_description()} />
 {/snippet}
+
+<ResponsiveDialog
+	open={importOpen}
+	onOpenChange={(next) => {
+		if (!next && !importing) resetImport();
+	}}
+	title={m.import_project()}
+	description={m.import_project_description()}
+	contentClass="sm:max-w-xl"
+	dismissible={!importing}
+>
+	<div class="grid min-w-0 gap-y-4 py-4" data-testid="project-import-dialog">
+		<EnvironmentDestinationSelect
+			bind:value={() => importEnvironmentId, (value) => (pickedImportEnvironmentId = value)}
+			permission="projects:create"
+			variant="field"
+		/>
+		{#if importFile}
+			<div class="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border bg-muted/50 p-3">
+				<div class="flex min-w-0 flex-col">
+					<span class="text-sm font-medium break-all">{importFile.name}</span>
+					<span class="text-xs text-muted-foreground">{displaySize(importFile.size)}</span>
+				</div>
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="icon"
+					onclick={() => (importFile = null)}
+					disabled={importing}
+					icon={CloseIcon}
+				/>
+			</div>
+		{:else}
+			<FileDropZone
+				onUpload={onImportFile}
+				onFileRejected={onImportFileRejected}
+				accept=".tar.gz,.tgz"
+				maxFiles={1}
+				fileCount={0}
+				disabled={importing}
+			/>
+		{/if}
+		<div class="space-y-2">
+			<Label for="import-project-name">{m.project_name()}</Label>
+			<Input
+				id="import-project-name"
+				value={importName}
+				autocomplete="off"
+				disabled={importing}
+				oninput={(event) => (importNameOverride = event.currentTarget.value)}
+			/>
+		</div>
+		<LabeledSwitch
+			id="import-start"
+			checked={importStart && canStartImport}
+			label={m.start_after_import()}
+			disabled={!canStartImport || importing}
+			onCheckedChange={(next) => (importStart = next)}
+		/>
+		{#if importing}
+			<div class="flex flex-col gap-2" aria-live="polite">
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
+					<Spinner class="size-4" />
+					<span>{importProgress && importPercent < 100 ? m.uploading() : m.importing_project()}</span>
+					{#if importProgress && importPercent < 100}
+						<span class="ml-auto tabular-nums">{importPercent}%</span>
+					{/if}
+				</div>
+				{#if importProgress && importPercent < 100}
+					<Progress value={importPercent} class="h-1.5" />
+				{/if}
+			</div>
+		{/if}
+	</div>
+
+	{#snippet footer()}
+		<ArcaneButton action="cancel" onclick={resetImport} disabled={importing} />
+		<ArcaneButton
+			action="create"
+			customLabel={m.import()}
+			icon={UploadIcon}
+			onclick={handleImport}
+			loading={importing}
+			disabled={!importFile || !importName.trim() || importing}
+		/>
+	{/snippet}
+</ResponsiveDialog>
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}

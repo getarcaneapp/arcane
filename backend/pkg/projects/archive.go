@@ -2,15 +2,19 @@ package projects
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -18,12 +22,35 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 
 	"kit.getarcane.app/acfs"
-	"kit.getarcane.app/acfs/types"
+	acfstypes "kit.getarcane.app/acfs/types"
+
+	"getarcane.dev/types/v3"
+)
+
+type (
+	// ProjectBundleWriter writes a project bundle: a tar.gz holding the manifest, the project archive, and volume archives.
+	ProjectBundleWriter struct {
+		gzip *gzip.Writer
+		tar  *tar.Writer
+	}
+
+	// ProjectBundleVisitor receives each archive entry of a bundle; body is valid only during the call.
+	ProjectBundleVisitor func(name string, size int64, body io.Reader) error
 )
 
 const (
-	maxArchiveEntries  = 200_000
-	unpackReserveBytes = 1 << 30
+	ProjectBundleManifest = "arcane-project.json"
+	ProjectBundleProject  = "project.tar.gz"
+
+	maxArchiveEntries       = 200_000
+	unpackReserveBytes      = 1 << 30
+	maxProjectManifestBytes = 1 << 20
+	projectBundleVolumes    = "volumes/"
+)
+
+var (
+	composeVolumeKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	dockerVolumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
 )
 
 func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) error {
@@ -34,7 +61,7 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	root := acfs.Root{Path: projectPath}
 	gzipWriter := gzip.NewWriter(w)
 	tarWriter := tar.NewWriter(gzipWriter)
-	visit := func(entry types.Entry) error {
+	visit := func(entry acfstypes.Entry) error {
 		relativePath := strings.TrimPrefix(entry.Path, "/")
 		mode := os.FileMode(entry.UnixMode)
 		switch {
@@ -109,7 +136,7 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		_, err = io.CopyN(tarWriter, reader, entry.Size)
 		return err
 	}
-	if _, walkErr := root.Walk(ctx, "/", types.WalkOptions{}, visit); walkErr != nil {
+	if _, walkErr := root.Walk(ctx, "/", acfstypes.WalkOptions{}, visit); walkErr != nil {
 		return fmt.Errorf("pack project directory: %w", walkErr)
 	}
 	if closeErr := tarWriter.Close(); closeErr != nil {
@@ -252,4 +279,175 @@ func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Re
 		return 0, fmt.Errorf("hard links are not supported (target %q)", header.Linkname)
 	}
 	return 0, fmt.Errorf("unsupported entry type %q", header.Typeflag)
+}
+
+// ProjectBundleVolumeArchive names the bundle entry that holds the data archive of the volume with the Compose key.
+func ProjectBundleVolumeArchive(key string) (string, error) {
+	if !composeVolumeKeyPattern.MatchString(key) || key == "." || key == ".." {
+		return "", fmt.Errorf("volume key %q cannot name a bundle entry", key)
+	}
+	return projectBundleVolumes + key + ".tar.gz", nil
+}
+
+// NewProjectBundleWriter starts a bundle with its manifest, which readers expect as the first entry.
+// The inner archives are already compressed, so the outer gzip uses the fastest level.
+func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*ProjectBundleWriter, error) {
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("encode bundle manifest: %w", err)
+	}
+	if len(content) > maxProjectManifestBytes {
+		return nil, fmt.Errorf("bundle manifest exceeds %d bytes", maxProjectManifestBytes)
+	}
+	gzipWriter, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	writer := &ProjectBundleWriter{gzip: gzipWriter, tar: tar.NewWriter(gzipWriter)}
+	if addErr := writer.add(ProjectBundleManifest, int64(len(content)), bytes.NewReader(content)); addErr != nil {
+		return nil, addErr
+	}
+	return writer, nil
+}
+
+// Add appends the project archive or a volume archive named by ProjectBundleVolumeArchive.
+func (w *ProjectBundleWriter) Add(name string, size int64, body io.Reader) error {
+	if name != ProjectBundleProject && !isProjectBundleVolumeArchive(name) {
+		return fmt.Errorf("unexpected bundle entry %q", name)
+	}
+	return w.add(name, size, body)
+}
+
+func (w *ProjectBundleWriter) add(name string, size int64, body io.Reader) error {
+	if err := w.tar.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     name,
+		Mode:     0o600,
+		Size:     size,
+	}); err != nil {
+		return fmt.Errorf("write bundle entry %s: %w", name, err)
+	}
+	if _, err := io.CopyN(w.tar, body, size); err != nil {
+		return fmt.Errorf("write bundle entry %s: %w", name, err)
+	}
+	return nil
+}
+
+func (w *ProjectBundleWriter) Close() error {
+	if err := w.tar.Close(); err != nil {
+		return fmt.Errorf("finish project bundle: %w", err)
+	}
+	if err := w.gzip.Close(); err != nil {
+		return fmt.Errorf("finish project bundle compression: %w", err)
+	}
+	return nil
+}
+
+func isProjectBundleVolumeArchive(name string) bool {
+	key, ok := strings.CutPrefix(name, projectBundleVolumes)
+	if !ok {
+		return false
+	}
+	key, ok = strings.CutSuffix(key, ".tar.gz")
+	archive, err := ProjectBundleVolumeArchive(key)
+	return ok && err == nil && archive == name
+}
+
+// ReadProjectBundle reports whether r is a project bundle, a tar.gz whose first entry is the manifest, and checks
+// every entry against the manifest. Anything else is a plain project archive and returns false without an error.
+// When visit is set it receives the project archive and then each included volume archive.
+func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return types.ProjectManifest{}, false, nil
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+	tarReader := tar.NewReader(gzipReader)
+	header, err := tarReader.Next()
+	if err != nil || header.Name != ProjectBundleManifest {
+		return types.ProjectManifest{}, false, nil
+	}
+	if header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
+		return types.ProjectManifest{}, true, fmt.Errorf("%s must be a file of at most %d bytes", ProjectBundleManifest, maxProjectManifestBytes)
+	}
+	var manifest types.ProjectManifest
+	if decodeErr := json.UnmarshalRead(io.LimitReader(tarReader, maxProjectManifestBytes), &manifest); decodeErr != nil {
+		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
+	}
+	expected, err := projectBundleVolumeArchives(manifest)
+	if err != nil {
+		return manifest, true, err
+	}
+	projectSeen := false
+	for {
+		header, err = tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return manifest, true, fmt.Errorf("read project bundle: %w", err)
+		}
+		name, pathErr := archiveEntryPath(header)
+		if pathErr != nil {
+			return manifest, true, fmt.Errorf("bundle entry %q: %w", header.Name, pathErr)
+		}
+		seen, isVolume := expected[name]
+		switch {
+		case header.Typeflag != tar.TypeReg:
+			return manifest, true, fmt.Errorf("bundle entry %q is not a regular file", name)
+		case name == ProjectBundleProject && !projectSeen:
+			projectSeen = true
+		case isVolume && projectSeen && !seen:
+			expected[name] = true
+		default:
+			return manifest, true, fmt.Errorf("unexpected bundle entry %q", name)
+		}
+		if visit != nil {
+			if visitErr := visit(name, header.Size, tarReader); visitErr != nil {
+				return manifest, true, visitErr
+			}
+		}
+	}
+	if !projectSeen {
+		return manifest, true, fmt.Errorf("project bundle has no %s", ProjectBundleProject)
+	}
+	for _, name := range slices.Sorted(maps.Keys(expected)) {
+		if !expected[name] {
+			return manifest, true, fmt.Errorf("project bundle has no %s", name)
+		}
+	}
+	return manifest, true, nil
+}
+
+// projectBundleVolumeArchives validates the manifest's volumes and maps each included volume's archive entry to false.
+func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]bool, error) {
+	if manifest.FormatVersion != types.ProjectManifestFormatVersion {
+		return nil, fmt.Errorf("unsupported project bundle format version %d", manifest.FormatVersion)
+	}
+	expected := map[string]bool{}
+	keys := map[string]struct{}{}
+	for _, volume := range manifest.Volumes {
+		if _, duplicate := keys[volume.Key]; duplicate {
+			return nil, fmt.Errorf("project bundle lists volume %q twice", volume.Key)
+		}
+		keys[volume.Key] = struct{}{}
+		archive, err := ProjectBundleVolumeArchive(volume.Key)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case !volume.Included && volume.Archive != "":
+			return nil, fmt.Errorf("volume %q is not included but names archive %q", volume.Key, volume.Archive)
+		case !volume.Included:
+		case volume.Archive != archive:
+			return nil, fmt.Errorf("volume %q must be archived at %s, not %q", volume.Key, archive, volume.Archive)
+		case !dockerVolumeNamePattern.MatchString(volume.Name):
+			return nil, fmt.Errorf("volume %q has invalid name %q", volume.Key, volume.Name)
+		default:
+			expected[archive] = false
+		}
+	}
+	return expected, nil
 }

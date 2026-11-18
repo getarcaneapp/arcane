@@ -49,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -61,6 +62,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -191,6 +193,24 @@ type (
 		Name     string
 		Color    types.ProjectTagColor
 		Attached bool
+	}
+
+	// projectBundles exports and imports projects with their volume data through the volume operations injected for transfers.
+	projectBundles struct {
+		local localTransferEnvironment
+	}
+
+	ExportBundleOptions struct {
+		User          types.Actor
+		EnvironmentID string
+		ProjectID     string
+		Request       types.ExportProjectArchive
+	}
+
+	ImportBundleOptions struct {
+		User          types.Actor
+		EnvironmentID string
+		Request       types.ImportProjectArchive
 	}
 )
 
@@ -1720,6 +1740,10 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 		return nil, err
 	}
 	defer cleanupSession()
+	return s.importArchive(ctx, archive, request, user)
+}
+
+func (s *ProjectService) importArchive(ctx context.Context, archive io.Reader, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
 		Archive:   archive,
 		Actor:     user,
@@ -1739,6 +1763,14 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
+	return s.ingestExport(ctx, proj, ".tar.gz", func(w io.Writer) error {
+		return projects.PackProjectDirectory(ctx, proj.Path, w)
+	})
+}
+
+// ingestExport writes an export of proj through a temporary file into a complete project-archive upload session.
+func (s *ProjectService) ingestExport(ctx context.Context, proj *Project, extension string, write func(io.Writer) error) (*types.UploadSession, error) {
+	projectID := proj.ID
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
@@ -1755,7 +1787,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
 		}
 	}()
-	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
+	if packErr := write(archive); packErr != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
 	}
 	info, err := archive.Stat()
@@ -1765,11 +1797,315 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
 	}
-	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", info.Size(), archive)
+	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+extension, info.Size(), archive)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store project archive: %w", err)
 	}
 	return session, nil
+}
+
+// ExportOptions lists the project's volumes as an export classifies them.
+func (b projectBundles) ExportOptions(ctx context.Context, projectID string) (types.ProjectExportOptions, error) {
+	project, err := b.local.Project(ctx, projectID)
+	if err != nil {
+		return types.ProjectExportOptions{}, err
+	}
+	return types.ProjectExportOptions{
+		Volumes: projects.ClassifyProjectVolumes(project),
+		Running: project.RunningCount > 0,
+	}, nil
+}
+
+// Export packages the project archive and the data of the requested named volumes into a bundle upload session.
+func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*types.UploadSession, error) {
+	required := []string{authz.PermVolumesBackup}
+	if opts.Request.StopProject {
+		required = append(required, authz.PermProjectsDown, authz.PermProjectsDeploy)
+	}
+	if err := requirePermissions(ctx, opts.EnvironmentID, required...); err != nil {
+		return nil, err
+	}
+	proj, err := b.local.projects.GetProjectFromDatabaseByID(ctx, opts.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := b.local.projects.GetProjectDetails(ctx, opts.ProjectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := exportManifest(project, opts.Request)
+	if err != nil {
+		return nil, err
+	}
+	return b.local.projects.ingestExport(ctx, proj, ".arcane.tar.gz", func(w io.Writer) error {
+		return b.writeBundle(ctx, w, opts, manifest, project.RunningCount > 0 && opts.Request.StopProject)
+	})
+}
+
+func exportManifest(project types.Project, request types.ExportProjectArchive) (types.ProjectManifest, error) {
+	if project.ComposeName == "" {
+		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
+	}
+	classified := projects.ClassifyProjectVolumes(project)
+	for _, key := range request.Volumes {
+		index := slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == key })
+		if index < 0 {
+			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
+		}
+		if classified[index].Kind != types.ProjectVolumeNamed {
+			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so its data cannot be exported", key, classified[index].Kind))
+		}
+	}
+	manifestVolumes := make([]types.ProjectVolume, 0, len(classified))
+	for _, volume := range classified {
+		included := slices.Contains(request.Volumes, volume.Key)
+		archive := ""
+		if included {
+			var err error
+			if archive, err = projects.ProjectBundleVolumeArchive(volume.Key); err != nil {
+				return types.ProjectManifest{}, common.Classify(common.ErrValidation, err)
+			}
+		}
+		// Driver options hold host paths, so the portable manifest leaves them out.
+		manifestVolumes = append(manifestVolumes, types.ProjectVolume{
+			Labels:   volume.Labels,
+			Key:      volume.Key,
+			Name:     volume.Name,
+			Kind:     volume.Kind,
+			Driver:   volume.Driver,
+			Archive:  archive,
+			Included: included,
+		})
+	}
+	includeFiles := make([]string, 0, len(project.IncludeFiles))
+	for _, file := range project.IncludeFiles {
+		includeFiles = append(includeFiles, file.RelativePath)
+	}
+	return types.ProjectManifest{
+		CreatedAt:     time.Now().UTC(),
+		Kind:          types.ProjectManifestKindExport,
+		ArcaneVersion: config.Version,
+		Project: types.ProjectManifestProject{
+			ID:          project.ID,
+			Name:        project.Name,
+			ComposeName: project.ComposeName,
+		},
+		ComposeFiles:  kit.Ternary(len(project.ComposeFiles) > 0, project.ComposeFiles, []string{project.ComposeFileName}),
+		IncludeFiles:  includeFiles,
+		Volumes:       manifestVolumes,
+		FormatVersion: types.ProjectManifestFormatVersion,
+		Consistent:    project.RunningCount == 0 || request.StopProject,
+	}, nil
+}
+
+// writeBundle writes the manifest, the project archive, and the included volumes' archives; with stop set the
+// project is stopped while its volumes are exported and started again afterwards, even when the export fails.
+func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts ExportBundleOptions, manifest types.ProjectManifest, stop bool) (err error) {
+	writer, err := projects.NewProjectBundleWriter(w, manifest)
+	if err != nil {
+		return err
+	}
+	files, err := b.local.ExportProject(ctx, opts.ProjectID)
+	if err != nil {
+		return fmt.Errorf("export project files: %w", err)
+	}
+	if appendErr := b.appendUpload(ctx, writer, types.UploadKindProjectArchive, projects.ProjectBundleProject, files); appendErr != nil {
+		return appendErr
+	}
+	name := manifest.Project.Name
+	if stop {
+		defer func() {
+			if startErr := b.local.DeployProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User); startErr != nil {
+				err = errors.Join(err, fmt.Errorf("start project %s again: %w", name, startErr))
+			}
+		}()
+		if downErr := b.local.DownProject(ctx, opts.ProjectID, opts.User); downErr != nil {
+			return fmt.Errorf("stop project %s: %w", name, downErr)
+		}
+		current, currentErr := b.local.Project(ctx, opts.ProjectID)
+		if currentErr != nil {
+			return fmt.Errorf("check project %s: %w", name, currentErr)
+		}
+		if current.RunningCount > 0 {
+			return fmt.Errorf("%d container(s) of project %s are still running; volume data was not exported", current.RunningCount, name)
+		}
+	}
+	for _, volume := range manifest.Volumes {
+		if !volume.Included {
+			continue
+		}
+		session, exportErr := b.local.ExportVolume(ctx, volume.Name)
+		if exportErr != nil {
+			return fmt.Errorf("export volume %s: %w", volume.Name, exportErr)
+		}
+		if appendErr := b.appendUpload(ctx, writer, types.UploadKindVolumeBackup, volume.Archive, session); appendErr != nil {
+			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
+		}
+	}
+	return writer.Close()
+}
+
+// appendUpload moves a complete upload session into the bundle.
+func (b projectBundles) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, kind, name string, session types.UploadSession) error {
+	file, consumed, cleanup, err := b.local.projects.uploads.Consume(ctx, kind, session.ID)
+	if err != nil {
+		return errors.Join(err, b.local.DeleteUpload(context.WithoutCancel(ctx), kind, session.ID))
+	}
+	defer cleanup()
+	return writer.Add(name, consumed.Size, file)
+}
+
+// Import creates a project from a project-archive upload session. A plain project archive imports as before; a bundle
+// also restores its included volumes, and when one fails the project and the volumes it created are removed again,
+// so an import either completes or leaves nothing behind.
+func (b projectBundles) Import(ctx context.Context, opts ImportBundleOptions) (*Project, error) {
+	request := opts.Request
+	if request.Start {
+		if err := requirePermissions(ctx, opts.EnvironmentID, authz.PermProjectsDeploy); err != nil {
+			return nil, err
+		}
+	}
+	archive, _, cleanupSession, err := b.local.projects.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupSession()
+	manifest, bundle, err := projects.ReadProjectBundle(archive, nil)
+	if err != nil {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
+	}
+	if _, err = archive.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("read project archive: %w", err)
+	}
+	var proj *Project
+	if bundle {
+		proj, err = b.importBundle(ctx, archive, manifest, opts)
+	} else {
+		proj, err = b.local.projects.importArchive(ctx, archive, request, opts.User)
+	}
+	if err != nil || !request.Start {
+		return proj, err
+	}
+	if deployErr := b.local.DeployProject(ctx, proj.ID, opts.User); deployErr != nil {
+		return nil, fmt.Errorf("project %s was imported but could not be started: %w", proj.Name, deployErr)
+	}
+	return proj, nil
+}
+
+func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, manifest types.ProjectManifest, opts ImportBundleOptions) (*Project, error) {
+	included := slices.DeleteFunc(slices.Clone(manifest.Volumes), func(volume types.ProjectVolume) bool { return !volume.Included })
+	if len(included) > 0 {
+		if err := requirePermissions(ctx, opts.EnvironmentID, authz.PermVolumesCreate, authz.PermVolumesUpload); err != nil {
+			return nil, err
+		}
+	}
+	keys := map[string]string{}
+	var conflicts []string
+	for _, volume := range included {
+		keys[volume.Archive] = volume.Key
+		// The manifest only predicts the names; the restore uses the names of the imported project.
+		target := projects.ComposeVolumeTargetName(manifest.Project.ComposeName, volume.Key, volume.Name, opts.Request.Name)
+		_, exists, err := b.local.Volume(ctx, target)
+		if err != nil {
+			return nil, fmt.Errorf("inspect volume %s: %w", target, err)
+		}
+		if exists {
+			conflicts = append(conflicts, target)
+		}
+	}
+	if len(conflicts) > 0 {
+		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
+	}
+	var (
+		proj     *Project
+		imported types.Project
+		targets  map[string]types.ProjectVolume
+		created  []string
+	)
+	_, _, err := projects.ReadProjectBundle(archive, func(name string, size int64, body io.Reader) error {
+		if name == projects.ProjectBundleProject {
+			var importErr error
+			if proj, importErr = b.local.projects.importArchive(ctx, body, opts.Request, opts.User); importErr != nil {
+				return importErr
+			}
+			if imported, importErr = b.local.Project(ctx, proj.ID); importErr != nil {
+				return fmt.Errorf("load the imported project: %w", importErr)
+			}
+			if imported.ComposeName == "" {
+				return fmt.Errorf("the compose files of the imported project %s cannot be loaded", proj.Name)
+			}
+			targets = map[string]types.ProjectVolume{}
+			for _, volume := range projects.ClassifyProjectVolumes(imported) {
+				targets[volume.Key] = volume
+			}
+			return nil
+		}
+		key := keys[name]
+		target, ok := targets[key]
+		if !ok || target.Kind != types.ProjectVolumeNamed {
+			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project", key)
+		}
+		session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, key+".tar.gz", size, body)
+		if err != nil {
+			return fmt.Errorf("store the data of volume %s: %w", key, err)
+		}
+		err = b.local.RestoreVolume(ctx, target.Name, types.RestoreVolumeUploadRequest{
+			ComposeVolume: &types.ComposeVolumeTarget{
+				Labels:  target.Labels,
+				Project: imported.ComposeName,
+				Key:     key,
+				Driver:  target.Driver,
+			},
+			UploadID: session.ID,
+		}, opts.User)
+		// A conflict means the volume already existed, so it is not this import's to remove.
+		if !errors.Is(err, common.ErrConflict) {
+			created = append(created, target.Name)
+		}
+		if err != nil {
+			return errors.Join(fmt.Errorf("restore volume %s: %w", target.Name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, b.rollback(ctx, err, proj, imported.ComposeName, created, opts.User)
+	}
+	return proj, nil
+}
+
+// rollback removes the project an import created and those of its volumes that carry the project's Compose label.
+func (b projectBundles) rollback(ctx context.Context, cause error, proj *Project, composeName string, createdVolumes []string, user types.Actor) error {
+	if proj == nil {
+		return cause
+	}
+	ctx = context.WithoutCancel(ctx)
+	var leftovers []string
+	if err := b.local.DestroyProject(ctx, proj.ID, user); err != nil {
+		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", proj.Name, err))
+	}
+	for _, name := range createdVolumes {
+		existing, exists, err := b.local.Volume(ctx, name)
+		if err == nil && exists && composeName != "" && docker.ComposeProjectLabel(existing.Labels) == composeName {
+			err = b.local.DeleteVolume(ctx, name, user)
+		}
+		if err != nil {
+			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", name, err))
+		}
+	}
+	if len(leftovers) > 0 {
+		return fmt.Errorf("%w; could not remove %s", cause, strings.Join(leftovers, ", "))
+	}
+	return fmt.Errorf("%w; the imported project and its volumes were removed", cause)
+}
+
+func requirePermissions(ctx context.Context, environmentID string, required ...string) error {
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range required {
+		if !permissions.Allows(perm, environmentID) {
+			return common.Classify(common.ErrForbidden, errors.New("permission denied: "+perm))
+		}
+	}
+	return nil
 }
 
 func (s *ProjectService) createRootDirectory(ctx context.Context, directory string) (string, error) {

@@ -55,6 +55,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/listing"
@@ -64,6 +65,8 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -11091,4 +11094,69 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	enabled, err := svc.EnabledProjectsRoots(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
+}
+
+func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/volumes/copy_data"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, volume.Volume{Name: "copy_data", Driver: "local"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+
+	dataArchive, err := projects.ProjectBundleVolumeArchive("data")
+	require.NoError(t, err)
+	var bundle strings.Builder
+	writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
+		Project: types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
+		Volumes: []types.ProjectVolume{
+			{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true},
+			{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed},
+		},
+		FormatVersion: types.ProjectManifestFormatVersion,
+	})
+	require.NoError(t, err)
+	project := "services:\n  app:\n    image: nginx\n"
+	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(len(project)), strings.NewReader(project)))
+	require.NoError(t, writer.Add(dataArchive, 4, strings.NewReader("data")))
+	require.NoError(t, writer.Close())
+	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
+	require.NoError(t, err)
+
+	// web_data becomes copy_data under the new name, which already exists, so the import must stop before creating anything.
+	_, err = projectBundles{local: localTransferEnvironment{projects: svc}}.Import(ctx, ImportBundleOptions{
+		EnvironmentID: "0",
+		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
+	})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "copy_data")
+	var count int64
+	require.NoError(t, db.Model(&Project{}).Count(&count).Error)
+	assert.Zero(t, count)
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
 }

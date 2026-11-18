@@ -18,6 +18,7 @@ type (
 		service  *ProjectService
 		activity *activity.ActivityService
 		transfer *transfer.Service
+		bundles  projectBundles
 	}
 
 	ModuleParams struct {
@@ -28,15 +29,17 @@ type (
 )
 
 func New(p ModuleParams) *Module {
+	local := localTransferEnvironment{
+		projects: p.Service,
+		deps:     p.Transfer,
+	}
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
+		bundles:  projectBundles{local: local},
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
-				Local: localTransferEnvironment{
-					projects: p.Service,
-					deps:     p.Transfer,
-				},
+				Local:     local,
 				Transport: p.Transfer.Transport,
 				Tunnels:   p.Transfer.Tunnels,
 			}.Get,
@@ -61,20 +64,20 @@ func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterProjects(api, nil, nil, appCtx)
+		RegisterProjects(api, &ProjectHandler{appCtx: appCtx.Context()})
 		transfer.RegisterRoutes(api, transfer.NewHandler(nil))
 		return
 	}
-	RegisterProjects(api, m.service, m.activity, appCtx)
+	RegisterProjects(api, &ProjectHandler{
+		projectService:  m.service,
+		activityService: m.activity,
+		appCtx:          appCtx.Context(),
+		bundles:         m.bundles,
+	})
 	transfer.RegisterRoutes(api, transfer.NewHandler(m.transfer))
 }
 
-func RegisterProjects(api huma.API, projectService *ProjectService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
-	h := &ProjectHandler{
-		projectService:  projectService,
-		activityService: activityService,
-		appCtx:          appCtx.Context(),
-	}
+func RegisterProjects(api huma.API, h *ProjectHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-workspace",
 		Method:      http.MethodGet,
@@ -239,19 +242,31 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/projects/import",
 		Summary:     "Import project archive",
-		Description: "Create a project, without deploying it, from a complete project-archive upload session",
+		Description: "Create a project from a complete project-archive upload session holding a project archive or a project bundle. " +
+			"A bundle's volumes are restored too, which requires volumes:create and volumes:upload; start deploys the project and requires projects:deploy.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-export-options",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/export",
+		Summary:     "Get project export options",
+		Description: "List the project's volumes, which of them an export includes by default, and whether the project is running",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+	}, authz.PermProjectsRead, h.GetProjectExportOptions)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-project-archive",
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/projects/{projectId}/export",
 		Summary:     "Export project archive",
-		Description: "Package the project's directory as a tar.gz into a complete project-archive upload session",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
+		Description: "Package the project's directory as a tar.gz into a complete project-archive upload session. " +
+			"With volumes the session holds a project bundle with their data, which requires volumes:backup; stopProject also requires projects:down and projects:deploy.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsRead, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

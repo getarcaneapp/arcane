@@ -181,3 +181,29 @@ func TestProjectRenameJournalTargetsCopied(t *testing.T) {
 	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseOldVolumesRemoved))
 	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseProjectStateCommitted))
 }
+
+func TestClassifyProjectVolumes(t *testing.T) {
+	project := types.Project{
+		Name: "Web",
+		Volumes: composetypes.Volumes{
+			"data":     {Name: "web_data", Driver: "local", Labels: composetypes.Labels{"tier": "db"}},
+			"shared":   {Name: "shared-data"},
+			"external": {Name: "outside", External: true},
+			"host":     {Name: "web_host", DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
+		},
+	}
+
+	got := ClassifyProjectVolumes(project)
+
+	// Sorted by key, so manifests and previews are stable; only named volumes are included by default.
+	require.Equal(t, []types.ProjectVolume{
+		{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Driver: "local", Labels: map[string]string{"tier": "db"}, Included: true},
+		{Key: "external", Name: "outside", Kind: types.ProjectVolumeExternal},
+		{Key: "host", Name: "web_host", Kind: types.ProjectVolumeDriverOpts, DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
+		{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeNamed, Included: true},
+	}, got)
+
+	// A default <project>_<key> name follows the new project; an explicit name: is kept.
+	assert.Equal(t, "copy_data", ComposeVolumeTargetName(project.Name, "data", "web_data", "Copy"))
+	assert.Equal(t, "shared-data", ComposeVolumeTargetName(project.Name, "shared", "shared-data", "Copy"))
+}

@@ -1,8 +1,11 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { MessageResponse, Paginated } from '#lib/types/base.js';
 import type {
+	ExportProjectArchiveRequest,
+	ImportProjectArchiveRequest,
 	Project,
 	ProjectDeployOptions,
+	ProjectExportOptions,
 	ProjectStatusCounts,
 	ProjectsDirectoryStatus,
 	ProjectTag,
@@ -17,11 +20,15 @@ import type {
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { ProjectUpdate } from '#lib/types/ui/project.js';
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
 import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
+import type { UploadSession } from '#lib/types/upload.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService, { type APIRequestConfig, withSessionSignal } from './api-service';
+import { uploadService } from './upload-service';
 
 class ProjectService extends BaseAPIService {
 	async getProjectsForEnvironment(
@@ -268,6 +275,39 @@ class ProjectService extends BaseAPIService {
 
 	async createTransferResource(projectId: string, resource: ProjectTransferResource, environmentId: string): Promise<void> {
 		await this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer/resources`, resource));
+	}
+
+	async getExportOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
+	}
+
+	// Packages the project, and the requested volumes' data, then downloads the resulting archive.
+	async exportProject(
+		projectId: string,
+		request: ExportProjectArchiveRequest,
+		environmentId: string,
+		onProgress?: UploadProgressCallback
+	): Promise<void> {
+		const session = await this.handleResponse<UploadSession>(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
+		);
+		await uploadService.downloadSession(environmentId, session, onProgress);
+	}
+
+	async importProject(
+		file: File,
+		request: ImportProjectArchiveRequest,
+		environmentId: string,
+		onProgress?: UploadProgressCallback
+	): Promise<Project> {
+		const uploadId = await uploadService.uploadFile(environmentId, 'project-archive', file, onProgress);
+		const result = await tryCatch(
+			this.handleResponse<Project>(this.api.post(`/agents/${environmentId}/projects/import`, { ...request, uploadId }))
+		);
+		if (result.error === null) return result.data;
+		// The import removes the upload once it reads it; one rejected earlier must not linger.
+		await tryCatch(uploadService.deleteSession(environmentId, 'project-archive', uploadId));
+		throw result.error;
 	}
 
 	async destroyProject(projectName: string, removeVolumes = false, environmentId: string): Promise<void> {

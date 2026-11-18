@@ -452,22 +452,20 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		})
 	}
 	var externalVolumes, hostVolumes, sourceVolumes, built []string
-	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
-		config := project.Volumes[key]
-		if config.External {
-			externalVolumes = append(externalVolumes, config.Name)
-			continue
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		switch volume.Kind {
+		case types.ProjectVolumeExternal:
+			externalVolumes = append(externalVolumes, volume.Name)
+		case types.ProjectVolumeDriverOpts:
+			hostVolumes = append(hostVolumes, volume.Name)
+		case types.ProjectVolumeNamed:
+			sourceVolumes = append(sourceVolumes, volume.Name)
+			plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
+				Key:        volume.Key,
+				SourceName: volume.Name,
+				TargetName: projects.ComposeVolumeTargetName(project.Name, volume.Key, volume.Name, request.Name),
+			})
 		}
-		if len(config.DriverOpts) > 0 {
-			hostVolumes = append(hostVolumes, config.Name)
-			continue
-		}
-		sourceVolumes = append(sourceVolumes, config.Name)
-		plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
-			Key:        key,
-			SourceName: config.Name,
-			TargetName: targetVolumeName(project.Name, key, config.Name, request.Name),
-		})
 	}
 	if !request.IncludeVolumes && len(sourceVolumes) > 0 {
 		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
@@ -597,13 +595,6 @@ func availabilityCheck(plan *types.ProjectTransferPreflight, availability Availa
 		return false
 	}
 	return true
-}
-
-func targetVolumeName(sourceProject, key, sourceName, name string) string {
-	if sourceName == projects.NormalizeProjectName(sourceProject)+"_"+key {
-		return projects.NormalizeProjectName(name) + "_" + key
-	}
-	return sourceName
 }
 
 func (s *Service) execute(ctx context.Context, t flow.Task) (any, error) {

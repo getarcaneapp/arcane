@@ -108,6 +108,8 @@ func Command() *cobra.Command {
 		newTransferCmd(types.ProjectTransferModeMove),
 		newCreateCmd(),
 		newUpdateCmd(),
+		newExportCmd(),
+		newImportCmd(),
 	)
 	cmdutil.SetScope(cmdutil.ScopeResource, cmd)
 	return cmd

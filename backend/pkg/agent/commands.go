@@ -101,6 +101,7 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects", CommandName: "project.create"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/import", CommandName: "project.import"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export.options"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.inspect"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/compose", CommandName: "project.compose"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/workspace", CommandName: "project.workspace.list"},

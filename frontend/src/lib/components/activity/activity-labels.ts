@@ -100,6 +100,7 @@ const resourceActionDisplay = new Map<string, () => string>(
 		transfer_project_move: m.move_project,
 		transfer_project_copy: m.copy_project,
 		import_project: m.import_project,
+		export_project: m.export_project,
 		connect_network: m.connect_container,
 		disconnect_network: m.disconnect_container
 	})

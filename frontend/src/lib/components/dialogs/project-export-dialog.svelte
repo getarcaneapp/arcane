@@ -1,0 +1,210 @@
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
+
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { projectService } from '#lib/services/project-service.js';
+	import type { Project, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
+	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+
+	let {
+		open = $bindable(false),
+		project,
+		environmentId
+	}: {
+		open?: boolean;
+		project: Pick<Project, 'id' | 'name'> | null;
+		environmentId: string;
+	} = $props();
+
+	let options = $state<ProjectExportOptions | null>(null);
+	let optionsError = $state<string | null>(null);
+	let checkedOverrides = $state<Record<string, boolean>>({});
+	let stopOverride = $state<boolean | null>(null);
+	let exporting = $state(false);
+	let progress = $state<ChunkedUploadProgress | null>(null);
+	let optionsSeq = 0;
+
+	const canBackupVolumes = $derived(hasPermission('volumes:backup', environmentId));
+	const canStop = $derived(hasPermission('projects:down', environmentId) && hasPermission('projects:deploy', environmentId));
+	const selectable = (volume: ProjectVolume) => canBackupVolumes && volume.kind === 'named';
+	const selectedVolumes = $derived(
+		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
+	);
+	const showStop = $derived(!!options?.running && selectedVolumes.length > 0);
+	const stopProject = $derived(showStop && canStop && (stopOverride ?? true));
+	const percent = $derived(
+		progress && progress.totalBytes > 0 ? Math.round((progress.bytesDone / progress.totalBytes) * 100) : 0
+	);
+
+	$effect(() => {
+		if (open && project) {
+			const projectId = project.id;
+			untrack(() => void loadOptions(projectId));
+		}
+	});
+
+	async function loadOptions(projectId: string) {
+		const seq = ++optionsSeq;
+		options = null;
+		optionsError = null;
+		const result = await tryCatch(projectService.getExportOptions(projectId, environmentId));
+		if (seq !== optionsSeq) return;
+		if (result.error) {
+			optionsError = extractApiErrorMessage(result.error);
+			return;
+		}
+		options = result.data;
+	}
+
+	function volumeNote(volume: ProjectVolume): string | null {
+		if (volume.kind === 'external') return m.volume_kind_external();
+		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
+		return null;
+	}
+
+	function handleOpenChange(next: boolean) {
+		if (!next) handleClose();
+	}
+
+	function handleClose() {
+		if (!exporting) reset();
+	}
+
+	function reset() {
+		optionsSeq++;
+		options = null;
+		optionsError = null;
+		checkedOverrides = {};
+		stopOverride = null;
+		progress = null;
+		open = false;
+	}
+
+	async function handleExport() {
+		if (!project || !options || exporting) return;
+		exporting = true;
+		const result = await tryCatch(
+			projectService.exportProject(
+				project.id,
+				{ volumes: selectedVolumes.map((volume) => volume.key), stopProject },
+				environmentId,
+				(next) => (progress = next)
+			)
+		);
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.project_export_failed(),
+			setLoadingState: (value) => (exporting = value),
+			onSuccess: () => {
+				toast.success(m.project_exported({ name: project?.name ?? '' }));
+				reset();
+			},
+			onError: () => {
+				progress = null;
+			}
+		});
+	}
+</script>
+
+<ResponsiveDialog
+	{open}
+	onOpenChange={handleOpenChange}
+	title={m.export_project()}
+	description={m.export_project_description()}
+	contentClass="sm:max-w-xl"
+	dismissible={!exporting}
+>
+	<div class="grid min-w-0 gap-y-4 py-4" data-testid="project-export-dialog">
+		{#if optionsError}
+			<Alert.Root variant="destructive">
+				<AlertIcon class="size-4" />
+				<Alert.Description>{optionsError}</Alert.Description>
+			</Alert.Root>
+		{:else if !options}
+			<div class="flex items-center gap-2 text-sm text-muted-foreground">
+				<Spinner class="size-4" />
+				<span>{m.common_loading()}</span>
+			</div>
+		{:else if options.volumes.length === 0}
+			<p class="text-sm text-muted-foreground">{m.export_no_volumes()}</p>
+		{:else}
+			<div class="min-w-0 space-y-2">
+				<p class="text-sm font-medium">{m.include_volume_data()}</p>
+				{#if !canBackupVolumes}
+					<p class="text-xs text-muted-foreground">{m.export_volumes_permission_required()}</p>
+				{/if}
+				<ul class="space-y-2">
+					{#each options.volumes as volume (volume.key)}
+						{@const note = volumeNote(volume)}
+						<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
+							<Checkbox
+								id={`export-volume-${volume.key}`}
+								class="mt-0.5"
+								checked={selectable(volume) && (checkedOverrides[volume.key] ?? volume.included)}
+								disabled={!selectable(volume) || exporting}
+								onCheckedChange={(checked) => (checkedOverrides = { ...checkedOverrides, [volume.key]: checked === true })}
+							/>
+							<div class="grid min-w-0 gap-1">
+								<Label for={`export-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
+								<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
+								{#if note}
+									<span class="text-xs text-muted-foreground">{note}</span>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+			{#if showStop}
+				<LabeledSwitch
+					id="export-stop-project"
+					checked={stopProject}
+					label={m.stop_project_during_export()}
+					description={canStop ? m.stop_project_during_export_description() : m.stop_project_permission_required()}
+					disabled={!canStop || exporting}
+					onCheckedChange={(next) => (stopOverride = next)}
+				/>
+			{/if}
+		{/if}
+
+		{#if exporting}
+			<div class="flex flex-col gap-2" aria-live="polite">
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
+					<Spinner class="size-4" />
+					<span>{progress ? m.common_action_downloading() : m.vuln_exporting()}</span>
+					{#if progress}
+						<span class="ml-auto tabular-nums">{percent}%</span>
+					{/if}
+				</div>
+				{#if progress}
+					<Progress value={percent} class="h-1.5" />
+				{/if}
+			</div>
+		{/if}
+	</div>
+
+	{#snippet footer()}
+		<ArcaneButton action="cancel" onclick={handleClose} disabled={exporting} />
+		<ArcaneButton
+			action="base"
+			customLabel={m.images_export()}
+			icon={DownloadIcon}
+			onclick={handleExport}
+			loading={exporting}
+			disabled={!options || exporting}
+		/>
+	{/snippet}
+</ResponsiveDialog>

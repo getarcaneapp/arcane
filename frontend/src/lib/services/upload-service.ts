@@ -1,5 +1,6 @@
 import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
 import type { UploadKind, UploadSession } from '#lib/types/upload.js';
+import { downloadBlob } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService from './api-service';
@@ -75,6 +76,37 @@ class UploadService extends BaseAPIService {
 			report();
 		}
 		return session.id;
+	}
+
+	// Downloads a complete session chunk by chunk with per-chunk retry, saves it as the session's file, and deletes the session.
+	async downloadSession(envId: string, session: UploadSession, onProgress?: UploadProgressCallback): Promise<void> {
+		const parts: Blob[] = [];
+		let bytesDone = 0;
+		const report = () =>
+			onProgress?.({ chunksDone: parts.length, totalChunks: session.totalChunks, bytesDone, totalBytes: session.size });
+		try {
+			report();
+			for (let index = 0; index < session.totalChunks; index++) {
+				for (let attempt = 1; ; attempt++) {
+					const chunkResult = await tryCatch(
+						this.api.get<Blob>(`/agents/${envId}/uploads/${session.kind}/${session.id}/chunks/${index}`, {
+							responseType: 'blob'
+						})
+					);
+					if (chunkResult.error === null) {
+						parts.push(chunkResult.data.data);
+						bytesDone += chunkResult.data.data.size;
+						break;
+					}
+					if (attempt >= chunkRetryAttempts) throw chunkResult.error;
+					await new Promise((resolve) => setTimeout(resolve, chunkRetryDelayMs * attempt));
+				}
+				report();
+			}
+		} finally {
+			await tryCatch(this.deleteSession(envId, session.kind, session.id));
+		}
+		downloadBlob(new Blob(parts, { type: 'application/gzip' }), session.filename);
 	}
 }
 

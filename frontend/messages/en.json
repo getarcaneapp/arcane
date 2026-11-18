@@ -4692,5 +4692,22 @@
   "connect_container": "Connect Container",
   "disconnect_container": "Disconnect Container",
   "background_blur": "Background Blur",
-  "background_blur_description": "How much to blur the background image. Set 0% to show it sharp."
+  "background_blur_description": "How much to blur the background image. Set 0% to show it sharp.",
+  "export_project": "Export Project",
+  "export_project_description": "Download the project's files, and the data of the volumes you select, as a .tar.gz archive that can be imported on any environment.",
+  "volume_kind_external": "External volume; its data is managed outside this project and is not exported.",
+  "volume_kind_driver_opts": "Uses driver options that keep its data outside Docker, so its data is not exported.",
+  "export_no_volumes": "This project has no volumes, so only its files are exported.",
+  "export_volumes_permission_required": "Including volume data requires the volumes:backup permission.",
+  "stop_project_during_export": "Stop project during export for a consistent copy",
+  "stop_project_during_export_description": "The project is started again when its volumes are exported.",
+  "stop_project_permission_required": "Stopping the project requires the projects:down and projects:deploy permissions.",
+  "project_exported": "Project {name} exported",
+  "project_export_failed": "Failed to export project",
+  "import_project_description": "Create a project from an archive exported by Arcane. Volume data in the archive is restored into new volumes.",
+  "start_after_import": "Start after import",
+  "project_imported": "Project {name} imported",
+  "project_import_failed": "Failed to import project",
+  "uploading": "Uploading…",
+  "importing_project": "Importing project…"
 }
