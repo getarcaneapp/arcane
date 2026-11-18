@@ -634,7 +634,10 @@ func (s *Service) resumeSelection(ctx context.Context, previous types.SchedulerR
 func (s *Service) backUpSelection(ctx context.Context, input selectionInput, trigger volume.VolumeBackupTrigger, activityID string) (*types.SystemVolumeBackupRunResult, error) {
 	lease, admitted, err := s.engine.AcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID, input.Claim)
 	if err == nil && !admitted {
-		// Without a parked claim, a resumed run waits rather than abandoning its interrupted backups.
+		// A resumed scheduled run waits. A manual run fails fast: a newer manual start may park the admission behind it.
+		if trigger != volume.VolumeBackupTriggerScheduled {
+			return nil, s.alreadyRunning
+		}
 		lease, err = s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	}
 	if err != nil {

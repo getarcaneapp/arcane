@@ -1515,7 +1515,9 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 }
 
 func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, error) {
-	outcome, err := s.reconcileBackup(ctx, previous, policyID, "")
+	outcome, err := s.reconcileBackup(ctx, previous, policyID, "", func(ctx context.Context) (*runs.Lease, error) {
+		return s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+	})
 	if err == nil && outcome.Status != types.RunStatusSucceeded {
 		return outcome, nil
 	}
@@ -1799,7 +1801,10 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	}
 }
 
-func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string) (types.SchedulerOutcome, error) {
+// reconcileBackup finishes an interrupted backup; acquire returns a nil lease when the admission is busy.
+func (s *Service) reconcileBackup(
+	ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string, acquire func(context.Context) (*runs.Lease, error),
+) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, targetID)
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == targetID && len(target.RecoveryData) > 0
@@ -1836,8 +1841,8 @@ func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerR
 	if run.Status == types.SystemBackupStatusSucceeded {
 		return confirm()
 	}
-	lease, err := s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
-	if err != nil {
+	lease, err := acquire(ctx)
+	if err != nil || lease == nil {
 		return outcome, err
 	}
 	defer lease.Release(ctx)
@@ -2029,7 +2034,11 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		return succeeded, nil
 	}
 	if resuming {
-		outcome, reconcileErr := s.reconcileBackup(ctx, previous, runID, key)
+		// Manual runs fail fast: a newer manual start may park the admission behind this task.
+		outcome, reconcileErr := s.reconcileBackup(ctx, previous, runID, key, func(ctx context.Context) (*runs.Lease, error) {
+			lease, _, acquireErr := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+			return lease, acquireErr
+		})
 		if reconcileErr != nil {
 			return nil, reconcileErr
 		}
