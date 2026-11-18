@@ -136,6 +136,7 @@ var (
 		"imagePatchAllPlatforms",
 		"imagePatchSuffix",
 		"imagePatchTimeoutSec",
+		"jobRunTimeout",
 		"ldapAttributeGroupMember",
 		"ldapAttributeGroupName",
 		"ldapAttributeUserDisplayName",

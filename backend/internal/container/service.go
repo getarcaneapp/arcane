@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -703,6 +704,9 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 	if guardErr := s.podmanService.GuardQuadletManaged(ctx, containerInfo.Config.Labels); guardErr != nil {
 		return "", guardErr
+	}
+	if containerInfo.Config.Labels[api.HookLabel] != "" || containerInfo.Config.Labels[projects.JobRunLabel] != "" {
+		return "", common.Classify(common.ErrValidation, errors.New("compose hook runners and job runs cannot be redeployed; redeploy their project instead"))
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")

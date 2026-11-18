@@ -1,9 +1,11 @@
 package apikeys
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 
 	"kit.getarcane.app"
 
+	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
@@ -95,7 +98,7 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			grants, grantsErr := permissionGrants(opts.permissions)
+			grants, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -137,7 +140,8 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVarP(&opts.description, "description", "d", "", "Description for the API key")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
 	command.Flags().StringArrayVarP(&opts.permissions, "permission", "p", nil,
-		"Permission to grant as `resource:action[:envId]` (repeatable, required). Omit envId for a global grant. Cannot exceed your own permissions.")
+		"Permission to grant as `permission[@envId]`, e.g. projects:deploy@<envId> (repeatable, required). "+
+			"Omit @envId for a global grant. The legacy resource:action:envId form still works. Cannot exceed your own permissions.")
 	_ = command.MarkFlagRequired("permission")
 	return command
 }
@@ -248,7 +252,7 @@ func newUpdateCmd() *cobra.Command {
 				}
 				expiresAt = &parsedTime
 			}
-			permissions, grantsErr := permissionGrants(opts.permissions)
+			permissions, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -285,28 +289,45 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVarP(&opts.description, "description", "d", "", "API key description")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
 	command.Flags().StringArrayVarP(&opts.permissions, "permission", "p", nil,
-		"Replace the key's permission grants. Use `resource:action[:envId]` (repeatable). Pass --permission \"\" once to clear all grants.")
+		"Replace the key's permission grants. Use `permission[@envId]`, e.g. projects:jobs:run@<envId> (repeatable). "+
+			"The legacy resource:action:envId form still works. Pass --permission \"\" once to clear all grants.")
 	return command
 }
 
-func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
+func permissionGrants(ctx context.Context, c *client.Client, rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
+	var known map[string]struct{}
 	grants := make([]types.ApiKeyPermissionGrant, 0, len(rawPermissions))
 	for _, raw := range rawPermissions {
 		token := strings.TrimSpace(raw)
 		if token == "" {
 			continue
 		}
-		parts := strings.Split(token, ":")
-		if (len(parts) != 2 && len(parts) != 3) || parts[0] == "" || parts[1] == "" || (len(parts) == 3 && parts[2] == "") {
-			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+		permission, environmentID, scoped := strings.Cut(token, "@")
+		if !scoped && strings.Count(token, ":") == 2 {
+			if known == nil {
+				manifest, err := c.GetJSON[types.PermissionsManifest](ctx, clitypes.RolesAvailablePermissions())
+				if err != nil {
+					return nil, fmt.Errorf("failed to load permission manifest: %w", err)
+				}
+				known = map[string]struct{}{}
+				for _, resource := range manifest.Data.Resources {
+					for _, action := range resource.Actions {
+						known[action.Permission] = struct{}{}
+					}
+				}
+			}
+			if _, whole := known[token]; !whole {
+				separator := strings.LastIndex(token, ":")
+				permission, environmentID, scoped = token[:separator], token[separator+1:], true
+			}
 		}
-		var environmentID *string
-		if len(parts) == 3 {
-			environmentID = new(parts[2])
+		segments := strings.Split(permission, ":")
+		if len(segments) < 2 || slices.Contains(segments, "") || (scoped && environmentID == "") {
+			return nil, fmt.Errorf("invalid --permission value %q (expected `permission[@envId]`)", raw)
 		}
 		grants = append(grants, types.ApiKeyPermissionGrant{
-			Permission:    parts[0] + ":" + parts[1],
-			EnvironmentID: environmentID,
+			Permission:    permission,
+			EnvironmentID: kit.Ternary(scoped, new(environmentID), nil),
 		})
 	}
 	return grants, nil

@@ -11,6 +11,7 @@
 		'dockerApiTimeout',
 		'dockerImagePullTimeout',
 		'deployWaitTimeout',
+		'jobRunTimeout',
 		'trivyScanTimeout',
 		'gitOperationTimeout',
 		'httpClientTimeout',

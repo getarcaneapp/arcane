@@ -102,6 +102,9 @@ func (s *Service) ComposeServices(
 	have := map[string]bool{}
 	var services []types.ProjectRuntimeService
 	for _, c := range containers {
+		if c.Labels[projects.JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
+			continue
+		}
 		resolvedIcon := iconcatalog.Resolve(catalog, cmp.Or(
 			projects.FindArcaneIconSet(c.Labels),
 			meta.ServiceIconSets[c.Service],
