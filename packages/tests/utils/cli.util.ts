@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '..', '..');
+const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const cliDir = path.join(repoRoot, 'cli');
 const cliBinDir = path.join(reportDirectory, 'bin');
 const cliBinName = process.platform === 'win32' ? 'arcane-cli.exe' : 'arcane-cli';
