@@ -185,6 +185,7 @@ var (
 				cfg *config.Config,
 				localRegistry *registry.ContainerRegistryService,
 				localDocker *docker.DockerClientService,
+				eventService *event.EventService,
 				imageUpdate *imageupdate.ImageUpdateService,
 				settingsService *settings.SettingsService,
 			) *version.VersionService {
@@ -194,6 +195,7 @@ var (
 					Revision:                 config.Revision,
 					ContainerRegistryService: localRegistry,
 					DockerService:            localDocker,
+					EventService:             eventService,
 					ImageUpdateService:       imageUpdate,
 					SettingsService:          settingsService,
 				})

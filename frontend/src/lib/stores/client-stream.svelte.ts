@@ -48,7 +48,17 @@ export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
 	activity: ['backup-activities', 'volume-backups', 'environment-jobs', 'job-runs', 'job-run'],
 	build: ['images', 'image', 'build-workspace', 'system'],
 	vulnerability: ['vulnerabilities', 'images', 'image'],
-	image_update: ['containers', 'container', 'projects', 'project', 'images', 'image', 'image-update', 'vulnerabilities']
+	image_update: [
+		'containers',
+		'container',
+		'projects',
+		'project',
+		'images',
+		'image',
+		'image-update',
+		'vulnerabilities',
+		'environment-versions'
+	]
 };
 
 const ALL_DOMAINS = [...new Set([...Object.values(KIND_QUERY_DOMAINS).flat(), ...MANAGER_GLOBAL_DOMAINS])];
