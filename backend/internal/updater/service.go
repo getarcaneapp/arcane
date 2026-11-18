@@ -2053,7 +2053,7 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 	check, checkErr := func() (updatertypes.CheckResult, error) {
 		// Disabling automatic installation keeps the preview check; only the
 		// update-check label opts a service out of monitoring.
-		if service.Build != nil || imageref.IsUpdateCheckDisabled(service.Labels) {
+		if service.Build != nil || parsed.RegistryHost == imageref.PodmanLocalRegistry || imageref.IsUpdateCheckDisabled(service.Labels) {
 			return updatertypes.CheckResult{}, nil
 		}
 		result, resultErr := s.engine.CheckImageUpdate(ctx, updatertypes.CheckRequest{
@@ -2097,7 +2097,7 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 		Tag:        parsed.Tag,
 		UpdateType: func() string {
 			switch {
-			case service.Build != nil:
+			case service.Build != nil || parsed.RegistryHost == imageref.PodmanLocalRegistry:
 				return imageupdate.UpdateTypeLocal
 			case errdefs.IsNotFound(checkErr):
 				return imageupdate.UpdateTypeNotPulled

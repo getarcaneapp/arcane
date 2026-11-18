@@ -433,7 +433,7 @@ func digestPinnedImageUpdateResult(imageRef, activityID string, responseTimeMs i
 
 func isLocalBuildImageRef(imageRef string, composeBuildRefs map[string]struct{}) bool {
 	if named, err := reference.ParseNormalizedNamed(strings.TrimSpace(imageRef)); err == nil &&
-		kitregistry.Normalize(reference.Domain(named)) == imageref.LocalBuildRegistry {
+		slices.Contains([]string{imageref.LocalBuildRegistry, imageref.PodmanLocalRegistry}, kitregistry.Normalize(reference.Domain(named))) {
 		return true
 	}
 	_, ok := composeBuildRefs[refs.NormalizeImageUpdateRef(imageRef)]
