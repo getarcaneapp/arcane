@@ -337,7 +337,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemVolumeBackupOp
 	return options, nil
 }
 
-// prepareSystemVolumeBackups takes the system admission through acquire, resolves the requested policy, and selects the live volumes.
+// prepareSystemVolumeBackups resolves the requested policy, takes the system admission through acquire, and selects the live volumes.
 func (s *Service) prepareSystemVolumeBackups(
 	ctx context.Context, request types.RunSystemVolumeBackupsRequest, acquire func(context.Context) (*runs.Lease, error),
 ) (selectionInput, *runs.Lease, error) {
@@ -349,10 +349,6 @@ func (s *Service) prepareSystemVolumeBackups(
 		request.Custom.Destination,
 	) {
 		return selectionInput{}, nil, common.Classify(common.ErrValidation, errors.New("destination must be local, s3, or local_s3"))
-	}
-	lease, err := acquire(ctx)
-	if err != nil {
-		return selectionInput{}, nil, err
 	}
 	policy, err := func() (*types.SystemVolumeBackupPolicy, error) {
 		if request.PolicyID != "" {
@@ -391,7 +387,10 @@ func (s *Service) prepareSystemVolumeBackups(
 		return &normalized, normalizeErr
 	}()
 	if err != nil {
-		lease.Release(ctx)
+		return selectionInput{}, nil, err
+	}
+	lease, err := acquire(ctx)
+	if err != nil {
 		return selectionInput{}, nil, err
 	}
 	options, err := s.volumes.ListBackupVolumeOptions(ctx)
