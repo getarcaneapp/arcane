@@ -275,7 +275,7 @@
 						{/if}
 					</div>
 				{/if}
-				{#each item.serviceConfig?.pre_start ?? [] as hook, idx (idx)}
+				{#each item.serviceConfig?.pre_start ?? [] as hook (hook)}
 					{@const summary = preStartHookSummary(hook, item)}
 					<div class="mt-1 flex min-w-0 items-center gap-1.5 pl-11 text-xs text-muted-foreground">
 						<span class="shrink-0">{m.pre_start()}</span>

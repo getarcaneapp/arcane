@@ -213,6 +213,7 @@ func newRunJobCmd() *cobra.Command {
 				},
 				failureMessage: "failed to run job " + args[1],
 				successMessage: "Job " + args[1] + " completed successfully in project %s",
+				unbounded:      true,
 			})
 		},
 	}
