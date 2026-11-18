@@ -1,6 +1,10 @@
 import { environmentListQuery } from '#lib/query/environments.js';
+import { secretSourceListQuery } from '#lib/query/secret-sources.js';
 import { variableListQuery } from '#lib/query/variables.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import { canReachAccessSurface } from '#lib/utils/access-policy.js';
+import { hasAnyPermission } from '#lib/utils/auth.js';
 
 import type { PageLoad } from './$types';
 
@@ -10,12 +14,16 @@ const environmentListOptions: SearchPaginationSortRequest = {
 };
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
+	const { queryClient, permissionsManifest, user } = await parent();
 
-	const [variables, environmentsPage] = await Promise.all([
-		queryClient.query(variableListQuery()),
+	const showVariables = hasAnyPermission(['variables:list', 'variables:read'], GLOBAL_SCOPE);
+	const showSecretSources = canReachAccessSurface(permissionsManifest, 'route.projects.variables.sources', user);
+
+	const [variables, sources, environmentsPage] = await Promise.all([
+		showVariables ? queryClient.query(variableListQuery()) : [],
+		showSecretSources ? queryClient.query(secretSourceListQuery()) : [],
 		queryClient.query(environmentListQuery(environmentListOptions))
 	]);
 
-	return { variables, environments: environmentsPage.data };
+	return { variables, sources, environments: environmentsPage.data, showVariables, showSecretSources };
 };

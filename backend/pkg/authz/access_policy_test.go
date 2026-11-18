@@ -40,7 +40,7 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessSurfaceKindRoute, variables.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, variables.ScopeMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, variables.MatchMode)
-	require.ElementsMatch(t, []string{authz.PermVariablesList, authz.PermVariablesRead}, variables.Permissions)
+	require.ElementsMatch(t, []string{authz.PermVariablesList, authz.PermVariablesRead, authz.PermSecretSourcesList, authz.PermSecretSourcesRead}, variables.Permissions)
 	require.NotContains(t, variables.Permissions, authz.PermTemplatesRead)
 
 	activities := requireAccessSurface(t, "route.activities")

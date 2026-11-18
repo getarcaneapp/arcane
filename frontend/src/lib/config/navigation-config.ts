@@ -114,7 +114,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'route.projects.templates'
 				},
 				{
-					title: m.variables_title(),
+					title: m.variables_and_secrets(),
 					url: resolve('/(app)/projects/variables'),
 					icon: VariableIcon,
 					accessSurfaceId: 'route.projects.variables'
@@ -135,12 +135,6 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'route.gitops.repositories'
 				}
 			]
-		},
-		{
-			title: m.external_secrets(),
-			url: resolve('/(app)/secrets'),
-			icon: ApiKeyIcon,
-			accessSurfaceId: 'route.secrets'
 		}
 	],
 	resourceItems: [
