@@ -48,6 +48,7 @@
 - sync Crowdin translations through main before release ([\#4839](https://github.com/getarcaneapp/arcane/pull/4839) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.0.1...v3.1.0
+
 ## v3.0.1
 
 ### Bug fixes

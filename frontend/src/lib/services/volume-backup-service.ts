@@ -10,6 +10,7 @@ import type {
 	DiscoverVolumeBackupsResponse,
 	VolumeBackupPolicyCollection
 } from '#lib/types/volume.js';
+import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -97,18 +98,8 @@ class VolumeBackupService extends BaseAPIService {
 		return res.data.data ?? [];
 	}
 
-	async downloadBackup(backupId: string, environmentId: string): Promise<void> {
-		const res = await this.api.get(`/agents/${environmentId}/volumes/backups/${backupId}/download`, {
-			responseType: 'blob'
-		});
-
-		const url = window.URL.createObjectURL(new Blob([res.data]));
-		const link = document.createElement('a');
-		link.href = url;
-		link.setAttribute('download', `${backupId}.tar.gz`);
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
+	downloadBackup(backupId: string, environmentId: string): void {
+		downloadFromUrl(`${this.api.defaults.baseURL}/agents/${environmentId}/volumes/backups/${backupId}/download`);
 	}
 
 	async deleteBackup(backupId: string, environmentId: string): Promise<MessageResponse> {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"io"
+	"mime"
 	"strconv"
 	"strings"
 
@@ -109,7 +110,7 @@ func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput
 			defer func() { _ = reader.Close() }()
 
 			humaCtx.SetHeader("Content-Type", "application/x-gzip")
-			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+input.BackupID+".tar.gz")
+			humaCtx.SetHeader("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": input.BackupID + ".tar.gz"}))
 			humaCtx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
 
 			writer := humaCtx.BodyWriter()
