@@ -35,7 +35,9 @@ func serveSecrets(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	_, _ = w.Write([]byte(`{"DB_PASSWORD": "pw", "bad-key": "x"}`))
+	if _, err := w.Write([]byte(`{"DB_PASSWORD": "pw", "bad-key": "x"}`)); err != nil {
+		panic(err)
+	}
 }
 
 func TestSecretSource_PresetFetchesKeysForScopedEnvironment(t *testing.T) {
