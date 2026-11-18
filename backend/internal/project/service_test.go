@@ -11160,3 +11160,65 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }
+
+func TestProjectBundlesExportSkipsVolumesNotCreatedYet(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	projectPath := createComposeProjectDir(t, projectsDir, "demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\n      - cache:/cache\nvolumes:\n  data:\n  cache:\n",
+	), 0o644))
+	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
+	bundles := projectBundles{local: localTransferEnvironment{projects: svc}}
+
+	options, err := bundles.ExportOptions(ctx, "proj-demo")
+	require.NoError(t, err)
+	require.Len(t, options.Volumes, 2)
+	assert.Equal(t, "cache", options.Volumes[0].Key)
+	assert.True(t, options.Volumes[0].Missing)
+	assert.False(t, options.Volumes[0].Included)
+	assert.Equal(t, "data", options.Volumes[1].Key)
+	assert.False(t, options.Volumes[1].Missing)
+	assert.True(t, options.Volumes[1].Included)
+
+	// Asking for a volume that has no data fails before anything is written.
+	_, err = bundles.Export(ctx, ExportBundleOptions{
+		EnvironmentID: "0",
+		ProjectID:     "proj-demo",
+		Request:       types.ExportProjectArchive{Volumes: []string{"data", "cache"}},
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "cache")
+	_, err = os.Stat(filepath.Join(os.TempDir(), "arcane-uploads"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}

@@ -23,6 +23,7 @@ import type { ProjectUpdate } from '#lib/types/ui/project.js';
 import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
 import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
 import type { UploadSession } from '#lib/types/upload.js';
+import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -281,17 +282,16 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
 	}
 
-	// Packages the project, and the requested volumes' data, then downloads the resulting archive.
-	async exportProject(
-		projectId: string,
-		request: ExportProjectArchiveRequest,
-		environmentId: string,
-		onProgress?: UploadProgressCallback
-	): Promise<void> {
+	// Packages the project, and the requested volumes' data, then lets the browser stream the resulting archive to disk.
+	// No probe request first: the server deletes the session once it has sent the whole file.
+	async exportProject(projectId: string, request: ExportProjectArchiveRequest, environmentId: string): Promise<void> {
 		const session = await this.handleResponse<UploadSession>(
 			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
 		);
-		await uploadService.downloadSession(environmentId, session, onProgress);
+		downloadFromUrl(
+			`${this.api.defaults.baseURL}/agents/${environmentId}/uploads/${session.kind}/${session.id}/download`,
+			session.filename
+		);
 	}
 
 	async importProject(

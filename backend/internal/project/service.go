@@ -1763,55 +1763,36 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
-	return s.ingestExport(ctx, proj, ".tar.gz", func(w io.Writer) error {
+	session, err := s.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", func(w io.Writer) error {
 		return projects.PackProjectDirectory(ctx, proj.Path, w)
 	})
-}
-
-// ingestExport writes an export of proj through a temporary file into a complete project-archive upload session.
-func (s *ProjectService) ingestExport(ctx context.Context, proj *Project, extension string, write func(io.Writer) error) (*types.UploadSession, error) {
-	projectID := proj.ID
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
-	}
-	archive, archiveLogical, err := acfs.Root{Path: projectsDirectory}.CreateTemp(ctx, "/", ".project-export-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project archive: %w", err)
-	}
-	defer func() {
-		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
-		}
-		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
-		}
-	}()
-	if packErr := write(archive); packErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
-	}
-	info, err := archive.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
-	}
-	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
-	}
-	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+extension, info.Size(), archive)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store project archive: %w", err)
 	}
 	return session, nil
 }
 
-// ExportOptions lists the project's volumes as an export classifies them.
+// ExportOptions lists the project's volumes as an export classifies them; a named volume not created in Docker yet
+// has no data, so it is marked missing and not included.
 func (b projectBundles) ExportOptions(ctx context.Context, projectID string) (types.ProjectExportOptions, error) {
 	project, err := b.local.Project(ctx, projectID)
 	if err != nil {
 		return types.ProjectExportOptions{}, err
 	}
+	classified := projects.ClassifyProjectVolumes(project)
+	for index, volume := range classified {
+		if volume.Kind != types.ProjectVolumeNamed {
+			continue
+		}
+		_, exists, inspectErr := b.local.Volume(ctx, volume.Name)
+		if inspectErr != nil {
+			return types.ProjectExportOptions{}, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
+		}
+		classified[index].Missing = !exists
+		classified[index].Included = exists
+	}
 	return types.ProjectExportOptions{
-		Volumes: projects.ClassifyProjectVolumes(project),
+		Volumes: classified,
 		Running: project.RunningCount > 0,
 	}, nil
 }
@@ -1837,9 +1818,29 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	return b.local.projects.ingestExport(ctx, proj, ".arcane.tar.gz", func(w io.Writer) error {
+	var missing []string
+	for _, volume := range manifest.Volumes {
+		if !volume.Included {
+			continue
+		}
+		_, exists, inspectErr := b.local.Volume(ctx, volume.Name)
+		if inspectErr != nil {
+			return nil, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
+		}
+		if !exists {
+			missing = append(missing, volume.Key)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("these volumes have not been created yet, so they hold no data to export: %s", strings.Join(missing, ", ")))
+	}
+	session, err := b.local.projects.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+types.ProjectBundleExtension, func(w io.Writer) error {
 		return b.writeBundle(ctx, w, opts, manifest, project.RunningCount > 0 && opts.Request.StopProject)
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
+	}
+	return session, nil
 }
 
 func exportManifest(project types.Project, request types.ExportProjectArchive) (types.ProjectManifest, error) {

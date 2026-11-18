@@ -7,14 +7,12 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { Project, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
-	import type { ChunkedUploadProgress } from '#lib/types/ui/upload.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -34,20 +32,16 @@
 	let checkedOverrides = $state<Record<string, boolean>>({});
 	let stopOverride = $state<boolean | null>(null);
 	let exporting = $state(false);
-	let progress = $state<ChunkedUploadProgress | null>(null);
 	let optionsSeq = 0;
 
 	const canBackupVolumes = $derived(hasPermission('volumes:backup', environmentId));
 	const canStop = $derived(hasPermission('projects:down', environmentId) && hasPermission('projects:deploy', environmentId));
-	const selectable = (volume: ProjectVolume) => canBackupVolumes && volume.kind === 'named';
+	const selectable = (volume: ProjectVolume) => canBackupVolumes && volume.kind === 'named' && !volume.missing;
 	const selectedVolumes = $derived(
 		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
 	const showStop = $derived(!!options?.running && selectedVolumes.length > 0);
 	const stopProject = $derived(showStop && canStop && (stopOverride ?? true));
-	const percent = $derived(
-		progress && progress.totalBytes > 0 ? Math.round((progress.bytesDone / progress.totalBytes) * 100) : 0
-	);
 
 	$effect(() => {
 		if (open && project) {
@@ -72,6 +66,7 @@
 	function volumeNote(volume: ProjectVolume): string | null {
 		if (volume.kind === 'external') return m.volume_kind_external();
 		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
+		if (volume.missing) return m.volume_not_created_yet();
 		return null;
 	}
 
@@ -89,7 +84,6 @@
 		optionsError = null;
 		checkedOverrides = {};
 		stopOverride = null;
-		progress = null;
 		open = false;
 	}
 
@@ -100,8 +94,7 @@
 			projectService.exportProject(
 				project.id,
 				{ volumes: selectedVolumes.map((volume) => volume.key), stopProject },
-				environmentId,
-				(next) => (progress = next)
+				environmentId
 			)
 		);
 		await handleApiResultWithCallbacks({
@@ -111,9 +104,6 @@
 			onSuccess: () => {
 				toast.success(m.project_exported({ name: project?.name ?? '' }));
 				reset();
-			},
-			onError: () => {
-				progress = null;
 			}
 		});
 	}
@@ -181,17 +171,9 @@
 		{/if}
 
 		{#if exporting}
-			<div class="flex flex-col gap-2" aria-live="polite">
-				<div class="flex items-center gap-2 text-sm text-muted-foreground">
-					<Spinner class="size-4" />
-					<span>{progress ? m.common_action_downloading() : m.vuln_exporting()}</span>
-					{#if progress}
-						<span class="ml-auto tabular-nums">{percent}%</span>
-					{/if}
-				</div>
-				{#if progress}
-					<Progress value={percent} class="h-1.5" />
-				{/if}
+			<div class="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+				<Spinner class="size-4" />
+				<span>{m.vuln_exporting()}</span>
 			</div>
 		{/if}
 	</div>

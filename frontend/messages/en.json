@@ -4709,5 +4709,6 @@
   "project_imported": "Project {name} imported",
   "project_import_failed": "Failed to import project",
   "uploading": "Uploading…",
-  "importing_project": "Importing project…"
+  "importing_project": "Importing project…",
+  "volume_not_created_yet": "Not created yet, so it has no data to export."
 }

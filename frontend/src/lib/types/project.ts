@@ -225,6 +225,7 @@ export interface ProjectVolume {
 	driverOpts?: Record<string, string>;
 	archive?: string;
 	included: boolean;
+	missing?: boolean;
 }
 
 export interface ProjectExportOptions {

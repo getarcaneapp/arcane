@@ -160,6 +160,20 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 	return sessionResponse(session), nil
 }
 
+func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSessionInput) (*huma.StreamResponse, error) {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+		return nil, err
+	}
+	reader, session, err := h.uploadService.DownloadSession(ctx, input.Kind, input.UploadID)
+	if err != nil {
+		if httpErr := SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
+}
+
 func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err

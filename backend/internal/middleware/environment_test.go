@@ -597,6 +597,19 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 		"expected denial: permission is scoped to a different environment")
 }
 
+func TestProxyPermissionUploadSessionReadsUseKindPermission(t *testing.T) {
+	m := newProxyAuthzMiddleware(containerMatcher())
+	for _, suffix := range []string{"/uploads/project-archive/0123456789abcdef/download", "/uploads/project-archive/0123456789abcdef/chunks/0"} {
+		c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+suffix)
+		permitted := authz.NewPermissionSet()
+		permitted.AddEnv(proxyTestEnvID, authz.PermProjectsCreate)
+		require.True(t, m.proxyPermitted(c, permitted, proxyTestEnvID, suffix), "expected %s to be allowed with projects:create", suffix)
+		readOnly := authz.NewPermissionSet()
+		readOnly.AddEnv(proxyTestEnvID, authz.PermProjectsRead)
+		require.False(t, m.proxyPermitted(c, readOnly, proxyTestEnvID, suffix), "expected %s to be denied without projects:create", suffix)
+	}
+}
+
 func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")

@@ -63,6 +63,7 @@ var (
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}", CommandName: "upload.session.delete"},
 		{Method: http.MethodPut, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}", CommandName: "upload.session.chunk"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}", CommandName: "upload.session.chunk.read"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/download", CommandName: "upload.session.download"},
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/images/updates/check", CommandName: "image_update.check"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/images/updates/check/{imageId}", CommandName: "image_update.check_one"},

@@ -75,6 +75,17 @@ func RegisterUploads(api huma.API, service *UploadService) {
 	}, h.ReadChunk)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "download-upload-session",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}/download",
+		Summary:     "Download an upload session",
+		Description: "Stream the file of a complete upload session; the session is deleted once the whole file was sent",
+		Tags:        []string{"Uploads"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
+	}, h.DownloadSession)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-upload-session",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/uploads/{kind}/{uploadId}",

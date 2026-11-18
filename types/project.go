@@ -63,7 +63,8 @@ type (
 		Kind       ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named volumes hold Docker-managed data; external and driverOpts volumes keep their data outside the project"`
 		Driver     string            `json:"driver,omitempty" doc:"Compose volume driver"`
 		Archive    string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle"`
-		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default only named volumes are"`
+		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default only named volumes that exist are"`
+		Missing    bool              `json:"missing,omitempty" doc:"True when the named volume has not been created in Docker yet, so it has no data to export"`
 	}
 
 	ProjectManifestProject struct {
@@ -576,6 +577,7 @@ const (
 
 	ProjectManifestFormatVersion = 1
 	ProjectManifestKindExport    = "export"
+	ProjectBundleExtension       = ".arcane.tar.gz"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

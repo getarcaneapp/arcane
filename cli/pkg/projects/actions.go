@@ -392,6 +392,11 @@ func newExportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to export project: %w", err)
 			}
+			// Servers without volume export ignore the request body and return a plain project archive.
+			if len(volumes) > 0 && !strings.HasSuffix(exported.Data.Filename, types.ProjectBundleExtension) {
+				cmdutil.AbortUploadSession(cmd.Context(), c, exported.Data.Kind, exported.Data.ID)
+				return errors.New("the server does not support exporting volumes; upgrade Arcane")
+			}
 
 			outputFile := filepath.Base(exported.Data.Filename)
 			if len(args) == 2 {
@@ -438,7 +443,7 @@ func newImportCmd() *cobra.Command {
 			c.SetTimeout(30 * time.Minute)
 
 			name := filepath.Base(args[0])
-			for _, suffix := range []string{".arcane.tar.gz", ".tar.gz", ".tgz"} {
+			for _, suffix := range []string{types.ProjectBundleExtension, ".tar.gz", ".tgz"} {
 				if trimmed, ok := strings.CutSuffix(name, suffix); ok {
 					name = trimmed
 					break
