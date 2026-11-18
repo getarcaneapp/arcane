@@ -89,6 +89,7 @@ const (
 	ActivityTypeProjectDown       ActivityType         = "project_down"
 	ActivityTypeProjectRestart    ActivityType         = "project_restart"
 	ActivityTypeProjectDestroy    ActivityType         = "project_destroy"
+	ActivityTypeProjectJobRun     ActivityType         = "project_job_run"
 	ActivityTypeContainerStart    ActivityType         = "container_start"
 	ActivityTypeContainerStop     ActivityType         = "container_stop"
 	ActivityTypeContainerRestart  ActivityType         = "container_restart"
