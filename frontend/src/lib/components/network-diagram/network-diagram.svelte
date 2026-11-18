@@ -511,7 +511,7 @@
 				<SvelteFlow
 					nodes={diagramNodes}
 					edges={diagramEdges}
-					colorMode={isDarkMode ? 'dark' : 'light'}
+					forceColorMode={isDarkMode ? 'dark' : 'light'}
 					fitView
 					minZoom={0.35}
 					maxZoom={1.75}

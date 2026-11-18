@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Just
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: just
 
@@ -50,7 +50,7 @@ jobs:
           configure-docker: true
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
           cache: false
@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
           cache: false
@@ -146,7 +146,7 @@ jobs:
           run-install: true
 
       - name: Setup Just
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: just
 
@@ -165,7 +165,6 @@ jobs:
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
     runs-on: depot-ubuntu-24.04-4
-    # Passing runs finish in about 17 minutes; a broken stack must not grind through retries for hours.
     timeout-minutes: 45
     env:
       PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY: g7r5wqb57k.registry.depot.dev/mirrors/playwright
@@ -265,7 +264,7 @@ jobs:
           run-install: false
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: cli/go.mod
           cache: false
