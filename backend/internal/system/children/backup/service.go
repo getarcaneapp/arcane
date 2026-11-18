@@ -412,19 +412,6 @@ func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, err
 	return key, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, user types.Actor, trigger string, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
-	lease, err := s.acquireRun(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer lease.Release(ctx)
-	prepared, err := s.prepareBackup(ctx, trigger, request)
-	if err != nil {
-		return nil, err
-	}
-	return s.executeBackup(ctx, prepared)
-}
-
 func (s *Service) prepareBackup(ctx context.Context, trigger string, request types.CreateSystemBackupRequest) (*preparedSystemBackup, error) {
 	if !strings.HasPrefix(s.config.DatabaseURL, "file:") {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
@@ -1464,6 +1451,12 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 }
 
 func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (types.SchedulerOutcome, error) {
+	// The policy is read under the admission so a wait never runs stale settings.
+	lease, err := s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	defer lease.Release(ctx)
 	policy, loadErr := s.store.Policy(ctx, policyID)
 	if loadErr != nil {
 		return types.SchedulerOutcome{}, loadErr
@@ -1489,11 +1482,14 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if remoteDisabled && !policy.LocalEnabled {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	run, runErr := s.CreateBackup(ctx, types.SystemUser, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
-	if errors.Is(runErr, ErrSystemBackupAlreadyRunning) {
-		slog.InfoContext(ctx, "Scheduled Arcane system backup skipped; another backup is running", "policyId", policy.ID)
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: "Skipped: another system backup is running"}, nil
-	}
+	run, runErr := func() (*types.SystemBackupRun, error) {
+		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		return s.executeBackup(ctx, prepared)
+	}()
+	lease.Release(ctx)
 	if runErr != nil {
 		slog.ErrorContext(ctx, "Scheduled Arcane system backup failed", "policyId", policy.ID, "error", runErr)
 		if policy.RetentionCount > 0 {
@@ -1519,7 +1515,9 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 }
 
 func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, error) {
-	outcome, err := s.reconcileBackup(ctx, previous, policyID, "")
+	outcome, err := s.reconcileBackup(ctx, previous, policyID, "", func(ctx context.Context) (*runs.Lease, error) {
+		return s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+	})
 	if err == nil && outcome.Status != types.RunStatusSucceeded {
 		return outcome, nil
 	}
@@ -1629,7 +1627,7 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 	if err != nil || len(expired) == 0 {
 		return err
 	}
-	lease, err := s.acquireRun(ctx)
+	lease, err := s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	if err != nil {
 		return err
 	}
@@ -1803,7 +1801,10 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	}
 }
 
-func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string) (types.SchedulerOutcome, error) {
+// reconcileBackup finishes an interrupted backup; acquire returns a nil lease when the admission is busy.
+func (s *Service) reconcileBackup(
+	ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string, acquire func(context.Context) (*runs.Lease, error),
+) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, targetID)
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == targetID && len(target.RecoveryData) > 0
@@ -1840,8 +1841,8 @@ func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerR
 	if run.Status == types.SystemBackupStatusSucceeded {
 		return confirm()
 	}
-	lease, admitted, err := s.engine.AcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID, "")
-	if err != nil || !admitted {
+	lease, err := acquire(ctx)
+	if err != nil || lease == nil {
 		return outcome, err
 	}
 	defer lease.Release(ctx)
@@ -2033,7 +2034,11 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		return succeeded, nil
 	}
 	if resuming {
-		outcome, reconcileErr := s.reconcileBackup(ctx, previous, runID, key)
+		// Manual runs fail fast: a newer manual start may park the admission behind this task.
+		outcome, reconcileErr := s.reconcileBackup(ctx, previous, runID, key, func(ctx context.Context) (*runs.Lease, error) {
+			lease, _, acquireErr := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
+			return lease, acquireErr
+		})
 		if reconcileErr != nil {
 			return nil, reconcileErr
 		}
