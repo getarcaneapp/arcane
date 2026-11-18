@@ -13,9 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -29,15 +31,23 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
+	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/rustic"
 	s3util "getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
@@ -135,10 +145,43 @@ type (
 		Field         string
 		LocalEnabled  bool
 	}
+
+	// VolumeRepository is the volumes data repository that volume and project backups share.
+	VolumeRepository struct {
+		deps           VolumeRepositoryDependencies
+		legacyPassword string
+		rekeyed        sync.Map
+	}
+
+	VolumeRepositoryDependencies struct {
+		Docker           *dockerInternal.DockerClientService
+		Engine           *Engine
+		Settings         *settings.SettingsService
+		S3Destinations   *s3.S3DestinationService
+		RecoveryKeys     *RecoveryKeyStore
+		BackupVolumeName string
+		EncryptionKey    string
+	}
+
+	// Containers stops the containers a backup must not run under and starts them again.
+	Containers struct {
+		Docker *dockerInternal.DockerClientService
+		Stop   func(ctx context.Context, containerID string, user types.Actor) error
+		Start  func(ctx context.Context, containerID string, user types.Actor) error
+	}
+
+	// ContainerScope selects the containers of a Compose project and those mounting any of the volumes.
+	ContainerScope struct {
+		Project string
+		Volumes []string
+		// RefuseArcaneWriters fails instead when an Arcane container mounts one of the volumes.
+		RefuseArcaneWriters bool
+	}
 )
 
 const (
 	VolumeAdmissionScope           = "volume-backup"
+	ProjectSnapshotTag             = "arcane-kind:project"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -151,6 +194,14 @@ const (
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 
 	admissionWait = 6 * time.Hour
+
+	volumeRepositoryPath     = "/repository/volumes"
+	localVolumeRepositoryID  = "volumes:local"
+	legacyVolumePasswordSalt = "arcane-volume-backups:"
+	legacyEncryptionKey      = "arcane-dev-key-32-characters!!!"
+
+	containerRecoveryTimeout  = 30 * time.Second
+	containerRecoveryInterval = 500 * time.Millisecond
 )
 
 var (
@@ -1032,4 +1083,336 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		return query.Order("RANDOM()").Limit(DeletionBatchSize).Pluck("id", &expired).Error
 	})
 	return expired, err
+}
+
+func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {
+	return &VolumeRepository{deps: deps, legacyPassword: kit.SHA256Hex(legacyVolumePasswordSalt + cmp.Or(deps.EncryptionKey, legacyEncryptionKey))}
+}
+
+// StorageMount mounts backup storage at target: Arcane's own /backups mount when it has one, otherwise the backup volume.
+func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil {
+		slog.WarnContext(ctx, "backup: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
+	} else if mirrored := storageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
+		return *mirrored, nil
+	}
+	if _, inspectErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, r.deps.BackupVolumeName, client.VolumeInspectOptions{})
+	}); inspectErr != nil {
+		if _, createErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
+				Name:   r.deps.BackupVolumeName,
+				Labels: map[string]string{selfcontainer.InternalResourceLabel: "true"},
+			})
+		}); createErr != nil {
+			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
+		}
+	}
+	return mount.Mount{Type: mount.TypeVolume, Source: r.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
+}
+
+func storageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
+	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
+	if mirroredMount == nil {
+		return nil
+	}
+	if !readOnly && mirroredMount.ReadOnly {
+		slog.WarnContext(ctx, "backup: requested writable backup mount but source is read-only; writes may fail")
+	}
+	mirroredMount.ReadOnly = readOnly
+	return mirroredMount
+}
+
+func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Client, readOnly bool) (Repository, error) {
+	storage, err := r.StorageMount(ctx, dockerClient, "/repository", readOnly)
+	if err != nil {
+		return Repository{}, err
+	}
+	return Repository{
+		ID:          localVolumeRepositoryID,
+		Environment: []string{"RUSTIC_REPOSITORY=" + volumeRepositoryPath},
+		Mounts:      []mount.Mount{storage},
+	}, nil
+}
+
+// LocalInitialized reports false only when the mirrored /backups mount provably has no local repository yet.
+func (r *VolumeRepository) LocalInitialized(ctx context.Context, dockerClient *client.Client) bool {
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
+		return true
+	}
+	_, err = acfs.Host{}.Stat(ctx, path.Join("/backups", path.Base(volumeRepositoryPath), "config"), acfstypes.StatOptions{FollowFinal: true})
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// Remote addresses one instance's root on the destination; empty instanceID means this instance.
+func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID string) (Repository, error) {
+	instanceID = cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value))
+	if instanceID == "" {
+		return Repository{}, errors.New("arcane instance ID is unavailable")
+	}
+	configuration, err := r.deps.S3Destinations.Configuration(ctx, destinationID)
+	if err != nil {
+		return Repository{}, fmt.Errorf("the selected S3 backup destination is not configured: %w", err)
+	}
+	return Repository{
+		ID:          "volumes:s3:" + destinationID + ":" + instanceID,
+		Environment: configuration.RusticEnvironment(VolumeRoot, instanceID),
+	}, nil
+}
+
+// Password returns the recovery key, or the legacy password before one is configured.
+func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Client, repositories ...Repository) (string, error) {
+	key, err := r.deps.RecoveryKeys.Get(ctx, RecoveryKeyConfigID)
+	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
+		return r.legacyPassword, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	// Re-key each legacy repository once per process; one that opens with neither password is left for the caller to create or report.
+	for _, repository := range repositories {
+		if done, _ := r.rekeyed.Load(repository.ID); done == key {
+			continue
+		}
+		if repository.ID == localVolumeRepositoryID {
+			writable, localErr := r.Local(ctx, dockerClient, false)
+			if localErr != nil {
+				slog.WarnContext(ctx, "could not open the local volume backup repository for re-keying", "error", localErr.Error())
+				continue
+			}
+			repository = writable
+		}
+		previous, rekeyErr := r.deps.Engine.RekeyRepository(ctx, dockerClient, repository, key, r.legacyPassword)
+		if rekeyErr != nil {
+			slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", rekeyErr.Error())
+			continue
+		}
+		if previous != "" {
+			slog.InfoContext(ctx, "Re-keyed volume backup repository to the recovery key", "repository", repository.ID)
+		}
+		r.rekeyed.Store(repository.ID, key)
+	}
+	return key, nil
+}
+
+// Rekey re-keys this instance's own volumes repositories to the recovery key; other instances re-key their own roots.
+func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string) error {
+	dockerClient, err := r.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	local, err := r.Local(ctx, dockerClient, false)
+	if err != nil {
+		return err
+	}
+	repositories := []Repository{local}
+	destinations, listErr := r.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if listErr != nil {
+		return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
+	}
+	for _, destination := range destinations {
+		remote, remoteErr := r.Remote(ctx, destination.ID, "")
+		if remoteErr != nil {
+			return remoteErr
+		}
+		repositories = append(repositories, remote)
+	}
+	if rekeyErr := r.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, r.legacyPassword); rekeyErr != nil {
+		return rekeyErr
+	}
+	for _, repository := range repositories {
+		r.rekeyed.Store(repository.ID, newKey)
+	}
+	return nil
+}
+
+// StopContainers stops the running containers in scope, skipping Arcane's own and its helpers, and returns those it stopped.
+func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, user types.Actor) ([]container.Summary, error) {
+	containers, err := c.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list running containers before backup: %w", err)
+	}
+
+	eligible := make([]container.Summary, 0, len(containers.Items))
+	arcaneOwned := make([]container.Summary, 0, 2)
+	for _, candidate := range containers.Items {
+		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
+			arcaneOwned = append(arcaneOwned, candidate)
+			continue
+		}
+		// Arcane helpers auto-remove on stop, which would leave nothing to restart.
+		if strings.EqualFold(candidate.Labels[selfcontainer.InternalResourceLabel], "true") {
+			continue
+		}
+		eligible = append(eligible, candidate)
+	}
+	var selected []string
+	for _, volumeName := range scope.Volumes {
+		// Restores rewrite the volume in place, so refuse rather than corrupt data under a labeled container.
+		if writers := docker.FilterContainersUsingVolume(arcaneOwned, volumeName); scope.RefuseArcaneWriters && len(writers) > 0 {
+			return nil, fmt.Errorf("volume %s is mounted by a running Arcane-managed container; restoring under it would corrupt its data", volumeName)
+		}
+		selected = append(selected, docker.FilterContainersUsingVolume(eligible, volumeName)...)
+	}
+	stopped := make([]container.Summary, 0, len(selected))
+	for _, candidate := range eligible {
+		inProject := scope.Project != "" && candidate.Labels[docker.ComposeProjectLabelKey] == scope.Project
+		if !inProject && !slices.Contains(selected, candidate.ID) {
+			continue
+		}
+		if stopErr := c.Stop(ctx, candidate.ID, user); stopErr != nil {
+			stillStopped, restartErr := c.StartContainers(context.WithoutCancel(ctx), stopped, user)
+			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before backup: %w", candidate.ID, stopErr), restartErr)
+		}
+		stopped = append(stopped, candidate)
+	}
+	return stopped, nil
+}
+
+// StartContainers starts stopped containers again, or the Compose replicas that replaced them, and returns those it could not start.
+//
+//nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
+func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []container.Summary, user types.Actor) ([]container.Summary, error) {
+	recoveryCtx, cancel := context.WithTimeout(ctx, containerRecoveryTimeout)
+	defer cancel()
+
+	remaining := append([]container.Summary(nil), stoppedContainers...)
+	lastErrors := make(map[string]error, len(stoppedContainers))
+	for len(remaining) > 0 {
+		currentContainers, listErr := c.Docker.ListContainers(recoveryCtx, false)
+		if listErr == nil {
+			currentByID := make(map[string]container.Summary, len(currentContainers))
+			currentByName := make(map[string]container.Summary, len(currentContainers))
+			for _, current := range currentContainers {
+				currentByID[current.ID] = current
+				if name := docker.ContainerNameFromNames(current.Names); name != "" {
+					currentByName[name] = current
+				}
+			}
+
+			nextRemaining := make([]container.Summary, 0, len(remaining))
+			for _, stopped := range remaining {
+				current, found := currentByID[stopped.ID]
+				if !found {
+					name := docker.ContainerNameFromNames(stopped.Names)
+					current, found = currentByName[name]
+				}
+				if !found {
+					current, found = projects.FindComposeReplica(currentContainers, stopped.Labels)
+				}
+				if !found {
+					nextRemaining = append(nextRemaining, stopped)
+					continue
+				}
+				if current.State == container.StateRunning || current.State == container.StateRestarting {
+					if current.ID != stopped.ID {
+						slog.InfoContext(ctx, "backup: container was replaced during backup and is already running", "previousContainer", stopped.ID, "currentContainer", current.ID)
+					}
+					continue
+				}
+				if startErr := c.Start(recoveryCtx, current.ID, user); startErr != nil {
+					lastErrors[stopped.ID] = startErr
+					nextRemaining = append(nextRemaining, stopped)
+					continue
+				}
+				if current.ID != stopped.ID {
+					slog.InfoContext(ctx, "backup: restarted replacement container after backup", "previousContainer", stopped.ID, "currentContainer", current.ID)
+				}
+			}
+			remaining = nextRemaining
+		} else {
+			for _, stopped := range remaining {
+				lastErrors[stopped.ID] = listErr
+			}
+		}
+
+		if len(remaining) == 0 {
+			return nil, nil
+		}
+		timer := time.NewTimer(containerRecoveryInterval)
+		select {
+		case <-recoveryCtx.Done():
+			timer.Stop()
+			var restartErr error
+			for _, stopped := range remaining {
+				if lastErr := lastErrors[stopped.ID]; lastErr != nil {
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after backup: %w", stopped.ID, lastErr))
+				} else {
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after backup: replacement did not appear within %s", stopped.ID, containerRecoveryTimeout))
+				}
+			}
+			return remaining, restartErr
+		case <-timer.C:
+		}
+	}
+	return nil, nil
+}
+
+// CurrentMounts returns Arcane's own mounts when it runs in a container.
+func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
+	_, containerErr := cgroup.CurrentContainerID()
+	if inContainer = containerErr == nil; !inContainer {
+		return nil, false, nil
+	}
+	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil {
+		return nil, true, fmt.Errorf("failed to inspect Arcane container mounts: %w", err)
+	}
+	return inspect.Mounts, true, nil
+}
+
+// SourceMounts mounts containerPath read-only at target through the host mounts behind it, including nested ones.
+func SourceMounts(mounts []container.MountPoint, inContainer bool, containerPath, target string) ([]mount.Mount, error) {
+	if !inContainer {
+		return []mount.Mount{{Type: mount.TypeBind, Source: containerPath, Target: target, ReadOnly: true}}, nil
+	}
+	primary := docker.MountForSubpath(mounts, containerPath, target)
+	if primary == nil {
+		return nil, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume for backups", containerPath)
+	}
+	result := make([]mount.Mount, 0, 1+len(docker.NestedMounts(mounts, containerPath, target)))
+	for _, resolved := range append([]mount.Mount{*primary}, docker.NestedMounts(mounts, containerPath, target)...) {
+		result = append(result, mount.Mount{ //exhaustruct:enforce
+			Type:           resolved.Type,
+			Source:         resolved.Source,
+			Target:         resolved.Target,
+			ReadOnly:       true,
+			Consistency:    resolved.Consistency,
+			BindOptions:    resolved.BindOptions,
+			VolumeOptions:  resolved.VolumeOptions,
+			ImageOptions:   resolved.ImageOptions,
+			TmpfsOptions:   resolved.TmpfsOptions,
+			ClusterOptions: resolved.ClusterOptions,
+		})
+	}
+	return result, nil
+}
+
+// BindVolumeSubpaths rewrites volume subpath mounts as binds of the subpath on daemons before API 1.45,
+// which ignore subpaths and mount the volume root instead.
+func BindVolumeSubpaths(ctx context.Context, dockerClient *client.Client, mounts []mount.Mount) ([]mount.Mount, error) {
+	if compat.IsDockerAPIVersionAtLeast(compat.DetectDockerAPIVersion(ctx, dockerClient), "1.45") {
+		return mounts, nil
+	}
+	rewritten := slices.Clone(mounts)
+	for index, resolved := range rewritten {
+		if resolved.Type != mount.TypeVolume || kit.FromPtr(resolved.VolumeOptions).Subpath == "" {
+			continue
+		}
+		inspect, err := dockerClient.VolumeInspect(ctx, resolved.Source, client.VolumeInspectOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("inspect volume %s for backup: %w", resolved.Source, err)
+		}
+		rewritten[index] = mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   filepath.Join(inspect.Volume.Mountpoint, resolved.VolumeOptions.Subpath),
+			Target:   resolved.Target,
+			ReadOnly: resolved.ReadOnly,
+		}
+	}
+	return rewritten, nil
 }

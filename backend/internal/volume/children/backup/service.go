@@ -11,7 +11,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 	"uuid"
 
@@ -79,19 +78,17 @@ type (
 		S3Destinations   *s3.S3DestinationService
 		RecoveryKeys     *backup.RecoveryKeyStore
 		Uploads          *upload.UploadService
+		Repository       *backup.VolumeRepository
+		Containers       *backup.Containers
 		Locks            *concurrency.KeyedMutex
 		AlreadyRunning   error
 		PolicyOverridden error
-		StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
-		StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
 		Admission        *runs.Admission
-		BackupVolumeName string
-		EncryptionKey    string
 	}
 
 	Service struct {
@@ -102,7 +99,6 @@ type (
 		// backupWorkflow runs manual backups that StartBackup accepted.
 		backupWorkflow *flow.Workflow
 		deps           Dependencies
-		rekeyed        sync.Map
 	}
 
 	// backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
@@ -168,7 +164,7 @@ func NewService(deps Dependencies) *Service {
 		Engine:     deps.Engine,
 		Run:        deps.Store.Run,
 		Repository: s.snapshotRepository,
-		Password:   s.volumeBackupPassword,
+		Password:   deps.Repository.Password,
 		SanitizePath: func(input string) (string, error) {
 			return kit.NormalizeRelativePath(strings.TrimLeft(strings.TrimSpace(input), "/"))
 		},
@@ -177,15 +173,14 @@ func NewService(deps Dependencies) *Service {
 		Exec:            deps.Exec,
 	})
 	s.restore = restore.NewService(restore.Dependencies{
-		Docker:          deps.Docker,
-		Engine:          deps.Engine,
-		Events:          deps.Events,
-		Locks:           deps.Locks,
-		Run:             deps.Store.Run,
-		Repository:      s.snapshotRepository,
-		Password:        s.volumeBackupPassword,
-		StopContainers:  s.stopRunningContainersForBackup,
-		StartContainers: s.startContainersAfterBackup,
+		Docker:     deps.Docker,
+		Engine:     deps.Engine,
+		Events:     deps.Events,
+		Locks:      deps.Locks,
+		Run:        deps.Store.Run,
+		Repository: s.snapshotRepository,
+		Password:   deps.Repository.Password,
+		Containers: deps.Containers,
 		// The safety backup runs under the restore's workspace lock, so executeBackup must not take it again.
 		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
 			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
@@ -199,7 +194,7 @@ func NewService(deps Dependencies) *Service {
 		ArchivePaths:    s.browser.ArchivePaths,
 		ArchiveFilename: backupArchiveFilename,
 		HelperImage:     deps.HelperImage,
-		StorageMount:    s.StorageMount,
+		StorageMount:    deps.Repository.StorageMount,
 		AcquireHelper:   deps.AcquireHelper,
 		Exec:            deps.Exec,
 	})
@@ -447,10 +442,10 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	}
 	var stopped []container.Summary
 	if plan.Policy != nil && plan.Policy.StopContainers {
-		stopped, err = s.stopRunningContainersForBackup(ctx, volumeName, user, false)
+		stopped, err = s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
 		defer func() {
 			if len(stopped) > 0 {
-				_, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), stopped, user)
+				_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 				err = errors.Join(err, restartErr)
 			}
 		}()
@@ -462,7 +457,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 		return snapshotErr
 	}
 	if len(stopped) > 0 {
-		if stopped, err = s.startContainersAfterBackup(context.WithoutCancel(ctx), stopped, user); err != nil {
+		if stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user); err != nil {
 			return err
 		}
 	}
@@ -498,11 +493,11 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	source := mount.Mount{Type: mount.TypeVolume, Source: entry.VolumeName, Target: "/volume", ReadOnly: true}
 	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
-		repository, err := s.localRusticRepository(ctx, dockerClient, false)
+		repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
 		if err != nil {
 			return err
 		}
-		password, err := s.volumeBackupPassword(ctx, dockerClient, repository)
+		password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
 		if err != nil {
 			return err
 		}
@@ -525,11 +520,11 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	if !plan.S3Enabled || entry.RemoteSnapshotID != "" {
 		return nil
 	}
-	remoteRepository, err := s.remoteRusticRepository(ctx, plan.S3DestinationID, "")
+	remoteRepository, err := s.deps.Repository.Remote(ctx, plan.S3DestinationID, "")
 	if err != nil {
 		return err
 	}
-	password, err := s.volumeBackupPassword(ctx, dockerClient, remoteRepository)
+	password, err := s.deps.Repository.Password(ctx, dockerClient, remoteRepository)
 	if err != nil {
 		return err
 	}
@@ -538,7 +533,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	}
 	var snapshot backup.Snapshot
 	if plan.LocalEnabled {
-		localRepository, localErr := s.localRusticRepository(ctx, dockerClient, true)
+		localRepository, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
 		if localErr != nil {
 			return localErr
 		}
@@ -579,7 +574,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if strings.TrimSpace(s3DestinationID) == "" {
 		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the upload"))
 	}
-	remoteRepository, err := s.remoteRusticRepository(ctx, s3DestinationID, "")
+	remoteRepository, err := s.deps.Repository.Remote(ctx, s3DestinationID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -587,11 +582,11 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if err != nil {
 		return nil, err
 	}
-	localRepository, err := s.localRusticRepository(ctx, dockerClient, true)
+	localRepository, err := s.deps.Repository.Local(ctx, dockerClient, true)
 	if err != nil {
 		return nil, err
 	}
-	password, err := s.volumeBackupPassword(ctx, dockerClient, localRepository, remoteRepository)
+	password, err := s.deps.Repository.Password(ctx, dockerClient, localRepository, remoteRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -822,7 +817,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	}
 	var deleteErr error
 	if len(localSnapshotIDs) > 0 {
-		repository, repoErr := s.localRusticRepository(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localSnapshotIDs)
 		}
@@ -839,7 +834,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 		for index, entry := range group {
 			snapshotIDs[index] = entry.RemoteSnapshotID
 		}
-		repository, repoErr := s.remoteRusticRepository(ctx, key.destinationID, key.instanceID)
+		repository, repoErr := s.deps.Repository.Remote(ctx, key.destinationID, key.instanceID)
 		var observation types.BackupRepositoryObservation
 		if repoErr == nil {
 			observation, repoErr = backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, key.destinationID, path.Join(backup.VolumeRoot, key.instanceID))
@@ -890,10 +885,10 @@ func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 		return err
 	}
 	// Skip before re-keying, which would start Rustic against a missing repository.
-	if !s.localRusticRepositoryInitialized(ctx, dockerClient) {
+	if !s.deps.Repository.LocalInitialized(ctx, dockerClient) {
 		return nil
 	}
-	repository, err := s.localRusticRepository(ctx, dockerClient, false)
+	repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
 	if err != nil {
 		return err
 	}
@@ -901,7 +896,7 @@ func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 }
 
 func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Client, repository backup.Repository, snapshotIDs []string) error {
-	password, err := s.volumeBackupPassword(ctx, dockerClient, repository)
+	password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
 	if err != nil {
 		return err
 	}
@@ -932,11 +927,11 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		containerID, cleanup, err = s.createBackupTempContainer(ctx, "/volume", true)
 	} else {
 		archivePath = "/tmp/" + entry.ID + ".tar.gz"
-		repository, repoErr := s.localRusticRepository(ctx, dockerClient, true)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, true)
 		if repoErr != nil {
 			return nil, 0, repoErr
 		}
-		password, passwordErr := s.volumeBackupPassword(ctx, dockerClient, repository)
+		password, passwordErr := s.deps.Repository.Password(ctx, dockerClient, repository)
 		if passwordErr != nil {
 			return nil, 0, passwordErr
 		}
@@ -1055,7 +1050,7 @@ func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRe
 	if err != nil {
 		return "", err
 	}
-	password, err := s.volumeBackupPassword(ctx, dockerClient, repository)
+	password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
 	if err != nil {
 		return "", err
 	}
@@ -1099,7 +1094,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 	created := 0
 	var failures []string
 	for _, root := range roots {
-		repository, repoErr := s.remoteRusticRepository(ctx, destinationID, root)
+		repository, repoErr := s.deps.Repository.Remote(ctx, destinationID, root)
 		if repoErr != nil {
 			failures = append(failures, fmt.Sprintf("instance %s: %v", root, repoErr))
 			continue
@@ -1130,10 +1125,10 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 	return created, failures, nil
 }
 
-// discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled and system snapshots map to nil.
+// discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled, system, and project snapshots map to nil.
 func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *types.VolumeBackup {
 	volumeName := strings.TrimSpace(snapshot.Label)
-	if volumeName == "" || volumeName == systemRecoverySnapshotLabel {
+	if volumeName == "" || volumeName == systemRecoverySnapshotLabel || slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
 		return nil
 	}
 	createdAt := snapshot.Time
@@ -1147,38 +1142,6 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 		Destination: types.VolumeBackupDestinationS3, Format: types.VolumeBackupFormatRustic,
 		RemoteSnapshotID: snapshot.ID, S3DestinationID: destinationID, RemoteInstanceID: root,
 	}
-}
-
-// MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
-func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	local, err := s.localRusticRepository(ctx, dockerClient, false)
-	if err != nil {
-		return err
-	}
-	repositories := []backup.Repository{local}
-	destinations, listErr := s.deps.S3Destinations.ListAllS3Destinations(ctx)
-	if listErr != nil {
-		return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
-	}
-	for _, destination := range destinations {
-		remote, remoteRusticRepositoryErr := s.remoteRusticRepository(ctx, destination.ID, "")
-		if remoteRusticRepositoryErr != nil {
-			return remoteRusticRepositoryErr
-		}
-		repositories = append(repositories, remote)
-	}
-	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
-	if rekeyErr := s.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, legacyPassword); rekeyErr != nil {
-		return rekeyErr
-	}
-	for _, repository := range repositories {
-		s.rekeyed.Store(repository.ID, newKey)
-	}
-	return nil
 }
 
 func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
@@ -1305,18 +1268,18 @@ func (s *Service) resumeBackup(ctx context.Context, previous types.SchedulerRun,
 	var local, remote backup.Repository
 	var repositories []backup.Repository
 	if checkpoint.LocalEnabled {
-		if local, err = s.localRusticRepository(ctx, dockerClient, false); err != nil {
+		if local, err = s.deps.Repository.Local(ctx, dockerClient, false); err != nil {
 			return err
 		}
 		repositories = append(repositories, local)
 	}
 	if checkpoint.S3Enabled {
-		if remote, err = s.remoteRusticRepository(ctx, checkpoint.S3DestinationID, ""); err != nil {
+		if remote, err = s.deps.Repository.Remote(ctx, checkpoint.S3DestinationID, ""); err != nil {
 			return err
 		}
 		repositories = append(repositories, remote)
 	}
-	password, err := s.volumeBackupPassword(ctx, dockerClient, repositories...)
+	password, err := s.deps.Repository.Password(ctx, dockerClient, repositories...)
 	if err != nil {
 		return err
 	}

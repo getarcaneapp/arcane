@@ -30,7 +30,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
-	containerdomain "getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
@@ -65,6 +64,7 @@ type (
 		imageService     *image.ImageService
 		helperByVolume   map[string]*volumeHelper
 		backup           *volumebackup.Service
+		repository       *backup.VolumeRepository
 		workspace        *workspace.Service
 		backupVolumeName string
 		helperMu         sync.Mutex
@@ -73,20 +73,21 @@ type (
 	VolumeServiceParams struct {
 		fx.In
 
-		DB               *database.DB
-		DockerService    *dockerInternal.DockerClientService
-		EventService     *event.EventService
-		SettingsService  *settings.SettingsService
-		ContainerService *containerdomain.ContainerService
-		ImageService     *image.ImageService
-		Engine           *backup.Engine
-		S3Destinations   *s3.S3DestinationService
-		Config           *config.Config
-		RecoveryKeys     *backup.RecoveryKeyStore
-		Uploads          *upload.UploadService
-		Ctx              context.Context
-		Scheduler        types.DynamicScheduler
-		Admission        *runs.Admission
+		DB              *database.DB
+		DockerService   *dockerInternal.DockerClientService
+		EventService    *event.EventService
+		SettingsService *settings.SettingsService
+		ImageService    *image.ImageService
+		Engine          *backup.Engine
+		Repository      *backup.VolumeRepository
+		Containers      *backup.Containers
+		S3Destinations  *s3.S3DestinationService
+		Config          *config.Config
+		RecoveryKeys    *backup.RecoveryKeyStore
+		Uploads         *upload.UploadService
+		Ctx             context.Context
+		Scheduler       types.DynamicScheduler
+		Admission       *runs.Admission
 	}
 
 	// VolumeSizeData holds size information for a volume.
@@ -98,7 +99,6 @@ type (
 
 const (
 	internalVolumePruneFilterValue = selfcontainer.InternalResourceLabel + "=true"
-	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
 )
 
 var (
@@ -118,6 +118,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		settingsService:  p.SettingsService,
 		imageService:     p.ImageService,
 		backupVolumeName: backupVolumeName,
+		repository:       p.Repository,
 		helperByVolume:   make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
@@ -127,6 +128,8 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		Events:           p.EventService,
 		Settings:         p.SettingsService,
 		Engine:           p.Engine,
+		Repository:       p.Repository,
+		Containers:       p.Containers,
 		S3Destinations:   p.S3Destinations,
 		RecoveryKeys:     p.RecoveryKeys,
 		Uploads:          p.Uploads,
@@ -136,10 +139,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
 		Exec:             service.execInContainer,
-		BackupVolumeName: backupVolumeName,
-		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
-		StopContainer:    p.ContainerService.StopContainer,
-		StartContainer:   p.ContainerService.StartContainer,
 		Ctx:              p.Ctx,
 		Scheduler:        p.Scheduler,
 		Admission:        p.Admission,
@@ -153,11 +152,16 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		RequireACFS:        service.requireVolumeHelperACFS,
 		Exec:               service.execInContainer,
 		HelperImage:        service.getVolumeHelperImage,
-		BackupStorageMount: service.backup.StorageMount,
+		BackupStorageMount: p.Repository.StorageMount,
 		RestoreFile:        service.backup.RestoreFile,
 		Settings:           p.SettingsService,
 	})
 	return service
+}
+
+// WorkspaceLocks serializes changes to each volume's contents, including backups and restores.
+func (s *VolumeService) WorkspaceLocks() *concurrency.KeyedMutex {
+	return &s.workspaceLocks
 }
 
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
@@ -166,7 +170,7 @@ func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 
 // BackupStorageMount resolves the repository mount shared with system-backup operations.
 func (s *VolumeService) BackupStorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
-	return s.backup.StorageMount(ctx, dockerClient, target, readOnly)
+	return s.repository.StorageMount(ctx, dockerClient, target, readOnly)
 }
 
 // HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
@@ -258,7 +262,7 @@ func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention type
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
 func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
-	return s.backup.MigrateRepositoryPasswords(ctx, previousKey, newKey)
+	return s.repository.Rekey(ctx, previousKey, newKey)
 }
 
 func (s *VolumeService) backupStore() volumebackup.Store {

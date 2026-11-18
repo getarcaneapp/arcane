@@ -1,16 +1,23 @@
 package project
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"kit.getarcane.app/concurrency"
+
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -18,6 +25,7 @@ type (
 		service  *ProjectService
 		activity *activity.ActivityService
 		transfer *transfer.Service
+		backups  *projectbackup.Service
 		bundles  projectBundles
 	}
 
@@ -25,6 +33,16 @@ type (
 		Service  *ProjectService
 		Activity *activity.ActivityService
 		Transfer TransferDependencies
+		Backups  BackupDependencies
+	}
+
+	// BackupDependencies are the shared backup plumbing project backups run on; volume locks come from the volume domain.
+	BackupDependencies struct {
+		Engine         *backup.Engine
+		Repository     *backup.VolumeRepository
+		Containers     *backup.Containers
+		S3Destinations *s3.S3DestinationService
+		VolumeLocks    *concurrency.KeyedMutex
 	}
 )
 
@@ -48,6 +66,19 @@ func New(p ModuleParams) *Module {
 			Activities:       p.Activity,
 			Backups:          p.Transfer.Backups,
 		}),
+		backups: projectbackup.NewService(projectbackup.Dependencies{
+			DB:             p.Service.db,
+			Docker:         p.Service.dockerService,
+			Engine:         p.Backups.Engine,
+			Repository:     p.Backups.Repository,
+			Containers:     p.Backups.Containers,
+			S3Destinations: p.Backups.S3Destinations,
+			Settings:       p.Service.settingsService,
+			VolumeLocks:    p.Backups.VolumeLocks,
+			Project: func(ctx context.Context, projectID string) (types.Project, error) {
+				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
+			},
+		}),
 	}
 }
 
@@ -59,13 +90,22 @@ func (m *Module) Service() *ProjectService {
 }
 
 func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
-	return m.transfer.RegisterWorkflows(engine)
+	if err := m.transfer.RegisterWorkflows(engine); err != nil {
+		return err
+	}
+	return m.backups.RegisterWorkflows(engine)
+}
+
+// ReconcileInterruptedBackups fails project backups the previous process left running, except protected ones that resume.
+func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
+	return m.backups.ReconcileInterruptedBackups(ctx, protectedIDs...)
 }
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterProjects(api, &ProjectHandler{appCtx: appCtx.Context()})
 		transfer.RegisterRoutes(api, transfer.NewHandler(nil))
+		projectbackup.RegisterRoutes(api, projectbackup.NewHandler(nil, appCtx.Context()))
 		return
 	}
 	RegisterProjects(api, &ProjectHandler{
@@ -75,6 +115,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		bundles:         m.bundles,
 	})
 	transfer.RegisterRoutes(api, transfer.NewHandler(m.transfer))
+	projectbackup.RegisterRoutes(api, projectbackup.NewHandler(m.backups, appCtx.Context()))
 }
 
 func RegisterProjects(api huma.API, h *ProjectHandler) {

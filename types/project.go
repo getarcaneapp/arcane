@@ -85,6 +85,40 @@ type (
 		Consistent    bool                   `json:"consistent" doc:"True when no project container ran while the volumes were exported"`
 	}
 
+	CreateProjectBackupRequest struct {
+		StopContainers  *bool                   `json:"stopContainers,omitempty" doc:"Stop the project's running containers while the snapshot is taken; defaults to true"`
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3,local_s3" doc:"Where the backup is stored; defaults to local"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"Saved S3 destination for s3 and local_s3"`
+		Volumes         []string                `json:"volumes,omitempty" doc:"Compose keys of the named volumes to include; omitted means every named volume that exists, empty means none"`
+	}
+
+	ProjectBackupVolume struct {
+		Key      string `json:"key" doc:"Volume key in the compose file"`
+		Name     string `json:"name" doc:"Docker volume name"`
+		Included bool   `json:"included" doc:"Whether the volume's data is in the backup"`
+	}
+
+	ProjectBackup struct {
+		CreatedAt         time.Time               `json:"createdAt"`
+		CompletedAt       *time.Time              `json:"completedAt,omitempty"`
+		ActivityID        *string                 `json:"activityId,omitempty"`
+		ID                string                  `json:"id"`
+		ProjectID         string                  `json:"projectId"`
+		ProjectName       string                  `json:"projectName"`
+		ComposeName       string                  `json:"composeName"`
+		Status            string                  `json:"status" enum:"running,succeeded,failed"`
+		Trigger           string                  `json:"trigger"`
+		Destination       VolumeBackupDestination `json:"destination"`
+		LocalSnapshotID   string                  `json:"localSnapshotId,omitempty"`
+		RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
+		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		Error             string                  `json:"error,omitempty"`
+		Volumes           []ProjectBackupVolume   `json:"volumes"`
+		Size              int64                   `json:"size" doc:"Total size of the captured files"`
+		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
+	}
+
 	ProjectTransferMode string
 
 	ProjectTransferSeverity string
@@ -601,6 +635,7 @@ const (
 
 	ProjectManifestFormatVersion = 1
 	ProjectManifestKindExport    = "export"
+	ProjectManifestKindBackup    = "backup"
 	ProjectBundleExtension       = ".arcane.tar.gz"
 )
 

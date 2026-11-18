@@ -1,4 +1,6 @@
+import type { SystemBackupDestination } from './backup';
 import type { ImageUpdateInfo } from './image';
+import type { BackupRun } from './ui/backup';
 import type { WorkspaceFileChange } from './workspace';
 
 export interface ProjectIncludeFile {
@@ -261,6 +263,28 @@ export interface ExportProjectArchiveRequest {
 	volumes?: string[];
 	stopProject?: boolean;
 }
+
+export interface CreateProjectBackupRequest {
+	volumes?: string[];
+	stopContainers?: boolean;
+	destination?: SystemBackupDestination;
+	s3DestinationId?: string;
+}
+
+export interface ProjectBackupVolume {
+	key: string;
+	name: string;
+	included: boolean;
+}
+
+export type ProjectBackup = BackupRun & {
+	projectId: string;
+	projectName: string;
+	composeName: string;
+	completedAt?: string;
+	volumes: ProjectBackupVolume[];
+	stoppedContainers: boolean;
+};
 
 export interface ImportProjectArchiveRequest {
 	name: string;

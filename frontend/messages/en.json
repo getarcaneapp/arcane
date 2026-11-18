@@ -4720,5 +4720,17 @@
   "project_import_failed": "Failed to import project",
   "uploading": "Uploading…",
   "importing_project": "Importing project…",
-  "volume_not_created_yet": "Not created yet, so it has no data to export."
+  "volume_not_created_yet": "Not created yet, so it has no data to export.",
+  "project_backups_description": "Each backup is one snapshot of the project's files and the data of the volumes you select, so they restore to the same point in time.",
+  "project_backup_create_description": "Back up the project's files and the data of the selected volumes as one snapshot.",
+  "project_backup_stop_containers_description": "Stop the project's running containers while the snapshot is taken, then start them again, so files and volumes are captured consistently.",
+  "project_backup_volume_external": "External volume; its data is managed outside this project and is not backed up.",
+  "project_backup_volume_driver_opts": "Uses driver options that keep its data outside Docker, so its data is not backed up.",
+  "project_backup_volume_missing": "Not created yet, so it has no data to back up.",
+  "project_backup_no_volumes": "This project has no volumes; only its files are backed up.",
+  "project_backup_files_only": "Files only",
+  "project_backup": "Project backup",
+  "project_backup_delete_confirm": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
+  "project_backup_failed": "Failed to start the project backup",
+  "project_backups_load_failed": "Failed to load project backups"
 }

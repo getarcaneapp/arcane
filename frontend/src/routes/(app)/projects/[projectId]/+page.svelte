@@ -52,6 +52,7 @@
 		SearchIcon,
 		ResetIcon,
 		GitBranchIcon,
+		BackupIcon,
 		FolderMoveIcon,
 		DownloadIcon
 	} from '#lib/icons/index.js';
@@ -106,6 +107,7 @@
 	} from '#lib/utils/workspace-files.js';
 
 	import EditableName from '../components/editable-name.svelte';
+	import ProjectBackupsPanel from '../components/project-backups-panel.svelte';
 	import ProjectJobsPanel from '../components/project-jobs-panel.svelte';
 	import ProjectsLogsPanel from '../components/project-logs-panel.svelte';
 	import ProjectServicesPanel from '../components/project-services-panel.svelte';
@@ -428,7 +430,7 @@
 
 	let autoScrollStackLogs = $state(true);
 
-	type ProjectTab = 'services' | 'compose' | 'backup' | 'logs';
+	type ProjectTab = 'services' | 'compose' | 'backup' | 'backups' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
 	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
@@ -573,13 +575,18 @@
 						label: gitSyncsBothWays ? m.git_sync() : m.git_backup(),
 						icon: GitBranchIcon
 					}
-				])
+				]),
+		{
+			value: 'backups',
+			label: m.backups(),
+			icon: BackupIcon
+		}
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
 	type ComposeUIPrefs = {
-		tab: 'services' | 'compose' | 'backup' | 'logs';
+		tab: ProjectTab;
 		composeOpen: boolean;
 		overrideOpen: boolean;
 		envOpen: boolean;
@@ -2601,6 +2608,10 @@
 			{@render projectComposeTab(project)}
 
 			{@render projectBackupTab(project)}
+
+			<Tabs.Content value="backups" class="h-full min-h-0 overflow-y-auto">
+				<ProjectBackupsPanel projectId={project.id} environmentId={envId} />
+			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>
 {:else}

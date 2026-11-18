@@ -43,8 +43,7 @@ type (
 		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
 		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
 		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
-		StopContainers  func(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
-		StartContainers func(ctx context.Context, stopped []container.Summary, user types.Actor) ([]container.Summary, error)
+		Containers      *backup.Containers
 		SafetyBackup    func(ctx context.Context, volumeName string, user types.Actor) (string, error)
 		ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
 		ArchiveFilename func(backupID string) (string, error)
@@ -125,11 +124,11 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 			return err
 		}
 	}
-	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
+	stopped, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}, RefuseArcaneWriters: true}, user)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
-			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+			_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 			err = errors.Join(err, restartErr)
 		}
 	}()
@@ -180,7 +179,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		return fmt.Errorf("failed to restore Rustic snapshot: %w", restoreSnapshotErr)
 	}
 	if containersStopped {
-		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+		stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
 			return err
@@ -337,11 +336,11 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	if err != nil {
 		return err
 	}
-	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
+	stopped, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}, RefuseArcaneWriters: true}, user)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
-			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+			_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 			err = errors.Join(err, restartErr)
 		}
 	}()
@@ -365,7 +364,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		return restoreSelectionErr
 	}
 	if containersStopped {
-		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+		stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
 			return err
@@ -502,11 +501,11 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 			return createErr
 		}
 	}
-	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
+	stopped, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}, RefuseArcaneWriters: true}, user)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
-			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+			_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 			err = errors.Join(err, restartErr)
 		}
 	}()
@@ -582,7 +581,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	}
 
 	if containersStopped {
-		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+		stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
 			return err
