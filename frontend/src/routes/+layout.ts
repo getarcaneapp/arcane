@@ -34,7 +34,6 @@ import { getAuthRedirectPath } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
-import { setTelemetry } from '#lib/utils/telemetry.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { LayoutLoad } from './$types';
@@ -61,7 +60,6 @@ const queryClient = new QueryClient({
 });
 
 let authenticatedUserId: string | null | undefined;
-let telemetryAwaited = false;
 
 // Navigations reuse root data for this long; a refresh of the page on screen always refetches.
 const ROOT_STALE_TIME = 30_000;
@@ -389,22 +387,6 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	if (versionInformation !== appliedVersion) {
 		versionStore.seed(versionInformation);
 		appliedVersion = versionInformation;
-	}
-
-	const telemetry = setTelemetry(
-		{
-			traces: settings?.runtime.frontendTracingEnabled ?? false,
-			metrics: settings?.runtime.frontendMetricsEnabled ?? false,
-			logs: settings?.runtime.frontendLogsEnabled ?? false
-		},
-		versionInformation.currentVersion
-	);
-	// Waiting lets the first page view be traced, but a stalled SDK download must never hold up the app.
-	if (!telemetryAwaited) {
-		telemetryAwaited = true;
-		let timeout: ReturnType<typeof setTimeout> | undefined;
-		await Promise.race([telemetry, new Promise((resolve) => (timeout = setTimeout(resolve, 2_000)))]);
-		clearTimeout(timeout);
 	}
 
 	const redirectPath = getAuthRedirectPath(
