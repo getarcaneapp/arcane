@@ -107,8 +107,15 @@ func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, exc
 	if _, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan); ok {
 		return ctx, nil
 	}
-	if plan, found, err := frozenPlan(run); err != nil || found {
-		return context.WithValue(ctx, frozenPendingKey{}, &plan), err
+	existing, found, err := frozenPlan(run)
+	if err != nil {
+		return context.WithValue(ctx, frozenPendingKey{}, &existing), err
+	}
+	if found {
+		unsettled, unsettledErr := s.Unsettled(run)
+		if unsettledErr != nil || unsettled > 0 {
+			return context.WithValue(ctx, frozenPendingKey{}, &existing), unsettledErr
+		}
 	}
 	records, err := s.pendingUpdates(ctx)
 	if err != nil {
@@ -538,11 +545,6 @@ func (s *Service) ResumePlan(ctx context.Context, run types.SchedulerRun) (conte
 		}
 	}
 	return context.WithValue(ctx, frozenPendingKey{}, &frozenUpdatePlan{Records: records, Targets: targets}), len(records), unresolved, nil
-}
-
-func (s *Service) Planned(run types.SchedulerRun) bool {
-	_, found, err := frozenPlan(run)
-	return found && err == nil
 }
 
 func (s *Service) Started(run types.SchedulerRun) bool {

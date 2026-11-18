@@ -2167,8 +2167,9 @@ func (s *UpdaterService) autoUpdateCandidates(ctx context.Context, t flow.Task) 
 }
 
 func (s *UpdaterService) autoUpdateResume(ctx context.Context, _ flow.Task) (any, error) {
-	run, ok := jobcontext.Run(ctx)
-	return ok && s.recovery.Planned(run), nil
+	run, _ := jobcontext.Run(ctx)
+	unsettled, err := s.recovery.Unsettled(run)
+	return err == nil && unsettled > 0, nil
 }
 
 func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, error) {
@@ -2177,8 +2178,27 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 		return nil, errors.New("auto-update requires a job run")
 	}
 	var checked types.SchedulerOutcome
-	if err := t.DecodeOutput("check", &checked); err != nil && !errors.Is(err, workflow.ErrStepSkipped) {
-		return nil, err
+	checkErr := t.DecodeOutput("check", &checked)
+	if checkErr != nil && !errors.Is(checkErr, workflow.ErrStepSkipped) {
+		return nil, checkErr
+	}
+	if checkErr == nil {
+		for _, stale := range s.recovery.Unplanned(run) {
+			if slices.ContainsFunc(checked.Targets, func(target types.TargetOutcome) bool {
+				return target.ID == stale.ID
+			}) {
+				continue
+			}
+			if err := jobcontext.Progress(ctx, types.TargetOutcome{
+				ID:           stale.ID,
+				ResourceType: stale.ResourceType,
+				Status:       types.RunStatusSucceeded,
+				Message:      "Resolved on retry",
+				ActivityID:   t.ActivityID(),
+			}); err != nil {
+				return nil, common.Classify(common.ErrUnavailable, err)
+			}
+		}
 	}
 	excluded := map[string]bool{}
 	for _, target := range checked.Targets {
@@ -2396,8 +2416,8 @@ func (s *UpdaterService) ValidateAutoUpdateRetry(_ context.Context, run types.Sc
 	if err != nil {
 		return fmt.Errorf("auto-update has no frozen plan to retry: %w", err)
 	}
-	if unsettled == 0 {
-		return errors.New("auto-update has no unsettled targets to retry")
+	if unsettled == 0 && len(s.recovery.Unplanned(run)) == 0 {
+		return errors.New("auto-update has no failed targets to retry")
 	}
 	return nil
 }
