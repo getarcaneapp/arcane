@@ -1,7 +1,9 @@
 package project
 
 import (
+	"archive/tar"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json/v2"
@@ -11159,6 +11161,88 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 	entries, err := os.ReadDir(projectsDir)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
+}
+
+func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, []container.Summary{})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - cache:/cache\nvolumes:\n  cache:\n",
+	), 0o644))
+	var project strings.Builder
+	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
+	// tar -czf - -C /volume . of an empty volume holds only the root directory.
+	var volumeArchive strings.Builder
+	gzipWriter := gzip.NewWriter(&volumeArchive)
+	tarWriter := tar.NewWriter(gzipWriter)
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
+	require.NoError(t, tarWriter.Close())
+	require.NoError(t, gzipWriter.Close())
+	cacheArchive, err := projects.ProjectBundleVolumeArchive("cache")
+	require.NoError(t, err)
+	var bundle strings.Builder
+	writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
+		Project:       types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
+		Volumes:       []types.ProjectVolume{{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true}},
+		FormatVersion: types.ProjectManifestFormatVersion,
+	})
+	require.NoError(t, err)
+	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
+	require.NoError(t, writer.Add(cacheArchive, int64(volumeArchive.Len()), strings.NewReader(volumeArchive.String())))
+	require.NoError(t, writer.Close())
+	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
+	require.NoError(t, err)
+
+	var created []client.VolumeCreateOptions
+	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		CreateVolume: func(_ context.Context, options client.VolumeCreateOptions, _ types.Actor) (*types.Volume, error) {
+			created = append(created, options)
+			return &types.Volume{Name: options.Name}, nil
+		},
+		RestoreVolume: func(context.Context, string, types.RestoreVolumeUploadRequest, types.Actor) error {
+			return errors.New("an empty volume must not be restored")
+		},
+	}}}
+	imported, err := bundles.Import(ctx, ImportBundleOptions{
+		EnvironmentID: "0",
+		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "copy", imported.Name)
+	require.Len(t, created, 1)
+	assert.Equal(t, "copy_cache", created[0].Name)
+	assert.Equal(t, "copy", created[0].Labels[api.ProjectLabel])
+	assert.Equal(t, "cache", created[0].Labels[api.VolumeLabel])
+	assert.NotEmpty(t, created[0].Labels[api.ConfigHashLabel])
 }
 
 func TestProjectBundlesExportSkipsVolumesNotCreatedYet(t *testing.T) {

@@ -2046,6 +2046,15 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 		if !ok || target.Kind != types.ProjectVolumeNamed {
 			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project", key)
 		}
+		// The restore refuses empty archives, so an empty volume is only created.
+		empty, body := projects.PeekEmptyVolumeArchive(body)
+		if empty {
+			err := b.createEmptyVolume(ctx, target, imported.ComposeName, opts.User)
+			if !errors.Is(err, common.ErrConflict) {
+				created = append(created, target.Name)
+			}
+			return err
+		}
 		session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, key+".tar.gz", size, body)
 		if err != nil {
 			return fmt.Errorf("store the data of volume %s: %w", key, err)
@@ -2072,6 +2081,28 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 		return nil, b.rollback(ctx, err, proj, imported.ComposeName, created, opts.User)
 	}
 	return proj, nil
+}
+
+// createEmptyVolume creates the volume with the Compose labels a restore into a new volume gives it.
+func (b projectBundles) createEmptyVolume(ctx context.Context, target types.ProjectVolume, composeName string, user types.Actor) error {
+	_, exists, err := b.local.Volume(ctx, target.Name)
+	if err != nil {
+		return fmt.Errorf("inspect volume %s: %w", target.Name, err)
+	}
+	if exists {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", target.Name))
+	}
+	options, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
+		Driver: target.Driver,
+		Labels: target.Labels,
+	}, target.Key, target.Name, composeName), nil)
+	if err != nil {
+		return err
+	}
+	if _, err = b.local.deps.CreateVolume(ctx, options, user); err != nil {
+		return fmt.Errorf("create volume %s: %w", target.Name, err)
+	}
+	return nil
 }
 
 // rollback removes the project an import created and those of its volumes that carry the project's Compose label.

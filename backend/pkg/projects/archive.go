@@ -343,6 +343,28 @@ func (w *ProjectBundleWriter) Close() error {
 	return nil
 }
 
+// PeekEmptyVolumeArchive reports whether the tar.gz volume archive in r holds nothing but its root directory, which is
+// how an empty volume exports. It reads only the first entries, and replay yields all of r again.
+func PeekEmptyVolumeArchive(r io.Reader) (empty bool, replay io.Reader) {
+	var peeked bytes.Buffer
+	replay = io.MultiReader(&peeked, r)
+	gzipReader, err := gzip.NewReader(io.TeeReader(r, &peeked))
+	if err != nil {
+		return false, replay
+	}
+	tarReader := tar.NewReader(gzipReader)
+	for range 2 {
+		header, nextErr := tarReader.Next()
+		if errors.Is(nextErr, io.EOF) {
+			return true, replay
+		}
+		if nextErr != nil || header.Typeflag != tar.TypeDir || path.Clean(header.Name) != "." {
+			return false, replay
+		}
+	}
+	return false, replay
+}
+
 func isProjectBundleVolumeArchive(name string) bool {
 	key, ok := strings.CutPrefix(name, projectBundleVolumes)
 	if !ok {

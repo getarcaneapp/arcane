@@ -210,6 +210,31 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPeekEmptyVolumeArchive(t *testing.T) {
+	root := archiveTestEntry{header: tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}}
+	file := archiveTestEntry{header: tar.Header{Typeflag: tar.TypeReg, Name: "./index.html", Mode: 0o644}, body: "<h1>hi</h1>"}
+	for _, tt := range []struct {
+		name  string
+		data  []byte
+		empty bool
+	}{
+		// tar -czf - -C /volume . of an empty volume holds only the root directory.
+		{name: "root only", data: buildTestArchive(t, []archiveTestEntry{root}).Bytes(), empty: true},
+		{name: "root and file", data: buildTestArchive(t, []archiveTestEntry{root, file}).Bytes()},
+		{name: "file only", data: buildTestArchive(t, []archiveTestEntry{file}).Bytes()},
+		{name: "root twice", data: buildTestArchive(t, []archiveTestEntry{root, root}).Bytes()},
+		{name: "not gzip", data: []byte("volume data")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			empty, replay := PeekEmptyVolumeArchive(bytes.NewReader(tt.data))
+			assert.Equal(t, tt.empty, empty)
+			replayed, err := io.ReadAll(replay)
+			require.NoError(t, err)
+			assert.Equal(t, tt.data, replayed)
+		})
+	}
+}
+
 func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	// A plain project archive must keep importing as before instead of failing bundle validation.
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
