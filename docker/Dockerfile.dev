@@ -14,7 +14,7 @@ COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
 # Install dependencies with a persistent package store cache
 RUN mkdir -p /home/vp/.local/share/pnpm/store
 RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
-    vp install --frozen-lockfile --prefer-offline --filter ./frontend...
+    vp install --frozen-lockfile --prefer-offline --filter ./frontend... --filter ./packages/ui
 
 # Copy frontend source
 COPY --chown=vp:vp packages/ui ./packages/ui
