@@ -24,7 +24,7 @@
 	data-pinned={pinned || undefined}
 	class={cn(
 		'bg-transparent px-4 py-3 align-middle whitespace-nowrap',
-		'first:rounded-l-lg first:pl-6 last:rounded-r-lg last:pr-6 [&:has([role=checkbox])]:pr-0',
+		'first:rounded-l-lg first:pl-6 last:rounded-r-lg last:pr-6 [&:has(+[data-pinned]:last-child)]:rounded-r-lg [&:has([role=checkbox])]:pr-0',
 		variant === 'checkbox' && 'w-0 pr-4!',
 		variant === 'expander' && 'w-8 px-2',
 		variant === 'flush' && 'p-0',
@@ -36,7 +36,7 @@
 >
 	{#if pinned}
 		<div
-			class="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 rounded-xl border border-border/60 bg-popover p-0.5 opacity-0 shadow-lg transition-opacity duration-150 group-hover/row:pointer-events-auto group-hover/row:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 has-data-[state=open]:pointer-events-auto has-data-[state=open]:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100"
+			class="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 rounded-xl border border-border/60 bg-popover p-0.5 opacity-0 shadow-sm transition-opacity duration-150 group-hover/row:pointer-events-auto group-hover/row:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 has-data-[state=open]:pointer-events-auto has-data-[state=open]:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100"
 		>
 			{@render children?.()}
 		</div>
