@@ -462,7 +462,7 @@ var permissionCatalog = []PermissionCatalogResource{
 				Key:         "use",
 				Permission:  PermSecretSourcesUse,
 				Label:       "Use",
-				Description: "Bind projects to a source; a binding delivers anything the source can read",
+				Description: "Bind projects to a source and list a target's keys; a binding delivers anything the source can read",
 				Requires:    []string{PermSecretSourcesRead},
 			},
 		},

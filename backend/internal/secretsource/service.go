@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -25,7 +26,14 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/bitwarden"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/doppler"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/httpsource"
 	"getarcane.dev/arcane/v3/internal/secretsource/children/infisical"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/onepassword"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/protonpass"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/setupplan"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/vault"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
@@ -65,6 +73,7 @@ type (
 	// fetches, and background drift checks. Secret values are only held in memory
 	// for the duration of a deploy or check.
 	SecretSourceService struct {
+		projectFiles ProjectFileAccess
 		db           *database.DB
 		eventService *event.EventService
 		httpClient   *http.Client
@@ -92,8 +101,8 @@ func NewSecretSourceService(db *database.DB, eventService *event.EventService) *
 	return &SecretSourceService{
 		db:           db,
 		eventService: eventService,
-		// Not the SSRF-safe client: self-hosted secret managers normally
-		// live on private, VPN, tailnet, or Docker network addresses,
+		// Not the SSRF-safe client: self-hosted secret managers and bw serve
+		// normally live on private, VPN, tailnet, or Docker network addresses,
 		// which that client rejects. Cloud metadata addresses are still
 		// refused (see transport.go), and creating a source requires the
 		// secret-sources:create permission.
@@ -156,6 +165,9 @@ func (s *SecretSourceService) CreateSource(ctx context.Context, req types.Secret
 	}
 
 	source := SecretSource{Name: name, Provider: req.Provider, Settings: settings, Credential: credential}
+	if setupErr := applySetupCredentialInternal(&source, "", req.SetupCredential); setupErr != nil {
+		return nil, setupErr
+	}
 	if createErr := s.db.WithContext(ctx).Create(&source).Error; createErr != nil {
 		return nil, fmt.Errorf("failed to create secret source: %w", createErr)
 	}
@@ -169,6 +181,7 @@ func (s *SecretSourceService) UpdateSource(ctx context.Context, id string, req t
 		return nil, err
 	}
 	beforeFingerprint := connectionFingerprintInternal(source)
+	beforeSetupClientID := setupClientIDInternal(source.Settings)
 	beforeEndpoint := endpointKeyInternal(source.Settings)
 
 	if req.Name != nil {
@@ -189,10 +202,16 @@ func (s *SecretSourceService) UpdateSource(ctx context.Context, id string, req t
 		source.Settings = settings
 	}
 	newCredential := req.Credential != nil && *req.Credential != ""
+	if req.ClearCredential {
+		if !providerAcceptsCredentialInternal(source.Provider) || providerNeedsCredentialInternal(source.Provider) {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("only an optional token, such as an HTTP endpoint's, can be removed"))
+		}
+		source.Credential = ""
+	}
 	// A stored credential only goes to the address it was saved for. When the
-	// address changes, it has to be entered again.
+	// address or login method changes, it has to be entered again.
 	endpointChanged := endpointKeyInternal(source.Settings) != beforeEndpoint
-	if endpointChanged && source.Credential != "" && !newCredential {
+	if endpointChanged && source.Credential != "" && !newCredential && !req.ClearCredential {
 		return nil, common.Classify(common.ErrSecretSourceInvalid,
 			errors.New("the address or login method changed; enter "+credentialLabelInternal(source.Provider)+" again"))
 	}
@@ -202,6 +221,16 @@ func (s *SecretSourceService) UpdateSource(ctx context.Context, id string, req t
 			return nil, fmt.Errorf("failed to encrypt credential: %w", encryptErr)
 		}
 		source.Credential = encrypted
+	}
+	setupSecret := ""
+	if req.SetupCredential != nil {
+		setupSecret = *req.SetupCredential
+	}
+	if endpointChanged && source.SetupCredential != "" && setupSecret == "" && setupClientIDInternal(source.Settings) != "" {
+		return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("the address changed; enter the setup identity's secret again"))
+	}
+	if setupErr := applySetupCredentialInternal(source, beforeSetupClientID, setupSecret); setupErr != nil {
+		return nil, setupErr
 	}
 	// A test result only describes the connection it was run against.
 	if connectionFingerprintInternal(source) != beforeFingerprint {
@@ -298,8 +327,8 @@ func (s *SecretSourceService) recordTestInternal(ctx context.Context, sourceID s
 	}
 }
 
-// Browse lists pickable targets of a source, such as Infisical projects and
-// their folders.
+// Browse lists pickable targets of a source, such as Infisical projects or
+// Bitwarden folders.
 func (s *SecretSourceService) Browse(ctx context.Context, sourceID string, query types.SecretSourceBrowseQuery) ([]types.SecretSourceBrowseItem, error) {
 	source, err := s.loadSourceInternal(ctx, sourceID)
 	if err != nil {
@@ -464,6 +493,36 @@ func (s *SecretSourceService) newProviderInternal(providerName string, settings 
 			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("infisical settings are required"))
 		}
 		return infisical.New(s.httpClient, *settings.Infisical, credential)
+	case types.SecretSourceProviderBitwarden:
+		if settings.Bitwarden == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("bitwarden settings are required"))
+		}
+		return bitwarden.New(s.httpClient, *settings.Bitwarden)
+	case types.SecretSourceProviderVault:
+		if settings.Vault == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("vault settings are required"))
+		}
+		return vault.New(s.httpClient, *settings.Vault, credential)
+	case types.SecretSourceProviderDoppler:
+		if settings.Doppler == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("doppler settings are required"))
+		}
+		return doppler.New(s.httpClient, *settings.Doppler, credential)
+	case types.SecretSourceProviderOnePassword:
+		if settings.OnePassword == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("1Password settings are required"))
+		}
+		return onepassword.New(s.httpClient, *settings.OnePassword, credential)
+	case types.SecretSourceProviderProtonPass:
+		if settings.ProtonPass == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("settings for Proton Pass are required"))
+		}
+		return protonpass.New(s.httpClient, *settings.ProtonPass, credential)
+	case types.SecretSourceProviderHTTP:
+		if settings.HTTP == nil {
+			return nil, common.Classify(common.ErrSecretSourceInvalid, errors.New("endpoint settings are required"))
+		}
+		return httpsource.New(s.httpClient, *settings.HTTP, credential)
 	default:
 		return nil, common.Classify(common.ErrSecretSourceInvalid, fmt.Errorf("unknown provider %q", providerName))
 	}
@@ -529,29 +588,61 @@ func (s *SecretSourceService) ensureNameAvailableInternal(ctx context.Context, n
 // providerNeedsCredentialInternal reports providers that cannot connect
 // without a stored credential.
 func providerNeedsCredentialInternal(providerName string) bool {
-	return providerName == types.SecretSourceProviderInfisical
+	switch providerName {
+	case types.SecretSourceProviderInfisical, types.SecretSourceProviderVault,
+		types.SecretSourceProviderDoppler, types.SecretSourceProviderOnePassword:
+		return true
+	default:
+		return false
+	}
 }
 
 // providerAcceptsCredentialInternal reports providers that store a
-// credential. A provider whose credential is optional accepts one without
-// needing it.
+// credential: the ones that need one, and HTTP, where a bearer token is
+// optional, and Proton Pass, whose kit may require one. Bitwarden's session
+// lives in bw serve.
 func providerAcceptsCredentialInternal(providerName string) bool {
-	return providerNeedsCredentialInternal(providerName)
+	return providerNeedsCredentialInternal(providerName) ||
+		providerName == types.SecretSourceProviderHTTP || providerName == types.SecretSourceProviderProtonPass
 }
 
-// endpointKeyInternal identifies where a source's credential is sent.
+// endpointKeyInternal identifies where a source's credential is sent and how
+// it is used: the server address and, for Vault, the login method.
 func endpointKeyInternal(settings types.SecretSourceSettings) string {
-	if settings.Infisical != nil {
+	switch {
+	case settings.Infisical != nil:
 		return "infisical\x00" + settings.Infisical.SiteURL
+	case settings.Vault != nil:
+		v := settings.Vault
+		return "vault\x00" + v.Address + "\x00" + v.AuthMethod + "\x00" + v.RoleID + "\x00" + v.AppRoleMount
+	case settings.Doppler != nil:
+		return "doppler\x00" + settings.Doppler.APIURL
+	case settings.OnePassword != nil:
+		return "onepassword\x00" + settings.OnePassword.ServerURL
+	case settings.ProtonPass != nil:
+		return "protonpass\x00" + settings.ProtonPass.KitURL
+	case settings.HTTP != nil:
+		return "http\x00" + settings.HTTP.BaseURL
+	case settings.Bitwarden != nil:
+		return "bitwarden\x00" + settings.Bitwarden.ServeURL
+	default:
+		return ""
 	}
-	return ""
 }
 
 func credentialLabelInternal(providerName string) string {
-	if providerName == types.SecretSourceProviderInfisical {
+	switch providerName {
+	case types.SecretSourceProviderInfisical:
 		return "a client secret"
+	case types.SecretSourceProviderVault:
+		return "a token or AppRole secret ID"
+	case types.SecretSourceProviderDoppler:
+		return "a Doppler token"
+	case types.SecretSourceProviderOnePassword:
+		return "a Connect token"
+	default:
+		return "a credential"
 	}
-	return "a credential"
 }
 
 // normalizeSettingsInternal validates the settings of one provider and drops
@@ -562,6 +653,18 @@ func normalizeSettingsInternal(providerName string, settings types.SecretSourceS
 	switch providerName {
 	case types.SecretSourceProviderInfisical:
 		normalized.Infisical, err = infisical.NormalizeSettings(settings.Infisical)
+	case types.SecretSourceProviderBitwarden:
+		normalized.Bitwarden, err = bitwarden.NormalizeSettings(settings.Bitwarden)
+	case types.SecretSourceProviderVault:
+		normalized.Vault, err = vault.NormalizeSettings(settings.Vault)
+	case types.SecretSourceProviderDoppler:
+		normalized.Doppler, err = doppler.NormalizeSettings(settings.Doppler)
+	case types.SecretSourceProviderOnePassword:
+		normalized.OnePassword, err = onepassword.NormalizeSettings(settings.OnePassword)
+	case types.SecretSourceProviderProtonPass:
+		normalized.ProtonPass, err = protonpass.NormalizeSettings(settings.ProtonPass)
+	case types.SecretSourceProviderHTTP:
+		normalized.HTTP, err = httpsource.NormalizeSettings(settings.HTTP)
 	default:
 		err = fmt.Errorf("unknown provider %q; use one of %s", providerName, strings.Join(types.SecretSourceProviders, ", "))
 	}
@@ -579,6 +682,18 @@ func normalizeTargetInternal(providerName string, target types.SecretSourceBindi
 	switch providerName {
 	case types.SecretSourceProviderInfisical:
 		normalized.Infisical, err = infisical.NormalizeTarget(target.Infisical)
+	case types.SecretSourceProviderBitwarden:
+		normalized.Bitwarden, err = bitwarden.NormalizeTarget(target.Bitwarden)
+	case types.SecretSourceProviderVault:
+		normalized.Vault, err = vault.NormalizeTarget(target.Vault)
+	case types.SecretSourceProviderDoppler:
+		normalized.Doppler, err = doppler.NormalizeTarget(target.Doppler)
+	case types.SecretSourceProviderOnePassword:
+		normalized.OnePassword, err = onepassword.NormalizeTarget(target.OnePassword)
+	case types.SecretSourceProviderProtonPass:
+		normalized.ProtonPass, err = protonpass.NormalizeTarget(target.ProtonPass)
+	case types.SecretSourceProviderHTTP:
+		normalized.HTTP, err = httpsource.NormalizeTarget(target.HTTP)
 	default:
 		err = fmt.Errorf("unknown provider %q", providerName)
 	}
@@ -592,6 +707,18 @@ func describeTargetInternal(binding *ProjectSecretBinding) string {
 	switch {
 	case binding.Target.Infisical != nil:
 		return infisical.Describe(binding.Target.Infisical)
+	case binding.Target.Bitwarden != nil:
+		return bitwarden.Describe(binding.Target.Bitwarden)
+	case binding.Target.Vault != nil:
+		return vault.Describe(binding.Target.Vault)
+	case binding.Target.Doppler != nil:
+		return doppler.Describe(binding.Target.Doppler)
+	case binding.Target.OnePassword != nil:
+		return onepassword.Describe(binding.Target.OnePassword)
+	case binding.Target.ProtonPass != nil:
+		return protonpass.Describe(binding.Target.ProtonPass)
+	case binding.Target.HTTP != nil:
+		return httpsource.Describe(binding.Target.HTTP)
 	default:
 		return "an unknown target"
 	}
@@ -603,10 +730,59 @@ func sameTargetInternal(a, b types.SecretSourceBindingTarget) bool {
 	return leftErr == nil && rightErr == nil && string(left) == string(right)
 }
 
+// setupClientIDInternal names the setup identity a stored setup credential
+// belongs to, or "" when the source has none: the Infisical setup client ID,
+// or a fixed marker for a Vault/OpenBao setup token.
+func setupClientIDInternal(settings types.SecretSourceSettings) string {
+	switch {
+	case settings.Infisical != nil:
+		return settings.Infisical.SetupClientID
+	case settings.Vault != nil && settings.Vault.SetupToken:
+		return "vault-setup-token"
+	default:
+		return ""
+	}
+}
+
+// applySetupCredentialInternal keeps the setup credential consistent with the
+// setup client ID: no ID means no credential, and a new ID needs its secret.
+// An empty secret keeps the stored one for an unchanged ID.
+func applySetupCredentialInternal(source *SecretSource, previousClientID, secret string) error {
+	clientID := setupClientIDInternal(source.Settings)
+	if clientID == "" {
+		source.SetupCredential = ""
+		return nil
+	}
+	if secret == "" {
+		if source.SetupCredential == "" || clientID != previousClientID {
+			return common.Classify(common.ErrSecretSourceInvalid, errors.New("enter the setup identity's secret"))
+		}
+		return nil
+	}
+	encrypted, err := crypto.Encrypt(secret)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt setup credential: %w", err)
+	}
+	source.SetupCredential = encrypted
+	return nil
+}
+
 // connectionFingerprintInternal identifies everything a deploy connection
-// depends on: provider, settings, and the stored credential.
+// depends on: provider, settings, and the stored credential. The setup
+// identity is left out because deploys never use it.
 func connectionFingerprintInternal(source *SecretSource) string {
-	settings, err := json.Marshal(source.Settings)
+	fingerprintSettings := source.Settings
+	if fingerprintSettings.Infisical != nil {
+		deployOnly := *fingerprintSettings.Infisical
+		deployOnly.SetupClientID = ""
+		fingerprintSettings.Infisical = &deployOnly
+	}
+	if fingerprintSettings.Vault != nil {
+		deployOnly := *fingerprintSettings.Vault
+		deployOnly.SetupToken = false
+		fingerprintSettings.Vault = &deployOnly
+	}
+	settings, err := json.Marshal(fingerprintSettings)
 	if err != nil {
 		settings = nil
 	}
@@ -672,8 +848,15 @@ func overriddenKeysInternal(ctx context.Context, project ProjectRef, keys []stri
 			slog.DebugContext(ctx, "could not read env file for override check", "path", path, "error", err)
 			continue
 		}
+		// KEY=${KEY} passes the secret on rather than setting its own value.
+		var placeholders map[string]struct{}
+		if content, readErr := os.ReadFile(path); readErr == nil {
+			placeholders = setupplan.SelfReferencedKeys(string(content))
+		}
 		for key := range values {
-			defined[key] = struct{}{}
+			if _, placeholder := placeholders[key]; !placeholder {
+				defined[key] = struct{}{}
+			}
 		}
 	}
 
@@ -688,15 +871,16 @@ func overriddenKeysInternal(ctx context.Context, project ProjectRef, keys []stri
 
 func sourceToDTOInternal(source *SecretSource, bindingCount int) types.SecretSource {
 	return types.SecretSource{
-		ID:            source.ID,
-		Name:          source.Name,
-		Provider:      source.Provider,
-		Settings:      source.Settings,
-		HasCredential: source.Credential != "",
-		BindingCount:  bindingCount,
-		LastTestedAt:  source.LastTestedAt,
-		LastTestError: source.LastTestError,
-		CreatedAt:     source.CreatedAt,
-		UpdatedAt:     source.UpdatedAt,
+		ID:                 source.ID,
+		Name:               source.Name,
+		Provider:           source.Provider,
+		Settings:           source.Settings,
+		HasCredential:      source.Credential != "",
+		HasSetupCredential: source.SetupCredential != "",
+		BindingCount:       bindingCount,
+		LastTestedAt:       source.LastTestedAt,
+		LastTestError:      source.LastTestError,
+		CreatedAt:          source.CreatedAt,
+		UpdatedAt:          source.UpdatedAt,
 	}
 }

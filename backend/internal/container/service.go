@@ -73,6 +73,7 @@ type (
 		podmanService   *podman.Service
 		iconMetaCache   *cache.Cache[string, projects.ArcaneComposeMetadata]
 		stats           *stats.Service
+		secretFiller    SecretFiller
 		// opLock serializes mutating operations on the same container.
 		opLock concurrency.KeyedMutex
 	}
@@ -127,6 +128,12 @@ type (
 		PodmanService   *podman.Service
 	}
 
+	// SecretFiller fills a new container's environment from secret sources.
+	// Implemented by secretsource.SecretSourceService.
+	SecretFiller interface {
+		ResolveTargets(ctx context.Context, refs []types.SecretSourceTargetRef, actor types.Actor) (map[string]string, error)
+	}
+
 	DeleteContainerOptions struct {
 		Force         bool
 		RemoveVolumes bool
@@ -158,6 +165,53 @@ var (
 
 	hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 )
+
+// SecretEnvKeysLabel lists, on a container filled from secret sources, the
+// variables that came from them, so views can mask their values.
+const SecretEnvKeysLabel = "com.arcane.secret-env-keys"
+
+// SetSecretFiller lets container creation read secret sources.
+func (s *ContainerService) SetSecretFiller(filler SecretFiller) {
+	s.secretFiller = filler
+}
+
+// FillSecretEnv adds variables from secret source targets to env, for keys
+// env does not already set, and returns the new env and the added names. The
+// values are read once and kept only in the new container's configuration.
+func (s *ContainerService) FillSecretEnv(
+	ctx context.Context,
+	env []string,
+	refs []types.SecretSourceTargetRef,
+	actor types.Actor,
+) ([]string, []string, error) {
+	if len(refs) == 0 {
+		return env, nil, nil
+	}
+	if s.secretFiller == nil {
+		return nil, nil, errors.New("secret sources are not available")
+	}
+	values, err := s.secretFiller.ResolveTargets(ctx, refs, actor)
+	if err != nil {
+		return nil, nil, err
+	}
+	set := make(map[string]struct{}, len(env))
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		set[name] = struct{}{}
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if _, explicit := set[key]; !explicit {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	filled := slices.Clone(env)
+	for _, key := range keys {
+		filled = append(filled, key+"="+values[key])
+	}
+	return filled, keys, nil
+}
 
 func NewContainerService(p ContainerServiceParams) *ContainerService {
 	return &ContainerService{
@@ -1411,7 +1465,8 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 		}),
 	)
 	// Compose-managed containers cannot be edited in Arcane, so a masked value
-	// is never written back.
+	// is never written back. Containers filled at create stay unmasked here:
+	// an edit recreates them from this config.
 	if isCompose {
 		s.maskSecretEnvInternal(ctx, containerLabels, editConfig.Environment)
 	}
@@ -1592,19 +1647,20 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 }
 
 // maskSecretEnvInternal replaces, in place, the values of environment
-// entries that the compose project's last deploy delivered from secret
-// sources, and returns the masked names.
+// entries that came from secret sources (through the compose project's last
+// deploy, or the fill at create recorded in SecretEnvKeysLabel) and returns
+// the masked names.
 func (s *ContainerService) maskSecretEnvInternal(ctx context.Context, labels map[string]string, env []string) []string {
-	composeProject := docker.ComposeProjectLabel(labels)
-	if len(env) == 0 || composeProject == "" || s.projectService == nil {
+	if len(env) == 0 {
 		return nil
 	}
-	return maskEnvValuesInternal(env, s.projectService.SecretKeysForComposeProject(ctx, composeProject))
-}
-
-// maskEnvValuesInternal replaces, in place, the values of the entries of env
-// named in keys, and returns the names it masked.
-func maskEnvValuesInternal(env, keys []string) []string {
+	var keys []string
+	if composeProject := docker.ComposeProjectLabel(labels); composeProject != "" && s.projectService != nil {
+		keys = s.projectService.SecretKeysForComposeProject(ctx, composeProject)
+	}
+	if filled := labels[SecretEnvKeysLabel]; filled != "" {
+		keys = append(keys, strings.Split(filled, ",")...)
+	}
 	if len(keys) == 0 {
 		return nil
 	}

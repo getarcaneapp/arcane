@@ -1,6 +1,6 @@
 // Package secretsource owns connections to external secret providers
-// (Infisical), project secret bindings, the deploy-time secret fetch, and
-// background drift checks.
+// (Infisical, Bitwarden/Vaultwarden), project secret bindings, the deploy-time
+// secret fetch, and background drift checks.
 package secretsource
 
 import (
@@ -62,7 +62,7 @@ func RegisterSecretSources(api huma.API, h *SecretSourceHandler) {
 		Method:      "POST",
 		Path:        "/secret-sources",
 		Summary:     "Create a secret source",
-		Description: "Save a connection to a secret provider: Infisical (Universal Auth)",
+		Description: "Save a connection to a secret provider: Infisical (Universal Auth) or Bitwarden/Vaultwarden (through bw serve)",
 		Tags:        tags,
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermSecretSourcesCreate, h.CreateSource)
@@ -111,10 +111,40 @@ func RegisterSecretSources(api huma.API, h *SecretSourceHandler) {
 		Method:      "GET",
 		Path:        "/secret-sources/{id}/browse",
 		Summary:     "Browse a secret source",
-		Description: "List pickable binding targets, such as Infisical projects and folders",
+		Description: "List pickable binding targets, such as Infisical projects and folders or Bitwarden folders, collections, and items",
 		Tags:        tags,
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermSecretSourcesRead, h.Browse)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "listSecretSourceTargetKeys",
+		Method:      "POST",
+		Path:        "/secret-sources/{id}/keys",
+		Summary:     "List a target's variable names",
+		Description: "Fetch a binding target and return its variable names, without values, to prepare a project before binding it",
+		Tags:        tags,
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSecretSourcesUse, h.TargetKeys)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "listComposeServicesForSecrets",
+		Method:      "POST",
+		Path:        "/secret-sources/compose/services",
+		Summary:     "List compose services for secret references",
+		Description: "List the services of compose content and the variables each already receives. Nothing is saved.",
+		Tags:        tags,
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSecretSourcesRead, h.ComposeServices)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "addComposeSecretRefs",
+		Method:      "POST",
+		Path:        "/secret-sources/compose/refs",
+		Summary:     "Add secret references to compose content",
+		Description: "Add KEY: ${KEY} entries to the environment of chosen services, keeping comments and layout. Returns the new content; nothing is saved.",
+		Tags:        tags,
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSecretSourcesRead, h.AddComposeRefs)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listProjectSecretBindings",
@@ -163,8 +193,36 @@ func RegisterSecretSources(api huma.API, h *SecretSourceHandler) {
 		Path:        "/environments/{id}/projects/{projectId}/secrets/check",
 		Summary:     "Check a project's secrets",
 		Description: "Fetch every binding now and report, per binding, key names, keys an earlier binding already delivers, " +
-			"overridden .env keys, and whether a redeploy is needed. Values are never returned.",
+			"keys no service uses, overridden .env keys, and whether a redeploy is needed. Values are never returned.",
 		Tags:     tags,
 		Security: handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsDeploy, h.CheckProjectBindings)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "planProjectSecretSetup",
+		Method:      "POST",
+		Path:        "/environments/{id}/projects/{projectId}/secrets/setup/plan",
+		Summary:     "Plan moving a project's variables to a secret manager",
+		Description: "List the variables the project's compose files and .env use and, for a target, where each stands in Infisical. Writes nothing; values are never returned.",
+		Tags:        tags,
+		Security:    handlerutil.DefaultOperationSecurity(),
+		// Setup writes with the source's setup identity and binds the project,
+		// so it also needs the rights to change and to use secret sources.
+		Middlewares: append(middleware.RequirePermission(api, authz.PermSecretSourcesUpdate), middleware.RequirePermission(api, authz.PermSecretSourcesUse)...),
+	}, authz.PermProjectsUpdate, h.PlanProjectSetup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "applyProjectSecretSetup",
+		Method:      "POST",
+		Path:        "/environments/{id}/projects/{projectId}/secrets/setup",
+		Summary:     "Move a project's variables to a secret manager",
+		Description: "With the source's setup identity, create the Infisical project or folder and the secrets, " +
+			"give the deploy identity read access, bind the project, verify the binding, " +
+			"and optionally remove the moved keys from the .env.",
+		Tags:     tags,
+		Security: handlerutil.DefaultOperationSecurity(),
+		// Setup writes with the source's setup identity and binds the project,
+		// so it also needs the rights to change and to use secret sources.
+		Middlewares: append(middleware.RequirePermission(api, authz.PermSecretSourcesUpdate), middleware.RequirePermission(api, authz.PermSecretSourcesUse)...),
+	}, authz.PermProjectsUpdate, h.ApplyProjectSetup)
 }

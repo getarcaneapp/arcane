@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -207,6 +208,36 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	}, nil
 }
 
+// fillSecretEnvInternal adds variables from the requested secret source
+// targets. Secret sources are local-environment only, and reading one for a
+// container needs secret-sources:use, as binding a project does.
+func (h *ContainerHandler) fillSecretEnvInternal(ctx context.Context, input *CreateContainerInput, config *dockercontainer.Config, user types.Actor) error {
+	if input.EnvironmentID != "0" {
+		return huma.Error400BadRequest("Secret sources are currently supported on the local environment only")
+	}
+	if ps, _ := middleware.PermissionsFromContext(ctx); !ps.Allows(authz.PermSecretSourcesUse, "") {
+		return huma.Error403Forbidden("permission denied: " + authz.PermSecretSourcesUse)
+	}
+	env, keys, err := h.containerService.FillSecretEnv(ctx, config.Env, input.Body.SecretSources, user)
+	switch {
+	case err == nil:
+		config.Env = env
+		if len(keys) > 0 {
+			if config.Labels == nil {
+				config.Labels = map[string]string{}
+			}
+			config.Labels[SecretEnvKeysLabel] = strings.Join(keys, ",")
+		}
+		return nil
+	case errors.Is(err, common.ErrValidation):
+		return huma.Error400BadRequest(err.Error())
+	case errors.Is(err, common.ErrNotFound):
+		return huma.Error404NotFound(err.Error())
+	default:
+		return huma.Error502BadGateway("Could not read the secret sources: " + err.Error())
+	}
+}
+
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*handlerutil.Out[types.ContainerCreated], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -260,28 +291,35 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	createLabels := map[string]string{"com.arcane.created": "true"}
 	maps.Copy(createLabels, input.Body.Labels)
 
+	config := &dockercontainer.Config{
+		Image:           input.Body.Image,
+		Cmd:             kit.Ternary(len(input.Body.Command) > 0, input.Body.Command, input.Body.Cmd),
+		Entrypoint:      input.Body.Entrypoint,
+		WorkingDir:      input.Body.WorkingDir,
+		User:            input.Body.User,
+		Env:             kit.Ternary(len(input.Body.Environment) > 0, input.Body.Environment, input.Body.Env),
+		ExposedPorts:    exposedPorts,
+		Labels:          createLabels,
+		Healthcheck:     healthConfigFromCreate(input.Body.Healthcheck),
+		Hostname:        input.Body.Hostname,
+		Domainname:      input.Body.Domainname,
+		AttachStdout:    input.Body.AttachStdout,
+		AttachStderr:    input.Body.AttachStderr,
+		AttachStdin:     input.Body.AttachStdin,
+		Tty:             input.Body.Tty,
+		OpenStdin:       input.Body.OpenStdin,
+		StdinOnce:       input.Body.StdinOnce,
+		NetworkDisabled: input.Body.NetworkDisabled,
+	}
+	if len(input.Body.SecretSources) > 0 {
+		if fillErr := h.fillSecretEnvInternal(ctx, input, config, *user); fillErr != nil {
+			return nil, fillErr
+		}
+	}
+
 	containerJSON, err := h.containerService.CreateContainer(
 		ctx,
-		&dockercontainer.Config{
-			Image:           input.Body.Image,
-			Cmd:             kit.Ternary(len(input.Body.Command) > 0, input.Body.Command, input.Body.Cmd),
-			Entrypoint:      input.Body.Entrypoint,
-			WorkingDir:      input.Body.WorkingDir,
-			User:            input.Body.User,
-			Env:             kit.Ternary(len(input.Body.Environment) > 0, input.Body.Environment, input.Body.Env),
-			ExposedPorts:    exposedPorts,
-			Labels:          createLabels,
-			Healthcheck:     healthConfigFromCreate(input.Body.Healthcheck),
-			Hostname:        input.Body.Hostname,
-			Domainname:      input.Body.Domainname,
-			AttachStdout:    input.Body.AttachStdout,
-			AttachStderr:    input.Body.AttachStderr,
-			AttachStdin:     input.Body.AttachStdin,
-			Tty:             input.Body.Tty,
-			OpenStdin:       input.Body.OpenStdin,
-			StdinOnce:       input.Body.StdinOnce,
-			NetworkDisabled: input.Body.NetworkDisabled,
-		},
+		config,
 		&dockercontainer.HostConfig{
 			Binds:        kit.Ternary(len(hostConfig.Binds) > 0, hostConfig.Binds, input.Body.Volumes),
 			NetworkMode:  dockercontainer.NetworkMode(hostConfig.NetworkMode),

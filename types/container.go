@@ -98,6 +98,7 @@ type (
 		Volumes          []string                         `json:"volumes,omitempty" doc:"Bind and volume specs as source:target[:options]; ignored when hostConfig.binds is non-empty"`
 		Networks         []string                         `json:"networks,omitempty" doc:"Networks to join by name; ignored when networkingConfig lists endpoints"`
 		Credentials      []ContainerRegistryCredential    `json:"credentials,omitempty" writeOnly:"true" doc:"Registry credentials for pulling a missing image"`
+		SecretSources    []SecretSourceTargetRef          `json:"secretSources,omitempty" doc:"Secret source targets that fill environment variables once, at create; variables set in environment win, and earlier sources win over later ones. Needs secret-sources:use and the local environment"`
 
 		Memory          int64   `json:"memory,omitempty" doc:"Memory limit in bytes; above 0 it replaces hostConfig.memory"`
 		CPUs            float64 `json:"cpus,omitempty" doc:"CPU limit in CPUs, fractions allowed; above 0 it replaces hostConfig.nanoCpus"`

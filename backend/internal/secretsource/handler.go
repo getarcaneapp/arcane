@@ -30,8 +30,8 @@ type (
 	}
 
 	UpdateSourceInput struct {
-		Body types.SecretSourceUpdateRequest
 		ID   string `path:"id" doc:"Secret source ID"`
+		Body types.SecretSourceUpdateRequest
 	}
 
 	DeleteSourceInput struct {
@@ -44,10 +44,13 @@ type (
 
 	BrowseSourceInput struct {
 		ID          string `path:"id" doc:"Secret source ID"`
-		Kind        string `query:"kind" doc:"What to list. Infisical: projects, folders"`
-		ProjectID   string `query:"projectId" doc:"Infisical project ID, for folders"`
+		Kind        string `query:"kind" doc:"What to list. Infisical: projects, folders. Bitwarden: folders, collections, items. Vault: mounts, paths. Doppler: projects, configs. 1Password: vaults, items"`
+		ProjectID   string `query:"projectId" doc:"Infisical project ID, for folders; Doppler project, for configs"`
 		Environment string `query:"environment" doc:"Infisical environment slug, for folders"`
-		Path        string `query:"path" doc:"Infisical folder path to list" default:"/"`
+		Path        string `query:"path" doc:"Infisical folder path, or Vault/OpenBao path prefix, to list" default:"/"`
+		Mount       string `query:"mount" doc:"Vault/OpenBao KV mount, for paths"`
+		VaultID     string `query:"vaultId" doc:"1Password vault ID, for items"`
+		KVVersion   int    `query:"kvVersion" doc:"Vault/OpenBao KV version (1 or 2), for paths"`
 	}
 
 	ProjectBindingInput struct {
@@ -72,6 +75,31 @@ type (
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 		BindingID     string `path:"bindingId" doc:"Binding ID"`
+	}
+
+	SetupPlanInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+		Body          types.SecretSourceSetupPlanRequest
+	}
+
+	SetupApplyInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+		Body          types.SecretSourceSetupApplyRequest
+	}
+
+	ComposeServicesInput struct {
+		Body types.SecretSourceComposeServicesRequest
+	}
+
+	ComposeRefsInput struct {
+		Body types.SecretSourceComposeRefsRequest
+	}
+
+	TargetKeysInput struct {
+		Body types.SecretSourceTargetKeysRequest
+		ID   string `path:"id" doc:"Secret source ID"`
 	}
 )
 
@@ -128,6 +156,9 @@ func (h *SecretSourceHandler) Browse(ctx context.Context, input *BrowseSourceInp
 		ProjectID:   input.ProjectID,
 		Environment: input.Environment,
 		Path:        input.Path,
+		Mount:       input.Mount,
+		KVVersion:   input.KVVersion,
+		VaultID:     input.VaultID,
 	})
 	if err != nil {
 		return nil, httpErrorInternal(err)
@@ -188,6 +219,54 @@ func (h *SecretSourceHandler) CheckProjectBindings(ctx context.Context, input *P
 		return nil, httpErrorInternal(err)
 	}
 	return okInternal(result), nil
+}
+
+func (h *SecretSourceHandler) PlanProjectSetup(ctx context.Context, input *SetupPlanInput) (*handlerutil.Out[types.SecretSourceSetupPlan], error) {
+	project, err := h.localProjectInternal(ctx, input.EnvironmentID, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := h.service.PlanSetup(ctx, project, input.Body)
+	if err != nil {
+		return nil, httpErrorInternal(err)
+	}
+	return okInternal(plan), nil
+}
+
+func (h *SecretSourceHandler) ApplyProjectSetup(ctx context.Context, input *SetupApplyInput) (*handlerutil.Out[types.SecretSourceSetupResult], error) {
+	project, err := h.localProjectInternal(ctx, input.EnvironmentID, input.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.service.ApplySetup(ctx, project, input.Body, handlerutil.CurrentActor(ctx))
+	if err != nil {
+		return nil, httpErrorInternal(err)
+	}
+	return okInternal(result), nil
+}
+
+func (h *SecretSourceHandler) ComposeServices(_ context.Context, input *ComposeServicesInput) (*handlerutil.Out[[]types.SecretSourceComposeService], error) {
+	services, err := ComposeServices(input.Body.Compose)
+	if err != nil {
+		return nil, httpErrorInternal(err)
+	}
+	return okInternal(services), nil
+}
+
+func (h *SecretSourceHandler) AddComposeRefs(_ context.Context, input *ComposeRefsInput) (*handlerutil.Out[types.SecretSourceComposeRefsResult], error) {
+	result, err := AddComposeRefs(input.Body)
+	if err != nil {
+		return nil, httpErrorInternal(err)
+	}
+	return okInternal(result), nil
+}
+
+func (h *SecretSourceHandler) TargetKeys(ctx context.Context, input *TargetKeysInput) (*handlerutil.Out[types.SecretSourceTargetKeys], error) {
+	keys, err := h.service.TargetKeys(ctx, input.ID, input.Body.Target)
+	if err != nil {
+		return nil, httpErrorInternal(err)
+	}
+	return okInternal(keys), nil
 }
 
 // localProjectInternal resolves a project of the local environment. Remote

@@ -12,14 +12,14 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { secretSourceService } from '#lib/services/secret-source-service.js';
-	import type { SecretSourceInfisicalTarget } from '#lib/types/secretsource.js';
+	import type { InfisicalTarget } from '#lib/types/secret-source.js';
 
 	let {
 		sourceId,
 		target = $bindable()
 	}: {
 		sourceId: string;
-		target: SecretSourceInfisicalTarget;
+		target: InfisicalTarget;
 	} = $props();
 
 	// The project list fills the pickers. Identities that cannot list projects

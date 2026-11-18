@@ -15,6 +15,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/secretsource/children/setupplan"
 	"getarcane.dev/types/v3"
 )
 
@@ -178,6 +179,26 @@ func (s *SecretSourceService) DeleteBinding(ctx context.Context, projectID, bind
 	})
 }
 
+// bindTargetInternal updates the project's binding to the same source and
+// target, or adds one. Guided setup uses it, so running setup again for the
+// same target does not add a second binding.
+func (s *SecretSourceService) bindTargetInternal(ctx context.Context, projectID string, req types.SecretSourceBindingUpsertRequest) (*types.SecretSourceBinding, error) {
+	source, target, err := s.validateBindingRequestInternal(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := s.loadBindingsInternal(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range bindings {
+		if bindings[i].SourceID == source.ID && sameTargetInternal(bindings[i].Target, target) {
+			return s.UpdateBinding(ctx, projectID, bindings[i].ID, req)
+		}
+	}
+	return s.CreateBinding(ctx, projectID, req)
+}
+
 func (s *SecretSourceService) validateBindingRequestInternal(
 	ctx context.Context,
 	req types.SecretSourceBindingUpsertRequest,
@@ -261,6 +282,7 @@ func (s *SecretSourceService) CheckBindings(ctx context.Context, project Project
 	if len(bindings) == 0 {
 		return types.SecretSourceProjectCheckResult{}, common.ErrSecretBindingNotFound
 	}
+	used, usedKnown := s.composeKeysInternal(ctx, project.ID)
 
 	result := types.SecretSourceProjectCheckResult{Bindings: make([]types.SecretSourceCheckResult, 0, len(bindings))}
 	delivered := make(map[string]struct{})
@@ -271,6 +293,7 @@ func (s *SecretSourceService) CheckBindings(ctx context.Context, project Project
 			BindingID:      binding.ID,
 			Keys:           []string{},
 			ShadowedKeys:   []string{},
+			UnusedKeys:     []string{},
 			OverriddenKeys: []string{},
 			InvalidKeys:    []string{},
 			FetchedAt:      time.Now(),
@@ -297,6 +320,11 @@ func (s *SecretSourceService) CheckBindings(ctx context.Context, project Project
 			if _, shadowed := delivered[key]; shadowed {
 				check.ShadowedKeys = append(check.ShadowedKeys, key)
 			}
+			if usedKnown {
+				if _, ok := used[key]; !ok {
+					check.UnusedKeys = append(check.UnusedKeys, key)
+				}
+			}
 		}
 		// Disabled bindings deliver nothing, so they shadow nothing.
 		if binding.Enabled {
@@ -317,6 +345,40 @@ func (s *SecretSourceService) CheckBindings(ctx context.Context, project Project
 		result.Bindings = append(result.Bindings, check)
 	}
 	return result, nil
+}
+
+// composeKeysInternal returns every variable the project's compose files
+// pass to a service or interpolate, and every variable its .env references. ok is false when the files cannot be
+// read or parsed, so callers do not report every key as unused.
+func (s *SecretSourceService) composeKeysInternal(ctx context.Context, projectID string) (map[string]struct{}, bool) {
+	if s.projectFiles == nil {
+		return nil, false
+	}
+	files, err := s.projectFiles.SecretSetupFiles(ctx, projectID)
+	if err != nil {
+		slog.DebugContext(ctx, "could not read compose files for the unused-key check", "projectId", projectID, "error", err)
+		return nil, false
+	}
+	used := make(map[string]struct{})
+	for _, content := range files.ComposeContents {
+		services, parseErr := setupplan.ComposeServices(content)
+		if parseErr != nil {
+			slog.DebugContext(ctx, "could not parse compose file for the unused-key check", "projectId", projectID, "error", parseErr)
+			return nil, false
+		}
+		for _, service := range services {
+			for _, key := range service.Available {
+				used[key] = struct{}{}
+			}
+		}
+	}
+	// A .env entry such as API_KEY=${API_KEY} passes the secret on to
+	// services that load the file, or to every service when Arcane injects
+	// .env variables.
+	for key := range setupplan.ReferencedKeys(files.EnvContent) {
+		used[key] = struct{}{}
+	}
+	return used, true
 }
 
 // ResolveDeployEnv fetches the secrets of every enabled binding for a deploy

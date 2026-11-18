@@ -2,18 +2,29 @@
 	import type { Component } from 'svelte';
 	// Brand marks from the selfh.st icon set (CC BY 4.0), the same set Arcane
 	// offers as an icon catalog. They are bundled, so no request leaves Arcane.
+	import OnePasswordIcon from 'virtual:icons/selfhst/1password';
+	import OnePasswordLightIcon from 'virtual:icons/selfhst/1password-light';
+	import BitwardenIcon from 'virtual:icons/selfhst/bitwarden';
+	import DopplerIcon from 'virtual:icons/selfhst/doppler';
+	import VaultIcon from 'virtual:icons/selfhst/hashicorp-vault';
 	import InfisicalIcon from 'virtual:icons/selfhst/infisical';
 	import InfisicalLightIcon from 'virtual:icons/selfhst/infisical-light';
+	import ProtonPassIcon from 'virtual:icons/selfhst/proton-pass';
 
 	import { ConnectionIcon } from '#lib/icons/index.js';
-	import type { SecretSourceProvider } from '#lib/types/secretsource.js';
+	import type { SecretProvider } from '#lib/types/secret-source.js';
 	import { cn } from '#lib/utils.js';
 
-	let { provider, class: className }: { provider: SecretSourceProvider | undefined; class?: string } = $props();
+	let { provider, class: className }: { provider: SecretProvider | undefined; class?: string } = $props();
 
 	// `dark` replaces marks that are too dark to see on the dark theme.
-	const brandIcons: Partial<Record<SecretSourceProvider, { light: Component; dark?: Component }>> = {
-		infisical: { light: InfisicalIcon, dark: InfisicalLightIcon }
+	const brandIcons: Partial<Record<SecretProvider, { light: Component; dark?: Component }>> = {
+		bitwarden: { light: BitwardenIcon },
+		doppler: { light: DopplerIcon },
+		infisical: { light: InfisicalIcon, dark: InfisicalLightIcon },
+		onepassword: { light: OnePasswordIcon, dark: OnePasswordLightIcon },
+		protonpass: { light: ProtonPassIcon },
+		vault: { light: VaultIcon }
 	};
 
 	const brand = $derived(provider ? brandIcons[provider] : undefined);

@@ -650,3 +650,62 @@ func TestLoadComposeProject_PrepareRunsBeforeHostPathTranslation(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoDirExists(t, filepath.Join(projectDir, "conf"), "nil prepare must not create bind directories")
 }
+
+func TestLoadComposeProject_EnvOverrideFillsEnvReferences(t *testing.T) {
+	t.Parallel()
+
+	// A .env entry such as API_KEY=${API_KEY} passes an override (a secret
+	// source value) on: to services that load .env with env_file, and to every
+	// service when .env variables are injected.
+	writeProject := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(`services:
+  app:
+    image: nginx:alpine
+    env_file: .env
+  web:
+    image: nginx:alpine
+`), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("TZ=UTC\nAPI_KEY=${API_KEY}\n"), 0o600))
+		return filepath.Join(dir, "compose.yaml")
+	}
+	override := EnvMap{"API_KEY": "s3cret"}
+
+	t.Run("env_file", func(t *testing.T) {
+		t.Parallel()
+		composePath := writeProject(t)
+		project, err := LoadComposeProject(t.Context(), LoadOptions{
+			ComposeFile:       composePath,
+			ProjectName:       "demo",
+			ProjectsDirectory: filepath.Dir(composePath),
+			EnvOverride:       override,
+		})
+		require.NoError(t, err)
+		app := project.Services["app"]
+		require.NotNil(t, app.Environment["API_KEY"])
+		assert.Equal(t, "s3cret", *app.Environment["API_KEY"])
+		assert.NotContains(t, project.Services["web"].Environment, "API_KEY")
+	})
+
+	t.Run("auto inject", func(t *testing.T) {
+		t.Parallel()
+		composePath := writeProject(t)
+		project, err := LoadComposeProject(t.Context(), LoadOptions{
+			ComposeFile:       composePath,
+			ProjectName:       "demo",
+			ProjectsDirectory: filepath.Dir(composePath),
+			AutoInjectEnv:     true,
+			EnvOverride:       override,
+		})
+		require.NoError(t, err)
+		for _, name := range []string{"app", "web"} {
+			value := project.Services[name].Environment["API_KEY"]
+			require.NotNil(t, value, name)
+			assert.Equal(t, "s3cret", *value, name)
+		}
+		tz := project.Services["web"].Environment["TZ"]
+		require.NotNil(t, tz)
+		assert.Equal(t, "UTC", *tz)
+	})
+}

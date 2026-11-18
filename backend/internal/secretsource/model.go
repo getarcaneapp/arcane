@@ -9,15 +9,17 @@ import (
 
 type (
 	// SecretSource is a saved connection to an external secret provider.
-	// Credential holds ciphertext; Settings never holds secrets.
+	// Credential (the deploy identity's secret) and SetupCredential (the optional
+	// setup identity's secret) hold ciphertext; Settings never holds secrets.
 	SecretSource struct {
 		Settings      types.SecretSourceSettings `gorm:"column:settings;serializer:json"`
 		LastTestedAt  *time.Time                 `gorm:"column:last_tested_at"`
 		LastTestError *string                    `gorm:"column:last_test_error"`
 		database.BaseModel
-		Name       string `gorm:"column:name"`
-		Provider   string `gorm:"column:provider"`
-		Credential string `gorm:"column:credential"`
+		Name            string `gorm:"column:name"`
+		Provider        string `gorm:"column:provider"`
+		Credential      string `gorm:"column:credential"`
+		SetupCredential string `gorm:"column:setup_credential"`
 	}
 
 	// ProjectSecretBinding connects a project to one provider target; a project
@@ -30,8 +32,8 @@ type (
 	// The table is secret_bindings, with an owner kind, so standalone containers
 	// can be bound later without another table; only projects are supported now.
 	ProjectSecretBinding struct {
-		Source           *SecretSource                   `gorm:"foreignKey:SourceID"`
 		Target           types.SecretSourceBindingTarget `gorm:"column:target;serializer:json"`
+		Source           *SecretSource                   `gorm:"foreignKey:SourceID"`
 		DeployedHash     *string                         `gorm:"column:deployed_hash"`
 		DeployedAt       *time.Time                      `gorm:"column:deployed_at"`
 		LastSeenHash     *string                         `gorm:"column:last_seen_hash"`

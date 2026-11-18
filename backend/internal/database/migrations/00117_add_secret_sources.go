@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS secret_sources (
     provider TEXT NOT NULL,
     settings TEXT NOT NULL DEFAULT '{}',
     credential TEXT NOT NULL DEFAULT '',
+    setup_credential TEXT NOT NULL DEFAULT '',
     last_tested_at DATETIME,
     last_test_error TEXT
 );
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS secret_sources (
     provider TEXT NOT NULL,
     settings TEXT NOT NULL DEFAULT '{}',
     credential TEXT NOT NULL DEFAULT '',
+    setup_credential TEXT NOT NULL DEFAULT '',
     last_tested_at TIMESTAMPTZ,
     last_test_error TEXT
 );

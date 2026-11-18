@@ -190,3 +190,21 @@ func TestCheckBindingsWithoutBindings(t *testing.T) {
 	_, err := service.CheckBindings(t.Context(), ProjectRef{ID: "project-1"}, types.Actor{})
 	require.ErrorIs(t, err, common.ErrSecretBindingNotFound)
 }
+
+func TestCheckBindingsReportsUnusedKeys(t *testing.T) {
+	service, _ := setupSecretSourceServiceTestInternal(t)
+	service.SetProjectFileAccess(&fakeProjectFilesInternal{files: ProjectFiles{
+		ComposeContents: []string{"services:\n  app:\n    image: x\n    environment:\n      DB_PASS: ${DB_PASS}\n"},
+		EnvContent:      "TZ=UTC\nSMTP=${SMTP}\n",
+	}})
+	source, _ := namedInfisicalSourceInternal(t, service, "App", `{"secrets":[{"secretKey":"DB_PASS","secretValue":"p"},{"secretKey":"API_KEY","secretValue":"k"},{"secretKey":"SMTP","secretValue":"s"}]}`)
+	project := ProjectRef{ID: "project-1", Name: "billing-api"}
+	_, err := service.CreateBinding(t.Context(), project.ID, infisicalBindingInternal(source.ID, "/", false))
+	require.NoError(t, err)
+
+	check, err := service.CheckBindings(t.Context(), project, types.Actor{})
+	require.NoError(t, err)
+	require.Len(t, check.Bindings, 1)
+	// DB_PASS is used by the compose file and SMTP by a .env reference.
+	assert.Equal(t, []string{"API_KEY"}, check.Bindings[0].UnusedKeys)
+}

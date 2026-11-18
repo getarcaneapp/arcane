@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,6 +61,36 @@ func (f *fakeInfisicalInternal) server(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("GET /api/v1/projects", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"projects":[{"id":"p1","name":"Apps","slug":"apps","environments":[{"id":"e1","name":"Production","slug":"prod"}]}]}`))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+// fakeBitwardenServeInternal mimics the bw serve Vault Management API.
+func fakeBitwardenServeInternal(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"object":"template","template":{"serverUrl":"https://vault.example","userEmail":"deploy@example","status":"unlocked"}}}`))
+	})
+	mux.HandleFunc("POST /sync", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"object":"message","title":"Syncing complete."}}`))
+	})
+	mux.HandleFunc("GET /list/object/items", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("folderid") != "f1" {
+			_, _ = w.Write([]byte(`{"success":true,"data":{"object":"list","data":[]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"object":"list","data":[
+			{"id":"i1","name":"DB_PASSWORD","type":1,"login":{"password":"pw"}},
+			{"id":"i2","name":"TLS_NOTE","type":2,"notes":"note text"},
+			{"id":"i3","name":"EMPTY_LOGIN","type":1,"login":{"password":null}}
+		]}}`))
+	})
+	mux.HandleFunc("GET /object/item/i9", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"object":"item","id":"i9","name":"billing env","type":2,
+			"fields":[{"name":"API_KEY","value":"k","type":1},{"name":"DEBUG","value":"true","type":2},{"name":"user","value":null,"type":3}]}}`))
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -200,13 +229,107 @@ func TestCreateSourceValidatesPerProvider(t *testing.T) {
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
+	vault, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "Vaultwarden", Provider: types.SecretSourceProviderBitwarden,
+		Settings: types.SecretSourceSettings{
+			Bitwarden: &types.SecretSourceBitwardenSettings{ServeURL: "http://bw-serve:8087/"},
+			Infisical: &types.SecretSourceInfisicalSettings{ClientID: "ignored"},
+		},
+	})
+	require.NoError(t, err)
+	assert.False(t, vault.HasCredential)
+	assert.Nil(t, vault.Settings.Infisical, "settings of another provider must be dropped")
+	assert.Equal(t, "http://bw-serve:8087", vault.Settings.Bitwarden.ServeURL)
+
+	_, err = service.CreateSource(t.Context(), types.SecretSourceCreateRequest{Name: "Unknown", Provider: "nope"})
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestCreateSourceCredentialsForNewProviders(t *testing.T) {
+	service, db := setupSecretSourceServiceTestInternal(t)
+
+	// Vault/OpenBao, Doppler, and 1Password need a credential.
+	needs := map[string]types.SecretSourceSettings{
+		types.SecretSourceProviderVault:       {Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200"}},
+		types.SecretSourceProviderDoppler:     {Doppler: &types.SecretSourceDopplerSettings{}},
+		types.SecretSourceProviderOnePassword: {OnePassword: &types.SecretSourceOnePasswordSettings{ServerURL: "http://op-connect-api:8080"}},
+	}
+	for provider, settings := range needs {
+		_, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{Name: "no " + provider, Provider: provider, Settings: settings})
+		require.ErrorIs(t, err, common.ErrValidation, provider)
+
+		created, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{Name: provider, Provider: provider, Settings: settings, Credential: "tok"})
+		require.NoError(t, err, provider)
+		assert.True(t, created.HasCredential, provider)
+	}
+
+	// The HTTP token is optional.
+	open, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "kit", Provider: types.SecretSourceProviderHTTP,
+		Settings: types.SecretSourceSettings{HTTP: &types.SecretSourceHTTPSettings{BaseURL: "http://sops-kit:8080/"}},
+	})
+	require.NoError(t, err)
+	assert.False(t, open.HasCredential)
+	assert.Equal(t, "http://sops-kit:8080", open.Settings.HTTP.BaseURL)
+
+	withToken, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "kit with token", Provider: types.SecretSourceProviderHTTP, Credential: "bearer",
+		Settings: types.SecretSourceSettings{HTTP: &types.SecretSourceHTTPSettings{BaseURL: "http://sops-kit:8080"}},
+	})
+	require.NoError(t, err)
+	assert.True(t, withToken.HasCredential)
+
+	// A Vault setup token is stored apart from the deploy token and needs
+	// its secret when first enabled.
 	_, err = service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
-		Name: "No client ID", Provider: types.SecretSourceProviderInfisical, Credential: "secret",
-		Settings: types.SecretSourceSettings{Infisical: &types.SecretSourceInfisicalSettings{SiteURL: "https://app.infisical.com"}},
+		Name: "bao no setup secret", Provider: types.SecretSourceProviderVault, Credential: "read",
+		Settings: types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200", SetupToken: true}},
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
-	_, err = service.CreateSource(t.Context(), types.SecretSourceCreateRequest{Name: "Unknown", Provider: "nope"})
+	bao, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "bao", Provider: types.SecretSourceProviderVault, Credential: "read", SetupCredential: "write",
+		Settings: types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200", SetupToken: true}},
+	})
+	require.NoError(t, err)
+	assert.True(t, bao.HasSetupCredential)
+	var stored SecretSource
+	require.NoError(t, db.First(&stored, "id = ?", bao.ID).Error)
+	setupPlain, err := crypto.Decrypt(stored.SetupCredential)
+	require.NoError(t, err)
+	assert.Equal(t, "write", setupPlain)
+
+	// Turning the setup token off deletes it.
+	off := types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200"}}
+	updated, err := service.UpdateSource(t.Context(), bao.ID, types.SecretSourceUpdateRequest{Settings: &off})
+	require.NoError(t, err)
+	assert.False(t, updated.HasSetupCredential)
+	assert.True(t, updated.HasCredential)
+}
+
+func TestUpsertBindingNormalizesNewProviderTargets(t *testing.T) {
+	service, _ := setupSecretSourceServiceTestInternal(t)
+	bao, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "bao", Provider: types.SecretSourceProviderVault, Credential: "read",
+		Settings: types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200"}},
+	})
+	require.NoError(t, err)
+
+	binding, err := upsertBindingForTestInternal(t.Context(), service, "project-1", types.SecretSourceBindingUpsertRequest{
+		SourceID: bao.ID, Enabled: true,
+		Target: types.SecretSourceBindingTarget{
+			Vault:   &types.SecretSourceVaultTarget{Path: "/apps/web/"},
+			Doppler: &types.SecretSourceDopplerTarget{Project: "ignored", Config: "ignored"},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, &types.SecretSourceVaultTarget{Mount: "secret", Path: "apps/web", KVVersion: 2}, binding.Target.Vault)
+	assert.Nil(t, binding.Target.Doppler, "targets of another provider must be dropped")
+
+	_, err = upsertBindingForTestInternal(t.Context(), service, "project-1", types.SecretSourceBindingUpsertRequest{
+		SourceID: bao.ID, Enabled: true,
+		Target: types.SecretSourceBindingTarget{Vault: &types.SecretSourceVaultTarget{Path: "apps/../sys"}},
+	})
 	require.ErrorIs(t, err, common.ErrValidation)
 }
 
@@ -264,15 +387,9 @@ func TestUpsertBindingValidatesTargetForProvider(t *testing.T) {
 
 	_, err := upsertBindingForTestInternal(t.Context(), service, "project-1", types.SecretSourceBindingUpsertRequest{
 		SourceID: source.ID,
-		Target:   types.SecretSourceBindingTarget{},
+		Target:   types.SecretSourceBindingTarget{Bitwarden: &types.SecretSourceBitwardenTarget{Scope: "folder", ID: "f1"}},
 	})
 	require.ErrorIs(t, err, common.ErrValidation, "an Infisical source needs an Infisical target")
-
-	_, err = upsertBindingForTestInternal(t.Context(), service, "project-1", types.SecretSourceBindingUpsertRequest{
-		SourceID: source.ID,
-		Target:   types.SecretSourceBindingTarget{Infisical: &types.SecretSourceInfisicalTarget{ProjectID: "p1"}},
-	})
-	require.ErrorIs(t, err, common.ErrValidation, "an environment is required")
 }
 
 func TestResolveDeployEnvDropsInvalidKeysAndHashesStably(t *testing.T) {
@@ -366,7 +483,7 @@ func TestCheckBindingReportsOverridesAndDrift(t *testing.T) {
 	bindInfisicalInternal(t, service, source.ID, true, false)
 
 	projectDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("DB_PASS=local\nOTHER=1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("DB_PASS=local\nOTHER=1\n# A placeholder passes the secret on and is not an override.\nAPI_KEY=${API_KEY}\n"), 0o600))
 	project := ProjectRef{ID: "project-1", Name: "billing-api", Path: projectDir}
 
 	result, err := checkFirstBindingForTestInternal(t.Context(), service, project, types.Actor{})
@@ -429,34 +546,87 @@ func TestCheckDriftReportsEachChangeOnce(t *testing.T) {
 	assert.False(t, binding.RedeployNeeded)
 }
 
+func TestBitwardenSourceFolderAndItemBindings(t *testing.T) {
+	service, _ := setupSecretSourceServiceTestInternal(t)
+	server := fakeBitwardenServeInternal(t)
+	source, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "Vaultwarden", Provider: types.SecretSourceProviderBitwarden,
+		Settings: types.SecretSourceSettings{Bitwarden: &types.SecretSourceBitwardenSettings{ServeURL: server.URL}},
+	})
+	require.NoError(t, err)
+
+	result, err := service.TestSource(t.Context(), types.SecretSourceTestRequest{SourceID: source.ID, Settings: source.Settings})
+	require.NoError(t, err)
+	assert.True(t, result.OK, result.Message)
+	assert.Contains(t, result.Message, "deploy@example")
+
+	project := ProjectRef{ID: "project-1", Name: "billing-api"}
+	_, err = upsertBindingForTestInternal(t.Context(), service, project.ID, types.SecretSourceBindingUpsertRequest{
+		SourceID: source.ID,
+		Target:   types.SecretSourceBindingTarget{Bitwarden: &types.SecretSourceBitwardenTarget{Scope: "folder", ID: "f1", Name: "billing"}},
+		Required: true, Enabled: true,
+	})
+	require.NoError(t, err)
+	check, err := checkFirstBindingForTestInternal(t.Context(), service, project, types.Actor{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"DB_PASSWORD", "TLS_NOTE"}, check.Keys)
+	assert.Equal(t, []string{"EMPTY_LOGIN"}, check.InvalidKeys)
+
+	_, err = upsertBindingForTestInternal(t.Context(), service, project.ID, types.SecretSourceBindingUpsertRequest{
+		SourceID: source.ID,
+		Target:   types.SecretSourceBindingTarget{Bitwarden: &types.SecretSourceBitwardenTarget{Scope: "item", ID: "i9"}},
+		Required: true, Enabled: true,
+	})
+	require.NoError(t, err)
+	env, err := service.ResolveDeployEnv(t.Context(), project, types.Actor{})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"API_KEY": "k", "DEBUG": "true"}, env.Values)
+}
+
 func TestStoredCredentialOnlyGoesToItsOwnAddress(t *testing.T) {
 	service, _ := setupSecretSourceServiceTestInternal(t)
 
-	var bodies []string
+	var seen []string
 	capture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		bodies = append(bodies, string(body))
-		w.WriteHeader(http.StatusUnauthorized)
+		seen = append(seen, r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"A":"1"}`))
 	}))
 	t.Cleanup(capture.Close)
 
-	source := createInfisicalSourceInternal(t, service, "https://infisical.example.ts.net")
+	source, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "kit", Provider: types.SecretSourceProviderHTTP, Credential: "stored-token",
+		Settings: types.SecretSourceSettings{HTTP: &types.SecretSourceHTTPSettings{BaseURL: "http://sops-kit:8080"}},
+	})
+	require.NoError(t, err)
 
-	// Testing an edited address with a blank credential must not send the
-	// stored client secret there.
-	moved := infisicalSettingsInternal(capture.URL, "client-id")
+	// Testing an edited address with a blank credential must not send the stored token there.
+	moved := types.SecretSourceSettings{HTTP: &types.SecretSourceHTTPSettings{BaseURL: capture.URL}}
 	result, err := service.TestSource(t.Context(), types.SecretSourceTestRequest{SourceID: source.ID, Settings: moved})
 	require.NoError(t, err)
-	assert.False(t, result.OK)
-	for _, body := range bodies {
-		assert.NotContains(t, body, "client-secret")
-	}
+	assert.True(t, result.OK)
+	require.Len(t, seen, 1)
+	assert.Empty(t, seen[0])
 
-	// Saving the new address needs the secret again.
+	// Saving the new address needs the token again, or an explicit removal.
 	_, err = service.UpdateSource(t.Context(), source.ID, types.SecretSourceUpdateRequest{Settings: &moved})
 	require.ErrorIs(t, err, common.ErrValidation)
-	updated, err := service.UpdateSource(t.Context(), source.ID, types.SecretSourceUpdateRequest{Settings: &moved, Credential: new("new-secret")})
+	updated, err := service.UpdateSource(t.Context(), source.ID, types.SecretSourceUpdateRequest{Settings: &moved, ClearCredential: true})
 	require.NoError(t, err)
-	assert.True(t, updated.HasCredential)
-	assert.Equal(t, strings.TrimSuffix(capture.URL, "/"), updated.Settings.Infisical.SiteURL)
+	assert.False(t, updated.HasCredential)
+
+	// Vault: switching from token to AppRole must not reuse the token as a secret ID.
+	bao, err := service.CreateSource(t.Context(), types.SecretSourceCreateRequest{
+		Name: "bao", Provider: types.SecretSourceProviderVault, Credential: "token",
+		Settings: types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200"}},
+	})
+	require.NoError(t, err)
+	approle := types.SecretSourceSettings{Vault: &types.SecretSourceVaultSettings{Address: "http://openbao:8200", AuthMethod: "approle", RoleID: "r"}}
+	_, err = service.UpdateSource(t.Context(), bao.ID, types.SecretSourceUpdateRequest{Settings: &approle})
+	require.ErrorIs(t, err, common.ErrValidation)
+	_, err = service.UpdateSource(t.Context(), bao.ID, types.SecretSourceUpdateRequest{Settings: &approle, Credential: new("secret-id")})
+	require.NoError(t, err)
+
+	// Only HTTP tokens can be removed.
+	_, err = service.UpdateSource(t.Context(), bao.ID, types.SecretSourceUpdateRequest{ClearCredential: true})
+	require.ErrorIs(t, err, common.ErrValidation)
 }

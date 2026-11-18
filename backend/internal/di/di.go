@@ -119,7 +119,11 @@ var (
 			provideImageService,
 			build.NewBuildService,
 			project.NewLifecycleService,
-			container.NewContainerService,
+			func(p container.ContainerServiceParams, secretSources *secretsource.SecretSourceService) *container.ContainerService {
+				service := container.NewContainerService(p)
+				service.SetSecretFiller(secretSources)
+				return service
+			},
 			network.NewNetworkService,
 			port.NewPortService,
 			swarm.NewSwarmService,
@@ -182,6 +186,7 @@ var (
 					RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
 				})
 				service.SetSecretEnvResolver(secretSources)
+				secretSources.SetProjectFileAccess(service)
 				return service
 			},
 			provideBackupEngine,
