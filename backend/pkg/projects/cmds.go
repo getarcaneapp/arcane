@@ -116,6 +116,7 @@ func ComposeCreate(ctx context.Context, opts types.ComposeCreateOptions) error {
 		Services:             opts.Services,
 		Recreate:             api.RecreateForce,
 		RecreateDependencies: api.RecreateDiverged,
+		Inherit:              true,
 	})
 }
 
@@ -125,6 +126,7 @@ func composeUpOptions(opts types.ComposeUpOptions, waitTimeout time.Duration, en
 			Services:             opts.Services,
 			Recreate:             kit.Ternary(opts.ForceRecreate, api.RecreateForce, api.RecreateDiverged),
 			RecreateDependencies: api.RecreateDiverged,
+			Inherit:              true,
 			// A caller opt-in (or GitOps-forced true) still wins over COMPOSE_REMOVE_ORPHANS.
 			RemoveOrphans: opts.RemoveOrphans || envOpts.RemoveOrphans,
 			IgnoreOrphans: envOpts.IgnoreOrphans,
