@@ -27,6 +27,7 @@ type (
 		CodeFont              *string                  `json:"codeFont,omitempty" maxLength:"128" pattern:"^[\\p{L}\\p{N} _'\",-]*$" doc:"Font family list for code blocks; empty uses the default"`
 		Backdrop              *string                  `json:"backdrop,omitempty" pattern:"^[a-z0-9-]{1,32}$" doc:"Background image: a preset ID, 'custom' (uploaded image), or 'none'"`
 		BackdropDim           *int                     `json:"backdropDim,omitempty" minimum:"0" maximum:"80" doc:"Percent the background image is darkened in dark mode"`
+		BackdropBlur          *int                     `json:"backdropBlur,omitempty" minimum:"0" maximum:"100" doc:"Percent of the maximum blur applied to the background image; 0 shows it sharp"`
 	}
 
 	CustomTheme struct {
