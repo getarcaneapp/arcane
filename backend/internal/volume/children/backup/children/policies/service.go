@@ -30,7 +30,6 @@ type (
 		DB             *database.DB
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		AlreadyRunning error
 		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
 		CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
 		Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
@@ -235,10 +234,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID)
-	if errors.Is(err, s.deps.AlreadyRunning) {
-		slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
-		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: "Skipped: another backup is running for this volume"}, nil
-	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
 		return nil, err

@@ -147,7 +147,6 @@ func NewService(deps Dependencies) *Service {
 		DB:             deps.DB,
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
-		AlreadyRunning: deps.AlreadyRunning,
 		Ctx:            deps.Ctx,
 		Scheduler:      deps.Scheduler,
 		Admission:      deps.Admission,
@@ -354,7 +353,13 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 
 // prepareBackup admits the run, persists its row, and records plan (now carrying the row ID) as the checkpoint.
 func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policyID string, plan *backupPlan) (*types.VolumeBackup, *runs.Lease, error) {
-	lease, err := s.acquireVolumeRun(ctx, volumeName)
+	lease, err := func() (*runs.Lease, error) {
+		// Scheduled backups of a busy volume run in turn. Manual starts park their admission, so they fail fast.
+		if trigger == types.VolumeBackupTriggerScheduled {
+			return s.deps.Engine.AwaitRun(ctx, backup.VolumeAdmissionScope, volumeName)
+		}
+		return s.acquireVolumeRun(ctx, volumeName)
+	}()
 	if err != nil {
 		return nil, nil, err
 	}

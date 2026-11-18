@@ -117,19 +117,16 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	service.RegisterJobsOnStartup(t.Context())
 	job, registered := jobScheduler.jobs["volume-backup:"+policy.ID]
 	require.True(t, registered)
-	// Holding the volume's admission lease skips the scheduled run, which still completes its activity.
-	lease, admitted, err := engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, policy.VolumeName)
-	require.NoError(t, err)
-	require.True(t, admitted)
-	defer lease.Release(t.Context())
+	// Disabling the policy after registration ends the scheduled run before a backup, which still completes its activity.
+	require.NoError(t, gormDB.Model(policy).Update("enabled", false).Error)
 
 	outcome, scheduledBackupErr := job.Run(t.Context())
 	require.NoError(t, scheduledBackupErr)
-	require.Equal(t, types.RunStatusSkipped, outcome.Status)
+	require.Equal(t, types.RunStatusCanceled, outcome.Status)
 
 	var backupActivity activity.Activity
 	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&backupActivity).Error)
-	require.Equal(t, types.ActivityStatusSuccess, backupActivity.Status)
+	require.Equal(t, types.ActivityStatusCancelled, backupActivity.Status)
 	require.Equal(t, "scheduled_volume_backup", backupActivity.Metadata["action"])
 	require.Equal(t, policy.Schedule, backupActivity.Metadata["schedule"])
 }
