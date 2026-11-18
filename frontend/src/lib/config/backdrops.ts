@@ -11,6 +11,8 @@ export type BackdropPreset = {
 export const BACKDROP_NONE = 'none';
 export const BACKDROP_CUSTOM = 'custom';
 export const BACKDROP_DEFAULT_DIM = 45;
+export const BACKDROP_DEFAULT_BLUR = 100;
+export const BACKDROP_MAX_BLUR_PX = 64;
 export const BACKDROP_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const BACKDROP_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 

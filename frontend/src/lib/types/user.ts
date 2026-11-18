@@ -94,6 +94,7 @@ export type UserPreferences = {
 	glassEffectsEnabled?: boolean;
 	backdrop?: string;
 	backdropDim?: number;
+	backdropBlur?: number;
 	animationsEnabled?: boolean;
 	keyboardShortcutsEnabled?: boolean;
 	mobileNavigationShowLabels?: boolean;

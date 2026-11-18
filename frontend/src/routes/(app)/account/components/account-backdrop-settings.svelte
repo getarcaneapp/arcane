@@ -6,6 +6,7 @@
 	import { Slider } from '#lib/components/ui/slider/index.js';
 	import {
 		BACKDROP_CUSTOM,
+		BACKDROP_DEFAULT_BLUR,
 		BACKDROP_DEFAULT_DIM,
 		BACKDROP_MAX_UPLOAD_BYTES,
 		BACKDROP_NONE,
@@ -39,6 +40,8 @@
 	const selectedPreset = $derived(backdropPresets.find((preset) => preset.id === selected));
 	let dimDraft = $state<number | null>(null);
 	const dim = $derived(dimDraft ?? currentUser?.preferences?.backdropDim ?? BACKDROP_DEFAULT_DIM);
+	let blurDraft = $state<number | null>(null);
+	const blur = $derived(blurDraft ?? currentUser?.preferences?.backdropBlur ?? BACKDROP_DEFAULT_BLUR);
 	const maxSizeMb = BACKDROP_MAX_UPLOAD_BYTES / (1024 * 1024);
 
 	let fileInput = $state<HTMLInputElement>();
@@ -173,6 +176,30 @@
 		{/snippet}
 	</SettingsRow>
 {/if}
+
+<SettingsRow label={m.background_blur()} description={m.background_blur_description()}>
+	{#snippet children({ describedBy })}
+		<div class="flex items-center gap-4">
+			<Slider
+				type="single"
+				value={blur}
+				min={0}
+				max={100}
+				step={5}
+				disabled={selected === BACKDROP_NONE}
+				onValueChange={(value) => (blurDraft = value)}
+				onValueCommit={(value) => {
+					savePreferencesDebounced({ backdropBlur: value });
+					blurDraft = null;
+				}}
+				aria-label={m.background_blur()}
+				aria-describedby={describedBy}
+				class="max-w-64"
+			/>
+			<span class="w-10 text-right text-xs text-muted-foreground tabular-nums">{blur}%</span>
+		</div>
+	{/snippet}
+</SettingsRow>
 
 <SettingsRow label={m.background_dim()} description={m.background_dim_description()}>
 	{#snippet children({ describedBy })}

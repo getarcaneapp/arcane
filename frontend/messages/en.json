@@ -4690,5 +4690,7 @@
   "copy_project": "Copy Project",
   "import_project": "Import Project",
   "connect_container": "Connect Container",
-  "disconnect_container": "Disconnect Container"
+  "disconnect_container": "Disconnect Container",
+  "background_blur": "Background Blur",
+  "background_blur_description": "How much to blur the background image. Set 0% to show it sharp."
 }
