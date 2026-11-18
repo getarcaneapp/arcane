@@ -1,12 +1,11 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+	import { cn } from '@arcane/ui/utils';
 	import { onMount, type Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { ArrowDownIcon } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
-
-	import * as Card from './ui/card';
 
 	let {
 		id,

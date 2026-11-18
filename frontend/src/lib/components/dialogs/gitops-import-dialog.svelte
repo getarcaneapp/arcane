@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { Label } from '@arcane/ui/label';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { Textarea } from '@arcane/ui/textarea';
+
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ImportGitOpsSyncRequest } from '#lib/types/gitops.js';
 

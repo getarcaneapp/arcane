@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
 	import { createQuery, keepPreviousData, skipToken, useQueryClient } from '@tanstack/svelte-query';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { projectListQuery } from '#lib/query/projects.js';

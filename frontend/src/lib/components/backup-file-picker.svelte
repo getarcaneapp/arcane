@@ -1,13 +1,13 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
+	import { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { BackupFileEntry } from '#lib/types/backup.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';

@@ -1,15 +1,15 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Button } from '@arcane/ui/button';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';

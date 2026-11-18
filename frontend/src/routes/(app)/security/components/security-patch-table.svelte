@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -8,8 +10,6 @@
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

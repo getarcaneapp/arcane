@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { LayoutGridIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		showLabels = true,

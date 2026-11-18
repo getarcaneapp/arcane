@@ -24,16 +24,16 @@
 
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import { Skeleton } from '@arcane/ui/skeleton';
+	import { cn } from '@arcane/ui/utils';
 
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import MemoryRing from '#lib/components/memory-ring.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { getRiskBandDisplay } from '#lib/utils/vulnerability.js';
 

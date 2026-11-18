@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';

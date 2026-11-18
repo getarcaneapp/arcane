@@ -1,11 +1,12 @@
 <script lang="ts">
+	import * as Tabs from '@arcane/ui/tabs';
+
 	import EnvironmentSettingsPage from '#lib/components/settings/environment/environment-settings-page.svelte';
 	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import VulnerabilityUpdateGateSettings from '#lib/components/settings/vulnerability-update-gate-settings.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { CodeIcon, SearchIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';

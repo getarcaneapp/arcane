@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import { Button } from '@arcane/ui/button';
+	import * as Dialog from '@arcane/ui/dialog';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import { createQueries } from '@tanstack/svelte-query';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, AlertIcon, ArrowRightIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -19,7 +20,6 @@
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';

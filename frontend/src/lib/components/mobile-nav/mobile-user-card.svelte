@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
@@ -7,7 +9,6 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { User } from '#lib/types/user.js';
-	import { cn } from '#lib/utils.js';
 
 	type Props = {
 		user: User;

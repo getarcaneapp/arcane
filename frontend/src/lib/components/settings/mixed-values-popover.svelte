@@ -1,7 +1,7 @@
 <script lang="ts">
+	import * as Popover from '@arcane/ui/popover';
 	import type { Snippet } from 'svelte';
 
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';

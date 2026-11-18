@@ -1,3 +1,4 @@
+import { tv } from '@arcane/ui/utils';
 import type { VariantProps } from 'tailwind-variants';
 
 import {
@@ -33,7 +34,6 @@ import {
 	ContainersIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import { tv } from '#lib/utils.js';
 
 export const arcaneButtonVariants = tv({
 	base:

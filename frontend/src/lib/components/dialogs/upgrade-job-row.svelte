@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import { Progress } from '@arcane/ui/progress';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, ClockIcon, AlertIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';
 

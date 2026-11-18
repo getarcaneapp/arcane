@@ -1,7 +1,8 @@
 <script lang="ts">
+	import * as Select from '@arcane/ui/select';
+
 	import PruneConfirmationDialogContent from '#lib/components/dialogs/prune-confirmation-dialog-content.svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { PruneAllRequest } from '#lib/types/system.js';

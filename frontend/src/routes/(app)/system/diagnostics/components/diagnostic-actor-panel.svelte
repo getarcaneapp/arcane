@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as Table from '@arcane/ui/table';
+	import { cn } from '@arcane/ui/utils';
 	import { onDestroy, onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { slide } from 'svelte/transition';
 
 	import { jobStatusLabel } from '#lib/components/job-card/job-status.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ActorDiagnostics, ActorTypeInfo } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { createActorDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
 

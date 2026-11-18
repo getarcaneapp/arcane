@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 

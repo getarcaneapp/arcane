@@ -1,7 +1,8 @@
 <script lang="ts">
+	import * as Table from '@arcane/ui/table';
+
 	import { DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { CpuIcon, HammerIcon, MemoryStickIcon, SecurityIcon, StatsIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodInspect } from '#lib/types/podman.js';

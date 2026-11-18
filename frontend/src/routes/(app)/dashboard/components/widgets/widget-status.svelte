@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
+	import { Skeleton } from '@arcane/ui/skeleton';
 	import type { Snippet } from 'svelte';
 
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';

@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import { onMount, onDestroy } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { LogEntry } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
 

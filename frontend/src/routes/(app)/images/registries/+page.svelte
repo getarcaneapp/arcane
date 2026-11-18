@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import ContainerRegistryFormSheet from '#lib/components/sheets/container-registry-sheet.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { RegistryIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

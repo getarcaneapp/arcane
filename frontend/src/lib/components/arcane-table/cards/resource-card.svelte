@@ -1,8 +1,7 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
-
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		selected = false,

@@ -2,7 +2,6 @@
 	"$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
 	"entry": ["src/routes/**/*.{svelte,ts,js}", "src/lib/components/**/index.ts"],
 	"ignoreDependencies": [
-		"@typescript/native",
 		"@iconify/json",
 		"@tanstack/svelte-query-devtools",
 		"paneforge",

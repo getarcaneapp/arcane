@@ -21,7 +21,11 @@ frontend check='':
 
 [arg('check', long, value='--check')]
 tests check='':
-    vp fmt {{ check }} tests
+    vp fmt {{ check }} packages/tests
+
+[arg('check', long, value='--check')]
+ui check='':
+    vp fmt {{ check }} packages/ui
 
 # Go modules with the formatters configured in .golangci.yml
 [arg('check', long, value='--check')]

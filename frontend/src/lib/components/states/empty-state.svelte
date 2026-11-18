@@ -1,9 +1,9 @@
 <script lang="ts">
+	import * as Empty from '@arcane/ui/empty';
 	import type { Snippet } from 'svelte';
 	import type { ClassValue } from 'svelte/elements';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Empty from '#lib/components/ui/empty/index.js';
 	import type { IconType } from '#lib/icons/index.js';
 
 	interface Props {

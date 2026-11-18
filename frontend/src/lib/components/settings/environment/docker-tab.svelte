@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import PruneModePicker from '#lib/components/prune/prune-mode-picker.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { UpdateCheckRegistry } from '#lib/types/settings.js';
 	import {

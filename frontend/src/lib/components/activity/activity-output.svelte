@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import PinnedScrollRegion from '#lib/components/pinned-scroll-region.svelte';
 	import type { ActivityMessage } from '#lib/types/activity.js';
-	import { cn } from '#lib/utils.js';
 	import { ansiToHtml } from '#lib/utils/formatting.js';
 
 	let {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
 	import { mode } from 'mode-watcher';
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
@@ -11,7 +12,6 @@
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
 	import TimeFormatPicker from '#lib/components/time-format-picker.svelte';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';

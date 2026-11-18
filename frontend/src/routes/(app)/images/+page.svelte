@@ -1,4 +1,8 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '@arcane/ui/file-drop-zone';
+	import { Progress } from '@arcane/ui/progress';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -10,10 +14,6 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import ImagePullSheet from '#lib/components/sheets/image-pull-sheet.svelte';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import PinnedScrollRegion from '#lib/components/pinned-scroll-region.svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
 	import { ansiToHtml } from '#lib/utils/formatting.js';

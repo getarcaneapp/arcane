@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import { Label } from '@arcane/ui/label';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { SettingLock } from '#lib/components/badges/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { AlertIcon, LayersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SettingState } from '#lib/types/settings.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
-	import { cn } from '#lib/utils.js';
 
 	import MixedValuesPopover from './mixed-values-popover.svelte';
 

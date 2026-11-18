@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Tabs from '@arcane/ui/tabs';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		backUrl?: string;

@@ -1,6 +1,7 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+
 	import { ComposeEditorSplit } from '#lib/components/compose/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { CodeIcon, VariableIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 

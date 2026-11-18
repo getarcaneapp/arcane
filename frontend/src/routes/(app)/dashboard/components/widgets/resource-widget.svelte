@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge, type BadgeVariant } from '@arcane/ui/badge';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';

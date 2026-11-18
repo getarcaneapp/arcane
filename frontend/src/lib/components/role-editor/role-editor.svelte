@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Input } from '@arcane/ui/input';
 	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { CopyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Role, PermissionsManifest } from '#lib/types/role.js';

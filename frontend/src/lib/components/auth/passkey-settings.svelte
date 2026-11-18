@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Button } from '@arcane/ui/button';
+	import { Input } from '@arcane/ui/input';
 	import {
 		browserSupportsWebAuthn,
 		startRegistration,
@@ -9,9 +12,6 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { AddIcon, AlertIcon, ApiKeyIcon, CopyIcon, EditIcon, ShieldCheckIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { passkeyService } from '#lib/services/passkey-service.js';

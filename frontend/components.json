@@ -7,8 +7,8 @@
 	},
 	"aliases": {
 		"components": "#lib/components",
-		"utils": "#lib/utils",
-		"ui": "#lib/components/ui",
+		"utils": "@arcane/ui/utils",
+		"ui": "@arcane/ui",
 		"hooks": "#lib/hooks",
 		"lib": "#lib"
 	},

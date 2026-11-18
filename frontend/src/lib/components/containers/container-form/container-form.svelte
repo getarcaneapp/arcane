@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -10,11 +15,6 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import VolumeMountEditor from '#lib/components/form/volume-mount-editor.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { CloseIcon, ContainersIcon, NetworksIcon, SettingsIcon, VariableIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

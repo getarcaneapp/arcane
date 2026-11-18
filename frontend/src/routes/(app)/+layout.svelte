@@ -8,8 +8,8 @@
 	import BackdropImage from '#lib/components/backdrop/backdrop-image.svelte';
 	import MobileNav from '#lib/components/mobile-nav/mobile-nav.svelte';
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
+	import * as Sidebar from '#lib/components/sidebar/primitives/index.js';
 	import AppSidebar from '#lib/components/sidebar/sidebar.svelte';
-	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { navigationItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';

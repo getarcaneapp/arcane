@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as Card from '@arcane/ui/card';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type {
 		CodeLanguage,
@@ -6,8 +9,6 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AlertIcon, CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

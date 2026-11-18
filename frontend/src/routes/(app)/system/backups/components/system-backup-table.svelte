@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import type { Snippet } from 'svelte';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -13,7 +14,6 @@
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';

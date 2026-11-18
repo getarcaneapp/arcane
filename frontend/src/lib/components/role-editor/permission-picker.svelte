@@ -1,8 +1,9 @@
 <script lang="ts">
-	import * as Accordion from '#lib/components/ui/accordion/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Accordion from '@arcane/ui/accordion';
+	import { Badge } from '@arcane/ui/badge';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '#lib/types/role.js';
 	import { normalizePermissionSelection, removePermissionSelection } from '#lib/utils/permissions.js';

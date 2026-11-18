@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Skeleton } from '@arcane/ui/skeleton';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';

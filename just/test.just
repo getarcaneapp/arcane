@@ -9,7 +9,7 @@ all: e2e backend cli
 
 # Playwright E2E tests
 e2e:
-    vp -C tests run test
+    vp -C packages/tests run test
 
 backend: (_go 'backend' '-tags=exclude_frontend,buildables' '-ldflags=-X getarcane.dev/arcane/v3/buildables.EnabledFeatures=autologin')
 

@@ -1,10 +1,10 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';

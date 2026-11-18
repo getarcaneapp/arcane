@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as Breadcrumb from '#lib/components/ui/breadcrumb/index.js';
+	import * as Breadcrumb from '@arcane/ui/breadcrumb';
+
 	import { ArrowRightIcon, DashboardIcon } from '#lib/icons/index.js';
 
 	let {

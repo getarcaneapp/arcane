@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import * as Tooltip from '@arcane/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import {
 		FolderOpenIcon,
 		FileTextIcon,

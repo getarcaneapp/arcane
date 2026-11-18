@@ -1,10 +1,10 @@
 <script lang="ts">
+	import * as Checkbox from '@arcane/ui/checkbox';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
-	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ArrowDownIcon, ArrowRightIcon, FileTextIcon, FolderOpenIcon, LockIcon } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		name,

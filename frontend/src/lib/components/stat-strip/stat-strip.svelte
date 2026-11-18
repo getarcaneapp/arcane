@@ -1,8 +1,7 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 	import type { ClassValue } from 'svelte/elements';
-
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		class?: ClassValue;

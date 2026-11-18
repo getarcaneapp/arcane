@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import * as Tabs from '@arcane/ui/tabs';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	import type { BuildWorkspaceDraft } from '../build-workspace-draft.svelte';

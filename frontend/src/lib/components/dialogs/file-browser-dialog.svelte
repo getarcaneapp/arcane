@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { ScrollArea } from '@arcane/ui/scroll-area';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { FolderOpenIcon, FileTextIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

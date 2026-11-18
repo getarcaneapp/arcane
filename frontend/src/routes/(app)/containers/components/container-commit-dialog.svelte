@@ -1,12 +1,12 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';

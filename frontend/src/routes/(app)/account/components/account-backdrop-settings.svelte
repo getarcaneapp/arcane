@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { Slider } from '@arcane/ui/slider';
+	import { cn } from '@arcane/ui/utils';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { Slider } from '#lib/components/ui/slider/index.js';
 	import {
 		BACKDROP_CUSTOM,
 		BACKDROP_DEFAULT_DIM,
@@ -18,7 +19,6 @@
 	import { userService } from '#lib/services/user-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { UserPreferences } from '#lib/types/user.js';
-	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';

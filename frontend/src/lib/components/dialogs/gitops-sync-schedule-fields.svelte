@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Switch } from '@arcane/ui/switch';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	import type { GitOpsSyncFormState } from './gitops-sync-form.svelte';

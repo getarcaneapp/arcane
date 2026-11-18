@@ -3,9 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
+	import * as Empty from '@arcane/ui/empty';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Empty from '#lib/components/ui/empty/index.js';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ErrorNotFoundIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

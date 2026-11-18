@@ -1,7 +1,6 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
-
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		title?: string;

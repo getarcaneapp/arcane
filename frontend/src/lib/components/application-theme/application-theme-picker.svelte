@@ -1,13 +1,13 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as RadioGroup from '@arcane/ui/radio-group';
+	import { cn } from '@arcane/ui/utils';
 	import { mode } from 'mode-watcher';
 
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { AddIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ApplicationTheme, CustomTheme } from '#lib/types/user.js';
-	import { cn } from '#lib/utils.js';
 	import {
 		type ApplicationThemeOption,
 		applyApplicationTheme,

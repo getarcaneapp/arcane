@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Avatar from '@arcane/ui/avatar';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 
-	import * as Avatar from '#lib/components/ui/avatar/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
-	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
+	import * as Sidebar from '#lib/components/sidebar/primitives/index.js';
+	import { useSidebar } from '#lib/components/sidebar/primitives/index.js';
 	import { LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

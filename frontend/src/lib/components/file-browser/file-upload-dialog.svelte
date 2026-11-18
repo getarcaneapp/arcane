@@ -1,10 +1,10 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import { FileDropZone, displaySize, type FileDropZoneProps } from '@arcane/ui/file-drop-zone';
+	import { Progress } from '@arcane/ui/progress';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { FileDropZone, displaySize, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { ChunkedUploadProgress, UploadProgressCallback } from '#lib/types/ui/upload.js';

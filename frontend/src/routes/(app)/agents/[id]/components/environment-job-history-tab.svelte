@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import * as Alert from '@arcane/ui/alert';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
@@ -7,8 +9,6 @@
 	import { jobNameLabel } from '#lib/components/job-card/job-status.js';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

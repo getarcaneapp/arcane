@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createQueries, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { watch } from 'runed';
 	import { onMount, onDestroy, untrack } from 'svelte';
@@ -8,8 +10,6 @@
 	import FeatureDisabled from '#lib/components/features/feature-disabled.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { BULK_FETCH_MAX_ITEMS, BULK_FETCH_PAGE_SIZE } from '#lib/constants/table-pagination.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {

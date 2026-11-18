@@ -44,13 +44,13 @@
 </script>
 
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import type { Attachment } from 'svelte/attachments';
 	import { on } from 'svelte/events';
 
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { matchesShortcutEvent } from '#lib/utils/navigation.js';
 
 	import { arcaneButtonVariants, actionConfigs } from './variants';

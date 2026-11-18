@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { Progress } from '@arcane/ui/progress';
+	import { Skeleton } from '@arcane/ui/skeleton';
+
 	import { DetailMetaStrip, DetailSection, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerDetails, ContainerStats as ContainerStatsType } from '#lib/types/container.js';
 	import { bytes } from '#lib/utils/formatting.js';

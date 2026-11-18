@@ -5,8 +5,8 @@
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerRegistry, RegistryType } from '#lib/types/containerregistry.js';
 	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/ui/containerregistry.js';

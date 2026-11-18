@@ -1,14 +1,14 @@
 <script lang="ts">
+	import * as Command from '@arcane/ui/command';
+	import * as Popover from '@arcane/ui/popover';
+	import { Separator } from '@arcane/ui/separator';
+	import { cn } from '@arcane/ui/utils';
 	import type { Component } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Command from '#lib/components/ui/command/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
-	import { Separator } from '#lib/components/ui/separator/index.js';
 	import { CheckIcon, FilterIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	// Structural shape of the faceted-filter column controls — see the note in
 	// arcane-table-header.svelte for why v9's invariant `Column` generic (even with `any`

@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLocale, type Locale } from '#lib/paraglide/runtime.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

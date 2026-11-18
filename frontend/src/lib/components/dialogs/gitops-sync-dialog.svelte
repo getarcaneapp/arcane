@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { settingsService } from '#lib/services/settings-service.js';

@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import type { AgentHostInfo } from '#lib/types/environment.js';
-	import { cn } from '#lib/utils.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	let { host }: { host: AgentHostInfo } = $props();

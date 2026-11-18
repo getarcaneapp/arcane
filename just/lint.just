@@ -9,8 +9,8 @@ list:
 
 all: js go proto
 
-# Frontend and Playwright tests
-js: frontend tests
+# Frontend, UI package, and Playwright tests
+js: frontend ui tests
     vp lint .
 
 # Type check and lint the frontend
@@ -18,9 +18,13 @@ frontend:
     vp -C frontend run check
     vp -C frontend run lint
 
+# Type check the UI package
+ui:
+    vp -C packages/ui run check
+
 # Type check Playwright tests
 tests:
-    vp -C tests run check
+    vp -C packages/tests run check
 
 # Backend, CLI, and types modules
 go: backend cli types

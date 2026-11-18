@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
+	import * as ButtonGroup from '@arcane/ui/button-group';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import { flushSync } from 'svelte';
 
 	import {
@@ -11,12 +15,8 @@
 		type ArcaneButtonTone
 	} from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ArrowDownIcon, EllipsisIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	import type { ActionButton, ActionGroup } from './types.js';
 

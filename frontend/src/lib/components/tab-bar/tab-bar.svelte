@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { cn } from '#lib/utils.js';
+	import * as Tabs from '@arcane/ui/tabs';
+	import { cn } from '@arcane/ui/utils';
 
 	import type { TabItem } from './types.ts';
 

@@ -17,17 +17,17 @@
 </script>
 
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Spinner } from '@arcane/ui/spinner';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { AlertIcon, CopyIcon, FolderMoveIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';

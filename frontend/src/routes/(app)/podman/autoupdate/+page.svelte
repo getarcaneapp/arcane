@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Table from '@arcane/ui/table';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import { DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { AlertIcon, InfoIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

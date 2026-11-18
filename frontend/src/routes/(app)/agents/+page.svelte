@@ -2,6 +2,7 @@
 	import { dev } from '$app/env';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -10,7 +11,6 @@
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { ApiKeyIcon, DownloadIcon, EnvironmentsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';

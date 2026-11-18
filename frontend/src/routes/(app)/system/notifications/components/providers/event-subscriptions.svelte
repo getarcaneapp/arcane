@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
+
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {

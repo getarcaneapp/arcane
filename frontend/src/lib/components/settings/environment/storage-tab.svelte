@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import RowListEditor from '#lib/components/form/row-list-editor.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectDirectoriesQuery } from '#lib/query/projects.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';

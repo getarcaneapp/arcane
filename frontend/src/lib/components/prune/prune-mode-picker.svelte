@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { useId } from 'bits-ui';
 
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	export type PruneModeOption = {

@@ -1,18 +1,19 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as ContextMenu from '@arcane/ui/context-menu';
+	import * as Dialog from '@arcane/ui/dialog';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import * as Tooltip from '@arcane/ui/tooltip';
+	import * as TreeView from '@arcane/ui/tree-view';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
-	import * as TreeView from '#lib/components/ui/tree-view/index.js';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
+	import { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 	import {
 		AlertIcon,
 		ArrowDownIcon,
@@ -31,7 +32,6 @@
 		type IconType
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 	import {
 		compareWorkspaceFileEntries,
 		joinWorkspaceFilePath,

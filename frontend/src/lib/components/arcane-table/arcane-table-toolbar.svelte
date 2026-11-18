@@ -1,15 +1,15 @@
 <script lang="ts" generics="TData extends Record<string, any>">
+	import * as ButtonGroup from '@arcane/ui/button-group';
+	import * as Popover from '@arcane/ui/popover';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { ResetIcon, SearchIcon, FilterIcon, LayoutGridIcon, LayoutListIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { ENVIRONMENT_FILTER } from '#lib/utils/environments.js';
 	import { debounced } from '#lib/utils/ws.js';
 

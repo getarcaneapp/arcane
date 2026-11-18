@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PortMapping } from '#lib/types/port.js';

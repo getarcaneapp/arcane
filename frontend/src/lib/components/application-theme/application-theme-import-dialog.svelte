@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { FileDropZone, type FileDropZoneProps } from '@arcane/ui/file-drop-zone';
+	import { Label } from '@arcane/ui/label';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { Textarea } from '@arcane/ui/textarea';
+
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { FileDropZone, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { THEME_TOKENS, type ThemeDefinition } from '#lib/types/ui/theme.js';
 	import type { CustomTheme, ThemePalette } from '#lib/types/user.js';

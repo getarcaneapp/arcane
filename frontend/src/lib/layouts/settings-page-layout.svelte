@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -10,7 +11,6 @@
 	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import { ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	import type { SettingsPageType, SettingsStatCard } from './types.js';
 

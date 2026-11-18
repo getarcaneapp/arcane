@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -8,11 +10,9 @@
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, GlobeIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

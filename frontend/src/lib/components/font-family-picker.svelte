@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { browser } from '$app/env';
+	import { Input } from '@arcane/ui/input';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { SearchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';

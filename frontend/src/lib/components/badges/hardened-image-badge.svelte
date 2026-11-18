@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { HardenedImageInfo } from '#lib/types/image.js';
 	import { hardenedImageDisplay } from '#lib/utils/hardened-images.js';

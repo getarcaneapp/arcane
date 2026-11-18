@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge, type BadgeVariant } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
+	import { Skeleton } from '@arcane/ui/skeleton';
 	import { createQuery, keepPreviousData, skipToken, useQueryClient } from '@tanstack/svelte-query';
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { imageListQuery } from '#lib/query/images.js';

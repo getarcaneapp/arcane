@@ -1,0 +1,158 @@
+<script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import * as Drawer from '@arcane/ui/drawer';
+	import * as Sheet from '@arcane/ui/sheet';
+	import { cn } from '@arcane/ui/utils';
+
+	// Close convention: the component that owns `open` must close it in the
+	// success path. Dialogs delegate closing to their parent and never self-close on submit.
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+
+	import type { ResponsiveDialogProps } from './responsive-dialog.type.js';
+
+	let {
+		open = $bindable(false),
+		onOpenChange,
+		trigger,
+		title,
+		description,
+		children,
+		footer,
+		class: className,
+		contentClass,
+		showCloseButton = true,
+		dismissible = true,
+		variant = 'dialog'
+	}: ResponsiveDialogProps = $props();
+
+	const isMobile = new IsMobile();
+	const isDesktop = $derived(!isMobile.current);
+
+	function handleOpenChange(newOpen: boolean) {
+		if (!newOpen && !dismissible) return;
+		open = newOpen;
+		onOpenChange?.(newOpen);
+	}
+</script>
+
+{#snippet renderTitle()}
+	{#if typeof title === 'string'}
+		{title}
+	{:else if title}
+		{@render title()}
+	{/if}
+{/snippet}
+
+{#if isDesktop}
+	{#if variant === 'sheet'}
+		<Sheet.Root {open} onOpenChange={handleOpenChange}>
+			{#if trigger}
+				<Sheet.Trigger>
+					{@render trigger()}
+				</Sheet.Trigger>
+			{/if}
+			<Sheet.Content
+				class={cn('flex flex-col overflow-hidden p-0', contentClass)}
+				interactOutsideBehavior={dismissible ? 'close' : 'ignore'}
+				escapeKeydownBehavior={dismissible ? 'close' : 'ignore'}
+			>
+				{#if title || description}
+					<Sheet.Header class="shrink-0 px-6 pt-6">
+						{#if title}
+							<Sheet.Title>{@render renderTitle()}</Sheet.Title>
+						{/if}
+						{#if description}
+							<Sheet.Description>{description}</Sheet.Description>
+						{/if}
+					</Sheet.Header>
+				{/if}
+				<div class={cn('min-h-0 flex-1 overflow-y-auto px-6', className)}>
+					{@render children()}
+				</div>
+				{#if footer}
+					<div class="border-t bg-background p-4">
+						<Sheet.Footer class="mt-0 flex-row justify-end p-0">
+							{@render footer()}
+						</Sheet.Footer>
+					</div>
+				{/if}
+			</Sheet.Content>
+		</Sheet.Root>
+	{:else}
+		<Dialog.Root {open} onOpenChange={handleOpenChange}>
+			{#if trigger}
+				<Dialog.Trigger>
+					{@render trigger()}
+				</Dialog.Trigger>
+			{/if}
+			<Dialog.Content
+				class={cn(
+					'max-h-screen-inset-2 grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
+					contentClass ?? 'sm:max-w-106.25'
+				)}
+				showCloseButton={showCloseButton && dismissible}
+				interactOutsideBehavior={dismissible ? 'close' : 'ignore'}
+				escapeKeydownBehavior={dismissible ? 'close' : 'ignore'}
+			>
+				{#if title || description}
+					<Dialog.Header class="shrink-0 px-6 pt-6">
+						{#if title}
+							<Dialog.Title>{@render renderTitle()}</Dialog.Title>
+						{/if}
+						{#if description}
+							<Dialog.Description>{description}</Dialog.Description>
+						{/if}
+					</Dialog.Header>
+				{/if}
+				<div class={cn('min-h-0 overflow-y-auto px-6', className)}>
+					{@render children()}
+				</div>
+				{#if footer}
+					<Dialog.Footer class="shrink-0 px-6 pb-6">
+						{@render footer()}
+					</Dialog.Footer>
+				{/if}
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
+{:else}
+	<Drawer.Root {open} {dismissible} onOpenChange={handleOpenChange}>
+		{#if trigger}
+			<Drawer.Trigger>
+				{@render trigger()}
+			</Drawer.Trigger>
+		{/if}
+		<Drawer.Content class="flex max-h-screen-85 flex-col overflow-hidden">
+			{#if title || description}
+				<Drawer.Header class="shrink-0 text-left">
+					{#if title}
+						<Drawer.Title>{@render renderTitle()}</Drawer.Title>
+					{/if}
+					{#if description}
+						<Drawer.Description>{description}</Drawer.Description>
+					{/if}
+				</Drawer.Header>
+			{/if}
+			<div class={cn('min-h-0 flex-1 overflow-y-auto', className ?? 'px-4 pb-4')}>
+				{@render children()}
+			</div>
+			{#if footer}
+				<Drawer.Footer class="shrink-0 pt-2">
+					{@render footer()}
+				</Drawer.Footer>
+			{/if}
+		</Drawer.Content>
+	</Drawer.Root>
+{/if}
+
+<style>
+	:global(html:has([data-slot='dialog-overlay'][data-state='open'])),
+	:global(body:has([data-slot='dialog-overlay'][data-state='open'])) {
+		overflow: hidden !important;
+	}
+
+	:global(html:has([data-vaul-drawer])),
+	:global(body:has([data-vaul-drawer])) {
+		overflow: hidden !important;
+	}
+</style>

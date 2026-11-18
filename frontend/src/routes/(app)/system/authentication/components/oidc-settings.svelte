@@ -19,12 +19,13 @@
 </script>
 
 <script lang="ts">
+	import * as AlertDialog from '@arcane/ui/alert-dialog';
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { FormInputs } from '#lib/types/ui/form.js';

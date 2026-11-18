@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge, type BadgeVariant } from '@arcane/ui/badge';
+	import { cn } from '@arcane/ui/utils';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 
 	import MetricRing from '#lib/components/metric-ring.svelte';
-	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
 	import type { ContainerResourceSample } from '#lib/types/container.js';
-	import { cn } from '#lib/utils.js';
 	import type { DashboardWidget } from '#lib/utils/dashboard-layout.js';
 	import { rowKey } from '#lib/utils/environments.js';
 	import { bytes, formatElapsedTime, instantEpochMilliseconds } from '#lib/utils/formatting.js';

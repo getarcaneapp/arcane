@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -6,8 +8,6 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

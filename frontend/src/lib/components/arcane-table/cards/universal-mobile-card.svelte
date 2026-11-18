@@ -1,13 +1,13 @@
 <script lang="ts" generics="T">
+	import { Badge } from '@arcane/ui/badge';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import TableCheckbox from '#lib/components/arcane-table/arcane-table-checkbox.svelte';
 	import { getMobileRowSelection, hasMobileRowSelection } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import type { IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 	import { rowKey } from '#lib/utils/environments.js';
 
 	import { iconBgClass, iconTextClass, type IconVariant } from './icon-variants.js';

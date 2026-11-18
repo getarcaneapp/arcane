@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Button } from '@arcane/ui/button';
+	import * as Collapsible from '@arcane/ui/collapsible';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Switch } from '@arcane/ui/switch';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { ArrowRightIcon, CodeIcon, InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';

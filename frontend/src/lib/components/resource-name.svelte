@@ -1,8 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { cn } from '#lib/utils.js';
 
 	const maxWidthClasses = {
 		'resource-name': 'max-w-resource-name',

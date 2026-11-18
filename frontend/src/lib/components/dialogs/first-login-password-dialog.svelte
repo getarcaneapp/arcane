@@ -1,13 +1,13 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Label } from '@arcane/ui/label';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService } from '#lib/services/auth-service.js';

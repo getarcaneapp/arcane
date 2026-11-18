@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
+
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { InfoIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmServiceInspect } from '#lib/types/swarm.js';

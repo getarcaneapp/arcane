@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { useSidebar } from '#lib/components/ui/sidebar/context.svelte.js';
+	import { useSidebar } from '#lib/components/sidebar/primitives/context.svelte.js';
 	import { PinOnIcon, PinOffIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	let { ref = $bindable(null), class: className }: { ref?: HTMLElement | null; class?: string } = $props();
 

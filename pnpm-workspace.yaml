@@ -1,6 +1,6 @@
 packages:
   - frontend
-  - tests
+  - packages/*
 
 autoDedupe: true
 
@@ -56,4 +56,3 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: '*'
-    'formsnap@2.0.1>sveltekit-superforms': ^3.0.0

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -13,7 +14,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { SettingsFormContext, SettingsFormState } from '#lib/types/ui/settingsform.js';
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		rootUrl: ResolvedPathname;

@@ -1,14 +1,15 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import * as Collapsible from '@arcane/ui/collapsible';
+	import * as Table from '@arcane/ui/table';
+	import * as Tabs from '@arcane/ui/tabs';
+	import { cn } from '@arcane/ui/utils';
 	import { onMount } from 'svelte';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		ActivityIcon,
@@ -27,7 +28,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

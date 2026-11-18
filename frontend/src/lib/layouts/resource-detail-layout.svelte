@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -6,7 +7,6 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		backUrl?: string;

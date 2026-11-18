@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import ResponsiveDialog from '#lib/components/responsive-dialog/responsive-dialog.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as Kbd from '#lib/components/ui/kbd/index.js';
+	import * as Kbd from '@arcane/ui/kbd';
+
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation.js';

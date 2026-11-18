@@ -1,14 +1,14 @@
 <script lang="ts">
+	import * as Accordion from '@arcane/ui/accordion';
+	import * as Alert from '@arcane/ui/alert';
+	import { Input } from '@arcane/ui/input';
+	import * as Select from '@arcane/ui/select';
 	import { untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
-	import * as Accordion from '#lib/components/ui/accordion/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';

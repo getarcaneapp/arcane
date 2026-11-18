@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import * as Drawer from '@arcane/ui/drawer';
+	import { cn } from '@arcane/ui/utils';
 
 	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import UpdateAvailableBanner from '#lib/components/sidebar/update-available-banner.svelte';
-	import * as Drawer from '#lib/components/ui/drawer/index.js';
 	import { navigationItems, filterByPermissions } from '#lib/config/navigation-config.js';
 	import type { NavigationItem } from '#lib/config/navigation-config.js';
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
@@ -13,7 +14,6 @@
 	import type { PermissionsManifest } from '#lib/types/role.js';
 	import type { User } from '#lib/types/user.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 
 	import MobileUserCard from './mobile-user-card.svelte';
 

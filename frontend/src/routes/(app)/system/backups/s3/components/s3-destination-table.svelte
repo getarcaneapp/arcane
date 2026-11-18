@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -9,7 +10,6 @@
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { EditIcon, AgentIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';

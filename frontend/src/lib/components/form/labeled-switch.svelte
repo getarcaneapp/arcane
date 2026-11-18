@@ -1,8 +1,7 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import { Switch } from '@arcane/ui/switch';
 	import { mergeProps } from 'bits-ui';
-
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 
 	let {
 		id,

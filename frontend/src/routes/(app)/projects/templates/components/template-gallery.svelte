@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as Select from '@arcane/ui/select';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, untrack } from 'svelte';
@@ -8,9 +9,8 @@
 	import type { CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 	import { templateTypeFilters } from '#lib/components/arcane-table/data.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { SearchIcon, TemplateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

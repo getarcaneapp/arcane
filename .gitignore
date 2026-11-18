@@ -41,10 +41,10 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 #tests data
-tests/.report/
-tests/setup/projects/*
-!tests/setup/projects/test-project-static/
-!tests/setup/projects/test-project-static/**
+packages/tests/.report/
+packages/tests/setup/projects/*
+!packages/tests/setup/projects/test-project-static/
+!packages/tests/setup/projects/test-project-static/**
 backend/test-results/
 cli/test-results/
 types/test-results/

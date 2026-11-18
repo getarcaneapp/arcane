@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as ButtonGroup from '@arcane/ui/button-group';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -25,10 +28,7 @@
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import {
 		TrashIcon,

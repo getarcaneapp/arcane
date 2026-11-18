@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { CloseIcon, SearchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	let {

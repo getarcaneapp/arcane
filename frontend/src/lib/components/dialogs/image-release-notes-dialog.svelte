@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

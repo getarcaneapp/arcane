@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { cn } from '@arcane/ui/utils';
+
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { ActivityIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { Activity } from '#lib/types/activity.js';
-	import { cn } from '#lib/utils.js';
 
 	import ActivityOutput from './activity-output.svelte';
 

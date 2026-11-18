@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Button } from '@arcane/ui/button';
+	import { Switch } from '@arcane/ui/switch';
 	import { toast } from 'svelte-sonner';
 
 	import { HardenedImageBadge } from '#lib/components/badges/index.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { PlayIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';

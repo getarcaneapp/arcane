@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import * as Popover from '@arcane/ui/popover';
+	import { Separator } from '@arcane/ui/separator';
+	import { cn } from '@arcane/ui/utils';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
-	import { Separator } from '#lib/components/ui/separator/index.js';
 	import { FilterIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	type FilterableColumn = {
 		getFilterValue: () => unknown;

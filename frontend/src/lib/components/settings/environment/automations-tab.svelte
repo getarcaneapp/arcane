@@ -1,16 +1,16 @@
 <script lang="ts">
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import * as ScrollArea from '@arcane/ui/scroll-area';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { Switch } from '@arcane/ui/switch';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import JobScheduleDialog from '#lib/components/job-card/job-schedule-dialog.svelte';
 	import MixedValuesPopover from '#lib/components/settings/mixed-values-popover.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { ClockIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';

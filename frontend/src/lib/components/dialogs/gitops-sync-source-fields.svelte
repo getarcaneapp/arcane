@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
+	import { Spinner } from '@arcane/ui/spinner';
 	import type { Snippet } from 'svelte';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { GitBranchInfo, GitRepository } from '#lib/types/gitops.js';
 

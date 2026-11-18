@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { setEditorStatusHost, type EditorStatusHost } from '#lib/components/code-editor/status-context.js';
 	import { CloseIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	interface EditorTab {
 		key: string;

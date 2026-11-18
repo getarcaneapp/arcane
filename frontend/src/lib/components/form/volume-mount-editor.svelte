@@ -12,12 +12,13 @@
 </script>
 
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { AddIcon, CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 

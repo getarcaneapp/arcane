@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

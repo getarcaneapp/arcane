@@ -1,6 +1,7 @@
 <script lang="ts">
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
+
 	import type { IconType } from '#lib/icons/index.js';
 
 	interface Props {

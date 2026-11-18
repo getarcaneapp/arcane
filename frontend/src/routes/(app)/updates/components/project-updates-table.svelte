@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -16,9 +19,6 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ProjectsIcon, ImagesIcon, UpdateIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

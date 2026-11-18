@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
 	import { mergeProps } from 'bits-ui';
 	import type { Component } from 'svelte';
 
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
 	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';

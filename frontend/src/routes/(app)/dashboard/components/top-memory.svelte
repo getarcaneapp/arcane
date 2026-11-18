@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Skeleton } from '@arcane/ui/skeleton';
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import ResourceName from '#lib/components/resource-name.svelte';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
 	import type { EnvironmentRow } from '#lib/utils/environments.js';

@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

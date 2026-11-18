@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { cn } from '@arcane/ui/utils';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 
@@ -9,7 +11,6 @@
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		PlayIcon,
 		StopIcon,
@@ -24,7 +25,6 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ImageUpdateResponse } from '#lib/types/imageupdate.js';
 	import type { ProjectRuntimeService } from '#lib/types/project.js';
-	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';

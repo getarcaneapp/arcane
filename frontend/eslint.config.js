@@ -33,7 +33,10 @@ export default defineConfig([
 	},
 	{
 		// Components own their styles.
-		files: ['src/lib/components/ui/**'],
+		files: [
+			'src/lib/components/{copy-button,image-cropper,input-group,responsive-dialog,snippet,sonner}/**',
+			'src/lib/components/sidebar/primitives/**'
+		],
 		rules: {
 			'shadcn/no-restyle': 'off',
 			'shadcn/no-arbitrary-values': 'off',

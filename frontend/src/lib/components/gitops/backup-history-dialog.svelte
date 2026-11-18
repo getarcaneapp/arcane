@@ -1,12 +1,12 @@
 <script lang="ts">
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import type { CodeBlockLineVariant } from '@arcane/ui/code-block';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { slide } from 'svelte/transition';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import type { CodeBlockLineVariant } from '#lib/components/ui/code-block/index.js';
-	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import ResponsiveDialog from '#lib/components/responsive-dialog/responsive-dialog.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';

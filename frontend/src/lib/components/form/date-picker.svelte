@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { Calendar } from '@arcane/ui/calendar';
+	import * as Popover from '@arcane/ui/popover';
+	import { cn } from '@arcane/ui/utils';
 	import { CalendarDate, type DateValue } from '@internationalized/date';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Calendar } from '#lib/components/ui/calendar/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { CalendarIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLocale } from '#lib/paraglide/runtime.js';
-	import { cn } from '#lib/utils.js';
 
 	type Props = {
 		value?: Temporal.PlainDate;

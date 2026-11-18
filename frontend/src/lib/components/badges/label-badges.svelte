@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Badge } from '@arcane/ui/badge';
 
 	let { labels, limit = 2 }: { labels: Record<string, string> | null | undefined; limit?: number } = $props();
 

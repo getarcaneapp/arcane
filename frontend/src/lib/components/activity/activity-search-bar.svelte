@@ -1,9 +1,10 @@
 <script lang="ts">
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { cn } from '@arcane/ui/utils';
+
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { RefreshIcon, SearchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import { cn } from '#lib/utils.js';
 
 	import ActivityFilterPopover from './activity-filter-popover.svelte';
 	import ActivityIconButton from './activity-icon-button.svelte';

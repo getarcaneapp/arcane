@@ -27,13 +27,14 @@
 </script>
 
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
 	import { validateWorkspaceFileName, workspaceFileBasename, workspaceFileLanguage } from '#lib/utils/workspace-files.js';
 

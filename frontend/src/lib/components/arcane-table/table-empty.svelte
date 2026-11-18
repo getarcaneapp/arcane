@@ -1,6 +1,7 @@
 <script lang="ts">
+	import * as Empty from '@arcane/ui/empty';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Empty from '#lib/components/ui/empty/index.js';
 	import { FolderXIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 

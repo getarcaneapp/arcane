@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Label } from '@arcane/ui/label';
+	import { Switch } from '@arcane/ui/switch';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import type { Snippet } from 'svelte';
@@ -18,10 +22,6 @@
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import {
 		AlertIcon,
 		ContainersIcon,

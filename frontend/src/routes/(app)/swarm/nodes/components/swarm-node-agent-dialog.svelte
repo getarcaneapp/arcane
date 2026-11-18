@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import { Spinner } from '@arcane/ui/spinner';
 
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import { AlertIcon, AgentConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';

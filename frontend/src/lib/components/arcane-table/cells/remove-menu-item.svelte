@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+
 	import { TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 

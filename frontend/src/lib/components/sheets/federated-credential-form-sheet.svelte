@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
+	import { Switch } from '@arcane/ui/switch';
 	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import RoleScopeSelects from '#lib/components/sheets/role-scope-selects.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { Environment } from '#lib/types/environment.js';

@@ -2,6 +2,8 @@
 	import { dev } from '$app/env';
 	import { afterNavigate, beforeNavigate, refreshAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
+	import { setUiLabels } from '@arcane/ui/labels';
+	import * as Tooltip from '@arcane/ui/tooltip';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
@@ -10,8 +12,7 @@
 	import ConfirmDialog from '#lib/components/confirm-dialog/confirm-dialog.svelte';
 	import Error from '#lib/components/error.svelte';
 	import LoadingIndicator from '#lib/components/loading-indicator.svelte';
-	import { Toaster } from '#lib/components/ui/sonner/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import { Toaster } from '#lib/components/sonner/index.js';
 	import { getNavigationTitleForPath } from '#lib/config/navigation-config.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
@@ -27,6 +28,17 @@
 	import './layout.css';
 
 	let { data, children }: LayoutProps = $props();
+
+	setUiLabels({
+		loading: () => m.common_loading(),
+		close: () => m.common_close(),
+		more: () => m.common_more(),
+		morePages: () => m.common_more_pages(),
+		fileDropZoneDragDrop: () => m.file_drop_zone_drag_drop(),
+		fileDropZoneMaxFiles: (maxFiles) => m.file_drop_zone_max_files({ maxFiles }),
+		fileDropZoneUpToEach: (maxSize) => m.file_drop_zone_up_to_each({ maxSize }),
+		fileDropZoneMaxSize: (maxSize) => m.file_drop_zone_max_size({ maxSize })
+	});
 
 	onMount(() => {
 		if (!dev && 'serviceWorker' in navigator) {

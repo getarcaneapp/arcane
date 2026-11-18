@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
 	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

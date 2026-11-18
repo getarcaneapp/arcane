@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { Select as SelectPrimitive } from 'bits-ui';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { AlertIcon, ArrowDownIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectDirectoriesQuery } from '#lib/query/projects.js';

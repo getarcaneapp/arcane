@@ -1,7 +1,7 @@
 <script lang="ts">
+	import * as Slider from '@arcane/ui/slider';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
-	import * as Slider from '#lib/components/ui/slider/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';

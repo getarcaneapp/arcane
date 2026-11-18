@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { ImagesIcon, type IconType } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		src,

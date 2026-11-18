@@ -1,9 +1,10 @@
 <script lang="ts" generics="T extends object">
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+	import { Textarea } from '@arcane/ui/textarea';
+
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import Textarea from '#lib/components/ui/textarea/textarea.svelte';
 
 	import type {
 		ProviderFieldKey,

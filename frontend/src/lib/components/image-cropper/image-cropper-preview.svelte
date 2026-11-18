@@ -1,0 +1,26 @@
+<script lang="ts">
+	import * as Avatar from '@arcane/ui/avatar';
+	import { cn } from '@arcane/ui/utils';
+
+	import { UploadIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+
+	import { useImageCropperPreview } from './image-cropper-state.svelte.js';
+	import type { ImageCropperPreviewProps } from './types';
+
+	let { child, class: className }: ImageCropperPreviewProps = $props();
+
+	const previewState = useImageCropperPreview();
+</script>
+
+{#if child}
+	{@render child({ src: previewState.rootState.src })}
+{:else}
+	<Avatar.Root class={cn('size-20 ring-2 ring-accent ring-offset-2 ring-offset-background', className)}>
+		<Avatar.Image src={previewState.rootState.src} />
+		<Avatar.Fallback>
+			<UploadIcon class="size-4" />
+			<span class="sr-only">{m.account_upload_photo()}</span>
+		</Avatar.Fallback>
+	</Avatar.Root>
+{/if}

@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

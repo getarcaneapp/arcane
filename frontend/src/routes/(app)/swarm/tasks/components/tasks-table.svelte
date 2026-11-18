@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmTaskSummary } from '#lib/types/swarm.js';

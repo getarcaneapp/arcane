@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import * as Breadcrumb from '@arcane/ui/breadcrumb';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Breadcrumb from '#lib/components/ui/breadcrumb/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistryRepositoryTagRow } from '#lib/types/ui/containerregistry.js';
-	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';

@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { LockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

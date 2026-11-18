@@ -53,10 +53,11 @@
 </script>
 
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as RadioGroup from '@arcane/ui/radio-group';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import type { DashboardWidgetConfig } from '#lib/types/user.js';
 	import {
 		createDashboardWidget,

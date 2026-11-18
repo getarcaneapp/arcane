@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import * as Dialog from '@arcane/ui/dialog';
+
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import JobRunHistory from '#lib/components/job-card/job-run-history.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Activity } from '#lib/types/activity.js';

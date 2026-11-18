@@ -1,8 +1,7 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
 	import type { HTMLInputAttributes } from 'svelte/elements';
-
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 
 	let {
 		id,

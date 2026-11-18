@@ -13,8 +13,8 @@ frontend:
 
 # Playwright test dependencies and browser
 tests:
-    vp -C tests install --silent
-    vp -C tests exec playwright install --with-deps chromium > /dev/null
+    vp -C packages/tests install --silent
+    vp -C packages/tests exec playwright install --with-deps chromium > /dev/null
 
 node: frontend tests
 

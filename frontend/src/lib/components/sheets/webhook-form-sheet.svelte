@@ -4,8 +4,8 @@
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';

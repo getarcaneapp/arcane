@@ -223,6 +223,13 @@ frontend/src/
     └── utils/           frontend utilities
 ```
 
+- **`packages/ui`:** the UI primitives as `@arcane/ui`.
+  - Import components as `@arcane/ui/<component>` and `cn` from `@arcane/ui/utils`.
+  - App-agnostic: no Paraglide, `$app/*`, stores, or services.
+  - Strings it renders come from `setUiLabels` in the root layout.
+  - App behavior goes in a wrapper under `frontend/src/lib/components`.
+- **`packages/tests`:** Playwright E2E tests.
+
 ### Components and state
 
 - **Runes:** use `$props`, `$state`, `$derived`, `$effect`.

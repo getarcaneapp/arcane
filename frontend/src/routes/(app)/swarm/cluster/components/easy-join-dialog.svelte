@@ -1,12 +1,12 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Input } from '@arcane/ui/input';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';

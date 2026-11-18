@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import * as Select from '@arcane/ui/select';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment } from '#lib/types/environment.js';

@@ -5,9 +5,9 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import { Snippet } from '#lib/components/snippet/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { apiKeyListQuery } from '#lib/query/api-keys.js';

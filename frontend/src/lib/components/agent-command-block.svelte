@@ -1,6 +1,7 @@
 <script lang="ts">
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import * as CodeBlock from '@arcane/ui/code-block';
+
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 
 	interface Props {

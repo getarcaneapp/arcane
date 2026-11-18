@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Button } from '@arcane/ui/button';
+	import { Label } from '@arcane/ui/label';
 	import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { ApiKeyIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { passkeyService } from '#lib/services/passkey-service.js';

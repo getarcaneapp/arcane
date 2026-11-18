@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { Badge } from '@arcane/ui/badge';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -9,13 +11,11 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import VulnerabilityScanPanel from '#lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {

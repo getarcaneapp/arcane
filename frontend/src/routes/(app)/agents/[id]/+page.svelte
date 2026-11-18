@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { Switch } from '@arcane/ui/switch';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -8,13 +10,11 @@
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import type { TabItem } from '#lib/components/tab-bar/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { featureDefinitions } from '#lib/config/features.js';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Skeleton } from '@arcane/ui/skeleton';
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { jobNameLabel } from '#lib/components/job-card/job-status.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 

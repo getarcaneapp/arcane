@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { BACKDROP_DEFAULT_DIM, resolveBackdropSource } from '#lib/config/backdrops.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { cn } from '#lib/utils.js';
 
 	const src = $derived(resolveBackdropSource(userStore.current));
 	const dim = $derived(userStore.current?.preferences?.backdropDim ?? BACKDROP_DEFAULT_DIM);

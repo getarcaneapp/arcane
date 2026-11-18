@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import * as Card from '@arcane/ui/card';
+	import { Label } from '@arcane/ui/label';
+	import { cn } from '@arcane/ui/utils';
 	import {
 		browserSupportsWebAuthn,
 		startAuthentication,
@@ -13,10 +17,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import AuthAmbient from '#lib/components/auth/auth-ambient.svelte';
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import { AlertIcon, ApiKeyIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -24,7 +25,6 @@
 	import { passkeyService } from '#lib/services/passkey-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
-	import { cn } from '#lib/utils.js';
 	import { normalizeAuthenticationError } from '#lib/utils/auth.js';
 	import { logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';

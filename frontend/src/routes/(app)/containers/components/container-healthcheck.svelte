@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
+	import * as CodeBlock from '@arcane/ui/code-block';
+
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

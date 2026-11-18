@@ -1,7 +1,6 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { SVGAttributes } from 'svelte/elements';
-
-	import { cn } from '#lib/utils.js';
 
 	let { class: className, ...restProps }: SVGAttributes<SVGSVGElement> = $props();
 </script>

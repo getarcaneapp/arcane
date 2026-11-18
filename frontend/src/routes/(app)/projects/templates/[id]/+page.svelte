@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { afterNavigate, goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -8,15 +13,10 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {

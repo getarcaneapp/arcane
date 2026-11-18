@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
+	import * as Tooltip from '@arcane/ui/tooltip';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -16,10 +20,6 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import VulnerabilityScanItem from '#lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import {
 		DownloadIcon,

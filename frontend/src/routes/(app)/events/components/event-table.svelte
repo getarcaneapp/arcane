@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -20,8 +22,6 @@
 	} from '#lib/components/events/events-labels.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EventsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

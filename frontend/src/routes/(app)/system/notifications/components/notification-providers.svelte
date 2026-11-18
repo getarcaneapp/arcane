@@ -1,12 +1,12 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { NotificationsIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { notificationService } from '#lib/services/notification-service.js';

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import AddTemplateRegistrySheet from '#lib/components/sheets/add-template-registry-sheet.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';

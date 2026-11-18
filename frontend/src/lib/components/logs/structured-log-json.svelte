@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
+	import * as CodeBlock from '@arcane/ui/code-block';
+
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 
 	interface Props {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/env';
+	import * as Command from '@arcane/ui/command';
+	import * as ContextMenu from '@arcane/ui/context-menu';
 	import { autocompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
 	import { javascript } from '@codemirror/lang-javascript';
 	import { json } from '@codemirror/lang-json';
@@ -26,8 +28,6 @@
 	import CodeMirror from 'svelte-codemirror-editor';
 	import { toast } from 'svelte-sonner';
 
-	import * as Command from '#lib/components/ui/command/index.js';
-	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 

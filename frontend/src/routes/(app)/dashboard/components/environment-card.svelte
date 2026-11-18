@@ -1,15 +1,16 @@
 <script lang="ts">
+	import { Badge, badgeVariants } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
+	import { Skeleton } from '@arcane/ui/skeleton';
+	import { cn } from '@arcane/ui/utils';
+
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { Badge, badgeVariants } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { CpuIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SystemStats } from '#lib/types/system.js';
 	import type { DashboardEnvironmentOverview, DashboardLiveStatsStatus } from '#lib/types/ui/dashboard.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 	import {

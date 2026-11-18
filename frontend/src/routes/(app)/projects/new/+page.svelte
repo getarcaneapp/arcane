@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Switch } from '@arcane/ui/switch';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -17,8 +19,6 @@
 	import ProjectDirectorySelect from '#lib/components/form/project-directory-select.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';

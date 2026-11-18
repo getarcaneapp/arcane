@@ -1,10 +1,10 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import NetworkDiagram from '#lib/components/network-diagram/network-diagram.svelte';
 	import { fetchEnvironmentTopology } from '#lib/components/network-diagram/topology.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

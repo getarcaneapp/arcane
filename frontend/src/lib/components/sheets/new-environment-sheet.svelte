@@ -1,15 +1,15 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import { AgentConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

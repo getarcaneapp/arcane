@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
 	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import RoleAssignmentsEditor from '#lib/components/forms/role-assignments-editor.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';

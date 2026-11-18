@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Badge } from '@arcane/ui/badge';
+
 	import * as m from '#lib/paraglide/messages.js';
 	import type { BackupRun } from '#lib/types/ui/backup.js';
 	import { backupDestinationLabel, backupDestinationName } from '#lib/utils/backups.js';

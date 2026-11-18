@@ -5,7 +5,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import type { UpdateBackupPolicy, S3Destination } from '#lib/types/backup.js';

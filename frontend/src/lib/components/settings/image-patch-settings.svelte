@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { SettingKey } from '#lib/types/settings.js';

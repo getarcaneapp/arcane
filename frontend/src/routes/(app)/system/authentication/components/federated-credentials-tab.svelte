@@ -5,9 +5,9 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import FederatedCredentialFormSheet from '#lib/components/sheets/federated-credential-form-sheet.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import { Snippet } from '#lib/components/snippet/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

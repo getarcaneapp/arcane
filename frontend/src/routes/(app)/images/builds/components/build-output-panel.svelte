@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Progress } from '@arcane/ui/progress';
+	import { Switch } from '@arcane/ui/switch';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { CloseIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { ansiToHtml, sanitizeLogText } from '#lib/utils/formatting.js';

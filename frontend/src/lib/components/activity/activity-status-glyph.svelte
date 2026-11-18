@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import type { ActivityStatus } from '#lib/types/activity.js';
-	import { cn } from '#lib/utils.js';
 
 	import { activityStatusLabel } from './activity-labels';
 

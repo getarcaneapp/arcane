@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import * as RadioGroup from '@arcane/ui/radio-group';
 	import { mode } from 'mode-watcher';
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { CheckIcon, AddIcon } from '#lib/icons/index.js';
 	import { resolveThemePrimary } from '#lib/utils/theme.svelte.js';
 

@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, CheckIcon, CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

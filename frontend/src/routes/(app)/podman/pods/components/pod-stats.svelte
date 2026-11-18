@@ -1,9 +1,9 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+	import * as Table from '@arcane/ui/table';
 	import { onDestroy } from 'svelte';
 
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { StatsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

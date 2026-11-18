@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { onMount } from 'svelte';
@@ -15,8 +17,6 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ResourceName from '#lib/components/resource-name.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

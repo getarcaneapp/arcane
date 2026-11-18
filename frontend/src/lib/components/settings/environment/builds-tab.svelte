@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	import type { BuildsTabProps } from './tab-props';

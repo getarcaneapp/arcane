@@ -1,7 +1,8 @@
 <script lang="ts">
+	import * as Tooltip from '@arcane/ui/tooltip';
+
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
-	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import { useSidebar } from '#lib/components/sidebar/primitives/index.js';
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import { CircleArrowUpIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

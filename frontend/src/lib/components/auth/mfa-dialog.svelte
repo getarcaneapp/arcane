@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '@arcane/ui/button';
+	import * as Dialog from '@arcane/ui/dialog';
+
 	import { ShieldCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 

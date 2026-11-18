@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
+
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 
 	interface Props {
 		id: string;

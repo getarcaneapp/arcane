@@ -1,8 +1,8 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createSubscriber } from 'svelte/reactivity';
 
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { HealthIcon, TagIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';

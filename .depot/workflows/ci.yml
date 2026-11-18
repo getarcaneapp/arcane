@@ -200,7 +200,7 @@ jobs:
           configure-docker: true
 
       - name: Install E2E test dependencies
-        run: vp -C tests install
+        run: vp -C packages/tests install
 
       - name: Ensure test images are available
         retry: 2
@@ -209,7 +209,7 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$DEPOT_TOKEN" | docker login g7r5wqb57k.registry.depot.dev --username x-token --password-stdin
-          version="$(vp -C tests exec node -p 'require("@playwright/test/package.json").version')"
+          version="$(vp -C packages/tests exec node -p 'require("@playwright/test/package.json").version')"
           for image in public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 "$PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY:v$version-noble"; do
             if ! docker image inspect "$image" > /dev/null 2>&1; then
               docker pull "$image"
@@ -217,7 +217,7 @@ jobs:
           done
 
       - name: Run Playwright E2E tests
-        run: mkdir -p tests/.report && vp -C tests exec playwright test --project=chromium
+        run: mkdir -p packages/tests/.report && vp -C packages/tests exec playwright test --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}
@@ -229,10 +229,10 @@ jobs:
         with:
           name: playwright-report-${{ matrix.database.name }}
           path: |
-            tests/.report
-            !tests/.report/auth/**
-            !tests/.report/bin/**
-            !tests/.report/cli/**
+            packages/tests/.report
+            !packages/tests/.report/auth/**
+            !packages/tests/.report/bin/**
+            !packages/tests/.report/cli/**
           include-hidden-files: true
           retention-days: 15
 
@@ -240,7 +240,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: depot/test-report-action@2ad5779840a9c63e884fa26f11d019768a27a941 # v1.0.1
         with:
-          path: tests/.report/*.xml
+          path: packages/tests/.report/*.xml
 
   cli-e2e-tests:
     name: CLI E2E Tests
@@ -288,10 +288,10 @@ jobs:
           configure-docker: true
 
       - name: Install Playwright test dependencies
-        run: vp -C tests install
+        run: vp -C packages/tests install
 
       - name: Run CLI E2E tests
-        run: mkdir -p tests/.report && vp -C tests exec playwright test --project=cli
+        run: mkdir -p packages/tests/.report && vp -C packages/tests exec playwright test --project=cli
         env:
           COMPOSE_FILE: setup/compose.yaml
           BASE_URL: http://localhost:3000
@@ -304,10 +304,10 @@ jobs:
         with:
           name: playwright-report-cli
           path: |
-            tests/.report
-            !tests/.report/auth/**
-            !tests/.report/bin/**
-            !tests/.report/cli/**
+            packages/tests/.report
+            !packages/tests/.report/auth/**
+            !packages/tests/.report/bin/**
+            !packages/tests/.report/cli/**
           include-hidden-files: true
           retention-days: 15
 
@@ -315,4 +315,4 @@ jobs:
         if: ${{ !cancelled() }}
         uses: depot/test-report-action@2ad5779840a9c63e884fa26f11d019768a27a941 # v1.0.1
         with:
-          path: tests/.report/*.xml
+          path: packages/tests/.report/*.xml

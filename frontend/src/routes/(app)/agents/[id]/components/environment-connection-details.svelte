@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Collapsible from '@arcane/ui/collapsible';
+	import { cn } from '@arcane/ui/utils';
 	import { createSubscriber } from 'svelte/reactivity';
 
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon, EnvironmentsIcon, type IconType, LockIcon, AgentIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
-	import { cn } from '#lib/utils.js';
 	import {
 		bytes,
 		formatDateTimeShort,

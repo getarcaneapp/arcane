@@ -1,12 +1,13 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Checkbox from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+	import { ScrollArea } from '@arcane/ui/scroll-area';
+	import { Switch } from '@arcane/ui/switch';
+
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { SystemVolumeBackupOption, SystemVolumeSelectionMode } from '#lib/types/backup.js';

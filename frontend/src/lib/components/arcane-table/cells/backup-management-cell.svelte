@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Badge } from '@arcane/ui/badge';
+
 	import type { BackupManagementType } from '#lib/types/backup.js';
 	import { backupManagementLabel } from '#lib/utils/backups.js';
 

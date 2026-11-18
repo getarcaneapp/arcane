@@ -16,11 +16,11 @@
 </script>
 
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import StatCard from '#lib/components/stat-card.svelte';
-	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		title: string;

@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Card } from '@arcane/ui/card';
+	import { Spinner } from '@arcane/ui/spinner';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Card } from '#lib/components/ui/card/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { SearchIcon, ArrowRightIcon, CloseIcon } from '#lib/icons/index.js';
 
 	import type { CategoryGroup, NormalizedCategory } from './category-index-page.types';

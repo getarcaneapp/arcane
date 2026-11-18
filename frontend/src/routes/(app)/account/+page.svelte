@@ -1,13 +1,13 @@
 <script lang="ts">
+	import * as Avatar from '@arcane/ui/avatar';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import * as ImageCropper from '#lib/components/image-cropper/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Avatar from '#lib/components/ui/avatar/index.js';
-	import * as ImageCropper from '#lib/components/ui/image-cropper/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { UserIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

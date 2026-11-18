@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as ButtonGroup from '@arcane/ui/button-group';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Label } from '@arcane/ui/label';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -9,13 +14,8 @@
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArrowDownIcon, ArrowLeftIcon, CloseIcon, LayersIcon, TerminalIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

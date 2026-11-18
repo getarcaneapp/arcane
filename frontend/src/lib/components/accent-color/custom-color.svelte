@@ -1,8 +1,9 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 

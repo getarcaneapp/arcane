@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import * as Card from '@arcane/ui/card';
+	import { Input } from '@arcane/ui/input';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -8,8 +10,6 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { NetworksIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

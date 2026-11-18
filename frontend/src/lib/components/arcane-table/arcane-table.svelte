@@ -1,4 +1,6 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import * as Alert from '@arcane/ui/alert';
+	import { cn } from '@arcane/ui/utils';
 	import { createTable, createTableState, renderComponent, renderSnippet } from '@tanstack/svelte-table';
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { PersistedState } from 'runed';
@@ -8,7 +10,6 @@
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AlertIcon } from '#lib/icons/index.js';
@@ -17,7 +18,6 @@
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { trackOverflow, type ScrollOverflow } from '#lib/utils/overflow.js';

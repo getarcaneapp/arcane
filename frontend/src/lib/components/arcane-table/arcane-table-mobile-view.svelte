@@ -1,15 +1,15 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import * as Card from '@arcane/ui/card';
+	import { Skeleton } from '@arcane/ui/skeleton';
+	import { cn } from '@arcane/ui/utils';
 	import { PersistedState } from 'runed';
 	import { untrack, type Snippet, type Component } from 'svelte';
 
-	import * as Card from '#lib/components/ui/card/index.js';
-	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
+	import { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
-	import { cn } from '#lib/utils.js';
 
 	import { setMobileRowSelection, type GroupedData, type SelectionModifiers } from './arcane-table.types.svelte';
 	import { getTableDisplayEntries } from './arcane-table.utils';

@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import { Switch } from '@arcane/ui/switch';
+	import * as Tabs from '@arcane/ui/tabs';
+	import { cn } from '@arcane/ui/utils';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState, watch } from 'runed';
@@ -25,10 +30,6 @@
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
@@ -65,7 +66,6 @@
 	import type { ProjectUpdate, ProjectWritable } from '#lib/types/ui/project.js';
 	import type { ProjectEditorLayout } from '#lib/types/user.js';
 	import type { WorkspaceFileChange, WorkspaceFileContent } from '#lib/types/workspace.js';
-	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';

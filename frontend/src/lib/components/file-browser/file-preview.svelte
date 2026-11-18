@@ -1,8 +1,8 @@
 <script lang="ts">
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import * as Sheet from '@arcane/ui/sheet';
 	import { onMount } from 'svelte';
 
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';

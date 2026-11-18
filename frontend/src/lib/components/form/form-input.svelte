@@ -1,13 +1,13 @@
 <!-- Originally From  https://github.com/pocket-id/pocket-id/blob/main/frontend/src/lib/components/form/form-input.svelte -->
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Switch } from '@arcane/ui/switch';
+	import { Textarea } from '@arcane/ui/textarea';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	import DatePicker from '#lib/components/form/date-picker.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import type { FormInput } from '#lib/types/ui/form.js';
 
 	let {

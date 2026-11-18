@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as Accordion from '@arcane/ui/accordion';
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Textarea } from '@arcane/ui/textarea';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as Accordion from '#lib/components/ui/accordion/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { NetworkIPAMConfig, NetworkCreateOptions } from '#lib/types/network.js';

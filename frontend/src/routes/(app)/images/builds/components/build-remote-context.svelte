@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	let { value = $bindable('') }: { value?: string } = $props();

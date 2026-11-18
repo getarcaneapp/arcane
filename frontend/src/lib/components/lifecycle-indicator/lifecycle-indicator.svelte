@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		scriptPath,

@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import type { ActivityGroup } from '#lib/types/ui/activity.js';
-	import { cn } from '#lib/utils.js';
 	import { formatRelativeTime, formatTime } from '#lib/utils/formatting.js';
 
 	import ActivityElapsed from './activity-elapsed.svelte';

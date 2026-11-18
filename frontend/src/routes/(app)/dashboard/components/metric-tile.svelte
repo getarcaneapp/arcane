@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { ClassValue } from 'svelte/elements';
 
 	import { metricColorClass, type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import type { IconType } from '#lib/icons/index.js';
-	import { cn } from '#lib/utils.js';
 
 	import { getUsageTone } from '../../containers/container-table.helpers';
 

@@ -1,8 +1,8 @@
 <script lang="ts" generics="TRow">
+	import { cn } from '@arcane/ui/utils';
 	import type { Snippet } from 'svelte';
 
-	import type { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
-	import { cn } from '#lib/utils.js';
+	import type { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 
 	let {
 		virtualizer,

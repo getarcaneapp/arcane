@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as Collapsible from '@arcane/ui/collapsible';
+
 	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { formatTime } from '#lib/utils/formatting.js';

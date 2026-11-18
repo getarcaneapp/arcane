@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import * as Card from '@arcane/ui/card';
 	import { PersistedState } from 'runed';
 
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
 	import Terminal from '#lib/components/terminal/terminal.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

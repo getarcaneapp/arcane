@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { cn } from '@arcane/ui/utils';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -14,8 +17,6 @@
 	import BackupStateBadge from '#lib/components/gitops/backup-state-badge.svelte';
 	import { LifecycleIndicator } from '#lib/components/lifecycle-indicator/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		EditIcon as PencilIcon,
 		PlayIcon,
@@ -37,7 +38,6 @@
 	import type { PaginatedWithCounts } from '#lib/types/base.js';
 	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/gitops.js';
 	import type { FilterMap, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';

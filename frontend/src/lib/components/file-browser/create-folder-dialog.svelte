@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import * as Dialog from '@arcane/ui/dialog';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
 	import { toast } from 'svelte-sonner';
 
-	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

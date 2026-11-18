@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Spinner } from '@arcane/ui/spinner';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { CloseIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ImageBuildRecord } from '#lib/types/image.js';

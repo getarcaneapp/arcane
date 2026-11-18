@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Switch } from '@arcane/ui/switch';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
@@ -6,9 +9,6 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';

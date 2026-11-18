@@ -1,5 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import { Card } from '@arcane/ui/card';
+	import * as Collapsible from '@arcane/ui/collapsible';
+	import { Label } from '@arcane/ui/label';
+	import { ScrollArea } from '@arcane/ui/scroll-area';
+	import * as Select from '@arcane/ui/select';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -8,14 +14,8 @@
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import SearchInput from '#lib/components/form/search-input.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Card } from '#lib/components/ui/card/index.js';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,

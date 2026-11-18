@@ -1,9 +1,8 @@
 <script lang="ts">
+	import * as Popover from '@arcane/ui/popover';
+	import * as Tooltip from '@arcane/ui/tooltip';
+	import { cn } from '@arcane/ui/utils';
 	import { Tooltip as TooltipPrimitive } from 'bits-ui';
-
-	import * as Popover from '#lib/components/ui/popover/index.js';
-	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
-	import { cn } from '#lib/utils.js';
 
 	import { getArcaneTooltipContext } from './context.svelte.js';
 

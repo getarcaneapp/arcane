@@ -1,0 +1,45 @@
+{
+	"name": "@arcane/ui",
+	"private": true,
+	"type": "module",
+	"imports": {
+		"#lib/*": "./src/lib/*"
+	},
+	"exports": {
+		"./styles.css": "./src/lib/styles.css",
+		"./labels": {
+			"types": "./src/lib/labels.ts",
+			"default": "./src/lib/labels.ts"
+		},
+		"./utils": {
+			"types": "./src/lib/utils.ts",
+			"default": "./src/lib/utils.ts"
+		},
+		"./*": {
+			"types": "./src/lib/components/*/index.ts",
+			"svelte": "./src/lib/components/*/index.ts"
+		}
+	},
+	"scripts": {
+		"check": "svelte-check --tsconfig ./tsconfig.json"
+	},
+	"dependencies": {
+		"@internationalized/date": "^3.12.4",
+		"clsx": "^2.1.1",
+		"tailwind-merge": "^3.7.0",
+		"tailwind-variants": "^4.0.2",
+		"vaul-svelte": "1.0.0-next.7"
+	},
+	"devDependencies": {
+		"bits-ui": "^2.21.0",
+		"svelte": "^5.57.3",
+		"svelte-check": "^4.7.8",
+		"typescript": "npm:@typescript/typescript6@^6.0.2",
+		"unplugin-icons": "^24.0.0"
+	},
+	"peerDependencies": {
+		"bits-ui": "^2.21.0",
+		"svelte": "^5.57.3",
+		"unplugin-icons": "^24.0.0"
+	}
+}

@@ -16,11 +16,12 @@ export default defineConfig({
 			'frontend/build/**',
 			'frontend/messages/**',
 			'frontend/src/lib/paraglide/**',
-			'tests/.report/**'
+			'packages/tests/.report/**',
+			'packages/ui/dist/**'
 		],
 		overrides: [
 			{
-				files: ['frontend/**'],
+				files: ['frontend/**', 'packages/ui/**'],
 				options: {
 					printWidth: 130,
 					sortImports: true,
@@ -38,11 +39,12 @@ export default defineConfig({
 	},
 	staged: {
 		'frontend/**/*': "sh -c 'just format frontend --check'",
-		'tests/**/*.{ts,tsx,js,jsx,mts,cts}': "sh -c 'just format tests --check'",
+		'packages/tests/**/*.{ts,tsx,js,jsx,mts,cts}': "sh -c 'just format tests --check'",
+		'packages/ui/**/*': "sh -c 'just format ui --check'",
 		'{backend,cli,types}/**/*': "sh -c 'just format go --check'"
 	},
 	test: {
-		exclude: ['**/node_modules/**', 'tests/**'],
+		exclude: ['**/node_modules/**', 'packages/tests/**'],
 		passWithNoTests: true
 	},
 	lint: {

@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Dialog from '@arcane/ui/dialog';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import {

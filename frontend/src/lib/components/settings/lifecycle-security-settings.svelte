@@ -1,9 +1,10 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SettingKey } from '#lib/types/settings.js';

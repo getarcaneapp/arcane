@@ -2,6 +2,10 @@
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { cn } from '@arcane/ui/utils';
 	import {
 		Background,
 		BackgroundVariant,
@@ -18,13 +22,9 @@
 	import { onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { AlertIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { NetworkTopologyEdge } from '#lib/types/network.js';
-	import { cn } from '#lib/utils.js';
 
 	import type { EnvironmentTopology } from './topology.js';
 

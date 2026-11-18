@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 
 	interface Props {

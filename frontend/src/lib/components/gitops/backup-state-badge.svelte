@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { BadgeVariant } from '#lib/components/ui/badge/badge.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import type { BadgeVariant } from '@arcane/ui/badge';
+	import { Badge } from '@arcane/ui/badge';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import type { GitOpsBackupState, GitOpsSync } from '#lib/types/gitops.js';
 

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import * as Alert from '@arcane/ui/alert';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';

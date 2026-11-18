@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as Popover from '@arcane/ui/popover';
 	import { toast } from 'svelte-sonner';
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
@@ -7,7 +8,6 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { cn } from '@arcane/ui/utils';
 	import { onDestroy } from 'svelte';
 
 	import {
@@ -12,7 +13,6 @@
 	import type { PermissionsManifest } from '#lib/types/role.js';
 	import type { User } from '#lib/types/user.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 
 	import { MobileNavGestures } from './gestures.svelte';

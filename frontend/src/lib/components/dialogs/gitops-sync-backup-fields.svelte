@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { Switch } from '@arcane/ui/switch';
 	import type { Snippet } from 'svelte';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';

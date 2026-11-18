@@ -105,7 +105,7 @@ export default defineConfig(() => ({
 	server: {
 		allowedHosts: ['arcane-frontend-dev'],
 		fs: {
-			allow: [searchForWorkspaceRoot(process.cwd())]
+			allow: [searchForWorkspaceRoot(process.cwd()), '../packages/ui']
 		},
 		host: process.env['HOST'],
 		proxy: {

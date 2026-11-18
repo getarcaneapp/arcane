@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn-svelte/tailwind.css';
+@import '@arcane/ui/styles.css';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant desktop-layout (&:where([data-layout='desktop'], [data-layout='desktop'] *));

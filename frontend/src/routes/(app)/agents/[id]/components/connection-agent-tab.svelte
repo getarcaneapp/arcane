@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DownloadIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';

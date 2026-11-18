@@ -1,7 +1,7 @@
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import { createQuery } from '@tanstack/svelte-query';
 
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { UpdateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

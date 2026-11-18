@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	// fallow-ignore-file code-duplication -- useUrlTab initialization is the hook's intended per-page integration surface
+	import * as Card from '@arcane/ui/card';
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
@@ -17,14 +24,7 @@
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	// fallow-ignore-file code-duplication -- useUrlTab initialization is the hook's intended per-page integration surface
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';

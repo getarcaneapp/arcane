@@ -19,8 +19,9 @@
 </script>
 
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ArrowDownIcon, SendEmailIcon } from '#lib/icons/index.js';
 
 	interface Props {

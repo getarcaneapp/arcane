@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Card from '@arcane/ui/card';
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -9,9 +12,6 @@
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';

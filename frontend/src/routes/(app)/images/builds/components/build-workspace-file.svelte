@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
+
 	import CodePanel from '#lib/components/code-panel.svelte';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { bytes } from '#lib/utils/formatting.js';

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
+	import * as Collapsible from '@arcane/ui/collapsible';
 	import type { Snippet } from 'svelte';
 
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { useSidebar } from '#lib/components/ui/sidebar/context.svelte.js';
-	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import { useSidebar } from '#lib/components/sidebar/primitives/context.svelte.js';
+	import * as Sidebar from '#lib/components/sidebar/primitives/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';

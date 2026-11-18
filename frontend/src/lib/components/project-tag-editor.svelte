@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as Command from '@arcane/ui/command';
+	import * as Popover from '@arcane/ui/popover';
+	import * as Select from '@arcane/ui/select';
 	import { mergeProps } from 'bits-ui';
 	import { toast } from 'svelte-sonner';
 
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Command from '#lib/components/ui/command/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { AddIcon, CheckIcon, LockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ProjectTag, ProjectTagColor, ProjectTagOption } from '#lib/types/project.js';

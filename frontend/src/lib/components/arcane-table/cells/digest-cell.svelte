@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { cn } from '#lib/utils.js';
+	import { cn } from '@arcane/ui/utils';
+
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 
 	let { value, wrap = false }: { value: unknown; wrap?: boolean } = $props();
 	const text = $derived(typeof value === 'string' ? value : '');

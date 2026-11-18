@@ -1,10 +1,10 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

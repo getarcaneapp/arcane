@@ -1,8 +1,9 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+
 	import { HardenedImageBadge } from '#lib/components/badges/index.js';
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ExternalLinkIcon, ShieldAlertIcon, ShieldXIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { HardenedImageInfo } from '#lib/types/image.js';

@@ -1,11 +1,11 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+	import { Spinner } from '@arcane/ui/spinner';
+	import * as Table from '@arcane/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { LayoutListIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

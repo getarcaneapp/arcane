@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import * as Empty from '@arcane/ui/empty';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -8,9 +12,6 @@
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import MetricRing from '#lib/components/metric-ring.svelte';
 	import StatCard from '#lib/components/stat-card.svelte';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as Empty from '#lib/components/ui/empty/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		ClockIcon,
 		FileTextIcon,
@@ -29,7 +30,6 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import type { GitOpsBackupHistoryEntry, GitOpsBackupState } from '#lib/types/gitops.js';
-	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';

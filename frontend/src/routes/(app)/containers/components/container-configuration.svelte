@@ -1,7 +1,8 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+
 	import EnvVarsList from '#lib/components/env-vars-list.svelte';
 	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { SettingsIcon, TagIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerDetails } from '#lib/types/container.js';

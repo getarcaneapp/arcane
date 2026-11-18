@@ -1,10 +1,11 @@
 <script lang="ts">
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
+	import { Spinner } from '@arcane/ui/spinner';
+	import { cn } from '@arcane/ui/utils';
+
 	import { SuccessIcon, ClockIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJobResult } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 
 	let { result, selected, onselect }: { result: UpgradeJobResult; selected: boolean; onselect: () => void } = $props();
 </script>

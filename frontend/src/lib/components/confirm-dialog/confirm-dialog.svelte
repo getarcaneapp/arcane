@@ -1,17 +1,17 @@
 <script lang="ts">
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Dialog from '@arcane/ui/dialog';
+
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { confirmDialogState } from './store.svelte.js';
 	const dialog = $derived(confirmDialogState.current);
+	import { Checkbox } from '@arcane/ui/checkbox';
+	import { Label } from '@arcane/ui/label';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-
-	import Checkbox from '../ui/checkbox/checkbox.svelte';
 
 	async function handleConfirm() {
 		if (!dialog) return;

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { deployOptionsStore, type DeployPullPolicy } from '#lib/stores/deploy-options.store.svelte.js';
 

@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import { mode } from 'mode-watcher';
 
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { cn } from '#lib/utils.js';
 	import { logoBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';

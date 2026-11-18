@@ -2,17 +2,17 @@
 	// Dozzle reference: the grouped row shell and left-side timestamp treatment here were
 	// informed by amir20/dozzle's LogItem.vue and GroupedLogItem.vue.
 	import { dev } from '$app/env';
+	import * as Alert from '@arcane/ui/alert';
+	import { cn } from '@arcane/ui/utils';
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 	import { ansiToHtml, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { ReconnectingWebSocket } from '#lib/utils/ws.js';

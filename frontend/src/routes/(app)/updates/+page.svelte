@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
+	import * as Tabs from '@arcane/ui/tabs';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';

@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
+	import { Textarea } from '@arcane/ui/textarea';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import KeyValueEditor from '#lib/components/form/key-value-editor.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';

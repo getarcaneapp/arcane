@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Badge } from '@arcane/ui/badge';
+	import * as Card from '@arcane/ui/card';
+	import * as Table from '@arcane/ui/table';
 
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { ContainersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodInspect } from '#lib/types/podman.js';

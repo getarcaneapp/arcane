@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Progress } from '@arcane/ui/progress';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
@@ -21,11 +26,6 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import ResourceName from '#lib/components/resource-name.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Progress } from '#lib/components/ui/progress/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		PlayIcon,
 		StopIcon,

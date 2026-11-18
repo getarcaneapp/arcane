@@ -3,9 +3,9 @@
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import PermissionPicker from '#lib/components/role-editor/permission-picker.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { ApiKey } from '#lib/types/apikey.js';
 	import type { ApiKeyPermissionGrant } from '#lib/types/apikey.js';

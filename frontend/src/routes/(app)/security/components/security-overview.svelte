@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Badge } from '@arcane/ui/badge';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
@@ -7,8 +9,6 @@
 	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import RiskGauge from '#lib/components/vulnerability/risk-gauge.svelte';
 	import RiskTrendChart from '#lib/components/vulnerability/risk-trend-chart.svelte';
 	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';

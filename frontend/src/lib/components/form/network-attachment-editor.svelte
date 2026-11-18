@@ -7,8 +7,9 @@
 </script>
 
 <script lang="ts">
+	import { Input } from '@arcane/ui/input';
+
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	import RowListEditor from './row-list-editor.svelte';

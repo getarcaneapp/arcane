@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import type { SvelteHTMLElements } from 'svelte/elements';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	import type { ColumnAlign } from './arcane-table.types.svelte';
 

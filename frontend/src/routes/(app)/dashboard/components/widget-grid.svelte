@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
 	import { tick, type Snippet } from 'svelte';
 
 	import { EyeOffIcon, SettingsIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { DashboardWidgetType } from '#lib/types/ui/user.js';
-	import { cn } from '#lib/utils.js';
 	import { DASHBOARD_WIDGET_TYPES, type DashboardWidget, GRID_COLUMNS, moveWidget } from '#lib/utils/dashboard-layout.js';
 
 	const ROW_PITCH_REM = 4;

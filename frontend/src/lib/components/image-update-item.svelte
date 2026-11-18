@@ -1,12 +1,12 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { mergeProps } from 'bits-ui';
 	import type { Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
 	import UpdateStatusBanner from '#lib/components/update-status-banner.svelte';
 	import UpdateStatusPopover from '#lib/components/update-status-popover.svelte';

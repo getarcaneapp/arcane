@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { Spinner } from '@arcane/ui/spinner';
 	import type { Snippet } from 'svelte';
 
 	import EnvironmentSettingsScopeBar from '#lib/components/settings/environment-settings-scope-bar.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { useEnvironmentSettingsScope } from '#lib/hooks/use-environment-settings-scope.svelte.js';
 	import { ConnectionIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';

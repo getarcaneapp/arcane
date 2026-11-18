@@ -1,14 +1,15 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon, ContainersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated } from '#lib/types/base.js';

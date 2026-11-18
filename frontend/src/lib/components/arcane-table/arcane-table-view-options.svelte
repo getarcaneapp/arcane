@@ -1,8 +1,8 @@
 <script lang="ts" generics="TData extends Record<string, any>">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination.js';
 	import { EyeOnIcon, ArrowUpIcon, ArrowDownIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

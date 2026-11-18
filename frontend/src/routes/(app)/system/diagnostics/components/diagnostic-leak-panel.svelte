@@ -1,11 +1,12 @@
 <script lang="ts">
+	import * as CodeBlock from '@arcane/ui/code-block';
+	import { cn } from '@arcane/ui/utils';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { GoroutineLeakReport } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

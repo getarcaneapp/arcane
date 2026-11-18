@@ -1,15 +1,15 @@
 <script lang="ts">
+	import * as Card from '@arcane/ui/card';
+	import { Input } from '@arcane/ui/input';
+	import { Switch } from '@arcane/ui/switch';
+	import { Textarea } from '@arcane/ui/textarea';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { EyeOffIcon, EyeOnIcon, SettingsIcon, UsersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

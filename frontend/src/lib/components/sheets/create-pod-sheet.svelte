@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Accordion from '@arcane/ui/accordion';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
 	import { z } from 'zod/v4';
 
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
@@ -7,11 +10,8 @@
 	import PortMappingEditor, { type PortMappingRow } from '#lib/components/form/port-mapping-editor.svelte';
 	import RowListEditor from '#lib/components/form/row-list-editor.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as Accordion from '#lib/components/ui/accordion/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodCreateRequest, PodDeviceLimit, PodmanPodExitPolicy, PodmanPodRestartPolicy } from '#lib/types/podman.js';

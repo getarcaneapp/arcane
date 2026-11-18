@@ -1,9 +1,9 @@
 <script lang="ts">
+	import * as Dialog from '@arcane/ui/dialog';
+	import * as Drawer from '@arcane/ui/drawer';
+	import * as Popover from '@arcane/ui/popover';
 	import { onMount } from 'svelte';
 
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Drawer from '#lib/components/ui/drawer/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 

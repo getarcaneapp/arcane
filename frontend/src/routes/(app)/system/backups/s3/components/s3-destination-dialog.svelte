@@ -5,8 +5,8 @@
 
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import type { S3Destination } from '#lib/types/backup.js';

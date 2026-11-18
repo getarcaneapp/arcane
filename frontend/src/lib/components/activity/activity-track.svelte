@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Progress } from '@arcane/ui/progress';
+
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';

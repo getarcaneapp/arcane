@@ -1,18 +1,18 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import * as Table from '@arcane/ui/table';
+	import { cn } from '@arcane/ui/utils';
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { slide } from 'svelte/transition';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SearchInput from '#lib/components/form/search-input.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { GoroutineGroup, GoroutineProfile } from '#lib/types/system.js';
-	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

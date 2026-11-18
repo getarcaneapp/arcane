@@ -12,8 +12,8 @@
 
 	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
 	import VersionInfoDialog from '#lib/components/dialogs/version-info-dialog.svelte';
-	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
-	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
+	import * as Sidebar from '#lib/components/sidebar/primitives/index.js';
+	import { useSidebar } from '#lib/components/sidebar/primitives/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';

@@ -9,7 +9,7 @@ on:
       - '.depot/workflows/**'
       - '.depot/actions/publish-images/action.yml'
       - 'pnpm-lock.yaml'
-      - 'tests/package.json'
+      - 'packages/tests/package.json'
   schedule:
     - cron: '17 4 * * 1'
 
@@ -47,7 +47,7 @@ jobs:
           run-install: false
 
       - name: Install E2E test dependencies
-        run: vp -C tests install
+        run: vp -C packages/tests install
 
       - name: Install GCC and envsubst
         run: |
@@ -79,7 +79,7 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$DEPOT_TOKEN" | docker login g7r5wqb57k.registry.depot.dev --username x-token --password-stdin
-          version="$(vp -C tests exec node -p 'require("@playwright/test/package.json").version')"
+          version="$(vp -C packages/tests exec node -p 'require("@playwright/test/package.json").version')"
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull public.ecr.aws/docker/library/busybox:1.37
           docker pull "g7r5wqb57k.registry.depot.dev/mirrors/playwright:v$version-noble"

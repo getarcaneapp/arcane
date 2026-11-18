@@ -48,8 +48,8 @@ frontend/src/paraglide
 **/junit*.xml
 
 # Workspace manifests are required by the frontend dependency install
-/tests/**
-!/tests/package.json
+/packages/tests/**
+!/packages/tests/package.json
 
 # Local runtime data and binaries; keep platform binaries used by static images
 /data

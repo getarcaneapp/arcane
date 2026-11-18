@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { Badge } from '@arcane/ui/badge';
+	import { Skeleton } from '@arcane/ui/skeleton';
+	import { cn } from '@arcane/ui/utils';
+
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import SegmentToggle from '#lib/components/segment-toggle.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	import { sortAttentionItems, type AttentionItem, type AttentionSeverity, type AttentionSort } from '../overview.helpers';
 	import DashboardPanel from './dashboard-panel.svelte';

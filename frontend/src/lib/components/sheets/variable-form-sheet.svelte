@@ -1,16 +1,16 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { Input } from '@arcane/ui/input';
+	import { Label } from '@arcane/ui/label';
+	import * as RadioGroup from '@arcane/ui/radio-group';
+	import { Textarea } from '@arcane/ui/textarea';
 	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import EnvironmentMultiSelect from '#lib/components/sheets/environment-multi-select.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { GlobalVariable } from '#lib/types/env.js';
 	import type { Environment } from '#lib/types/environment.js';

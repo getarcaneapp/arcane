@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import * as Card from '@arcane/ui/card';
 
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import {
 		AlertIcon,
 		ArrowDownIcon,

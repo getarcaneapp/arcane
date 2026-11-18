@@ -1,8 +1,8 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';

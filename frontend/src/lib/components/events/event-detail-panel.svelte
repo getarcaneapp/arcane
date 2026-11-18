@@ -1,7 +1,8 @@
 <script lang="ts">
+	import * as CodeBlock from '@arcane/ui/code-block';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Event } from '#lib/types/event.js';

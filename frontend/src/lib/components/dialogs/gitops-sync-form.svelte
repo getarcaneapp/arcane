@@ -67,6 +67,8 @@
 </script>
 
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
 	import { untrack } from 'svelte';
@@ -74,8 +76,6 @@
 
 	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { useWorkspaceFolders } from '#lib/hooks/use-workspace-folders.svelte.js';
 	import { FolderOpenIcon } from '#lib/icons/index.js';
 	import { gitRepositoryBranchesQuery, gitRepositoryListQuery } from '#lib/query/git-repositories.js';

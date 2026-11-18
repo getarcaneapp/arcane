@@ -1,0 +1,124 @@
+<!--
+	Installed from @ieedan/shadcn-svelte-extras
+-->
+
+<script lang="ts">
+	import * as Tooltip from '@arcane/ui/tooltip';
+	import { cn } from '@arcane/ui/utils';
+	import { onMount } from 'svelte';
+	import { scale } from 'svelte/transition';
+
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
+	import { CopyIcon, CloseIcon, CheckIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+
+	import type { CopyButtonProps } from './types';
+
+	let {
+		ref = $bindable(null),
+		text,
+		icon,
+		animationDuration = 500,
+		variant = 'ghost',
+		size = 'icon',
+		onCopy,
+		class: className,
+		tabindex = -1,
+		children
+	}: CopyButtonProps = $props();
+	void ref;
+
+	const clipboard = new UseClipboard();
+	void scale;
+
+	const resolvedSize = $derived(size === 'icon' && children ? 'default' : size);
+
+	let isSecure = $state(true);
+
+	onMount(() => {
+		isSecure = window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+	});
+</script>
+
+{#snippet idleIcon()}
+	<div
+		class="col-start-1 row-start-1"
+		in:scale={{ duration: animationDuration, start: 0.85 }}
+		out:scale={{ duration: animationDuration, start: 0.85 }}
+	>
+		{#if icon}
+			{@render icon()}
+		{:else}
+			<CopyIcon tabindex={-1} />
+		{/if}
+		<span class="sr-only">{m.common_copy()}</span>
+	</div>
+{/snippet}
+
+{#if isSecure}
+	<ArcaneButton
+		bind:ref
+		action="base"
+		tone={variant === 'ghost' ? 'ghost' : 'outline'}
+		size={resolvedSize}
+		{tabindex}
+		class={cn('flex items-center gap-2', className)}
+		type="button"
+		name="copy"
+		onclick={async () => {
+			const status = await clipboard.copy(text);
+
+			onCopy?.(status);
+		}}
+	>
+		<span class="grid place-items-center">
+			{#if clipboard.status === 'success'}
+				<div
+					class="col-start-1 row-start-1"
+					in:scale={{ duration: animationDuration, start: 0.85 }}
+					out:scale={{ duration: animationDuration, start: 0.85 }}
+				>
+					<CheckIcon tabindex={-1} />
+					<span class="sr-only">{m.common_copied()}</span>
+				</div>
+			{:else if clipboard.status === 'failure'}
+				<div
+					class="col-start-1 row-start-1"
+					in:scale={{ duration: animationDuration, start: 0.85 }}
+					out:scale={{ duration: animationDuration, start: 0.85 }}
+				>
+					<CloseIcon tabindex={-1} />
+					<span class="sr-only">{m.common_copy_failed()}</span>
+				</div>
+			{:else}
+				{@render idleIcon()}
+			{/if}
+		</span>
+		{@render children?.()}
+	</ArcaneButton>
+{:else}
+	<Tooltip.Root>
+		<Tooltip.Trigger class="rounded-xl">
+			<ArcaneButton
+				bind:ref
+				action="base"
+				tone={variant === 'ghost' ? 'ghost' : 'outline'}
+				size={resolvedSize}
+				{tabindex}
+				class={cn('flex cursor-not-allowed items-center gap-2 opacity-50', className)}
+				type="button"
+				name="copy"
+				disabled
+			>
+				<span class="grid place-items-center">
+					{@render idleIcon()}
+				</span>
+				{@render children?.()}
+			</ArcaneButton>
+		</Tooltip.Trigger>
+		<Tooltip.Content>
+			<p>{m.common_copy_https_required()}</p>
+		</Tooltip.Content>
+	</Tooltip.Root>
+{/if}

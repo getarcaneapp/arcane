@@ -1,17 +1,17 @@
 <script lang="ts">
+	import * as Alert from '@arcane/ui/alert';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
 	import { AddIcon, AlertIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

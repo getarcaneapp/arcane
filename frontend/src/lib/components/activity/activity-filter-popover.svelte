@@ -1,10 +1,11 @@
 <script lang="ts">
-	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Popover from '@arcane/ui/popover';
+	import { cn } from '@arcane/ui/utils';
+
 	import { CheckIcon, FilterIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { ActivityStatus, ActivityType } from '#lib/types/activity.js';
-	import { cn } from '#lib/utils.js';
 
 	import { activityStatusLabel, activityTypeLabel } from './activity-labels';
 

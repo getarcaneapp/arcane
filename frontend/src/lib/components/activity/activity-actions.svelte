@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { Button } from '@arcane/ui/button';
+
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';

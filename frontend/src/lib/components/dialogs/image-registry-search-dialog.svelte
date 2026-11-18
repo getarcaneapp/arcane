@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Label } from '@arcane/ui/label';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as InputGroup from '#lib/components/input-group/index.js';
+	import * as ResponsiveDialog from '#lib/components/responsive-dialog/index.js';
 	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';

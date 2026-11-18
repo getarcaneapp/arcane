@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { cn } from '@arcane/ui/utils';
+
 	import { m } from '#lib/paraglide/messages.js';
-	import { cn } from '#lib/utils.js';
 
 	let {
 		label,

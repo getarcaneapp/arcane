@@ -1,12 +1,12 @@
 <script lang="ts">
+	import * as ButtonGroup from '@arcane/ui/button-group';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Spinner } from '@arcane/ui/spinner';
 	import { mergeProps } from 'bits-ui';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons/index.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';

@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
-	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { Badge } from '@arcane/ui/badge';
+	import * as Select from '@arcane/ui/select';
+	import { Spinner } from '@arcane/ui/spinner';
+
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';

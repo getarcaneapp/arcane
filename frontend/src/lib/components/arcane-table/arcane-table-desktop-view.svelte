@@ -1,17 +1,17 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import { Skeleton } from '@arcane/ui/skeleton';
+	import * as Table from '@arcane/ui/table';
+	import { cn } from '@arcane/ui/utils';
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import { untrack, type Component, type Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 
-	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
-	import * as Table from '#lib/components/ui/table/index.js';
+	import { createVirtualizer } from '#lib/hooks/virtualizer.svelte.js';
 	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
-	import { cn } from '#lib/utils.js';
 	import { rowKey } from '#lib/utils/environments.js';
 
-	import { createVirtualizer } from '../ui/virtualizer.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import {
 		shouldIgnoreTableRowClick,

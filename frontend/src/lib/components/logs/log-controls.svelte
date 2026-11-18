@@ -1,8 +1,9 @@
 <script lang="ts">
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { Input } from '@arcane/ui/input';
+	import * as Select from '@arcane/ui/select';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import type { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 	import { DownloadIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';

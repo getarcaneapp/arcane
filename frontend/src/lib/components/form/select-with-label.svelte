@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import { Badge } from '@arcane/ui/badge';
+	import { Label } from '@arcane/ui/label';
+	import * as Select from '@arcane/ui/select';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {

@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { badgeVariants } from '@arcane/ui/badge';
+	import { cn } from '@arcane/ui/utils';
 	import { mergeProps } from 'bits-ui';
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import { badgeVariants } from '#lib/components/ui/badge/index.js';
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerPort } from '#lib/types/container.js';
 	import type { ServicePort } from '#lib/types/project.js';
-	import { cn } from '#lib/utils.js';
 	import { toPortHref } from '#lib/utils/navigation.js';
 
 	let {

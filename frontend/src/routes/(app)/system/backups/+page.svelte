@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto, afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import { Input } from '@arcane/ui/input';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -10,15 +12,13 @@
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import { CopyButton } from '#lib/components/copy-button/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { ResponsiveDialog } from '#lib/components/responsive-dialog/index.js';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';

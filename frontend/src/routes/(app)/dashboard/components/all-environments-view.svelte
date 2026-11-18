@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import * as Alert from '@arcane/ui/alert';
+	import * as DropdownMenu from '@arcane/ui/dropdown-menu';
+	import { cn } from '@arcane/ui/utils';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onDestroy, untrack } from 'svelte';
@@ -10,8 +13,6 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
-	import * as Alert from '#lib/components/ui/alert/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AddIcon, AlertIcon, InspectIcon, LayoutGridIcon, LayoutListIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -47,7 +48,6 @@
 	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
 	import type { VersionInfo } from '#lib/types/version.js';
 	import type { EnvironmentVulnerabilitySummary } from '#lib/types/vulnerability.js';
-	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';

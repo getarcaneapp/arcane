@@ -3,7 +3,7 @@
 	"private": true,
 	"workspaces": [
 		"frontend",
-		"tests"
+		"packages/*"
 	],
 	"scripts": {
 		"preinstall": "npx only-allow pnpm"

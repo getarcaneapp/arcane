@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Switch } from '@arcane/ui/switch';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { apnsService } from '#lib/services/apns-service.js';

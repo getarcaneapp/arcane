@@ -1,0 +1,61 @@
+<script lang="ts" module>
+	import type { VariantProps } from 'tailwind-variants';
+
+	import { tv, cn, type WithoutChildrenOrChild } from '#lib/utils.js';
+	export const sheetVariants = tv({
+		base: 'text-foreground bg-white dark:bg-surface/10 backdrop-blur-md border border-border/70 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fill-mode-forwards fixed z-(--arcane-z-surface) flex flex-col gap-4 ease-in-out data-[state=closed]:animation-duration-300 data-[state=open]:animation-duration-500',
+		variants: {
+			side: {
+				top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto rounded-b-2xl',
+				bottom:
+					'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto rounded-t-2xl',
+				left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 rounded-r-2xl sm:max-w-sm',
+				right:
+					'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 rounded-l-2xl sm:max-w-sm'
+			}
+		},
+		defaultVariants: {
+			side: 'right'
+		}
+	});
+
+	export type Side = VariantProps<typeof sheetVariants>['side'];
+</script>
+
+<script lang="ts">
+	import { Dialog as SheetPrimitive } from 'bits-ui';
+	import type { Snippet } from 'svelte';
+	import CloseIcon from 'virtual:icons/majesticons/close';
+
+	import { getUiLabels } from '#lib/labels.js';
+
+	import SheetOverlay from './sheet-overlay.svelte';
+
+	let {
+		ref = $bindable(null),
+		class: className,
+		side = 'right',
+		portalProps,
+		children,
+		...restProps
+	}: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
+		portalProps?: SheetPrimitive.PortalProps;
+		side?: Side;
+		children: Snippet;
+	} = $props();
+
+	const labels = getUiLabels();
+</script>
+
+<SheetPrimitive.Portal {...portalProps}>
+	<SheetOverlay />
+	<SheetPrimitive.Content bind:ref data-slot="sheet-content" class={cn(sheetVariants({ side }), className)} {...restProps}>
+		{@render children?.()}
+		<SheetPrimitive.Close
+			class="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none"
+		>
+			<CloseIcon class="size-4" />
+			<span class="sr-only">{labels.close()}</span>
+		</SheetPrimitive.Close>
+	</SheetPrimitive.Content>
+</SheetPrimitive.Portal>
