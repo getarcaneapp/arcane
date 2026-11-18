@@ -1,5 +1,4 @@
 import type { Workspace, WorkspaceFileContent, WorkspaceUpdateManifest } from '#lib/types/workspace.js';
-import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 import { createWorkspaceFormData } from '#lib/utils/workspace-files.js';
 
 import BaseAPIService from './api-service';
@@ -30,11 +29,7 @@ class BuildWorkspaceService extends BaseAPIService {
 	}
 
 	async downloadWorkspaceFile(relativePath: string, environmentId: string): Promise<void> {
-		const response = await this.api.get(`/agents/${environmentId}/builds/workspace/file/download`, {
-			params: { relativePath },
-			responseType: 'blob'
-		});
-		downloadBlob(response.data, filenameFromPath(relativePath));
+		await this.downloadFile(`/agents/${environmentId}/builds/workspace/file/download`, { relativePath });
 	}
 }
 

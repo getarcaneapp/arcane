@@ -12,16 +12,9 @@ import type {
 	ContainerProcesses
 } from '#lib/types/container.js';
 import type { ContainerCreate, ContainerListRequestOptions } from '#lib/types/ui/container.js';
-import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, {
-	type APIRequestConfig,
-	extractServerMessage,
-	handleUnauthorizedResponseInternal,
-	withSessionSignal
-} from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class ContainerService extends BaseAPIService {
 	async getContainersForEnvironment(
@@ -146,29 +139,7 @@ class ContainerService extends BaseAPIService {
 	}
 
 	async downloadContainerLogs(containerId: string, environmentId: string): Promise<void> {
-		const base = this.api.defaults.baseURL;
-		const url = `${base}/agents/${environmentId}/containers/${containerId}/logs/download`;
-		if (await this.probeDownloadInternal(url)) {
-			downloadFromUrl(url);
-		}
-	}
-
-	private async probeDownloadInternal(url: string, retry = false): Promise<boolean> {
-		const probe = new AbortController();
-		const response = await fetch(url, { credentials: 'include', signal: withSessionSignal(probe.signal) });
-		if (response.ok) {
-			probe.abort();
-			return true;
-		}
-		const body = await tryCatch(response.json());
-		const message = extractServerMessage(body.data, true);
-		if (response.status === 401 && !retry) {
-			const path = new URL(url, window.location.origin).pathname;
-			const action = await handleUnauthorizedResponseInternal(path, false, message);
-			if (action === 'retry') return this.probeDownloadInternal(url, true);
-			if (action !== 'none') return false;
-		}
-		throw new Error(message ?? `${response.status} ${response.statusText}`.trim());
+		await this.downloadFile(`/agents/${environmentId}/containers/${containerId}/logs/download`);
 	}
 }
 

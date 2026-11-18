@@ -2,6 +2,7 @@ import ky, { HTTPError as KyHTTPError, TimeoutError, type Options as KyOptions, 
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
+import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export interface APIRequestConfig {
@@ -234,6 +235,24 @@ export async function handleUnauthorizedResponseInternal(
 	return 'redirect';
 }
 
+async function probeDownload(url: string, retry = false): Promise<boolean> {
+	const probe = new AbortController();
+	const response = await fetch(url, { credentials: 'include', signal: withSessionSignal(probe.signal) });
+	if (response.ok) {
+		probe.abort();
+		return true;
+	}
+	const body = await tryCatch(response.json());
+	const message = extractServerMessage(body.data, true);
+	if (response.status === 401 && !retry) {
+		const path = new URL(url, window.location.origin).pathname;
+		const action = await handleUnauthorizedResponseInternal(path, false, message);
+		if (action === 'retry') return probeDownload(url, true);
+		if (action !== 'none') return false;
+	}
+	throw new Error(message ?? `${response.status} ${response.statusText}`.trim());
+}
+
 class APIClient {
 	defaults: { baseURL: string };
 	private client;
@@ -428,6 +447,14 @@ abstract class BaseAPIService {
 	static beginSession() {
 		if (sessionController.signal.aborted) {
 			sessionController = new AbortController();
+		}
+	}
+
+	protected async downloadFile(path: string, params?: Record<string, string>): Promise<void> {
+		const query = new URLSearchParams(params).toString();
+		const url = `${this.api.defaults.baseURL}${path}${query ? `?${query}` : ''}`;
+		if (await probeDownload(url)) {
+			downloadFromUrl(url);
 		}
 	}
 

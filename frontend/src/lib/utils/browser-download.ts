@@ -13,10 +13,6 @@ export function downloadBlob(data: BlobPart, filename: string): void {
 	window.URL.revokeObjectURL(url);
 }
 
-export function filenameFromPath(path: string, fallback = 'download'): string {
-	return path.split('/').pop() || fallback;
-}
-
 export function filenameFromContentDisposition(header: string | null, fallback: string): string {
 	return header?.split('filename=')[1]?.split(';')[0]?.replaceAll('"', '') || fallback;
 }
