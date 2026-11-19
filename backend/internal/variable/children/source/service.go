@@ -343,12 +343,15 @@ func (s *Service) testBase(ctx context.Context, id string) (sourceConfig, error)
 
 func (s *Service) EffectiveLayers(ctx context.Context, envID string) ([][]types.EnvVariable, error) {
 	var records []SecretSource
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Order("created_at, id").Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Environments").Where("enabled = ?", true).Order("created_at, id").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("failed to load secret sources: %w", err)
 	}
 
 	var global, scoped [][]types.EnvVariable
 	for _, record := range records {
+		if !record.AllEnvironments && !slices.Contains(environment.IDs(record.Environments), envID) {
+			continue
+		}
 		entries, allEnvironments, err := s.scopedEntries(ctx, record.ID, envID)
 		if err != nil {
 			return nil, fmt.Errorf("secret source %q has no values: %w", record.Name, err)
