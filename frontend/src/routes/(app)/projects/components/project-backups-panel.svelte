@@ -132,7 +132,10 @@
 		enabled: restoreOpen,
 		staleTime: 0
 	}));
-	const projectRunning = $derived(restoreOptionsQuery.data?.running ?? false);
+	// Only a finished, successful check counts; otherwise the server decides from the project's current state.
+	const projectRunning = $derived(
+		restoreOptionsQuery.isSuccess && !restoreOptionsQuery.isFetching && (restoreOptionsQuery.data?.running ?? false)
+	);
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -805,7 +808,7 @@
 			<Alert.Description>{m.restore_replaces_current_data()}</Alert.Description>
 		</Alert.Root>
 		{@render RestoreParts(false)}
-		{#if restoreOptionsQuery.isPending}
+		{#if restoreOptionsQuery.isFetching}
 			<div class="flex items-center gap-2 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 				<span>{m.common_loading()}</span>
@@ -834,7 +837,7 @@
 			customLabel={m.volumes_backups_restore()}
 			onclick={handleRestore}
 			loading={restoring}
-			disabled={restoring || restoreOptionsQuery.isPending || (!restoreFiles && selectedRestoreVolumes.length === 0)}
+			disabled={restoring || restoreOptionsQuery.isFetching || (!restoreFiles && selectedRestoreVolumes.length === 0)}
 			data-testid="project-restore-submit"
 		/>
 	{/snippet}

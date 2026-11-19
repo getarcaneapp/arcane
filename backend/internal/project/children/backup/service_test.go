@@ -2030,6 +2030,35 @@ func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
 	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
 }
 
+func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{
+		DB: db, Engine: engine, VolumeLocks: locks,
+		Project:     func(context.Context, string) (types.Project, error) { return testProject(), nil },
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+	})
+	p := restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", Volumes: []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}}}
+
+	// A volume backup of the cache volume can start the project's containers; the restore of data waits for it.
+	unlock := locks.Lock("web_cache")
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err := service.lockRestore(waiting, p, "")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	unlock()
+
+	release, err := service.lockRestore(t.Context(), p, "")
+	require.NoError(t, err)
+	release()
+}
+
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	locks := &concurrency.KeyedMutex{}
 	service := NewService(Dependencies{VolumeLocks: locks})
