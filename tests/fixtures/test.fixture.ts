@@ -1,5 +1,25 @@
-import { expect, test as base } from '@playwright/test';
-import type { ConsoleMessage, Page, Request, Response } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+	chromium,
+	type Browser,
+	type BrowserContext,
+	type BrowserContextOptions,
+	type ConsoleMessage,
+	type Page,
+	type Request,
+	type Response
+} from 'playwright';
+import { expect } from 'playwright/test';
+import { afterAll, inject, test as base } from 'vite-plus/test';
+import { baseURL, reportDirectory } from '../utils/report';
+
+declare module 'vite-plus/test' {
+	interface ProvidedContext {
+		browserEndpoint?: string;
+		contextOptions: BrowserContextOptions;
+	}
+}
 
 export type PageErrorRecord = {
 	url: string;
@@ -10,6 +30,10 @@ export type PageErrorRecord = {
 };
 
 type TestFixtures = {
+	browser: Browser;
+	outputPath: (name: string) => string;
+	context: BrowserContext;
+	page: Page;
 	registerCleanup: (cleanup: () => Promise<void>) => void;
 	pageErrorGuard: {
 		allow: (matcher: string | RegExp) => void;
@@ -52,34 +76,61 @@ export function formatPageErrors(pageErrors: PageErrorRecord[]): string {
 		.join('\n\n');
 }
 
+const endpoint = inject('browserEndpoint');
+const browser = await (endpoint
+	? chromium.connect(endpoint, { exposeNetwork: '<loopback>' })
+	: chromium.launch());
+afterAll(() => browser.close());
+
 export const test = base.extend<TestFixtures>({
-	connectOptions: [
-		async ({ connectOptions }, use) => {
-			const wsEndpoint = process.env.ARCANE_PLAYWRIGHT_WS_ENDPOINT;
-			await use(
-				connectOptions ?? (wsEndpoint ? { wsEndpoint, exposeNetwork: '<loopback>' } : undefined)
-			);
-		},
-		{ scope: 'worker' }
-	],
-	registerCleanup: [
-		async ({ page: _page }, use, testInfo) => {
-			const cleanups: Array<() => Promise<void>> = [];
-			await use((cleanup) => cleanups.push(cleanup));
-			for (const cleanup of cleanups.reverse()) {
-				try {
-					await cleanup();
-				} catch (error) {
-					const detail = String(error);
-					await testInfo.attach('cleanup-error', { body: detail, contentType: 'text/plain' });
-					expect.soft(false, detail).toBe(true);
-				}
+	browser,
+	outputPath: async ({ task }, use) => {
+		const directory = path.join(
+			reportDirectory,
+			'results',
+			`${task.file.projectName}-${task.fullName.replace(/[^\w.-]+/g, '-').slice(0, 120)}-${task.id}`
+		);
+		await use((name) => {
+			fs.mkdirSync(directory, { recursive: true });
+			return path.join(directory, name);
+		});
+	},
+	context: async ({ outputPath, task }, use) => {
+		const context = await browser.newContext({
+			baseURL,
+			serviceWorkers: 'block',
+			...inject('contextOptions')
+		});
+		await context.tracing.start({ screenshots: true, snapshots: true });
+		await use(context);
+		if (task.result?.state === 'fail') {
+			for (const [index, page] of context.pages().entries()) {
+				await page.screenshot({ path: outputPath(`screenshot-${index}.png`) });
 			}
-		},
-		{ timeout: 120_000 }
-	],
+			await context.tracing.stop({ path: outputPath('trace.zip') });
+		} else {
+			await context.tracing.stop();
+		}
+		await context.close();
+	},
+	page: async ({ context }, use) => {
+		await use(await context.newPage());
+	},
+	registerCleanup: async ({ page: _page }, use) => {
+		const cleanups: Array<() => Promise<void>> = [];
+		await use((cleanup) => cleanups.push(cleanup));
+		const failures: unknown[] = [];
+		for (const cleanup of cleanups.reverse()) {
+			try {
+				await cleanup();
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		if (failures.length > 0) throw new AggregateError(failures, 'Test cleanup failed');
+	},
 	pageErrorGuard: [
-		async ({ page }, use, testInfo) => {
+		async ({ page, outputPath, task }, use) => {
 			const collector = installPageErrorCollector(page);
 			const allowed: Array<string | RegExp> = [];
 			const diagnostics: string[] = [];
@@ -137,21 +188,13 @@ export const test = base.extend<TestFixtures>({
 			const unexpected = collector.errors.filter(
 				(error) => !allowed.some((matcher) => pageErrorMatches(error, matcher))
 			);
-			if (testInfo.status !== testInfo.expectedStatus || unexpected.length > 0) {
-				await testInfo.attach('browser-diagnostics', {
-					body: diagnostics.join('\n'),
-					contentType: 'text/plain'
-				});
+			if (task.result?.state === 'fail' || unexpected.length > 0) {
+				fs.writeFileSync(outputPath('browser-diagnostics.txt'), diagnostics.join('\n'));
 			}
 
 			if (unexpected.length > 0) {
 				const details = formatPageErrors(unexpected);
-
-				await testInfo.attach('unexpected-page-errors', {
-					body: details,
-					contentType: 'text/plain'
-				});
-
+				fs.writeFileSync(outputPath('unexpected-page-errors.txt'), details);
 				throw new Error(`Unexpected pageerror event(s):\n\n${details}`);
 			}
 		},
@@ -169,4 +212,4 @@ export type {
 	Request,
 	Response,
 	Route
-} from '@playwright/test';
+} from 'playwright';

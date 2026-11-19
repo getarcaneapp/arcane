@@ -299,8 +299,7 @@ test.describe('Management', () => {
 			await menu.getByRole('menuitem', { name: 'Inspect' }).click();
 		});
 
-		test('should pull image from dropdown menu', async ({ page }) => {
-			test.setTimeout(90_000);
+		test('should pull image from dropdown menu', { timeout: 90_000 }, async ({ page }) => {
 			const reference = 'public.ecr.aws/docker/library/busybox:1.37';
 			const fixtures = await readList<{ id: string }>(
 				await page.request.get(ROUTES.apiImages, { params: { search: reference } }),
@@ -520,9 +519,7 @@ test.describe('Management', () => {
 			});
 		});
 
-		test('should pull image via form', async ({ page }) => {
-			test.setTimeout(180_000); // Pulling images can take a long time on CI
-
+		test('should pull image via form', { timeout: 180_000 }, async ({ page }) => {
 			await navigateToImages(page);
 
 			await page.getByRole('button', { name: 'Pull Image' }).click();

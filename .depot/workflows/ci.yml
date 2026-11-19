@@ -209,7 +209,7 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$DEPOT_TOKEN" | docker login g7r5wqb57k.registry.depot.dev --username x-token --password-stdin
-          version="$(vp -C tests exec node -p 'require("@playwright/test/package.json").version')"
+          version="$(vp -C tests exec node -p 'require("playwright/package.json").version')"
           for image in public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 "$PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY:v$version-noble"; do
             if ! docker image inspect "$image" > /dev/null 2>&1; then
               docker pull "$image"
@@ -217,11 +217,11 @@ jobs:
           done
 
       - name: Run Playwright E2E tests
-        run: mkdir -p tests/.report && vp -C tests exec playwright test --project=chromium
+        run: mkdir -p tests/.report && vp -C tests test run --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
-          BASE_URL: http://localhost:${{ matrix.database.port }}
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: .report/playwright-${{ matrix.database.name }}.xml
+          E2E_BASE_URL: http://localhost:${{ matrix.database.port }}
+          E2E_JUNIT_OUTPUT_FILE: .report/playwright-${{ matrix.database.name }}.xml
 
       - name: Upload Playwright HTML report
         if: always()
@@ -291,12 +291,12 @@ jobs:
         run: vp -C tests install
 
       - name: Run CLI E2E tests
-        run: mkdir -p tests/.report && vp -C tests exec playwright test --project=cli
+        run: mkdir -p tests/.report && vp -C tests test run --project=cli
         env:
           COMPOSE_FILE: setup/compose.yaml
-          BASE_URL: http://localhost:3000
+          E2E_BASE_URL: http://localhost:3000
           PLAYWRIGHT_DOCKER_BROWSER: '0'
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: .report/playwright-cli.xml
+          E2E_JUNIT_OUTPUT_FILE: .report/playwright-cli.xml
 
       - name: Upload Playwright HTML report
         if: always()

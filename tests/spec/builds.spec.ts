@@ -58,8 +58,9 @@ async function openAdvancedBuildOptions(page: Page) {
 
 async function selectBuildProvider(page: Page, provider: 'local' | 'depot') {
 	const providerTrigger = page.getByRole('combobox', { name: 'Build Provider' });
-	await expect(providerTrigger).toBeVisible();
-	await providerTrigger.click();
+	await expect(async () => {
+		await providerTrigger.click({ timeout: 2_000 });
+	}).toPass({ timeout: 15_000 });
 
 	const providerLabel = provider === 'depot' ? 'Depot' : 'Local Docker';
 	await page

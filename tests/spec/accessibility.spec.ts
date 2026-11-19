@@ -30,33 +30,33 @@ async function expectNoSeriousAccessibilityViolations(page: Page, label: string,
 	expect(violations, `${label}\n${formatViolations(violations)}`).toEqual([]);
 }
 
-test('login and representative authenticated surfaces pass the accessibility checks', async ({
-	page
-}) => {
-	test.setTimeout(120_000);
+test(
+	'login and representative authenticated surfaces pass the accessibility checks',
+	{ timeout: 120_000 },
+	async ({ page }) => {
+		await page.goto('/login');
+		await expect(page).toHaveTitle(/Arcane/);
+		await expectNoSeriousAccessibilityViolations(page, 'Login page');
 
-	await page.goto('/login');
-	await expect(page).toHaveTitle(/Arcane/);
-	await expectNoSeriousAccessibilityViolations(page, 'Login page');
+		await page.getByLabel('Username').fill('arcane');
+		await page.getByLabel('Password').fill(authUtil.TEST_PASSWORD);
+		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
+		await expect(page).toHaveURL('/dashboard');
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+		await expectNoSeriousAccessibilityViolations(page, 'Dashboard', 'main');
 
-	await page.getByLabel('Username').fill('arcane');
-	await page.getByLabel('Password').fill(authUtil.TEST_PASSWORD);
-	await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
-	await expect(page).toHaveURL('/dashboard');
-	await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
-	await expectNoSeriousAccessibilityViolations(page, 'Dashboard', 'main');
+		await page.goto('/networks');
+		await expect(page.getByRole('heading', { name: 'Networks', level: 1 })).toBeVisible();
+		await expectNoSeriousAccessibilityViolations(page, 'Networks table', 'main');
 
-	await page.goto('/networks');
-	await expect(page.getByRole('heading', { name: 'Networks', level: 1 })).toBeVisible();
-	await expectNoSeriousAccessibilityViolations(page, 'Networks table', 'main');
+		await page.goto('/containers/new');
+		await expect(page.getByRole('heading', { name: 'Create Container' })).toBeVisible();
+		await expectNoSeriousAccessibilityViolations(page, 'New container form', 'main');
 
-	await page.goto('/containers/new');
-	await expect(page.getByRole('heading', { name: 'Create Container' })).toBeVisible();
-	await expectNoSeriousAccessibilityViolations(page, 'New container form', 'main');
-
-	await page.goto('/networks');
-	await expect(page.getByRole('heading', { name: 'Networks', level: 1 })).toBeVisible();
-	await page.getByRole('button', { name: 'Create Network' }).first().click();
-	await expect(page.getByRole('dialog')).toBeVisible();
-	await expectNoSeriousAccessibilityViolations(page, 'Create network dialog', '[role="dialog"]');
-});
+		await page.goto('/networks');
+		await expect(page.getByRole('heading', { name: 'Networks', level: 1 })).toBeVisible();
+		await page.getByRole('button', { name: 'Create Network' }).first().click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+		await expectNoSeriousAccessibilityViolations(page, 'Create network dialog', '[role="dialog"]');
+	}
+);
