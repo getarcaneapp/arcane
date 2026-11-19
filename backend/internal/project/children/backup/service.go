@@ -1255,7 +1255,7 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 		}
 		var lastRun *types.ProjectBackup
 		if len(latest) > 0 {
-			lastRun = new(latest[0].DTO())
+			lastRun = new(latest[0].DTO(DTOOptions{}))
 		}
 		dtos = append(dtos, policies[i].DTO(lastRun, destinations[policies[i].S3DestinationID].Name))
 	}
