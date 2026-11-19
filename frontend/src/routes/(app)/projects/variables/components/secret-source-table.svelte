@@ -46,17 +46,23 @@
 
 	const envNameById = $derived(new Map(environments.map((environment) => [environment.id, environment.name])));
 
+	function enabledBadge(source: SecretSource) {
+		if (source.enabled) return { variant: 'green' as const, text: m.common_enabled() };
+		return { variant: 'red' as const, text: m.common_disabled() };
+	}
+
 	function providerLabel(source: SecretSource): string {
 		return source.definition.name || source.presetId || m.custom_definition();
 	}
 
 	const filteredSources = $derived.by(() => {
 		const query = (requestOptions.search ?? '').trim().toLowerCase();
-		const list = query
-			? sources.filter(
-					(source) => source.name.toLowerCase().includes(query) || providerLabel(source).toLowerCase().includes(query)
-				)
-			: [...sources];
+		let list = [...sources];
+		if (query) {
+			list = sources.filter(
+				(source) => source.name.toLowerCase().includes(query) || providerLabel(source).toLowerCase().includes(query)
+			);
+		}
 
 		const sort = requestOptions.sort;
 		if (sort?.column === 'name') {
@@ -179,10 +185,7 @@
 		title={(item: SecretSource) => item.name}
 		subtitle={(item: SecretSource) => item.lastError ?? null}
 		badges={[
-			(item: SecretSource) =>
-				item.enabled
-					? { variant: 'green' as const, text: m.common_enabled() }
-					: { variant: 'red' as const, text: m.common_disabled() },
+			enabledBadge,
 			(item: SecretSource) => (item.injectIntoContainers ? { variant: 'blue' as const, text: m.injected() } : null)
 		]}
 		fields={[

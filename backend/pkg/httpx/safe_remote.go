@@ -26,8 +26,9 @@ type (
 	}
 
 	addressPolicy struct {
-		blockedIP    func(addr netip.Addr) bool
-		blockedHosts []string
+		blockedPrefixes []netip.Prefix
+		blockedHosts    []string
+		allowPrivate    bool
 	}
 )
 
@@ -76,18 +77,13 @@ var (
 	}
 
 	publicOnlyPolicy = addressPolicy{
-		blockedIP: func(addr netip.Addr) bool {
-			return addr.IsLoopback() || addr.IsPrivate() || addr.IsMulticast() || addr.IsUnspecified() ||
-				addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || slices.ContainsFunc(blockedRemotePrefixes, func(p netip.Prefix) bool { return p.Contains(addr) })
-		},
+		blockedPrefixes: blockedRemotePrefixes,
 	}
 
 	privateNetworkPolicy = addressPolicy{
-		blockedIP: func(addr netip.Addr) bool {
-			return addr.IsMulticast() || addr.IsUnspecified() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||
-				slices.ContainsFunc(privateNetworkBlockedPrefixes, func(p netip.Prefix) bool { return p.Contains(addr) })
-		},
-		blockedHosts: metadataHostnames,
+		blockedPrefixes: privateNetworkBlockedPrefixes,
+		blockedHosts:    metadataHostnames,
+		allowPrivate:    true,
 	}
 )
 
@@ -164,17 +160,19 @@ func NewPrivateNetworkHTTPClient(cfg PrivateNetworkClientConfig) *http.Client {
 			ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
 			DisableProxy:          true,
 		})),
-		Timeout: max(cfg.Timeout, 0),
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("stopped after 5 redirects")
-			}
-			if !strings.EqualFold(req.URL.Host, via[0].URL.Host) || !strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) {
-				return common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("redirect to a different host is not allowed: %s", req.URL.Host))
-			}
-			return nil
-		},
+		Timeout:       max(cfg.Timeout, 0),
+		CheckRedirect: sameOriginRedirect,
 	}
+}
+
+func sameOriginRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("stopped after 5 redirects")
+	}
+	if !strings.EqualFold(req.URL.Host, via[0].URL.Host) || !strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) {
+		return common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("redirect to a different host is not allowed: %s", req.URL.Host))
+	}
+	return nil
 }
 
 func guardedDialContext(
@@ -237,7 +235,7 @@ func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc, 
 		}
 		addr, ok := netip.AddrFromSlice(ip)
 		addr = addr.Unmap()
-		if !ok || policy.blockedIP(addr) || policy.blockedIP(embeddedIPv4(addr)) {
+		if !ok || policy.blocks(addr) || policy.blocks(embeddedIPv4(addr)) {
 			return nil, common.Classify(
 				common.ErrUnsafeRemoteURL,
 				fmt.Errorf("Remote URL is not allowed: %w", fmt.Errorf("blocked IP address %s", ip)), //nolint:staticcheck // Preserve the existing error message.
@@ -253,6 +251,14 @@ func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc, 
 		)
 	}
 	return allowed, nil
+}
+
+func (p addressPolicy) blocks(addr netip.Addr) bool {
+	return addr.IsMulticast() || addr.IsUnspecified() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||
+		(!p.allowPrivate && (addr.IsLoopback() || addr.IsPrivate())) ||
+		slices.ContainsFunc(p.blockedPrefixes, func(prefix netip.Prefix) bool {
+			return prefix.Contains(addr)
+		})
 }
 
 func embeddedIPv4(addr netip.Addr) netip.Addr {

@@ -77,6 +77,11 @@ const (
 	variableSyncTimeout             = 15 * time.Second
 )
 
+var variableScope = environment.ScopeTable{
+	Table:       "global_variable_environments",
+	OwnerColumn: "global_variable_id",
+}
+
 func validateVariableKey(key string) error {
 	if projects.EnvKeyPattern.MatchString(key) {
 		return nil
@@ -93,9 +98,8 @@ func NewVariableService(p VariableServiceParams) *VariableService {
 		settingsService: p.SettingsService,
 		kvService:       p.KVService,
 		sources: source.NewService(source.ServiceParams{
-			DB:             p.DB,
-			DockerClient:   p.DockerService.GetClient,
-			NormalizeScope: normalizeScope,
+			DB:           p.DB,
+			DockerClient: p.DockerService.GetClient,
 		}),
 		syncStatus: make(map[string]types.EnvironmentSyncStatus),
 	}
@@ -120,7 +124,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVa
 		return nil, validateKeyErr
 	}
 
-	envIDs, err := normalizeScope(ctx, s.db, req.AllEnvironments, req.EnvironmentIDs)
+	envIDs, err := environment.NormalizeScope(ctx, s.db, req.AllEnvironments, req.EnvironmentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -148,12 +152,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVa
 		if createVariableErr := tx.Omit("Environments").Create(&variable).Error; createVariableErr != nil {
 			return fmt.Errorf("failed to create global variable: %w", createVariableErr)
 		}
-		return environment.ReplaceScopeRows(tx, environment.ScopeRows{
-			Table:          "global_variable_environments",
-			OwnerColumn:    "global_variable_id",
-			OwnerID:        variable.ID,
-			EnvironmentIDs: envIDs,
-		})
+		return variableScope.Replace(tx, variable.ID, envIDs)
 	})
 	if err != nil {
 		return nil, wrapVariableMutationError(err)
@@ -185,7 +184,13 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 		return nil, err
 	}
 
-	envIDs, allEnvironments, err := s.resolveUpdatedScope(ctx, &variable, req, submitted)
+	envIDs, allEnvironments, err := environment.ResolveScope(ctx, s.db, environment.ScopeChange{
+		Submitted:       submitted,
+		Current:         variable.Environments,
+		EnvironmentIDs:  req.EnvironmentIDs,
+		AllEnvironments: req.AllEnvironments,
+		CurrentAll:      variable.AllEnvironments,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -203,12 +208,7 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 		if updateVariableErr := tx.Omit("Environments").Save(&variable).Error; updateVariableErr != nil {
 			return fmt.Errorf("failed to update global variable: %w", updateVariableErr)
 		}
-		return environment.ReplaceScopeRows(tx, environment.ScopeRows{
-			Table:          "global_variable_environments",
-			OwnerColumn:    "global_variable_id",
-			OwnerID:        variable.ID,
-			EnvironmentIDs: envIDs,
-		})
+		return variableScope.Replace(tx, variable.ID, envIDs)
 	})
 	if err != nil {
 		return nil, wrapVariableMutationError(err)
@@ -249,24 +249,6 @@ func resolveUpdatedValue(variable *GlobalVariable, reqValue string, valueSubmitt
 	default:
 		return variable.Value, nil
 	}
-}
-
-func (s *VariableService) resolveUpdatedScope(ctx context.Context, variable *GlobalVariable, req types.GlobalVariable, submitted map[string]bool) ([]string, bool, error) {
-	envIDs := environment.IDs(variable.Environments)
-	if !submitted["allEnvironments"] && !submitted["environmentIds"] {
-		return envIDs, variable.AllEnvironments, nil
-	}
-
-	normalized, err := normalizeScope(
-		ctx,
-		s.db,
-		kit.Ternary(submitted["allEnvironments"], req.AllEnvironments, variable.AllEnvironments),
-		kit.Ternary(submitted["environmentIds"], req.EnvironmentIDs, envIDs),
-	)
-	if err != nil {
-		return nil, false, err
-	}
-	return normalized, len(normalized) == 0, nil
 }
 
 func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
@@ -362,13 +344,6 @@ func (s *VariableService) RefreshSecretSource(ctx context.Context, id string) er
 	}
 	s.SyncAllBackground(ctx)
 	return nil
-}
-
-func (s *VariableService) secretSourceHandler() *source.SecretSourceHandler {
-	if s == nil {
-		return source.NewHandler(nil, nil)
-	}
-	return source.NewHandler(s.sources, s.SyncAllBackground)
 }
 
 func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) error {
@@ -734,12 +709,7 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 			if scopeEnvID == "" {
 				return nil
 			}
-			return environment.ReplaceScopeRows(tx, environment.ScopeRows{
-				Table:          "global_variable_environments",
-				OwnerColumn:    "global_variable_id",
-				OwnerID:        variable.ID,
-				EnvironmentIDs: []string{scopeEnvID},
-			})
+			return variableScope.Replace(tx, variable.ID, []string{scopeEnvID})
 		})
 		if transactionErr != nil {
 			return fmt.Errorf("failed to import legacy variable %q: %w", key, transactionErr)
@@ -757,42 +727,6 @@ func (s *VariableService) loadVariables(ctx context.Context) ([]GlobalVariable, 
 		return nil, fmt.Errorf("failed to load global variables: %w", err)
 	}
 	return variables, nil
-}
-
-func normalizeScope(ctx context.Context, db *database.DB, allEnvironments bool, envIDs []string) ([]string, error) {
-	if allEnvironments {
-		return nil, nil
-	}
-
-	unique := make([]string, 0, len(envIDs))
-	for _, id := range envIDs {
-		id = strings.TrimSpace(id)
-		if id != "" && !slices.Contains(unique, id) {
-			unique = append(unique, id)
-		}
-	}
-	// An explicitly specific scope with no environments must not silently
-	// widen to all environments.
-	if len(unique) == 0 {
-		return nil, common.Classify(
-			common.ErrGlobalVariableScopeRequired,
-			errors.New(
-				"at least one environment is required when a variable is not scoped to all environments",
-			),
-		)
-	}
-
-	var count int64
-	if err := db.WithContext(ctx).Model(&environment.Environment{}).Where("id IN ?", unique).Count(&count).Error; err != nil {
-		return nil, fmt.Errorf("failed to update global variables: %w", err)
-	}
-	if count != int64(len(unique)) {
-		return nil, common.Classify(
-			common.ErrGlobalVariableUnknownEnvironment,
-			errors.New("failed to update global variables: one or more environments do not exist"),
-		)
-	}
-	return unique, nil
 }
 
 func (s *VariableService) validateScopeConflict(tx *gorm.DB, key, excludeID string, allEnvironments bool, envIDs []string) error {

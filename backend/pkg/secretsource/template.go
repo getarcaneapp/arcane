@@ -88,9 +88,23 @@ func ValidateValues(req Request) error {
 	if req.Definition.PathRequired && strings.TrimSpace(req.Path) == "" {
 		return &types.FieldError{Field: "path", Err: errors.New("path is required")}
 	}
-	if _, err := resolveFields("input", req.Definition.Inputs, req.Inputs); err != nil {
+	inputs, err := resolveFields("input", req.Definition.Inputs, req.Inputs)
+	if err != nil {
 		return err
 	}
-	_, err := resolveFields("credential", req.Definition.Credentials, req.Credentials)
-	return err
+	credentials, err := resolveFields("credential", req.Definition.Credentials, req.Credentials)
+	if err != nil {
+		return err
+	}
+	for key := range req.Inputs {
+		if _, known := inputs[key]; !known {
+			return &types.FieldError{Field: "inputs", Err: fmt.Errorf("unknown input %q", key)}
+		}
+	}
+	for key := range req.Credentials {
+		if _, known := credentials[key]; !known {
+			return &types.FieldError{Field: "credentials", Err: fmt.Errorf("unknown credential %q", key)}
+		}
+	}
+	return nil
 }

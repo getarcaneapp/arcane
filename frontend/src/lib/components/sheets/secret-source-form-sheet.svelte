@@ -177,9 +177,8 @@
 	}
 
 	function scopeDto(): Pick<SecretSourceInput, 'allEnvironments' | 'environmentIds'> {
-		return scope === 'all'
-			? { allEnvironments: true, environmentIds: [] }
-			: { allEnvironments: false, environmentIds: [...selectedEnvIds] };
+		if (scope === 'all') return { allEnvironments: true, environmentIds: [] };
+		return { allEnvironments: false, environmentIds: [...selectedEnvIds] };
 	}
 
 	function buildInput(definition: SecretSourceDefinition): SecretSourceInput {
@@ -269,16 +268,11 @@
 		}
 
 		const { definition: yaml, credentials, presetId, ...rest } = input;
-		await onSubmit({
-			mode: 'edit',
-			id: sourceToEdit.id,
-			source: {
-				...changedFields(sourceToEdit, rest),
-				...(presetId !== (sourceToEdit.presetId ?? '') ? { presetId } : {}),
-				...(yaml.trim() !== '' ? { definition: yaml } : {}),
-				...(Object.keys(credentials).length > 0 ? { credentials } : {})
-			}
-		});
+		const source: SecretSourceUpdate = changedFields(sourceToEdit, rest);
+		if (presetId !== (sourceToEdit.presetId ?? '')) source.presetId = presetId;
+		if (yaml.trim() !== '') source.definition = yaml;
+		if (Object.keys(credentials).length > 0) source.credentials = credentials;
+		await onSubmit({ mode: 'edit', id: sourceToEdit.id, source });
 	}
 </script>
 

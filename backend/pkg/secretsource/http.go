@@ -118,9 +118,33 @@ func (e *Engine) send(ctx context.Context, base *url.URL, name string, step type
 	if err != nil {
 		return httpResponse{}, err
 	}
-	target, err := resolveTarget(base, path, query)
+	if strings.ContainsAny(path, "?#") {
+		return httpResponse{}, fmt.Errorf("%s: request path must not contain ? or #; use the step's query parameters", name)
+	}
+	ref, err := url.Parse(path)
 	if err != nil {
-		return httpResponse{}, fmt.Errorf("%s: %w", name, err)
+		return httpResponse{}, fmt.Errorf("%s: invalid request path: %w", name, err)
+	}
+	if ref.Scheme != "" || ref.Host != "" || ref.User != nil || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return httpResponse{}, fmt.Errorf("%s: request path must be a relative path starting with a single /", name)
+	}
+	for segment := range strings.SplitSeq(strings.ReplaceAll(ref.Path, "\\", "/"), "/") {
+		if segment == ".." {
+			return httpResponse{}, fmt.Errorf("%s: request path must not contain .. segments", name)
+		}
+	}
+	values := url.Values{}
+	for key, value := range query {
+		if value != "" {
+			values.Set(key, value)
+		}
+	}
+	target := url.URL{
+		Scheme:   base.Scheme,
+		Host:     base.Host,
+		Path:     strings.TrimSuffix(base.Path, "/") + ref.Path,
+		RawPath:  strings.TrimSuffix(base.EscapedPath(), "/") + ref.EscapedPath(),
+		RawQuery: values.Encode(),
 	}
 	headers, err := renderMap(name+".headers", step.Headers, data)
 	if err != nil {
@@ -200,37 +224,4 @@ func requestBody(name string, step types.SecretSourceHTTPStep, data map[string]a
 	default:
 		return nil, "", nil
 	}
-}
-
-func resolveTarget(base *url.URL, path string, query map[string]string) (*url.URL, error) {
-	if strings.ContainsAny(path, "?#") {
-		return nil, errors.New("request path must not contain ? or #; use the step's query parameters")
-	}
-	ref, err := url.Parse(path)
-	if err != nil {
-		return nil, fmt.Errorf("invalid request path: %w", err)
-	}
-	if ref.Scheme != "" || ref.Host != "" || ref.User != nil || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return nil, errors.New("request path must be a relative path starting with a single /")
-	}
-	for segment := range strings.SplitSeq(strings.ReplaceAll(ref.Path, "\\", "/"), "/") {
-		if segment == ".." {
-			return nil, errors.New("request path must not contain .. segments")
-		}
-	}
-
-	values := url.Values{}
-	for key, value := range query {
-		if value != "" {
-			values.Set(key, value)
-		}
-	}
-	basePath := strings.TrimSuffix(base.Path, "/")
-	return &url.URL{
-		Scheme:   base.Scheme,
-		Host:     base.Host,
-		Path:     basePath + ref.Path,
-		RawPath:  strings.TrimSuffix(base.EscapedPath(), "/") + ref.EscapedPath(),
-		RawQuery: values.Encode(),
-	}, nil
 }

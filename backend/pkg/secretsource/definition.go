@@ -3,6 +3,7 @@ package secretsource
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -41,13 +42,41 @@ func ParseDefinition(source []byte) (types.SecretSourceDefinition, error) {
 
 	document := root.Content[0]
 	for i := 0; i+1 < len(document.Content); i += 2 {
-		if name := document.Content[i].Value; name == "inputs" || name == "credentials" {
-			fields, err := fieldListNode(name, document.Content[i+1])
-			if err != nil {
-				return types.SecretSourceDefinition{}, err
-			}
-			document.Content[i+1] = fields
+		name, node := document.Content[i].Value, document.Content[i+1]
+		if name != "inputs" && name != "credentials" {
+			continue
 		}
+		switch {
+		case node.Kind == yaml.SequenceNode:
+			continue
+		case node.Kind == yaml.ScalarNode && node.Tag == "!!null":
+			document.Content[i+1] = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			continue
+		case node.Kind != yaml.MappingNode:
+			return types.SecretSourceDefinition{}, fmt.Errorf("%s must be a mapping of field keys", name)
+		}
+
+		items := make([]*yaml.Node, 0, len(node.Content)/2)
+		for j := 0; j+1 < len(node.Content); j += 2 {
+			key, value := node.Content[j], node.Content[j+1]
+			content := []*yaml.Node{
+				{Kind: yaml.ScalarNode, Tag: "!!str", Value: "key"},
+				{Kind: yaml.ScalarNode, Tag: "!!str", Value: key.Value},
+			}
+			switch {
+			case value.Kind == yaml.MappingNode:
+				content = append(content, value.Content...)
+			case value.Kind == yaml.ScalarNode && value.Tag != "!!null":
+				content = append(content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "label"},
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value.Value},
+				)
+			case value.Kind != yaml.ScalarNode:
+				return types.SecretSourceDefinition{}, fmt.Errorf("%s.%s must be a mapping", name, key.Value)
+			}
+			items = append(items, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: content})
+		}
+		document.Content[i+1] = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: items}
 	}
 
 	var definition types.SecretSourceDefinition
@@ -58,39 +87,6 @@ func ParseDefinition(source []byte) (types.SecretSourceDefinition, error) {
 		return types.SecretSourceDefinition{}, err
 	}
 	return definition, nil
-}
-
-func fieldListNode(name string, node *yaml.Node) (*yaml.Node, error) {
-	switch {
-	case node.Kind == yaml.SequenceNode:
-		return node, nil
-	case node.Kind == yaml.ScalarNode && node.Tag == "!!null":
-		return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}, nil
-	case node.Kind != yaml.MappingNode:
-		return nil, fmt.Errorf("%s must be a mapping of field keys", name)
-	}
-
-	items := make([]*yaml.Node, 0, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key, value := node.Content[i], node.Content[i+1]
-		content := []*yaml.Node{
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "key"},
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: key.Value},
-		}
-		switch {
-		case value.Kind == yaml.MappingNode:
-			content = append(content, value.Content...)
-		case value.Kind == yaml.ScalarNode && value.Tag != "!!null":
-			content = append(content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "label"},
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value.Value},
-			)
-		case value.Kind != yaml.ScalarNode:
-			return nil, fmt.Errorf("%s.%s must be a mapping", name, key.Value)
-		}
-		items = append(items, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: content})
-	}
-	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: items}, nil
 }
 
 func validateDefinition(definition types.SecretSourceDefinition) error {
@@ -108,7 +104,9 @@ func validateDefinition(definition types.SecretSourceDefinition) error {
 	problems = append(problems, validateFields("inputs", definition.Inputs)...)
 	problems = append(problems, validateFields("credentials", definition.Credentials)...)
 	for _, input := range definition.Inputs {
-		if slices.ContainsFunc(definition.Credentials, func(credential types.SecretSourceField) bool { return credential.Key == input.Key }) {
+		if slices.ContainsFunc(definition.Credentials, func(credential types.SecretSourceField) bool {
+			return credential.Key == input.Key
+		}) {
 			problems = append(problems, fmt.Errorf("%q is declared as both an input and a credential", input.Key))
 		}
 	}
@@ -117,7 +115,12 @@ func validateDefinition(definition types.SecretSourceDefinition) error {
 	case KindHTTP:
 		problems = append(problems, validateHTTPDefinition(definition)...)
 	case KindContainer:
-		problems = append(problems, validateContainerDefinition(definition)...)
+		if strings.TrimSpace(definition.Image) == "" {
+			problems = append(problems, errors.New("container definitions need an image"))
+		}
+		if definition.Login != nil || definition.Fetch != nil {
+			problems = append(problems, errors.New("login and fetch are only valid for the http kind"))
+		}
 	default:
 		problems = append(problems, fmt.Errorf("kind must be %q or %q", KindHTTP, KindContainer))
 	}
@@ -134,7 +137,20 @@ func validateDefinition(definition types.SecretSourceDefinition) error {
 		}
 	}
 
-	for _, text := range definitionTemplates(definition) {
+	texts := []string{definition.Image, definition.Format}
+	texts = append(texts, definition.Args...)
+	texts = slices.AppendSeq(texts, maps.Values(definition.Env))
+	for _, step := range []*types.SecretSourceHTTPStep{definition.Login, definition.Fetch} {
+		if step == nil {
+			continue
+		}
+		texts = append(texts, step.Path)
+		for _, values := range []map[string]string{step.Query, step.Headers, step.Form} {
+			texts = slices.AppendSeq(texts, maps.Values(values))
+		}
+		texts = append(texts, templateStrings(step.JSON)...)
+	}
+	for _, text := range texts {
 		if _, err := template.New("definition").Parse(text); err != nil {
 			problems = append(problems, fmt.Errorf("invalid template %q: %w", text, err))
 		}
@@ -160,7 +176,9 @@ func validateFields(section string, fields []types.SecretSourceField) []error {
 
 func validateHTTPDefinition(definition types.SecretSourceDefinition) []error {
 	var problems []error
-	if !slices.ContainsFunc(definition.Inputs, func(field types.SecretSourceField) bool { return field.Key == BaseURLInput }) {
+	if !slices.ContainsFunc(definition.Inputs, func(field types.SecretSourceField) bool {
+		return field.Key == BaseURLInput
+	}) {
 		problems = append(problems, fmt.Errorf("http definitions need a %q input", BaseURLInput))
 	}
 	if definition.Fetch == nil {
@@ -196,38 +214,6 @@ func validateHTTPDefinition(definition types.SecretSourceDefinition) []error {
 		problems = append(problems, errors.New("login needs at least one capture"))
 	}
 	return problems
-}
-
-func validateContainerDefinition(definition types.SecretSourceDefinition) []error {
-	var problems []error
-	if strings.TrimSpace(definition.Image) == "" {
-		problems = append(problems, errors.New("container definitions need an image"))
-	}
-	if definition.Login != nil || definition.Fetch != nil {
-		problems = append(problems, errors.New("login and fetch are only valid for the http kind"))
-	}
-	return problems
-}
-
-func definitionTemplates(definition types.SecretSourceDefinition) []string {
-	texts := []string{definition.Image, definition.Format}
-	texts = append(texts, definition.Args...)
-	for _, value := range definition.Env {
-		texts = append(texts, value)
-	}
-	for _, step := range []*types.SecretSourceHTTPStep{definition.Login, definition.Fetch} {
-		if step == nil {
-			continue
-		}
-		texts = append(texts, step.Path)
-		for _, values := range []map[string]string{step.Query, step.Headers, step.Form} {
-			for _, value := range values {
-				texts = append(texts, value)
-			}
-		}
-		texts = append(texts, templateStrings(step.JSON)...)
-	}
-	return texts
 }
 
 func templateStrings(value any) []string {

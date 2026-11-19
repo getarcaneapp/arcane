@@ -533,8 +533,8 @@ func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *Webho
 		}
 		return localSync.Name
 	case WebhookTargetTypeSecretSource:
-		secretSource, err := s.variableService.GetSecretSource(ctx, wh.TargetID)
-		return kit.Ternary(err != nil, "", secretSource.Name)
+		secretSource, _ := s.variableService.GetSecretSource(ctx, wh.TargetID)
+		return secretSource.Name
 	default:
 		return ""
 	}

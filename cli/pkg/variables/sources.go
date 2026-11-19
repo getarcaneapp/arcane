@@ -70,50 +70,6 @@ func bindSourceFlags(command *cobra.Command, opts *sourceFlags) {
 }
 
 func sourceRequest(cmd *cobra.Command, opts sourceFlags) (map[string]any, error) {
-	definition := ""
-	if opts.definitionFile != "" {
-		content, err := os.ReadFile(opts.definitionFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read definition file: %w", err)
-		}
-		definition = string(content)
-	}
-	credentials, err := readCredentials(cmd, opts)
-	if err != nil {
-		return nil, err
-	}
-	allAgents := len(opts.envIDs) == 0 || slices.Equal(opts.envIDs, []string{"all"})
-
-	req := map[string]any{}
-	for _, field := range []struct {
-		value any
-		flag  string
-		key   string
-	}{
-		{flag: "name", key: "name", value: opts.name},
-		{flag: "preset", key: "presetId", value: opts.preset},
-		{flag: "definition-file", key: "definition", value: definition},
-		{flag: "input", key: "inputs", value: opts.inputs},
-		{flag: "credential", key: "credentials", value: credentials},
-		{flag: "credentials-file", key: "credentials", value: credentials},
-		{flag: "path", key: "path", value: opts.path},
-		{flag: "key-prefix", key: "keyPrefix", value: opts.keyPrefix},
-		{flag: "agent", key: "allEnvironments", value: allAgents},
-		{flag: "agent", key: "environmentIds", value: opts.envIDs},
-		{flag: "inject", key: "injectIntoContainers", value: opts.inject},
-		{flag: "disabled", key: "enabled", value: !opts.disabled},
-	} {
-		if cmd.Flags().Changed(field.flag) {
-			req[field.key] = field.value
-		}
-	}
-	if allAgents {
-		delete(req, "environmentIds")
-	}
-	return req, nil
-}
-
-func readCredentials(cmd *cobra.Command, opts sourceFlags) (map[string]string, error) {
 	credentials := map[string]string{}
 	if opts.credentialFile != "" {
 		content, err := readCredentialFile(cmd, opts.credentialFile)
@@ -132,7 +88,37 @@ func readCredentials(cmd *cobra.Command, opts sourceFlags) (map[string]string, e
 		}
 	}
 	maps.Copy(credentials, opts.credentials)
-	return credentials, nil
+
+	req := map[string]any{}
+	for _, field := range []struct {
+		value any
+		flag  string
+		key   string
+	}{
+		{flag: "name", key: "name", value: opts.name},
+		{flag: "preset", key: "presetId", value: opts.preset},
+		{flag: "input", key: "inputs", value: opts.inputs},
+		{flag: "credential", key: "credentials", value: credentials},
+		{flag: "credentials-file", key: "credentials", value: credentials},
+		{flag: "path", key: "path", value: opts.path},
+		{flag: "key-prefix", key: "keyPrefix", value: opts.keyPrefix},
+		{flag: "agent", key: "allEnvironments", value: slices.Equal(opts.envIDs, []string{"all"})},
+		{flag: "agent", key: "environmentIds", value: kit.Ternary(slices.Equal(opts.envIDs, []string{"all"}), nil, opts.envIDs)},
+		{flag: "inject", key: "injectIntoContainers", value: opts.inject},
+		{flag: "disabled", key: "enabled", value: !opts.disabled},
+	} {
+		if cmd.Flags().Changed(field.flag) {
+			req[field.key] = field.value
+		}
+	}
+	if opts.definitionFile != "" {
+		content, err := os.ReadFile(opts.definitionFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read definition file: %w", err)
+		}
+		req["definition"] = string(content)
+	}
+	return req, nil
 }
 
 func readCredentialFile(cmd *cobra.Command, path string) ([]byte, error) {

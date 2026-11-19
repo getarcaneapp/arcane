@@ -23,13 +23,6 @@ func unavailableDocker(context.Context) (*client.Client, error) {
 	return nil, errors.New("docker is not available in tests")
 }
 
-func passScope(_ context.Context, _ *database.DB, allEnvironments bool, envIDs []string) ([]string, error) {
-	if allEnvironments {
-		return nil, nil
-	}
-	return envIDs, nil
-}
-
 func serveSecrets(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/secrets" || r.Header.Get("Authorization") != "Bearer secret-token" {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -62,9 +55,8 @@ func TestSecretSource_PresetFetchesKeysForScopedEnvironment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(serveSecrets))
 	t.Cleanup(server.Close)
 	service := NewService(ServiceParams{
-		DB:             dbWrap,
-		DockerClient:   unavailableDocker,
-		NormalizeScope: passScope,
+		DB:           dbWrap,
+		DockerClient: unavailableDocker,
 	})
 
 	created, err := service.Create(ctx, types.SecretSourceInput{

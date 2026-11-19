@@ -1,6 +1,8 @@
 package variable
 
 import (
+	"cmp"
+
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/config"
@@ -108,7 +110,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, proxyRemo
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVariablesRead, h.GetSyncStatus)
 
-	source.RegisterRoutes(api, variableService.secretSourceHandler())
+	source.RegisterRoutes(api, source.NewHandler(cmp.Or(variableService, &VariableService{}).sources, variableService.SyncAllBackground))
 }
 
 func RegisterMaterializedVariables(api huma.API, variableService *VariableService, proxyRemoteJSON handlerutil.RemoteJSONProxy) {

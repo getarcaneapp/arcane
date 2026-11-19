@@ -1,7 +1,6 @@
 package secretsource
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
@@ -12,7 +11,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -24,20 +22,19 @@ import (
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-const (
-	containerTimeout  = 2 * time.Minute
-	secretSourceLabel = "com.getarcaneapp.secret-source"
-)
+const secretSourceLabel = "com.getarcaneapp.secret-source"
 
 func (e *Engine) fetchContainer(ctx context.Context, definition types.SecretSourceDefinition, data map[string]any) ([]types.EnvVariable, error) {
-	image, err := render("image", definition.Image, data)
+	rendered, err := render("image", definition.Image, data)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(image) == "" {
+	image := strings.TrimSpace(rendered)
+	if image == "" {
 		return nil, errors.New("container image is empty")
 	}
 	format, err := render("format", definition.Format, data)
@@ -70,47 +67,24 @@ func (e *Engine) fetchContainer(ctx context.Context, definition types.SecretSour
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	stdout, err := runContainer(ctx, dockerClient, container.Config{
-		Image:  strings.TrimSpace(image),
-		Cmd:    args,
-		Env:    containerEnv,
-		Labels: map[string]string{selfcontainer.InternalResourceLabel: "true", secretSourceLabel: "true"},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if format == formatDotenv {
-		values, parseErr := projects.ParseProjectEnvContent(string(stdout), nil)
-		if parseErr != nil {
-			return nil, fmt.Errorf("container output is not valid dotenv: %w", parseErr)
+	if _, inspectErr := dockerClient.ImageInspect(ctx, image); inspectErr != nil {
+		pull, pullErr := dockerClient.ImagePull(ctx, image, client.ImagePullOptions{})
+		if pullErr != nil {
+			return nil, fmt.Errorf("failed to pull secret source image %s: %w", image, pullErr)
 		}
-		entries := make([]types.EnvVariable, 0, len(values))
-		for _, key := range slices.Sorted(maps.Keys(values)) {
-			entries = append(entries, types.EnvVariable{
-				Key:   key,
-				Value: values[key],
-			})
+		defer func() { _ = pull.Close() }()
+		if renderErr := docker.RenderJSONMessageStream(pull, io.Discard); renderErr != nil {
+			return nil, fmt.Errorf("failed to pull secret source image %s: %w", image, renderErr)
 		}
-		return entries, nil
-	}
-	document := jsontext.Value(bytes.TrimSpace(stdout))
-	if !document.IsValid() {
-		return nil, errors.New("container output is not valid JSON")
-	}
-	return extract(document, definition.Extract)
-}
-
-func runContainer(ctx context.Context, dockerClient *client.Client, config container.Config) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, containerTimeout)
-	defer cancel()
-
-	if err := ensureImage(ctx, dockerClient, config.Image); err != nil {
-		return nil, err
 	}
 
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &config,
+		Config: &container.Config{
+			Image:  image,
+			Cmd:    args,
+			Env:    containerEnv,
+			Labels: map[string]string{selfcontainer.InternalResourceLabel: "true", secretSourceLabel: "true"},
+		},
 		HostConfig: &container.HostConfig{},
 	})
 	if err != nil {
@@ -119,7 +93,7 @@ func runContainer(ctx context.Context, dockerClient *client.Client, config conta
 	defer func() {
 		removeCtx, removeCancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 		defer removeCancel()
-		if _, removeErr := dockerClient.ContainerRemove(removeCtx, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
+		if _, removeErr := dockerClient.ContainerRemove(removeCtx, created.ID, volumes.RemoveOptions()); removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
 			slog.WarnContext(removeCtx, "failed to remove secret source container", "containerId", created.ID, "error", removeErr)
 		}
 	}()
@@ -136,7 +110,6 @@ func runContainer(ctx context.Context, dockerClient *client.Client, config conta
 		}
 	case status = <-wait.Result:
 	}
-
 	if status.StatusCode != 0 {
 		return nil, fmt.Errorf("secret source container exited with code %d", status.StatusCode)
 	}
@@ -153,22 +126,24 @@ func runContainer(ctx context.Context, dockerClient *client.Client, config conta
 	if stdout.Truncated() {
 		return nil, fmt.Errorf("secret source container output exceeds %d bytes", maxResponseBytes)
 	}
-	return []byte(stdout.String()), nil
-}
 
-func ensureImage(ctx context.Context, dockerClient *client.Client, image string) error {
-	if _, err := dockerClient.ImageInspect(ctx, image); err == nil {
-		return nil
+	if format == formatDotenv {
+		values, parseErr := projects.ParseProjectEnvContent(stdout.String(), nil)
+		if parseErr != nil {
+			return nil, fmt.Errorf("container output is not valid dotenv: %w", parseErr)
+		}
+		entries := make([]types.EnvVariable, 0, len(values))
+		for _, key := range slices.Sorted(maps.Keys(values)) {
+			entries = append(entries, types.EnvVariable{
+				Key:   key,
+				Value: values[key],
+			})
+		}
+		return entries, nil
 	}
-	pullCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerImagePull)
-	defer cancel()
-	reader, err := dockerClient.ImagePull(pullCtx, image, client.ImagePullOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to pull secret source image %s: %w", image, err)
+	document := jsontext.Value(strings.TrimSpace(stdout.String()))
+	if !document.IsValid() {
+		return nil, errors.New("container output is not valid JSON")
 	}
-	defer func() { _ = reader.Close() }()
-	if renderErr := docker.RenderJSONMessageStream(reader, io.Discard); renderErr != nil {
-		return fmt.Errorf("failed to pull secret source image %s: %w", image, renderErr)
-	}
-	return nil
+	return extract(document, definition.Extract)
 }
