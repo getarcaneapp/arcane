@@ -2032,7 +2032,8 @@ func (b projectBundles) appendUpload(ctx context.Context, writer *projects.Proje
 }
 
 // stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it
-// stopped, also when it fails. Paused containers are frozen, so they are left as they are.
+// stopped, also when it fails. Paused containers are frozen, so they are left as they are, and Arcane's own containers
+// keep running.
 func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2048,13 +2049,13 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 			return stopped, fmt.Errorf("list containers: %w", listErr)
 		}
 		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool {
-			return c.State != container.StateRunning && c.State != container.StateRestarting
+			return (c.State != container.StateRunning && c.State != container.StateRestarting) || labels.IsArcaneContainer(c.Labels)
 		})
 		switch {
 		case len(running) == 0:
 			return stopped, nil
 		case pass > 0:
-			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not exported", len(running))
+			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
 		for _, c := range running {
 			// Each stop runs to completion so the deferred restart never races a stop still in progress.
@@ -2155,6 +2156,26 @@ func (s *ProjectService) startContainers(ctx context.Context, compose *composety
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// restartContainers starts a project's stopped containers again with startContainers; when its Compose files no
+// longer load, they are started directly.
+func (s *ProjectService) restartContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
+	if len(stopped) == 0 {
+		return nil
+	}
+	compose := &composetypes.Project{Name: docker.ComposeProjectLabel(stopped[0].Labels)}
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err == nil {
+		var loaded *composetypes.Project
+		if loaded, err = s.loadComposeProjectForProject(ctx, proj, nil); err == nil {
+			compose = loaded
+		}
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
+	}
+	return s.startContainers(ctx, compose, stopped)
 }
 
 // Import creates a project from a project-archive upload session. A plain project archive imports as before; a bundle

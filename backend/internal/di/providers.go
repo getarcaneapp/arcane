@@ -127,7 +127,6 @@ type (
 		Networks  *network.NetworkService
 
 		Repository     *backup.VolumeRepository
-		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -199,7 +198,6 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 		Backups: project.BackupDependencies{
 			Engine:         p.Backups,
 			Repository:     p.Repository,
-			Containers:     p.Containers,
 			S3Destinations: p.S3Destinations,
 			VolumeLocks:    p.Volumes.WorkspaceLocks(),
 		},

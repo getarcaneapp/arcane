@@ -40,7 +40,6 @@ type (
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
-		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		VolumeLocks    *concurrency.KeyedMutex
 	}
@@ -71,10 +70,13 @@ func New(p ModuleParams) *Module {
 			Docker:         p.Service.dockerService,
 			Engine:         p.Backups.Engine,
 			Repository:     p.Backups.Repository,
-			Containers:     p.Backups.Containers,
 			S3Destinations: p.Backups.S3Destinations,
 			Settings:       p.Service.settingsService,
 			VolumeLocks:    p.Backups.VolumeLocks,
+			// The containers are stopped and started again, and other projects' volumes found, as for an export.
+			StopContainers:  p.Service.stopRunningContainers,
+			StartContainers: p.Service.restartContainers,
+			VolumesInUse:    p.Service.volumesInUseOutside,
 			Project: func(ctx context.Context, projectID string) (types.Project, error) {
 				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
 			},

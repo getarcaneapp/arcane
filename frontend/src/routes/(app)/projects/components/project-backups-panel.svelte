@@ -67,7 +67,7 @@
 	let s3DestinationsError = $state<string | null>(null);
 	let creating = $state(false);
 
-	const selectable = (volume: ProjectVolume) => volume.kind === 'named' && !volume.missing;
+	const selectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
 		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
@@ -179,9 +179,10 @@
 	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
-		if (volume.kind === 'external') return m.project_backup_volume_external();
-		if (volume.kind === 'driverOpts') return m.project_backup_volume_driver_opts();
 		if (volume.missing) return m.project_backup_volume_missing();
+		if (volume.kind === 'driverOpts') return m.project_backup_volume_driver_opts();
+		if (volume.kind === 'external' && !volume.included) return m.project_backup_volume_external();
+		if (volume.inUse) return m.volume_in_use_elsewhere();
 		return null;
 	}
 
@@ -374,7 +375,7 @@
 									<Label for={`project-backup-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
 									<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
 									{#if note}
-										<span class="text-xs text-muted-foreground">{note}</span>
+										<span class={['text-xs', volume.inUse ? 'text-warning' : 'text-muted-foreground']}>{note}</span>
 									{/if}
 								</div>
 							</li>

@@ -66,7 +66,7 @@ type (
 		Archive      string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle; volumes naming one Docker volume share it"`
 		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
 		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
-		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export"`
+		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export or backup"`
 	}
 
 	ProjectManifestProject struct {
@@ -84,14 +84,14 @@ type (
 		IncludeFiles  []string               `json:"includeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
-		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were exported"`
+		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
 	}
 
 	CreateProjectBackupRequest struct {
-		StopContainers  *bool                   `json:"stopContainers,omitempty" doc:"Stop the project's running containers while the snapshot is taken; defaults to true"`
+		StopContainers  *bool                   `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; other projects keep running; defaults to true"`
 		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3,local_s3" doc:"Where the backup is stored; defaults to local"`
 		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"Saved S3 destination for s3 and local_s3"`
-		Volumes         []string                `json:"volumes,omitempty" doc:"Compose keys of the named volumes to include; omitted means every named volume that exists, empty means none"`
+		Volumes         []string                `json:"volumes,omitempty" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
 	}
 
 	ProjectBackupVolume struct {

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +35,7 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func newTestDockerService(t *testing.T, handler http.Handler) (*docker.DockerClientService, *client.Client) {
+func newTestDockerService(t *testing.T, handler http.Handler) *docker.DockerClientService {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -50,7 +49,7 @@ func newTestDockerService(t *testing.T, handler http.Handler) (*docker.DockerCli
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{Ctx: t.Context(), DB: db, Config: &config.Config{}, Env: settings.Env{}})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient), dockerClient
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }
 
 func newTestDB(t *testing.T) *database.DB {
@@ -90,7 +89,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	dockerService, _ := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
+	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
@@ -150,6 +149,10 @@ func TestBackupManifestKind(t *testing.T) {
 
 	p.StopContainers = true
 	require.True(t, backupManifest(project, p).Consistent)
+
+	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
+	p.Volumes[0].InUse = true
+	require.False(t, backupManifest(project, p).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -159,7 +162,7 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	require.NoError(t, gate.Register(harness.Runtime))
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	dockerService, _ := newTestDockerService(t, volumeServer(t, "web_data"))
+	dockerService := newTestDockerService(t, volumeServer(t, "web_data"))
 	service := NewService(Dependencies{
 		DB:     db,
 		Docker: dockerService,
@@ -194,22 +197,6 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 }
 
 func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
-	var mu sync.Mutex
-	var started []string
-	dockerService, dockerClient := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, State: container.StateExited}}))
-		case strings.HasSuffix(r.URL.Path, "/containers/web-1/start"):
-			mu.Lock()
-			started = append(started, "web-1")
-			mu.Unlock()
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
 	db := newTestDB(t)
 	entry := &ProjectBackup{
 		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()},
@@ -218,21 +205,22 @@ func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
 		Error:     "snapshot failed",
 	}
 	require.NoError(t, db.Create(entry).Error)
+	var started []container.Summary
 	service := NewService(Dependencies{
 		DB:          db,
 		VolumeLocks: &concurrency.KeyedMutex{},
-		Containers: &backup.Containers{
-			Docker: dockerService,
-			Start: func(ctx context.Context, containerID string, _ types.Actor) error {
-				_, err := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
-				return err
-			},
+		StartContainers: func(_ context.Context, projectID string, stopped []container.Summary) error {
+			assert.Equal(t, "p1", projectID)
+			started = append(started, stopped...)
+			return nil
 		},
 	})
 
-	recorded := plan{BackupID: "b1", ProjectID: "p1", StopContainers: true, Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}}}
+	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
+	recorded := plan{BackupID: "b1", ProjectID: "p1", StopContainers: true, Stopped: checkpointed}
 	err := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
 	require.ErrorIs(t, err, backup.ErrBackupSettled)
 	require.ErrorContains(t, err, "snapshot failed")
-	require.Equal(t, []string{"web-1"}, started)
+	// The checkpointed containers are started again through the project's Compose start.
+	require.Equal(t, checkpointed, started)
 }

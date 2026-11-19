@@ -50,11 +50,16 @@ type (
 		Docker         *dockerInternal.DockerClientService
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
-		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		VolumeLocks    *concurrency.KeyedMutex
 		Project        func(ctx context.Context, projectID string) (types.Project, error)
+		// StopContainers stops the Compose project's running containers and returns those it stopped, also when it fails.
+		StopContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
+		// StartContainers starts the project's stopped containers again in Compose order.
+		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
+		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
+		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
 	}
 
 	Service struct {
@@ -84,7 +89,6 @@ type (
 
 	runInput struct {
 		Requester types.BackupRequester `json:"requester"`
-		User      types.Actor           `json:"user"`
 		Plan      plan                  `json:"plan"`
 	}
 )
@@ -161,7 +165,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 			releaseLease(ctx)
 		}
 	}
-	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, User: opts.User, Plan: p}, activitylib.StartRequest{
+	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, Plan: p}, activitylib.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Creating backup", LatestMessage: "Creating project backup",
 		Metadata: database.JSON{"action": "create_project_backup", "backupId": entry.ID, "destination": entry.Destination, "s3DestinationId": entry.S3DestinationID},
@@ -181,7 +185,8 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	return dto, nil
 }
 
-// resolvePlan validates the request against the project; by default it captures every named volume that exists.
+// resolvePlan validates the request against the project; by default it captures every volume that exists and keeps its
+// data in Docker.
 func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest) (plan, error) {
 	selected := cmp.Or(request.Destination, types.VolumeBackupDestinationLocal)
 	if !slices.Contains([]types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}, selected) {
@@ -342,7 +347,7 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	if err != nil {
 		return nil, err
 	}
-	err = s.execute(ctx, entry, input.Plan, input.User)
+	err = s.execute(ctx, entry, input.Plan)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -356,8 +361,10 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 // snapshots it already wrote and finishes the backup.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input runInput, recorded plan) error {
 	if len(recorded.Stopped) > 0 {
-		remaining, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), recorded.Stopped, input.User)
-		recorded.Stopped = remaining
+		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		if restartErr == nil {
+			recorded.Stopped = nil
+		}
 		if err := errors.Join(restartErr, s.record(ctx, recorded)); err != nil {
 			return err
 		}
@@ -387,7 +394,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 	if adoptErr := s.adopt(ctx, previous, entry, recorded); adoptErr != nil {
 		return adoptErr
 	}
-	err = s.execute(ctx, entry, recorded, input.User)
+	err = s.execute(ctx, entry, recorded)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -435,10 +442,10 @@ func (s *Service) repository(ctx context.Context, dockerClient *client.Client, p
 }
 
 // execute takes the snapshot unless it already exists, then replicates a local snapshot to S3 when both are enabled.
-func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan, user types.Actor) (err error) {
+func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (err error) {
 	defer concurrency.RecoverToError(&err, "project backup")
 	if kit.Ternary(p.LocalEnabled, entry.LocalSnapshotID, entry.RemoteSnapshotID) == "" {
-		if captureErr := s.capture(ctx, entry, p, user); captureErr != nil {
+		if captureErr := s.capture(ctx, entry, p); captureErr != nil {
 			return captureErr
 		}
 	}
@@ -476,7 +483,7 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan, use
 }
 
 // capture writes the manifest, stops the project when asked, and takes one snapshot of its files and volumes.
-func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, user types.Actor) (err error) {
+func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (err error) {
 	unlock, err := s.lockVolumes(ctx, p.volumeNames())
 	if err != nil {
 		return err
@@ -489,6 +496,14 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, use
 	project, err := s.deps.Project(ctx, entry.ProjectID)
 	if err != nil {
 		return err
+	}
+	// Other projects keep running, so a volume they mount may change while it is captured.
+	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
+	if err != nil {
+		return err
+	}
+	for index, volume := range p.Volumes {
+		p.Volumes[index].InUse = volume.Included && inUse[volume.Name]
 	}
 	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p))
 	if err != nil {
@@ -511,13 +526,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, use
 	var stopped []container.Summary
 	defer func() {
 		if len(stopped) > 0 {
-			_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
-			err = errors.Join(err, restartErr)
+			err = errors.Join(err, s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped))
 		}
 	}()
 	if p.StopContainers {
 		var stopErr error
-		stopped, stopErr = s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Project: project.ComposeName, Volumes: p.volumeNames()}, user)
+		stopped, stopErr = s.deps.StopContainers(ctx, project.ComposeName)
 		p.Stopped = checkpointContainers(stopped)
 		if recordErr := errors.Join(stopErr, s.record(ctx, p)); recordErr != nil {
 			return recordErr
@@ -537,9 +551,10 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, use
 		return saveErr
 	}
 	if len(stopped) > 0 {
-		var restartErr error
-		stopped, restartErr = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
-		p.Stopped = checkpointContainers(stopped)
+		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
+		if restartErr == nil {
+			stopped, p.Stopped = nil, nil
+		}
 		if recordErr := errors.Join(restartErr, s.record(ctx, p)); recordErr != nil {
 			return recordErr
 		}
@@ -547,7 +562,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, use
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
 }
 
-// checkpointContainers keeps what restarting a container needs, including the labels that find its Compose replacement.
+// checkpointContainers keeps what restarting a container needs, including the labels that name its Compose service.
 func checkpointContainers(stopped []container.Summary) []container.Summary {
 	kept := make([]container.Summary, 0, len(stopped))
 	for _, summary := range stopped {
@@ -609,7 +624,7 @@ func backupManifest(project types.Project, p plan) types.ProjectManifest {
 		IncludeFiles:  includeFiles,
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
-		Consistent:    p.StopContainers || project.RunningCount == 0,
+		Consistent:    (p.StopContainers || project.RunningCount == 0) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 	}
 }
 

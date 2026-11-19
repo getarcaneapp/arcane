@@ -11621,6 +11621,98 @@ func TestProjectServiceStartContainersStartsOnlyTheStoppedOnes(t *testing.T) {
 	}
 }
 
+func TestProjectServiceBackupStopsAndRestartsOnlyThisProject(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	labelsFor := func(project, service string) map[string]string {
+		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
+	}
+	arcane := labelsFor("demo", "arcane")
+	arcane["com.getarcaneapp.arcane"] = "true"
+	var (
+		mu             sync.Mutex
+		stopped        []string
+		composeStarted []types.ComposeTarget
+	)
+	states := map[string]container.ContainerState{
+		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
+		"arcane-1": container.StateRunning, "other-1": container.StateRunning,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			all := []container.Summary{
+				{ID: "web-1", Labels: labelsFor("demo", "web"), State: states["web-1"]},
+				{ID: "db-1", Labels: labelsFor("demo", "db"), State: states["db-1"]},
+				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
+				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"]},
+				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
+			}
+			// The project label filter is what keeps other projects out.
+			if filter := r.URL.Query().Get("filters"); filter != "" {
+				all = slices.DeleteFunc(all, func(c container.Summary) bool {
+					return !strings.Contains(filter, api.ProjectLabel+"="+c.Labels[api.ProjectLabel])
+				})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, all)
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			id := filepath.Base(filepath.Dir(r.URL.Path))
+			stopped = append(stopped, id)
+			states[id] = container.StateExited
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	originalComposeStart := composeStartProjectServices
+	t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
+	composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
+		mu.Lock()
+		defer mu.Unlock()
+		composeStarted = append(composeStarted, target)
+		return nil
+	}
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	projectPath := createComposeProjectDir(t, projectsDir, "demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n  web:\n    image: nginx:alpine\n    depends_on:\n      db:\n        condition: service_healthy\n    volumes:\n      - data:/data\n"+
+			"  db:\n    image: postgres:alpine\n  cache:\n    image: redis:alpine\nvolumes:\n  data:\n",
+	), 0o644))
+	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
+
+	inUse, err := svc.volumesInUseOutside(ctx, "demo")
+	require.NoError(t, err)
+	assert.True(t, inUse["demo_data"], "another project's running container mounts the volume")
+
+	summaries, err := svc.stopRunningContainers(ctx, "demo")
+	require.NoError(t, err)
+	// The paused cache, Arcane itself, and the other project keep their state.
+	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
+	assert.Equal(t, container.StatePaused, states["cache-1"])
+
+	require.NoError(t, svc.restartContainers(ctx, "proj-demo", summaries))
+	require.Len(t, composeStarted, 1)
+	assert.Equal(t, []string{"web", "db"}, composeStarted[0].Services)
+	assert.Equal(t, composetypes.ServiceConditionHealthy, composeStarted[0].Project.Services["web"].DependsOn["db"].Condition)
+}
+
 func TestProjectBundlesExportSkipsVolumesNotCreatedYet(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
