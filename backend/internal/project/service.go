@@ -2048,13 +2048,13 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 			return stopped, fmt.Errorf("list containers: %w", listErr)
 		}
 		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool {
-			return c.State != container.StateRunning && c.State != container.StateRestarting
+			return (c.State != container.StateRunning && c.State != container.StateRestarting) || labels.IsArcaneContainer(c.Labels)
 		})
 		switch {
 		case len(running) == 0:
 			return stopped, nil
 		case pass > 0:
-			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not exported", len(running))
+			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
 		for _, c := range running {
 			// Each stop runs to completion so the deferred restart never races a stop still in progress.
@@ -2082,7 +2082,8 @@ func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName st
 	}
 	inUse := map[string]bool{}
 	for _, c := range running.Items {
-		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName {
+		// Arcane's own containers are never stopped, so they count as in use even within this project.
+		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
 			continue
 		}
 		for _, m := range c.Mounts {
