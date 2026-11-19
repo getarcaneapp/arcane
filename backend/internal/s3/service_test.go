@@ -38,7 +38,7 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
@@ -127,9 +127,24 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.Exec("INSERT INTO project_backups (s3_destination_id, remote_snapshot_id) VALUES (?, ?)", projectDestination.ID, "snapshot-1").Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO project_backups (s3_destination_id, remote_snapshot_id, status) VALUES (?, ?, ?)", projectDestination.ID, "snapshot-1", "succeeded").Error)
 
 	err = service.DeleteS3Destination(ctx, projectDestination.ID)
+	require.ErrorIs(t, err, ErrS3DestinationInUse)
+
+	// A first backup still running has no snapshot ID yet, but it is writing to the destination.
+	runningDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
+		Name:            "Running project backup",
+		Bucket:          "running-project-backup",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.Exec("INSERT INTO project_backups (s3_destination_id, remote_snapshot_id, status) VALUES (?, ?, ?)", runningDestination.ID, "", "running").Error)
+
+	err = service.DeleteS3Destination(ctx, runningDestination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 }
 
