@@ -12291,8 +12291,11 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				entries, readErr := os.ReadDir(projectsDir)
 				require.NoError(t, readErr)
 				assert.Empty(t, entries)
+				// The new project's files may be restored before its volume names are known; no volume data is.
 				if tt.conflict && tt.failCreate == "" {
-					assert.Empty(t, snapshots.restores, "nothing is restored when the new project is refused")
+					for _, restore := range snapshots.restores {
+						assert.Empty(t, restore.Volumes, "no volume data is restored when the new project is refused")
+					}
 				}
 				return
 			}
