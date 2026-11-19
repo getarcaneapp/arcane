@@ -2825,7 +2825,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 
 	// Arcane's own container goes through the system upgrade flow.
 	if s.runsArcane(ctx, proj) {
-		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
+		return common.ErrSelfRedeployBlocked
 	}
 
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)

@@ -1,17 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page } from 'playwright/test';
 import { readApiData } from './fetch.util';
 import { waitForDialogReady } from './playwright.util';
-import { reportDirectory } from './report';
+import { composeFile, reportDirectory } from './report';
 
 const TEST_PASSWORD = 'Test-password-123';
 const GENERATED_PASSWORD_FILE = 'initial-admin-password';
 
 function generatedAdminPassword(): string {
-	const composeFile = process.env.ARCANE_E2E_COMPOSE_FILE;
-	if (!composeFile) throw new Error('ARCANE_E2E_COMPOSE_FILE is not set');
 	const target = path.join(reportDirectory, GENERATED_PASSWORD_FILE);
 	fs.mkdirSync(reportDirectory, { recursive: true });
 	execFileSync(
