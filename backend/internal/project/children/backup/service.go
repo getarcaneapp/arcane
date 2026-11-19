@@ -102,6 +102,8 @@ type (
 		restores  *flow.Workflow
 		scheduled *flow.Workflow
 		global    *flow.Workflow
+		// policyLocks serializes saving a project's policies with updating their jobs.
+		policyLocks concurrency.KeyedMutex
 		// globalConfig serializes every read-modify-save of the global policies' setting.
 		globalConfig sync.Mutex
 	}
@@ -1311,6 +1313,8 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 
 // UpdatePolicies replaces the project's backup policies, schedules the enabled ones and unschedules the rest.
 func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
+	// Two saves for the same project must not register jobs in a different order from their commits.
+	defer s.policyLocks.Lock(projectID)()
 	project, err := s.deps.Project(ctx, projectID)
 	if err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
@@ -1355,7 +1359,10 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			}
 			return nil
 		},
-		Unregister: s.jobs.Unregister,
+		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
+		Unregister: func(ctx context.Context, policyID string) {
+			s.reschedule(ctx, &ProjectBackupPolicy{BaseModel: database.BaseModel{ID: policyID}, ProjectID: projectID})
+		},
 		Reschedule: s.reschedule,
 	}
 	if runErr := reconcile.Run(ctx, updates); runErr != nil {
@@ -1364,11 +1371,26 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 	return s.Policies(ctx, projectID)
 }
 
-// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy.
+// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy, and keeps the
+// job of a disabled or deleted per-project policy whose backup was interrupted, so the run can resume and start the
+// containers it stopped.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
+	db := s.deps.DB.WithContext(ctx)
+	unfinished := db.Model(&ProjectBackup{}).Select("policy_id").
+		Where("status = ? AND trigger = ? AND policy_id <> ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled)
 	var policies []ProjectBackupPolicy
-	if err := s.deps.DB.WithContext(ctx).Where("enabled = ?", true).Find(&policies).Error; err != nil {
+	if err := db.Where("enabled = ? OR id IN (?)", true, unfinished).Find(&policies).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load scheduled project backups", "error", err)
+	}
+	var orphaned []ProjectBackup
+	if err := db.Where("status = ? AND trigger = ? AND policy_id <> '' AND policy_id NOT LIKE ? AND policy_id NOT IN (?)",
+		types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%",
+		db.Model(&ProjectBackupPolicy{}).Select("id"),
+	).Find(&orphaned).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to load interrupted project backups of deleted policies", "error", err)
+	}
+	for _, entry := range orphaned {
+		policies = append(policies, ProjectBackupPolicy{BaseModel: database.BaseModel{ID: entry.PolicyID}, ProjectID: entry.ProjectID})
 	}
 	for i := range policies {
 		s.reschedule(ctx, &policies[i])
@@ -1376,6 +1398,19 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	globals, err := s.globalPolicies()
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load global project backup policies", "error", err)
+	}
+	// A deleted global policy's interrupted run resumes through its job as well.
+	var series []string
+	if seriesErr := db.Model(&ProjectBackup{}).Distinct("policy_id").
+		Where("status = ? AND trigger = ? AND policy_id LIKE ?", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%").
+		Pluck("policy_id", &series).Error; seriesErr != nil {
+		slog.ErrorContext(ctx, "Failed to load interrupted global project backups", "error", seriesErr)
+	}
+	for _, seriesID := range series {
+		policyID, _, _ := strings.Cut(strings.TrimPrefix(seriesID, types.GlobalProjectPolicyPrefix), ":")
+		if !slices.ContainsFunc(globals, func(policy types.GlobalProjectBackupPolicy) bool { return policy.ID == policyID }) {
+			globals = append(globals, types.GlobalProjectBackupPolicy{ID: policyID})
+		}
 	}
 	for i := range globals {
 		s.rescheduleGlobal(ctx, &globals[i])
@@ -1385,6 +1420,7 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 
 // RemovePolicies unschedules and deletes a deleted project's backup policies, which leaves their backups unmanaged.
 func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
+	defer s.policyLocks.Lock(projectID)()
 	policies, err := s.policies(ctx, projectID)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load the backup policies of a deleted project", "projectId", projectID, "error", err)
@@ -1400,8 +1436,17 @@ func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
 	}
 }
 
+// unfinished reports whether a scheduled backup of the job's policy is still running, matching a global policy's
+// per-project series too; a failed check counts as running, so its job is kept.
+func (s *Service) unfinished(ctx context.Context, jobID string) bool {
+	var count int64
+	err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
+		Where("(policy_id = ? OR policy_id LIKE ?) AND status = ?", jobID, jobID+":%", types.VolumeBackupStatusRunning).Count(&count).Error
+	return err != nil || count > 0
+}
+
 func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
-	if !policy.Enabled {
+	if !policy.Enabled && !s.unfinished(ctx, policy.ID) {
 		s.jobs.Unregister(ctx, policy.ID)
 		return
 	}
@@ -1429,6 +1474,13 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 				return defaultSchedule
 			}
 			return current.Schedule
+		},
+		// A disabled or deleted policy's job only finishes an interrupted backup; a run it starts finds the policy off
+		// and cancels.
+		ShouldRunFn: func(ctx context.Context) bool {
+			var current ProjectBackupPolicy
+			loadErr := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error
+			return (loadErr == nil && current.Enabled) || s.unfinished(ctx, policyID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and finishes its backup. Nothing
 		// retries a fallback, so it waits for a busy admission instead of handing the run back.
@@ -1924,8 +1976,9 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 			return nil
 		},
 		Persist: s.saveGlobalPolicies,
+		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
 		Unregister: func(ctx context.Context, policyID string) {
-			s.jobs.Unregister(ctx, types.GlobalProjectPolicyPrefix+policyID)
+			s.rescheduleGlobal(ctx, &types.GlobalProjectBackupPolicy{ID: policyID})
 		},
 		Reschedule: s.rescheduleGlobal,
 	}
@@ -2005,7 +2058,7 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 		return
 	}
 	jobID := types.GlobalProjectPolicyPrefix + policy.ID
-	if !policy.Enabled {
+	if !policy.Enabled && !s.unfinished(ctx, jobID) {
 		s.jobs.Unregister(ctx, jobID)
 		return
 	}
@@ -2024,6 +2077,11 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 				return defaultSchedule
 			}
 			return current.Schedule
+		},
+		// A disabled or deleted policy's job only finishes an interrupted run; a run it starts finds the policy off.
+		ShouldRunFn: func(ctx context.Context) bool {
+			current, err := s.globalPolicy(policyID)
+			return (err == nil && current != nil && current.Enabled) || s.unfinished(ctx, jobID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and backs up the rest of its
 		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back.
