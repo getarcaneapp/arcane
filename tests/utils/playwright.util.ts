@@ -1,8 +1,8 @@
-import { expect, type Locator } from '@playwright/test';
-import playwrightConfig from '../playwright.config';
+import { expect, type Locator } from 'playwright/test';
+import { baseURL } from './report';
 
 export async function createTestApiKeys(count: number = 2) {
-	const url = new URL('/api/playwright/apikeys', playwrightConfig.use!.baseURL);
+	const url = new URL('/api/playwright/apikeys', baseURL);
 
 	const response = await fetch(url, {
 		method: 'POST',
@@ -20,7 +20,7 @@ export async function createTestApiKeys(count: number = 2) {
 }
 
 export async function deleteTestApiKeys() {
-	const url = new URL('/api/playwright/apikeys', playwrightConfig.use!.baseURL);
+	const url = new URL('/api/playwright/apikeys', baseURL);
 
 	const response = await fetch(url, {
 		method: 'DELETE'

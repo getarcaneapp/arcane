@@ -1,8 +1,9 @@
-import { expect, test } from '@playwright/test';
-import playwrightConfig from '../playwright.config';
+import { expect } from 'playwright/test';
+import { expect as vitestExpect, test } from 'vite-plus/test';
 import { buildCLI, createCLIConfig, runCLI, runCLIJSON, type CLIConfig } from '../utils/cli.util';
 import { createMockOidcIssuer } from '../utils/oidc.util';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
+import { baseURL } from '../utils/report';
 
 type CreatedApiKey = {
 	id: string;
@@ -44,7 +45,6 @@ type JsonReadOnlyCommand = {
 	expectation: (value: unknown) => void;
 };
 
-const baseURL = String(playwrightConfig.use!.baseURL);
 const staticApiKey = process.env.E2E_ADMIN_STATIC_API_KEY;
 let apiKey = staticApiKey ?? '';
 
@@ -336,7 +336,6 @@ const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 ];
 
 test.beforeAll(async () => {
-	test.setTimeout(180_000);
 	await buildCLI();
 });
 
@@ -615,7 +614,7 @@ test.describe('arcane-cli e2e', () => {
 						'delete',
 						created.id
 					]).catch((error: unknown) => {
-						expect.soft(false, `Remove CLI test key: ${String(error)}`).toBe(true);
+						vitestExpect.soft(false, `Remove CLI test key: ${String(error)}`).toBe(true);
 					});
 				}
 			}
@@ -723,7 +722,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 					)
 					.toBe(true);
 			} catch (error) {
-				expect.soft(false, `Remove read-only key: ${String(error)}`).toBe(true);
+				vitestExpect.soft(false, `Remove read-only key: ${String(error)}`).toBe(true);
 			}
 		}
 		if (remoteEnvId) {
@@ -736,7 +735,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 					)
 					.toBe(true);
 			} catch (error) {
-				expect.soft(false, `Remove remote environment: ${String(error)}`).toBe(true);
+				vitestExpect.soft(false, `Remove remote environment: ${String(error)}`).toBe(true);
 			}
 		}
 		if (createdAdminKey) {

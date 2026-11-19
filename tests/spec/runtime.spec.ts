@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { expect as vitestExpect } from 'vite-plus/test';
 
 const IMAGE = process.env.ARCANE_RUNTIME_TEST_IMAGE || 'arcane:playwright-tests';
 const HELPER_IMAGE =
@@ -179,7 +180,7 @@ function cleanupContainer(name: string) {
 		docker(['rm', '-f', name]);
 	} catch (error) {
 		if (!String(error).includes('No such container'))
-			expect.soft(false, `Remove container ${name}: ${String(error)}`).toBe(true);
+			vitestExpect.soft(false, `Remove container ${name}: ${String(error)}`).toBe(true);
 	}
 }
 
@@ -206,7 +207,7 @@ function cleanupDir(dir: string) {
 			]);
 			fs.rmSync(dir, { recursive: true, force: true });
 		} catch (error) {
-			expect.soft(false, `Remove directory ${dir}: ${String(error)}`).toBe(true);
+			vitestExpect.soft(false, `Remove directory ${dir}: ${String(error)}`).toBe(true);
 		}
 	}
 }
@@ -216,7 +217,7 @@ function cleanupNetwork(name: string) {
 		docker(['network', 'rm', name]);
 	} catch (error) {
 		if (!String(error).includes('not found'))
-			expect.soft(false, `Remove network ${name}: ${String(error)}`).toBe(true);
+			vitestExpect.soft(false, `Remove network ${name}: ${String(error)}`).toBe(true);
 	}
 }
 
@@ -225,7 +226,7 @@ function cleanupVolume(name: string) {
 		docker(['volume', 'rm', '-f', name]);
 	} catch (error) {
 		if (!String(error).includes('no such volume'))
-			expect.soft(false, `Remove volume ${name}: ${String(error)}`).toBe(true);
+			vitestExpect.soft(false, `Remove volume ${name}: ${String(error)}`).toBe(true);
 	}
 }
 
@@ -330,9 +331,7 @@ function defaultRunArgs(name: string, dataDir: string) {
 	];
 }
 
-test.describe.serial('Docker runtime identity', () => {
-	test.setTimeout(240_000);
-
+test.describe('Docker runtime identity', { timeout: 240_000 }, () => {
 	test('uses the default non-root runtime when PUID and PGID are unset', async () => {
 		const containerName = uniqueName('arcane-default');
 		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-'));
