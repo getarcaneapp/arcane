@@ -82,7 +82,18 @@ type (
 		DestinationPath string
 		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
 		ExtraMounts []mount.Mount
+		// Globs filter what is restored; --delete still removes destination paths they exclude.
+		Globs       []string
 		DeleteExtra bool
+	}
+
+	SourceMountOptions struct {
+		ContainerPath string
+		Target        string
+		Mounts        []container.MountPoint
+		InContainer   bool
+		// Writable mounts the source read-write, for a restore into it.
+		Writable bool
 	}
 
 	CreateSnapshotInput struct {
@@ -343,6 +354,9 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 	command := []string{"restore", "--verify-existing"}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
+	}
+	for _, glob := range options.Globs {
+		command = append(command, "--glob", glob)
 	}
 	source := snapshotID + ":/" + strings.TrimPrefix(options.SourcePath, "/")
 	command = append(command, "--", source, cmp.Or(options.DestinationPath, target.Target))
@@ -1365,22 +1379,23 @@ func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []c
 	return inspect.Mounts, true, nil
 }
 
-// SourceMounts mounts containerPath read-only at target through the host mounts behind it, including nested ones.
-func SourceMounts(mounts []container.MountPoint, inContainer bool, containerPath, target string) ([]mount.Mount, error) {
-	if !inContainer {
-		return []mount.Mount{{Type: mount.TypeBind, Source: containerPath, Target: target, ReadOnly: true}}, nil
+// SourceMounts mounts ContainerPath at Target through the host mounts behind it, including nested ones.
+func SourceMounts(opts SourceMountOptions) ([]mount.Mount, error) {
+	if !opts.InContainer {
+		return []mount.Mount{{Type: mount.TypeBind, Source: opts.ContainerPath, Target: opts.Target, ReadOnly: !opts.Writable}}, nil
 	}
-	primary := docker.MountForSubpath(mounts, containerPath, target)
+	primary := docker.MountForSubpath(opts.Mounts, opts.ContainerPath, opts.Target)
 	if primary == nil {
-		return nil, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume for backups", containerPath)
+		return nil, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume for backups", opts.ContainerPath)
 	}
-	result := make([]mount.Mount, 0, 1+len(docker.NestedMounts(mounts, containerPath, target)))
-	for _, resolved := range append([]mount.Mount{*primary}, docker.NestedMounts(mounts, containerPath, target)...) {
+	nested := docker.NestedMounts(opts.Mounts, opts.ContainerPath, opts.Target)
+	result := make([]mount.Mount, 0, 1+len(nested))
+	for _, resolved := range append([]mount.Mount{*primary}, nested...) {
 		result = append(result, mount.Mount{ //exhaustruct:enforce
 			Type:           resolved.Type,
 			Source:         resolved.Source,
 			Target:         resolved.Target,
-			ReadOnly:       true,
+			ReadOnly:       !opts.Writable,
 			Consistency:    resolved.Consistency,
 			BindOptions:    resolved.BindOptions,
 			VolumeOptions:  resolved.VolumeOptions,

@@ -60,6 +60,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/listing"
@@ -103,6 +104,14 @@ type (
 
 	bundleActivityRecorder struct {
 		messages []string
+	}
+
+	// fakeBackupSnapshots serves a backup's manifest and restores its project files by writing their compose file.
+	fakeBackupSnapshots struct {
+		fail     error
+		compose  string
+		restores []projectbackup.RestoreToOptions
+		manifest types.ProjectManifest
 	}
 )
 
@@ -12074,7 +12083,7 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 			assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
 			if tt.failCreate != "" {
 				// The rollback runs under the import's project lock.
-				require.ErrorContains(t, err, "the imported project and its volumes were removed")
+				require.ErrorContains(t, err, "the new project and its volumes were removed")
 			}
 			// An existing volume refuses the import before anything is created, restored, or removed.
 			assert.Equal(t, tt.wantCreated, names)
@@ -12087,6 +12096,163 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 			if index := slices.IndexFunc(created, func(options client.VolumeCreateOptions) bool { return options.Name == "copy_cache" }); index >= 0 {
 				assert.Equal(t, "copy", created[index].Labels[api.ProjectLabel])
 			}
+		})
+	}
+}
+
+func (f *fakeBackupSnapshots) Manifest(context.Context, string, string) (types.ProjectManifest, error) {
+	return f.manifest, nil
+}
+
+func (f *fakeBackupSnapshots) RestoreTo(_ context.Context, opts projectbackup.RestoreToOptions) error {
+	f.restores = append(f.restores, opts)
+	if opts.ProjectPath != "" {
+		return os.WriteFile(filepath.Join(opts.ProjectPath, "compose.yaml"), []byte(f.compose), 0o644)
+	}
+	return f.fail
+}
+
+func TestProjectBundlesRestoreAsNew(t *testing.T) {
+	compose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\n      - shared:/shared\n" +
+		"volumes:\n  data:\n  logs:\n  shared:\n    external: true\n    name: shared-data\n"
+	manifest := types.ProjectManifest{
+		Kind:         types.ProjectManifestKindBackup,
+		Project:      types.ProjectManifestProject{ID: "p1", Name: "web", ComposeName: "web"},
+		ComposeFiles: []string{"compose.yaml"},
+		Volumes: []types.ProjectVolume{
+			{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true},
+			{Key: "logs", Name: "web_logs", Kind: types.ProjectVolumeNamed},
+			{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeExternal, DockerLabels: map[string]string{"owner": "ops"}, Included: true},
+		},
+		FormatVersion: types.ProjectManifestFormatVersion,
+	}
+	tests := []struct {
+		name        string
+		wantErr     string
+		failCreate  string
+		existing    []string
+		wantCreated []string
+		wantDeleted []string
+		failRestore bool
+		conflict    bool
+		stack       bool
+	}{
+		{name: "restores", wantCreated: []string{"shared-data", "copy_data"}},
+		// Both refusals come before the project or any volume is created.
+		{name: "refuses a running Compose stack of the same name", stack: true, conflict: true, wantErr: "docker already runs a Compose stack named copy"},
+		{name: "refuses an existing volume", existing: []string{"copy_data"}, conflict: true, wantErr: "these volumes already exist: copy_data"},
+		{
+			name: "removes what it created when the restore fails", failRestore: true, wantErr: "rustic failed",
+			wantCreated: []string{"shared-data", "copy_data"}, wantDeleted: []string{"shared-data", "copy_data"},
+		},
+		// copy_data was made by someone else when its create failed, so only shared-data is removed.
+		{name: "removes only what it created", failCreate: "copy_data", wantErr: "disk full", wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TMPDIR", t.TempDir())
+			ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+			db := setupProjectTestDB(t)
+			settingsService, err := newSettingsServiceForTest(t, ctx, db)
+			require.NoError(t, err)
+			projectsDir := t.TempDir()
+			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+			var mu sync.Mutex
+			existing := map[string]map[string]string{}
+			for _, name := range tt.existing {
+				existing[name] = nil
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				name := filepath.Base(r.URL.Path)
+				labels, exists := existing[name]
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json") && tt.stack && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, []container.Summary{{ID: "app-1", Labels: map[string]string{api.ProjectLabel: "copy"}, State: container.StateRunning}})
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, []container.Summary{})
+				case strings.Contains(r.URL.Path, "/volumes/") && exists:
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, volume.Volume{Name: name, Driver: "local", Labels: labels})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+			svc := NewProjectService(ProjectServiceParams{
+				DB:                          db,
+				SettingsService:             settingsService,
+				EventService:                event.NewEventService(db, &config.Config{}, nil),
+				DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+				BuildService:                testBuildBuilder{},
+				Uploads:                     upload.NewUploadService(settingsService),
+				Config:                      loadTestConfig(t),
+				KVService:                   kv.NewKVService(db),
+				RegistryCredentialsProvider: testRegistryCredentials,
+			})
+			snapshots := &fakeBackupSnapshots{compose: compose, manifest: manifest, fail: kit.Ternary(tt.failRestore, errors.New("rustic failed"), nil)}
+			var (
+				created        []client.VolumeCreateOptions
+				names, deleted []string
+			)
+			bundles := projectBundles{backups: snapshots, local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+				CreateVolume: func(_ context.Context, options client.VolumeCreateOptions, _ types.Actor) (*types.Volume, error) {
+					mu.Lock()
+					defer mu.Unlock()
+					existing[options.Name] = options.Labels
+					if options.Name == tt.failCreate {
+						return nil, errors.New("disk full")
+					}
+					created = append(created, options)
+					names = append(names, options.Name)
+					return &types.Volume{Name: options.Name}, nil
+				},
+				DeleteVolume: func(_ context.Context, name string, _ bool, _ types.Actor) error {
+					deleted = append(deleted, name)
+					return nil
+				},
+			}}}
+
+			restored, err := bundles.RestoreAsNew(ctx, RestoreAsNewOptions{
+				EnvironmentID: "0",
+				ProjectID:     "p1",
+				BackupID:      "b1",
+				Request:       types.RestoreProjectBackupAsNewRequest{Name: "copy"},
+			})
+			assert.Equal(t, tt.wantCreated, names)
+			assert.Equal(t, tt.wantDeleted, deleted)
+			var projectCount int64
+			require.NoError(t, db.Model(&Project{}).Count(&projectCount).Error)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
+				assert.Zero(t, projectCount)
+				entries, readErr := os.ReadDir(projectsDir)
+				require.NoError(t, readErr)
+				assert.Empty(t, entries)
+				if tt.conflict {
+					assert.Empty(t, snapshots.restores, "nothing is restored when the new project is refused")
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "copy", restored.Name)
+			assert.Equal(t, int64(1), projectCount)
+			// The files restore into the new project directory, then the volumes into the volumes it created.
+			require.Len(t, snapshots.restores, 2)
+			assert.Equal(t, restored.Path, snapshots.restores[0].ProjectPath)
+			assert.Equal(t, []projectbackup.RestoreVolume{
+				{Key: "shared", Snapshot: "shared-data", Name: "shared-data"},
+				{Key: "data", Snapshot: "web_data", Name: "copy_data"},
+			}, snapshots.restores[1].Volumes)
+			// An external volume gets its recorded Docker labels and no Compose labels.
+			assert.Equal(t, client.VolumeCreateOptions{Name: "shared-data", Labels: map[string]string{"owner": "ops"}}, created[0])
+			assert.Equal(t, "copy", created[1].Labels[api.ProjectLabel])
+			assert.Equal(t, "data", created[1].Labels[api.VolumeLabel])
 		})
 	}
 }

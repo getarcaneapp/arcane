@@ -545,21 +545,21 @@ func TestSourceMounts(t *testing.T) {
 		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
 		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
 	}
-	data, err := SourceMounts(mounts, true, "/app/data", "/data")
+	data, err := SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/app/data", Target: "/data", InContainer: true})
 	require.NoError(t, err)
 	require.Equal(t, []mount.Mount{
 		{Type: mount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true},
 		{Type: mount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
 	}, data)
 
-	external, err := SourceMounts(mounts, true, "/srv/projects", "/projects")
+	external, err := SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/srv/projects", Target: "/projects", InContainer: true})
 	require.NoError(t, err)
 	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/host/external", Target: "/projects", ReadOnly: true}}, external)
 
-	_, err = SourceMounts(mounts, true, "/opt/projects", "/projects")
+	_, err = SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/opt/projects", Target: "/projects", InContainer: true})
 	require.ErrorContains(t, err, "/opt/projects must be mounted into the Arcane container")
 
-	host, err := SourceMounts(nil, false, "/tmp/data", "/data")
+	host, err := SourceMounts(SourceMountOptions{ContainerPath: "/tmp/data", Target: "/data"})
 	require.NoError(t, err)
 	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/tmp/data", Target: "/data", ReadOnly: true}}, host)
 }

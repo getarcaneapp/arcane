@@ -822,6 +822,13 @@ var permissionCatalog = []PermissionCatalogResource{
 				Description: "Create and delete project backups",
 				Requires:    []string{PermProjectsRead, PermActivitiesRead},
 			},
+			{
+				Key:         "restore",
+				Permission:  PermProjectsRestore,
+				Label:       "Restore",
+				Description: "Restore project backups over a project's files and volumes",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
 		},
 	},
 	{

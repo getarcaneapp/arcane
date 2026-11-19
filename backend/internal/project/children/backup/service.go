@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
@@ -66,12 +68,17 @@ type (
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
 		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
+		// Down brings the project down without removing its volumes and Deploy deploys it; the caller holds the project lock.
+		Down       func(ctx context.Context, projectID string, user types.Actor) error
+		Deploy     func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
+		Activities activitylib.MessageAppender
 	}
 
 	Service struct {
 		deps     Dependencies
 		flow     *flow.Engine
 		workflow *flow.Workflow
+		restores *flow.Workflow
 	}
 
 	StartOptions struct {
@@ -97,16 +104,89 @@ type (
 		Requester types.BackupRequester `json:"requester"`
 		Plan      plan                  `json:"plan"`
 	}
+
+	StartRestoreOptions struct {
+		User          types.Actor
+		EnvironmentID string
+		ProjectID     string
+		BackupID      string
+		Request       types.RestoreProjectBackupRequest
+	}
+
+	// RestoreToOptions restores parts of a backup into a project directory and volumes, which need not be the ones the
+	// backup was taken from.
+	RestoreToOptions struct {
+		ProjectID string
+		BackupID  string
+		// ProjectPath receives the project files; empty leaves them out.
+		ProjectPath string
+		Volumes     []RestoreVolume
+	}
+
+	// RestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
+	RestoreVolume struct {
+		Key      string `json:"key"`
+		Snapshot string `json:"snapshot"`
+		Name     string `json:"name"`
+	}
+
+	// restorePlan is an in-place restore's frozen request and, as it progresses, its recovery checkpoint.
+	restorePlan struct {
+		Redeploy  *bool  `json:"redeploy,omitempty"`
+		ID        string `json:"id"`
+		BackupID  string `json:"backupId"`
+		ProjectID string `json:"projectId"`
+		// ProjectPath is set when the project files are restored.
+		ProjectPath string                       `json:"projectPath,omitempty"`
+		SafetyID    string                       `json:"safetyId,omitempty"`
+		Failure     string                       `json:"failure,omitempty"`
+		Volumes     []RestoreVolume              `json:"volumes"`
+		Create      []client.VolumeCreateOptions `json:"create,omitempty"`
+		Files       bool                         `json:"files"`
+		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
+		MayStop   bool `json:"mayStop"`
+		Running   bool `json:"running"`
+		Started   bool `json:"started"`
+		Restored  bool `json:"restored"`
+		Deploying bool `json:"deploying"`
+	}
+
+	restoreRun struct {
+		Requester types.BackupRequester `json:"requester"`
+		User      types.Actor           `json:"user"`
+		Plan      restorePlan           `json:"plan"`
+	}
+
+	// restoreSteps are the operations an in-place restore applies, bound to its run; tests pass fakes.
+	restoreSteps struct {
+		record  func(ctx context.Context, p restorePlan) error
+		report  func(ctx context.Context, message string)
+		down    func(ctx context.Context) error
+		deploy  func(ctx context.Context) error
+		safety  func(ctx context.Context, p restorePlan) (string, error)
+		create  func(ctx context.Context, volumes []client.VolumeCreateOptions) error
+		restore func(ctx context.Context, opts RestoreToOptions) error
+		verify  func(ctx context.Context, p restorePlan) error
+		remove  func(ctx context.Context, names []string) error
+	}
+
+	snapshotSource struct {
+		password   string
+		id         string
+		repository backup.Repository
+	}
 )
 
 const (
-	admissionScope = "project-backup"
-	snapshotRoot   = "/snapshot"
-	manifestName   = "arcane-project.json"
-	targetType     = "project_backup"
+	admissionScope    = "project-backup"
+	snapshotRoot      = "/snapshot"
+	restoreRoot       = "/dest"
+	manifestName      = "arcane-project.json"
+	targetType        = "project_backup"
+	restoreTargetType = "project_restore"
 )
 
-var errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup of this project is already running"))
+var errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -125,6 +205,20 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Labels:      map[string]string{"backup": "Creating backup"},
 		Steps:       []workflow.StepSpec{workflow.Step("backup", engine.Handler(s.run), workflow.WithMaxAttempts(1))},
 	})
+	if err != nil {
+		return err
+	}
+	// A restore runs as a workflow so that one interrupted with the project down is rolled back when it resumes.
+	s.restores, err = engine.Define(flow.Definition{
+		Name:        "project-restore",
+		Version:     1,
+		Fingerprint: "34a558e74ada5f164a05b1b41ea0e7b81f7fe1634d9afc9b11a0819d3ade60b3",
+		Concurrency: 4,
+		Timeout:     24 * time.Hour,
+		Activity:    activitylib.StartRequest{Type: types.ActivityTypeResourceAction},
+		Labels:      map[string]string{"restore": "Restoring backup"},
+		Steps:       []workflow.StepSpec{workflow.Step("restore", engine.Handler(s.runRestore), workflow.WithMaxAttempts(1))},
+	})
 	return err
 }
 
@@ -142,7 +236,8 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
 		return types.ProjectBackup{}, authorizeErr
 	}
-	leases, err := s.admit(ctx, p, "")
+	keys := admissions(p.ProjectID, p.volumeNames())
+	leases, err := s.admit(ctx, keys, "")
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
@@ -162,15 +257,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		return types.ProjectBackup{}, fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	p.BackupID = entry.ID
-	releases := make([]func(context.Context), 0, len(leases))
-	for index, key := range p.admissions() {
-		releases = append(releases, s.deps.Engine.Hold(key.Scope, key.ID, entry.ID, leases[index]))
-	}
-	releaseHeld := func(ctx context.Context) {
-		for _, releaseLease := range releases {
-			releaseLease(ctx)
-		}
-	}
+	releaseHeld := s.hold(keys, entry.ID, leases)
 	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, Plan: p}, activitylib.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Creating backup", LatestMessage: "Creating project backup",
@@ -253,14 +340,16 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", volume.Key, volume.Kind))
 		}
 		inspected = append(inspected, types.ProjectVolume{
-			Labels:     volume.Labels,
-			DriverOpts: volume.DriverOpts,
-			Key:        volume.Key,
-			Name:       volume.Name,
-			Kind:       volume.Kind,
-			Driver:     volume.Driver,
-			Included:   backable && wanted,
-			Missing:    missing,
+			Labels: volume.Labels,
+			// A restore recreates a missing external volume with its own labels, not Compose's.
+			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal && backable, found.Volume.Labels, nil),
+			DriverOpts:   volume.DriverOpts,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         volume.Kind,
+			Driver:       volume.Driver,
+			Included:     backable && wanted,
+			Missing:      missing,
 		})
 	}
 	for _, key := range requested {
@@ -286,18 +375,17 @@ func (p plan) volumeNames() []string {
 	return slices.Compact(names)
 }
 
-// admissions are the project's run and a volume-backup run for each captured volume.
-func (p plan) admissions() []types.SchedulerAdmissionKey {
-	keys := []types.SchedulerAdmissionKey{{Scope: admissionScope, ID: p.ProjectID}}
-	for _, name := range p.volumeNames() {
+// admissions are the project's run and a volume-backup run for each volume, in the order every run takes them.
+func admissions(projectID string, volumeNames []string) []types.SchedulerAdmissionKey {
+	keys := []types.SchedulerAdmissionKey{{Scope: admissionScope, ID: projectID}}
+	for _, name := range volumeNames {
 		keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: name})
 	}
 	return keys
 }
 
-// admit takes every admission without waiting; run takes over the leases StartBackup parked for it.
-func (s *Service) admit(ctx context.Context, p plan, run string) ([]*runs.Lease, error) {
-	keys := p.admissions()
+// admit takes every admission without waiting; run takes over the leases a start parked for it.
+func (s *Service) admit(ctx context.Context, keys []types.SchedulerAdmissionKey, run string) ([]*runs.Lease, error) {
 	leases := make([]*runs.Lease, 0, len(keys))
 	for _, key := range keys {
 		lease, admitted, err := s.deps.Engine.AcquireRun(ctx, key.Scope, key.ID, run)
@@ -314,6 +402,20 @@ func (s *Service) admit(ctx context.Context, p plan, run string) ([]*runs.Lease,
 		leases = append(leases, lease)
 	}
 	return leases, nil
+}
+
+// hold parks the leases a start took until the run it started takes them over, and returns what releases the ones the
+// run never took.
+func (s *Service) hold(keys []types.SchedulerAdmissionKey, run string, leases []*runs.Lease) func(context.Context) {
+	releases := make([]func(context.Context), 0, len(leases))
+	for index, key := range keys {
+		releases = append(releases, s.deps.Engine.Hold(key.Scope, key.ID, run, leases[index]))
+	}
+	return func(ctx context.Context) {
+		for _, releaseLease := range releases {
+			releaseLease(ctx)
+		}
+	}
 }
 
 func release(ctx context.Context, leases []*runs.Lease) {
@@ -366,7 +468,7 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 		}
 		return succeeded, nil
 	}
-	leases, err := s.admit(ctx, input.Plan, input.Plan.BackupID)
+	leases, err := s.admit(ctx, admissions(input.Plan.ProjectID, input.Plan.volumeNames()), input.Plan.BackupID)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +515,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 	case types.VolumeBackupStatusSucceeded:
 		return nil
 	}
-	leases, err := s.admit(ctx, recorded, "")
+	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
 	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
 	if errors.Is(err, common.ErrConflict) {
 		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
@@ -517,7 +619,7 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (er
 }
 
 // capture writes the manifest, stops the project when asked, and takes one snapshot of its files and volumes.
-func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (err error) {
+func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) error {
 	// Like a consistent export, hold the project lock so nothing deploys or edits the project while it is stopped.
 	if p.StopContainers {
 		unlockProject, lockErr := s.deps.LockProject(ctx, "back up project", entry.ProjectID)
@@ -531,6 +633,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		return err
 	}
 	defer unlock()
+	return s.snapshot(ctx, entry, p)
+}
+
+// snapshot takes the snapshot capture describes; the caller holds the volume locks, and the project lock when it stops
+// containers.
+func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (err error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -563,7 +671,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		return err
 	}
 	defer removeMeta()
-	projectMounts, err := projectSourceMounts(ctx, dockerClient, project.Path)
+	projectMounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(snapshotRoot, "project")})
 	if err != nil {
 		return err
 	}
@@ -701,12 +809,19 @@ func snapshotInput(projectMounts []mount.Mount, metaVolume, backupID string, p p
 	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(p.ProjectID, backupID)}
 }
 
-func projectSourceMounts(ctx context.Context, dockerClient *client.Client, projectPath string) ([]mount.Mount, error) {
+// projectSourceMounts resolves the host mounts behind the project directory source names.
+func projectSourceMounts(ctx context.Context, dockerClient *client.Client, source backup.SourceMountOptions) ([]mount.Mount, error) {
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := backup.SourceMounts(mounts, inContainer, projectPath, path.Join(snapshotRoot, "project"))
+	resolved, err := backup.SourceMounts(backup.SourceMountOptions{
+		Mounts:        mounts,
+		ContainerPath: source.ContainerPath,
+		Target:        source.Target,
+		InContainer:   inContainer,
+		Writable:      source.Writable,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -942,4 +1057,669 @@ func destination(local, remote bool) types.VolumeBackupDestination {
 	default:
 		return types.VolumeBackupDestinationLocal
 	}
+}
+
+// StartRestore checks an in-place restore against the backup and the project, admits it, and hands it to the
+// workflow; a busy project or volume fails fast. It returns the restore's activity ID.
+func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (string, error) {
+	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
+	if err != nil {
+		return "", err
+	}
+	project, err := s.deps.Project(ctx, opts.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	if project.ComposeName == "" {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before restoring it", project.Name))
+	}
+	var included []string
+	for _, volume := range entry.Volumes {
+		if volume.Included {
+			included = append(included, volume.Key)
+		}
+	}
+	keys, err := SelectVolumes(included, opts.Request.Volumes)
+	if err != nil {
+		return "", err
+	}
+	files := *cmp.Or(opts.Request.Files, new(true))
+	if !files && len(keys) == 0 {
+		return "", common.Classify(common.ErrValidation, errors.New("select the project files or at least one volume to restore"))
+	}
+	targets, err := restoreTargets(project, entry.Volumes, keys)
+	if err != nil {
+		return "", err
+	}
+	active, err := s.deps.ActiveContainers(ctx, project.ComposeName)
+	if err != nil {
+		return "", err
+	}
+	var required []string
+	switch {
+	case len(active) > 0:
+		required = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
+	case kit.FromPtr(opts.Request.Redeploy):
+		required = []string{authz.PermProjectsDeploy}
+	}
+	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, required...); permissionErr != nil {
+		return "", permissionErr
+	}
+	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
+	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+		return "", authorizeErr
+	}
+	p := restorePlan{
+		Redeploy:  opts.Request.Redeploy,
+		ID:        uuid.New().String(),
+		BackupID:  entry.ID,
+		ProjectID: project.ID,
+		Volumes:   targets,
+		Files:     files,
+		MayStop:   len(active) > 0,
+	}
+	keysToAdmit := admissions(p.ProjectID, p.volumeNames())
+	leases, err := s.admit(ctx, keysToAdmit, "")
+	if err != nil {
+		return "", err
+	}
+	releaseHeld := s.hold(keysToAdmit, p.ID, leases)
+	activityID, err := s.flow.Submit(ctx, s.restores, restoreRun{Requester: requester, User: opts.User, Plan: p}, activitylib.StartRequest{
+		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
+		Step: "Restoring backup", LatestMessage: "Restoring project backup",
+		Metadata: database.JSON{"action": "restore_project_backup", "backupId": entry.ID},
+	})
+	if err != nil {
+		releaseHeld(ctx)
+		return "", err
+	}
+	// A restore canceled before its task runs never takes the parked leases.
+	go func() {
+		background := context.WithoutCancel(ctx)
+		_, _ = s.flow.Wait(background, s.restores, activityID)
+		releaseHeld(background)
+	}()
+	return activityID, nil
+}
+
+// SelectVolumes returns the requested volume keys, or every included one when the request names none; the backup must
+// include each requested key.
+func SelectVolumes(included, requested []string) ([]string, error) {
+	if requested == nil {
+		return included, nil
+	}
+	for _, key := range requested {
+		if !slices.Contains(included, key) {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("the backup does not include the data of volume %s", key))
+		}
+	}
+	return slices.Compact(slices.Sorted(slices.Values(requested))), nil
+}
+
+// restoreTargets pairs each key's volume in the snapshot with the project's current volume for the key, so a backup
+// restores into the project's volumes even after a rename.
+func restoreTargets(project types.Project, captured []types.ProjectBackupVolume, keys []string) ([]RestoreVolume, error) {
+	classified := projects.ClassifyProjectVolumes(project)
+	targets := make([]RestoreVolume, 0, len(keys))
+	for _, key := range keys {
+		source := slices.IndexFunc(captured, func(volume types.ProjectBackupVolume) bool { return volume.Key == key && volume.Included })
+		current := slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == key })
+		switch {
+		case source < 0:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("the backup does not include the data of volume %s", key))
+		case current < 0:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s no longer has volume %s", project.Name, key))
+		case !classified[current].Included:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker (%s), so it cannot be restored", key, classified[current].Kind))
+		}
+		targets = append(targets, RestoreVolume{Key: key, Snapshot: captured[source].Name, Name: classified[current].Name})
+	}
+	return targets, nil
+}
+
+func (p restorePlan) volumeNames() []string {
+	names := make([]string, 0, len(p.Volumes))
+	for _, volume := range p.Volumes {
+		names = append(names, volume.Name)
+	}
+	return slices.Compact(slices.Sorted(slices.Values(names)))
+}
+
+// safetyVolumes restores each target from the safety backup, which holds the targets that existed before the restore.
+func (p restorePlan) safetyVolumes() []RestoreVolume {
+	existing := make([]RestoreVolume, 0, len(p.Volumes))
+	for _, volume := range p.Volumes {
+		if !slices.ContainsFunc(p.Create, func(created client.VolumeCreateOptions) bool { return created.Name == volume.Name }) {
+			existing = append(existing, RestoreVolume{Key: volume.Key, Snapshot: volume.Name, Name: volume.Name})
+		}
+	}
+	return existing
+}
+
+// runRestore applies an accepted restore, or resumes one whose checkpoint an earlier attempt recorded.
+func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
+	var input restoreRun
+	if err := t.Payload(&input); err != nil {
+		return nil, err
+	}
+	p := input.Plan
+	previous, _ := jobcontext.Run(ctx)
+	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+		return target.ID == p.ID && len(target.RecoveryData) > 0
+	})
+	resumed := index >= 0
+	if resumed {
+		var recorded restorePlan
+		if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
+			return nil, err
+		}
+		p = recorded
+	}
+	unlock, err := s.lockRestore(ctx, p, kit.Ternary(resumed, "", p.ID))
+	// A resumed restore may have left the project down, so it waits for its turn instead of failing.
+	if err != nil && resumed {
+		return nil, fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if !resumed {
+		if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
+			return nil, authorizeErr
+		}
+		if p, err = s.prepareRestore(ctx, p); err != nil {
+			return nil, err
+		}
+	}
+	if applyErr := s.restoreSteps(input, t.ActivityID()).apply(ctx, p); applyErr != nil {
+		return nil, applyErr
+	}
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Project backup restored successfully"}, nil
+}
+
+// lockRestore takes the restore's admissions, then the project lock that deploy, down and edits take, then its volumes'
+// locks; run takes over the leases StartRestore parked for it.
+func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (func(), error) {
+	leases, err := s.admit(ctx, admissions(p.ProjectID, p.volumeNames()), run)
+	if err != nil {
+		return nil, err
+	}
+	unlockProject, err := s.deps.LockProject(ctx, "restore project", p.ProjectID)
+	if err != nil {
+		release(context.WithoutCancel(ctx), leases)
+		return nil, err
+	}
+	unlockVolumes, err := s.lockVolumes(ctx, p.volumeNames())
+	if err != nil {
+		unlockProject()
+		release(context.WithoutCancel(ctx), leases)
+		return nil, err
+	}
+	return func() {
+		unlockVolumes()
+		unlockProject()
+		release(context.WithoutCancel(ctx), leases)
+	}, nil
+}
+
+// prepareRestore checks a fresh restore against the backup's manifest and the project as it is now.
+func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePlan, error) {
+	manifest, err := s.Manifest(ctx, p.ProjectID, p.BackupID)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	keys := make([]string, 0, len(p.Volumes))
+	for _, volume := range p.Volumes {
+		keys = append(keys, volume.Key)
+	}
+	targets, err := restoreTargets(project, backupVolumes(manifest.Volumes), keys)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	// The admissions and locks cover the volumes found when the restore was requested.
+	if !slices.Equal(targets, p.Volumes) {
+		return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("the volumes of project %s changed after the restore was requested; start it again", project.Name))
+	}
+	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	for _, name := range p.volumeNames() {
+		if inUse[name] {
+			return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("volume %s is mounted by a running container outside project %s; stop it before restoring", name, project.Name))
+		}
+	}
+	create, err := s.missingVolumes(ctx, project, manifest, targets)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	active, err := s.deps.ActiveContainers(ctx, project.ComposeName)
+	if err != nil {
+		return restorePlan{}, err
+	}
+	if len(active) > 0 && !p.MayStop {
+		return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("project %s started after the restore was requested; start the restore again", project.Name))
+	}
+	return restorePlan{
+		Redeploy:    p.Redeploy,
+		ID:          p.ID,
+		BackupID:    p.BackupID,
+		ProjectID:   p.ProjectID,
+		ProjectPath: kit.Ternary(p.Files, project.Path, ""),
+		Volumes:     targets,
+		Create:      create,
+		Files:       p.Files,
+		MayStop:     p.MayStop,
+		Running:     len(active) > 0,
+	}, nil
+}
+
+// missingVolumes returns how to create each target that does not exist yet the way Compose would; an external volume
+// gets the Docker labels the backup recorded instead of Compose's.
+func (s *Service) missingVolumes(ctx context.Context, project types.Project, manifest types.ProjectManifest, targets []RestoreVolume) ([]client.VolumeCreateOptions, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	classified := projects.ClassifyProjectVolumes(project)
+	var create []client.VolumeCreateOptions
+	for _, target := range targets {
+		if slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }) {
+			continue
+		}
+		_, inspectErr := dockerClient.VolumeInspect(ctx, target.Name, client.VolumeInspectOptions{})
+		if inspectErr == nil {
+			continue
+		}
+		if !errdefs.IsNotFound(inspectErr) {
+			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, inspectErr)
+		}
+		current := classified[slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
+		recorded := slices.IndexFunc(manifest.Volumes, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })
+		external := current.Kind == types.ProjectVolumeExternal
+		options, optionsErr := projects.ComposeVolumeTargetCreateOptions(target.Name, types.ComposeVolumeTarget{
+			Labels:   kit.Ternary(external, manifest.Volumes[recorded].DockerLabels, current.Labels),
+			Project:  project.ComposeName,
+			Key:      target.Key,
+			Driver:   current.Driver,
+			External: external,
+		})
+		if optionsErr != nil {
+			return nil, optionsErr
+		}
+		create = append(create, options)
+	}
+	return create, nil
+}
+
+// apply runs an in-place restore from its checkpoint; one resumed before its restore finished rolls back instead. On
+// any failure the project is rolled back and deployed again if it ran, so it is never left down.
+func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
+	switch {
+	case p.Failure != "":
+		return errors.New(p.Failure)
+	case p.Restored:
+		return r.finish(ctx, p)
+	case p.Started:
+		return r.rollback(ctx, p, errors.New("the restore was interrupted"))
+	}
+	p.Started = true
+	if err := r.record(ctx, p); err != nil {
+		return err
+	}
+	if p.Running {
+		r.report(ctx, "Stopping the project")
+		if err := r.down(ctx); err != nil {
+			return r.rollback(ctx, p, fmt.Errorf("stop the project: %w", err))
+		}
+	}
+	r.report(ctx, "Taking a safety backup")
+	safetyID, err := r.safety(ctx, p)
+	if err != nil {
+		return r.rollback(ctx, p, fmt.Errorf("take a safety backup: %w", err))
+	}
+	p.SafetyID = safetyID
+	if err = r.record(ctx, p); err == nil {
+		r.report(ctx, "Restoring the backup")
+		err = r.restoreBackup(ctx, p)
+	}
+	if err == nil {
+		p.Restored = true
+		err = r.record(ctx, p)
+	}
+	if err != nil {
+		return r.rollback(ctx, p, err)
+	}
+	return r.finish(ctx, p)
+}
+
+func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
+	if err := r.create(ctx, p.Create); err != nil {
+		return fmt.Errorf("create the missing volumes: %w", err)
+	}
+	if err := r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes}); err != nil {
+		return err
+	}
+	return r.verify(ctx, p)
+}
+
+// finish deploys the restored project when asked, by default when it ran before the restore.
+func (r restoreSteps) finish(ctx context.Context, p restorePlan) error {
+	if !*cmp.Or(p.Redeploy, new(p.Running)) {
+		return nil
+	}
+	p.Deploying = true
+	if err := r.record(ctx, p); err != nil {
+		return r.rollback(ctx, p, err)
+	}
+	r.report(ctx, "Deploying the project")
+	if err := r.deploy(ctx); err != nil {
+		return r.rollback(ctx, p, fmt.Errorf("deploy the restored project: %w", err))
+	}
+	return nil
+}
+
+// rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran.
+func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) error {
+	ctx = context.WithoutCancel(ctx)
+	var failures []error
+	if p.SafetyID != "" {
+		r.report(ctx, "Rolling back to the safety backup")
+		if p.Deploying {
+			failures = append(failures, r.down(ctx))
+		}
+		failures = append(failures,
+			r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()}),
+			r.remove(ctx, createdNames(p.Create)),
+		)
+	}
+	if p.Running {
+		failures = append(failures, r.deploy(ctx))
+	}
+	var err error
+	switch failed := errors.Join(failures...); {
+	case failed != nil && p.SafetyID != "":
+		err = fmt.Errorf("%w; the rollback failed too (%w), so restore the safety backup %s to undo the restore", cause, failed, p.SafetyID)
+	case failed != nil:
+		err = fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, failed)
+	case p.SafetyID != "":
+		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s", cause, p.SafetyID)
+	default:
+		err = fmt.Errorf("%w; nothing was restored", cause)
+	}
+	p.Failure = err.Error()
+	return errors.Join(err, r.record(ctx, p))
+}
+
+func createdNames(create []client.VolumeCreateOptions) []string {
+	names := make([]string, 0, len(create))
+	for _, options := range create {
+		names = append(names, options.Name)
+	}
+	return names
+}
+
+func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps {
+	projectID := input.Plan.ProjectID
+	return restoreSteps{
+		record: func(ctx context.Context, p restorePlan) error {
+			checkpoint, err := json.Marshal(p)
+			if err != nil {
+				return err
+			}
+			return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: restoreTargetType, ID: p.ID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
+		},
+		report: func(ctx context.Context, message string) {
+			if _, err := s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), activityID, activitylib.AppendMessageRequest{
+				Level:   types.ActivityMessageLevelInfo,
+				Message: message,
+			}); err != nil {
+				slog.WarnContext(ctx, "Failed to append project restore activity message", "activityId", activityID, "error", err)
+			}
+		},
+		down: func(ctx context.Context) error {
+			return s.deps.Down(ctx, projectID, input.User)
+		},
+		deploy: func(ctx context.Context) error {
+			return s.deps.Deploy(ctx, projectID, input.User, nil)
+		},
+		safety:  s.safetyBackup,
+		create:  s.createVolumes,
+		restore: s.RestoreTo,
+		verify:  s.verifyRestore,
+		remove:  s.removeVolumes,
+	}
+}
+
+// safetyBackup takes a local backup of the project files and the existing targets; the restore holds the locks.
+func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, error) {
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	created := createdNames(p.Create)
+	classified := projects.ClassifyProjectVolumes(project)
+	captured := make([]types.ProjectVolume, 0, len(classified))
+	for _, volume := range classified {
+		captured = append(captured, types.ProjectVolume{
+			Labels:     volume.Labels,
+			DriverOpts: volume.DriverOpts,
+			Key:        volume.Key,
+			Name:       volume.Name,
+			Kind:       volume.Kind,
+			Driver:     volume.Driver,
+			Included: slices.ContainsFunc(p.Volumes, func(target RestoreVolume) bool { return target.Name == volume.Name }) &&
+				!slices.Contains(created, volume.Name),
+		})
+	}
+	entry := &ProjectBackup{
+		BaseModel:   database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
+		ProjectID:   project.ID,
+		ProjectName: project.Name,
+		ComposeName: project.ComposeName,
+		Status:      types.VolumeBackupStatusRunning,
+		Trigger:     types.VolumeBackupTriggerSafety,
+		Destination: types.VolumeBackupDestinationLocal,
+		Volumes:     backupVolumes(captured),
+	}
+	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
+		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)
+	}
+	err = s.snapshot(ctx, entry, plan{BackupID: entry.ID, ProjectID: project.ID, Volumes: captured, LocalEnabled: true})
+	if completeErr := s.complete(ctx, entry, err); completeErr != nil {
+		return "", completeErr
+	}
+	return entry.ID, nil
+}
+
+func (s *Service) createVolumes(ctx context.Context, create []client.VolumeCreateOptions) error {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	for _, options := range create {
+		if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
+			return fmt.Errorf("create volume %s: %w", options.Name, createErr)
+		}
+	}
+	return nil
+}
+
+func (s *Service) removeVolumes(ctx context.Context, names []string) error {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, name := range names {
+		if _, removeErr := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
+			errs = append(errs, fmt.Errorf("remove volume %s: %w", name, removeErr))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// verifyRestore fails when the restored compose files name a restored volume differently, since the project would no
+// longer use the data restored into it.
+func (s *Service) verifyRestore(ctx context.Context, p restorePlan) error {
+	if p.ProjectPath == "" || len(p.Volumes) == 0 {
+		return nil
+	}
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		return err
+	}
+	classified := projects.ClassifyProjectVolumes(project)
+	for _, target := range p.Volumes {
+		if !slices.ContainsFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key && volume.Name == target.Name }) {
+			return common.Classify(common.ErrConflict, fmt.Errorf(
+				"the restored compose files no longer name volume %s %s, so the project would not use its restored data; restore the backup as a new project instead",
+				target.Key, target.Name,
+			))
+		}
+	}
+	return nil
+}
+
+// Manifest returns the manifest a succeeded backup of the project recorded in its snapshot.
+func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error) {
+	entry, err := s.restorable(ctx, projectID, backupID)
+	if err != nil {
+		return types.ProjectManifest{}, err
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return types.ProjectManifest{}, err
+	}
+	source, err := s.source(ctx, dockerClient, entry)
+	if err != nil {
+		return types.ProjectManifest{}, err
+	}
+	return s.readManifest(ctx, dockerClient, source)
+}
+
+// RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
+// volumes it names; the caller holds the locks they need.
+func (s *Service) RestoreTo(ctx context.Context, opts RestoreToOptions) error {
+	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
+		return nil
+	}
+	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
+	if err != nil {
+		return err
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	source, err := s.source(ctx, dockerClient, entry)
+	if err != nil {
+		return err
+	}
+	// The manifest, not the caller, says which volumes the snapshot holds.
+	manifest, err := s.readManifest(ctx, dockerClient, source)
+	if err != nil {
+		return err
+	}
+	var projectMounts []mount.Mount
+	if opts.ProjectPath != "" {
+		projectMounts, err = projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: opts.ProjectPath, Target: path.Join(restoreRoot, "project"), Writable: true})
+		if err != nil {
+			return err
+		}
+	}
+	target, options, err := restoreInput(projectMounts, opts.Volumes, plan{Volumes: manifest.Volumes}.volumeNames())
+	if err != nil {
+		return err
+	}
+	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.id, target, options); restoreErr != nil {
+		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
+	}
+	return nil
+}
+
+// restoreInput mounts the targets under /dest as the backup laid them out under /snapshot and restores the snapshot root,
+// so each target root keeps its owner and mode; globs skip the rest, and /dest holds only targets, so --delete is safe.
+func restoreInput(projectMounts []mount.Mount, targets []RestoreVolume, captured []string) (mount.Mount, backup.RestoreOptions, error) {
+	mounts := slices.Clone(projectMounts)
+	globs := []string{"!/meta", "!/meta/**"}
+	if len(projectMounts) == 0 {
+		globs = append(globs, "!/project", "!/project/**")
+	}
+	restored := map[string]string{}
+	for _, volume := range targets {
+		into, seen := restored[volume.Snapshot]
+		switch {
+		case !slices.Contains(captured, volume.Snapshot):
+			return mount.Mount{}, backup.RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup holds no data for volume %s", volume.Key))
+		case seen && into != volume.Name:
+			return mount.Mount{}, backup.RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup's volume %s cannot be restored into both %s and %s", volume.Snapshot, into, volume.Name))
+		case !seen && slices.Contains(slices.Collect(maps.Values(restored)), volume.Name):
+			return mount.Mount{}, backup.RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("two of the backup's volumes would be restored into %s", volume.Name))
+		case seen:
+			continue
+		}
+		restored[volume.Snapshot] = volume.Name
+		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: volume.Name, Target: path.Join(restoreRoot, "volumes", volume.Snapshot)})
+	}
+	for _, name := range captured {
+		if _, ok := restored[name]; !ok {
+			globs = append(globs, "!/volumes/"+name, "!/volumes/"+name+"/**")
+		}
+	}
+	if len(mounts) == 0 {
+		return mount.Mount{}, backup.RestoreOptions{}, common.Classify(common.ErrValidation, errors.New("select the project files or at least one volume to restore"))
+	}
+	return mounts[0], backup.RestoreOptions{DestinationPath: restoreRoot, ExtraMounts: mounts[1:], Globs: globs, DeleteExtra: true}, nil
+}
+
+// restorable loads a backup of the project that succeeded, so it has a snapshot to restore.
+func (s *Service) restorable(ctx context.Context, projectID, backupID string) (*ProjectBackup, error) {
+	entry, err := s.load(ctx, backupID)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case entry.ProjectID != projectID:
+		return nil, common.Classify(common.ErrNotFound, errors.New("project backup not found"))
+	case entry.Status != types.VolumeBackupStatusSucceeded || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""):
+		return nil, common.Classify(common.ErrValidation, errors.New("only a backup that succeeded can be restored"))
+	}
+	return entry, nil
+}
+
+// source opens the repository holding the backup's snapshot, preferring the local copy.
+func (s *Service) source(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup) (snapshotSource, error) {
+	remote := entry.LocalSnapshotID == ""
+	repository, err := s.repository(ctx, dockerClient, plan{S3DestinationID: entry.S3DestinationID}, remote)
+	if err != nil {
+		return snapshotSource{}, err
+	}
+	password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
+	if err != nil {
+		return snapshotSource{}, err
+	}
+	return snapshotSource{repository: repository, password: password, id: kit.Ternary(remote, entry.RemoteSnapshotID, entry.LocalSnapshotID)}, nil
+}
+
+func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, source snapshotSource) (types.ProjectManifest, error) {
+	text, err := s.deps.Engine.ReadSnapshotTextFile(ctx, dockerClient, source.repository, source.password, source.id, path.Join("meta", manifestName))
+	if err != nil {
+		return types.ProjectManifest{}, err
+	}
+	var manifest types.ProjectManifest
+	if decodeErr := json.Unmarshal([]byte(text), &manifest); decodeErr != nil {
+		return types.ProjectManifest{}, fmt.Errorf("decode the project backup manifest: %w", decodeErr)
+	}
+	if manifest.Kind != types.ProjectManifestKindBackup || manifest.FormatVersion > types.ProjectManifestFormatVersion {
+		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
+			"the backup's manifest is a %q manifest in format %d, which this version of Arcane cannot restore", manifest.Kind, manifest.FormatVersion,
+		))
+	}
+	return manifest, nil
 }

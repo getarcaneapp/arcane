@@ -121,6 +121,19 @@ type (
 		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
 	}
 
+	RestoreProjectBackupRequest struct {
+		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to true"`
+		Redeploy *bool    `json:"redeploy,omitempty" doc:"Deploy the project after the restore, which requires projects:deploy; defaults to true when it runs"`
+		Volumes  []string `json:"volumes,omitempty" doc:"Compose keys of the backup's volumes to restore; omitted means every volume the backup includes, empty means none"`
+	}
+
+	RestoreProjectBackupAsNewRequest struct {
+		Files   *bool    `json:"files,omitempty" doc:"Restore the project files; a new project needs them, so it must be true when set"`
+		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		Volumes []string `json:"volumes,omitempty" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
+		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
+	}
+
 	ProjectTransferMode string
 
 	ProjectTransferSeverity string

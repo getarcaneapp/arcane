@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -34,6 +35,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/types/v3"
 )
+
+// fakeRestore records the steps an in-place restore applies and fails the ones it names.
+type fakeRestore struct {
+	calls []string
+	fail  map[string]error
+	plans []restorePlan
+}
 
 func newTestDockerService(t *testing.T, handler http.Handler) *docker.DockerClientService {
 	t.Helper()
@@ -203,7 +211,7 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	require.NoError(t, db.Model(&ProjectBackup{}).Count(&rows).Error)
 	require.Zero(t, rows)
 	// A refused start releases every admission it took.
-	for _, key := range (plan{ProjectID: "p1", Volumes: []types.ProjectVolume{{Name: "web_data", Included: true}}}).admissions() {
+	for _, key := range admissions("p1", []string{"web_data"}) {
 		lease, admitted, err := engine.TryAcquireRun(t.Context(), key.Scope, key.ID)
 		require.NoError(t, err)
 		require.True(t, admitted, key)
@@ -238,4 +246,232 @@ func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
 	require.ErrorContains(t, err, "snapshot failed")
 	// The checkpointed containers are started again through the project's Compose start.
 	require.Equal(t, checkpointed, started)
+}
+
+func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
+	projectMounts := []mount.Mount{{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/dest/project"}}
+	volumes := []RestoreVolume{
+		{Key: "data", Snapshot: "web_data", Name: "shop_data"},
+		{Key: "alias", Snapshot: "web_data", Name: "shop_data"},
+	}
+	target, options, err := restoreInput(projectMounts, volumes, []string{"shared", "web_cache", "web_data"})
+	require.NoError(t, err)
+	// /dest holds only the restored project directory and volumes, each volume under its name in the snapshot.
+	require.Equal(t, projectMounts[0], target)
+	require.Equal(t, []mount.Mount{{Type: mount.TypeVolume, Source: "shop_data", Target: "/dest/volumes/web_data"}}, options.ExtraMounts)
+	require.Equal(t, "/dest", options.DestinationPath)
+	require.Empty(t, options.SourcePath, "the snapshot root is restored, so each target's root keeps its owner and mode")
+	require.True(t, options.DeleteExtra)
+	require.Equal(t, []string{"!/meta", "!/meta/**", "!/volumes/shared", "!/volumes/shared/**", "!/volumes/web_cache", "!/volumes/web_cache/**"}, options.Globs)
+
+	target, options, err = restoreInput(nil, volumes[:1], []string{"web_data"})
+	require.NoError(t, err)
+	require.Equal(t, mount.Mount{Type: mount.TypeVolume, Source: "shop_data", Target: "/dest/volumes/web_data"}, target)
+	require.Empty(t, options.ExtraMounts)
+	require.Equal(t, []string{"!/meta", "!/meta/**", "!/project", "!/project/**"}, options.Globs)
+
+	for name, invalid := range map[string][]RestoreVolume{
+		"not in the snapshot": {{Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}},
+		"into two volumes":    {{Key: "data", Snapshot: "web_data", Name: "a"}, {Key: "alias", Snapshot: "web_data", Name: "b"}},
+		"two into one volume": {{Key: "data", Snapshot: "web_data", Name: "a"}, {Key: "other", Snapshot: "shared", Name: "a"}},
+		"nothing to restore":  nil,
+	} {
+		_, _, err = restoreInput(nil, invalid, []string{"shared", "web_data"})
+		require.ErrorIs(t, err, common.ErrValidation, name)
+	}
+}
+
+func TestRestoreTargetsMapKeysToTheProjectsCurrentVolumes(t *testing.T) {
+	captured := []types.ProjectBackupVolume{
+		{Key: "data", Name: "web_data", Included: true},
+		{Key: "shared", Name: "shared", Included: true},
+		{Key: "cache", Name: "web_cache"},
+		{Key: "nfs", Name: "web_nfs"},
+	}
+	keys, err := SelectVolumes([]string{"data", "shared"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"data", "shared"}, keys)
+	_, err = SelectVolumes([]string{"data", "shared"}, []string{"cache"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "does not include the data of volume cache")
+	_, err = SelectVolumes([]string{"data"}, []string{"unknown"})
+	require.ErrorIs(t, err, common.ErrValidation)
+	none, err := SelectVolumes([]string{"data"}, []string{})
+	require.NoError(t, err)
+	require.Empty(t, none)
+
+	targets, err := restoreTargets(testProject(), captured, keys)
+	require.NoError(t, err)
+	require.Equal(t, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}, {Key: "shared", Snapshot: "shared", Name: "shared"}}, targets)
+
+	// After a rename the snapshot's web_data restores into the volume the project now uses for the key.
+	renamed := testProject()
+	renamed.ComposeName = "shop"
+	renamed.Volumes["data"] = composetypes.VolumeConfig{Name: "shop_data"}
+	targets, err = restoreTargets(renamed, captured, []string{"data"})
+	require.NoError(t, err)
+	require.Equal(t, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "shop_data"}}, targets)
+
+	gone := testProject()
+	delete(gone.Volumes, "data")
+	_, err = restoreTargets(gone, captured, []string{"data"})
+	require.ErrorContains(t, err, "no longer has volume data")
+	outside := testProject()
+	outside.Volumes["data"] = composetypes.VolumeConfig{Name: "web_data", DriverOpts: map[string]string{"type": "nfs"}}
+	_, err = restoreTargets(outside, captured, []string{"data"})
+	require.ErrorContains(t, err, "keeps its data outside Docker")
+	_, err = restoreTargets(testProject(), captured, []string{"cache"})
+	require.ErrorContains(t, err, "does not include the data of volume cache")
+}
+
+func TestStartRestoreValidatesTheSelection(t *testing.T) {
+	db := newTestDB(t)
+	require.NoError(t, db.Create(&ProjectBackup{
+		BaseModel:       database.BaseModel{ID: "b1", CreatedAt: time.Now()},
+		ProjectID:       "p1",
+		Status:          types.VolumeBackupStatusSucceeded,
+		LocalSnapshotID: "snap",
+		Volumes:         []types.ProjectBackupVolume{{Key: "data", Name: "web_data", Included: true}, {Key: "cache", Name: "web_cache"}},
+	}).Error)
+	require.NoError(t, db.Create(&ProjectBackup{BaseModel: database.BaseModel{ID: "b2", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusFailed}).Error)
+	service := NewService(Dependencies{
+		DB: db,
+		Project: func(context.Context, string) (types.Project, error) {
+			return testProject(), nil
+		},
+	})
+	for name, test := range map[string]struct {
+		backupID string
+		message  string
+		request  types.RestoreProjectBackupRequest
+	}{
+		"nothing":      {backupID: "b1", request: types.RestoreProjectBackupRequest{Files: new(false), Volumes: []string{}}, message: "select the project files or at least one volume"},
+		"unknown key":  {backupID: "b1", request: types.RestoreProjectBackupRequest{Volumes: []string{"unknown"}}, message: "does not include the data of volume unknown"},
+		"not included": {backupID: "b1", request: types.RestoreProjectBackupRequest{Volumes: []string{"cache"}}, message: "does not include the data of volume cache"},
+		"failed":       {backupID: "b2", message: "only a backup that succeeded"},
+	} {
+		_, err := service.StartRestore(t.Context(), StartRestoreOptions{EnvironmentID: "0", ProjectID: "p1", BackupID: test.backupID, Request: test.request})
+		require.ErrorIs(t, err, common.ErrValidation, name)
+		require.ErrorContains(t, err, test.message, name)
+	}
+	_, err := service.StartRestore(t.Context(), StartRestoreOptions{EnvironmentID: "0", ProjectID: "other", BackupID: "b1"})
+	require.ErrorIs(t, err, common.ErrNotFound)
+}
+
+func (f *fakeRestore) step(name string) error {
+	f.calls = append(f.calls, name)
+	return f.fail[name]
+}
+
+func (f *fakeRestore) steps() restoreSteps {
+	return restoreSteps{
+		record: func(_ context.Context, p restorePlan) error {
+			f.plans = append(f.plans, p)
+			return nil
+		},
+		report: func(context.Context, string) {},
+		down:   func(context.Context) error { return f.step("down") },
+		deploy: func(context.Context) error { return f.step("deploy") },
+		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
+		create: func(_ context.Context, volumes []client.VolumeCreateOptions) error {
+			return f.step("create " + strings.Join(createdNames(volumes), ","))
+		},
+		restore: func(_ context.Context, opts RestoreToOptions) error {
+			names := make([]string, 0, len(opts.Volumes))
+			for _, volume := range opts.Volumes {
+				names = append(names, volume.Snapshot+">"+volume.Name)
+			}
+			return f.step("restore " + opts.BackupID + " " + opts.ProjectPath + " " + strings.Join(names, ","))
+		},
+		verify: func(context.Context, restorePlan) error { return f.step("verify") },
+		remove: func(_ context.Context, names []string) error { return f.step("remove " + strings.Join(names, ",")) },
+	}
+}
+
+func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
+	plan := func(running bool) restorePlan {
+		return restorePlan{
+			ID:          "r1",
+			BackupID:    "b1",
+			ProjectID:   "p1",
+			ProjectPath: "/projects/web",
+			Volumes:     []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "shop_data"}, {Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}},
+			Create:      []client.VolumeCreateOptions{{Name: "shop_cache"}},
+			Files:       true,
+			MayStop:     running,
+			Running:     running,
+		}
+	}
+	restoreErr := errors.New("rustic failed")
+
+	running := &fakeRestore{fail: map[string]error{"restore b1 /projects/web web_data>shop_data,web_cache>shop_cache": restoreErr}}
+	err := running.steps().apply(t.Context(), plan(true))
+	require.ErrorIs(t, err, restoreErr)
+	require.ErrorContains(t, err, "rolled back to the safety backup s1")
+	// The volume the restore created is removed; the one that existed comes back from the safety backup.
+	require.Equal(t, []string{
+		"down", "safety", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
+		"restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "deploy",
+	}, running.calls)
+	require.Equal(t, err.Error(), running.plans[len(running.plans)-1].Failure)
+
+	stopped := &fakeRestore{fail: map[string]error{"verify": restoreErr}}
+	err = stopped.steps().apply(t.Context(), plan(false))
+	require.ErrorIs(t, err, restoreErr)
+	require.NotContains(t, stopped.calls, "down")
+	require.NotContains(t, stopped.calls, "deploy", "a project that did not run is not deployed")
+	require.Contains(t, stopped.calls, "restore s1 /projects/web shop_data>shop_data")
+
+	// A failed redeploy stops what it started before the safety backup is restored, then deploys again.
+	redeploy := &fakeRestore{fail: map[string]error{"deploy": restoreErr}}
+	err = redeploy.steps().apply(t.Context(), plan(true))
+	require.ErrorContains(t, err, "the rollback failed too")
+	require.ErrorContains(t, err, "restore the safety backup s1")
+	require.Equal(t, []string{
+		"down", "safety", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
+		"down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "deploy",
+	}, redeploy.calls)
+
+	safetyFailed := &fakeRestore{fail: map[string]error{"safety": restoreErr}}
+	err = safetyFailed.steps().apply(t.Context(), plan(true))
+	require.ErrorContains(t, err, "nothing was restored")
+	require.Equal(t, []string{"down", "safety", "deploy"}, safetyFailed.calls)
+}
+
+func TestRestoreRedeploysOnlyWhenTheProjectRanOrIsAsked(t *testing.T) {
+	for name, test := range map[string]struct {
+		redeploy *bool
+		running  bool
+		deployed bool
+	}{
+		"running":            {running: true, deployed: true},
+		"stopped":            {running: false, deployed: false},
+		"running, kept down": {redeploy: new(false), running: true, deployed: false},
+		"stopped, deployed":  {redeploy: new(true), running: false, deployed: true},
+	} {
+		restore := &fakeRestore{}
+		require.NoError(t, restore.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", Files: true, ProjectPath: "/p", Redeploy: test.redeploy, Running: test.running}), name)
+		require.Equal(t, test.deployed, slices.Contains(restore.calls, "deploy"), name)
+		require.Equal(t, test.running, slices.Contains(restore.calls, "down"), name)
+		require.NotContains(t, restore.calls, "restore s1 /p ", name)
+	}
+}
+
+func TestResumedRestoreNeverLeavesTheProjectDown(t *testing.T) {
+	// Interrupted after the safety backup: the restore may be half done, so it is rolled back and the project deployed.
+	resumed := &fakeRestore{}
+	err := resumed.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1"})
+	require.ErrorContains(t, err, "the restore was interrupted; the project was rolled back to the safety backup s1")
+	require.Equal(t, []string{"restore s1 /p ", "remove ", "deploy"}, resumed.calls)
+
+	// Interrupted before the safety backup: nothing changed, so the project is only deployed again.
+	early := &fakeRestore{}
+	err = early.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", Files: true, Running: true, Started: true})
+	require.ErrorContains(t, err, "nothing was restored")
+	require.Equal(t, []string{"deploy"}, early.calls)
+
+	// Interrupted after the restore finished: only the redeploy is left.
+	restored := &fakeRestore{}
+	require.NoError(t, restored.steps().apply(t.Context(), restorePlan{ID: "r1", Running: true, Started: true, SafetyID: "s1", Restored: true}))
+	require.Equal(t, []string{"deploy"}, restored.calls)
 }

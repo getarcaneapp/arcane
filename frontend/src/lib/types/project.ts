@@ -278,6 +278,19 @@ export interface ProjectBackupVolume {
 	included: boolean;
 }
 
+export interface RestoreProjectBackupRequest {
+	files?: boolean;
+	volumes?: string[];
+	redeploy?: boolean;
+}
+
+export interface RestoreProjectBackupAsNewRequest {
+	name: string;
+	files?: boolean;
+	volumes?: string[];
+	start?: boolean;
+}
+
 export type ProjectBackup = BackupRun & {
 	projectId: string;
 	projectName: string;

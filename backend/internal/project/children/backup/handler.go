@@ -40,6 +40,13 @@ type (
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 		BackupID      string `path:"backupId" doc:"Backup ID"`
 	}
+
+	RestoreInput struct {
+		Body          *types.RestoreProjectBackupRequest `json:"body,omitempty"`
+		EnvironmentID string                             `path:"id" doc:"Environment ID"`
+		ProjectID     string                             `path:"projectId" doc:"Project ID"`
+		BackupID      string                             `path:"backupId" doc:"Backup ID"`
+	}
 )
 
 func NewHandler(service *Service, appCtx context.Context) *Handler {
@@ -86,4 +93,22 @@ func (h *Handler) Delete(ctx context.Context, input *BackupInput) (*handlerutil.
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Project backup deleted successfully", ""), nil
+}
+
+func (h *Handler) Restore(ctx context.Context, input *RestoreInput) (*handlerutil.Out[types.MessageResponse], error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activityID, err := h.service.StartRestore(activitylib.ActivityRuntimeContext(ctx, h.appCtx), StartRestoreOptions{
+		User:          *user,
+		EnvironmentID: input.EnvironmentID,
+		ProjectID:     input.ProjectID,
+		BackupID:      input.BackupID,
+		Request:       kit.FromPtr(input.Body),
+	})
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return handlerutil.MessageOutput("Project restore started", activityID), nil
 }

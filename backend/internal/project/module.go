@@ -50,10 +50,39 @@ func New(p ModuleParams) *Module {
 		projects: p.Service,
 		deps:     p.Transfer,
 	}
+	backups := projectbackup.NewService(projectbackup.Dependencies{
+		DB:             p.Service.db,
+		Docker:         p.Service.dockerService,
+		Engine:         p.Backups.Engine,
+		Repository:     p.Backups.Repository,
+		S3Destinations: p.Backups.S3Destinations,
+		Settings:       p.Service.settingsService,
+		VolumeLocks:    p.Backups.VolumeLocks,
+		// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
+		StopContainers:   p.Service.stopRunningContainers,
+		StartContainers:  p.Service.restartContainers,
+		VolumesInUse:     p.Service.volumesInUseOutside,
+		ActiveContainers: p.Service.activeProjectContainers,
+		ComposeFiles:     p.Service.loadedComposeFiles,
+		LockProject:      p.Service.LockProject,
+		Project: func(ctx context.Context, projectID string) (types.Project, error) {
+			return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
+		},
+		// A restore holds the project lock, so it brings the project down and deploys it without taking it again.
+		Down: func(ctx context.Context, projectID string, user types.Actor) error {
+			proj, err := p.Service.getMutableProject(ctx, projectID)
+			if err != nil {
+				return err
+			}
+			return p.Service.downProject(ctx, proj, user)
+		},
+		Deploy:     p.Service.deployProject,
+		Activities: p.Activity,
+	})
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  projectBundles{local: local},
+		bundles:  projectBundles{local: local, backups: backups},
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,
@@ -65,25 +94,7 @@ func New(p ModuleParams) *Module {
 			Activities:       p.Activity,
 			Backups:          p.Transfer.Backups,
 		}),
-		backups: projectbackup.NewService(projectbackup.Dependencies{
-			DB:             p.Service.db,
-			Docker:         p.Service.dockerService,
-			Engine:         p.Backups.Engine,
-			Repository:     p.Backups.Repository,
-			S3Destinations: p.Backups.S3Destinations,
-			Settings:       p.Service.settingsService,
-			VolumeLocks:    p.Backups.VolumeLocks,
-			// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
-			StopContainers:   p.Service.stopRunningContainers,
-			StartContainers:  p.Service.restartContainers,
-			VolumesInUse:     p.Service.volumesInUseOutside,
-			ActiveContainers: p.Service.activeProjectContainers,
-			ComposeFiles:     p.Service.loadedComposeFiles,
-			LockProject:      p.Service.LockProject,
-			Project: func(ctx context.Context, projectID string) (types.Project, error) {
-				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
-			},
-		}),
+		backups: backups,
 	}
 }
 
@@ -293,6 +304,17 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "restore-project-backup-as-new",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/{projectId}/backups/{backupId}/restore-as-new",
+		Summary:     "Restore project backup as a new project",
+		Description: "Create a project from the backup's files and the data of the selected volumes, restored into new volumes; the backed up project is left as it is. " +
+			"Requires projects:read, and volumes:create when volumes are restored; start deploys the project and requires projects:deploy.",
+		Tags:     []string{"Project Backup"},
+		Security: handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsCreate, h.RestoreProjectBackupAsNew)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-export-options",

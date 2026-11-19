@@ -17,7 +17,9 @@ import type {
 	ProjectTransferRequest,
 	ProjectTransferResource,
 	ProjectTransferStarted,
-	ProjectUpdateInfo
+	ProjectUpdateInfo,
+	RestoreProjectBackupAsNewRequest,
+	RestoreProjectBackupRequest
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -315,6 +317,28 @@ class ProjectService extends BaseAPIService {
 
 	async deleteBackup(projectId: string, backupId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(this.api.delete(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}`));
+	}
+
+	async restoreBackup(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupRequest,
+		environmentId: string
+	): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore`, request)
+		);
+	}
+
+	async restoreBackupAsNew(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupAsNewRequest,
+		environmentId: string
+	): Promise<Project> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore-as-new`, request)
+		);
 	}
 
 	// Packages the project, and the requested volumes' data, then lets the browser stream the resulting archive to disk.

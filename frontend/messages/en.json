@@ -4733,5 +4733,18 @@
   "project_backup": "Project backup",
   "remove_this_backup": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
   "failed_to_start_project_backup": "Failed to start the project backup",
-  "failed_to_load_project_backups": "Failed to load project backups"
+  "failed_to_load_project_backups": "Failed to load project backups",
+  "restore_backup_description": "Put the project's files and the data of the selected volumes back to the time of this backup.",
+  "restore_replaces_current_data": "The project's current files and the data of the selected volumes are replaced. A safety backup is taken first, and the project is rolled back to it if the restore fails.",
+  "what_to_restore": "What to restore",
+  "project_files": "Project files",
+  "redeploy_after_restore": "Redeploy after restore",
+  "redeploy_after_restore_description": "The project is running, so it is stopped for the restore. Deploy it again once the restore is done.",
+  "restore_as_new_project": "Restore as new project",
+  "restore_as_new_project_description": "Create a project from this backup's files and the data of the selected volumes, restored into new volumes. This project is left as it is.",
+  "start_after_restore": "Start after restore",
+  "restore_started": "Restore started",
+  "restore_in_progress": "Restore in progress",
+  "failed_to_restore_backup": "Failed to restore the backup",
+  "project_restored_from_backup": "Project {name} restored from the backup"
 }

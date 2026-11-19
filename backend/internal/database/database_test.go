@@ -356,7 +356,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || permission == authz.PermProjectsBackup {
+		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || permission == authz.PermProjectsBackup || permission == authz.PermProjectsRestore {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -1003,6 +1003,59 @@ func TestMigration118_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, backups)
 	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
 	assert.Zero(t, keyGrants)
+}
+
+func TestMigration119_GrantsProjectsRestore(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-restore.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('r1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
+		('r2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('k1', 'Global key', 'hash-k1', 'k1'),
+		('k2', 'Mixed key', 'hash-k2', 'k2'),
+		('k3', 'Other env key', 'hash-k3', 'k3')`)
+	require.NoError(t, err)
+	// k2 reads projects everywhere but backs up volumes only in environment 0, so it may restore projects only there;
+	// k3's grants are in different environments, so it gets nothing.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('p1', 'k1', 'volumes:backup', NULL),
+		('p2', 'k1', 'projects:read', NULL),
+		('p3', 'k2', 'volumes:backup', '0'),
+		('p4', 'k2', 'projects:read', NULL),
+		('p5', 'k3', 'volumes:backup', '0'),
+		('p6', 'k3', 'projects:read', 'other')`)
+	require.NoError(t, err)
+	role := func(id string) string {
+		var permissions string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = ?`, id).Scan(&permissions))
+		return permissions
+	}
+	keyGrants := func() map[string]string {
+		rows, queryErr := rawDB.QueryContext(ctx, `SELECT api_key_id, COALESCE(environment_id, '*') FROM api_key_permissions WHERE permission = 'projects:restore'`)
+		require.NoError(t, queryErr)
+		defer func() { require.NoError(t, rows.Close()) }()
+		grants := map[string]string{}
+		for rows.Next() {
+			var keyID, environmentID string
+			require.NoError(t, rows.Scan(&keyID, &environmentID))
+			grants[keyID] = environmentID
+		}
+		require.NoError(t, rows.Err())
+		return grants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:restore"]`, role("r1"))
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
+	assert.Equal(t, map[string]string{"k1": "*", "k2": "0"}, keyGrants())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 118))
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, role("r1"))
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
+	assert.Empty(t, keyGrants())
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

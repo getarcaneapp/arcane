@@ -690,7 +690,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 	if err != nil {
 		return backupSourceLayout{}, err
 	}
-	dataMounts, err := backup.SourceMounts(mounts, inContainer, dataDirectory, snapshotDataPath)
+	dataMounts, err := backup.SourceMounts(backup.SourceMountOptions{Mounts: mounts, ContainerPath: dataDirectory, Target: snapshotDataPath, InContainer: inContainer})
 	if err != nil {
 		return backupSourceLayout{}, fmt.Errorf("resolve Arcane data source: %w", err)
 	}
@@ -705,7 +705,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 			excludes:          excludes,
 		}, nil
 	}
-	projectMounts, err := backup.SourceMounts(mounts, inContainer, projectsDirectory, snapshotProjectsPath)
+	projectMounts, err := backup.SourceMounts(backup.SourceMountOptions{Mounts: mounts, ContainerPath: projectsDirectory, Target: snapshotProjectsPath, InContainer: inContainer})
 	if err != nil {
 		return backupSourceLayout{}, fmt.Errorf("resolve projects source: %w", err)
 	}
@@ -1067,7 +1067,9 @@ func (s *Service) Create(
 		if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), stagedDatabase); stageErr != nil {
 			return backup.Snapshot{}, stageErr
 		}
-		stagedMounts, mountErr := backup.SourceMounts(mounts, inContainer, stagedDatabase, filepath.Join(snapshotDataPath, name))
+		stagedMounts, mountErr := backup.SourceMounts(backup.SourceMountOptions{
+			Mounts: mounts, ContainerPath: stagedDatabase, Target: filepath.Join(snapshotDataPath, name), InContainer: inContainer,
+		})
 		if mountErr != nil {
 			return backup.Snapshot{}, mountErr
 		}
