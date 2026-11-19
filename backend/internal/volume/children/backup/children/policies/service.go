@@ -32,7 +32,6 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
-		// CreateBackup runs admitted under the volume's admission, before the backup reads its policy.
 		CreateBackup func(ctx context.Context, volumeName, policyID string, admitted func(context.Context) error) (*types.VolumeBackup, error)
 		Reconcile    func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
 		Ctx          context.Context
