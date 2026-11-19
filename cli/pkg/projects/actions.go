@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -424,6 +425,10 @@ func newExportCmd() *cobra.Command {
 			written, err := cmdutil.DownloadFileInChunks(cmd.Context(), c, exported.Data, outputFile, !cmdutil.JSONOutputEnabled(cmd))
 			if err != nil {
 				return fmt.Errorf("failed to download project archive: %w", err)
+			}
+			// Output after an archive written to stdout or another special file would corrupt it.
+			if info, statErr := os.Stat(outputFile); statErr == nil && !info.Mode().IsRegular() {
+				return nil
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) {
