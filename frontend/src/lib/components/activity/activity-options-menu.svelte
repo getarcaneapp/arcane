@@ -13,7 +13,7 @@
 	import ActivityIconButton from './activity-icon-button.svelte';
 	import { activityCenterLayout, activityCenterLayouts, isActivityCenterLayout } from './activity-layout';
 
-	function clearHistoryInternal() {
+	function clearHistory() {
 		openConfirmDialog({
 			title: m.activity_clear_history_title(),
 			message: m.activity_clear_history_message(),
@@ -75,7 +75,7 @@
 		</DropdownMenu.CheckboxItem>
 		<IfPermitted perm="activities:delete">
 			<DropdownMenu.Separator />
-			<DropdownMenu.Item onclick={clearHistoryInternal} variant="destructive">
+			<DropdownMenu.Item onclick={clearHistory} variant="destructive">
 				<TrashIcon class="size-4" aria-hidden="true" />
 				{m.activity_clear_history()}
 			</DropdownMenu.Item>

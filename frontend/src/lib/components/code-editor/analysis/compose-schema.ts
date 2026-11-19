@@ -435,13 +435,14 @@ function getServiceArcaneSchemaDoc(path: Array<string | number>): SchemaDoc | nu
 	if (path.length === 4 && path[3] === 'update-check')
 		return { ...ARCANE_SCHEMA_DOCS['x-arcane.update-check'], title: 'services.<name>.x-arcane.update-check' };
 	if (path.length !== 4 || !['icon', 'icon-light', 'icon-dark'].includes(String(path[3]))) return null;
-	return {
-		title: `services.<name>.x-arcane.${String(path[3])}`,
-		description:
-			path[3] === 'icon'
-				? 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
-				: 'Service theme icon URL or catalog slug override.'
-	};
+	const title = `services.<name>.x-arcane.${String(path[3])}`;
+	if (path[3] === 'icon') {
+		return {
+			title,
+			description: 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
+		};
+	}
+	return { title, description: 'Service theme icon URL or catalog slug override.' };
 }
 
 function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | null {
@@ -476,60 +477,60 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 	return null;
 }
 
+async function fetchComposeSchemaContext(): Promise<ComposeSchemaContext> {
+	const response = await fetch(DOCKER_COMPOSE_SCHEMA_URL, { cache: 'no-store' });
+	if (!response.ok) {
+		throw new Error(`HTTP ${response.status}`);
+	}
+
+	const payload = (await response.json()) as unknown;
+	const schema = asSchemaObject(payload);
+	if (!schema) throw new Error('Invalid compose schema payload');
+
+	writeCachedSchema(schema);
+	return {
+		schema,
+		validate: createValidator(schema),
+		status: 'ready'
+	};
+}
+
+async function loadComposeSchemaContext(): Promise<ComposeSchemaContext> {
+	try {
+		const fetched = await tryCatch(fetchComposeSchemaContext());
+		if (fetched.error === null) {
+			composeSchemaContext = fetched.data;
+			return composeSchemaContext;
+		}
+
+		const cached = readCachedSchema();
+		if (cached) {
+			composeSchemaContext = {
+				schema: cached,
+				validate: createValidator(cached),
+				status: 'cached',
+				message: 'Using cached Docker Compose schema'
+			};
+			return composeSchemaContext;
+		}
+
+		composeSchemaContext = {
+			schema: null,
+			validate: null,
+			status: 'unavailable',
+			message: fetched.error instanceof Error ? fetched.error.message : 'Schema unavailable'
+		};
+		return composeSchemaContext;
+	} finally {
+		composeSchemaPromise = null;
+	}
+}
+
 export async function getComposeSchemaContext(): Promise<ComposeSchemaContext> {
 	if (composeSchemaContext) return composeSchemaContext;
 	if (composeSchemaPromise) return composeSchemaPromise;
 
-	composeSchemaPromise = (async () => {
-		try {
-			const requestResult1 = await tryCatch(
-				(async () => {
-					const response = await fetch(DOCKER_COMPOSE_SCHEMA_URL, { cache: 'no-store' });
-					if (!response.ok) {
-						throw new Error(`HTTP ${response.status}`);
-					}
-
-					const payload = (await response.json()) as unknown;
-					const schema = asSchemaObject(payload);
-					if (!schema) throw new Error('Invalid compose schema payload');
-
-					writeCachedSchema(schema);
-					composeSchemaContext = {
-						schema,
-						validate: createValidator(schema),
-						status: 'ready'
-					};
-					return composeSchemaContext;
-				})()
-			);
-			if (requestResult1.error !== null) {
-				const error = requestResult1.error;
-
-				const cached = readCachedSchema();
-				if (cached) {
-					composeSchemaContext = {
-						schema: cached,
-						validate: createValidator(cached),
-						status: 'cached',
-						message: 'Using cached Docker Compose schema'
-					};
-					return composeSchemaContext;
-				}
-
-				composeSchemaContext = {
-					schema: null,
-					validate: null,
-					status: 'unavailable',
-					message: error instanceof Error ? error.message : 'Schema unavailable'
-				};
-				return composeSchemaContext;
-			} else {
-				return requestResult1.data;
-			}
-		} finally {
-			composeSchemaPromise = null;
-		}
-	})();
+	composeSchemaPromise = loadComposeSchemaContext();
 
 	return composeSchemaPromise;
 }

@@ -5,7 +5,7 @@
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import type { ActionButton } from '#lib/components/action-button-group/types.js';
+	import type { ActionButton, ActionButtonMenuItem } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
@@ -24,6 +24,7 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
+	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
@@ -31,6 +32,8 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
+		CreateSystemBackupRequest,
+		RunSystemVolumeBackupsRequest,
 		SystemVolumeBackupHistoryEntry,
 		SystemBackupDestination,
 		SystemVolumeBackupOption,
@@ -65,7 +68,13 @@
 	const backups = $derived(backupsQuery.data ?? data.backups);
 	let policyCollection = $derived(data.policyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
-	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
+	const systemVolumeOptionsQuery = createQuery(() => ({
+		...systemVolumeBackupOptionsQuery(),
+		enabled: false
+	}));
+	const systemVolumeOptions = $derived<SystemVolumeBackupOption[]>(systemVolumeOptionsQuery.data ?? []);
+	const systemVolumeOptionsLoading = $derived(systemVolumeOptionsQuery.isFetching);
+	let systemVolumeOptionsLoaded = false;
 	let scheduleOpen = $state(false);
 	let scheduleSession = $state(0);
 	let scheduleType = $state<'system' | 'volume'>('system');
@@ -85,8 +94,6 @@
 	let selectionMode = $state<SystemVolumeSelectionMode>('all');
 	let volumeNames = $state<string[]>([]);
 	let ignoreAnonymous = $state(true);
-	let systemVolumeOptionsLoading = $state(false);
-	let systemVolumeOptionsLoaded = $state(false);
 	let recoveryKey = $state('');
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
@@ -145,13 +152,13 @@
 		if (action === 'delete') return false;
 		return !policyCollection.recoveryKeyStored;
 	});
-	const destinationError = $derived(
-		backupConfiguration === 'custom' &&
-			((action === 'create' && destination !== 'local') || action === 'upload' || action === 'discover') &&
-			!s3DestinationId
-			? m.volume_backup_s3_destination_required()
-			: ''
-	);
+	const destinationError = $derived.by(() => {
+		const needsS3 = (action === 'create' && destination !== 'local') || action === 'upload' || action === 'discover';
+		if (backupConfiguration === 'custom' && needsS3 && !s3DestinationId) {
+			return m.volume_backup_s3_destination_required();
+		}
+		return '';
+	});
 	const invalid = $derived(Boolean(actionKeyInvalid || destinationError));
 
 	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
@@ -168,22 +175,21 @@
 		newRecoveryKey = '';
 		generatingKey = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const generated = await systemBackupService.generateRecoveryKey();
-					await systemBackupService.setRecoveryKey(generated.recoveryKey);
-					newRecoveryKey = generated.recoveryKey;
-					policyCollection = { ...policyCollection, recoveryKeyStored: true };
-					void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
-					void discoverStoredBackups();
-					keyOpen = true;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_save_failed());
+			const generated = await tryCatch(systemBackupService.generateRecoveryKey());
+			if (generated.error !== null) {
+				toast.error(generated.error.message || m.system_backups_recovery_key_save_failed());
+				return;
 			}
+			const stored = await tryCatch(systemBackupService.setRecoveryKey(generated.data.recoveryKey));
+			if (stored.error !== null) {
+				toast.error(stored.error.message || m.system_backups_recovery_key_save_failed());
+				return;
+			}
+			newRecoveryKey = generated.data.recoveryKey;
+			policyCollection = { ...policyCollection, recoveryKeyStored: true };
+			void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
+			void discoverStoredBackups();
+			keyOpen = true;
 		} finally {
 			generatingKey = false;
 		}
@@ -216,21 +222,16 @@
 		if (importingKey || importKeyInvalid) return;
 		importingKey = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await systemBackupService.setRecoveryKey(importKeyInput.trim());
-					policyCollection = { ...policyCollection, recoveryKeyStored: true };
-					void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
-					void discoverStoredBackups();
-					importKeyOpen = false;
-					toast.success(m.system_backups_recovery_key_saved());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_save_failed());
+			const stored = await tryCatch(systemBackupService.setRecoveryKey(importKeyInput.trim()));
+			if (stored.error !== null) {
+				toast.error(stored.error.message || m.system_backups_recovery_key_save_failed());
+				return;
 			}
+			policyCollection = { ...policyCollection, recoveryKeyStored: true };
+			void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
+			void discoverStoredBackups();
+			importKeyOpen = false;
+			toast.success(m.system_backups_recovery_key_saved());
 		} finally {
 			importingKey = false;
 		}
@@ -308,31 +309,24 @@
 			return;
 		restoringFiles = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await systemBackupService.restoreFiles(
-						restoreFilesTarget.environmentId,
-						restoreFilesTarget.id,
-						restoreFilesRecoveryKey.trim(),
-						{
-							paths: restoreFilesSelectedPaths,
-							selectAll: restoreFilesSelectAll,
-							search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
-						}
-					);
-					const projectQueryKey = queryKeys.projects.environment(restoreFilesTarget.environmentId);
-					await queryClient.cancelQueries({ queryKey: projectQueryKey });
-					queryClient.removeQueries({ queryKey: projectQueryKey });
-					toast.success(m.system_backups_restore_selection_success(), activityToastOptions(extractActivityId(result)));
-					closeRestoreFiles();
-					await refresh();
-				})()
+			const environmentId = restoreFilesTarget.environmentId;
+			const restored = await tryCatch(
+				systemBackupService.restoreFiles(environmentId, restoreFilesTarget.id, restoreFilesRecoveryKey.trim(), {
+					paths: restoreFilesSelectedPaths,
+					selectAll: restoreFilesSelectAll,
+					search: restoreFilesSelectAll ? restoreFilesSearch.trim() : undefined
+				})
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.system_backups_restore_files_failed());
+			if (restored.error !== null) {
+				toast.error(restored.error.message || m.system_backups_restore_files_failed());
+				return;
 			}
+			const projectQueryKey = queryKeys.projects.environment(environmentId);
+			await queryClient.cancelQueries({ queryKey: projectQueryKey });
+			queryClient.removeQueries({ queryKey: projectQueryKey });
+			toast.success(m.system_backups_restore_selection_success(), activityToastOptions(extractActivityId(restored.data)));
+			closeRestoreFiles();
+			await refresh();
 		} finally {
 			restoringFiles = false;
 		}
@@ -370,23 +364,13 @@
 	}
 
 	async function loadSystemVolumeOptions() {
-		if (systemVolumeOptionsLoading || systemVolumeOptionsLoaded) return;
-		systemVolumeOptionsLoading = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					systemVolumeOptions = await systemBackupService.listSystemVolumeOptions();
-					systemVolumeOptionsLoaded = true;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.system_volume_backups_options_failed());
-			}
-		} finally {
-			systemVolumeOptionsLoading = false;
+		if (systemVolumeOptionsQuery.isFetching || systemVolumeOptionsLoaded) return;
+		const result = await systemVolumeOptionsQuery.refetch();
+		if (result.isError) {
+			toast.error(result.error.message || m.system_volume_backups_options_failed());
+			return;
 		}
+		systemVolumeOptionsLoaded = true;
 	}
 
 	function changeBackupType(value: string) {
@@ -437,17 +421,14 @@
 			confirm: {
 				label: m.volumes_backups_restore(),
 				action: async () => {
-					const operationResult = await tryCatch(
-						(async () => {
-							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id, backup.environmentId);
-							toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
-						})()
+					const restored = await tryCatch(
+						volumeBackupService.restoreBackup(backup.resourceName, backup.id, backup.environmentId)
 					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-
-						toast.error(error instanceof Error ? error.message : m.common_failed());
+					if (restored.error !== null) {
+						toast.error(restored.error.message || m.common_failed());
+						return;
 					}
+					toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(restored.data)));
 				}
 			}
 		});
@@ -462,155 +443,152 @@
 		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
 	);
 
+	async function createBackup() {
+		const customS3DestinationId = destination === 'local' ? '' : s3DestinationId;
+		if (backupType === 'system') {
+			let request: CreateSystemBackupRequest = { policyId: backupConfiguration, recoveryKey };
+			if (backupConfiguration === 'custom') {
+				request = { destination, s3DestinationId: customS3DestinationId, recoveryKey };
+			}
+			const result = await systemBackupService.create(request);
+			backupActivity.accepted(extractActivityId(result));
+			toast.success(m.backups_started(), activityToastOptions(extractActivityId(result), false));
+		} else {
+			let request: RunSystemVolumeBackupsRequest = { policyId: backupConfiguration };
+			if (backupConfiguration === 'custom') {
+				request = {
+					custom: {
+						destination,
+						s3DestinationId: customS3DestinationId,
+						stopContainers,
+						selectionMode,
+						volumeNames,
+						ignoreAnonymous
+					}
+				};
+			}
+			const result = await systemBackupService.runSystemVolumeBackups(request);
+			backupActivity.accepted(result.activityId);
+			toast.success(m.backups_started(), activityToastOptions(result.activityId, false));
+		}
+		actionOpen = false;
+		loading = false;
+		void tryCatch(
+			queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
+		).then((result) => {
+			if (result.error === null) return;
+			toast.error(m.common_refresh_failed({ resource: m.backup_history() }), {
+				description: extractApiErrorMessage(result.error)
+			});
+		});
+	}
+
+	async function performAction() {
+		if (action === 'create') {
+			await createBackup();
+		} else if (action === 'restore' && selected) {
+			await systemBackupService.restore(selected.environmentId, selected.id, recoveryKey);
+			toast.success(m.system_backups_restore_started());
+		} else if (action === 'upload' && selected) {
+			await systemBackupService.upload(selected.environmentId, selected.id, s3DestinationId, recoveryKey);
+			toast.success(m.backups_upload_s3_success());
+			await refresh();
+		} else if (action === 'delete' && selected) {
+			await systemBackupService.delete(selected.environmentId, selected.id, recoveryKey);
+			toast.success(m.system_backups_deleted());
+			await refresh();
+		} else if (action === 'discover') {
+			const count = await systemBackupService.discover(s3DestinationId, recoveryKey);
+			toast.success(m.system_backups_discovered({ count }));
+			await refresh();
+		}
+		actionOpen = false;
+	}
+
 	async function submitAction() {
 		if (loading || invalid || (action === 'create' && backupActivity.activeIds.length)) return;
 		loading = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (action === 'create') {
-						const customS3DestinationId = destination === 'local' ? '' : s3DestinationId;
-						if (backupType === 'system') {
-							const result = await systemBackupService.create(
-								backupConfiguration === 'custom'
-									? { destination, s3DestinationId: customS3DestinationId, recoveryKey }
-									: { policyId: backupConfiguration, recoveryKey }
-							);
-							backupActivity.accepted(extractActivityId(result));
-							toast.success(m.backups_started(), activityToastOptions(extractActivityId(result), false));
-						} else {
-							const result = await systemBackupService.runSystemVolumeBackups(
-								backupConfiguration === 'custom'
-									? {
-											custom: {
-												destination,
-												s3DestinationId: customS3DestinationId,
-												stopContainers,
-												selectionMode,
-												volumeNames,
-												ignoreAnonymous
-											}
-										}
-									: { policyId: backupConfiguration }
-							);
-							backupActivity.accepted(result.activityId);
-							toast.success(m.backups_started(), activityToastOptions(result.activityId, false));
-						}
-						actionOpen = false;
-						loading = false;
-						void tryCatch(
-							queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
-						).then((result) => {
-							if (result.error === null) return;
-							toast.error(m.common_refresh_failed({ resource: m.backup_history() }), {
-								description: extractApiErrorMessage(result.error)
-							});
-						});
-					} else if (action === 'restore' && selected) {
-						await systemBackupService.restore(selected.environmentId, selected.id, recoveryKey);
-						toast.success(m.system_backups_restore_started());
-					} else if (action === 'upload' && selected) {
-						await systemBackupService.upload(selected.environmentId, selected.id, s3DestinationId, recoveryKey);
-						toast.success(m.backups_upload_s3_success());
-						await refresh();
-					} else if (action === 'delete' && selected) {
-						await systemBackupService.delete(selected.environmentId, selected.id, recoveryKey);
-						toast.success(m.system_backups_deleted());
-						await refresh();
-					} else if (action === 'discover') {
-						const count = await systemBackupService.discover(s3DestinationId, recoveryKey);
-						toast.success(m.system_backups_discovered({ count }));
-						await refresh();
-					}
-					actionOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				const fallback = actionFailedMessage();
-				toast.error(error instanceof Error ? error.message : fallback);
+			const performed = await tryCatch(performAction());
+			if (performed.error !== null) {
+				toast.error(performed.error.message || actionFailedMessage());
 			}
 		} finally {
 			loading = false;
 		}
 	}
 
-	const actionButtons: ActionButton[] = $derived.by(() => [
-		...(canCreateBackups || canUpdateBackupPolicies
-			? [
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateBackups || canUpdateBackupPolicies) {
+			const menuItems: ActionButtonMenuItem[] = [];
+			if (canUpdateBackupPolicies) {
+				menuItems.push({ id: 'schedule', label: m.jobs_schedule(), onclick: () => openSchedule() });
+			}
+			if (canCreateBackups) {
+				menuItems.push({
+					id: 'workspace-backup',
+					label: m.volumes_workspace_backup(),
+					onclick: () => openAction('create'),
+					disabled: backupActivity.activeIds.length > 0
+				});
+			}
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_create(),
+				disabled: isReadOnly,
+				menuItems
+			});
+		}
+		if (hasAnyPermission(['s3-destinations:list', 's3-destinations:read'], GLOBAL_SCOPE)) {
+			buttons.push({
+				id: 's3-destinations',
+				action: 'edit',
+				icon: CloudStorageIcon,
+				label: m.s3_destinations_title(),
+				href: '/system/backups/s3'
+			});
+		}
+		if (canDiscoverBackups && !policyCollection.recoveryKeyStored) {
+			buttons.push({
+				id: 'discover',
+				action: 'inspect',
+				label: m.system_backups_discover(),
+				onclick: () => openAction('discover'),
+				disabled: isReadOnly || data.destinations.length === 0
+			});
+		}
+		if (canManageRecoveryKey) {
+			let recoveryKeyLabel = m.system_backups_create_recovery_key();
+			if (policyCollection.recoveryKeyStored) {
+				recoveryKeyLabel = m.system_backups_reset_recovery_key();
+			}
+			buttons.push({
+				id: 'recovery-key',
+				action: 'edit',
+				icon: LockIcon,
+				label: m.system_backups_recovery_key(),
+				disabled: isReadOnly,
+				menuItems: [
 					{
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_create(),
-						disabled: isReadOnly,
-						menuItems: [
-							...(canUpdateBackupPolicies ? [{ id: 'schedule', label: m.jobs_schedule(), onclick: () => openSchedule() }] : []),
-							...(canCreateBackups
-								? [
-										{
-											id: 'workspace-backup',
-											label: m.volumes_workspace_backup(),
-											onclick: () => openAction('create'),
-											disabled: backupActivity.activeIds.length > 0
-										}
-									]
-								: [])
-						]
-					} satisfies ActionButton
-				]
-			: []),
-		...(hasAnyPermission(['s3-destinations:list', 's3-destinations:read'], GLOBAL_SCOPE)
-			? [
+						id: 'recovery-key-set',
+						label: recoveryKeyLabel,
+						icon: ResetIcon,
+						onclick: () => openRecoveryKey()
+					},
 					{
-						id: 's3-destinations',
-						action: 'edit',
-						icon: CloudStorageIcon,
-						label: m.s3_destinations_title(),
-						href: '/system/backups/s3'
-					} satisfies ActionButton
+						id: 'recovery-key-import',
+						label: m.system_backups_import_recovery_key(),
+						icon: UploadIcon,
+						onclick: () => openImportKey()
+					}
 				]
-			: []),
-		...(canDiscoverBackups && !policyCollection.recoveryKeyStored
-			? [
-					{
-						id: 'discover',
-						action: 'inspect',
-						label: m.system_backups_discover(),
-						onclick: () => openAction('discover'),
-						disabled: isReadOnly || data.destinations.length === 0
-					} satisfies ActionButton
-				]
-			: []),
-		...(canManageRecoveryKey
-			? [
-					{
-						id: 'recovery-key',
-						action: 'edit',
-						icon: LockIcon,
-						label: m.system_backups_recovery_key(),
-						disabled: isReadOnly,
-						menuItems: [
-							{
-								id: 'recovery-key-set',
-								label: policyCollection.recoveryKeyStored
-									? m.system_backups_reset_recovery_key()
-									: m.system_backups_create_recovery_key(),
-								icon: ResetIcon,
-								onclick: () => openRecoveryKey()
-							},
-							{
-								id: 'recovery-key-import',
-								label: m.system_backups_import_recovery_key(),
-								icon: UploadIcon,
-								onclick: () => openImportKey()
-							}
-						]
-					} satisfies ActionButton
-				]
-			: [])
-	]);
+			});
+		}
+		return buttons;
+	});
 </script>
 
 {#snippet backupsEmptyState()}

@@ -1,25 +1,14 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { templateService } from '#lib/services/template-service.js';
-import { variableService } from '#lib/services/variable-service.js';
+import { templateAllQuery, templateContentQuery, templateDefaultsQuery } from '#lib/query/templates.js';
+import { variableListQuery } from '#lib/query/variables.js';
 import type { GlobalVariable } from '#lib/types/env.js';
 import type { Template, TemplateContent } from '#lib/types/template.js';
 import type { User } from '#lib/types/user.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
-
-type QueryClientLike = {
-	query: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
-};
-
-type ParentWithQueryClient = () => Promise<{
-	queryClient: unknown;
-	user?: User | null;
-	[key: string]: unknown;
-}>;
 
 export type TemplateAuthoringResource = 'defaultTemplates' | 'templates' | 'globalVariables';
 
@@ -45,12 +34,7 @@ export function globalVariablesToMap(globalVariables: GlobalVariable[] | null | 
 }
 
 export async function loadGlobalVariablesOrEmpty(queryClient: QueryClient): Promise<GlobalVariable[]> {
-	const result = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.variables.list(),
-			queryFn: () => variableService.list()
-		})
-	);
+	const result = await tryCatch(queryClient.query(variableListQuery()));
 	return result.error ? [] : result.data;
 }
 
@@ -61,9 +45,8 @@ const EMPTY_DEFAULT_TEMPLATES = { composeTemplate: '', swarmStackTemplate: '', s
  * resource is fetched only when the user holds its permission; otherwise an
  * empty value is returned without a request.
  */
-export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
+export async function loadTemplateAuthoringData(parent: () => Promise<{ queryClient: QueryClient; user?: User | null }>) {
 	const { queryClient, user } = await parent();
-	const client = queryClient as QueryClientLike;
 	const permissions: TemplateAuthoringPermissions = {
 		canReadTemplates: userHasPermission(user, 'templates:read'),
 		canListTemplates: userHasPermission(user, 'templates:list'),
@@ -83,22 +66,11 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 
 	const [defaultTemplates, templates, globalVariables] = await Promise.all([
 		loadOptional<typeof EMPTY_DEFAULT_TEMPLATES>('defaultTemplates', permissions.canReadTemplates, EMPTY_DEFAULT_TEMPLATES, () =>
-			client.query({
-				queryKey: queryKeys.templates.defaults(),
-				queryFn: () => templateService.getDefaultTemplates()
-			})
+			queryClient.query(templateDefaultsQuery())
 		),
-		loadOptional<Template[]>('templates', permissions.canListTemplates, [], () =>
-			client.query({
-				queryKey: queryKeys.templates.allTemplates(),
-				queryFn: () => templateService.getAllTemplates()
-			})
-		),
+		loadOptional<Template[]>('templates', permissions.canListTemplates, [], () => queryClient.query(templateAllQuery())),
 		loadOptional<GlobalVariable[]>('globalVariables', permissions.canListVariables, [], () =>
-			client.query({
-				queryKey: queryKeys.variables.list(),
-				queryFn: () => variableService.list()
-			})
+			queryClient.query(variableListQuery())
 		)
 	]);
 
@@ -106,17 +78,12 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 }
 
 export async function loadTemplateContent(
-	client: QueryClientLike,
+	client: QueryClient,
 	templateId: string,
 	canRead: boolean
 ): Promise<SelectedTemplateLoad> {
 	if (!canRead) return { content: null, error: null, forbidden: true };
-	const result = await tryCatch(
-		client.query({
-			queryKey: queryKeys.templates.content(templateId),
-			queryFn: () => templateService.getTemplateContent(templateId)
-		})
-	);
+	const result = await tryCatch(client.query(templateContentQuery(templateId)));
 	if (result.error !== null) {
 		return { content: null, error: extractApiErrorMessage(result.error), forbidden: false };
 	}

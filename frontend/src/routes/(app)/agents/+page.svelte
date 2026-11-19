@@ -125,68 +125,62 @@
 		toast.success(m.common_create_success({ resource: m.resource_environment() }));
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		...(pageState.selectedIds.length > 0 && canDeleteEnvironment
-			? [
-					{
-						id: 'remove-selected',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						label: m.common_remove_selected(),
-						onclick: handleBulkDelete,
-						loading: isDeleting,
-						disabled: isDeleting
-					}
-				]
-			: []),
-		...(canCreateEnvironment
-			? [
-					{
-						id: 'create',
-						action: 'create' as const,
-						placement: 'primary' as const,
-						label: m.common_add_button({ resource: m.resource_environment_cap() }),
-						onclick: () => {
-							environmentSession += 1;
-							pageState.isCreateDialogOpen = true;
-						}
-					}
-				]
-			: []),
-		...(canCreateEnvironment && settingsStore.runtime.agentMTLSManagerCAAvailable
-			? [
-					{
-						id: 'download-agent-ca',
-						action: 'save' as const,
-						label: m.environments_download_agent_ca(),
-						onclick: () => downloadFromUrl('/api/agent/mtls/ca'),
-						icon: DownloadIcon
-					}
-				]
-			: []),
-		...(canUpdateEnvironments
-			? [
-					{
-						id: 'update-all',
-						action: 'update' as const,
-						label: m.update_all(),
-						icon: UpdateIcon,
-						onclick: () => (showUpdateAllDialog = true)
-					}
-				]
-			: []),
-		{
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (pageState.selectedIds.length > 0 && canDeleteEnvironment) {
+			buttons.push({
+				id: 'remove-selected',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				label: m.common_remove_selected(),
+				onclick: handleBulkDelete,
+				loading: isDeleting,
+				disabled: isDeleting
+			});
+		}
+		if (canCreateEnvironment) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_add_button({ resource: m.resource_environment_cap() }),
+				onclick: () => {
+					environmentSession += 1;
+					pageState.isCreateDialogOpen = true;
+				}
+			});
+		}
+		if (canCreateEnvironment && settingsStore.runtime.agentMTLSManagerCAAvailable) {
+			buttons.push({
+				id: 'download-agent-ca',
+				action: 'save',
+				label: m.environments_download_agent_ca(),
+				onclick: () => downloadFromUrl('/api/agent/mtls/ca'),
+				icon: DownloadIcon
+			});
+		}
+		if (canUpdateEnvironments) {
+			buttons.push({
+				id: 'update-all',
+				action: 'update',
+				label: m.update_all(),
+				icon: UpdateIcon,
+				onclick: () => (showUpdateAllDialog = true)
+			});
+		}
+		buttons.push({
 			id: 'refresh',
-			action: 'refresh' as const,
+			action: 'refresh',
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: environmentsQuery.isFetching
-		}
-	]);
+		});
+		return buttons;
+	});
 </script>
 
 <ResourcePageLayout title={m.environments_title()} subtitle={m.environments_subtitle()} {actionButtons}>

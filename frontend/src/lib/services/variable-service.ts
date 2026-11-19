@@ -5,12 +5,12 @@ import BaseAPIService from './api-service';
 
 class VariableService extends BaseAPIService {
 	async list(): Promise<GlobalVariable[]> {
-		const response = await this.api.get('/variables');
+		const response = await this.api.get<{ data?: GlobalVariable[] }>('/variables');
 		return response.data?.data ?? [];
 	}
 
 	async create(dto: GlobalVariableCreate): Promise<GlobalVariableMutationResponse> {
-		const response = await this.api.post('/variables', dto);
+		const response = await this.api.post<{ data?: GlobalVariableMutationResponse }>('/variables', dto);
 		return response.data?.data ?? {};
 	}
 
@@ -23,12 +23,12 @@ class VariableService extends BaseAPIService {
 	}
 
 	async update(id: string, dto: GlobalVariableUpdate): Promise<GlobalVariableMutationResponse> {
-		const response = await this.api.patch(`/variables/${encodeURIComponent(id)}`, dto);
+		const response = await this.api.patch<{ data?: GlobalVariableMutationResponse }>(`/variables/${encodeURIComponent(id)}`, dto);
 		return response.data?.data ?? {};
 	}
 
 	async delete(id: string): Promise<GlobalVariableMutationResponse> {
-		const response = await this.api.delete(`/variables/${encodeURIComponent(id)}`);
+		const response = await this.api.delete<{ data?: GlobalVariableMutationResponse }>(`/variables/${encodeURIComponent(id)}`);
 		return response.data?.data ?? {};
 	}
 }

@@ -87,25 +87,21 @@ export function createContainerActions({
 		const config = containerActionConfigs[action];
 		actionStatus[key] = config.status;
 
-		const operationResult = await tryCatch(
-			(async () => {
-				await handleApiResultWithCallbacks({
-					result: await tryCatch(config.run(id, environmentId)),
-					message: config.failure(),
-					setLoadingState: (value) => {
-						actionStatus[key] = value ? config.status : '';
-					},
-					async onSuccess(data) {
-						toast.success(config.success(), activityToastOptions(extractActivityId(data)));
-						await refreshContainers();
-					}
-				});
-			})()
+		const handled = await tryCatch(
+			handleApiResultWithCallbacks({
+				result: await tryCatch(config.run(id, environmentId)),
+				message: config.failure(),
+				setLoadingState: (value) => {
+					actionStatus[key] = value ? config.status : '';
+				},
+				async onSuccess(data) {
+					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
+					await refreshContainers();
+				}
+			})
 		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Container action failed:', error);
+		if (handled.error !== null) {
+			console.error('Container action failed:', handled.error);
 			toast.error(m.containers_action_error());
 			actionStatus[key] = '';
 		}
@@ -231,10 +227,10 @@ export function createContainerActions({
 		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:list', env.id));
 		const totalCount = allIds.length;
 		const filteredCount = validIds.length;
-		const message =
-			validIds?.length < allIds?.length
-				? m.containers_bulk_update_filtered_confirm_message({ filteredCount, totalCount })
-				: m.containers_bulk_update_confirm_message({ count: filteredCount });
+		let message = m.containers_bulk_update_confirm_message({ count: filteredCount });
+		if (filteredCount < totalCount) {
+			message = m.containers_bulk_update_filtered_confirm_message({ filteredCount, totalCount });
+		}
 
 		bulkConfirmAndRun({
 			ids: validIds,

@@ -15,3 +15,49 @@ export function gitOpsSyncListQuery(scope: string, environments: EnvironmentRef[
 			)
 	});
 }
+
+export function gitOpsSyncListForEnvironmentQuery(environmentId: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.list(environmentId, requestOptions),
+		queryFn: () => gitOpsSyncService.getSyncs(environmentId, requestOptions)
+	});
+}
+
+export function gitOpsSyncDetailQuery(environmentId: string, syncId: string | undefined) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.detail(environmentId, syncId ?? 'none'),
+		queryFn: () => gitOpsSyncService.getSync(environmentId, syncId ?? '')
+	});
+}
+
+export function gitOpsProjectBackupQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.projectBackup(environmentId, projectId),
+		queryFn: () =>
+			gitOpsSyncService.getSyncs(environmentId, {
+				pagination: { page: 1, limit: 1 },
+				filters: { projectId, mode: 'backup,bidirectional' }
+			})
+	});
+}
+
+export function gitOpsBackupHistoryQuery(environmentId: string, syncId: string, limit?: number) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.backupHistory(environmentId, syncId, limit),
+		queryFn: () => gitOpsSyncService.getBackupHistory(environmentId, syncId, limit)
+	});
+}
+
+export function gitOpsBackupRevisionQuery(environmentId: string, syncId: string, commit: string) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.backupRevision(environmentId, syncId, commit),
+		queryFn: () => gitOpsSyncService.getBackupRevision(environmentId, syncId, commit)
+	});
+}
+
+export function gitOpsBackupPreviewQuery(environmentId: string, syncId: string) {
+	return queryOptions({
+		queryKey: queryKeys.gitOpsSyncs.backupPreview(environmentId, syncId),
+		queryFn: () => gitOpsSyncService.previewBackup(environmentId, syncId)
+	});
+}

@@ -34,7 +34,10 @@ class VolumeBackupService extends BaseAPIService {
 		request: CreateVolumeBackupRequest | undefined,
 		environmentId: string
 	): Promise<VolumeBackupEntry> {
-		const res = await this.api.post(`/agents/${environmentId}/volumes/${volumeName}/backups`, request);
+		const res = await this.api.post<{ data: VolumeBackupEntry }>(
+			`/agents/${environmentId}/volumes/${volumeName}/backups`,
+			request
+		);
 		return res.data.data;
 	}
 
@@ -44,7 +47,9 @@ class VolumeBackupService extends BaseAPIService {
 		environmentId: string
 	): Promise<VolumeBackupListResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/volumes/${volumeName}/backups`, { params });
+		const res = await this.api.get<VolumeBackupListResponse>(`/agents/${environmentId}/volumes/${volumeName}/backups`, {
+			params
+		});
 		return res.data;
 	}
 
@@ -80,21 +85,27 @@ class VolumeBackupService extends BaseAPIService {
 		request: BackupFileBrowseRequest,
 		environmentId: string
 	): Promise<Paginated<BackupFileEntry>> {
-		const response = await this.api.get(`/agents/${environmentId}/volumes/backups/${backupId}/files/browse`, {
-			params: request
-		});
+		const response = await this.api.get<Paginated<BackupFileEntry>>(
+			`/agents/${environmentId}/volumes/backups/${backupId}/files/browse`,
+			{
+				params: request
+			}
+		);
 		return response.data;
 	}
 
 	async backupHasPath(backupId: string, filePath: string, environmentId: string): Promise<boolean> {
-		const res = await this.api.get(`/agents/${environmentId}/volumes/backups/${backupId}/files/exists`, {
-			params: { path: filePath }
-		});
+		const res = await this.api.get<{ data?: { exists?: boolean } }>(
+			`/agents/${environmentId}/volumes/backups/${backupId}/files/exists`,
+			{
+				params: { path: filePath }
+			}
+		);
 		return !!res.data.data?.exists;
 	}
 
 	async listBackupFiles(backupId: string, environmentId: string): Promise<string[]> {
-		const res = await this.api.get(`/agents/${environmentId}/volumes/backups/${backupId}/files`);
+		const res = await this.api.get<{ data?: string[] }>(`/agents/${environmentId}/volumes/backups/${backupId}/files`);
 		return res.data.data ?? [];
 	}
 

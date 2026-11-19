@@ -23,8 +23,8 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanPodQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanPodAction } from '#lib/types/ui/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -44,8 +44,7 @@
 	const queryClient = useQueryClient();
 	const envId = $derived(data.envId);
 	const podQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.pod(envId, data.pod.id),
-		queryFn: () => podmanService.getPod(data.pod.id, envId),
+		...podmanPodQuery(envId, data.pod.id),
 		initialData: data.pod,
 		retry: false
 	}));
@@ -75,25 +74,26 @@
 		];
 	}
 
-	const actions: ActionButton[] = $derived([
-		...(isRunning ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary')),
-		...lifecycleButton('restart', 'secondary'),
-		...(pod.state.toLowerCase() === 'paused' ? lifecycleButton('unpause', 'menu') : lifecycleButton('pause', 'menu')),
-		...lifecycleButton('kill', 'menu'),
-		...(hasPermission('podman-pods:delete', envId)
-			? [
-					{
-						id: 'remove',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						placement: 'menu' as const,
-						label: m.common_remove(),
-						onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto(resolve('/(app)/podman/pods')))
-					}
-				]
-			: [])
-	]);
+	const actions: ActionButton[] = $derived.by(() => {
+		const buttons = [
+			...(isRunning ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary')),
+			...lifecycleButton('restart', 'secondary'),
+			...(pod.state.toLowerCase() === 'paused' ? lifecycleButton('unpause', 'menu') : lifecycleButton('pause', 'menu')),
+			...lifecycleButton('kill', 'menu')
+		];
+		if (hasPermission('podman-pods:delete', envId)) {
+			buttons.push({
+				id: 'remove',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				placement: 'menu',
+				label: m.common_remove(),
+				onclick: () => confirmRemovePod({ ...pod, environmentId: envId }, () => goto(resolve('/(app)/podman/pods')))
+			});
+		}
+		return buttons;
+	});
 
 	const urlTab = useUrlTab({
 		tabs: () => [

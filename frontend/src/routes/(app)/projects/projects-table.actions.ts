@@ -112,22 +112,20 @@ export async function runProjectAction({
 	const config = projectActionConfigs[action];
 	setStatus(config.status);
 
-	const operationResult = await tryCatch(
-		(async () => {
-			await handleApiResultWithCallbacks({
-				result: await tryCatch(config.run(projectId, environmentId)),
-				message: config.failure(),
-				setLoadingState: (value) => {
-					setStatus(value ? config.status : '');
-				},
-				onSuccess: async (data) => {
-					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
-					await onRefresh();
-				}
-			});
-		})()
+	const handled = await tryCatch(
+		handleApiResultWithCallbacks({
+			result: await tryCatch(config.run(projectId, environmentId)),
+			message: config.failure(),
+			setLoadingState: (value) => {
+				setStatus(value ? config.status : '');
+			},
+			onSuccess: async (data) => {
+				toast.success(config.success(), activityToastOptions(extractActivityId(data)));
+				await onRefresh();
+			}
+		})
 	);
-	if (operationResult.error !== null) {
+	if (handled.error !== null) {
 		toast.error(m.common_action_failed());
 		setStatus('');
 	}

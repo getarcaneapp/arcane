@@ -38,28 +38,28 @@
 		files = files.filter((_, i) => i !== index);
 	}
 
+	async function uploadFiles() {
+		let lastResult: unknown;
+		for (const file of files) {
+			uploadingFile = file.name;
+			uploadProgress = null;
+			lastResult = await onUploadAction(file, (progress) => (uploadProgress = progress));
+		}
+		return lastResult;
+	}
+
 	async function handleUpload() {
 		if (files.length === 0) return;
 		uploading = true;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					let lastResult: unknown;
-					for (const file of files) {
-						uploadingFile = file.name;
-						uploadProgress = null;
-						lastResult = await onUploadAction(file, (progress) => (uploadProgress = progress));
-					}
-					toast.success(m.common_success(), activityToastOptions(extractActivityId(lastResult)));
-					open = false;
-					files = [];
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const e = operationResult1.error;
-
-				toast.error(e.message || m.common_failed());
+			const uploaded = await tryCatch(uploadFiles());
+			if (uploaded.error !== null) {
+				toast.error(uploaded.error.message || m.common_failed());
+				return;
 			}
+			toast.success(m.common_success(), activityToastOptions(extractActivityId(uploaded.data)));
+			open = false;
+			files = [];
 		} finally {
 			uploading = false;
 			uploadingFile = null;

@@ -163,9 +163,8 @@
 	const selectedWorkspaceEntry = $derived(selectedWorkspacePath ? entryByPath.get(selectedWorkspacePath) : undefined);
 	const selectedParentPath = $derived.by(() => {
 		if (activeFolderPath && entryByPath.get(activeFolderPath)?.isDirectory) return activeFolderPath;
-		return selectedWorkspaceEntry?.isDirectory
-			? selectedWorkspaceEntry.relativePath
-			: workspaceFileParentPath(selectedWorkspacePath);
+		if (selectedWorkspaceEntry?.isDirectory) return selectedWorkspaceEntry.relativePath;
+		return workspaceFileParentPath(selectedWorkspacePath);
 	});
 	const rows = $derived.by(() => flattenRows(entries, openFolders));
 	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
@@ -461,9 +460,10 @@
 			dialogError = m.workspace_upload_file_required();
 			return;
 		}
-		const normalizedNames = multipleUploads
-			? uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath))
-			: [normalizeDialogName(dialogName, dialogDestinationPath)];
+		let normalizedNames = [normalizeDialogName(dialogName, dialogDestinationPath)];
+		if (multipleUploads) {
+			normalizedNames = uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath));
+		}
 		if (normalizedNames.some((name) => !name)) {
 			dialogError = m.workspace_file_invalid_name();
 			return;
@@ -478,14 +478,15 @@
 
 		dialogSubmitting = true;
 		try {
-			const selectedFiles = multipleUploads
-				? uploadFiles
-				: [
-						new File([uploadFiles[0]!], normalizedNames[0]!, {
-							type: uploadFiles[0]!.type,
-							lastModified: uploadFiles[0]!.lastModified
-						})
-					];
+			let selectedFiles = uploadFiles;
+			if (!multipleUploads) {
+				selectedFiles = [
+					new File([uploadFiles[0]!], normalizedNames[0]!, {
+						type: uploadFiles[0]!.type,
+						lastModified: uploadFiles[0]!.lastModified
+					})
+				];
+			}
 			const error = await onUpload?.(dialogDestinationPath, selectedFiles);
 			if (typeof error === 'string' && error) {
 				dialogError = error;

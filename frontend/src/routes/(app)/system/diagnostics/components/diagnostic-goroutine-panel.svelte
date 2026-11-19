@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { slide } from 'svelte/transition';
 
@@ -9,16 +9,22 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import { goroutineProfileQuery } from '#lib/query/diagnostics.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
-	import type { GoroutineGroup, GoroutineProfile } from '#lib/types/system.js';
+	import type { GoroutineGroup } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let profile = $state.raw<GoroutineProfile | null>(null);
-	let loading = $state(false);
-	let error = $state<string | null>(null);
+	const profileQuery = createQuery(() => ({
+		...goroutineProfileQuery(LOCAL_DOCKER_ENVIRONMENT_ID),
+		staleTime: 0,
+		retry: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false
+	}));
+	const profile = $derived(profileQuery.data ?? null);
+	const loading = $derived(profileQuery.isFetching);
+	const error = $derived(profileQuery.isError ? extractApiErrorMessage(profileQuery.error) : null);
 	let query = $state('');
 	const expanded = new SvelteSet<string>();
 
@@ -47,20 +53,6 @@
 		if (expanded.has(key)) expanded.delete(key);
 		else expanded.add(key);
 	}
-
-	async function load() {
-		loading = true;
-		const result = await tryCatch(diagnosticsService.getGoroutinesForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID));
-		loading = false;
-		if (result.error !== null) {
-			error = extractApiErrorMessage(result.error);
-			return;
-		}
-		profile = result.data;
-		error = null;
-	}
-
-	onMount(load);
 </script>
 
 <div class="space-y-4">
@@ -80,7 +72,7 @@
 				aria-label={m.common_search()}
 			/>
 		</div>
-		<ArcaneButton action="refresh" {loading} onclick={load} />
+		<ArcaneButton action="refresh" {loading} onclick={() => profileQuery.refetch()} />
 	</div>
 
 	{#if error}

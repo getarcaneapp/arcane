@@ -21,12 +21,14 @@
 		isBuilding?: boolean;
 		onBuild: () => void;
 	} = $props();
+
+	const uid = $props.id();
 </script>
 
 <div class="flex flex-wrap items-center justify-end gap-2">
 	{#if providerOptions.length > 1}
 		<SelectWithLabel
-			id="build-provider"
+			id="{uid}-provider"
 			label={m.build_provider()}
 			hideLabel
 			compact

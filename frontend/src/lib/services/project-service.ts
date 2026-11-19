@@ -30,7 +30,7 @@ class ProjectService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<Project>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/projects`, { ...config, params });
+		const res = await this.api.get<Paginated<Project>>(`/agents/${environmentId}/projects`, { ...config, params });
 		return res.data;
 	}
 
@@ -54,11 +54,14 @@ class ProjectService extends BaseAPIService {
 		optionsOrEnvironmentId: ProjectDeployOptions | string | undefined,
 		maybeEnvironmentId?: string
 	): Promise<Project> {
-		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
-		const options = onLine
-			? (optionsOrEnvironmentId as ProjectDeployOptions | undefined)
-			: (onLineOrOptions as ProjectDeployOptions);
-		const environmentId = (onLine ? maybeEnvironmentId : optionsOrEnvironmentId) as string;
+		let onLine: ((data: unknown) => void) | undefined;
+		let options = onLineOrOptions as ProjectDeployOptions | undefined;
+		let environmentId = optionsOrEnvironmentId as string;
+		if (typeof onLineOrOptions === 'function') {
+			onLine = onLineOrOptions;
+			options = optionsOrEnvironmentId as ProjectDeployOptions | undefined;
+			environmentId = maybeEnvironmentId as string;
+		}
 		const url = `/api/agents/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
@@ -179,7 +182,7 @@ class ProjectService extends BaseAPIService {
 	}
 
 	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/projects/counts`, config);
+		const res = await this.api.get<{ data: ProjectStatusCounts }>(`/agents/${environmentId}/projects/counts`, config);
 		return res.data.data;
 	}
 
@@ -234,6 +237,17 @@ class ProjectService extends BaseAPIService {
 		}
 
 		await this.readProjectStream(res.body, onLine, () => m.images_pull_failed());
+	}
+
+	async runProjectJob(projectId: string, jobName: string, onLine: (data: unknown) => void, environmentId: string): Promise<void> {
+		const url = `/api/agents/${environmentId}/projects/${projectId}/jobs/${encodeURIComponent(jobName)}/run`;
+
+		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
+		if (!res.ok || !res.body) {
+			throw new Error(m.failed_to_start_job_run({ status: String(res.status) }));
+		}
+
+		await this.readProjectStream(res.body, onLine, () => m.job_run_failed());
 	}
 
 	async buildProjectImages(

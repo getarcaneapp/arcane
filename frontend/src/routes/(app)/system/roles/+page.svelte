@@ -24,19 +24,20 @@
 	}));
 	const roles = $derived(rolesQuery.data ?? data.roles);
 
-	const actionButtons: ActionButton[] = $derived.by(() =>
-		!isAdmin
-			? []
-			: [
-					{
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_create_button({ resource: m.common_role() }),
-						onclick: () => goto(resolve('/(app)/system/roles/new'))
-					}
-				]
-	);
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		if (!isAdmin) {
+			return [];
+		}
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_create_button({ resource: m.common_role() }),
+				onclick: () => goto(resolve('/(app)/system/roles/new'))
+			}
+		];
+	});
 </script>
 
 <SettingsPageLayout title={m.roles_title()} description={m.roles_subtitle()} pageType="management" {actionButtons}>

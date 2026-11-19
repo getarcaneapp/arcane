@@ -4,8 +4,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { UpdateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { upgradeVersionInfoQuery } from '#lib/query/system.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { VersionInfo } from '#lib/types/version.js';
 
@@ -24,8 +23,7 @@
 	} = $props();
 
 	const versionQuery = createQuery(() => ({
-		queryKey: queryKeys.system.versionInfo(environment.id),
-		queryFn: () => systemUpgradeService.getVersionInfo(environment.id),
+		...upgradeVersionInfoQuery(environment.id),
 		enabled: isOnline && environment.id !== '0',
 		staleTime: 60 * 1000,
 		retry: false

@@ -1,4 +1,4 @@
-import type { WebSocketRoute } from '@playwright/test';
+import type { WebSocketRoute } from 'playwright';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 
 const defaultDashboardPath = '/dashboard';

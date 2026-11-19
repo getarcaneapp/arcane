@@ -48,18 +48,17 @@
 	let labels = $state(recordToKeyValueRows(initial?.Labels));
 	let submitting = $state(false);
 
-	const description = $derived(
-		existing
-			? [
-					existing.spec.Name,
-					existing.spec.Driver?.Name,
-					`${m.common_created()} ${formatRelativeTime(existing.createdAt) || m.common_unknown()}`,
-					`${m.common_updated()} ${formatRelativeTime(existing.updatedAt) || m.common_unknown()}`
-				]
-					.filter(Boolean)
-					.join(' · ')
-			: resource.subtitle()
-	);
+	const description = $derived.by(() => {
+		if (!existing) return resource.subtitle();
+		return [
+			existing.spec.Name,
+			existing.spec.Driver?.Name,
+			`${m.common_created()} ${formatRelativeTime(existing.createdAt) || m.common_unknown()}`,
+			`${m.common_updated()} ${formatRelativeTime(existing.updatedAt) || m.common_unknown()}`
+		]
+			.filter(Boolean)
+			.join(' · ');
+	});
 
 	async function handleSubmit() {
 		if (existing) {

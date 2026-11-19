@@ -23,6 +23,7 @@ const LONG_RUNNING_TYPES = new Set<ActivityType>([
 	'project_build',
 	'project_deploy',
 	'project_redeploy',
+	'project_job_run',
 	'container_redeploy',
 	'vulnerability_scan',
 	'image_patch',
@@ -53,7 +54,7 @@ export function markActivityToastShown(activityId: string | undefined) {
 	shownActivityIds.set(activityId, now);
 }
 
-function wasToastShownInternal(activityId: string): boolean {
+function wasToastShown(activityId: string): boolean {
 	const shownAt = shownActivityIds.get(activityId);
 	return shownAt !== undefined && performance.now() - shownAt <= SHOWN_SUPPRESSION_MS;
 }
@@ -69,17 +70,17 @@ export function queueActivityCompletionToast(activity: Activity, navigate: Activ
 	if (debounceTimer) {
 		clearTimeout(debounceTimer);
 	}
-	debounceTimer = setTimeout(flushInternal, DEBOUNCE_MS);
+	debounceTimer = setTimeout(flush, DEBOUNCE_MS);
 	// Cap how long a steady stream of completions can defer the first toast.
-	hardFlushTimer ??= setTimeout(flushInternal, MAX_WAIT_MS);
+	hardFlushTimer ??= setTimeout(flush, MAX_WAIT_MS);
 }
 
 export function discardPendingActivityToasts() {
-	clearTimersInternal();
+	clearTimers();
 	pending = [];
 }
 
-function clearTimersInternal() {
+function clearTimers() {
 	if (debounceTimer) {
 		clearTimeout(debounceTimer);
 		debounceTimer = null;
@@ -90,8 +91,8 @@ function clearTimersInternal() {
 	}
 }
 
-function flushInternal() {
-	clearTimersInternal();
+function flush() {
+	clearTimers();
 	const items = pending;
 	pending = [];
 	if (items.length === 0) {
@@ -111,20 +112,20 @@ function flushInternal() {
 	}
 	for (const members of groups.values()) {
 		// A response toast (single or bulk summary) already covered this work.
-		if (members.some(({ activity }) => wasToastShownInternal(activity.id))) {
+		if (members.some(({ activity }) => wasToastShown(activity.id))) {
 			continue;
 		}
-		emitGroupToastInternal(members);
+		emitGroupToast(members);
 	}
 }
 
 // Container activities often carry a 64-char hex ID as their resource name;
 // show the familiar 12-char short ID instead.
-function shortenDockerIdInternal(value: string): string {
+function shortenDockerId(value: string): string {
 	return /^[0-9a-f]{25,64}$/i.test(value) ? value.slice(0, 12) : value;
 }
 
-function emitGroupToastInternal(members: PendingActivityToast[]) {
+function emitGroupToast(members: PendingActivityToast[]) {
 	const firstItem = members[0];
 	const first = firstItem?.activity;
 	if (!first) {
@@ -133,8 +134,8 @@ function emitGroupToastInternal(members: PendingActivityToast[]) {
 
 	if (members.length === 1) {
 		const rawName = activityTarget(first);
-		const name = rawName ? shortenDockerIdInternal(rawName) : activityTitle(first);
-		const action = viewActionInternal(first.id, first.batchId, firstItem.navigate);
+		const name = rawName ? shortenDockerId(rawName) : activityTitle(first);
+		const action = viewAction(first.id, first.batchId, firstItem.navigate);
 		if (first.status === 'failed') {
 			toast.error(m.activity_toast_failed({ name }), { action });
 		} else {
@@ -145,7 +146,7 @@ function emitGroupToastInternal(members: PendingActivityToast[]) {
 
 	const type = activityTitle(first);
 	const failed = members.filter(({ activity }) => activity.status === 'failed').length;
-	const action = viewActionInternal(undefined, first.batchId, firstItem.navigate);
+	const action = viewAction(undefined, first.batchId, firstItem.navigate);
 	if (failed > 0) {
 		toast.error(m.activity_toast_batch_partial({ type, failed, total: members.length }), { action });
 	} else {
@@ -153,7 +154,7 @@ function emitGroupToastInternal(members: PendingActivityToast[]) {
 	}
 }
 
-function viewActionInternal(activityId: string | undefined, batchId: string | undefined, navigate: ActivityToastNavigator) {
+function viewAction(activityId: string | undefined, batchId: string | undefined, navigate: ActivityToastNavigator) {
 	return {
 		label: m.activity_toast_view(),
 		onClick: () => navigate(activityId, batchId)

@@ -56,7 +56,13 @@
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
+	import { gitOpsSyncDetailQuery } from '#lib/query/gitops.js';
+	import {
+		projectDetailQuery,
+		projectTagsQuery,
+		projectWorkspaceFolderQuery,
+		type ProjectTagOptions
+	} from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -104,6 +110,7 @@
 	} from '#lib/utils/workspace-files.js';
 
 	import EditableName from '../components/editable-name.svelte';
+	import ProjectJobsPanel from '../components/project-jobs-panel.svelte';
 	import ProjectsLogsPanel from '../components/project-logs-panel.svelte';
 	import ProjectServicesPanel from '../components/project-services-panel.svelte';
 	import {
@@ -111,7 +118,6 @@
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
-	import { fetchProjectTags, type ProjectTagOptions } from '../projects-table.helpers';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -153,17 +159,13 @@
 	const projectSettings = useEnvironmentSettings(() => envId);
 	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
-	const projectDetailQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.detail(envId, projectId),
-		queryFn: () => projectService.getProjectForEnvironment(envId, projectId),
+	const detailQuery = createQuery(() => ({
+		...projectDetailQuery(envId, projectId),
 		initialData: data.project,
 		refetchOnMount: (query) => query.state.isInvalidated
 	}));
-	const projectTagsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.tags(envId),
-		queryFn: () => fetchProjectTags([{ id: envId, name: environmentName(envId) }])
-	}));
-	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
+	const tagsQuery = createQuery(() => projectTagsQuery(envId, [{ id: envId, name: environmentName(envId) }]));
+	const availableProjectTags = $derived(tagsQuery.data?.tags ?? []);
 
 	async function handleProjectTagToggle(name: string, attached: boolean, color: ProjectTagColor) {
 		const response = await projectService.updateProjectTag(projectId, name, attached, color, envId);
@@ -173,13 +175,15 @@
 		if (attached) {
 			queryClient.setQueryData<ProjectTagOptions>(
 				queryKeys.projects.tags(envId),
-				(current = { tags: [], failedEnvironments: [] }) =>
-					current.tags.some((tag) => tag.name === name)
-						? current
-						: {
-								...current,
-								tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
-							}
+				(current = { tags: [], failedEnvironments: [] }) => {
+					if (current.tags.some((tag) => tag.name === name)) {
+						return current;
+					}
+					return {
+						...current,
+						tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
+					};
+				}
 			);
 		}
 		return response.tags;
@@ -194,8 +198,7 @@
 	const lifecycleSyncQuery = createQuery(() => {
 		const syncId = data.project?.gitOpsManagedBy;
 		return {
-			queryKey: queryKeys.gitOpsSyncs.detail(envId, syncId ?? 'none'),
-			queryFn: () => gitOpsSyncService.getSync(envId, syncId!),
+			...gitOpsSyncDetailQuery(envId, syncId),
 			enabled: !!syncId,
 			staleTime: 30_000
 		};
@@ -242,7 +245,7 @@
 	}
 
 	const project = $derived.by(() => {
-		const detail = projectDetailQuery.data ?? data.project;
+		const detail = detailQuery.data ?? data.project;
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
@@ -458,11 +461,13 @@
 	let projectWorkspaceValidationReady = $state<Record<string, boolean>>({});
 	const includeFilePaths = $derived.by(() => new Set((project?.includeFiles ?? []).map((file) => file.relativePath)));
 	const directoryFilePaths = $derived.by(() => new Set(projectWorkspaceEntries.map((file) => file.relativePath)));
-	const lifecycleFilePath = $derived(
-		hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath)
-			? lifecycleSync.preDeployScriptPath
-			: undefined
-	);
+	const lifecycleFilePath = $derived.by(() => {
+		const scriptPath = lifecycleSync?.preDeployScriptPath;
+		if (hasLifecycleHook && scriptPath && directoryFilePaths.has(scriptPath)) {
+			return scriptPath;
+		}
+		return undefined;
+	});
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'override') return overrideActive ? 'override' : 'compose';
@@ -478,11 +483,12 @@
 		return includeFilePaths.has(current) ? current : 'compose';
 	});
 	const selectedProjectWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
-	const selectedProjectWorkspaceEntry = $derived.by(() =>
-		selectedProjectWorkspacePath
-			? projectWorkspaceEntries.find((file) => file.relativePath === selectedProjectWorkspacePath)
-			: undefined
-	);
+	const selectedProjectWorkspaceEntry = $derived.by(() => {
+		if (!selectedProjectWorkspacePath) {
+			return undefined;
+		}
+		return projectWorkspaceEntries.find((file) => file.relativePath === selectedProjectWorkspacePath);
+	});
 	const selectedProjectWorkspaceMetadata = $derived(
 		selectedProjectWorkspacePath ? projectWorkspaceFileMetadata[selectedProjectWorkspacePath] : undefined
 	);
@@ -549,28 +555,29 @@
 
 	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors && !composeActionsBlocked);
 
-	const tabItems = $derived<TabItem[]>([
-		{
-			value: 'services',
-			label: m.services(),
-			icon: LayersIcon,
-			badge: project?.serviceCount
-		},
-		{
-			value: 'compose',
-			label: m.common_configuration(),
-			icon: SettingsIcon
-		},
-		...(gitOwnsFiles
-			? []
-			: [
-					{
-						value: 'backup',
-						label: gitSyncsBothWays ? m.git_sync() : m.git_backup(),
-						icon: GitBranchIcon
-					}
-				])
-	]);
+	const tabItems = $derived.by(() => {
+		const items: TabItem[] = [
+			{
+				value: 'services',
+				label: m.services(),
+				icon: LayersIcon,
+				badge: project?.serviceCount
+			},
+			{
+				value: 'compose',
+				label: m.common_configuration(),
+				icon: SettingsIcon
+			}
+		];
+		if (!gitOwnsFiles) {
+			items.push({
+				value: 'backup',
+				label: gitSyncsBothWays ? m.git_sync() : m.git_backup(),
+				icon: GitBranchIcon
+			});
+		}
+		return items;
+	});
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -815,6 +822,15 @@
 
 	afterNavigate(initializeProjectPreferences);
 
+	async function saveProjectConfiguration(projectUpdate: Partial<Pick<ProjectUpdate, ProjectWritable>>) {
+		const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
+		rebaseEditorDraft(updatedProject, {
+			preserveProjectWorkspaceContents: true
+		});
+		await syncProjectQueries(updatedProject);
+		toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(updatedProject)));
+	}
+
 	async function handleSaveChanges(): Promise<boolean> {
 		if (!project) return false;
 		if (!hasChanges) return true;
@@ -832,6 +848,15 @@
 		if (!validated) return false;
 
 		const { composeContent, envContent, overrideContent } = validated;
+		let editedFields: Pick<ProjectUpdate, ProjectWritable> = {
+			name: effectiveName,
+			composeContent,
+			envContent,
+			overrideContent
+		};
+		if (gitOwnsFiles) {
+			editedFields = { envContent };
+		}
 		const projectUpdate = changedFields<ProjectUpdate, ProjectWritable>(
 			{
 				name: serverName,
@@ -839,14 +864,7 @@
 				envContent: serverEnvContent,
 				overrideContent: serverOverrideContent
 			},
-			gitOwnsFiles
-				? { envContent }
-				: {
-						name: effectiveName,
-						composeContent,
-						envContent,
-						overrideContent
-					}
+			editedFields
 		);
 		const workspaceUpdate = buildWorkspaceMultipartUpdate(
 			projectWorkspaceChanges,
@@ -855,62 +873,50 @@
 			projectWorkspaceStagedFiles,
 			projectWorkspaceStagedUploadedText
 		);
-		let workspaceCommitted = false;
+		const workspaceChanged = workspaceUpdate.fileChanges.length > 0;
 		isLoading.saving = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (workspaceUpdate.fileChanges.length > 0) {
-						await projectWorkspaceService.updateWorkspace(
-							projectId,
-							{ fileChanges: workspaceUpdate.fileChanges },
-							workspaceUpdate.files,
-							envId
-						);
-						workspaceCommitted = true;
-						projectWorkspaceFolders.keepSaved(projectWorkspaceEntries);
-
-						loadedProjectWorkspaceContents = {
-							...loadedProjectWorkspaceContents,
-							...projectWorkspaceContents
-						};
-						loadedIncludeFileContents = {
-							...loadedIncludeFileContents,
-							...Object.fromEntries(
-								changedIncludeFilePaths.flatMap((relativePath) => {
-									const content = includeFilesState[relativePath];
-									return content === undefined ? [] : [[relativePath, content] as const];
-								})
-							)
-						};
-						projectWorkspaceChanges = [];
-						projectWorkspaceStagedFiles = {};
-						projectWorkspaceStagedUploadedText = {};
-						await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
-					}
-
-					const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
-					rebaseEditorDraft(updatedProject, {
-						preserveProjectWorkspaceContents: true
-					});
-					await syncProjectQueries(updatedProject);
-					toast.success(
-						m.common_update_success({ resource: m.project() }),
-						activityToastOptions(extractActivityId(updatedProject))
-					);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				const message = error instanceof Error ? error.message : m.common_save_failed();
-				toast.error(
-					workspaceCommitted
-						? m.projects_workspace_saved_configuration_failed({
-								error: message
-							})
-						: message
+			if (workspaceChanged) {
+				const workspaceSaved = await tryCatch(
+					projectWorkspaceService.updateWorkspace(
+						projectId,
+						{ fileChanges: workspaceUpdate.fileChanges },
+						workspaceUpdate.files,
+						envId
+					)
 				);
+				if (workspaceSaved.error !== null) {
+					toast.error(workspaceSaved.error.message || m.common_save_failed());
+					return false;
+				}
+				projectWorkspaceFolders.keepSaved(projectWorkspaceEntries);
+
+				loadedProjectWorkspaceContents = {
+					...loadedProjectWorkspaceContents,
+					...projectWorkspaceContents
+				};
+				loadedIncludeFileContents = {
+					...loadedIncludeFileContents,
+					...Object.fromEntries(
+						changedIncludeFilePaths.flatMap((relativePath) => {
+							const content = includeFilesState[relativePath];
+							return content === undefined ? [] : [[relativePath, content] as const];
+						})
+					)
+				};
+				projectWorkspaceChanges = [];
+				projectWorkspaceStagedFiles = {};
+				projectWorkspaceStagedUploadedText = {};
+				await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
+			}
+
+			const updated = await tryCatch(saveProjectConfiguration(projectUpdate));
+			if (updated.error !== null) {
+				let message = updated.error.message || m.common_save_failed();
+				if (workspaceChanged) {
+					message = m.projects_workspace_saved_configuration_failed({ error: message });
+				}
+				toast.error(message);
 				return false;
 			}
 			return true;
@@ -1060,10 +1066,12 @@
 			}
 		}
 
-		const targetFile =
-			kind === 'include'
-				? project?.includeFiles?.find((file) => file.relativePath === relativePath)
-				: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+		let targetFile;
+		if (kind === 'include') {
+			targetFile = project?.includeFiles?.find((file) => file.relativePath === relativePath);
+		} else {
+			targetFile = projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+		}
 
 		if (!targetFile) {
 			throw new Error(m.workspace_file_not_found());
@@ -1101,7 +1109,7 @@
 
 		const requestedEnvId = envId;
 		const pendingFiles = projectWorkspaceFilePromises;
-		const promise = (async () => {
+		const fetchWorkspaceFile = async () => {
 			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, serverPath, requestedEnvId);
 			if (
 				kind !== 'workspace' &&
@@ -1112,7 +1120,8 @@
 				updateLoadedProjectWorkspaceSource(kind, relativePath, file.content ?? '');
 			}
 			return file;
-		})().finally(() => {
+		};
+		const promise = fetchWorkspaceFile().finally(() => {
 			delete pendingFiles[requestKey];
 		});
 
@@ -1249,41 +1258,32 @@
 		};
 		projectWorkspaceLoadErrors = removeWorkspaceFileRecord(projectWorkspaceLoadErrors, relativePath);
 
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (kind === 'workspace') {
-						const file = await getProjectWorkspaceFileResource(kind, relativePath);
-						if (
-							requestedProjectId !== projectId ||
-							requestedEnvId !== envId ||
-							pendingFiles !== projectWorkspaceFilePromises ||
-							requestedServerPath !== workspaceFileServerPath(projectWorkspaceChanges, relativePath)
-						)
-							return;
-						projectWorkspaceFileMetadata = {
-							...projectWorkspaceFileMetadata,
-							[relativePath]: file
-						};
-						if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
-					} else {
-						await getProjectWorkspaceFileResource(kind, relativePath);
-					}
-				})()
-			);
-			if (operationResult.error !== null) {
-				if (
-					requestedProjectId !== projectId ||
-					requestedEnvId !== envId ||
-					pendingFiles !== projectWorkspaceFilePromises ||
-					requestedServerPath !== workspaceFileServerPath(projectWorkspaceChanges, relativePath)
-				)
-					return;
-				const error = operationResult.error;
+		const isStale = () =>
+			requestedProjectId !== projectId ||
+			requestedEnvId !== envId ||
+			pendingFiles !== projectWorkspaceFilePromises ||
+			requestedServerPath !== workspaceFileServerPath(projectWorkspaceChanges, relativePath);
 
+		const applyProjectWorkspaceFile = async () => {
+			if (kind !== 'workspace') {
+				await getProjectWorkspaceFileResource(kind, relativePath);
+				return;
+			}
+			const file = await getProjectWorkspaceFileResource(kind, relativePath);
+			if (isStale()) return;
+			projectWorkspaceFileMetadata = {
+				...projectWorkspaceFileMetadata,
+				[relativePath]: file
+			};
+			if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
+		};
+
+		try {
+			const applied = await tryCatch(applyProjectWorkspaceFile());
+			if (applied.error !== null && !isStale()) {
 				projectWorkspaceLoadErrors = {
 					...projectWorkspaceLoadErrors,
-					[relativePath]: error instanceof Error ? error.message : String(error)
+					[relativePath]: applied.error.message || String(applied.error)
 				};
 			}
 		} finally {
@@ -1468,15 +1468,9 @@
 	async function downloadProjectWorkspaceFile(relativePath: string) {
 		const serverPath = workspaceFileServerPath(projectWorkspaceChanges, relativePath);
 		if (serverPath === null) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				await projectWorkspaceService.downloadWorkspaceFile(projectId, serverPath, envId);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			toast.error(error instanceof Error ? error.message : m.common_download_error());
+		const downloaded = await tryCatch(projectWorkspaceService.downloadWorkspaceFile(projectId, serverPath, envId));
+		if (downloaded.error !== null) {
+			toast.error(downloaded.error.message || m.common_download_error());
 		}
 	}
 
@@ -2059,6 +2053,25 @@
 	</Tabs.Content>
 {/snippet}
 
+{#snippet projectServiceAndJobPanels(project: Project)}
+	<div class="flex h-full min-h-0 flex-col">
+		<div class="flex min-h-0 flex-1 flex-col">
+			<ProjectServicesPanel
+				services={project.runtimeServices}
+				{projectId}
+				environmentId={envId}
+				updateInfoByRef={project.updateInfo?.updateInfoByRef}
+				onRefresh={() => refreshProjectDetails()}
+			/>
+		</div>
+		{#if project.jobs?.length}
+			<div class="flex max-h-1/2 min-h-0 shrink-0 flex-col">
+				<ProjectJobsPanel jobs={project.jobs} {projectId} environmentId={envId} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet projectServicesTab(project: Project)}
 	<Tabs.Content value="services" class="h-full min-h-0">
 		<div class="flex h-full min-h-0 flex-col">
@@ -2081,13 +2094,7 @@
 						persistStorage="local"
 					>
 						{#snippet first()}
-							<ProjectServicesPanel
-								services={project.runtimeServices}
-								{projectId}
-								environmentId={envId}
-								updateInfoByRef={project.updateInfo?.updateInfoByRef}
-								onRefresh={() => refreshProjectDetails()}
-							/>
+							{@render projectServiceAndJobPanels(project)}
 						{/snippet}
 						{#snippet second()}
 							<div class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2100,13 +2107,7 @@
 				</div>
 			{:else}
 				<div class="flex min-h-0 flex-1 flex-col">
-					<ProjectServicesPanel
-						services={project.runtimeServices}
-						{projectId}
-						environmentId={envId}
-						updateInfoByRef={project.updateInfo?.updateInfoByRef}
-						onRefresh={() => refreshProjectDetails()}
-					/>
+					{@render projectServiceAndJobPanels(project)}
 				</div>
 			{/if}
 		</div>

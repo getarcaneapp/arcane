@@ -227,16 +227,16 @@
 	async function loadDump(name: 'goroutine' | 'heap') {
 		dumpLoading[name] = true;
 		try {
-			const operationResult = await tryCatch(
-				ws ? ws.request({ type: 'dump', name }) : Promise.reject(new Error(m.disconnected()))
-			);
-			if (operationResult.error !== null) {
-				const e = operationResult.error;
-
-				dumpText[name] = e instanceof Error ? e.message : m.diagnostics_error_dump();
-			} else {
-				dumpText[name] = operationResult.data.text ?? '';
+			if (!ws) {
+				dumpText[name] = m.disconnected();
+				return;
 			}
+			const dump = await tryCatch(ws.request({ type: 'dump', name }));
+			if (dump.error !== null) {
+				dumpText[name] = dump.error.message || m.diagnostics_error_dump();
+				return;
+			}
+			dumpText[name] = dump.data.text ?? '';
 		} finally {
 			dumpLoading[name] = false;
 		}
@@ -276,16 +276,13 @@
 	async function download(p: PprofProfile) {
 		downloading = p;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (!ws) throw new Error(m.disconnected());
-					await ws.downloadProfile(p);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const e = operationResult.error;
-
-				error = e instanceof Error ? e.message : m.diagnostics_error_download();
+			if (!ws) {
+				error = m.disconnected();
+				return;
+			}
+			const downloaded = await tryCatch(ws.downloadProfile(p));
+			if (downloaded.error !== null) {
+				error = downloaded.error.message || m.diagnostics_error_download();
 			}
 		} finally {
 			downloading = null;

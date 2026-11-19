@@ -22,15 +22,16 @@
 	} = $props();
 
 	function exportTheme() {
-		const exported: ThemeDefinition = custom
-			? theme
-			: {
-					id: `custom-${theme.id}-copy`,
-					name: m.name_copy({ name: label }),
-					description,
-					light: theme.light,
-					dark: theme.dark
-				};
+		let exported: ThemeDefinition = theme;
+		if (!custom) {
+			exported = {
+				id: `custom-${theme.id}-copy`,
+				name: m.name_copy({ name: label }),
+				description,
+				light: theme.light,
+				dark: theme.dark
+			};
+		}
 		downloadBlob(JSON.stringify(exported, null, 2), `${exported.id}.json`);
 	}
 

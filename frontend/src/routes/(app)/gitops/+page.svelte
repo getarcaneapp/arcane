@@ -57,26 +57,27 @@
 			sync: GitOpsSyncCreate | GitOpsSyncUpdate;
 			target: GitOpsSync | null;
 			environmentId: string;
-		}) =>
-			target
-				? gitOpsSyncService.updateSync(target.environmentId, target.id, sync as GitOpsSyncUpdate)
-				: gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreate),
+		}) => {
+			if (target) {
+				return gitOpsSyncService.updateSync(target.environmentId, target.id, sync as GitOpsSyncUpdate);
+			}
+			return gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreate);
+		},
 		onSuccess: async (_result, { target }) => {
-			toast.success(
-				target
-					? m.common_update_success({ resource: m.resource_sync() })
-					: m.common_create_success({ resource: m.resource_sync() })
-			);
+			if (target) {
+				toast.success(m.common_update_success({ resource: m.resource_sync() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.resource_sync() }));
+			}
 			await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.listPrefix(pageState.scope) });
 			isSyncDialogOpen = false;
 		},
 		onError: (error, { target }) => {
-			toast.error(
-				target
-					? m.common_update_failed({ resource: m.resource_sync() })
-					: m.common_create_failed({ resource: m.resource_sync() }),
-				{ description: extractApiErrorMessage(error) }
-			);
+			let headline = m.common_create_failed({ resource: m.resource_sync() });
+			if (target) {
+				headline = m.common_update_failed({ resource: m.resource_sync() });
+			}
+			toast.error(headline, { description: extractApiErrorMessage(error) });
 		}
 	}));
 
@@ -197,32 +198,33 @@
 		importSyncsMutation.mutate({ syncs, environmentId: createEnvironmentId });
 	}
 
-	const actionButtons: ActionButton[] = $derived(
-		[
-			canCreate
-				? {
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_add_button({ resource: m.resource_sync_cap() }),
-						onclick: () => {
-							pickedEnvironmentId = '';
-							openCreateSyncDialog();
-						}
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreate) {
+			buttons.push(
+				{
+					id: 'create',
+					action: 'create',
+					placement: 'primary',
+					label: m.common_add_button({ resource: m.resource_sync_cap() }),
+					onclick: () => {
+						pickedEnvironmentId = '';
+						openCreateSyncDialog();
 					}
-				: null,
-			canCreate
-				? {
-						id: 'import',
-						action: 'create',
-						label: m.git_sync_import_open_button(),
-						icon: UploadIcon,
-						onclick: () => {
-							pickedEnvironmentId = '';
-							isImportDialogOpen = true;
-						}
+				},
+				{
+					id: 'import',
+					action: 'create',
+					label: m.git_sync_import_open_button(),
+					icon: UploadIcon,
+					onclick: () => {
+						pickedEnvironmentId = '';
+						isImportDialogOpen = true;
 					}
-				: null,
+				}
+			);
+		}
+		buttons.push(
 			{
 				id: 'manage-repos',
 				action: 'edit',
@@ -240,8 +242,9 @@
 				loading: isRefreshing,
 				disabled: syncsQuery.isFetching
 			}
-		].filter((button) => button !== null) as ActionButton[]
-	);
+		);
+		return buttons;
+	});
 
 	const statCards = $derived<StatCardConfig[]>([
 		{

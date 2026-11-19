@@ -3,8 +3,7 @@
 
 	import { UpdateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { upgradeVersionInfoQuery } from '#lib/query/system.js';
 	import type { Environment } from '#lib/types/environment.js';
 
 	let { environment, isOnline }: { environment: Environment; isOnline: boolean } = $props();
@@ -13,8 +12,7 @@
 	// result instead of asking the agent again. Offline environments are never queried:
 	// remote version lookups are proxied through the agent and would just time out.
 	const versionQuery = createQuery(() => ({
-		queryKey: queryKeys.system.versionInfo(environment.id),
-		queryFn: () => systemUpgradeService.getVersionInfo(environment.id),
+		...upgradeVersionInfoQuery(environment.id),
 		enabled: isOnline,
 		retry: false
 	}));

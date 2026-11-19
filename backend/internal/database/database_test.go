@@ -356,7 +356,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional {
+		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 115))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -465,7 +465,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
-		"gitops:backup",
+		"gitops:backup", "projects:deploy",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -902,6 +902,45 @@ func TestMigration116_AddsLdapUserColumns(t *testing.T) {
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 115))
 	assert.Zero(t, schemaObjects())
+}
+
+func TestMigration117_GrantsProjectsJobsRun(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-projects-jobs-run.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 116))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('j1', 'Deployer', '["projects:list","projects:read","projects:deploy"]'),
+		('j2', 'Reader', '["projects:list","projects:read"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('je1', 'Remote', 'edge://remote', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('jk1', 'Deploy key', 'hash-jk1', 'jk1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('jp1', 'jk1', 'projects:deploy', NULL),
+		('jp2', 'jk1', 'projects:deploy', 'je1')`)
+	require.NoError(t, err)
+	granted := func() (string, string, string) {
+		var deployer, reader, scopes string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'j1'`).Scan(&deployer))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'j2'`).Scan(&reader))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COALESCE(group_concat(scope, ','), '') FROM (
+			SELECT COALESCE(environment_id, 'global') AS scope FROM api_key_permissions
+			WHERE api_key_id = 'jk1' AND permission = 'projects:jobs:run' ORDER BY scope)`).Scan(&scopes))
+		return deployer, reader, scopes
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	deployer, reader, scopes := granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:deploy","projects:jobs:run"]`, deployer)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Equal(t, "global,je1", scopes)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 116))
+	deployer, reader, scopes = granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:deploy"]`, deployer)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Empty(t, scopes)
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

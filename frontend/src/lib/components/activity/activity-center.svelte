@@ -26,7 +26,7 @@
 		return false;
 	});
 	const anchor: Anchor = {
-		getBoundingClientRect: () => (visibleTriggerInternal() ?? FALLBACK_ANCHOR).getBoundingClientRect()
+		getBoundingClientRect: () => (visibleTrigger() ?? FALLBACK_ANCHOR).getBoundingClientRect()
 	};
 
 	const layout = $derived.by(() => {
@@ -40,19 +40,19 @@
 		return () => activityStore.stop();
 	});
 
-	function visibleTriggerInternal(): HTMLElement | null {
+	function visibleTrigger(): HTMLElement | null {
 		for (const element of document.querySelectorAll<HTMLElement>(TRIGGER_SELECTOR)) {
 			if (element.getClientRects().length > 0) return element;
 		}
 		return null;
 	}
 
-	function setOpenInternal(open: boolean) {
+	function setOpen(open: boolean) {
 		activityStore.setOpen(open);
 	}
 
 	// The trigger toggles the tray itself; letting the outside-click close it first would reopen it.
-	function handleTrayInteractOutsideInternal(event: PointerEvent) {
+	function handleTrayInteractOutside(event: PointerEvent) {
 		if (event.target instanceof Element && event.target.closest(TRIGGER_SELECTOR)) {
 			event.preventDefault();
 		}
@@ -60,13 +60,13 @@
 </script>
 
 {#if layout === 'drawer'}
-	<Drawer.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+	<Drawer.Root open={activityStore.open} onOpenChange={setOpen}>
 		<Drawer.Content class="flex max-h-(--max-height-screen-85) flex-col overflow-hidden">
 			<ActivityCenterTray dialogTitle />
 		</Drawer.Content>
 	</Drawer.Root>
 {:else if layout === 'tray'}
-	<Popover.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+	<Popover.Root open={activityStore.open} onOpenChange={setOpen}>
 		<Popover.Content
 			variant="panel"
 			role="dialog"
@@ -76,16 +76,16 @@
 			align="start"
 			sideOffset={12}
 			collisionPadding={8}
-			onInteractOutside={handleTrayInteractOutsideInternal}
+			onInteractOutside={handleTrayInteractOutside}
 			class="flex max-h-(--max-height-activity-tray) w-(--width-activity-tray) flex-col"
 		>
 			<ActivityCenterTray titleId={TITLE_ID} onExpand={() => (expanded = true)} />
 		</Popover.Content>
 	</Popover.Root>
 {:else}
-	<Dialog.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+	<Dialog.Root open={activityStore.open} onOpenChange={setOpen}>
 		<Dialog.Content variant="side-panel" showCloseButton={false} class="w-(--width-activity-inspector)">
-			<ActivityCenterInspector onClose={() => setOpenInternal(false)} />
+			<ActivityCenterInspector onClose={() => setOpen(false)} />
 		</Dialog.Content>
 	</Dialog.Root>
 {/if}

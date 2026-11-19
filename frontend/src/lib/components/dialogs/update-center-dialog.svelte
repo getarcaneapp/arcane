@@ -7,6 +7,7 @@
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { latestReleaseQuery } from '#lib/query/system.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
@@ -48,20 +49,7 @@
 
 	const debugReleaseEnabled = $derived(open && debug && !versionInformation?.releaseNotes);
 	const debugReleaseQuery = createQuery(() => ({
-		queryKey: ['github', 'getarcaneapp', 'arcane', 'latest-release'],
-		queryFn: async () => {
-			const res = await fetch('https://api.github.com/repos/getarcaneapp/arcane/releases/latest', {
-				headers: { Accept: 'application/vnd.github+json' }
-			});
-			if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
-			const data = await res.json();
-			return {
-				tag: (data.tag_name as string | undefined) ?? '',
-				body: (data.body as string | undefined) ?? '',
-				publishedAt: (data.published_at as string | undefined) ?? '',
-				url: (data.html_url as string | undefined) ?? ''
-			};
-		},
+		...latestReleaseQuery(),
 		enabled: debugReleaseEnabled,
 		staleTime: 5 * 60 * 1000,
 		retry: false

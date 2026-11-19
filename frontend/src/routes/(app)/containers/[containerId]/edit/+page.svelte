@@ -66,9 +66,9 @@
 	}
 </script>
 
-<div class="flex min-h-0 flex-col">
-	<div class="sticky top-0 z-10 border-b bg-background/95">
-		<div class="mx-auto flex h-16 w-full max-w-full items-center gap-4 px-6">
+<div class="flex h-full min-h-0 flex-col">
+	<div class="sticky top-0 mb-2 border-b">
+		<div class="mx-auto flex h-16 max-w-full items-center gap-4 px-6">
 			<ArcaneButton
 				action="base"
 				tone="ghost"

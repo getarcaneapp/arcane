@@ -166,6 +166,21 @@ type (
 		RedeployDisabled bool                        `json:"redeployDisabled,omitempty"`
 	}
 
+	ProjectJobSchedule struct {
+		Cron     string `json:"cron" doc:"Cron expression"`
+		Timezone string `json:"timezone,omitempty" doc:"IANA timezone the cron expression is evaluated in"`
+	}
+
+	ProjectJob struct {
+		Name          string               `json:"name" doc:"Job name"`
+		Image         string               `json:"image,omitempty" doc:"Job image"`
+		Profiles      []string             `json:"profiles,omitempty" doc:"Compose profiles the job belongs to"`
+		Schedules     []ProjectJobSchedule `json:"schedules" doc:"Schedule triggers registered with the engine on deploy"`
+		ManualAllowed bool                 `json:"manualAllowed" doc:"Whether the job can be run on demand"`
+		Disabled      bool                 `json:"disabled" doc:"Whether the job is disabled by inactive profiles"`
+		HasBuild      bool                 `json:"hasBuild" doc:"Whether the job declares a build"`
+	}
+
 	ProjectServiceUpdateInfo struct {
 		UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
 		ImageRef   string           `json:"imageRef"`
@@ -257,6 +272,7 @@ type (
 		ComposeFiles    []string                     `json:"composeFiles,omitempty" readOnly:"true"`
 		RuntimeServices []ProjectRuntimeService      `json:"runtimeServices,omitempty" readOnly:"true"`
 		Services        []composetypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
+		Jobs            []ProjectJob                 `json:"jobs,omitempty" readOnly:"true"`
 		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
 		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
 		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
@@ -384,6 +400,14 @@ type (
 	ComposePsOptions struct {
 		ComposeTarget
 		All bool
+	}
+
+	ComposeRunJobOptions struct {
+		AuthConfigs map[string]registry.AuthConfig
+		Project     *composetypes.Project
+		DockerHost  string
+		Job         string
+		Timeout     time.Duration
 	}
 
 	ComposeCommands struct {
@@ -527,6 +551,7 @@ const (
 	ProjectTransferVolumesNotCopied                               = "volume_data_not_copied"
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
+	ProjectTransferVolumeMissing                                  = "volume_missing"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

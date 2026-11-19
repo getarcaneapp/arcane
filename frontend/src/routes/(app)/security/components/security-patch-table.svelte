@@ -41,20 +41,15 @@
 
 	async function handlePatchImage(item: PatchTargetRow) {
 		if (!hasPermission('images:patch', item.environmentId)) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				// The fixable counts come from the stored scan, so patch from that report.
-				const record = await imageService.patchImage(item.imageId, { scanId: item.imageId }, item.environmentId);
-				toast.info(m.images_patch_started({ patchedRef: record.patchedRef }), activityToastOptions(record.activityId));
-				await queryClient.invalidateQueries({ queryKey: queryKeys.images.patchTargetsPrefix(environmentStore.shownKey) });
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to patch image:', error);
-			toast.error(m.images_patch_failed(), { description: extractApiErrorMessage(error) });
+		// The fixable counts come from the stored scan, so patch from that report.
+		const record = await tryCatch(imageService.patchImage(item.imageId, { scanId: item.imageId }, item.environmentId));
+		if (record.error !== null) {
+			console.error('Failed to patch image:', record.error);
+			toast.error(m.images_patch_failed(), { description: extractApiErrorMessage(record.error) });
+			return;
 		}
+		toast.info(m.images_patch_started({ patchedRef: record.data.patchedRef }), activityToastOptions(record.data.activityId));
+		await queryClient.invalidateQueries({ queryKey: queryKeys.images.patchTargetsPrefix(environmentStore.shownKey) });
 	}
 
 	function lastPatchState(item: PatchTargetRow): { label: string; variant: 'green' | 'red' | 'blue' | 'amber' } | null {

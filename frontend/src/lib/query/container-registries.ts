@@ -17,3 +17,24 @@ export function containerRegistryPullUsageQuery() {
 		queryFn: () => containerRegistryService.getPullUsage()
 	});
 }
+
+export function containerRegistryDetailQuery(registryId: string) {
+	return queryOptions({
+		queryKey: queryKeys.containerRegistries.detail(registryId),
+		queryFn: () => containerRegistryService.getRegistry(registryId)
+	});
+}
+
+export function containerRegistryRepositoriesQuery(registryId: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.containerRegistries.repositories(registryId, requestOptions),
+		queryFn: () => containerRegistryService.getRepositories(registryId, requestOptions)
+	});
+}
+
+export function containerRegistryTagsQuery(registryId: string, repository: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.containerRegistries.tags(registryId, repository, requestOptions),
+		queryFn: () => containerRegistryService.getTags(registryId, repository, requestOptions)
+	});
+}

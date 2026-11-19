@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
@@ -29,6 +30,7 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { swarmServiceQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type {
 		SwarmServiceInspect,
@@ -63,7 +65,8 @@
 	import ServiceTasksPanel from '../components/service-tasks-panel.svelte';
 
 	let { data } = $props();
-	let service = $derived(data?.service as SwarmServiceInspect);
+	const serviceQuery = createQuery(() => swarmServiceQuery(data.envId, data.serviceId));
+	const service = $derived<SwarmServiceInspect>(serviceQuery.data ?? data.service);
 
 	let scaleDialogOpen = $state(false);
 	let userScaleReplicas = $state<number | null>(null);
@@ -182,57 +185,55 @@
 	const canDeleteService = $derived(hasPermission('swarm-services:delete', envId));
 	const canScaleService = $derived(canUpdateService && showsReplicas);
 
-	const serviceActions = $derived<ActionButton[]>([
-		...(canScaleService
-			? [
-					{
-						id: 'scale',
-						action: 'base' as const,
-						placement: 'primary' as const,
-						label: m.swarm_service_scale(),
-						icon: LayersIcon,
-						disabled: isLoading.scale,
-						onclick: () => (scaleDialogOpen = true)
-					}
-				]
-			: []),
-		...(canUpdateService
-			? [
-					{
-						id: 'edit',
-						action: 'edit' as const,
-						placement: canScaleService ? ('secondary' as const) : ('primary' as const),
-						label: m.common_edit(),
-						icon: EditIcon,
-						disabled: isLoading.update,
-						onclick: openEdit
-					},
-					{
-						id: 'rollback',
-						action: 'redeploy' as const,
-						group: 'deploy' as const,
-						label: m.swarm_service_rollback(),
-						icon: RedeployIcon,
-						disabled: isLoading.rollback,
-						onclick: handleRollback
-					}
-				]
-			: []),
-		...(canDeleteService
-			? [
-					{
-						id: 'delete',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						label: m.common_delete(),
-						icon: TrashIcon,
-						disabled: isLoading.remove,
-						onclick: handleDelete
-					}
-				]
-			: [])
-	]);
+	const serviceActions = $derived.by(() => {
+		const actions: ActionButton[] = [];
+		if (canScaleService) {
+			actions.push({
+				id: 'scale',
+				action: 'base',
+				placement: 'primary',
+				label: m.swarm_service_scale(),
+				icon: LayersIcon,
+				disabled: isLoading.scale,
+				onclick: () => (scaleDialogOpen = true)
+			});
+		}
+		if (canUpdateService) {
+			actions.push(
+				{
+					id: 'edit',
+					action: 'edit',
+					placement: canScaleService ? 'secondary' : 'primary',
+					label: m.common_edit(),
+					icon: EditIcon,
+					disabled: isLoading.update,
+					onclick: openEdit
+				},
+				{
+					id: 'rollback',
+					action: 'redeploy',
+					group: 'deploy',
+					label: m.swarm_service_rollback(),
+					icon: RedeployIcon,
+					disabled: isLoading.rollback,
+					onclick: handleRollback
+				}
+			);
+		}
+		if (canDeleteService) {
+			actions.push({
+				id: 'delete',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				label: m.common_delete(),
+				icon: TrashIcon,
+				disabled: isLoading.remove,
+				onclick: handleDelete
+			});
+		}
+		return actions;
+	});
 	const canViewServiceLogs = $derived(hasPermission('swarm-services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([

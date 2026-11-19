@@ -36,7 +36,9 @@ export const queryKeys = {
 			['swarm', scope, 'secrets', stableSerialize(options)] as const,
 		listPrefix: (scope: string, kind: 'services' | 'tasks' | 'stacks' | 'nodes' | 'configs' | 'secrets') =>
 			['swarm', scope, kind] as const,
+		service: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service', serviceId] as const,
 		stack: (environmentId: string, name: string) => ['swarm', environmentId, 'stack', name] as const,
+		stackSource: (environmentId: string, name: string) => ['swarm', environmentId, 'stack', name, 'source'] as const,
 		stackServices: (environmentId: string, name: string, options: SearchPaginationSortRequest) =>
 			['swarm', environmentId, 'stack', name, 'services', stableSerialize(options)] as const,
 		stackTasks: (environmentId: string, name: string, options: SearchPaginationSortRequest) =>
@@ -75,19 +77,27 @@ export const queryKeys = {
 		active: (environmentId: string, resourceKey: string, discoverFromHistory: boolean) =>
 			['backup-activities', environmentId, resourceKey, discoverFromHistory] as const
 	},
+	volumeBackupPolicies: {
+		list: (environmentId: string, volumeName: string) => ['volume-backup-policies', environmentId, volumeName] as const
+	},
 	auth: {
 		all: ['auth'] as const,
 		logout: () => ['auth', 'logout'] as const,
 		currentUser: () => ['auth', 'current-user'] as const,
 		sessionBootstrap: () => ['auth', 'session-bootstrap'] as const,
 		autoLoginConfig: () => ['auth', 'auto-login-config'] as const,
-		autoLoginAttempt: () => ['auth', 'auto-login-attempt'] as const
+		autoLoginAttempt: () => ['auth', 'auto-login-attempt'] as const,
+		passkeyLoginAvailability: () => ['auth', 'passkey-login-availability'] as const,
+		passkeys: () => ['auth', 'passkeys'] as const,
+		passkeyCapabilities: () => ['auth', 'passkey-capabilities'] as const,
+		mfaStatus: () => ['auth', 'mfa-status'] as const
 	},
 	settings: {
 		all: ['settings'] as const,
 		byEnvironment: (environmentId: string) => ['settings', environmentId] as const,
 		public: (environmentId: string) => ['settings', environmentId, 'public'] as const,
-		publicAcross: ['settings-public-across'] as const
+		publicAcross: ['settings-public-across'] as const,
+		categories: () => ['settings-categories'] as const
 	},
 	roles: {
 		root: ['roles'] as const,
@@ -102,6 +112,7 @@ export const queryKeys = {
 	},
 	apiKeys: {
 		all: ['api-keys'] as const,
+		mine: () => ['api-keys', 'mine'] as const,
 		list: (options: SearchPaginationSortRequest) => ['api-keys', stableSerialize(options)] as const
 	},
 	federatedCredentials: {
@@ -151,7 +162,8 @@ export const queryKeys = {
 		history: (scope: string, options: SearchPaginationSortRequest) =>
 			['system-backups', 'history', scope, stableSerialize(options)] as const,
 		policies: () => ['system-backups', 'policies'] as const,
-		systemVolumeConfig: () => ['system-backups', 'system-volume-config'] as const
+		systemVolumeConfig: () => ['system-backups', 'system-volume-config'] as const,
+		systemVolumeOptions: () => ['system-backups', 'system-volume-options'] as const
 	},
 	s3Destinations: {
 		all: ['s3-destinations'] as const,
@@ -163,7 +175,8 @@ export const queryKeys = {
 		list: () => ['variables', 'list'] as const
 	},
 	notifications: {
-		settings: () => ['notification-settings'] as const
+		settings: () => ['notification-settings'] as const,
+		apnsStatus: () => ['notification-settings', 'apns-status'] as const
 	},
 	events: {
 		all: ['events'] as const,
@@ -174,6 +187,7 @@ export const queryKeys = {
 	},
 	system: {
 		appVersion: () => ['system', 'app-version'] as const,
+		latestRelease: () => ['github', 'getarcaneapp', 'arcane', 'latest-release'] as const,
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
 		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
 		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
@@ -294,6 +308,16 @@ export const queryKeys = {
 			['vulnerabilities', environmentId, 'all', stableSerialize(request)] as const,
 		imageRows: (environmentId: string, imageId: string, scanTime: string, request: SearchPaginationSortRequest) =>
 			['vulnerabilities', environmentId, 'image', imageId, scanTime, stableSerialize(request)] as const
+	},
+	diagnostics: {
+		goroutines: (environmentId: string) => ['diagnostics', environmentId, 'goroutines'] as const
+	},
+	dashboard: {
+		summary: (domain: string, scope: string, name: string) => [domain, scope, 'dashboard', name] as const,
+		resourceQuery: (kind: string | undefined, scope: string, request: unknown) =>
+			[kind, scope, 'dashboard', 'resource-query', request] as const,
+		resourcePicker: (kind: string | undefined, environmentId: string | undefined, term: string) =>
+			[kind, environmentId, 'dashboard', 'resource-picker', term] as const
 	},
 	buildWorkspace: {
 		workspace: (environmentId: string) => ['build-workspace', environmentId, 'workspace'] as const

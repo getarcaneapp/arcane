@@ -170,7 +170,7 @@ function createChangeInvalidator() {
 	};
 }
 
-function createClientStreamInternal() {
+function createClientStream() {
 	const subscribers = new Set<ChannelSubscriber>();
 	let params: Record<string, string> = {};
 	const changes = createChangeInvalidator();
@@ -277,4 +277,4 @@ function createClientStreamInternal() {
 	};
 }
 
-export const clientStream = createClientStreamInternal();
+export const clientStream = createClientStream();

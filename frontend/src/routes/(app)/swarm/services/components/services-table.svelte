@@ -229,10 +229,13 @@
 			},
 			{
 				label: m.nodes(),
-				getValue: (item: ServiceRow) =>
-					item.nodes?.length
-						? item.nodes.slice(0, 3).join(', ') + (item.nodes.length > 3 ? ` +${item.nodes.length - 3}` : '')
-						: m.common_na(),
+				getValue: (item: ServiceRow) => {
+					if (!item.nodes?.length) {
+						return m.common_na();
+					}
+					const overflow = item.nodes.length > 3 ? ` +${item.nodes.length - 3}` : '';
+					return item.nodes.slice(0, 3).join(', ') + overflow;
+				},
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['nodes'] ?? true

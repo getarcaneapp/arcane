@@ -11,16 +11,12 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
+	import { environmentJobsQuery } from '#lib/query/jobs.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let { environmentId }: { environmentId: string } = $props();
 
-	const jobsQuery = createQuery(() => ({
-		queryKey: queryKeys.jobs.list(environmentId),
-		queryFn: ({ signal }) => jobScheduleService.listJobs(environmentId, { signal, suppressAccessDeniedToast: true })
-	}));
+	const jobsQuery = createQuery(() => environmentJobsQuery(environmentId));
 	const jobs = $derived(
 		(jobsQuery.data?.jobs ?? [])
 			.filter((job) => !job.managerOnly || environmentId === '0')

@@ -1,9 +1,11 @@
-import { queryOptions } from '@tanstack/svelte-query';
+import { queryOptions, type QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { settingsService } from '#lib/services/settings-service.js';
+import { emptySettings, settingsService } from '#lib/services/settings-service.js';
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import { readEachEnvironment } from '#lib/utils/environments.js';
 
 export function environmentListQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({
@@ -22,10 +24,10 @@ export function environmentDetailQuery(environmentId: string) {
 export function environmentSettingsQuery(environmentId: string, canReadSettings: boolean) {
 	return queryOptions({
 		queryKey: queryKeys.environments.settings(environmentId),
-		queryFn: () =>
-			canReadSettings
-				? settingsService.getSettingsForEnvironment(environmentId)
-				: settingsService.getPublicSettingsForEnvironment(environmentId)
+		queryFn: () => {
+			if (canReadSettings) return settingsService.getSettingsForEnvironment(environmentId);
+			return settingsService.getPublicSettingsForEnvironment(environmentId);
+		}
 	});
 }
 
@@ -33,5 +35,22 @@ export function enrollmentTokensQuery() {
 	return queryOptions({
 		queryKey: queryKeys.environments.enrollmentTokens,
 		queryFn: () => environmentManagementService.listEnrollmentTokens()
+	});
+}
+
+export function environmentSettingsAcrossQuery(queryClient: QueryClient, environments: EnvironmentRef[]) {
+	return queryOptions({
+		queryKey: queryKeys.environments.settingsAcross(environments.map((env) => env.id).join(',')),
+		queryFn: async () => {
+			const sum = await readEachEnvironment(
+				environments,
+				(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
+				emptySettings
+			);
+			for (const { environment, data } of sum.byEnvironment) {
+				queryClient.setQueryData(queryKeys.environments.settings(environment.id), data);
+			}
+			return sum;
+		}
 	});
 }

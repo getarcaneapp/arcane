@@ -79,10 +79,9 @@
 	import { useWorkspaceFolders } from '#lib/hooks/use-workspace-folders.svelte.js';
 	import { FolderOpenIcon } from '#lib/icons/index.js';
 	import { gitRepositoryBranchesQuery, gitRepositoryListQuery } from '#lib/query/git-repositories.js';
+	import { gitOpsSyncListForEnvironmentQuery } from '#lib/query/gitops.js';
 	import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import { projectService } from '#lib/services/project-service.js';
+	import { projectListForEnvironmentQuery } from '#lib/query/projects.js';
 	import type { FileTreeNode, GitBranchInfo, GitOpsSync, GitRepository } from '#lib/types/gitops.js';
 	import type { Project } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
@@ -156,18 +155,28 @@
 	const envFileName = '.env';
 	const bytesPerMegabyte = 1024 * 1024;
 
-	function bytesToMegabytesInternal(value: number | undefined, fallback: number): number {
+	function bytesToMegabytes(value: number | undefined, fallback: number): number {
 		if (value === undefined) return fallback;
 		return Math.round(value / bytesPerMegabyte);
 	}
 
-	function megabytesToBytesInternal(value: number): number {
+	function megabytesToBytes(value: number): number {
 		return value * bytesPerMegabyte;
 	}
 
 	const lifecycleEnabled = $derived(settings.lifecycleEnabled ?? false);
 
 	function formValues(): z.infer<GitOpsSyncFormSchema> {
+		let maxSyncFiles = settings.gitSyncMaxFiles ?? 0;
+		let maxSyncTotalSizeMb = settings.gitSyncMaxTotalSizeMb ?? 0;
+		let maxSyncBinarySizeMb = settings.gitSyncMaxBinarySizeMb ?? 0;
+		let preDeployRunnerImage = settings.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest';
+		if (syncToEdit) {
+			maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;
+			maxSyncTotalSizeMb = bytesToMegabytes(syncToEdit.maxSyncTotalSize, 0);
+			maxSyncBinarySizeMb = bytesToMegabytes(syncToEdit.maxSyncBinarySize, 0);
+			preDeployRunnerImage = syncToEdit.preDeployRunnerImage ?? '';
+		}
 		return {
 			name: syncToEdit?.name ?? '',
 			projectId: syncToEdit?.projectId ?? projectId ?? '',
@@ -183,19 +192,13 @@
 			syncDirectory: syncToEdit?.syncDirectory ?? false,
 			pullImageAfterSync: syncToEdit?.pullImageAfterSync ?? false,
 			redeployAfterSync: syncToEdit?.redeployAfterSync ?? false,
-			maxSyncFiles: syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settings.gitSyncMaxFiles ?? 0),
-			maxSyncTotalSizeMb: syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0)
-				: (settings.gitSyncMaxTotalSizeMb ?? 0),
-			maxSyncBinarySizeMb: syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0)
-				: (settings.gitSyncMaxBinarySizeMb ?? 0),
+			maxSyncFiles,
+			maxSyncTotalSizeMb,
+			maxSyncBinarySizeMb,
 			autoSync: syncToEdit?.autoSync ?? true,
 			syncInterval: syncToEdit?.syncInterval ?? 5,
 			preDeployScriptPath: syncToEdit?.preDeployScriptPath ?? '',
-			preDeployRunnerImage: syncToEdit
-				? (syncToEdit.preDeployRunnerImage ?? '')
-				: settings.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest',
+			preDeployRunnerImage,
 			preDeployTimeoutSec: syncToEdit?.preDeployTimeoutSec ?? 60,
 			preDeployNetworkMode: syncToEdit?.preDeployNetworkMode ?? 'none',
 			preDeployEnv: syncToEdit?.preDeployEnv ?? '',
@@ -233,22 +236,22 @@
 	const branches = $derived<GitBranchInfo[]>(branchesQuery.data?.branches ?? []);
 	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
 
-	function normalizeLifecycleNetworkModeInternal(value: string | undefined | null): string {
+	function normalizeLifecycleNetworkMode(value: string | undefined | null): string {
 		return value?.trim() || 'none';
 	}
 
-	function existingLifecycleSnapshotInternal(sync: GitOpsSync | null) {
+	function existingLifecycleSnapshot(sync: GitOpsSync | null) {
 		return {
 			scriptPath: sync?.preDeployScriptPath?.trim() ?? '',
 			runnerImage: sync?.preDeployRunnerImage?.trim() ?? '',
 			timeoutSec: sync?.preDeployTimeoutSec ?? 60,
-			networkMode: normalizeLifecycleNetworkModeInternal(sync?.preDeployNetworkMode),
+			networkMode: normalizeLifecycleNetworkMode(sync?.preDeployNetworkMode),
 			env: sync?.preDeployEnv?.trim() ?? '',
 			extraMounts: sync?.preDeployExtraMounts?.trim() ?? ''
 		};
 	}
 
-	function shouldSubmitLifecycleFieldsInternal(data: z.infer<GitOpsSyncFormSchema>): boolean {
+	function shouldSubmitLifecycleFields(data: z.infer<GitOpsSyncFormSchema>): boolean {
 		if (!lifecycleEnabled || !canManageLifecycle || selectedTargetType !== 'project') {
 			return false;
 		}
@@ -258,7 +261,7 @@
 			return scriptPath !== '';
 		}
 
-		const existing = existingLifecycleSnapshotInternal(syncToEdit);
+		const existing = existingLifecycleSnapshot(syncToEdit);
 		if (scriptPath === '' && existing.scriptPath === '') {
 			return false;
 		}
@@ -267,7 +270,7 @@
 			scriptPath !== existing.scriptPath ||
 			data.preDeployRunnerImage.trim() !== existing.runnerImage ||
 			data.preDeployTimeoutSec !== existing.timeoutSec ||
-			normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode) !== existing.networkMode ||
+			normalizeLifecycleNetworkMode(data.preDeployNetworkMode) !== existing.networkMode ||
 			data.preDeployEnv.trim() !== existing.env ||
 			data.preDeployExtraMounts.trim() !== existing.extraMounts
 		);
@@ -298,8 +301,7 @@
 	};
 
 	const projectsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.list(environmentId, projectListOptions),
-		queryFn: () => projectService.getProjectsForEnvironment(environmentId, projectListOptions),
+		...projectListForEnvironmentQuery(environmentId, projectListOptions),
 		enabled: open
 	}));
 
@@ -309,8 +311,7 @@
 	};
 
 	const pushSyncsQuery = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.list(environmentId, pushSyncListOptions),
-		queryFn: () => gitOpsSyncService.getSyncs(environmentId, pushSyncListOptions),
+		...gitOpsSyncListForEnvironmentQuery(environmentId, pushSyncListOptions),
 		enabled: open && pushesToGit && !isEditMode
 	}));
 	const pushedProjectIds = $derived(
@@ -319,13 +320,12 @@
 
 	const projects = $derived<Project[]>(projectsQuery.data?.data ?? []);
 	const projectOptions = $derived(projects.map((project) => ({ value: project.id, label: project.name })));
-	const backupProjectOptions = $derived(
-		isEditMode
-			? projectOptions
-			: projects
-					.filter((project) => !pushedProjectIds.has(project.id) && !(isBidirectionalMode && project.gitOpsManagedBy))
-					.map((project) => ({ value: project.id, label: project.name }))
-	);
+	const backupProjectOptions = $derived.by(() => {
+		if (isEditMode) return projectOptions;
+		return projects
+			.filter((project) => !pushedProjectIds.has(project.id) && !(isBidirectionalMode && project.gitOpsManagedBy))
+			.map((project) => ({ value: project.id, label: project.name }));
+	});
 	const selectedProjectId = $derived.by(() => {
 		const value = inputs.projectId.value;
 		if (!pushesToGit || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
@@ -349,13 +349,13 @@
 		!!selectedProjectId && (!!workspaceFolders.root?.isPending || !!workspaceFolders.root?.isFetching)
 	);
 
-	function isEnvFileInternal(name: string): boolean {
+	function isEnvFile(name: string): boolean {
 		const lowered = name.toLowerCase();
 		return lowered === envFileName || lowered.startsWith('.env.') || lowered.endsWith('.env');
 	}
 
-	function isEnvPathInternal(path: string): boolean {
-		return isEnvFileInternal(path.split('/').pop() ?? '');
+	function isEnvPath(path: string): boolean {
+		return isEnvFile(path.split('/').pop() ?? '');
 	}
 
 	const initialBackupPaths = $derived.by<ReadonlySet<string>>(() => {
@@ -365,7 +365,7 @@
 	const selectionOverrides = new SvelteMap<string, SvelteSet<string>>();
 	const selectedPaths = $derived<ReadonlySet<string>>(selectionOverrides.get(selectedProjectId) ?? initialBackupPaths);
 
-	function editableSelectionInternal(): SvelteSet<string> {
+	function editableSelection(): SvelteSet<string> {
 		const existing = selectionOverrides.get(selectedProjectId);
 		if (existing) return existing;
 		const created = new SvelteSet(initialBackupPaths);
@@ -373,7 +373,7 @@
 		return created;
 	}
 
-	function ancestorSelectedInternal(path: string): boolean {
+	function ancestorSelected(path: string): boolean {
 		const segments = path.split('/');
 		for (let index = 1; index < segments.length; index++) {
 			if (selectedPaths.has(segments.slice(0, index).join('/'))) return true;
@@ -381,20 +381,20 @@
 		return false;
 	}
 
-	function isNodeCheckedInternal(node: WorkspaceDisplayEntry): boolean {
+	function isNodeChecked(node: WorkspaceDisplayEntry): boolean {
 		if (selectedPaths.has(node.relativePath)) return true;
-		if (!node.isDirectory && isEnvFileInternal(node.name)) return false;
-		return ancestorSelectedInternal(node.relativePath);
+		if (!node.isDirectory && isEnvFile(node.name)) return false;
+		return ancestorSelected(node.relativePath);
 	}
 
-	function isNodeLockedInternal(node: WorkspaceDisplayEntry): boolean {
-		if (!node.isDirectory && isEnvFileInternal(node.name)) return false;
-		return ancestorSelectedInternal(node.relativePath);
+	function isNodeLocked(node: WorkspaceDisplayEntry): boolean {
+		if (!node.isDirectory && isEnvFile(node.name)) return false;
+		return ancestorSelected(node.relativePath);
 	}
 
-	function toggleNodeInternal(node: WorkspaceDisplayEntry, checked: boolean) {
-		if (isNodeLockedInternal(node)) return;
-		const selection = editableSelectionInternal();
+	function toggleNode(node: WorkspaceDisplayEntry, checked: boolean) {
+		if (isNodeLocked(node)) return;
+		const selection = editableSelection();
 		if (!checked) {
 			selection.delete(node.relativePath);
 			return;
@@ -402,32 +402,31 @@
 		selection.add(node.relativePath);
 		if (!node.isDirectory) return;
 		for (const path of selection) {
-			if (path !== node.relativePath && path.startsWith(`${node.relativePath}/`) && !isEnvPathInternal(path)) {
+			if (path !== node.relativePath && path.startsWith(`${node.relativePath}/`) && !isEnvPath(path)) {
 				selection.delete(path);
 			}
 		}
 	}
 
-	const backupPaths = $derived(
-		isBidirectionalMode
-			? [...selectedPaths]
-					.filter((path) => !isEnvPathInternal(path) || initialBackupPaths.has(path))
-					.sort((a, b) => a.localeCompare(b))
-			: [...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
-	);
-	const hasSelectedEnvFile = $derived(!isBidirectionalMode && [...selectedPaths].some((path) => isEnvPathInternal(path)));
-	const workspaceFiles = $derived(
-		isBidirectionalMode
-			? workspaceFolders.files.filter(
-					(entry) => entry.isDirectory || !isEnvFileInternal(entry.name) || initialBackupPaths.has(entry.relativePath)
-				)
-			: workspaceFolders.files
-	);
-	const backupNamePlaceholder = $derived(
-		isBidirectionalMode
-			? m.project_git_sync_name({ name: selectedProject?.name ?? '' })
-			: m.project_backup_name({ name: selectedProject?.name ?? '' })
-	);
+	const backupPaths = $derived.by(() => {
+		if (isBidirectionalMode) {
+			return [...selectedPaths]
+				.filter((path) => !isEnvPath(path) || initialBackupPaths.has(path))
+				.sort((a, b) => a.localeCompare(b));
+		}
+		return [...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b));
+	});
+	const hasSelectedEnvFile = $derived(!isBidirectionalMode && [...selectedPaths].some((path) => isEnvPath(path)));
+	const workspaceFiles = $derived.by(() => {
+		if (!isBidirectionalMode) return workspaceFolders.files;
+		return workspaceFolders.files.filter(
+			(entry) => entry.isDirectory || !isEnvFile(entry.name) || initialBackupPaths.has(entry.relativePath)
+		);
+	});
+	const backupNamePlaceholder = $derived.by(() => {
+		if (isBidirectionalMode) return m.project_git_sync_name({ name: selectedProject?.name ?? '' });
+		return m.project_backup_name({ name: selectedProject?.name ?? '' });
+	});
 	const backupSummaryDestination = $derived(
 		`${selectedRepository?.label ?? ''} · ${selectedBranch} / ${effectiveBackupDirectory}`
 	);
@@ -449,7 +448,7 @@
 		inputs.maxSyncBinarySizeMb.value = untrack(formValues).maxSyncBinarySizeMb;
 	}
 
-	function buildBackupPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
+	function buildBackupPayload(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
 		const name = data.name.trim() || backupNamePlaceholder;
 		const repositoryId = selectedRepository?.value || data.repositoryId;
 
@@ -482,7 +481,7 @@
 		);
 	}
 
-	function buildBidirectionalPayloadInternal(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
+	function buildBidirectionalPayload(data: z.infer<GitOpsSyncFormSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
 		const fields = {
 			name: data.name.trim() || backupNamePlaceholder,
 			repositoryId: selectedRepository?.value || data.repositoryId,
@@ -492,7 +491,7 @@
 			pullImageAfterSync: data.pullImageAfterSync,
 			redeployAfterSync: data.redeployAfterSync,
 			maxSyncFiles: data.maxSyncFiles,
-			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
+			maxSyncTotalSize: megabytesToBytes(data.maxSyncTotalSizeMb),
 			autoSync: data.autoSync,
 			syncInterval: data.syncInterval,
 			backupOnSave: data.backupOnSave,
@@ -519,14 +518,14 @@
 		);
 	}
 
-	function applyLifecycleFieldsInternal(data: z.infer<GitOpsSyncFormSchema>, payload: GitOpsSyncCreate | GitOpsSyncUpdate) {
-		if (!shouldSubmitLifecycleFieldsInternal(data)) return payload;
+	function applyLifecycleFields(data: z.infer<GitOpsSyncFormSchema>, payload: GitOpsSyncCreate | GitOpsSyncUpdate) {
+		if (!shouldSubmitLifecycleFields(data)) return payload;
 		return {
 			...payload,
 			preDeployScriptPath: data.preDeployScriptPath.trim(),
 			preDeployRunnerImage: data.preDeployRunnerImage.trim(),
 			preDeployTimeoutSec: data.preDeployTimeoutSec,
-			preDeployNetworkMode: normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode),
+			preDeployNetworkMode: normalizeLifecycleNetworkMode(data.preDeployNetworkMode),
 			preDeployEnv: data.preDeployEnv.trim(),
 			preDeployExtraMounts: data.preDeployExtraMounts.trim()
 		};
@@ -544,12 +543,12 @@
 		if (!data) return;
 
 		if (isBackupMode) {
-			onSubmit({ sync: buildBackupPayloadInternal(data), isEditMode });
+			onSubmit({ sync: buildBackupPayload(data), isEditMode });
 			return;
 		}
 
 		if (isBidirectionalMode) {
-			onSubmit({ sync: applyLifecycleFieldsInternal(data, buildBidirectionalPayloadInternal(data)), isEditMode });
+			onSubmit({ sync: applyLifecycleFields(data, buildBidirectionalPayload(data)), isEditMode });
 			return;
 		}
 
@@ -566,25 +565,25 @@
 			pullImageAfterSync: data.pullImageAfterSync,
 			redeployAfterSync: data.redeployAfterSync,
 			maxSyncFiles: data.maxSyncFiles,
-			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
-			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
+			maxSyncTotalSize: megabytesToBytes(data.maxSyncTotalSizeMb),
+			maxSyncBinarySize: megabytesToBytes(data.maxSyncBinarySizeMb),
 			autoSync: data.autoSync,
 			syncInterval: data.syncInterval
 		};
 
-		const payload: GitOpsSyncCreate | GitOpsSyncUpdate =
-			isEditMode && syncToEdit
-				? changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(
-						{
-							...syncToEdit,
-							composeOverridePath: syncToEdit.composeOverridePath ?? '',
-							envContent: syncToEdit.envContent ?? ''
-						},
-						fields
-					)
-				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
+		let payload: GitOpsSyncCreate | GitOpsSyncUpdate = { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
+		if (isEditMode && syncToEdit) {
+			payload = changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(
+				{
+					...syncToEdit,
+					composeOverridePath: syncToEdit.composeOverridePath ?? '',
+					envContent: syncToEdit.envContent ?? ''
+				},
+				fields
+			);
+		}
 
-		onSubmit({ sync: applyLifecycleFieldsInternal(data, payload), isEditMode });
+		onSubmit({ sync: applyLifecycleFields(data, payload), isEditMode });
 	}
 </script>
 
@@ -679,10 +678,10 @@
 				loadedFolders={workspaceFolders.loaded}
 				onOpenFolder={workspaceFolders.load}
 				{loadingWorkspace}
-				isNodeChecked={isNodeCheckedInternal}
-				isNodeLocked={isNodeLockedInternal}
-				onToggleNode={toggleNodeInternal}
-				isEnvFile={isEnvFileInternal}
+				{isNodeChecked}
+				{isNodeLocked}
+				onToggleNode={toggleNode}
+				{isEnvFile}
 				{hasSelectedEnvFile}
 				{backupPaths}
 				{showBackupSummary}

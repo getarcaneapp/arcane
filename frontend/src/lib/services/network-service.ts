@@ -19,12 +19,12 @@ class NetworkService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<NetworksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/networks`, { ...config, params });
+		const res = await this.api.get<NetworksPaginatedResponse>(`/agents/${environmentId}/networks`, { ...config, params });
 		return res.data;
 	}
 
 	async getNetworkUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<NetworkUsageCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/networks/counts`, config);
+		const res = await this.api.get<{ data: NetworkUsageCounts }>(`/agents/${environmentId}/networks/counts`, config);
 		return res.data.data;
 	}
 

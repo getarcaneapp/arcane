@@ -5,9 +5,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { imageService } from '#lib/services/image-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { imageHistoryQuery } from '#lib/query/images.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
@@ -17,11 +15,7 @@
 		const environmentId = imageEnvironmentId;
 		const requestedImageId = imageId;
 		return {
-			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return imageService.getImageHistory(requestedImageId, environmentId);
-			},
+			...imageHistoryQuery(environmentId, requestedImageId),
 			enabled: !!environmentId && !!requestedImageId && hasPermission('images:read', environmentId)
 		};
 	});

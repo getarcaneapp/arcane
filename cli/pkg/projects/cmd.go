@@ -39,6 +39,7 @@ type (
 		endpoint       func(string, string) string
 		failureMessage string
 		successMessage string
+		unbounded      bool
 	}
 
 	projectTransferOptions struct {
@@ -92,6 +93,7 @@ func Command() *cobra.Command {
 		newArchiveCmd(),
 		newUnarchiveCmd(),
 		newBuildCmd(),
+		newRunJobCmd(),
 		newUpdateServicesCmd(),
 		newWorkspaceCmd(),
 		newListCmd(),
@@ -431,7 +433,7 @@ func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectSt
 	}
 
 	// Streamed actions can take a long time as they may pull images.
-	c.SetTimeout(30 * time.Minute)
+	c.SetTimeout(kit.Ternary(cfg.unbounded, 0, 30*time.Minute))
 
 	resp, err := c.Request(cmd.Context(), http.MethodPost, cfg.endpoint(c.EnvID(), resolved.ID), cfg.body)
 	if err != nil {

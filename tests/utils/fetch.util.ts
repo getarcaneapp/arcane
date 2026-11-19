@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from 'playwright/test';
+import { expect as vitestExpect } from 'vite-plus/test';
 import { ContainerSummary } from 'types/containers.type';
 import { ImageSummary, ImageUsageCounts } from 'types/image.type';
 import { NetworkSummary, NetworkUsageCounts } from 'types/networks.type';
@@ -271,11 +272,11 @@ export async function removeApiResource(
 			}
 			return;
 		}
-		const detail = `DELETE ${path}: ${response.status()} ${await response.text()}`;
-		await test.info().attach('cleanup-error', { body: detail, contentType: 'text/plain' });
-		expect.soft(false, detail).toBe(true);
+		vitestExpect
+			.soft(false, `DELETE ${path}: ${response.status()} ${await response.text()}`)
+			.toBe(true);
 	} catch (error) {
-		expect.soft(false, `DELETE ${path}: ${String(error)}`).toBe(true);
+		vitestExpect.soft(false, `DELETE ${path}: ${String(error)}`).toBe(true);
 	}
 }
 

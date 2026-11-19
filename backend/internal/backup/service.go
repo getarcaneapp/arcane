@@ -152,6 +152,8 @@ const (
 	dataDirectory                  = "data"
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
+
+	admissionWait = 6 * time.Hour
 )
 
 var (
@@ -204,6 +206,23 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 
 func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*runs.Lease, bool, error) {
 	return e.admission.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: scope, ID: id})
+}
+
+// AwaitRun waits for the admission so overlapping backups run in turn instead of skipping.
+func (e *Engine) AwaitRun(ctx context.Context, scope, id string) (*runs.Lease, error) {
+	key := types.SchedulerAdmissionKey{Scope: scope, ID: id}
+	lease, admitted, err := e.admission.TryAcquire(ctx, key)
+	if err != nil || admitted {
+		return lease, err
+	}
+	slog.InfoContext(ctx, "Backup waiting for another backup to finish", "scope", scope)
+	waitCtx, cancel := context.WithTimeout(ctx, admissionWait)
+	defer cancel()
+	lease, err = e.admission.Acquire(waitCtx, key)
+	if err != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		return nil, common.Classify(common.ErrTimeout, fmt.Errorf("timed out after %s waiting for another backup to finish", admissionWait))
+	}
+	return lease, err
 }
 
 func (e *Engine) Hold(scope, id, run string, lease *runs.Lease) func(context.Context) {

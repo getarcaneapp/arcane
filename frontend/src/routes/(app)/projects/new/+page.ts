@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 
 import { containerService } from '#lib/services/container-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { loadTemplateAuthoringData, loadTemplateContent } from '#lib/utils/template-load.js';
+import { loadTemplateAuthoringData, loadTemplateContent, type SelectedTemplateLoad } from '#lib/utils/template-load.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -20,22 +20,20 @@ export const load: PageLoad = async ({ url, parent }) => {
 
 	const templateId = url.searchParams.get('templateId');
 	const sourceEnvironmentId = url.searchParams.get('fromEnv') ?? '';
-	const sourceContainerIds = sourceEnvironmentId
-		? (url.searchParams.get('fromContainers')?.split(',').filter(Boolean) ?? [])
-		: [];
+	let sourceContainerIds: string[] = [];
+	if (sourceEnvironmentId) {
+		sourceContainerIds = url.searchParams.get('fromContainers')?.split(',').filter(Boolean) ?? [];
+	}
 
 	const [{ defaultTemplates, templates: allTemplates, globalVariables, permissions, loadErrors }, generated] = await Promise.all([
 		loadTemplateAuthoringData(parent),
 		sourceContainerIds.length ? generateFromContainers(sourceContainerIds, sourceEnvironmentId) : null
 	]);
 
-	const selectedTemplate = templateId
-		? await loadTemplateContent(
-				queryClient as Parameters<typeof loadTemplateContent>[0],
-				templateId,
-				permissions.canReadTemplates
-			)
-		: null;
+	let selectedTemplate: SelectedTemplateLoad | null = null;
+	if (templateId) {
+		selectedTemplate = await loadTemplateContent(queryClient, templateId, permissions.canReadTemplates);
+	}
 
 	return {
 		composeTemplates: allTemplates,

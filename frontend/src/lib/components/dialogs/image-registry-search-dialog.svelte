@@ -59,17 +59,13 @@
 		isSearching = true;
 		hasSearched = true;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					results = await imageService.searchImages(term, environmentId);
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const error = operationResult1.error;
-
-				console.error('Failed to search images:', error);
+			const found = await tryCatch(imageService.searchImages(term, environmentId));
+			if (found.error !== null) {
+				console.error('Failed to search images:', found.error);
 				toast.error(m.images_search_failed());
+				return;
 			}
+			results = found.data;
 		} finally {
 			isSearching = false;
 		}

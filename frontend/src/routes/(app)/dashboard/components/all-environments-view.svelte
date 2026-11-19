@@ -15,38 +15,36 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AddIcon, AlertIcon, InspectIcon, LayoutGridIcon, LayoutListIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { apiKeyListQuery } from '#lib/query/api-keys.js';
 	import { containerListQuery } from '#lib/query/containers.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import { containerService } from '#lib/services/container-service.js';
-	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import { eventService } from '#lib/services/event-service.js';
-	import { imageService } from '#lib/services/image-service.js';
-	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
-	import { podmanService } from '#lib/services/podman-service.js';
-	import { projectService } from '#lib/services/project-service.js';
+	import {
+		dashboardContainerCountsQuery,
+		dashboardDiskUsageQuery,
+		dashboardImageCountsQuery,
+		dashboardJobsQuery,
+		dashboardPodmanStatusQuery,
+		dashboardProjectCountsQuery,
+		dashboardRecentEventsQuery,
+		dashboardRiskQuery,
+		dashboardVersionsQuery,
+		dashboardVulnerabilitySummaryQuery,
+		EMPTY_CONTAINER_COUNTS,
+		EMPTY_IMAGE_COUNTS
+	} from '#lib/query/dashboard.js';
 	import { emptySettings, settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
-	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ContainerStatusCounts } from '#lib/types/container.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Event } from '#lib/types/event.js';
-	import type { ImageUsageCounts } from '#lib/types/image.js';
-	import type { JobListResponse } from '#lib/types/jobschedule.js';
-	import type { PodmanStatus } from '#lib/types/podman.js';
-	import type { ProjectStatusCounts } from '#lib/types/project.js';
 	import type { Settings } from '#lib/types/settings.js';
-	import type { PruneAllRequest, SystemDiskUsage } from '#lib/types/system.js';
+	import type { PruneAllRequest } from '#lib/types/system.js';
 	import type { DashboardEnvironmentCardState, DashboardEnvironmentOverview } from '#lib/types/ui/dashboard.js';
 	import type { PruneType } from '#lib/types/ui/system.js';
 	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
 	import type { VersionInfo } from '#lib/types/version.js';
-	import type { EnvironmentVulnerabilitySummary } from '#lib/types/vulnerability.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -61,17 +59,10 @@
 		showWidget
 	} from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
-	import {
-		readableEnvironments,
-		readAcrossEnvironments,
-		readEachEnvironment,
-		sumAcrossEnvironments,
-		type EnvironmentFailure
-	} from '#lib/utils/environments.js';
+	import { readableEnvironments, readEachEnvironment, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
-	import { fetchRiskOverview } from '#lib/utils/vulnerability.js';
 
 	import { canLoadLiveStats, DashboardLiveStats } from '../live-stats.svelte';
 	import {
@@ -119,27 +110,7 @@
 		updateAvailable: true
 	};
 
-	const EMPTY_CONTAINER_COUNTS: ContainerStatusCounts = {
-		runningContainers: 0,
-		stoppedContainers: 0,
-		totalContainers: 0,
-		unhealthyContainers: 0,
-		updatesAvailable: 0
-	};
-	const EMPTY_IMAGE_COUNTS: ImageUsageCounts = {
-		imagesInuse: 0,
-		imagesUnused: 0,
-		totalImages: 0,
-		totalImageSize: 0
-	};
 	const EXPIRING_API_KEYS = { pagination: { page: 1, limit: -1 }, filters: { expiresWithinDays: 14 } };
-	const EMPTY_DISK_USAGE: SystemDiskUsage = {
-		unusedImagesBytes: 0,
-		buildCacheBytes: 0,
-		unusedVolumesBytes: 0,
-		stoppedContainersBytes: 0
-	};
-	const RECENT_CONTAINER_EVENTS = { types: ['container.oom,container.die', 'container.start,container.restart'], limit: 50 };
 	const TOP_MEMORY_REQUEST = {
 		pagination: { page: 1, limit: 5 },
 		sort: { column: 'memoryUsage', direction: 'desc' as const }
@@ -204,10 +175,6 @@
 		return readableEnvironments(permission).filter((environment) => loadableEnvironmentIds.has(environment.id));
 	}
 
-	function dashboardQueryKey(domain: string, name: string, environments: EnvironmentRef[]) {
-		return [domain, environments.map((environment) => environment.id).join(','), 'dashboard', name];
-	}
-
 	function byEnvironmentId<C>(result: { byEnvironment: { environment: EnvironmentRef; data: C }[] } | undefined): Map<string, C> {
 		return new Map((result?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]));
 	}
@@ -216,91 +183,39 @@
 		return value?.currentVersion !== undefined;
 	}
 
-	const containersQuery = createQuery(() => {
-		const environments = loadableEnvironments('containers:list');
-		return {
-			queryKey: dashboardQueryKey('containers', 'status-counts', environments),
-			queryFn: () =>
-				sumAcrossEnvironments(
-					environments,
-					(scope, config) => containerService.getContainerStatusCountsForEnvironment(scope, config),
-					EMPTY_CONTAINER_COUNTS
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const containersQuery = createQuery(() => ({
+		...dashboardContainerCountsQuery(loadableEnvironments('containers:list')),
+		placeholderData: keepPreviousData
+	}));
 
-	const projectsQuery = createQuery(() => {
-		const environments = loadableEnvironments('projects:list');
-		return {
-			queryKey: dashboardQueryKey('projects', 'status-counts', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<ProjectStatusCounts, 'updatesAvailable'>>(
-					environments,
-					(scope, config) => projectService.getProjectStatusCountsForEnvironment(scope, config),
-					{ updatesAvailable: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const projectsQuery = createQuery(() => ({
+		...dashboardProjectCountsQuery(loadableEnvironments('projects:list')),
+		placeholderData: keepPreviousData
+	}));
 
-	const imagesQuery = createQuery(() => {
-		const environments = loadableEnvironments('images:list');
-		return {
-			queryKey: dashboardQueryKey('images', 'usage-counts', environments),
-			queryFn: () =>
-				sumAcrossEnvironments(
-					environments,
-					(scope, config) => imageService.getImageUsageCountsForEnvironment(scope, config),
-					EMPTY_IMAGE_COUNTS
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const imagesQuery = createQuery(() => ({
+		...dashboardImageCountsQuery(loadableEnvironments('images:list')),
+		placeholderData: keepPreviousData
+	}));
 
-	const vulnerabilitiesQuery = createQuery(() => {
-		const environments = loadableEnvironments('vulnerabilities:list').filter((environment) =>
-			featureStore.isEnabled('vulnerabilityManagement', environment.id)
-		);
-		return {
-			queryKey: dashboardQueryKey('vulnerabilities', 'summary', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<EnvironmentVulnerabilitySummary, 'actionableCount'>>(
-					environments,
-					(scope, config) => vulnerabilityService.getEnvironmentSummary(scope, config),
-					{ actionableCount: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const vulnerabilitiesQuery = createQuery(() => ({
+		...dashboardVulnerabilitySummaryQuery(
+			loadableEnvironments('vulnerabilities:list').filter((environment) =>
+				featureStore.isEnabled('vulnerabilityManagement', environment.id)
+			)
+		),
+		placeholderData: keepPreviousData
+	}));
 
-	const podmanQuery = createQuery(() => {
-		const environments = loadableEnvironments('podman:read');
-		return {
-			queryKey: dashboardQueryKey('podman', 'status', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<PodmanStatus, 'detected' | 'podCount'>>(
-					environments,
-					(scope, config) => podmanService.getStatus(scope, config),
-					{ detected: false, podCount: 0 }
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const podmanQuery = createQuery(() => ({
+		...dashboardPodmanStatusQuery(loadableEnvironments('podman:read')),
+		placeholderData: keepPreviousData
+	}));
 
-	const versionsQuery = createQuery(() => {
-		const environments = loadableEnvironments('environments:read');
-		return {
-			queryKey: dashboardQueryKey('environments', 'versions', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Partial<VersionInfo>>(
-					environments,
-					(scope, config) => environmentManagementService.getVersion(scope, config),
-					{}
-				),
-			placeholderData: keepPreviousData
-		};
-	});
+	const versionsQuery = createQuery(() => ({
+		...dashboardVersionsQuery(loadableEnvironments('environments:read')),
+		placeholderData: keepPreviousData
+	}));
 
 	const riskEnvironments = $derived(
 		loadableEnvironments('vulnerabilities:list').filter((environment) =>
@@ -308,61 +223,29 @@
 		)
 	);
 
-	const riskQuery = createQuery(() => {
-		const environments = riskEnvironments;
-		return {
-			queryKey: dashboardQueryKey('vulnerabilities', 'risk', environments),
-			queryFn: () => fetchRiskOverview(environments),
-			enabled: environments.length > 0 && anyWidgetVisible(['risk', ...ATTENTION_WIDGETS]),
-			placeholderData: keepPreviousData
-		};
-	});
+	const riskQuery = createQuery(() => ({
+		...dashboardRiskQuery(riskEnvironments),
+		enabled: riskEnvironments.length > 0 && anyWidgetVisible(['risk', ...ATTENTION_WIDGETS]),
+		placeholderData: keepPreviousData
+	}));
 
-	const eventsQuery = createQuery(() => {
-		const environments = userStore.hasPermission('events:list') ? loadableEnvironments('events:list') : [];
-		return {
-			queryKey: dashboardQueryKey('events', 'recent', environments),
-			queryFn: async (): Promise<{
-				events: Event[];
-				failedEnvironments: EnvironmentFailure[];
-				excludedEnvironments: EnvironmentRef[];
-			}> => {
-				if (environments.length === 0) return { events: [], failedEnvironments: [], excludedEnvironments: [] };
-				const { value, failures, excluded } = await readAcrossEnvironments(environments, (scope, config) =>
-					eventService.getRecentEnvironmentEvents(scope, RECENT_CONTAINER_EVENTS, config)
-				);
-				return { events: value, failedEnvironments: failures, excludedEnvironments: excluded };
-			},
-			enabled: anyWidgetVisible(ATTENTION_WIDGETS),
-			placeholderData: keepPreviousData
-		};
-	});
+	const eventsQuery = createQuery(() => ({
+		...dashboardRecentEventsQuery(userStore.hasPermission('events:list') ? loadableEnvironments('events:list') : []),
+		enabled: anyWidgetVisible(ATTENTION_WIDGETS),
+		placeholderData: keepPreviousData
+	}));
 
-	const jobsQuery = createQuery(() => {
-		const environments = loadableEnvironments('jobs:list');
-		return {
-			queryKey: dashboardQueryKey('environment-jobs', 'list', environments),
-			queryFn: () =>
-				sumAcrossEnvironments<Pick<JobListResponse, 'jobs'>>(
-					environments,
-					(scope, config) => jobScheduleService.listJobs(scope, config),
-					{ jobs: [] }
-				),
-			enabled: anyWidgetVisible(['jobs', ...ATTENTION_WIDGETS]),
-			placeholderData: keepPreviousData
-		};
-	});
+	const jobsQuery = createQuery(() => ({
+		...dashboardJobsQuery(loadableEnvironments('jobs:list')),
+		enabled: anyWidgetVisible(['jobs', ...ATTENTION_WIDGETS]),
+		placeholderData: keepPreviousData
+	}));
 
-	const diskUsageQuery = createQuery(() => {
-		const environments = loadableEnvironments('system:read');
-		return {
-			queryKey: dashboardQueryKey('system', 'disk-usage', environments),
-			queryFn: () =>
-				sumAcrossEnvironments(environments, (scope, config) => systemService.getDiskUsage(scope, config), EMPTY_DISK_USAGE),
-			enabled: anyWidgetVisible(['reclaimable', 'reclaimableTotal', 'environments']),
-			placeholderData: keepPreviousData
-		};
-	});
+	const diskUsageQuery = createQuery(() => ({
+		...dashboardDiskUsageQuery(loadableEnvironments('system:read')),
+		enabled: anyWidgetVisible(['reclaimable', 'reclaimableTotal', 'environments']),
+		placeholderData: keepPreviousData
+	}));
 
 	const topMemoryQuery = createQuery(() => {
 		const environments = loadableEnvironments('containers:read');
@@ -374,8 +257,7 @@
 	});
 
 	const apiKeysQuery = createQuery(() => ({
-		queryKey: queryKeys.apiKeys.list(EXPIRING_API_KEYS),
-		queryFn: () => apiKeyService.getApiKeys(EXPIRING_API_KEYS),
+		...apiKeyListQuery(EXPIRING_API_KEYS),
 		enabled: userStore.hasPermission('apikeys:list')
 	}));
 
@@ -643,10 +525,10 @@
 		}
 
 		const [onlyEnvironment] = prunableEnvironments;
-		const environmentId =
-			requestedId === 'all' && prunableEnvironments.length === 1 && onlyEnvironment
-				? onlyEnvironment.environment.id
-				: requestedId;
+		let environmentId = requestedId;
+		if (requestedId === 'all' && prunableEnvironments.length === 1 && onlyEnvironment) {
+			environmentId = onlyEnvironment.environment.id;
+		}
 		const targetIds = prunableEnvironments
 			.map((item) => item.environment.id)
 			.filter((id) => environmentId === 'all' || id === environmentId);
@@ -657,17 +539,17 @@
 		pruneTargetId = environmentId;
 		pruneDefaultsLoadingId = environmentId;
 		try {
-			const operationResult = await tryCatch(
+			const settings = await tryCatch(
 				readEachEnvironment(
 					prunableEnvironments.map((item) => item.environment).filter((env) => targetIds.includes(env.id)),
 					(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
 					emptySettings
 				)
 			);
-			if (operationResult.error !== null || operationResult.data.failedEnvironments.length > 0) {
+			if (settings.error !== null || settings.data.failedEnvironments.length > 0) {
 				pruneDefaults = null;
 			} else {
-				const [first, ...rest] = operationResult.data.byEnvironment.map(({ data }) => data.values);
+				const [first, ...rest] = settings.data.byEnvironment.map(({ data }) => data.values);
 				pruneDefaults = Object.fromEntries(
 					PRUNE_SETTING_GROUPS.filter((group) =>
 						group.every((key) => rest.every((values) => values[key] === first?.[key]))
@@ -710,10 +592,10 @@
 		};
 		const typesString = selectedTypes.map((type) => typeLabels[type]).join(', ');
 
-		const successMessage =
-			selectedTypes.length === 1
-				? m.dashboard_prune_success_one({ types: typesString })
-				: m.dashboard_prune_success_many({ types: typesString });
+		let successMessage = m.dashboard_prune_success_many({ types: typesString });
+		if (selectedTypes.length === 1) {
+			successMessage = m.dashboard_prune_success_one({ types: typesString });
+		}
 
 		pruningEnvironmentId = targetId;
 

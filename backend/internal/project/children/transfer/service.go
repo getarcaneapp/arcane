@@ -451,7 +451,7 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Project %s is managed by a GitOps sync, but its copy %s on the target environment is not.", project.Name, request.Name),
 		})
 	}
-	var externalVolumes, hostVolumes, sourceVolumes, built []string
+	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		config := project.Volumes[key]
 		if config.External {
@@ -461,6 +461,17 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		if len(config.DriverOpts) > 0 {
 			hostVolumes = append(hostVolumes, config.Name)
 			continue
+		}
+		if request.IncludeVolumes {
+			targetVolumes = append(targetVolumes, targetVolumeName(project.Name, key, config.Name, request.Name))
+			_, exists, existsErr := source.Volume(ctx, config.Name)
+			if existsErr != nil {
+				return fmt.Errorf("inspect source volume %s: %w", config.Name, existsErr)
+			}
+			if !exists {
+				missingVolumes = append(missingVolumes, config.Name)
+				continue
+			}
 		}
 		sourceVolumes = append(sourceVolumes, config.Name)
 		plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
@@ -474,6 +485,16 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Code:     types.ProjectTransferVolumesNotCopied,
 			Severity: types.ProjectTransferSeverityWarning,
 			Message:  fmt.Sprintf("Volume data is not included, so these volumes of project %s start empty on the target environment: %s.", project.Name, strings.Join(sourceVolumes, ", ")),
+		})
+	}
+	if len(missingVolumes) > 0 {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferVolumeMissing,
+			Severity: types.ProjectTransferSeverityWarning,
+			Message: fmt.Sprintf(
+				"These volumes of project %s do not exist on the source environment, so they are skipped and start empty on the target environment: %s.",
+				project.Name, strings.Join(missingVolumes, ", "),
+			),
 		})
 	}
 	if len(hostVolumes) > 0 {
@@ -505,10 +526,13 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	if !targetReady {
 		return nil
 	}
-	return targetChecks(ctx, plan, project, target, request, externalVolumes)
+	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes)
 }
 
-func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment, request types.ProjectTransferRequest, externalVolumes []string) error {
+func targetChecks(
+	ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment,
+	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string,
+) error {
 	existing, err := target.Projects(ctx, "")
 	if err != nil {
 		return fmt.Errorf("list target projects: %w", err)
@@ -531,16 +555,16 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 			Message:  fmt.Sprintf("A project or Compose stack named %s already exists on the target environment.", request.Name),
 		})
 	}
-	for _, volume := range kit.Ternary(request.IncludeVolumes, plan.Volumes, nil) {
-		_, exists, existsErr := target.Volume(ctx, volume.TargetName)
+	for _, name := range targetVolumes {
+		_, exists, existsErr := target.Volume(ctx, name)
 		if existsErr != nil {
-			return fmt.Errorf("inspect target volume %s: %w", volume.TargetName, existsErr)
+			return fmt.Errorf("inspect target volume %s: %w", name, existsErr)
 		}
 		if exists {
 			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
 				Code:     types.ProjectTransferVolumeExists,
 				Severity: types.ProjectTransferSeverityError,
-				Message:  fmt.Sprintf("Volume %s already exists on the target environment.", volume.TargetName),
+				Message:  fmt.Sprintf("Volume %s already exists on the target environment.", name),
 			})
 		}
 	}

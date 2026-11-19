@@ -17,10 +17,9 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { CloseIcon, ContainersIcon, NetworksIcon, SettingsIcon, VariableIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { networkListForEnvironmentQuery } from '#lib/query/networks.js';
+	import { volumeListForEnvironmentQuery } from '#lib/query/volumes.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { networkService } from '#lib/services/network-service.js';
-	import { volumeService } from '#lib/services/volume-service.js';
 	import type { ImageSearchResult } from '#lib/types/image.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -77,14 +76,8 @@
 	];
 
 	const listOptions = { pagination: { page: 1, limit: 500 } };
-	const volumesQuery = createQuery(() => ({
-		queryKey: queryKeys.volumes.table(envId, listOptions),
-		queryFn: () => volumeService.getVolumesForEnvironment(envId, listOptions)
-	}));
-	const networksQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.list(envId, listOptions),
-		queryFn: () => networkService.getNetworksForEnvironment(envId, listOptions)
-	}));
+	const volumesQuery = createQuery(() => volumeListForEnvironmentQuery(envId, listOptions));
+	const networksQuery = createQuery(() => networkListForEnvironmentQuery(envId, listOptions));
 
 	const volumeNames = $derived((volumesQuery.data?.data ?? []).map((volume) => volume.name));
 	const networkNames = $derived(
@@ -101,14 +94,12 @@
 			return;
 		}
 		imageSearchTimer = setTimeout(async () => {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					imageSuggestions = (await imageService.searchImages(term, envId)).slice(0, 6);
-				})()
-			);
-			if (operationResult1.error !== null) {
+			const found = await tryCatch(imageService.searchImages(term, envId));
+			if (found.error !== null) {
 				imageSuggestions = [];
+				return;
 			}
+			imageSuggestions = found.data.slice(0, 6);
 		}, 350);
 	}
 

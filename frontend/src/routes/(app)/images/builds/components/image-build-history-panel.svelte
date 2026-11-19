@@ -24,8 +24,8 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageBuildListQuery } from '#lib/query/images.js';
+	import { imageBuildRecordQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/image.js';
@@ -79,8 +79,7 @@
 		const requestedEnvironmentId = selectedOptimistic?.environmentId ?? 'none';
 		const buildId = selectedId;
 		return {
-			queryKey: queryKeys.images.buildRecord(requestedEnvironmentId, buildId ?? 'none'),
-			queryFn: () => imageService.getImageBuild(buildId!, requestedEnvironmentId),
+			...imageBuildRecordQuery(requestedEnvironmentId, buildId),
 			enabled: !!buildId
 		};
 	});

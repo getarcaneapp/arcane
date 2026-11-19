@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
+	import { startAuthentication } from '@simplewebauthn/browser';
 
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -9,7 +9,7 @@
 	import { AlertIcon, ApiKeyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { passkeyService } from '#lib/services/passkey-service.js';
-	import type { PasskeyChallenge, StepUpGrant } from '#lib/types/auth.js';
+	import type { StepUpGrant } from '#lib/types/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
@@ -30,7 +30,7 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 
-	function resetInternal() {
+	function reset() {
 		password = '';
 		busy = false;
 		error = null;
@@ -39,33 +39,27 @@
 	function handleOpenChange(nextOpen: boolean) {
 		open = nextOpen;
 		if (!nextOpen) {
-			resetInternal();
+			reset();
 			onCancel?.();
 		}
+	}
+
+	async function stepUpWithPasskey() {
+		const challenge = await passkeyService.beginStepUp();
+		if (!challenge.transactionId) throw new Error(m.account_passkey_step_up_failed());
+		const credential = await startAuthentication({ optionsJSON: challenge.options });
+		const grant = await passkeyService.finishStepUp(challenge.transactionId, credential);
+		await onResolved(grant);
+		open = false;
 	}
 
 	async function resolveWithPasskey() {
 		busy = true;
 		error = null;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					const challenge: PasskeyChallenge = await passkeyService.beginStepUp();
-					if (!challenge.transactionId) throw new Error(m.account_passkey_step_up_failed());
-					const credential = await startAuthentication({
-						optionsJSON: challenge.options as unknown as PublicKeyCredentialRequestOptionsJSON
-					});
-					const grant = await passkeyService.finishStepUp(challenge.transactionId, credential);
-					await onResolved(grant);
-					open = false;
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const value = operationResult1.error;
-
-				if (!(value instanceof Error && value.name === 'NotAllowedError')) {
-					error = value instanceof Error ? value.message : m.account_passkey_step_up_failed();
-				}
+			const steppedUp = await tryCatch(stepUpWithPasskey());
+			if (steppedUp.error !== null && !(steppedUp.error instanceof Error && steppedUp.error.name === 'NotAllowedError')) {
+				error = steppedUp.error instanceof Error ? steppedUp.error.message : m.account_passkey_step_up_failed();
 			}
 		} finally {
 			busy = false;
@@ -79,18 +73,17 @@
 		busy = true;
 		error = null;
 		try {
-			const operationResult2 = await tryCatch(
-				(async () => {
-					const grant = await passkeyService.passwordStepUp(password);
-					await onResolved(grant);
-					open = false;
-				})()
-			);
-			if (operationResult2.error !== null) {
-				const value = operationResult2.error;
-
-				error = value instanceof Error ? value.message : m.account_passkey_step_up_failed();
+			const grant = await tryCatch(passkeyService.passwordStepUp(password));
+			if (grant.error !== null) {
+				error = grant.error instanceof Error ? grant.error.message : m.account_passkey_step_up_failed();
+				return;
 			}
+			const resolved = await tryCatch(Promise.resolve(onResolved(grant.data)));
+			if (resolved.error !== null) {
+				error = resolved.error instanceof Error ? resolved.error.message : m.account_passkey_step_up_failed();
+				return;
+			}
+			open = false;
 		} finally {
 			busy = false;
 		}

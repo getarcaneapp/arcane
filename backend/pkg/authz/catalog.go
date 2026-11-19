@@ -781,6 +781,13 @@ var permissionCatalog = []PermissionCatalogResource{
 				Requires:    []string{PermProjectsRead, PermActivitiesRead},
 			},
 			{
+				Key:         "jobs-run",
+				Permission:  PermProjectsJobsRun,
+				Label:       "Run jobs",
+				Description: "Run a project's Compose job services",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
+			{
 				Key:         "down",
 				Permission:  PermProjectsDown,
 				Label:       "Bring down",

@@ -1,26 +1,13 @@
-import type { Reporter, TestCase, TestError, TestResult } from '@playwright/test/reporter';
+import type { Reporter, TestCase } from 'vite-plus/test/node';
 import { captureComposeDiagnostics } from '../setup/global-setup';
+import { composeFile } from './report';
 
 export default class ComposeReporter implements Reporter {
 	private capturedFailure = false;
 
-	onTestEnd(test: TestCase, result: TestResult) {
-		if (
-			result.status === test.expectedStatus ||
-			result.status === 'skipped' ||
-			this.capturedFailure
-		)
-			return;
+	onTestCaseResult(testCase: TestCase) {
+		if (this.capturedFailure || testCase.result().state !== 'failed') return;
 		this.capturedFailure = true;
-		this.capture();
-	}
-
-	onError(_error: TestError) {
-		this.capture();
-	}
-
-	private capture() {
-		const composeFile = process.env.ARCANE_E2E_COMPOSE_FILE;
-		if (composeFile) captureComposeDiagnostics(composeFile);
+		captureComposeDiagnostics(composeFile);
 	}
 }

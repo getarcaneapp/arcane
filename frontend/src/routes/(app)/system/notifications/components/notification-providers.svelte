@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -9,6 +10,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { NotificationsIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { notificationSettingsQuery } from '#lib/query/notifications.js';
 	import { notificationService } from '#lib/services/notification-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/ui/notification.js';
@@ -31,6 +33,7 @@
 	let { disabled }: { disabled: boolean } = $props();
 	const canTestNotifications = $derived(hasPermission('notifications:test', GLOBAL_SCOPE));
 
+	const queryClient = useQueryClient();
 	let isLoaded = $state(false);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
@@ -65,7 +68,7 @@
 
 	async function loadSettings() {
 		loadError = null;
-		const result = await tryCatch(notificationService.getSettings());
+		const result = await tryCatch(queryClient.fetchQuery({ ...notificationSettingsQuery(), staleTime: 0, retry: false }));
 		if (result.error !== null) {
 			loadError = extractApiErrorMessage(result.error);
 			return;

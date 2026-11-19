@@ -13,6 +13,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
+	import { projectTagsQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -32,7 +33,6 @@
 	} from '#lib/utils/environments.js';
 
 	import ProjectsTable from './components/projects-table.svelte';
-	import { fetchProjectTags } from './projects-table.helpers';
 
 	let { data } = $props();
 
@@ -89,27 +89,24 @@
 			refetchOnMount: false
 		};
 	});
-	const projectTagsQuery = createQuery(() => {
+	const tagsQuery = createQuery(() => {
 		const queryScope = scope;
 		const environments = readableEnvironments('projects:list');
 		return {
-			queryKey: queryKeys.projects.tags(queryScope),
-			queryFn: () => fetchProjectTags(environments),
+			...projectTagsQuery(queryScope, environments),
 			initialData: data.scope === queryScope ? data.projectTags : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
-	const projectTags = $derived(projectTagsQuery.data?.envId === scope ? projectTagsQuery.data.value.tags : []);
+	const projectTags = $derived(tagsQuery.data?.envId === scope ? tagsQuery.data.value.tags : []);
 	const relatedFailures = $derived(
-		[statusCountsQuery.data, projectTagsQuery.data].flatMap((result) =>
-			result?.envId === scope ? result.value.failedEnvironments : []
-		)
+		[statusCountsQuery.data, tagsQuery.data].flatMap((result) => (result?.envId === scope ? result.value.failedEnvironments : []))
 	);
 	const resourcesReady = $derived(projects !== null);
 	// Tags change rarely, so a refresh reloads them only after an environment failed to return them.
 	const refetchFailedTags = () =>
-		projectTagsQuery.isError || projectTagsQuery.data?.value.failedEnvironments.length ? projectTagsQuery.refetch() : undefined;
+		tagsQuery.isError || tagsQuery.data?.value.failedEnvironments.length ? tagsQuery.refetch() : undefined;
 
 	async function updateEnvironmentProjects(requestedEnvId: string) {
 		// Refresh image updates, then redeploy only projects the list reports as outdated.
@@ -170,7 +167,7 @@
 			);
 		},
 		onError: (error, requestedScope) => {
-			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
+			toast.error(error.message || m.containers_check_updates_failed());
 			void queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(requestedScope) });
 		}
 	}));

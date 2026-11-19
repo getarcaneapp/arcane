@@ -12,7 +12,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { EyeOffIcon, EyeOnIcon, SettingsIcon, UsersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmInfoQuery, swarmJoinTokensQuery, swarmUnlockKeyQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmInitRequest, SwarmJoinRequest, SwarmUpdateRequest } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -21,11 +21,10 @@
 
 	let { environmentId, onChanged }: { environmentId: string; onChanged?: () => void | Promise<void> } = $props();
 
-	const swarmInfoQuery = createQuery(() => {
+	const infoQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		return {
-			queryKey: queryKeys.swarm.info(requestedEnvironmentId),
-			queryFn: () => swarmService.getSwarmInfo(requestedEnvironmentId),
+			...swarmInfoQuery(requestedEnvironmentId),
 			enabled: hasPermission('swarm:read', requestedEnvironmentId),
 			retry: false
 		};
@@ -33,8 +32,7 @@
 	const joinTokensQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		return {
-			queryKey: queryKeys.swarm.joinTokens(requestedEnvironmentId),
-			queryFn: () => swarmService.getSwarmJoinTokens(requestedEnvironmentId),
+			...swarmJoinTokensQuery(requestedEnvironmentId),
 			enabled: hasPermission('swarm:unlock', requestedEnvironmentId),
 			retry: false
 		};
@@ -42,13 +40,12 @@
 	const unlockKeyQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		return {
-			queryKey: queryKeys.swarm.unlockKey(requestedEnvironmentId),
-			queryFn: () => swarmService.getSwarmUnlockKey(requestedEnvironmentId),
+			...swarmUnlockKeyQuery(requestedEnvironmentId),
 			enabled: hasPermission('swarm:unlock', requestedEnvironmentId),
 			retry: false
 		};
 	});
-	const swarmInfo = $derived(swarmInfoQuery.data ?? null);
+	const swarmInfo = $derived(infoQuery.data ?? null);
 	const joinTokens = $derived(joinTokensQuery.data ?? null);
 	const unlockKey = $derived(unlockKeyQuery.data?.unlockKey ?? '');
 	let showManagerToken = $state(false);
@@ -124,7 +121,7 @@
 		showWorkerToken = false;
 		try {
 			const requests: Promise<unknown>[] = [];
-			if (hasPermission('swarm:read', environmentId)) requests.push(swarmInfoQuery.refetch());
+			if (hasPermission('swarm:read', environmentId)) requests.push(infoQuery.refetch());
 			if (hasPermission('swarm:unlock', environmentId)) requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
 			await Promise.all(requests);
 			await onChanged?.();

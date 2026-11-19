@@ -10,7 +10,7 @@
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, AlertIcon, ArrowRightIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { upgradeVersionInfoQuery } from '#lib/query/system.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { clientStream } from '#lib/stores/client-stream.svelte.js';
@@ -164,8 +164,7 @@
 	const onlineEnvironments = $derived(environmentStore.available.filter((env) => isEnvironmentOnline(env)));
 	const versionQueries = createQueries(() => ({
 		queries: onlineEnvironments.map((env) => ({
-			queryKey: queryKeys.system.versionInfo(env.id),
-			queryFn: () => systemUpgradeService.getVersionInfo(env.id),
+			...upgradeVersionInfoQuery(env.id),
 			enabled: !!open,
 			staleTime: 5 * 60_000,
 			retry: false

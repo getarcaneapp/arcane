@@ -20,20 +20,22 @@
 
 	let open = $state(false);
 
-	function toCalendarDateInternal(date: Temporal.PlainDate): CalendarDate {
+	function toCalendarDate(date: Temporal.PlainDate): CalendarDate {
 		return new CalendarDate(date.year, date.month, date.day);
 	}
 
-	const calendarDisplayDate = $derived(value ? toCalendarDateInternal(value) : undefined);
+	const calendarDisplayDate = $derived(value ? toCalendarDate(value) : undefined);
 
 	function handleCalendarInteraction(newDateValue?: DateValue) {
-		value = newDateValue
-			? Temporal.PlainDate.from({ year: newDateValue.year, month: newDateValue.month, day: newDateValue.day })
-			: undefined;
+		if (newDateValue) {
+			value = Temporal.PlainDate.from({ year: newDateValue.year, month: newDateValue.month, day: newDateValue.day });
+		} else {
+			value = undefined;
+		}
 		open = false;
 	}
 
-	function formatDateInternal(date: Temporal.PlainDate): string {
+	function formatDate(date: Temporal.PlainDate): string {
 		return date.toLocaleString(getLocale(), { dateStyle: 'long' });
 	}
 </script>
@@ -49,7 +51,7 @@
 					class={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
 					aria-label={m.select_a_date()}
 					icon={CalendarIcon}
-					customLabel={value ? formatDateInternal(value) : m.select_a_date()}
+					customLabel={value ? formatDate(value) : m.select_a_date()}
 					{disabled}
 				/>
 			{/snippet}

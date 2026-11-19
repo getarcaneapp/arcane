@@ -7,8 +7,7 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { settingsService } from '#lib/services/settings-service.js';
+	import { mergedSettingsQuery } from '#lib/query/settings.js';
 	import type { GitOpsSync, GitOpsSyncMode } from '#lib/types/gitops.js';
 	import type { GitOpsSyncCreate, GitOpsSyncUpdate } from '#lib/types/ui/gitops.js';
 
@@ -43,8 +42,7 @@
 	const settingsQuery = createQuery(() => {
 		const requestEnvironmentId = environmentId;
 		return {
-			queryKey: queryKeys.settings.byEnvironment(requestEnvironmentId),
-			queryFn: () => settingsService.getSettingsForEnvironmentMerged(requestEnvironmentId),
+			...mergedSettingsQuery(requestEnvironmentId),
 			enabled: open
 		};
 	});

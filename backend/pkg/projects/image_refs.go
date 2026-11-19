@@ -55,8 +55,9 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 	}
 
 	serviceNames := slices.Sorted(maps.Keys(project.Services))
+	jobs := project.AllJobs()
 
-	return uniqueImageRefs(len(serviceNames), func(yield func(string)) {
+	return uniqueImageRefs(len(serviceNames)+len(jobs), func(yield func(string)) {
 		for _, name := range serviceNames {
 			svc := project.Services[name]
 			if svc.Build == nil {
@@ -64,6 +65,16 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 			}
 			svc.Name = cmp.Or(svc.Name, name)
 			yield(composeapi.GetImageNameOrDefault(svc, project.Name))
+		}
+		for _, name := range slices.Sorted(maps.Keys(jobs)) {
+			if jobs[name].Build == nil {
+				continue
+			}
+			yield(composeapi.GetImageNameOrDefault(composetypes.ServiceConfig{
+				Name:          name,
+				ContainerSpec: jobs[name].ContainerSpec,
+				WorkloadSpec:  jobs[name].WorkloadSpec,
+			}, project.Name))
 		}
 	})
 }
@@ -103,6 +114,16 @@ func PullableImageRefs(project *composetypes.Project) []string {
 				yield(image)
 			}
 			for _, volume := range service.Volumes {
+				if volume.Type == composetypes.VolumeTypeImage {
+					yield(volume.Source)
+				}
+			}
+		}
+		for _, job := range project.Jobs {
+			if job.Build == nil {
+				yield(job.Image)
+			}
+			for _, volume := range job.Volumes {
 				if volume.Type == composetypes.VolumeTypeImage {
 					yield(volume.Source)
 				}

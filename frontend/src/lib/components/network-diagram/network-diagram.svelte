@@ -103,27 +103,28 @@
 	);
 	const isDarkMode = $derived(mode.current === 'dark');
 
-	const canvasTheme = $derived(
-		isDarkMode
-			? {
-					edgeLabel: '#cbd5e1',
-					edgeStroke: 'rgba(148, 163, 184, 0.42)',
-					backgroundDots: 'rgba(148, 163, 184, 0.22)',
-					minimapBackground: 'rgba(15, 23, 42, 0.92)',
-					minimapMask: 'rgba(15, 23, 42, 0.45)',
-					minimapMaskStroke: 'rgba(148, 163, 184, 0.34)',
-					nodeShadow: '0 18px 52px rgba(2, 6, 23, 0.42)'
-				}
-			: {
-					edgeLabel: '#475569',
-					edgeStroke: 'rgba(71, 85, 105, 0.55)',
-					backgroundDots: 'rgba(100, 116, 139, 0.18)',
-					minimapBackground: 'rgba(248, 250, 252, 0.95)',
-					minimapMask: 'rgba(15, 23, 42, 0.12)',
-					minimapMaskStroke: 'rgba(15, 23, 42, 0.28)',
-					nodeShadow: '0 16px 40px rgba(15, 23, 42, 0.08)'
-				}
-	);
+	const canvasTheme = $derived.by(() => {
+		if (isDarkMode) {
+			return {
+				edgeLabel: '#cbd5e1',
+				edgeStroke: 'rgba(148, 163, 184, 0.42)',
+				backgroundDots: 'rgba(148, 163, 184, 0.22)',
+				minimapBackground: 'rgba(15, 23, 42, 0.92)',
+				minimapMask: 'rgba(15, 23, 42, 0.45)',
+				minimapMaskStroke: 'rgba(148, 163, 184, 0.34)',
+				nodeShadow: '0 18px 52px rgba(2, 6, 23, 0.42)'
+			};
+		}
+		return {
+			edgeLabel: '#475569',
+			edgeStroke: 'rgba(71, 85, 105, 0.55)',
+			backgroundDots: 'rgba(100, 116, 139, 0.18)',
+			minimapBackground: 'rgba(248, 250, 252, 0.95)',
+			minimapMask: 'rgba(15, 23, 42, 0.12)',
+			minimapMaskStroke: 'rgba(15, 23, 42, 0.28)',
+			nodeShadow: '0 16px 40px rgba(15, 23, 42, 0.08)'
+		};
+	});
 
 	function networkPalette(driver?: string, darkMode = false): NodePalette {
 		if (darkMode) {
@@ -272,13 +273,12 @@
 			return header;
 		}
 
-		const details =
-			connections.length === 1
-				? connections.map((connection) => connection.address)
-				: connections.map((connection) =>
-						connection.networkName ? `${connection.networkName}: ${connection.address}` : connection.address
-					);
-
+		if (connections.length === 1) {
+			return [header, connections[0]!.address].join('\n');
+		}
+		const details = connections.map((connection) =>
+			connection.networkName ? `${connection.networkName}: ${connection.address}` : connection.address
+		);
 		return [header, ...details].join('\n');
 	}
 

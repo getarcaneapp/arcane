@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { containerService } from '#lib/services/container-service.js';
-import { volumeService } from '#lib/services/volume-service.js';
+import { containerDetailQuery } from '#lib/query/containers.js';
+import { volumeDetailQuery } from '#lib/query/volumes.js';
+import { extractApiErrorStatus } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -15,51 +15,27 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 
 	const { volumeName } = params;
 
-	const operationResult = await tryCatch(
-		(async () => {
-			const volume = await queryClient.query({
-				queryKey: queryKeys.volumes.detail(envId, volumeName),
-				queryFn: () => volumeService.getVolumeForEnvironment(envId, volumeName)
-			});
-
-			let containersDetailed: { id: string; name: string }[] = [];
-			if (volume.containers && volume.containers.length > 0) {
-				containersDetailed = await Promise.all(
-					volume.containers.map(async (id: string) => {
-						const operationResult = await tryCatch(
-							(async () => {
-								const c = await queryClient.query({
-									queryKey: queryKeys.containers.detail(envId, id),
-									queryFn: () => containerService.getContainerForEnvironment(envId, id)
-								});
-								const idVal = c?.id || id;
-								const nameVal = c?.name || idVal.substring(0, 12);
-								return { id: idVal, name: nameVal };
-							})()
-						);
-						if (operationResult.error !== null) {
-							return { id, name: id.substring(0, 12) };
-						} else {
-							return operationResult.data;
-						}
-					})
-				);
-			}
-
-			return {
-				envId,
-				volume,
-				containersDetailed
-			};
-		})()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		console.error('Failed to load volume:', err);
-		if ('status' in err && err.status === 404) throw err;
-		throw error(500, err.message || m.failed_to_load_volume_details());
-	} else {
-		return operationResult.data;
+	const volume = await tryCatch(queryClient.query(volumeDetailQuery(envId, volumeName)));
+	if (volume.error !== null) {
+		console.error('Failed to load volume:', volume.error);
+		if (extractApiErrorStatus(volume.error) === 404) throw volume.error;
+		throw error(500, volume.error.message || m.failed_to_load_volume_details());
 	}
+
+	const containersDetailed = await Promise.all(
+		(volume.data.containers ?? []).map(async (id: string) => {
+			const container = await tryCatch(queryClient.query(containerDetailQuery(envId, id)));
+			if (container.error !== null) {
+				return { id, name: id.substring(0, 12) };
+			}
+			const idVal = container.data?.id || id;
+			return { id: idVal, name: container.data?.name || idVal.substring(0, 12) };
+		})
+	);
+
+	return {
+		envId,
+		volume: volume.data,
+		containersDetailed
+	};
 };

@@ -15,6 +15,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -163,7 +164,15 @@ var (
 	}
 	updateLabelPolicy = updater.LabelPolicy{
 		UnmanagedReasonFunc: func(l map[string]string) string {
-			return kit.Ternary(types.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
+			switch {
+			case types.QuadletUnit(l) != "":
+				return "managed by a Podman quadlet; updates run through Podman auto-update"
+			case l[api.HookLabel] != "":
+				return "Compose pre_start hook runner; it updates with its service"
+			case l[projects.JobRunLabel] != "":
+				return "Compose job run; it uses the updated image on its next run"
+			}
+			return ""
 		},
 	}
 )
@@ -1226,6 +1235,9 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 		return err
 	}
 	for _, cnt := range listed.Items {
+		if cnt.Labels[api.HookLabel] != "" || cnt.Labels[projects.JobRunLabel] != "" {
+			continue
+		}
 		if isProject && (docker.ComposeServiceLabel(cnt.Labels) != service || strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(cnt.Labels))) != composeName) {
 			continue
 		}

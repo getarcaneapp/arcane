@@ -1,5 +1,4 @@
-import { fetchEnvironmentTopology } from '#lib/components/network-diagram/topology.js';
-import { queryKeys } from '#lib/query/query-keys.js';
+import { networkTopologyQuery } from '#lib/query/networks.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -11,24 +10,13 @@ export const load: PageLoad = async ({ parent }) => {
 	await environmentStore.ready;
 	const scope = environmentStore.shownKey;
 
-	let topology;
-	const operationResult = await tryCatch(
-		(async () =>
-			queryClient.query({
-				queryKey: queryKeys.networks.topology(scope),
-				queryFn: fetchEnvironmentTopology
-			}))()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load network topology');
-	} else {
-		topology = operationResult.data;
+	const topology = await tryCatch(queryClient.query(networkTopologyQuery(scope)));
+	if (topology.error !== null) {
+		throwPageLoadError(topology.error, 'Failed to load network topology');
 	}
 
 	return {
 		scope,
-		topology
+		topology: topology.data
 	};
 };

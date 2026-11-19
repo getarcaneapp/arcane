@@ -221,16 +221,18 @@ async function createComposeTemplateWithValidation({
 	setLoading,
 	hasEditorErrors
 }: CreateComposeTemplateWithValidationOptions) {
+	if (!hasEditorErrors) {
+		await createComposeTemplate({ validate, setLoading });
+		return;
+	}
 	await createComposeTemplate({
 		validate,
 		setLoading,
-		beforeValidate: hasEditorErrors
-			? () => {
-					if (!hasEditorErrors()) return true;
-					toast.error(m.templates_validation_error());
-					return false;
-				}
-			: undefined
+		beforeValidate: () => {
+			if (!hasEditorErrors()) return true;
+			toast.error(m.templates_validation_error());
+			return false;
+		}
 	});
 }
 

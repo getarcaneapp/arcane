@@ -22,21 +22,19 @@
 
 	const isReservedPrefix = $derived(key.trim().startsWith('engine.labels') || key.trim().startsWith('com.docker.swarm'));
 
+	async function addLabel() {
+		await onAdd(key.trim(), value.trim());
+		handleCancel();
+	}
+
 	async function handleSubmit(e?: Event) {
 		e?.preventDefault();
 		if (!key.trim() || isReservedPrefix) return;
 		isSubmitting = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await onAdd(key.trim(), value.trim());
-					handleCancel();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				toast.error(m.common_update_failed({ resource: m.common_labels() }) + ': ' + extractApiErrorMessage(err));
+			const added = await tryCatch(addLabel());
+			if (added.error !== null) {
+				toast.error(m.common_update_failed({ resource: m.common_labels() }) + ': ' + extractApiErrorMessage(added.error));
 			}
 		} finally {
 			isSubmitting = false;

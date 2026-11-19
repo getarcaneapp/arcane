@@ -1,18 +1,21 @@
-import ky, { HTTPError as KyHTTPError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
 import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
+const errorBodyTimeoutMs = 10_000;
+const maxErrorBodyBytes = 10 * 1024 * 1024;
+
+type SearchParams = URLSearchParams | Record<string, string | number | boolean | undefined>;
+
 export interface APIRequestConfig {
 	baseURL?: string;
 	cache?: RequestCache;
 	data?: unknown;
 	headers?: HeadersInit;
-	params?: SearchParamsOption;
+	params?: SearchParams;
 	responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer';
-	retry?: number;
 	signal?: AbortSignal;
 	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
@@ -24,7 +27,7 @@ interface InternalRequestConfig extends APIRequestConfig {
 	_retry?: boolean;
 }
 
-export interface APIResponse<T = any> {
+export interface APIResponse<T = unknown> {
 	data: T;
 	headers: Headers;
 	raw: Response;
@@ -113,6 +116,43 @@ export function runWithActivityBatchId<T>(batchId: string, fn: () => T): T {
 	}
 }
 
+class HTTPStatusError extends Error {
+	response: Response;
+
+	constructor(response: Response) {
+		super(`Request failed with status code ${response.status} ${response.statusText}`.trim());
+		this.name = 'HTTPError';
+		this.response = response;
+	}
+}
+
+function withSearchParams(url: string, params?: SearchParams): string {
+	if (!params) return url;
+	let base = url;
+	let hash = '';
+	const hashIndex = url.indexOf('#');
+	if (hashIndex !== -1) {
+		base = url.slice(0, hashIndex);
+		hash = url.slice(hashIndex);
+	}
+	let path = base;
+	let existing = '';
+	const queryIndex = base.indexOf('?');
+	if (queryIndex !== -1) {
+		path = base.slice(0, queryIndex);
+		existing = base.slice(queryIndex + 1);
+	}
+	const search = new URLSearchParams(existing);
+	const entries: [string, string | number | boolean | undefined][] =
+		params instanceof URLSearchParams ? [...params] : Object.entries(params);
+	for (const [key] of entries) search.delete(key);
+	for (const [key, value] of entries) {
+		if (value !== undefined) search.append(key, String(value));
+	}
+	const query = search.toString();
+	return query ? `${path}?${query}${hash}` : `${path}${hash}`;
+}
+
 async function parseResponseBody(response: Response, responseType: APIRequestConfig['responseType'] = 'json'): Promise<unknown> {
 	if (responseType === 'blob') {
 		return response.blob();
@@ -182,12 +222,12 @@ function reloadDocumentOnce() {
 	window.location.reload();
 }
 
-async function reloadForNewBuildInternal() {
+async function reloadForNewBuild() {
 	await tokenRefreshHandler?.();
 	reloadDocumentOnce();
 }
 
-export async function handleUnauthorizedResponseInternal(
+export async function handleUnauthorizedResponse(
 	requestPath: string,
 	retry = false,
 	serverMsg?: string | null
@@ -212,20 +252,12 @@ export async function handleUnauthorizedResponseInternal(
 
 	if (!tokenRefreshHandler) return 'none';
 
-	const operationResult = await tryCatch(
-		(async () => {
-			if (!isVersionMismatch || !upgradeInProgress) {
-				await tokenRefreshHandler();
-				return 'retry';
-			}
-			await reloadForNewBuildInternal();
-			return 'reload';
-		})()
-	);
+	const needsReload = isVersionMismatch && upgradeInProgress;
+	const recovery = await tryCatch<void | string | null>(needsReload ? reloadForNewBuild() : tokenRefreshHandler());
 	if (session.aborted) return 'none';
-	if (operationResult.error === null) return operationResult.data;
+	if (recovery.error === null) return needsReload ? 'reload' : 'retry';
 
-	const error = operationResult.error;
+	const error = recovery.error;
 	const isTransientRefreshFailure = error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
 	if (recoverable && isTransientRefreshFailure) return 'none';
 	if (!unauthorizedRedirectStarted) {
@@ -246,7 +278,7 @@ async function probeDownload(url: string, retry = false): Promise<boolean> {
 	const message = extractServerMessage(body.data, true);
 	if (response.status === 401 && !retry) {
 		const path = new URL(url, window.location.origin).pathname;
-		const action = await handleUnauthorizedResponseInternal(path, false, message);
+		const action = await handleUnauthorizedResponse(path, false, message);
 		if (action === 'retry') return probeDownload(url, true);
 		if (action !== 'none') return false;
 	}
@@ -255,22 +287,16 @@ async function probeDownload(url: string, retry = false): Promise<boolean> {
 
 class APIClient {
 	defaults: { baseURL: string };
-	private client;
 
 	constructor(baseURL: string) {
 		this.defaults = { baseURL: baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL };
-		this.client = ky.create({
-			credentials: 'include',
-			retry: 0,
-			timeout: false
-		});
 	}
 
 	setBaseURL(baseURL: string) {
 		this.defaults.baseURL = baseURL;
 	}
 
-	private async performRequest<T = any>(
+	private async performRequest<T = unknown>(
 		method: string,
 		url: string,
 		data?: unknown,
@@ -298,78 +324,103 @@ class APIClient {
 				requestPath.startsWith('/app/version') ||
 				requestPath.endsWith('/settings/public'));
 		const session = isSessionFree ? undefined : sessionController.signal;
-		const signal = session ? withSessionSignal(config.signal) : config.signal;
+		const deadline = new AbortController();
+		const signals = [session ? withSessionSignal(config.signal) : config.signal, deadline.signal].filter(
+			(entry) => entry !== undefined
+		);
 		const upperMethod = method.toUpperCase();
 
-		const operationResult = await tryCatch(
-			(async () => {
-				const headers = new Headers(config.headers);
-				if (activeActivityBatchId && !['GET', 'HEAD'].includes(upperMethod) && !headers.has('X-Arcane-Batch-Id')) {
-					headers.set('X-Arcane-Batch-Id', activeActivityBatchId);
-				}
-				const options: KyOptions = {
-					cache: config.cache,
-					method,
-					headers,
-					retry: config.retry ?? 0,
-					searchParams: config.params,
-					signal,
-					timeout: config.timeout ?? false
-				};
-				const body = data ?? config.data;
-				if (
-					body instanceof FormData ||
-					body instanceof URLSearchParams ||
-					body instanceof Blob ||
-					body instanceof ArrayBuffer ||
-					ArrayBuffer.isView(body) ||
-					typeof body === 'string'
-				) {
-					options.body = body as BodyInit;
-				} else if (body !== undefined && body !== null) {
-					options.json = body;
-				}
+		async function sendRequest(): Promise<APIResponse<T>> {
+			const headers = new Headers(config.headers);
+			if (activeActivityBatchId && !['GET', 'HEAD'].includes(upperMethod) && !headers.has('X-Arcane-Batch-Id')) {
+				headers.set('X-Arcane-Batch-Id', activeActivityBatchId);
+			}
+			const init: RequestInit = {
+				cache: config.cache,
+				credentials: 'include',
+				method: upperMethod,
+				headers,
+				signal: AbortSignal.any(signals)
+			};
+			const body = data ?? config.data;
+			if (
+				body instanceof FormData ||
+				body instanceof URLSearchParams ||
+				body instanceof Blob ||
+				body instanceof ArrayBuffer ||
+				ArrayBuffer.isView(body) ||
+				typeof body === 'string'
+			) {
+				init.body = body as BodyInit;
+			} else if (body !== undefined && body !== null) {
+				init.body = JSON.stringify(body);
+				if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+			}
 
-				const response = await this.client(requestUrl, options);
-				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
-				if (session?.aborted) throw new SessionCancelledError();
-				const parsedRecord = asRecord(parsed);
-				const failedEnvironmentsHeader = response.headers.get('X-Arcane-Failed-Environments');
-				if (failedEnvironmentsHeader) config.onFailedEnvironments?.(JSON.parse(decodeURIComponent(failedEnvironmentsHeader)));
-				if (Array.isArray(parsedRecord?.['failedEnvironments']))
-					config.onFailedEnvironments?.(parsedRecord['failedEnvironments']);
-				if (Array.isArray(parsedRecord?.['environments'])) config.onEnvironments?.(parsedRecord['environments']);
-				return {
-					data: parsed as T,
-					headers: response.headers,
-					raw: response,
-					status: response.status
-				};
-			})()
-		);
-		if (operationResult.error === null) return operationResult.data;
+			let headersTimer: ReturnType<typeof setTimeout> | undefined;
+			if (config.timeout) {
+				headersTimer = setTimeout(() => deadline.abort(new DOMException('Request timed out', 'TimeoutError')), config.timeout);
+			}
+			let response: Response;
+			try {
+				response = await fetch(withSearchParams(requestUrl, config.params), init);
+			} finally {
+				clearTimeout(headersTimer);
+			}
+			if (!response.ok) throw new HTTPStatusError(response);
+			const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
+			if (session?.aborted) throw new SessionCancelledError();
+			const parsedRecord = asRecord(parsed);
+			const failedEnvironmentsHeader = response.headers.get('X-Arcane-Failed-Environments');
+			if (failedEnvironmentsHeader) config.onFailedEnvironments?.(JSON.parse(decodeURIComponent(failedEnvironmentsHeader)));
+			if (Array.isArray(parsedRecord?.['failedEnvironments'])) config.onFailedEnvironments?.(parsedRecord['failedEnvironments']);
+			if (Array.isArray(parsedRecord?.['environments'])) config.onEnvironments?.(parsedRecord['environments']);
+			return {
+				data: parsed as T,
+				headers: response.headers,
+				raw: response,
+				status: response.status
+			};
+		}
 
-		const error = operationResult.error;
+		const sent = await tryCatch(sendRequest());
+		if (sent.error === null) return sent.data;
+
+		const error = sent.error;
 		if (session?.aborted) throw new SessionCancelledError();
-		if (!(error instanceof KyHTTPError)) {
+		if (!(error instanceof HTTPStatusError)) {
 			let message = 'Unknown error';
-			if (error instanceof TimeoutError) message = 'Request timed out';
-			else if (error instanceof Error) message = error.message;
+			if (error instanceof Error) message = error.name === 'TimeoutError' ? 'Request timed out' : error.message;
+			let name = error instanceof Error ? error.name : undefined;
+			if (error instanceof TypeError) name = 'NetworkError';
 			throw new APIError(message, {
 				cause: error,
 				config: requestConfig,
-				name: (error instanceof Error && error.name) || undefined,
+				name: name || undefined,
 				requestUrl
 			});
 		}
 
 		const errorResponse = error.response;
-		const parsed =
-			error.data !== undefined || errorResponse.bodyUsed ? error.data : await parseResponseBody(errorResponse.clone());
+		let parsed: unknown;
+		if (Number(errorResponse.headers.get('Content-Length') ?? 0) <= maxErrorBodyBytes) {
+			let errorBodyTimer: ReturnType<typeof setTimeout> | undefined;
+			const errorBody = await tryCatch(
+				Promise.race([
+					parseResponseBody(errorResponse.clone()),
+					new Promise<undefined>((resolve) => {
+						errorBodyTimer = setTimeout(() => resolve(undefined), errorBodyTimeoutMs);
+					})
+				])
+			);
+			clearTimeout(errorBodyTimer);
+			parsed = errorBody.data ?? undefined;
+		}
+		deadline.abort();
 		if (session?.aborted) throw new SessionCancelledError();
 
 		if (errorResponse.status === 401) {
-			const action = await handleUnauthorizedResponseInternal(requestPath, config._retry, extractServerMessage(parsed));
+			const action = await handleUnauthorizedResponse(requestPath, config._retry, extractServerMessage(parsed));
 			if (session?.aborted) throw new SessionCancelledError();
 			if (action === 'retry') {
 				return this.performRequest<T>(method, url, data, { ...config, _retry: true });
@@ -393,27 +444,27 @@ class APIClient {
 		});
 	}
 
-	get<T = any>(url: string, config?: APIRequestConfig) {
+	get<T = unknown>(url: string, config?: APIRequestConfig) {
 		return this.performRequest<T>('GET', url, undefined, config);
 	}
 
-	post<T = any>(url: string, data?: unknown, config?: APIRequestConfig) {
+	post<T = unknown>(url: string, data?: unknown, config?: APIRequestConfig) {
 		return this.performRequest<T>('POST', url, data, config);
 	}
 
-	put<T = any>(url: string, data?: unknown, config?: APIRequestConfig) {
+	put<T = unknown>(url: string, data?: unknown, config?: APIRequestConfig) {
 		return this.performRequest<T>('PUT', url, data, config);
 	}
 
-	patch<T = any>(url: string, data?: unknown, config?: APIRequestConfig) {
+	patch<T = unknown>(url: string, data?: unknown, config?: APIRequestConfig) {
 		return this.performRequest<T>('PATCH', url, data, config);
 	}
 
-	delete<T = any>(url: string, config?: APIRequestConfig) {
+	delete<T = unknown>(url: string, config?: APIRequestConfig) {
 		return this.performRequest<T>('DELETE', url, undefined, config);
 	}
 
-	head<T = any>(url: string, config?: APIRequestConfig) {
+	head<T = unknown>(url: string, config?: APIRequestConfig) {
 		return this.performRequest<T>('HEAD', url, undefined, config);
 	}
 }
@@ -435,7 +486,7 @@ abstract class BaseAPIService {
 	}
 
 	static async reloadForNewBuild() {
-		const result = await tryCatch(reloadForNewBuildInternal());
+		const result = await tryCatch(reloadForNewBuild());
 		if (result.error !== null) reloadDocumentOnce();
 	}
 

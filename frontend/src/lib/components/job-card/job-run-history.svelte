@@ -6,7 +6,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { jobRunQuery, jobRunsQuery } from '#lib/query/jobs.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -36,14 +36,10 @@
 	}
 	let page = $state(1);
 	let selected = $derived<string | undefined>(initialRunId);
-	const runs = createQuery(() => ({
-		queryKey: queryKeys.jobs.runs(environmentId, jobId, page),
-		queryFn: () => jobScheduleService.listRuns(jobId, environmentId, page)
-	}));
+	const runs = createQuery(() => jobRunsQuery(environmentId, jobId, page));
 	const activeRunId = $derived(selected ?? runs.data?.runs[0]?.id);
 	const detail = createQuery(() => ({
-		queryKey: queryKeys.jobs.run(environmentId, jobId, activeRunId),
-		queryFn: () => jobScheduleService.getRun(jobId, activeRunId!, environmentId),
+		...jobRunQuery(environmentId, jobId, activeRunId),
 		enabled: !!activeRunId && hasPermission('jobs:read', environmentId)
 	}));
 	onMount(() => {

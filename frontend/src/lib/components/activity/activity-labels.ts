@@ -6,6 +6,7 @@ import {
 	DownloadIcon,
 	EditIcon,
 	HammerIcon,
+	JobsIcon,
 	PauseIcon,
 	PlayIcon,
 	RedeployIcon,
@@ -47,6 +48,7 @@ const typeDisplay = new Map(
 		project_down: { label: m.activity_type_project_down, icon: StopIcon },
 		project_restart: { label: m.activity_type_project_restart, icon: RestartIcon },
 		project_destroy: { label: m.activity_type_project_destroy, icon: TrashIcon },
+		project_job_run: { label: m.activity_type_project_job_run, icon: JobsIcon },
 		container_start: { label: m.activity_type_container_start, icon: PlayIcon },
 		container_stop: { label: m.activity_type_container_stop, icon: StopIcon },
 		container_restart: { label: m.activity_type_container_restart, icon: RestartIcon },
@@ -141,9 +143,9 @@ export function activityStatusAccentClass(status: ActivityStatus): string {
 }
 
 export function activityRunStatusLabel(activity: Activity): string {
-	return activity.type === 'job_run' && typeof activity.metadata?.['jobStatus'] === 'string'
-		? jobStatusLabel(activity.metadata['jobStatus'])
-		: activityStatusLabel(activity.status);
+	const jobStatus = activity.metadata?.['jobStatus'];
+	if (activity.type === 'job_run' && typeof jobStatus === 'string') return jobStatusLabel(jobStatus);
+	return activityStatusLabel(activity.status);
 }
 
 export function activityDurationLabel(activity: Activity | null | undefined): string {
