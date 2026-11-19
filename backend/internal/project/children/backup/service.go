@@ -1905,7 +1905,7 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 		}
 		var lastRun *types.ProjectBackup
 		if len(latest) > 0 {
-			lastRun = new(latest[0].DTO())
+			lastRun = new(latest[0].DTO(DTOOptions{}))
 		}
 		dtos = append(dtos, types.GlobalProjectBackupPolicy{ //exhaustruct:enforce
 			LastRun:           lastRun,
