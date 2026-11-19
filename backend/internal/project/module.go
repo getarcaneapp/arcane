@@ -54,7 +54,7 @@ func New(p ModuleParams) *Module {
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  projectBundles{local: local},
+		bundles:  projectBundles{local: local, activity: p.Activity},
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,

@@ -90,7 +90,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	dockerService, _ := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs"))
+	dockerService, _ := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
@@ -103,10 +103,10 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	for _, volume := range p.Volumes {
 		included[volume.Key], missing[volume.Key] = volume.Included, volume.Missing
 	}
-	// Only named volumes that exist are captured; external and driver_opts volumes are listed but left out.
-	require.Equal(t, map[string]bool{"cache": false, "data": true, "nfs": false, "shared": false}, included)
+	// Existing named and local external volumes are captured; driver_opts volumes are listed but left out.
+	require.Equal(t, map[string]bool{"cache": false, "data": true, "nfs": false, "shared": true}, included)
 	require.True(t, missing["cache"])
-	require.Equal(t, []string{"web_data"}, p.volumeNames())
+	require.Equal(t, []string{"shared", "web_data"}, p.volumeNames())
 
 	projectMounts := []mount.Mount{{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/snapshot/project", ReadOnly: true}}
 	input := snapshotInput(projectMounts, "arcane-project-backup-meta", "b1", p)
@@ -115,6 +115,7 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	require.Equal(t, []string{backup.ProjectSnapshotTag, "arcane-project:p1", "arcane-run:b1"}, input.Tags)
 	require.Equal(t, []mount.Mount{
 		{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/snapshot/project", ReadOnly: true},
+		{Type: mount.TypeVolume, Source: "shared", Target: "/snapshot/volumes/shared", ReadOnly: true},
 		{Type: mount.TypeVolume, Source: "web_data", Target: "/snapshot/volumes/web_data", ReadOnly: true},
 		{Type: mount.TypeVolume, Source: "arcane-project-backup-meta", Target: "/snapshot/meta", ReadOnly: true},
 	}, input.Mounts)
@@ -125,7 +126,7 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	require.False(t, none.StopContainers)
 
 	for key, message := range map[string]string{
-		"shared":  "keeps its data outside Docker",
+		"nfs":     "keeps its data outside Docker",
 		"cache":   "has not been created yet",
 		"missing": "has no volume missing",
 	} {

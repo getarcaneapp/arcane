@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -481,16 +480,20 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor) (err error) {
+// UploadAndRestore restores an uploaded archive into a volume, first creating it when composeVolume is set; created
+// reports whether this call created the volume, also when a later step fails.
+func (s *Service) UploadAndRestore(
+	ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor,
+) (created bool, err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
 	if err != nil {
-		return fmt.Errorf("invalid archive: %w", err)
+		return false, fmt.Errorf("invalid archive: %w", err)
 	}
 	if _, nextErr := tar.NewReader(gzr).Next(); nextErr != nil {
 		_ = gzr.Close()
-		return fmt.Errorf("invalid archive: %w", nextErr)
+		return false, fmt.Errorf("invalid archive: %w", nextErr)
 	}
 	_ = gzr.Close()
 
@@ -498,8 +501,9 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	defer unlock()
 	if composeVolume != nil {
 		if createErr := s.createComposeVolume(ctx, volumeName, *composeVolume); createErr != nil {
-			return createErr
+			return false, createErr
 		}
+		created = true
 	}
 	stopped, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}, RefuseArcaneWriters: true}, user)
 	containersStopped := len(stopped) > 0
@@ -510,31 +514,31 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		}
 	}()
 	if err != nil {
-		return err
+		return created, err
 	}
 	preBackupID := ""
 	if composeVolume == nil {
 		preBackupID, err = s.deps.SafetyBackup(ctx, volumeName, user)
 		if err != nil {
-			return fmt.Errorf("failed to create pre-restore backup: %w", err)
+			return created, fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
 	}
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
-		return err
+		return created, err
 	}
 
 	containerID, cleanup, err := s.deps.AcquireHelper(ctx, volumeName)
 	if err != nil {
-		return err
+		return created, err
 	}
 	defer cleanup()
 
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
 	_, stderr, err := s.deps.Exec(ctx, containerID, "", []string{"mkdir", "-p", tmpDir})
 	if err != nil {
-		return fmt.Errorf("failed to create temp restore dir: %w", err)
+		return created, fmt.Errorf("failed to create temp restore dir: %w", err)
 	}
 	replaceStarted := false
 	defer func() {
@@ -548,33 +552,33 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	}
 
 	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return fmt.Errorf("failed to read uploaded archive: %w", seekErr)
+		return created, fmt.Errorf("failed to read uploaded archive: %w", seekErr)
 	}
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
 		DestinationPath: tmpDir,
 		Content:         archive,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
+		return created, fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
 	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
 	if err != nil {
-		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+		return created, fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 	if composeVolume != nil {
 		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `chown "$(stat -c %u:%g "$1")" /volume && chmod "$(stat -c %a "$1")" /volume`, "sh", tmpDir}); err != nil {
-			return fmt.Errorf("failed to restore volume root ownership: %w", err)
+			return created, fmt.Errorf("failed to restore volume root ownership: %w", err)
 		}
 	}
 
 	replaceStarted = true
 	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", replaceVolumeScript, "sh", tmpDir})
 	if err != nil {
-		return fmt.Errorf("failed to replace volume contents: %w", err)
+		return created, fmt.Errorf("failed to replace volume contents: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore replace stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -584,7 +588,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
-			return err
+			return created, err
 		}
 	}
 
@@ -607,7 +611,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 
-	return nil
+	return created, nil
 }
 
 func (s *Service) createComposeVolume(ctx context.Context, volumeName string, target types.ComposeVolumeTarget) error {
@@ -620,10 +624,7 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if !errdefs.IsNotFound(inspectErr) {
 		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 	}
-	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
-		Driver: target.Driver,
-		Labels: target.Labels,
-	}, target.Key, volumeName, target.Project), nil)
+	createOptions, err := projects.ComposeVolumeTargetCreateOptions(volumeName, target)
 	if err != nil {
 		return err
 	}

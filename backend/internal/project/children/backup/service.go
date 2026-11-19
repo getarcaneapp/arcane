@@ -209,23 +209,25 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 		return plan{}, err
 	}
 	p.Volumes = projects.ClassifyProjectVolumes(project)
+	backable := make(map[string]bool, len(p.Volumes))
 	for index, volume := range p.Volumes {
-		if volume.Kind != types.ProjectVolumeNamed {
+		if !volume.Included {
 			continue
 		}
-		_, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
+		inspected, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
 		if inspectErr != nil && !errdefs.IsNotFound(inspectErr) {
 			return plan{}, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
 		}
 		p.Volumes[index].Missing = inspectErr != nil
-		p.Volumes[index].Included = inspectErr == nil && (request.Volumes == nil || slices.Contains(request.Volumes, volume.Key))
+		backable[volume.Key] = inspectErr == nil && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(inspected.Volume.Driver, inspected.Volume.Options))
+		p.Volumes[index].Included = backable[volume.Key] && (request.Volumes == nil || slices.Contains(request.Volumes, volume.Key))
 	}
 	for _, key := range request.Volumes {
 		index := slices.IndexFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.Key == key })
 		switch {
 		case index < 0:
 			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
-		case p.Volumes[index].Kind != types.ProjectVolumeNamed:
+		case !p.Volumes[index].Missing && !backable[key]:
 			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", key, p.Volumes[index].Kind))
 		case p.Volumes[index].Missing:
 			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", key))

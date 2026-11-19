@@ -313,6 +313,7 @@
 			buttons.push({
 				id: 'import',
 				action: 'base',
+				placement: 'secondary',
 				label: m.import(),
 				icon: UploadIcon,
 				onclick: () => (importOpen = true)

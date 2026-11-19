@@ -226,8 +226,14 @@ func TestPeekEmptyVolumeArchive(t *testing.T) {
 		{name: "not gzip", data: []byte("volume data")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			empty, replay := PeekEmptyVolumeArchive(bytes.NewReader(tt.data))
+			empty, rootHeader, replay := PeekEmptyVolumeArchive(bytes.NewReader(tt.data))
 			assert.Equal(t, tt.empty, empty)
+			if tt.empty {
+				require.NotNil(t, rootHeader)
+				assert.Equal(t, int64(0o755), rootHeader.Mode)
+			} else {
+				assert.Nil(t, rootHeader)
+			}
 			replayed, err := io.ReadAll(replay)
 			require.NoError(t, err)
 			assert.Equal(t, tt.data, replayed)

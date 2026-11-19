@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/output"
@@ -101,7 +103,8 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 	}
 }
 
-// DownloadFileInChunks saves a complete upload session to outputPath chunk by chunk, then deletes the session.
+// DownloadFileInChunks saves a complete upload session to outputPath chunk by chunk, then deletes the session. A
+// regular file is replaced only once the download is complete; a special file such as /dev/stdout is written directly.
 func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.UploadSession, outputPath string, showProgress bool) (written int64, err error) {
 	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
 
@@ -109,7 +112,24 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 	if err != nil {
 		return 0, fmt.Errorf("failed to create output file: %w", err)
 	}
-	file, err := acfs.Host{Special: true}.OpenFile(ctx, absPath, acfs.OpenOptions{Mode: 0o666, Write: true, Create: true, Truncate: true})
+	// os.Stat follows /dev/stdout to a pipe, which resolving the symlink path cannot.
+	if info, statErr := os.Stat(absPath); statErr == nil && !info.Mode().IsRegular() {
+		file, openErr := acfs.Host{Special: true}.OpenFile(ctx, absPath, acfs.OpenOptions{Write: true})
+		if openErr != nil {
+			return 0, fmt.Errorf("failed to open output file: %w", openErr)
+		}
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("failed to write output file: %w", closeErr)
+			}
+		}()
+		return downloadChunks(ctx, c, session, file, showProgress)
+	}
+	if entry, statErr := (acfs.Host{}).Stat(ctx, absPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
+		// A symbolic link keeps pointing at the replaced file.
+		absPath = entry.Path
+	}
+	file, tempPath, err := acfs.Host{}.CreateTemp(ctx, filepath.Dir(absPath), "."+filepath.Base(absPath)+".*.part")
 	if err != nil {
 		return 0, fmt.Errorf("failed to create output file: %w", err)
 	}
@@ -117,11 +137,17 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 		if closeErr := file.Close(); closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to write output file: %w", closeErr)
 		}
+		if err == nil {
+			err = acfs.Host{}.Rename(ctx, tempPath, absPath)
+		}
 		if err != nil {
-			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), absPath)
+			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), tempPath)
 		}
 	}()
+	return downloadChunks(ctx, c, session, file, showProgress)
+}
 
+func downloadChunks(ctx context.Context, c *client.Client, session types.UploadSession, file io.Writer, showProgress bool) (written int64, err error) {
 	loading := output.StartTracker(ctx, output.Stderr(), showProgress, "Downloading chunks")
 	loading.NextStep()
 	defer loading.Stop()

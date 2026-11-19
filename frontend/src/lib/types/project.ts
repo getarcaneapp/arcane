@@ -252,6 +252,7 @@ export interface ProjectVolume {
 	archive?: string;
 	included: boolean;
 	missing?: boolean;
+	inUse?: boolean;
 }
 
 export interface ProjectExportOptions {

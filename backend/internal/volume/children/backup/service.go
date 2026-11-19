@@ -1013,10 +1013,11 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 	return session, nil
 }
 
-func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
+// RestoreUpload restores an upload session into a volume and reports whether it created the volume.
+func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
 	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer cleanup()
 	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)

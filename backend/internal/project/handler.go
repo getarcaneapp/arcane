@@ -618,7 +618,6 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 	}, func(runtimeCtx context.Context) error {
 		var exportErr error
 		session, exportErr = h.bundles.Export(runtimeCtx, ExportBundleOptions{
-			User:          *user,
 			EnvironmentID: input.EnvironmentID,
 			ProjectID:     input.ProjectID,
 			Request:       *input.Body,

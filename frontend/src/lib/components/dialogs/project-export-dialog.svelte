@@ -36,7 +36,7 @@
 
 	const canBackupVolumes = $derived(hasPermission('volumes:backup', environmentId));
 	const canStop = $derived(hasPermission('projects:down', environmentId) && hasPermission('projects:deploy', environmentId));
-	const selectable = (volume: ProjectVolume) => canBackupVolumes && volume.kind === 'named' && !volume.missing;
+	const selectable = (volume: ProjectVolume) => canBackupVolumes && volume.included;
 	const selectedVolumes = $derived(
 		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
@@ -64,9 +64,10 @@
 	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
-		if (volume.kind === 'external') return m.volume_kind_external();
-		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
 		if (volume.missing) return m.volume_not_created_yet();
+		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
+		if (volume.kind === 'external' && !volume.included) return m.volume_kind_external();
+		if (volume.inUse) return m.volume_in_use_elsewhere();
 		return null;
 	}
 
@@ -151,7 +152,7 @@
 								<Label for={`export-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
 								<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
 								{#if note}
-									<span class="text-xs text-muted-foreground">{note}</span>
+									<span class={['text-xs', volume.inUse ? 'text-warning' : 'text-muted-foreground']}>{note}</span>
 								{/if}
 							</div>
 						</li>
