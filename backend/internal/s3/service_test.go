@@ -39,6 +39,7 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
@@ -146,6 +147,25 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 
 	err = service.DeleteS3Destination(ctx, runningDestination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
+
+	// A project backup policy that sends backups to S3 uses its destination before it has taken any.
+	policyDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
+		Name:            "Project backup policy",
+		Bucket:          "project-backup-policy",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.Exec("INSERT INTO project_backup_policies (s3_destination_id, s3_enabled) VALUES (?, ?)", policyDestination.ID, true).Error)
+	inUse, err := service.DestinationInUse(ctx, policyDestination.ID)
+	require.NoError(t, err)
+	require.True(t, inUse)
+	require.NoError(t, gormDB.Exec("UPDATE project_backup_policies SET s3_enabled = ? WHERE s3_destination_id = ?", false, policyDestination.ID).Error)
+	inUse, err = service.DestinationInUse(ctx, policyDestination.ID)
+	require.NoError(t, err)
+	require.False(t, inUse)
 }
 
 func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T) {

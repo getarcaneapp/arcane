@@ -105,6 +105,8 @@ var (
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export.options"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups", CommandName: "project.backup.list"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/backups", CommandName: "project.backup.create"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/policies", CommandName: "project.backup_policy.get"},
+		{Method: http.MethodPut, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/policies", CommandName: "project.backup_policy.update"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/{backupId}", CommandName: "project.backup.inspect"},
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/{backupId}", CommandName: "project.backup.delete"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/{backupId}/restore", CommandName: "project.backup.restore"},

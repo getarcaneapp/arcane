@@ -251,7 +251,9 @@ export const queryKeys = {
 			['project', environmentId, projectId, 'workspace-file', relativePath] as const,
 		backupListPrefix: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'backups'] as const,
 		backupList: (environmentId: string, projectId: string, options: SearchPaginationSortRequest) =>
-			['project', environmentId, projectId, 'backups', stableSerialize(options)] as const
+			['project', environmentId, projectId, 'backups', stableSerialize(options)] as const,
+		backupPolicies: (environmentId: string, projectId: string) =>
+			['project', environmentId, projectId, 'backup-policies'] as const
 	},
 	networks: {
 		all: ['networks'] as const,

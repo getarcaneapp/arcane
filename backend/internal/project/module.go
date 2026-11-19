@@ -15,6 +15,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -38,6 +39,9 @@ type (
 
 	// BackupDependencies are the shared backup plumbing project backups run on; volume locks come from the volume domain.
 	BackupDependencies struct {
+		Ctx            context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
@@ -86,8 +90,20 @@ func New(p ModuleParams) *Module {
 		},
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
-		Activities:         p.Activity,
+		ProjectName: func(ctx context.Context, projectID string) (string, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return "", err
+			}
+			return proj.Name, nil
+		},
+		Activities: p.Activity,
+		Ctx:        p.Backups.Ctx,
+		Scheduler:  p.Backups.Scheduler,
+		Admission:  p.Backups.Admission,
 	})
+	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
+	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
@@ -124,6 +140,16 @@ func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
 // ReconcileInterruptedBackups fails project backups the previous process left running, except protected ones that resume.
 func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	return m.backups.ReconcileInterruptedBackups(ctx, protectedIDs...)
+}
+
+// RegisterBackupJobsOnStartup schedules the enabled project backup policies.
+func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
+	m.backups.RegisterJobsOnStartup(ctx)
+}
+
+// PruneUnmanagedBackups deletes project backups that have been unmanaged for the unmanaged backup retention.
+func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {
+	return m.backups.PruneUnmanagedBackups(ctx)
 }
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {

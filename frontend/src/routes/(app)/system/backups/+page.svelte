@@ -389,6 +389,14 @@
 		);
 	}
 
+	async function openProjectBackups(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
+		await goto(
+			resolve(`/(app)/projects/[projectId]?tab=backups&env=${encodeURIComponent(backup.environmentId)}`, {
+				projectId: encodeURIComponent(backup.resourceId ?? '')
+			})
+		);
+	}
+
 	let autoDiscovered = false;
 	let mounted = false;
 	async function discoverStoredBackups() {
@@ -928,6 +936,7 @@
 				onRestore={(item) => openAction('restore', item)}
 				onRestoreFiles={openRestoreFiles}
 				onRestoreVolume={openVolumeRestore}
+				onOpenProject={openProjectBackups}
 				onUpload={(item) => openAction('upload', item)}
 				onDelete={(item) => openAction('delete', item)}
 				onOpenVolume={openVolumeBackups}

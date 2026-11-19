@@ -41,6 +41,17 @@ type (
 		BackupID      string `path:"backupId" doc:"Backup ID"`
 	}
 
+	PoliciesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+	}
+
+	UpdatePoliciesInput struct {
+		EnvironmentID string                            `path:"id" doc:"Environment ID"`
+		ProjectID     string                            `path:"projectId" doc:"Project ID"`
+		Body          types.UpdateProjectBackupPolicies `doc:"Scheduled project backup policies"`
+	}
+
 	RestoreInput struct {
 		Body          *types.RestoreProjectBackupRequest `json:"body,omitempty"`
 		EnvironmentID string                             `path:"id" doc:"Environment ID"`
@@ -111,4 +122,20 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreInput) (*handleruti
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Project restore started", activityID), nil
+}
+
+func (h *Handler) Policies(ctx context.Context, input *PoliciesInput) (*handlerutil.Out[types.ProjectBackupPolicyCollection], error) {
+	policies, err := h.service.Policies(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[types.ProjectBackupPolicyCollection]{Body: types.ApiResponse[types.ProjectBackupPolicyCollection]{Success: true, Data: policies}}, nil
+}
+
+func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdatePoliciesInput) (*handlerutil.Out[types.ProjectBackupPolicyCollection], error) {
+	policies, err := h.service.UpdatePolicies(ctx, input.ProjectID, input.Body.Policies)
+	if err != nil {
+		return nil, handlerutil.APIError(err)
+	}
+	return &handlerutil.Out[types.ProjectBackupPolicyCollection]{Body: types.ApiResponse[types.ProjectBackupPolicyCollection]{Success: true, Data: policies}}, nil
 }

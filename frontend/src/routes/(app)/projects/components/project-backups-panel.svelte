@@ -13,6 +13,8 @@
 	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
+	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
@@ -37,14 +39,20 @@
 		VolumesIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectBackupListQuery, projectExportOptionsQuery } from '#lib/query/projects.js';
+	import { projectBackupListQuery, projectBackupPoliciesQuery, projectExportOptionsQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
-	import type { ProjectBackup, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
+	import type {
+		ProjectBackup,
+		ProjectBackupPolicy,
+		ProjectExportOptions,
+		ProjectVolume,
+		UpdateProjectBackupPolicy
+	} from '#lib/types/project.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
@@ -53,6 +61,7 @@
 	import {
 		backupDestinationDisplay,
 		backupDestinationOptions,
+		backupPolicyUpdateFromPolicy,
 		backupStatusLabel,
 		backupTriggerLabel,
 		s3DestinationOptions
@@ -95,6 +104,21 @@
 	let startRestored = $state(false);
 	let restoring = $state(false);
 
+	let scheduleOpen = $state(false);
+	let scheduleSession = $state(0);
+	let editingPolicyId = $state<string | undefined>();
+	// The edited policy's volumes; undefined follows the volumes a manual backup includes by default.
+	let scheduleBaseVolumes = $state<string[] | undefined>();
+	let scheduleOverrides = $state<Record<string, boolean>>({});
+	const scheduleOptionsQuery = createQuery(() => ({
+		...projectExportOptionsQuery(environmentId, projectId),
+		enabled: scheduleOpen,
+		staleTime: 0
+	}));
+	const scheduleFollowsProject = $derived(scheduleBaseVolumes === undefined && Object.keys(scheduleOverrides).length === 0);
+	const policiesQuery = createQuery(() => projectBackupPoliciesQuery(environmentId, projectId));
+	const policies = $derived<ProjectBackupPolicy[]>(policiesQuery.data?.policies ?? []);
+
 	const selectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
 		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
@@ -126,12 +150,18 @@
 	});
 
 	function invalidateBackups() {
-		return queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) });
+		return Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupPolicies(environmentId, projectId) })
+		]);
 	}
 
 	const backupActivity = useBackupActivity(
 		() => environmentId,
-		(activity) => activity.metadata?.['action'] === 'create_project_backup' && activity.resourceId === projectId,
+		(activity) =>
+			(activity.metadata?.['action'] === 'create_project_backup' ||
+				activity.metadata?.['action'] === 'scheduled_project_backup') &&
+			activity.resourceId === projectId,
 		invalidateBackups,
 		() => `project:${projectId}`,
 		() => {
@@ -292,6 +322,25 @@
 				await goto(resolve('/(app)/projects/[projectId]', { projectId: project.id }));
 			}
 		});
+	}
+
+	function openSchedule(policy?: ProjectBackupPolicy) {
+		editingPolicyId = policy?.id;
+		scheduleBaseVolumes = policy?.volumes;
+		scheduleOverrides = {};
+		scheduleSession += 1;
+		scheduleOpen = true;
+	}
+
+	function scheduleChecked(volume: ProjectVolume): boolean {
+		if (!selectable(volume)) return false;
+		return scheduleOverrides[volume.key] ?? (scheduleBaseVolumes ? scheduleBaseVolumes.includes(volume.key) : volume.included);
+	}
+
+	// An untouched selection keeps the policy's own, so one that follows the project keeps doing so.
+	function scheduleVolumes(): string[] | undefined {
+		if (Object.keys(scheduleOverrides).length === 0) return scheduleBaseVolumes;
+		return (scheduleOptionsQuery.data?.volumes ?? []).filter(scheduleChecked).map((volume) => volume.key);
 	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
@@ -515,6 +564,35 @@
 			/>
 		{/if}
 	</div>
+	<div class="min-w-0 space-y-2">
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<h3 class="text-sm font-medium">{m.system_backups_schedules()}</h3>
+			{#if canBackup}
+				<ArcaneButton
+					action="create"
+					size="sm"
+					customLabel={m.volume_backup_add_schedule()}
+					icon={AddIcon}
+					onclick={() => openSchedule()}
+					data-testid="project-backup-add-schedule"
+				/>
+			{/if}
+		</div>
+		{#if policiesQuery.error}
+			<Alert.Root variant="destructive" size="sm">
+				<AlertIcon class="size-4" />
+				<Alert.Description>{extractApiErrorMessage(policiesQuery.error)}</Alert.Description>
+			</Alert.Root>
+		{:else if policies.length === 0}
+			<p class="text-sm text-muted-foreground">{m.no_backup_schedules()}</p>
+		{:else}
+			<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+				{#each policies as policy (policy.id)}
+					<BackupPolicyCard {policy} showStopContainers onEdit={canBackup ? () => openSchedule(policy) : undefined} />
+				{/each}
+			</div>
+		{/if}
+	</div>
 	<ArcaneTable
 		persistKey="arcane-project-backup-table"
 		items={backups}
@@ -623,6 +701,85 @@
 		/>
 	{/snippet}
 </ResponsiveDialog>
+
+{#snippet ScheduleVolumes()}
+	{#if scheduleOptionsQuery.isPending}
+		<div class="flex items-center gap-2 text-sm text-muted-foreground">
+			<Spinner class="size-4" />
+			<span>{m.common_loading()}</span>
+		</div>
+	{:else if scheduleOptionsQuery.error}
+		<Alert.Root variant="destructive" size="sm">
+			<AlertIcon class="size-4" />
+			<Alert.Description>{extractApiErrorMessage(scheduleOptionsQuery.error)}</Alert.Description>
+		</Alert.Root>
+	{:else if scheduleOptionsQuery.data?.volumes.length === 0}
+		<p class="text-sm text-muted-foreground">{m.no_volumes_files_only()}</p>
+	{:else}
+		<div class="min-w-0 space-y-2">
+			<p class="text-sm font-medium">{m.include_volume_data()}</p>
+			{#if scheduleFollowsProject}
+				<p class="text-xs text-muted-foreground">{m.volumes_added_later_included()}</p>
+			{/if}
+			<ul class="space-y-2">
+				{#each scheduleOptionsQuery.data?.volumes ?? [] as volume (volume.key)}
+					{@const note = volumeNote(volume)}
+					<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
+						<Checkbox
+							id={`project-backup-policy-volume-${volume.key}`}
+							class="mt-0.5"
+							checked={scheduleChecked(volume)}
+							disabled={!selectable(volume)}
+							onCheckedChange={(checked) => (scheduleOverrides = { ...scheduleOverrides, [volume.key]: checked === true })}
+						/>
+						<div class="grid min-w-0 gap-1">
+							<Label for={`project-backup-policy-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
+							<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
+							{#if note}
+								<span class={['text-xs', volume.inUse ? 'text-warning' : 'text-muted-foreground']}>{note}</span>
+							{/if}
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+{/snippet}
+
+{#if scheduleSession > 0}
+	{#key scheduleSession}
+		<BackupPolicyDialog
+			bind:open={scheduleOpen}
+			idPrefix="project-backup-policy"
+			{policies}
+			policyId={editingPolicyId}
+			addTitle={m.volume_backup_add_schedule()}
+			description={m.back_up_on_schedule_keep_newest()}
+			enabledDescription={m.back_up_project_on_schedule()}
+			defaultSchedule="0 2 * * *"
+			showStopContainers
+			defaultStopContainers
+			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
+			afterFields={ScheduleVolumes}
+			policyPayload={(policy): UpdateProjectBackupPolicy => ({
+				...backupPolicyUpdateFromPolicy(policy, true),
+				volumes: policy.volumes
+			})}
+			extendUpdate={(update): UpdateProjectBackupPolicy => ({ ...update, volumes: scheduleVolumes() })}
+			updatePolicies={async (next) => (await projectService.updateBackupPolicies(projectId, next, environmentId)).policies}
+			messages={{
+				saved: m.backup_schedules_saved(),
+				saveFailed: m.failed_to_save_backup_schedules(),
+				removed: m.backup_schedule_removed()
+			}}
+			onSaved={(saved) =>
+				queryClient.setQueryData(projectBackupPoliciesQuery(environmentId, projectId).queryKey, (current) => ({
+					s3Available: current?.s3Available ?? false,
+					policies: saved
+				}))}
+		/>
+	{/key}
+{/if}
 
 <ResponsiveDialog
 	bind:open={restoreOpen}

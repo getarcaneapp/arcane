@@ -146,6 +146,11 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Trigger: volume.VolumeBackupTriggerManual, Destination: types.VolumeBackupDestinationLocal,
 		Format: volume.VolumeBackupFormatRustic,
 	}).Error)
+	require.NoError(t, gormDB.Exec(`CREATE TABLE project_backups (id TEXT PRIMARY KEY, project_id TEXT, project_name TEXT, status TEXT,
+		trigger TEXT, destination TEXT, local_snapshot_id TEXT, remote_snapshot_id TEXT, s3_destination_id TEXT, policy_id TEXT,
+		error TEXT, size INTEGER, created_at TIMESTAMP)`).Error)
+	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?)`,
+		now.Add(-3*time.Minute)).Error)
 	db := &database.DB{DB: gormDB}
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
@@ -182,6 +187,20 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Len(t, volumeRows, 1)
 	require.Equal(t, types.BackupManagementTypeVolume, volumeRows[0].Type)
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
+
+	// Project backups appear with their project, whose ID opens them.
+	projectRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
+		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
+		Filters: map[string]string{"type": "project"},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, projectRows, 1)
+	require.Equal(t, types.BackupManagementTypeProject, projectRows[0].Type)
+	require.Equal(t, "project", projectRows[0].ResourceType)
+	require.Equal(t, "web", projectRows[0].ResourceName)
+	require.Equal(t, "p1", projectRows[0].ResourceID)
+	require.Equal(t, "scheduled", projectRows[0].Trigger)
 }
 
 func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {

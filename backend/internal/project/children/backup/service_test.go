@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +28,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
+	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -32,19 +36,37 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/types/v3"
 )
 
-// fakeRestore records the steps an in-place restore applies and fails the ones it names.
-type fakeRestore struct {
-	calls      []string
-	fail       map[string]error
-	plans      []restorePlan
-	rolledBack bool
-}
+type (
+	// fakeRestore records the steps an in-place restore applies and fails the ones it names.
+	fakeRestore struct {
+		calls      []string
+		fail       map[string]error
+		plans      []restorePlan
+		rolledBack bool
+	}
+
+	// fakeScheduler records the jobs the policies register.
+	fakeScheduler struct {
+		jobs map[string]types.SchedulerJob
+		mu   sync.Mutex
+	}
+
+	policyFixture struct {
+		db          *database.DB
+		engine      *backup.Engine
+		service     *Service
+		jobs        *fakeScheduler
+		s3Requests  *atomic.Int64
+		destination string
+	}
+)
 
 func newTestDockerService(t *testing.T, handler http.Handler) *docker.DockerClientService {
 	t.Helper()
@@ -244,7 +266,7 @@ func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
 
 	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
 	recorded := plan{BackupID: "b1", ProjectID: "p1", StopContainers: true, Stopped: checkpointed}
-	err := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
+	err := service.resume(t.Context(), types.SchedulerRun{}, nil, recorded)
 	require.ErrorIs(t, err, backup.ErrBackupSettled)
 	require.ErrorContains(t, err, "snapshot failed")
 	// The checkpointed containers are started again through the project's Compose start.
@@ -690,4 +712,306 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 	// Restoring the safety backup after the external volume is gone recreates it with its own labels.
 	require.Equal(t, map[string]string{"team": "ops"}, labels["shared"])
 	require.Nil(t, labels["data"])
+}
+
+func (f *fakeScheduler) Submit(context.Context, types.SchedulerRequest) (types.SchedulerRun, error) {
+	return types.SchedulerRun{}, nil
+}
+
+func (f *fakeScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.jobs[job.Name()] = job
+	return nil
+}
+
+func (f *fakeScheduler) RemoveJob(_ context.Context, name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.jobs, name)
+}
+
+func (f *fakeScheduler) HasJob(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.jobs[name]
+	return ok
+}
+
+// newPolicyFixture backs the service with real admissions and an S3 destination whose repository is missing.
+func newPolicyFixture(t *testing.T) policyFixture {
+	t.Helper()
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	harness.Start(t)
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{Ctx: t.Context(), DB: db, Config: &config.Config{}, Env: settings.Env{}})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+
+	requests := &atomic.Int64{}
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>missing</Message></Error>`))
+	}))
+	t.Cleanup(storage.Close)
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "test-encryption-key-for-project-backups-32b", Environment: "test"})
+	secret, err := crypto.Encrypt("secret-key")
+	require.NoError(t, err)
+	destination := &s3.S3Destination{
+		Name: "Offsite", Endpoint: strings.TrimPrefix(storage.URL, "http://"), Bucket: "backups", Region: "us-east-1",
+		AccessKeyID: "access-key", SecretAccessKey: secret, ForcePathStyle: true,
+	}
+	require.NoError(t, db.Create(destination).Error)
+
+	jobs := &fakeScheduler{jobs: map[string]types.SchedulerJob{}}
+	service := NewService(Dependencies{
+		DB:             db,
+		Docker:         newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared")),
+		Engine:         engine,
+		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		Settings:       settingsService,
+		Project:        func(context.Context, string) (types.Project, error) { return testProject(), nil },
+		ProjectName:    func(context.Context, string) (string, error) { return "Web", nil },
+		Ctx:            t.Context(),
+		Scheduler:      jobs,
+		Admission:      gate,
+	})
+	return policyFixture{db: db, engine: engine, service: service, jobs: jobs, s3Requests: requests, destination: destination.ID}
+}
+
+func (f policyFixture) policy(t *testing.T, policy ProjectBackupPolicy) ProjectBackupPolicy {
+	t.Helper()
+	require.NoError(t, f.db.Create(&policy).Error)
+	return policy
+}
+
+func (f policyFixture) hold(t *testing.T, scope, id string) *runs.Lease {
+	t.Helper()
+	lease, admitted, err := f.engine.TryAcquireRun(t.Context(), scope, id)
+	require.NoError(t, err)
+	require.True(t, admitted, id)
+	return lease
+}
+
+// admitWhileHeld starts admitScheduled while the lease is held, applies change once it waits, then releases the lease.
+func (f policyFixture) admitWhileHeld(t *testing.T, held *runs.Lease, policyID string, change map[string]any) (admittedRun, error) {
+	t.Helper()
+	type result struct {
+		err      error
+		admitted admittedRun
+	}
+	done := make(chan result, 1)
+	go func() {
+		admitted, err := f.service.admitScheduled(t.Context(), policyID, "p1")
+		done <- result{admitted: admitted, err: err}
+	}()
+	select {
+	case <-done:
+		t.Fatal("the scheduled backup ran while another run held its admission")
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Where("id = ?", policyID).Updates(change).Error)
+	held.Release(t.Context())
+	select {
+	case got := <-done:
+		return got.admitted, got.err
+	case <-time.After(10 * time.Second):
+		t.Fatal("the scheduled backup was not admitted after the other run finished")
+		return admittedRun{}, nil
+	}
+}
+
+func TestUpdatePoliciesValidatesAndKeepsTheVolumeSelection(t *testing.T) {
+	f := newPolicyFixture(t)
+	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 3, StopContainers: true, LocalEnabled: true}
+
+	collection, err := f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{
+		{UpdateBackupPolicy: base},
+		{UpdateBackupPolicy: base, Volumes: []string{}},
+		{UpdateBackupPolicy: base, Volumes: []string{"data", "data"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 3)
+	// No selection follows the project's volumes; an empty one backs up only the files.
+	require.Nil(t, collection.Policies[0].Volumes)
+	require.NotNil(t, collection.Policies[1].Volumes)
+	require.Empty(t, collection.Policies[1].Volumes)
+	require.Equal(t, []string{"data"}, collection.Policies[2].Volumes)
+	encoded, err := json.Marshal(collection.Policies[1])
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"volumes":[]`)
+	encoded, err = json.Marshal(collection.Policies[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"volumes"`)
+	require.Len(t, f.jobs.jobs, 3)
+	for _, policy := range collection.Policies {
+		require.True(t, f.jobs.HasJob("project-backup:"+policy.ID))
+	}
+
+	for name, update := range map[string]types.UpdateProjectBackupPolicy{
+		"select an S3 destination": {UpdateBackupPolicy: types.UpdateBackupPolicy{Schedule: "0 2 * * *", S3Enabled: true}},
+		"schedule":                 {UpdateBackupPolicy: types.UpdateBackupPolicy{Schedule: "every night", LocalEnabled: true}},
+		"has no volume missing":    {UpdateBackupPolicy: base, Volumes: []string{"missing"}},
+		"keeps its data outside":   {UpdateBackupPolicy: base, Volumes: []string{"nfs"}},
+	} {
+		_, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{update})
+		require.ErrorIs(t, err, common.ErrValidation, name)
+		require.ErrorContains(t, err, name)
+	}
+	_, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{UpdateBackupPolicy: types.UpdateBackupPolicy{Schedule: "every night", LocalEnabled: true}}})
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "schedule", fieldErr.Field)
+
+	// Disabling one policy and leaving out the others unschedules all of them.
+	disabled := base
+	disabled.ID, disabled.Enabled = collection.Policies[0].ID, false
+	collection, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{UpdateBackupPolicy: disabled}})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 1)
+	require.False(t, collection.Policies[0].Enabled)
+	require.Empty(t, f.jobs.jobs)
+
+	// Deleting the project removes its policies and their jobs.
+	disabled.Enabled = true
+	_, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{UpdateBackupPolicy: disabled}})
+	require.NoError(t, err)
+	require.Len(t, f.jobs.jobs, 1)
+	f.service.RemovePolicies(t.Context(), "p1")
+	require.Empty(t, f.jobs.jobs)
+	var remaining int64
+	require.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Count(&remaining).Error)
+	require.Zero(t, remaining)
+}
+
+func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T) {
+	f := newPolicyFixture(t)
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, StopContainers: true, LocalEnabled: true})
+
+	// The run waits instead of failing, then backs up with the policy as it stands once admitted.
+	admitted, err := f.admitWhileHeld(t, f.hold(t, admissionScope, "p1"), policy.ID, map[string]any{"stop_containers": false, "volumes": `["data"]`})
+	require.NoError(t, err)
+	require.False(t, admitted.plan.StopContainers)
+	require.Equal(t, []string{"web_data"}, admitted.plan.volumeNames())
+	require.Len(t, admitted.leases, 2)
+	_, busy, err := f.engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, "web_data")
+	require.NoError(t, err)
+	require.False(t, busy, "the run holds the lease of the volume it captures")
+	release(t.Context(), admitted.leases)
+
+	// A policy disabled while the run waits for a volume cancels it and releases what it took.
+	_, err = f.admitWhileHeld(t, f.hold(t, backup.VolumeAdmissionScope, "web_data"), policy.ID, map[string]any{"enabled": false})
+	require.ErrorIs(t, err, errPolicyGone)
+	for _, key := range admissions("p1", []string{"web_data"}) {
+		f.hold(t, key.Scope, key.ID).Release(t.Context())
+	}
+}
+
+func TestScheduledRemoteCheckRunsOnThePolicyReadUnderTheAdmission(t *testing.T) {
+	f := newPolicyFixture(t)
+	// A retained snapshot means the destination's repository existed, so its absence is not a first backup.
+	require.NoError(t, f.db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: "retained", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
+		Trigger: types.VolumeBackupTriggerManual, S3DestinationID: f.destination, RemoteSnapshotID: "remote",
+	}).Error)
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, Volumes: []string{}})
+
+	// S3 was enabled while the run waited, so only the policy read under the admission checks it.
+	admitted, err := f.admitWhileHeld(t, f.hold(t, admissionScope, "p1"), policy.ID, map[string]any{"s3_enabled": true, "s3_destination_id": f.destination})
+	require.NoError(t, err)
+	require.Positive(t, f.s3Requests.Load())
+	require.True(t, admitted.remoteDisabled)
+	require.False(t, admitted.plan.S3Enabled)
+	require.True(t, admitted.plan.LocalEnabled)
+	var stored ProjectBackupPolicy
+	require.NoError(t, f.db.Where("id = ?", policy.ID).First(&stored).Error)
+	require.False(t, stored.S3Enabled)
+	require.True(t, stored.Enabled)
+	require.True(t, f.jobs.HasJob("project-backup:"+policy.ID), "the policy is rescheduled with S3 disabled")
+	release(t.Context(), admitted.leases)
+
+	// With S3 as the only destination the policy is disabled and the run needs attention.
+	_, err = f.admitWhileHeld(t, f.hold(t, admissionScope, "p1"), policy.ID, map[string]any{"local_enabled": false, "s3_enabled": true})
+	require.ErrorIs(t, err, errRemoteOnlyDisabled)
+	require.NoError(t, f.db.Where("id = ?", policy.ID).First(&stored).Error)
+	require.False(t, stored.Enabled)
+	require.False(t, f.jobs.HasJob("project-backup:"+policy.ID))
+	f.hold(t, admissionScope, "p1").Release(t.Context())
+}
+
+// remoteBackup is a finished project backup whose only snapshot is in the fixture's missing S3 repository, so deleting
+// it needs no backup repository.
+func (f policyFixture) remoteBackup(t *testing.T, id, trigger, policyID string, age time.Duration) {
+	t.Helper()
+	require.NoError(t, f.db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: id, CreatedAt: time.Now().Add(-age)}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
+		Trigger: trigger, PolicyID: policyID, Destination: types.VolumeBackupDestinationS3, S3DestinationID: f.destination, RemoteSnapshotID: "snapshot-" + id,
+	}).Error)
+}
+
+func (f policyFixture) backupIDs(t *testing.T) []string {
+	t.Helper()
+	var ids []string
+	require.NoError(t, f.db.Model(&ProjectBackup{}).Order("id").Pluck("id", &ids).Error)
+	return ids
+}
+
+func TestRetentionKeepsTheNewestBackupsOfThePolicy(t *testing.T) {
+	f := newPolicyFixture(t)
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 2})
+	other := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
+	for i, age := range []time.Duration{time.Hour, 2 * time.Hour, 3 * time.Hour, 4 * time.Hour} {
+		f.remoteBackup(t, fmt.Sprintf("s%d", i+1), types.VolumeBackupTriggerScheduled, policy.ID, age)
+	}
+	f.remoteBackup(t, "manual", types.VolumeBackupTriggerManual, "", 10*time.Hour)
+	f.remoteBackup(t, "safety", types.VolumeBackupTriggerSafety, "", 10*time.Hour)
+	f.remoteBackup(t, "other", types.VolumeBackupTriggerScheduled, other.ID, 10*time.Hour)
+
+	// A busy project keeps its backups until the policy's next backup.
+	held := f.hold(t, admissionScope, "p1")
+	f.service.retain(t.Context(), "p1", policy.ID)
+	require.Len(t, f.backupIDs(t), 7)
+	held.Release(t.Context())
+
+	f.service.retain(t.Context(), "p1", policy.ID)
+	require.Equal(t, []string{"manual", "other", "s1", "s2", "safety"}, f.backupIDs(t))
+}
+
+func TestDeletedPolicyBackupsBecomeUnmanaged(t *testing.T) {
+	f := newPolicyFixture(t)
+	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 3, LocalEnabled: true}
+	collection, err := f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{UpdateBackupPolicy: base}, {UpdateBackupPolicy: base}})
+	require.NoError(t, err)
+	kept, deleted := collection.Policies[0], collection.Policies[1]
+	f.remoteBackup(t, "kept", types.VolumeBackupTriggerScheduled, kept.ID, time.Hour)
+	f.remoteBackup(t, "orphan", types.VolumeBackupTriggerScheduled, deleted.ID, time.Hour)
+	f.remoteBackup(t, "manual", types.VolumeBackupTriggerManual, "", 72*time.Hour)
+	keptUpdate := base
+	keptUpdate.ID = kept.ID
+	_, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{UpdateBackupPolicy: keptUpdate}})
+	require.NoError(t, err)
+
+	// The sweep marks the deleted policy's backups unmanaged, and only those.
+	now := time.Now()
+	expired, err := f.service.expiredUnmanaged(t.Context(), types.UnmanagedBackupSweep{Now: now, Retention: 24 * time.Hour})
+	require.NoError(t, err)
+	require.Empty(t, expired)
+	var orphaned []string
+	require.NoError(t, f.db.Model(&ProjectBackup{}).Where("orphaned_at IS NOT NULL").Pluck("id", &orphaned).Error)
+	require.Equal(t, []string{"orphan"}, orphaned)
+
+	// Once the unmanaged retention passes they are deleted; a busy project's wait for the next run.
+	later := types.UnmanagedBackupSweep{Now: now.Add(48 * time.Hour), Retention: 24 * time.Hour}
+	held := f.hold(t, admissionScope, "p1")
+	require.NoError(t, f.service.pruneUnmanaged(t.Context(), "p1", later))
+	require.Equal(t, []string{"kept", "manual", "orphan"}, f.backupIDs(t))
+	held.Release(t.Context())
+	require.NoError(t, f.service.pruneUnmanaged(t.Context(), "p1", later))
+	require.Equal(t, []string{"kept", "manual"}, f.backupIDs(t))
 }

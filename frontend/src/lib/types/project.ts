@@ -1,4 +1,4 @@
-import type { SystemBackupDestination } from './backup';
+import type { SystemBackupDestination, UpdateBackupPolicy } from './backup';
 import type { ImageUpdateInfo } from './image';
 import type { BackupRun } from './ui/backup';
 import type { WorkspaceFileChange } from './workspace';
@@ -299,6 +299,29 @@ export type ProjectBackup = BackupRun & {
 	volumes: ProjectBackupVolume[];
 	stoppedContainers: boolean;
 };
+
+export interface ProjectBackupPolicy {
+	lastRun?: ProjectBackup;
+	id: string;
+	projectId: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	/** Omitted follows the volumes a manual backup includes by default; empty backs up only the files. */
+	volumes?: string[];
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+}
+
+export interface ProjectBackupPolicyCollection {
+	policies: ProjectBackupPolicy[];
+	s3Available: boolean;
+}
+
+export type UpdateProjectBackupPolicy = UpdateBackupPolicy & { volumes?: string[] };
 
 export interface ImportProjectArchiveRequest {
 	name: string;

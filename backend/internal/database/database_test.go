@@ -1058,6 +1058,43 @@ func TestMigration119_GrantsProjectsRestore(t *testing.T) {
 	assert.Empty(t, keyGrants())
 }
 
+func TestMigration120_CreatesProjectBackupPolicies(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-backup-policies.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	objects := func() int {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_backup_policies') +
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_project_backup_policies_project_id', 'idx_project_backups_policy_id')) +
+			(SELECT COUNT(*) FROM pragma_table_info('project_backups') WHERE name = 'policy_id')`).Scan(&count))
+		return count
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	assert.Equal(t, 4, objects())
+	var policyID string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT policy_id FROM project_backups WHERE id = 'pb1'`).Scan(&policyID))
+	assert.Empty(t, policyID, "existing backups are manual")
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO project_backup_policies (id, project_id, schedule, created_at) VALUES ('pp1', 'p1', '0 2 * * *', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	var stopContainers, localEnabled bool
+	var volumes stdsql.NullString
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT stop_containers, local_enabled, volumes FROM project_backup_policies WHERE id = 'pp1'`).
+		Scan(&stopContainers, &localEnabled, &volumes))
+	assert.True(t, stopContainers)
+	assert.True(t, localEnabled)
+	assert.False(t, volumes.Valid, "no volume list selects the default volumes")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 119))
+	assert.Zero(t, objects())
+	var backups int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_backups`).Scan(&backups))
+	assert.Equal(t, 1, backups)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

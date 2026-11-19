@@ -33,6 +33,27 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	}, authz.PermProjectsBackup, h.Create)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-backup-policies",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/backups/policies",
+		Summary:     "Get project backup policies",
+		Description: "List the project's scheduled backup policies with the latest backup each one took",
+		Tags:        []string{"Project Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsRead, h.Policies)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-project-backup-policies",
+		Method:      http.MethodPut,
+		Path:        "/agents/{id}/projects/{projectId}/backups/policies",
+		Summary:     "Update project backup policies",
+		Description: "Replace the project's scheduled backup policies; scheduled backups beyond a policy's retention count are deleted, " +
+			"and the backups of a removed policy are deleted once they have been unmanaged for the unmanaged backup retention",
+		Tags:     []string{"Project Backup"},
+		Security: handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsBackup, h.UpdatePolicies)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-backup",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/projects/{projectId}/backups/{backupId}",

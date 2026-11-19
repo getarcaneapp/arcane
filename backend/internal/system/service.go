@@ -120,10 +120,13 @@ const (
 
 	systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, " +
 		"remote_snapshot_id, '' AS remote_instance_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS " +
-		"resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, " +
+		"resource_type, 'Arcane' AS resource_name, '' AS resource_id FROM system_backup_runs UNION ALL SELECT id, size, " +
 		"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
 		"s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE " +
-		"'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups"
+		"'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name, '' AS resource_id FROM volume_backups UNION ALL " +
+		"SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, '' AS remote_instance_id, " +
+		"s3_destination_id, policy_id, error, 'project' AS type, 'project' AS resource_type, project_name AS resource_name, " +
+		"project_id AS resource_id FROM project_backups"
 )
 
 func NewSystemService(p SystemServiceParams) *SystemService {

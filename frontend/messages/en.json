@@ -4746,5 +4746,15 @@
   "restore_started": "Restore started",
   "restore_in_progress": "Restore in progress",
   "failed_to_restore_backup": "Failed to restore the backup",
-  "project_restored_from_backup": "Project {name} restored from the backup"
+  "project_restored_from_backup": "Project {name} restored from the backup",
+  "project_managed": "Project-managed",
+  "open_project_backups": "Open project backups",
+  "scheduled_project_backup": "Scheduled Project Backup",
+  "no_backup_schedules": "No backup schedules yet.",
+  "back_up_on_schedule_keep_newest": "Back up the project's files and the data of the selected volumes on a schedule, keeping the newest backups.",
+  "back_up_project_on_schedule": "Back up this project according to this cron schedule.",
+  "volumes_added_later_included": "Volumes added to the project later are included too until you change the selection.",
+  "backup_schedules_saved": "Backup schedules saved",
+  "failed_to_save_backup_schedules": "Failed to save the backup schedules",
+  "backup_schedule_removed": "Backup schedule removed"
 }

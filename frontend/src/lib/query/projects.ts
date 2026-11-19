@@ -72,6 +72,16 @@ export function projectBackupListQuery(environmentId: string, projectId: string,
 	});
 }
 
+export function projectBackupPoliciesQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.backupPolicies(environmentId, projectId),
+		queryFn: async () => {
+			await environmentStore.ready;
+			return projectService.getBackupPolicies(projectId, environmentId);
+		}
+	});
+}
+
 export function projectStatusCountsQuery(scope: string, environments: EnvironmentRef[]) {
 	return queryOptions({
 		queryKey: queryKeys.projects.statusCounts(scope),

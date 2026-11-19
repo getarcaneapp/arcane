@@ -115,10 +115,40 @@ type (
 		RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
 		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
 		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that scheduled the backup"`
 		Error             string                  `json:"error,omitempty"`
 		Volumes           []ProjectBackupVolume   `json:"volumes"`
 		Size              int64                   `json:"size" doc:"Total size of the captured files"`
 		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
+	}
+
+	ProjectBackupPolicy struct {
+		LastRun           *ProjectBackup `json:"lastRun,omitempty"`
+		ID                string         `json:"id"`
+		ProjectID         string         `json:"projectId"`
+		Schedule          string         `json:"schedule"`
+		S3DestinationID   string         `json:"s3DestinationId,omitempty"`
+		S3DestinationName string         `json:"s3DestinationName,omitempty"`
+		Volumes           []string       `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		RetentionCount    int            `json:"retentionCount"`
+		Enabled           bool           `json:"enabled"`
+		StopContainers    bool           `json:"stopContainers"`
+		LocalEnabled      bool           `json:"localEnabled"`
+		S3Enabled         bool           `json:"s3Enabled"`
+	}
+
+	ProjectBackupPolicyCollection struct {
+		Policies    []ProjectBackupPolicy `json:"policies"`
+		S3Available bool                  `json:"s3Available"`
+	}
+
+	UpdateProjectBackupPolicy struct {
+		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		UpdateBackupPolicy
+	}
+
+	UpdateProjectBackupPolicies struct {
+		Policies []UpdateProjectBackupPolicy `json:"policies"`
 	}
 
 	RestoreProjectBackupRequest struct {

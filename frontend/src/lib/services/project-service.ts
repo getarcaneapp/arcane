@@ -7,6 +7,7 @@ import type {
 	Project,
 	ProjectDeployOptions,
 	ProjectBackup,
+	ProjectBackupPolicyCollection,
 	ProjectExportOptions,
 	ProjectStatusCounts,
 	ProjectsDirectoryStatus,
@@ -19,7 +20,8 @@ import type {
 	ProjectTransferStarted,
 	ProjectUpdateInfo,
 	RestoreProjectBackupAsNewRequest,
-	RestoreProjectBackupRequest
+	RestoreProjectBackupRequest,
+	UpdateProjectBackupPolicy
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -313,6 +315,18 @@ class ProjectService extends BaseAPIService {
 
 	async createBackup(projectId: string, request: CreateProjectBackupRequest, environmentId: string): Promise<ProjectBackup> {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/backups`, request));
+	}
+
+	async getBackupPolicies(projectId: string, environmentId: string): Promise<ProjectBackupPolicyCollection> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backups/policies`));
+	}
+
+	async updateBackupPolicies(
+		projectId: string,
+		policies: UpdateProjectBackupPolicy[],
+		environmentId: string
+	): Promise<ProjectBackupPolicyCollection> {
+		return this.handleResponse(this.api.put(`/agents/${environmentId}/projects/${projectId}/backups/policies`, { policies }));
 	}
 
 	async deleteBackup(projectId: string, backupId: string, environmentId: string): Promise<MessageResponse> {

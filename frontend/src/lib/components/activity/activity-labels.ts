@@ -88,6 +88,7 @@ const resourceActionDisplay = new Map<string, () => string>(
 		upload_restore_volume_backup: m.upload_and_restore_volume_backup,
 		update_volume_backup_policy: m.update_volume_backup_policy,
 		scheduled_volume_backup: m.scheduled_volume_backup,
+		scheduled_project_backup: m.scheduled_project_backup,
 		create_system_backup: m.create_system_backup,
 		scheduled_system_backup: m.scheduled_system_backup,
 		delete_system_backup: m.delete_system_backup,

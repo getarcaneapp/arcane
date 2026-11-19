@@ -261,6 +261,7 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 		db.Table("volume_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		// A running project backup may still be writing its first snapshot to the destination.
 		db.Table("project_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
+		db.Table("project_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 	}
 	for _, query := range counts {
 		var count int64
