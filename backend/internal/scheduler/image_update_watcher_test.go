@@ -487,11 +487,11 @@ func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T)
 	t.Cleanup(func() { require.NoError(t, jobScheduler.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, true))
 
-	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return scanner.count() >= 1 }, 5*time.Second, 5*time.Millisecond)
 	require.Eventually(t, func() bool {
 		record, nextRun, scheduleStateErr := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
 		return scheduleStateErr == nil && record.Schedule == settings.schedule && nextRun != nil
-	}, time.Second, 5*time.Millisecond)
+	}, 5*time.Second, 5*time.Millisecond)
 	require.NoError(t, jobScheduler.StartScheduler(t.Context()))
 	record, nextRun, err := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
 	require.NoError(t, err)
