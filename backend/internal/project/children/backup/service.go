@@ -60,8 +60,10 @@ type (
 		StopContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
 		// StartContainers starts the project's stopped containers again in Compose order.
 		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
-		// ProjectActive reports whether the Compose project has running or restarting containers.
-		ProjectActive func(ctx context.Context, composeName string) (bool, error)
+		// ActiveContainers lists the Compose project's running and restarting containers, the ones a stop stops.
+		ActiveContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
+		// ComposeFiles returns the compose files the project loads, relative to its directory.
+		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
 		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
 	}
@@ -196,53 +198,81 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	if !slices.Contains([]types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}, selected) {
 		return plan{}, common.Classify(common.ErrBadRequest, errors.New("invalid project backup destination"))
 	}
-	p := plan{
-		ProjectID:      project.ID,
-		LocalEnabled:   selected != types.VolumeBackupDestinationS3,
-		S3Enabled:      selected != types.VolumeBackupDestinationLocal,
-		StopContainers: *cmp.Or(request.StopContainers, new(true)),
-	}
-	if p.S3Enabled {
-		if p.S3DestinationID = strings.TrimSpace(request.S3DestinationID); p.S3DestinationID == "" {
+	s3Enabled := selected != types.VolumeBackupDestinationLocal
+	s3DestinationID := kit.Ternary(s3Enabled, strings.TrimSpace(request.S3DestinationID), "")
+	if s3Enabled {
+		if s3DestinationID == "" {
 			return plan{}, common.Classify(common.ErrBadRequest, errors.New("select an S3 destination for the project backup"))
 		}
-		if _, err := s.deps.S3Destinations.Configuration(ctx, p.S3DestinationID); err != nil {
+		if _, err := s.deps.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
 			return plan{}, fmt.Errorf("load S3 destination: %w", err)
 		}
 	}
 	if project.ComposeName == "" {
 		return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before backing it up", project.Name))
 	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	planned, err := s.inspectVolumes(ctx, project, request.Volumes)
 	if err != nil {
 		return plan{}, err
 	}
-	p.Volumes = projects.ClassifyProjectVolumes(project)
-	backable := make(map[string]bool, len(p.Volumes))
-	for index, volume := range p.Volumes {
+	return plan{
+		ProjectID:       project.ID,
+		S3DestinationID: s3DestinationID,
+		Volumes:         planned,
+		LocalEnabled:    selected != types.VolumeBackupDestinationS3,
+		S3Enabled:       s3Enabled,
+		StopContainers:  *cmp.Or(request.StopContainers, new(true)),
+	}, nil
+}
+
+// inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
+// and keep their data in Docker; requesting any other volume fails.
+func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	classified := projects.ClassifyProjectVolumes(project)
+	inspected := make([]types.ProjectVolume, 0, len(classified))
+	for _, volume := range classified {
 		if !volume.Included {
+			inspected = append(inspected, volume)
 			continue
 		}
-		inspected, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
+		found, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
 		if inspectErr != nil && !errdefs.IsNotFound(inspectErr) {
-			return plan{}, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
+			return nil, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
 		}
-		p.Volumes[index].Missing = inspectErr != nil
-		backable[volume.Key] = inspectErr == nil && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(inspected.Volume.Driver, inspected.Volume.Options))
-		p.Volumes[index].Included = backable[volume.Key] && (request.Volumes == nil || slices.Contains(request.Volumes, volume.Key))
+		missing := inspectErr != nil
+		backable := !missing && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(found.Volume.Driver, found.Volume.Options))
+		wanted := requested == nil || slices.Contains(requested, volume.Key)
+		switch {
+		case wanted && requested != nil && missing:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
+		case wanted && requested != nil && !backable:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", volume.Key, volume.Kind))
+		}
+		inspected = append(inspected, types.ProjectVolume{
+			Labels:     volume.Labels,
+			DriverOpts: volume.DriverOpts,
+			Key:        volume.Key,
+			Name:       volume.Name,
+			Kind:       volume.Kind,
+			Driver:     volume.Driver,
+			Included:   backable && wanted,
+			Missing:    missing,
+		})
 	}
-	for _, key := range request.Volumes {
-		index := slices.IndexFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.Key == key })
+	for _, key := range requested {
+		index := slices.IndexFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key })
 		switch {
 		case index < 0:
-			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
-		case !p.Volumes[index].Missing && !backable[key]:
-			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", key, p.Volumes[index].Kind))
-		case p.Volumes[index].Missing:
-			return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", key))
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
+		case !inspected[index].Included:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", key, inspected[index].Kind))
 		}
 	}
-	return p, nil
+	return inspected, nil
 }
 
 func (p plan) volumeNames() []string {
@@ -509,20 +539,26 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
+	// The plan's locks and leases cover the volumes found when the backup was queued.
+	if planErr := checkPlanVolumes(project, p); planErr != nil {
+		return planErr
+	}
 	// Containers outside the project keep running, so a volume they mount may change while it is captured.
 	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
 	if err != nil {
 		return err
 	}
-	for index, volume := range p.Volumes {
-		p.Volumes[index].InUse = volume.Included && inUse[volume.Name]
-	}
+	p.Volumes = markInUse(p.Volumes, inUse)
 	// A restarting container is left out of the running count but can still write its volumes.
-	active, err := s.deps.ProjectActive(ctx, project.ComposeName)
+	active, err := s.deps.ActiveContainers(ctx, project.ComposeName)
 	if err != nil {
 		return err
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, active))
+	composeFiles, err := s.deps.ComposeFiles(ctx, entry.ProjectID)
+	if err != nil {
+		return err
+	}
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles))
 	if err != nil {
 		return err
 	}
@@ -547,9 +583,15 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		}
 	}()
 	if p.StopContainers {
+		// Saved before the stops, so a run resumed after a crash partway through restarts what was stopped; starting
+		// one that still runs does nothing.
+		p.Stopped = checkpointContainers(active)
+		if recordErr := s.record(ctx, p); recordErr != nil {
+			return recordErr
+		}
 		var stopErr error
 		stopped, stopErr = s.deps.StopContainers(ctx, project.ComposeName)
-		p.Stopped = checkpointContainers(stopped)
+		p.Stopped = checkpointContainers(mergeContainers(active, stopped))
 		if recordErr := errors.Join(stopErr, s.record(ctx, p)); recordErr != nil {
 			return recordErr
 		}
@@ -578,6 +620,53 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		}
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
+}
+
+// checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
+// and deploy, so the snapshot never pairs new compose files with old volume data.
+func checkPlanVolumes(project types.Project, p plan) error {
+	current := projects.ClassifyProjectVolumes(project)
+	same := len(current) == len(p.Volumes) && !slices.ContainsFunc(current, func(volume types.ProjectVolume) bool {
+		return !slices.ContainsFunc(p.Volumes, func(planned types.ProjectVolume) bool {
+			return planned.Key == volume.Key && planned.Name == volume.Name && planned.Kind == volume.Kind
+		})
+	})
+	if !same {
+		return common.Classify(common.ErrConflict, fmt.Errorf("the volumes of project %s changed after the backup was queued; start the backup again", project.Name))
+	}
+	return nil
+}
+
+// markInUse returns the volumes with InUse set on each included one that a container outside the project mounts.
+func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.ProjectVolume {
+	marked := make([]types.ProjectVolume, 0, len(planned))
+	for _, volume := range planned {
+		marked = append(marked, types.ProjectVolume{
+			Labels:       volume.Labels,
+			DockerLabels: volume.DockerLabels,
+			DriverOpts:   volume.DriverOpts,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         volume.Kind,
+			Driver:       volume.Driver,
+			Archive:      volume.Archive,
+			Included:     volume.Included,
+			Missing:      volume.Missing,
+			InUse:        volume.Included && inUse[volume.Name],
+		})
+	}
+	return marked
+}
+
+// mergeContainers adds the containers of extra that first lacks.
+func mergeContainers(first, extra []container.Summary) []container.Summary {
+	merged := slices.Clone(first)
+	for _, c := range extra {
+		if !slices.ContainsFunc(merged, func(known container.Summary) bool { return known.ID == c.ID }) {
+			merged = append(merged, c)
+		}
+	}
+	return merged
 }
 
 // checkpointContainers keeps what restarting a container needs, including the labels that name its Compose service.
@@ -624,7 +713,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, proje
 	return backup.BindVolumeSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
 	includeFiles := make([]string, 0, len(project.IncludeFiles))
 	for _, file := range project.IncludeFiles {
 		includeFiles = append(includeFiles, file.RelativePath)
@@ -638,7 +727,7 @@ func backupManifest(project types.Project, p plan, active bool) types.ProjectMan
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  kit.Ternary(len(project.ComposeFiles) > 0, project.ComposeFiles, []string{project.ComposeFileName}),
+		ComposeFiles:  composeFiles,
 		IncludeFiles:  includeFiles,
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,

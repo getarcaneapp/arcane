@@ -135,24 +135,39 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	}
 }
 
+func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
+	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
+	service := NewService(Dependencies{Docker: dockerService})
+	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
+	require.NoError(t, err)
+	require.NoError(t, checkPlanVolumes(testProject(), p))
+
+	// A compose edit and deploy while the backup waited moved the data volume to a new name.
+	changed := testProject()
+	changed.Volumes["data"] = composetypes.VolumeConfig{Name: "web_data_v2"}
+	err = checkPlanVolumes(changed, p)
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "changed after the backup was queued")
+}
+
 func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true)
+	manifest := backupManifest(project, p, true, []string{"compose.yaml"})
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
-	require.True(t, backupManifest(project, p, false).Consistent, "nothing runs, so a live backup is consistent")
+	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true).Consistent)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true).Consistent)
+	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {

@@ -1883,18 +1883,9 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 	if project.ComposeName == "" {
 		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
 	}
-	// The global .env or a GitOps sync can select the compose files, so the manifest records the files actually loaded.
-	projectsDir, dirErr := b.local.projects.GetProjectsDirectory(ctx)
-	if dirErr != nil {
-		return types.ProjectManifest{}, dirErr
-	}
-	proj, projErr := b.local.projects.GetProjectFromDatabaseByID(ctx, project.ID)
-	if projErr != nil {
-		return types.ProjectManifest{}, projErr
-	}
-	composeFile, composeErr := b.local.projects.ResolveProjectComposeFile(ctx, proj)
+	composeFiles, composeErr := b.local.projects.loadedComposeFiles(ctx, project.ID)
 	if composeErr != nil {
-		return types.ProjectManifest{}, fmt.Errorf("resolve the compose file of project %s: %w", project.Name, composeErr)
+		return types.ProjectManifest{}, composeErr
 	}
 	classified := projects.ClassifyProjectVolumes(project)
 	for _, key := range request.Volumes {
@@ -1990,7 +1981,7 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: project.Path, ComposeFile: composeFile}),
+		ComposeFiles:  composeFiles,
 		IncludeFiles:  includeFiles,
 		Volumes:       manifestVolumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
@@ -2068,12 +2059,35 @@ func activeContainers(ctx context.Context, dockerClient *client.Client, composeN
 // projectActive reports whether the Compose project has running or restarting containers. Unlike the project's
 // running count, a container in a restart loop counts, since it can write to its volumes between restarts.
 func (s *ProjectService) projectActive(ctx context.Context, composeName string) (bool, error) {
+	active, err := s.activeProjectContainers(ctx, composeName)
+	return len(active) > 0, err
+}
+
+// activeProjectContainers lists the Compose project's running and restarting containers.
+func (s *ProjectService) activeProjectContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	active, err := activeContainers(ctx, dockerClient, composeName)
-	return len(active) > 0, err
+	return activeContainers(ctx, dockerClient, composeName)
+}
+
+// loadedComposeFiles returns the compose files a project loads, relative to its directory. The global .env or a GitOps
+// sync can select them, so they are resolved as the loader resolves them.
+func (s *ProjectService) loadedComposeFiles(ctx context.Context, projectID string) ([]string, error) {
+	projectsDir, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return nil, fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
+	}
+	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: proj.Path, ComposeFile: composeFile}), nil
 }
 
 // stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it

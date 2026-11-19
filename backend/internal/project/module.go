@@ -74,11 +74,12 @@ func New(p ModuleParams) *Module {
 			Settings:       p.Service.settingsService,
 			VolumeLocks:    p.Backups.VolumeLocks,
 			// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
-			StopContainers:  p.Service.stopRunningContainers,
-			StartContainers: p.Service.restartContainers,
-			VolumesInUse:    p.Service.volumesInUseOutside,
-			ProjectActive:   p.Service.projectActive,
-			LockProject:     p.Service.LockProject,
+			StopContainers:   p.Service.stopRunningContainers,
+			StartContainers:  p.Service.restartContainers,
+			VolumesInUse:     p.Service.volumesInUseOutside,
+			ActiveContainers: p.Service.activeProjectContainers,
+			ComposeFiles:     p.Service.loadedComposeFiles,
+			LockProject:      p.Service.LockProject,
 			Project: func(ctx context.Context, projectID string) (types.Project, error) {
 				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
 			},
