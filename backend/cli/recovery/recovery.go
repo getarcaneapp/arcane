@@ -360,7 +360,8 @@ func restoreData(
 }
 
 // runStages applies stages in order and reports whether live data changed. A staged stage restores into a staging folder
-// and only changes live data once its swap is planned; a direct stage changes it as soon as Rustic starts.
+// and only changes live data once its swap applies, unless the swap undoes itself; a direct stage changes it as soon as
+// Rustic starts.
 func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic func(context.Context, types.RecoveryRestoreStage) error) (bool, error) {
 	touched := false
 	for _, stage := range stages {
@@ -387,8 +388,12 @@ func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic 
 		if err != nil {
 			return touched, errors.Join(fmt.Errorf("check the restored data: %w", err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
 		}
+		err = plan.Apply(ctx)
+		if errors.Is(err, backup.ErrSwapNotApplied) {
+			return touched, errors.Join(fmt.Errorf("swap the restored data into %s: %w", directory, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+		}
 		touched = true
-		if err = plan.Apply(ctx); err != nil {
+		if err != nil {
 			return touched, fmt.Errorf("swap the restored data into %s: %w", directory, err)
 		}
 	}

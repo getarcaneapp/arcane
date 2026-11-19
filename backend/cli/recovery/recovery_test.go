@@ -162,6 +162,32 @@ func TestRestoreDataInternalSkipsRollbackWhenRusticFailsBeforeDataChanges(t *tes
 	require.Equal(t, "live", string(content))
 }
 
+func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T) {
+	data := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
+	var restored []string
+	restarts := 0
+	err := restoreData(t.Context(), stagedRestoreRequest(data), func(_ context.Context, stage types.RecoveryRestoreStage) error {
+		restored = append(restored, stage.SnapshotID)
+		staging := filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID)
+		require.NoError(t, os.MkdirAll(staging, 0o700))
+		// A file in the trash folder's place makes the swap fail before it moves anything.
+		require.NoError(t, os.WriteFile(filepath.Join(data, backup.SwapTrashPrefix+stage.SnapshotID), nil, 0o600))
+		return os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600)
+	}, func() { restarts++ })
+
+	require.ErrorIs(t, err, backup.ErrSwapNotApplied)
+	require.ErrorContains(t, err, "Arcane's data was not changed and Arcane was restarted")
+	require.Equal(t, []string{"restore"}, restored)
+	require.Equal(t, 1, restarts)
+	entries, err := os.ReadDir(data)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	content, err := os.ReadFile(filepath.Join(data, "arcane.db"))
+	require.NoError(t, err)
+	require.Equal(t, "live", string(content))
+}
+
 func TestRestoreDataInternalSwapsStagedRestoreAroundProjects(t *testing.T) {
 	data := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(data, "projects", "demo"), 0o755))

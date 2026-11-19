@@ -1804,7 +1804,8 @@ func (s *Service) globalSeries(references []types.ProjectReference) ([]string, e
 
 // DiscoverBackups records the project backups whose snapshots are in the selected repositories but whose rows are
 // missing, as after a system restore, and adds snapshots an existing row lacks; it never deletes anything. Only this
-// instance's root is searched on S3, since a project backup row always reads from it.
+// instance's root is searched on S3, since a project backup row always reads from it. A repository that fails is
+// reported in the error once the others are recorded.
 func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (int, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -1813,25 +1814,29 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 	list := func(ctx context.Context) ([]foundSnapshot, error) {
 		var repositories []backup.Repository
 		var destinationIDs []string
+		var listErr error
 		if opts.Local {
 			local, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
 			if localErr != nil {
-				return nil, localErr
+				listErr = fmt.Errorf("open the local repository: %w", localErr)
+			} else {
+				repositories, destinationIDs = append(repositories, local), append(destinationIDs, "")
 			}
-			repositories, destinationIDs = append(repositories, local), append(destinationIDs, "")
 		}
 		for _, destinationID := range opts.S3DestinationIDs {
 			root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
 			observation, checkErr := backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, destinationID, root)
 			if checkErr != nil {
-				return nil, fmt.Errorf("check S3 destination %s: %w", destinationID, checkErr)
+				listErr = errors.Join(listErr, fmt.Errorf("check S3 destination %s: %w", destinationID, checkErr))
+				continue
 			}
 			if !observation.Available {
 				continue
 			}
 			remote, remoteErr := s.deps.Repository.Remote(ctx, destinationID, "")
 			if remoteErr != nil {
-				return nil, remoteErr
+				listErr = errors.Join(listErr, fmt.Errorf("open S3 destination %s: %w", destinationID, remoteErr))
+				continue
 			}
 			repositories, destinationIDs = append(repositories, remote), append(destinationIDs, destinationID)
 		}
@@ -1839,14 +1844,16 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 		for index, repository := range repositories {
 			password, passwordErr := s.deps.Repository.Password(ctx, dockerClient, repository)
 			if passwordErr != nil {
-				return nil, passwordErr
-			}
-			listed, listErr := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, password)
-			if errors.Is(listErr, backup.ErrRepositoryMissing) {
+				listErr = errors.Join(listErr, fmt.Errorf("read the password for %s: %w", repository.ID, passwordErr))
 				continue
 			}
-			if listErr != nil {
-				return nil, fmt.Errorf("list project snapshots in %s: %w", repository.ID, listErr)
+			listed, snapshotsErr := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, password)
+			if errors.Is(snapshotsErr, backup.ErrRepositoryMissing) {
+				continue
+			}
+			if snapshotsErr != nil {
+				listErr = errors.Join(listErr, fmt.Errorf("list project snapshots in %s: %w", repository.ID, snapshotsErr))
+				continue
 			}
 			for _, snapshot := range listed {
 				if slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
@@ -1858,15 +1865,12 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 				}
 			}
 		}
-		return found, nil
+		return found, listErr
 	}
-	found, err := list(ctx)
-	if err != nil {
-		return 0, err
-	}
+	found, listErr := list(ctx)
 	planned, err := s.reconcileSnapshots(ctx, found)
 	if err != nil {
-		return 0, err
+		return 0, errors.Join(listErr, err)
 	}
 	projectIDs := make([]string, 0, len(planned))
 	for _, item := range planned {
@@ -1885,15 +1889,17 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 		}
 		leases = append(leases, lease)
 	}
-	if found, err = list(ctx); err != nil {
-		return 0, err
-	}
-	return s.importSnapshots(ctx, found, importOptions{
+	found, listErr = list(ctx)
+	recorded, err := s.importSnapshots(ctx, found, importOptions{
 		Held: projectIDs,
 		Manifest: func(ctx context.Context, snapshot foundSnapshot) (types.ProjectManifest, error) {
 			return s.readManifest(ctx, dockerClient, snapshot.source)
 		},
 	})
+	if err = errors.Join(listErr, err); err != nil && recorded > 0 {
+		return recorded, fmt.Errorf("recorded %d project backups, but discovery was incomplete: %w", recorded, err)
+	}
+	return recorded, err
 }
 
 // DiscoverAfterRestore runs the discovery a system restore asked for, after syncing the restored projects with their
@@ -1914,10 +1920,10 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context, discover func(contex
 		destinationIDs = append(destinationIDs, destination.ID)
 	}
 	count, err := discover(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: true})
+	slog.InfoContext(ctx, "Discovered project backups after a system restore", "recorded", count)
 	if err != nil {
 		return fmt.Errorf("discover project backups after a system restore: %w", err)
 	}
-	slog.InfoContext(ctx, "Discovered project backups after a system restore", "recorded", count)
 	return s.deps.Settings.UpdateSetting(ctx, discoveryPendingKey, "false")
 }
 

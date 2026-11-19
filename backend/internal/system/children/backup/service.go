@@ -234,7 +234,8 @@ func NewService(deps Dependencies) *Service {
 	return service
 }
 
-// projectRoots resolves the main projects directory and every additional one, enabled or not, to container paths.
+// projectRoots resolves the main projects directory and every additional one, enabled or not, to container paths,
+// followed by the resolved folders of the projects that project sync reaches through links.
 func (s *Service) projectRoots(ctx context.Context) ([]string, error) {
 	extras, err := s.settingsService.ProjectsDirectories()
 	if err != nil {
@@ -243,6 +244,42 @@ func (s *Service) projectRoots(ctx context.Context) ([]string, error) {
 	roots := []string{projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")}
 	for _, extra := range extras {
 		roots = append(roots, projects.ResolveConfiguredContainerDirectory(ctx, extra.Path, ""))
+	}
+	if !s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks") {
+		return roots, nil
+	}
+	databaseFile, err := s.databaseFile()
+	if err != nil {
+		return nil, err
+	}
+	data := filepath.Dir(databaseFile)
+	if resolved, resolveErr := filepath.EvalSymlinks(data); resolveErr == nil {
+		data = resolved
+	}
+	for _, root := range slices.Clone(roots) {
+		discovered, discoverErr := projects.DiscoverProjectDirectories(ctx, projects.DiscoverOptions{
+			Root:               root,
+			GlobalEnvDirectory: roots[0],
+			SkipDirectories:    s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
+			MaxDepth:           s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
+			FollowSymlinks:     true,
+		})
+		if discoverErr != nil {
+			if !errors.Is(discoverErr, os.ErrNotExist) {
+				slog.WarnContext(ctx, "Unable to find linked projects to leave out of system backups", "path", root, "error", discoverErr)
+			}
+			continue
+		}
+		for _, project := range discovered {
+			resolved, resolveErr := filepath.EvalSymlinks(project.Path)
+			switch {
+			case resolveErr != nil || resolved == filepath.Clean(project.Path):
+			case kit.FilePathMatches(data, resolved):
+				slog.WarnContext(ctx, "Linked project is Arcane's data folder or holds it; system backups keep it", "path", project.Path, "target", resolved)
+			default:
+				roots = append(roots, resolved)
+			}
+		}
 	}
 	return roots, nil
 }

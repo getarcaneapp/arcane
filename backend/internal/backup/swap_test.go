@@ -114,6 +114,39 @@ func TestSwapCreatesMissingProtectedParent(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestSwapUndoesFailedApply(t *testing.T) {
+	data := t.TempDir()
+	staging := SwapStagingPrefix + "snap"
+	writeSwapFiles(t, data, map[string]string{
+		"arcane.db":                    "live database",
+		"gone.txt":                     "not in the backup",
+		staging + "/arcane.db":         "restored database",
+		staging + "/stacks/readme.txt": "restored",
+		staging + "/zzz.txt":           "vanishes before the swap",
+	})
+	liveDatabase := swapInode(t, filepath.Join(data, "arcane.db"))
+
+	plan, err := PlanSwap(t.Context(), types.RecoveryRestoreSwap{Directory: data, ID: "snap", Preserve: []string{"stacks/apps"}})
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(filepath.Join(data, staging, "zzz.txt")))
+	err = plan.Apply(t.Context())
+	require.ErrorContains(t, err, "move restored zzz.txt into place")
+	require.ErrorIs(t, err, ErrSwapNotApplied)
+	require.NotContains(t, err.Error(), "undo the partial swap")
+
+	require.Equal(t, liveDatabase, swapInode(t, filepath.Join(data, "arcane.db")))
+	content, err := os.ReadFile(filepath.Join(data, "gone.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "not in the backup", string(content))
+	content, err = os.ReadFile(filepath.Join(data, staging, "stacks", "readme.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "restored", string(content))
+	for _, removed := range []string{"stacks", "zzz.txt", SwapTrashPrefix + "snap"} {
+		_, statErr := os.Lstat(filepath.Join(data, removed))
+		require.ErrorIs(t, statErr, os.ErrNotExist, removed)
+	}
+}
+
 func TestPlanSwapRejectsUnsafePlansBeforeAnyChange(t *testing.T) {
 	tests := []struct {
 		prepare  func(t *testing.T, data string)

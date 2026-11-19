@@ -1930,8 +1930,15 @@ func TestGlobalResumeAppliesRetentionAfterAFailedBackup(t *testing.T) {
 
 // projectSnapshot is a project snapshot found in the local repository, or on the S3 destination when one is given.
 func projectSnapshot(id, destinationID, label string, age time.Duration, tags ...string) foundSnapshot {
-	snapshot := backup.DiscoveredSnapshot{ID: id, Time: time.Now().Add(-age).UTC(), Label: label, Tags: append([]string{backup.ProjectSnapshotTag}, tags...)}
-	snapshot.Summary.TotalBytesProcessed = 2048
+	snapshot := backup.DiscoveredSnapshot{
+		ID:    id,
+		Time:  time.Now().Add(-age).UTC(),
+		Label: label,
+		Tags:  append([]string{backup.ProjectSnapshotTag}, tags...),
+		Summary: struct {
+			TotalBytesProcessed int64 `json:"total_bytes_processed"`
+		}{TotalBytesProcessed: 2048},
+	}
 	return foundSnapshot{source: snapshotSource{password: "", id: id, repository: backup.Repository{}}, s3DestinationID: destinationID, snapshot: snapshot}
 }
 
@@ -2048,6 +2055,15 @@ func TestDiscoveryRecordsMissingProjectBackups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Zero(t, recorded)
+}
+
+func TestDiscoveryContinuesPastAFailingRepository(t *testing.T) {
+	f := newPolicyFixture(t)
+	recorded, err := f.service.DiscoverBackups(t.Context(), DiscoverOptions{S3DestinationIDs: []string{"missing", f.destination}, Local: false})
+	require.ErrorContains(t, err, "check S3 destination missing")
+	require.Zero(t, recorded)
+	// Both listings still checked the reachable destination after the failing one.
+	require.EqualValues(t, 2, f.s3Requests.Load())
 }
 
 func TestDiscoveryAfterRestoreClearsItsRequestOnlyOnSuccess(t *testing.T) {

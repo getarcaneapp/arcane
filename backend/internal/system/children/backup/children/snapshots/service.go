@@ -59,7 +59,8 @@ type (
 		LocalRepository  func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
 		RemoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error)
 		DatabaseFile     func() (string, error)
-		// ProjectRoots lists the main projects directory first, then every additional one, enabled or not.
+		// ProjectRoots lists the main projects directory first, then every additional one, enabled or not, then the
+		// folders that followed project links resolve to.
 		ProjectRoots        func(ctx context.Context) ([]string, error)
 		RecoveryEnvironment func(ctx context.Context) map[string]string
 		GitWorkDirectory    string
@@ -600,6 +601,14 @@ func (s *Service) PlanRestore(
 	if err != nil {
 		return RestorePlan{}, fmt.Errorf("plan system restore: %w", err)
 	}
+	if snapshot.layout.projectsPath == "" {
+		stages, err = withoutMissingMountStages(stages, snapshot.layout.dataPath, func(folder string) ([]string, error) {
+			return s.engine.ListSnapshotFiles(ctx, dockerClient, snapshot.repository, key, snapshot.snapshotID, folder+"/", false)
+		})
+		if err != nil {
+			return RestorePlan{}, fmt.Errorf("plan system restore: %w", err)
+		}
+	}
 	return RestorePlan{SnapshotID: snapshot.snapshotID, ProjectsIncluded: (snapshot.layout.projectsPath != ""), Stages: stages}, nil
 }
 
@@ -691,7 +700,7 @@ func hostSource(mounts []container.MountPoint, directory string) (string, bool) 
 }
 
 // projectRootsInData returns, relative to the data directory, every project root inside it by container path, link
-// target or host folder, and refuses a root that is the data directory itself.
+// target, host folder or a mount inside the data directory, and refuses a root that is the data directory itself.
 func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	dataSource, dataMounted := hostSource(mounts, data)
@@ -706,8 +715,9 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 		if resolved, err := filepath.EvalSymlinks(root); err == nil {
 			candidates = append(candidates, [2]string{path.Clean(filepath.ToSlash(resolved)), resolvedData})
 		}
-		if source, mounted := hostSource(mounts, cleaned); mounted && dataMounted {
-			candidates = append(candidates, [2]string{source, dataSource})
+		rootSource, rootMounted := hostSource(mounts, cleaned)
+		if rootMounted && dataMounted {
+			candidates = append(candidates, [2]string{rootSource, dataSource})
 		}
 		for _, candidate := range candidates {
 			if !kit.FilePathMatches(candidate[0], candidate[1]) {
@@ -721,6 +731,23 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 				))
 			}
 			relatives = append(relatives, strings.TrimPrefix(candidate[0], candidate[1]+"/"))
+		}
+		if !rootMounted {
+			continue
+		}
+		// A bind mount inside the data directory that shows the root, or part of it, is projects; one that holds the
+		// root maps the root to its path in the data directory. Volume mounts are skipped: their subpath is unknown.
+		for _, nested := range mounts {
+			destination := path.Clean(filepath.ToSlash(nested.Destination))
+			relative, inside := strings.CutPrefix(destination, data+"/")
+			nestedSource, nestedMounted := hostSource(mounts, destination)
+			switch {
+			case !inside || !nestedMounted || nested.Type != mount.TypeBind:
+			case kit.FilePathMatches(nestedSource, rootSource):
+				relatives = append(relatives, relative)
+			case kit.FilePathMatches(rootSource, nestedSource):
+				relatives = append(relatives, path.Join(relative, strings.TrimPrefix(rootSource, nestedSource+"/")))
+			}
 		}
 	}
 	slices.Sort(relatives)
@@ -1212,6 +1239,50 @@ func stagedRestoreStages(
 		})
 	}
 	return stages, nil
+}
+
+// withoutMissingMountStages drops each nested mount stage whose path the snapshot lacks, as Rustic would fail on it
+// after the swap; the mount stays preserved, so the restore leaves it as it is. A file mount restores as before.
+func withoutMissingMountStages(
+	stages []types.RecoveryRestoreStage,
+	dataPath string,
+	list func(folder string) ([]string, error),
+) (
+	[]types.RecoveryRestoreStage,
+	error,
+) {
+	listings := make(map[string][]string)
+	kept := make([]types.RecoveryRestoreStage, 0, len(stages))
+	for _, stage := range stages {
+		if stage.Swap != nil {
+			kept = append(kept, stage)
+			continue
+		}
+		present, folder := true, dataPath
+		names := strings.Split(strings.TrimPrefix(strings.TrimPrefix(stage.SourcePath, dataPath), "/"), "/")
+		for index, name := range names {
+			listed, listedBefore := listings[folder]
+			if !listedBefore {
+				var err error
+				if listed, err = list(folder); err != nil {
+					return nil, fmt.Errorf("check %s in the backup: %w", stage.SourcePath, err)
+				}
+				listings[folder] = listed
+			}
+			folder = path.Join(folder, name)
+			// Only the steps above the mount must be folders.
+			last := index == len(names)-1
+			if present = slices.ContainsFunc(listed, func(entry string) bool {
+				return (last || strings.HasSuffix(entry, "/")) && path.Join("/", entry) == folder
+			}); !present {
+				break
+			}
+		}
+		if present {
+			kept = append(kept, stage)
+		}
+	}
+	return kept, nil
 }
 
 func (s *Service) Create(

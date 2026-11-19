@@ -45,6 +45,9 @@ const (
 	SwapTrashPrefix   = ".arcane-snapshot-trash-"
 )
 
+// ErrSwapNotApplied marks a failed swap that changed nothing or undid every change it made.
+var ErrSwapNotApplied = errors.New("the live data was left as it was")
+
 // RemoveSwapLeftovers removes the staging and trash folders an earlier staged restore left in directory.
 func RemoveSwapLeftovers(ctx context.Context, directory string) error {
 	root := acfs.Root{Path: directory}
@@ -186,29 +189,59 @@ func (p *SwapPlan) children(ctx context.Context, relative string) (map[string]ac
 }
 
 // Apply removes live entries missing from the backup first, so stale SQLite sidecars are gone before a database moves
-// in, then moves each staged entry into place; replaced entries wait in the trash until the swap finishes.
-func (p SwapPlan) Apply(ctx context.Context) error {
-	if err := p.root.Mkdir(ctx, "/"+p.trash, 0o700); err != nil {
-		return fmt.Errorf("create the restore trash folder: %w", err)
+// in, then moves each staged entry into place; replaced entries wait in the trash until the swap finishes. A failed
+// swap undoes its finished steps in reverse and reports ErrSwapNotApplied once the live data is as it was.
+func (p SwapPlan) Apply(ctx context.Context) (err error) {
+	if err = p.root.Mkdir(ctx, "/"+p.trash, 0o700); err != nil {
+		return fmt.Errorf("create the restore trash folder: %w; %w", err, ErrSwapNotApplied)
+	}
+	undoCtx := context.WithoutCancel(ctx)
+	var undo []func() error
+	defer func() {
+		if err == nil {
+			return
+		}
+		var undoErr error
+		for _, step := range slices.Backward(undo) {
+			undoErr = errors.Join(undoErr, step())
+		}
+		if undoErr == nil {
+			undoErr = p.root.Remove(undoCtx, "/"+p.trash)
+		}
+		if undoErr != nil {
+			err = errors.Join(err, fmt.Errorf("undo the partial swap: %w", undoErr))
+			return
+		}
+		err = fmt.Errorf("%w; %w", err, ErrSwapNotApplied)
+	}()
+	move := func(source, target string) error {
+		if renameErr := p.root.Rename(ctx, "/"+source, "/"+target); renameErr != nil {
+			return renameErr
+		}
+		undo = append(undo, func() error { return p.root.Rename(undoCtx, "/"+target, "/"+source) })
+		return nil
 	}
 	discarded := 0
 	discard := func(entryPath string) error {
 		discarded++
-		if err := p.root.Rename(ctx, "/"+entryPath, "/"+path.Join(p.trash, strconv.Itoa(discarded))); err != nil {
-			return fmt.Errorf("move %s aside: %w", entryPath, err)
+		if discardErr := move(entryPath, path.Join(p.trash, strconv.Itoa(discarded))); discardErr != nil {
+			return fmt.Errorf("move %s aside: %w", entryPath, discardErr)
 		}
 		return nil
 	}
 	for _, entryPath := range p.removals {
-		if err := discard(entryPath); err != nil {
-			return err
+		if discardErr := discard(entryPath); discardErr != nil {
+			return discardErr
 		}
 	}
 	for _, placement := range p.placements {
 		if placement.folder != nil {
 			mode := os.FileMode(placement.folder.UnixMode)
-			err := errors.Join(
-				p.root.Mkdir(ctx, "/"+placement.path, mode.Perm()),
+			if err = p.root.Mkdir(ctx, "/"+placement.path, mode.Perm()); err != nil {
+				return fmt.Errorf("create folder %s: %w", placement.path, err)
+			}
+			undo = append(undo, func() error { return p.root.Remove(undoCtx, "/"+placement.path) })
+			err = errors.Join(
 				p.root.Chmod(ctx, "/"+placement.path, mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)),
 				p.root.Lchown(ctx, "/"+placement.path, placement.folder.UID, placement.folder.GID),
 			)
@@ -218,16 +251,16 @@ func (p SwapPlan) Apply(ctx context.Context) error {
 			continue
 		}
 		if placement.replace {
-			if err := discard(placement.path); err != nil {
-				return err
+			if discardErr := discard(placement.path); discardErr != nil {
+				return discardErr
 			}
 		}
-		if err := p.root.Rename(ctx, "/"+path.Join(p.staging, placement.path), "/"+placement.path); err != nil {
+		if err = move(path.Join(p.staging, placement.path), placement.path); err != nil {
 			return fmt.Errorf("move restored %s into place: %w", placement.path, err)
 		}
 	}
-	if err := errors.Join(p.root.RemoveAll(ctx, "/"+p.staging), p.root.RemoveAll(ctx, "/"+p.trash)); err != nil {
-		slog.WarnContext(ctx, "Restored data is in place, but the staging folders could not be removed", "directory", p.root.Path, "error", err)
+	if cleanupErr := errors.Join(p.root.RemoveAll(ctx, "/"+p.staging), p.root.RemoveAll(ctx, "/"+p.trash)); cleanupErr != nil {
+		slog.WarnContext(ctx, "Restored data is in place, but the staging folders could not be removed", "directory", p.root.Path, "error", cleanupErr)
 	}
 	return nil
 }
