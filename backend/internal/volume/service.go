@@ -377,13 +377,9 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 	}
 }
 
-// listBackups pages one volume's backup history. Every row is a volume backup, so a type filter without volume matches
-// none.
+// listBackups pages one volume's backup history. Every row is a volume backup, so it ignores a type filter.
 func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
-	if kinds := kit.TrimNonEmpty(strings.Split(params.Filters["type"], ",")); len(kinds) > 0 && !slices.Contains(kinds, string(types.BackupManagementTypeVolume)) {
-		query = query.Where("1 = 0")
-	}
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"

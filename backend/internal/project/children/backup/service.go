@@ -130,10 +130,17 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 
-	// globalRun runs a global policy; a run started by hand also carries its requester.
+	// globalRun runs a global policy; a run started by hand also carries its requester and the claim on the policy's
+	// admission its start parked.
 	globalRun struct {
 		Requester *types.BackupRequester `json:"requester,omitempty"`
 		PolicyID  string                 `json:"policyId"`
+		Claim     string                 `json:"claim,omitempty"`
+	}
+
+	// globalPlan is the checkpoint of the projects a global run backs up.
+	globalPlan struct {
+		ProjectIDs []string `json:"projectIds"`
 	}
 
 	// admittedRun is a scheduled backup's plan, resolved under the admissions its leases hold, and the policy ID its
@@ -225,21 +232,24 @@ type (
 )
 
 const (
-	admissionScope    = "project-backup"
-	snapshotRoot      = "/snapshot"
-	restoreRoot       = "/dest"
-	manifestName      = "arcane-project.json"
-	targetType        = "project_backup"
-	restoreTargetType = "project_restore"
-	defaultSchedule   = "0 2 * * *"
-	backupsTable      = "project_backups"
-	globalConfigKey   = "projectBackupConfig"
+	admissionScope = "project-backup"
+	// globalAdmissionScope keeps one run of each global policy at a time; it is always taken before a project's.
+	globalAdmissionScope = "global-project-backup"
+	snapshotRoot         = "/snapshot"
+	restoreRoot          = "/dest"
+	manifestName         = "arcane-project.json"
+	targetType           = "project_backup"
+	restoreTargetType    = "project_restore"
+	defaultSchedule      = "0 2 * * *"
+	backupsTable         = "project_backups"
+	globalConfigKey      = "projectBackupConfig"
 	// globalPlanTarget records the projects a global policy's run backs up.
 	globalPlanTarget = "global-project-plan"
 )
 
 var (
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
+	errGlobalRunning      = common.Classify(common.ErrConflict, errors.New("this backup policy is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
 	errProjectSkipped     = errors.New("the project is no longer selected or has its own enabled backup policy")
@@ -1394,11 +1404,11 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
-// awaitCheckpointAdmissions waits until every admission the checkpointed backups need is free, then lets them go, so a
-// resume can take them.
+// awaitCheckpointAdmissions waits until every admission the still-running checkpointed backups need is free, then lets
+// them go, so a resume can take them.
 func (s *Service) awaitCheckpointAdmissions(ctx context.Context, previous types.SchedulerRun) error {
 	for _, target := range previous.Outcome.Targets {
-		if target.ResourceType != targetType || len(target.RecoveryData) == 0 {
+		if target.ResourceType != targetType || target.Status != types.RunStatusRunning || len(target.RecoveryData) == 0 {
 			continue
 		}
 		var recorded plan
@@ -1840,13 +1850,28 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 	case !policy.Enabled:
 		return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
 	}
-	activityID, err := s.flow.Submit(ctx, s.global, globalRun{Requester: &requester, PolicyID: policyID}, activitylib.StartRequest{
+	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, globalAdmissionScope, policyID)
+	if err != nil {
+		return types.BackupRunAccepted{}, err
+	}
+	if !admitted {
+		return types.BackupRunAccepted{}, errGlobalRunning
+	}
+	input := globalRun{Requester: &requester, PolicyID: policyID, Claim: uuid.NewV7().String()}
+	releaseHeld := s.deps.Engine.Hold(globalAdmissionScope, policyID, input.Claim, lease)
+	activityID, err := s.flow.Submit(ctx, s.global, input, activitylib.StartRequest{
 		StartedBy: &user,
 		Metadata:  database.JSON{"action": "run_project_backups", "policyId": policyID},
 	})
 	if err != nil {
+		releaseHeld(ctx)
 		return types.BackupRunAccepted{}, err
 	}
+	// A run canceled before its task starts never takes the parked lease.
+	go func() {
+		_, _ = s.flow.Wait(context.WithoutCancel(ctx), s.global, activityID)
+		releaseHeld(context.WithoutCancel(ctx))
+	}()
 	return types.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
@@ -1904,6 +1929,21 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 // scheduled backup. A resumed run first finishes the backups the interrupted attempt checkpointed, restarting the
 // containers they stopped, then backs up the rest of the projects that attempt planned.
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
+	lease, admitted, err := s.deps.Engine.AcquireRun(ctx, globalAdmissionScope, input.PolicyID, input.Claim)
+	switch {
+	case err == nil && !admitted && input.Requester == nil:
+		// A scheduled run or a fallback waits for the other run of the policy.
+		lease, err = s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
+	case err == nil && !admitted && len(previous.Outcome.Targets) > 0:
+		// A resumed run may have left containers stopped, so it is handed back instead of failing.
+		return types.SchedulerOutcome{}, fmt.Errorf("%w: %w", actor.ErrJobRejected, errGlobalRunning)
+	case err == nil && !admitted:
+		return types.SchedulerOutcome{}, errGlobalRunning
+	}
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	defer lease.Release(context.WithoutCancel(ctx))
 	planned, err := s.planGlobal(ctx, input.PolicyID, previous)
 	if errors.Is(err, errPolicyGone) {
 		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
@@ -1998,13 +2038,13 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 // planGlobal returns the projects the run backs up: the ones an interrupted attempt planned, or else the ones the
 // enabled policy selects now, saved before any is backed up so a resumed run keeps to them.
 func (s *Service) planGlobal(ctx context.Context, policyID string, previous types.SchedulerRun) ([]string, error) {
-	var planned []string
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == globalPlanTarget && len(target.RecoveryData) > 0
 	})
 	if index >= 0 {
-		err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &planned)
-		return planned, err
+		var recorded globalPlan
+		err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded)
+		return recorded.ProjectIDs, err
 	}
 	policy, err := s.globalPolicy(policyID)
 	if err != nil {
@@ -2017,10 +2057,11 @@ func (s *Service) planGlobal(ctx context.Context, policyID string, previous type
 	if err != nil {
 		return nil, err
 	}
+	var planned []string
 	for _, project := range selectProjects(*policy, references) {
 		planned = append(planned, project.ID)
 	}
-	frozen, err := json.Marshal(planned)
+	frozen, err := json.Marshal(globalPlan{ProjectIDs: planned})
 	if err != nil {
 		return nil, err
 	}

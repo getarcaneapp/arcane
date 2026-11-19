@@ -466,7 +466,8 @@
 	// Project runs take each project's own turn, so they never hold up a system or volume backup.
 	const projectActivity = useBackupActivity(
 		() => '0',
-		(activity) => activity.metadata?.['action'] === 'run_project_backups',
+		(activity) =>
+			activity.metadata?.['action'] === 'run_project_backups' || activity.metadata?.['action'] === 'scheduled_project_backups',
 		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
 		() => 'projects'
 	);
@@ -978,7 +979,11 @@
 								onEdit={() => openSchedule('project', policy.id)}
 								editDisabled={isReadOnly || !canUpdateBackupPolicies}
 								onRun={() => runPolicy('project', policy.id)}
-								runDisabled={isReadOnly || !canCreateBackups || !policy.enabled || runningPolicyId !== null}
+								runDisabled={isReadOnly ||
+									!canCreateBackups ||
+									!policy.enabled ||
+									projectActivity.activeIds.length > 0 ||
+									runningPolicyId !== null}
 								running={runningPolicyId === policy.id}
 							/>
 						{/each}

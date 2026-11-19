@@ -837,7 +837,6 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(harness.Runtime))
-	harness.Start(t)
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{Ctx: t.Context(), DB: db, Config: &config.Config{}, Env: settings.Env{}})
@@ -872,8 +871,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		Settings:       settingsService,
 		Project: func(_ context.Context, projectID string) (types.Project, error) {
 			project := testProject()
-			project.ID = projectID
-			return project, nil
+			return types.Project{ID: projectID, Name: project.Name, ComposeName: project.ComposeName, Path: project.Path, Volumes: project.Volumes}, nil
 		},
 		ProjectName:  func(context.Context, string) (string, error) { return "Web", nil },
 		ListProjects: func(context.Context) ([]types.ProjectReference, error) { return slices.Clone(*projects), nil },
@@ -887,6 +885,8 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		Scheduler: jobs,
 		Admission: gate,
 	})
+	require.NoError(t, service.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
 	return policyFixture{
 		db: db, engine: engine, service: service, jobs: jobs, projects: projects, started: started, s3Requests: requests, destination: destination.ID,
 	}
@@ -1237,8 +1237,7 @@ func TestUpdateGlobalPoliciesValidatesAndSchedules(t *testing.T) {
 	require.Equal(t, "schedule", fieldErr.Field)
 
 	// Disabling one policy and leaving out the others unschedules all of them.
-	disabled := base
-	disabled.ID, disabled.Enabled = policies[0].ID, false
+	disabled := types.UpdateBackupPolicy{ID: policies[0].ID, Schedule: "0 2 * * *", RetentionCount: 3, LocalEnabled: true}
 	policies = f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{UpdateBackupPolicy: disabled, SelectionMode: all})
 	require.Len(t, policies, 1)
 	require.False(t, policies[0].Enabled)
@@ -1346,7 +1345,7 @@ func TestGlobalBackupRereadsThePolicyUnderEachAdmission(t *testing.T) {
 	targets := recorded()
 	require.Len(t, targets, 3)
 	require.Equal(t, globalPlanTarget, targets[0].ID)
-	require.JSONEq(t, `["p1","p2"]`, string(targets[0].RecoveryData))
+	require.JSONEq(t, `{"projectIds":["p1","p2"]}`, string(targets[0].RecoveryData))
 	for _, target := range targets[1:] {
 		require.Equal(t, types.RunStatusSkipped, target.Status, target.ID)
 	}
@@ -1387,7 +1386,7 @@ func TestGlobalBackupResumesWithoutLeavingContainersStopped(t *testing.T) {
 		Volumes: []types.ProjectVolume{{Name: "web_data", Included: true}},
 	})
 	require.NoError(t, err)
-	planned, err := json.Marshal([]string{"p1", "p2"})
+	planned, err := json.Marshal(globalPlan{ProjectIDs: []string{"p1", "p2"}})
 	require.NoError(t, err)
 	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
 		{ResourceType: "backup_plan", ID: globalPlanTarget, Status: types.RunStatusSucceeded, RecoveryData: planned},
@@ -1434,6 +1433,113 @@ func TestGlobalBackupResumesWithoutLeavingContainersStopped(t *testing.T) {
 	require.Equal(t, []string{"b1"}, f.backupIDs(t))
 }
 
+func TestGlobalPlanPassesStartupRecovery(t *testing.T) {
+	f := newPolicyFixture(t)
+	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true}
+	policies := f.globalPolicies(t,
+		types.UpdateGlobalProjectBackupPolicy{UpdateBackupPolicy: base, SelectionMode: types.SystemVolumeSelectionAllowlist, ProjectIDs: []string{"p2"}},
+		types.UpdateGlobalProjectBackupPolicy{UpdateBackupPolicy: base, SelectionMode: types.SystemVolumeSelectionAllowlist, ProjectIDs: []string{}},
+	)
+	for index, expected := range [][]string{{"p2"}, {}} {
+		ctx, recorded := progress(t.Context())
+		planned, err := f.service.planGlobal(ctx, policies[index].ID, types.SchedulerRun{})
+		require.NoError(t, err)
+		require.ElementsMatch(t, expected, planned)
+		targets := recorded()
+		require.Len(t, targets, 1)
+		// Startup decodes every checkpoint of an unfinished run into this struct and refuses to start on anything else.
+		var checkpoint struct {
+			BackupID string `json:"backupId"`
+		}
+		require.NoError(t, json.Unmarshal(targets[0].RecoveryData, &checkpoint))
+		require.Empty(t, checkpoint.BackupID)
+		// A resumed run keeps to the plan.
+		resumed, err := f.service.planGlobal(t.Context(), policies[index].ID, types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: targets}})
+		require.NoError(t, err)
+		require.ElementsMatch(t, expected, resumed)
+	}
+}
+
+func TestGlobalPolicyRunsOneAtATime(t *testing.T) {
+	f := newPolicyFixture(t)
+	policy := f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true},
+		SelectionMode:      types.SystemVolumeSelectionAllowlist,
+		ProjectIDs:         []string{"p1"},
+	})[0]
+	// p1 has its own policy, so each run skips it once admitted; until then a run waits for its admission.
+	f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true})
+	held := f.hold(t, admissionScope, "p1")
+	accepted, err := f.service.StartGlobal(t.Context(), types.Actor{}, policy.ID)
+	require.NoError(t, err)
+
+	// Run now fails fast while the policy runs.
+	_, err = f.service.StartGlobal(t.Context(), types.Actor{}, policy.ID)
+	require.ErrorIs(t, err, errGlobalRunning)
+	manual := globalRun{Requester: &types.BackupRequester{}, PolicyID: policy.ID}
+	_, err = f.service.backUpGlobal(t.Context(), manual, types.SchedulerRun{})
+	require.ErrorIs(t, err, errGlobalRunning)
+	require.NotErrorIs(t, err, actor.ErrJobRejected)
+	// A resumed manual run may have left containers stopped, so it is handed back instead.
+	resumed := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
+		{ResourceType: "backup_plan", ID: globalPlanTarget, Status: types.RunStatusSucceeded, RecoveryData: []byte(`{"projectIds":["p1"]}`)},
+	}}}
+	_, err = f.service.backUpGlobal(t.Context(), manual, resumed)
+	require.ErrorIs(t, err, actor.ErrJobRejected)
+
+	// A scheduled run waits for the running one before it plans anything.
+	ctx, recorded := progress(t.Context())
+	scheduled := make(chan types.SchedulerOutcome, 1)
+	go func() {
+		outcome, runErr := f.service.backUpGlobal(ctx, globalRun{PolicyID: policy.ID}, types.SchedulerRun{})
+		assert.NoError(t, runErr)
+		scheduled <- outcome
+	}()
+	select {
+	case <-scheduled:
+		t.Fatal("the scheduled run started while the policy was running")
+	case <-time.After(300 * time.Millisecond):
+	}
+	require.Empty(t, recorded())
+	held.Release(t.Context())
+	outcome, err := f.service.flow.Wait(t.Context(), f.service.global, accepted.ActivityID)
+	require.NoError(t, err)
+	require.Equal(t, "Backed up 0 projects; 1 skipped", outcome.Message)
+	select {
+	case outcome = <-scheduled:
+		require.Equal(t, "Backed up 0 projects; 1 skipped", outcome.Message)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the scheduled run did not start after the running one finished")
+	}
+	// Every run released the policy's admission.
+	f.hold(t, globalAdmissionScope, policy.ID).Release(t.Context())
+}
+
+func TestCheckpointAdmissionsSkipFinishedProjects(t *testing.T) {
+	f := newPolicyFixture(t)
+	checkpoint := func(projectID string) []byte {
+		encoded, err := json.Marshal(plan{BackupID: projectID, ProjectID: projectID, Volumes: []types.ProjectVolume{{Name: projectID + "_data", Included: true}}})
+		require.NoError(t, err)
+		return encoded
+	}
+	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
+		{ResourceType: targetType, ID: "p1", Status: types.RunStatusSucceeded, RecoveryData: checkpoint("p1")},
+		{ResourceType: targetType, ID: "p2", Status: types.RunStatusRunning, RecoveryData: checkpoint("p2")},
+	}}}
+	// Another run holds the project the interrupted run already finished; recovery does not wait for it.
+	held := f.hold(t, admissionScope, "p1")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, f.service.awaitCheckpointAdmissions(ctx, previous))
+	held.Release(t.Context())
+	// It still waits for the project left running.
+	held = f.hold(t, backup.VolumeAdmissionScope, "p2_data")
+	ctx, cancel = context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, f.service.awaitCheckpointAdmissions(ctx, previous), context.DeadlineExceeded)
+	held.Release(t.Context())
+}
+
 func TestGlobalRetentionKeepsTheNewestBackupsPerProject(t *testing.T) {
 	f := newPolicyFixture(t)
 	policy := f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{
@@ -1467,8 +1573,7 @@ func TestGlobalSeriesStayManagedWhileTheirPolicySelectsTheProject(t *testing.T) 
 	f.remoteBackup(t, "shop", types.VolumeBackupTriggerScheduled, series(kept, "p2"), time.Hour)
 	f.remoteBackup(t, "wiki", types.VolumeBackupTriggerScheduled, series(kept, "p3"), time.Hour)
 	f.remoteBackup(t, "deleted-policy", types.VolumeBackupTriggerScheduled, series(removed, "p1"), time.Hour)
-	keptUpdate := base
-	keptUpdate.ID = kept.ID
+	keptUpdate := types.UpdateBackupPolicy{ID: kept.ID, Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true}
 	f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{UpdateBackupPolicy: keptUpdate, SelectionMode: types.SystemVolumeSelectionAllowlist, ProjectIDs: []string{"p1", "p2"}})
 	// p2 was deleted.
 	*f.projects = []types.ProjectReference{{ID: "p1", Name: "Web"}, {ID: "p3", Name: "Wiki"}}
