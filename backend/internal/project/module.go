@@ -65,6 +65,14 @@ func New(p ModuleParams) *Module {
 		ActiveContainers: p.Service.activeProjectContainers,
 		ComposeFiles:     p.Service.loadedComposeFiles,
 		LockProject:      p.Service.LockProject,
+		SoleDirectory:    p.Service.soleDirectory,
+		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return false, err
+			}
+			return p.Service.runsArcane(ctx, proj), nil
+		},
 		Project: func(ctx context.Context, projectID string) (types.Project, error) {
 			return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
 		},

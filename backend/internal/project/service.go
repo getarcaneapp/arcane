@@ -2466,10 +2466,14 @@ func (b projectBundles) restoreBackupVolumes(
 		if err != nil {
 			return created, err
 		}
-		if _, err = b.local.deps.CreateVolume(ctx, options, opts.User); err != nil {
-			return created, fmt.Errorf("create volume %s: %w", target.Name, err)
+		// As in an import, a volume that exists by now is refused, and only one this call made counts as created.
+		made, err := b.local.deps.CreateEmptyVolume(ctx, options, nil)
+		if made {
+			created = append(created, target)
 		}
-		created = append(created, target)
+		if err != nil {
+			return created, err
+		}
 		targets = append(targets, projectbackup.RestoreVolume{Key: target.Key, Snapshot: included[index].Name, Name: target.Name})
 	}
 	return created, b.backups.RestoreTo(ctx, projectbackup.RestoreToOptions{ProjectID: opts.ProjectID, BackupID: opts.BackupID, Volumes: targets})
@@ -2734,6 +2738,53 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	return nil
 }
 
+// runsArcane reports whether the project's containers include the running Arcane container; a failed listing reports
+// false, skipping the guard.
+func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
+	containers, err := s.details.ComposeContainers(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
+		return false
+	}
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c container.Summary) bool {
+		return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+			CurrentErr:         currentContainerErr,
+			Labels:             c.Labels,
+			ContainerID:        c.ID,
+			CurrentContainerID: currentContainerID,
+		})
+	})
+}
+
+// soleDirectory refuses a project directory that is a projects directory or holds another project, since restoring
+// its files would replace theirs too.
+func (s *ProjectService) soleDirectory(ctx context.Context, project types.Project) error {
+	roots, err := s.projectsRoots(ctx)
+	if err != nil {
+		return err
+	}
+	for _, root := range roots {
+		if projects.IsSafeSubdirectory(project.Path, root.ContainerPath) {
+			return common.Classify(common.ErrValidation, fmt.Errorf(
+				"project %s is the projects directory %s, so restoring its files would replace other projects' files too; restore only its volumes", project.Name, root.ContainerPath,
+			))
+		}
+	}
+	var others []Project
+	if err = s.db.WithContext(ctx).Select("name", "path").Where("id <> ?", project.ID).Find(&others).Error; err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+	for _, other := range others {
+		if projects.IsSafeSubdirectory(project.Path, other.Path) {
+			return common.Classify(common.ErrValidation, fmt.Errorf(
+				"the directory of project %s holds project %s, so restoring its files would replace that project's files too; restore only its volumes", project.Name, other.Name,
+			))
+		}
+	}
+	return nil
+}
+
 func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
 	unlock, err := s.LockProject(ctx, "redeploy project", projectID)
 	if err != nil {
@@ -2750,22 +2801,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return resolveProjectComposeFileErr
 	}
 
-	// Arcane's own container goes through the system upgrade flow; a failed listing skips the guard.
-	if containers, listErr := s.details.ComposeContainers(ctx); listErr != nil {
-		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", listErr)
-	} else {
-		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-		projectContainers := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
-		if slices.ContainsFunc(projectContainers, func(c container.Summary) bool {
-			return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
-				CurrentErr:         currentContainerErr,
-				Labels:             c.Labels,
-				ContainerID:        c.ID,
-				CurrentContainerID: currentContainerID,
-			})
-		}) {
-			return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
-		}
+	// Arcane's own container goes through the system upgrade flow.
+	if s.runsArcane(ctx, proj) {
+		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	}
 
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)

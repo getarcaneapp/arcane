@@ -358,6 +358,40 @@ func TestStartRestoreValidatesTheSelection(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrNotFound)
 }
 
+func TestStartRestoreRefusesRestoresThatReachBeyondTheProject(t *testing.T) {
+	db := newTestDB(t)
+	require.NoError(t, db.Create(&ProjectBackup{
+		BaseModel:       database.BaseModel{ID: "b1", CreatedAt: time.Now()},
+		ProjectID:       "p1",
+		Status:          types.VolumeBackupStatusSucceeded,
+		LocalSnapshotID: "snap",
+		Volumes:         []types.ProjectBackupVolume{{Key: "data", Name: "web_data", Included: true}},
+	}).Error)
+	sharedErr := common.Classify(common.ErrValidation, errors.New("project Web is the projects directory"))
+	passed := errors.New("past the checks")
+	start := func(runsArcane bool, request types.RestoreProjectBackupRequest) error {
+		service := NewService(Dependencies{
+			DB:            db,
+			Project:       func(context.Context, string) (types.Project, error) { return testProject(), nil },
+			RunsArcane:    func(context.Context, string) (bool, error) { return runsArcane, nil },
+			SoleDirectory: func(context.Context, types.Project) error { return sharedErr },
+			ActiveContainers: func(context.Context, string) ([]container.Summary, error) {
+				return nil, passed
+			},
+		})
+		_, err := service.StartRestore(t.Context(), StartRestoreOptions{EnvironmentID: "0", ProjectID: "p1", BackupID: "b1", Request: request})
+		return err
+	}
+	// Restoring the files of a project whose directory holds other projects would replace their files too.
+	require.ErrorIs(t, start(false, types.RestoreProjectBackupRequest{}), sharedErr)
+	// Its volumes alone can still be restored.
+	require.ErrorIs(t, start(false, types.RestoreProjectBackupRequest{Files: new(false)}), passed)
+	// A project that runs Arcane would take Arcane down with it.
+	err := start(true, types.RestoreProjectBackupRequest{Files: new(false)})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "runs Arcane itself")
+}
+
 func (f *fakeRestore) step(name string) error {
 	f.calls = append(f.calls, name)
 	return f.fail[name]
@@ -373,8 +407,9 @@ func (f *fakeRestore) steps() restoreSteps {
 		down:   func(context.Context) error { return f.step("down") },
 		deploy: func(context.Context) error { return f.step("deploy") },
 		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
-		create: func(_ context.Context, volumes []client.VolumeCreateOptions) error {
-			return f.step("create " + strings.Join(createdNames(volumes), ","))
+		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
+		create: func(_ context.Context, volumes []client.VolumeCreateOptions) ([]string, error) {
+			return createdNames(volumes), f.step("create " + strings.Join(createdNames(volumes), ","))
 		},
 		restore: func(_ context.Context, opts RestoreToOptions) error {
 			names := make([]string, 0, len(opts.Volumes))
@@ -410,7 +445,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	// The volume the restore created is removed; the one that existed comes back from the safety backup.
 	require.Equal(t, []string{
-		"down", "safety", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
+		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
 		"restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "deploy",
 	}, running.calls)
 	require.Equal(t, err.Error(), running.plans[len(running.plans)-1].Failure)
@@ -422,15 +457,34 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.NotContains(t, stopped.calls, "deploy", "a project that did not run is not deployed")
 	require.Contains(t, stopped.calls, "restore s1 /projects/web shop_data>shop_data")
 
-	// A failed redeploy stops what it started before the safety backup is restored, then deploys again.
+	// A failed redeploy stops what it started before the safety backup is restored, then deploys again; the data was
+	// rolled back, so only the deploy is reported as failed.
 	redeploy := &fakeRestore{fail: map[string]error{"deploy": restoreErr}}
 	err = redeploy.steps().apply(t.Context(), plan(true))
-	require.ErrorContains(t, err, "the rollback failed too")
-	require.ErrorContains(t, err, "restore the safety backup s1")
+	require.ErrorContains(t, err, "rolled back to the safety backup s1, but could not be deployed")
+	require.NotContains(t, err.Error(), "the rollback failed too")
 	require.Equal(t, []string{
-		"down", "safety", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
+		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
 		"down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "deploy",
 	}, redeploy.calls)
+
+	// A safety backup that cannot be restored leaves the project down instead of starting it on half-restored data.
+	undoFailed := &fakeRestore{fail: map[string]error{"verify": restoreErr, "restore s1 /projects/web shop_data>shop_data": errors.New("disk full")}}
+	err = undoFailed.steps().apply(t.Context(), plan(true))
+	require.ErrorContains(t, err, "the rollback failed too")
+	require.ErrorContains(t, err, "the project was left down; restore the safety backup s1")
+	require.Equal(t, []string{
+		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
+		"restore s1 /projects/web shop_data>shop_data", "remove shop_cache",
+	}, undoFailed.calls)
+
+	// A container that started using a volume after the checks stops the restore before anything is written.
+	inUse := &fakeRestore{fail: map[string]error{"in use": common.Classify(common.ErrConflict, errors.New("volume shop_data is mounted"))}}
+	err = inUse.steps().apply(t.Context(), plan(true))
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "nothing was restored")
+	// Nothing was written yet, so the volume a container now uses is left alone and the project is deployed again.
+	require.Equal(t, []string{"down", "safety", "in use", "deploy"}, inUse.calls)
 
 	safetyFailed := &fakeRestore{fail: map[string]error{"safety": restoreErr}}
 	err = safetyFailed.steps().apply(t.Context(), plan(true))

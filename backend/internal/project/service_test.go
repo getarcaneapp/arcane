@@ -10978,6 +10978,39 @@ func TestProjectService_MultipleProjectsDirectories_SyncKeepsUnavailableRootReco
 	assert.NoDirExists(t, missing)
 }
 
+func TestProjectService_SoleDirectoryRefusesDirectoriesHoldingOtherProjects(t *testing.T) {
+	extra := t.TempDir()
+	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{{Path: extra, Enabled: true}})
+	for _, proj := range []Project{
+		{BaseModel: database.BaseModel{ID: "root"}, Name: "root", Path: primary},
+		{BaseModel: database.BaseModel{ID: "group"}, Name: "group", Path: filepath.Join(extra, "group")},
+		{BaseModel: database.BaseModel{ID: "nested"}, Name: "nested", Path: filepath.Join(extra, "group", "nested")},
+		{BaseModel: database.BaseModel{ID: "web"}, Name: "web", Path: filepath.Join(primary, "web")},
+		{BaseModel: database.BaseModel{ID: "web-two"}, Name: "web-two", Path: filepath.Join(primary, "web-two")},
+	} {
+		require.NoError(t, db.Create(&Project{BaseModel: proj.BaseModel, Name: proj.Name, Path: proj.Path, Status: ProjectStatusStopped}).Error)
+	}
+	tests := []struct {
+		wantErr string
+		project types.Project
+	}{
+		{project: types.Project{ID: "root", Name: "root", Path: primary}, wantErr: "is the projects directory"},
+		{project: types.Project{ID: "group", Name: "group", Path: filepath.Join(extra, "group")}, wantErr: "holds project nested"},
+		{project: types.Project{ID: "nested", Name: "nested", Path: filepath.Join(extra, "group", "nested")}},
+		// A sibling whose name starts with the project's is not inside it.
+		{project: types.Project{ID: "web", Name: "web", Path: filepath.Join(primary, "web")}},
+	}
+	for _, tt := range tests {
+		err := svc.soleDirectory(t.Context(), tt.project)
+		if tt.wantErr == "" {
+			require.NoError(t, err, tt.project.Name)
+			continue
+		}
+		require.ErrorIs(t, err, common.ErrValidation, tt.project.Name)
+		require.ErrorContains(t, err, tt.wantErr, tt.project.Name)
+	}
+}
+
 func TestProjectService_EnsureProjectPathUnderRoot_MultipleRoots(t *testing.T) {
 	extra, disabled, outside := t.TempDir(), t.TempDir(), t.TempDir()
 	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
@@ -12145,8 +12178,13 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 			name: "removes what it created when the restore fails", failRestore: true, wantErr: "rustic failed",
 			wantCreated: []string{"shared-data", "copy_data"}, wantDeleted: []string{"shared-data", "copy_data"},
 		},
-		// copy_data was made by someone else when its create failed, so only shared-data is removed.
-		{name: "removes only what it created", failCreate: "copy_data", wantErr: "disk full", wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"}},
+		// Someone else made copy_data after the check, so it is refused and only shared-data is removed.
+		{
+			name: "removes only what it created", failCreate: "copy_data", wantErr: "volume copy_data already exists", conflict: true,
+			wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"},
+		},
+		// An external volume made by someone else after the check is refused, not taken over and later removed.
+		{name: "refuses an external volume made after the check", failCreate: "shared-data", wantErr: "volume shared-data already exists", conflict: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -12200,16 +12238,18 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				names, deleted []string
 			)
 			bundles := projectBundles{backups: snapshots, local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-				CreateVolume: func(_ context.Context, options client.VolumeCreateOptions, _ types.Actor) (*types.Volume, error) {
+				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
 					mu.Lock()
 					defer mu.Unlock()
-					existing[options.Name] = options.Labels
+					assert.Nil(t, root)
 					if options.Name == tt.failCreate {
-						return nil, errors.New("disk full")
+						existing[options.Name] = nil
+						return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
 					}
+					existing[options.Name] = options.Labels
 					created = append(created, options)
 					names = append(names, options.Name)
-					return &types.Volume{Name: options.Name}, nil
+					return true, nil
 				},
 				DeleteVolume: func(_ context.Context, name string, _ bool, _ types.Actor) error {
 					deleted = append(deleted, name)
@@ -12234,7 +12274,7 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				entries, readErr := os.ReadDir(projectsDir)
 				require.NoError(t, readErr)
 				assert.Empty(t, entries)
-				if tt.conflict {
+				if tt.conflict && tt.failCreate == "" {
 					assert.Empty(t, snapshots.restores, "nothing is restored when the new project is refused")
 				}
 				return

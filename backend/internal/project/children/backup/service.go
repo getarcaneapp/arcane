@@ -68,6 +68,10 @@ type (
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
 		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
+		// SoleDirectory refuses a project directory that is a projects directory or holds another project.
+		SoleDirectory func(ctx context.Context, project types.Project) error
+		// RunsArcane reports whether the project's containers include the running Arcane container.
+		RunsArcane func(ctx context.Context, projectID string) (bool, error)
 		// Down brings the project down without removing its volumes and Deploy deploys it; the caller holds the project lock.
 		Down       func(ctx context.Context, projectID string, user types.Actor) error
 		Deploy     func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
@@ -142,7 +146,9 @@ type (
 		Failure     string                       `json:"failure,omitempty"`
 		Volumes     []RestoreVolume              `json:"volumes"`
 		Create      []client.VolumeCreateOptions `json:"create,omitempty"`
-		Files       bool                         `json:"files"`
+		// Created are the volumes this restore created; only these are removed on rollback.
+		Created []string `json:"created,omitempty"`
+		Files   bool     `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
 		MayStop   bool `json:"mayStop"`
 		Running   bool `json:"running"`
@@ -164,7 +170,8 @@ type (
 		down    func(ctx context.Context) error
 		deploy  func(ctx context.Context) error
 		safety  func(ctx context.Context, p restorePlan) (string, error)
-		create  func(ctx context.Context, volumes []client.VolumeCreateOptions) error
+		inUse   func(ctx context.Context, p restorePlan) error
+		create  func(ctx context.Context, volumes []client.VolumeCreateOptions) ([]string, error)
 		restore func(ctx context.Context, opts RestoreToOptions) error
 		verify  func(ctx context.Context, p restorePlan) error
 		remove  func(ctx context.Context, names []string) error
@@ -1091,6 +1098,9 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
+	if checkErr := s.checkInPlace(ctx, project, files); checkErr != nil {
+		return "", checkErr
+	}
 	active, err := s.deps.ActiveContainers(ctx, project.ComposeName)
 	if err != nil {
 		return "", err
@@ -1285,14 +1295,12 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if !slices.Equal(targets, p.Volumes) {
 		return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("the volumes of project %s changed after the restore was requested; start it again", project.Name))
 	}
-	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
-	if err != nil {
-		return restorePlan{}, err
+	// The project's directory or containers can change after the request.
+	if checkErr := s.checkInPlace(ctx, project, p.Files); checkErr != nil {
+		return restorePlan{}, checkErr
 	}
-	for _, name := range p.volumeNames() {
-		if inUse[name] {
-			return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("volume %s is mounted by a running container outside project %s; stop it before restoring", name, project.Name))
-		}
+	if freeErr := s.volumesFree(ctx, project, p.volumeNames()); freeErr != nil {
+		return restorePlan{}, freeErr
 	}
 	create, err := s.missingVolumes(ctx, project, manifest, targets)
 	if err != nil {
@@ -1317,6 +1325,36 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 		MayStop:     p.MayStop,
 		Running:     len(active) > 0,
 	}, nil
+}
+
+// checkInPlace refuses an in-place restore that would take Arcane itself down or, when it restores the project files,
+// replace the files of other projects.
+func (s *Service) checkInPlace(ctx context.Context, project types.Project, files bool) error {
+	runsArcane, err := s.deps.RunsArcane(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	if runsArcane {
+		return common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be restored in place; restore it as a new project instead", project.Name))
+	}
+	if !files {
+		return nil
+	}
+	return s.deps.SoleDirectory(ctx, project)
+}
+
+// volumesFree refuses volumes that a running container outside the project mounts, since the restore would write under it.
+func (s *Service) volumesFree(ctx context.Context, project types.Project, names []string) error {
+	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if inUse[name] {
+			return common.Classify(common.ErrConflict, fmt.Errorf("volume %s is mounted by a running container outside project %s; stop it before restoring", name, project.Name))
+		}
+	}
+	return nil
 }
 
 // missingVolumes returns how to create each target that does not exist yet the way Compose would; an external volume
@@ -1358,7 +1396,7 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 }
 
 // apply runs an in-place restore from its checkpoint; one resumed before its restore finished rolls back instead. On
-// any failure the project is rolled back and deployed again if it ran, so it is never left down.
+// any failure the project is rolled back and deployed again if it ran.
 func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 	switch {
 	case p.Failure != "":
@@ -1383,10 +1421,22 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 	if err != nil {
 		return r.rollback(ctx, p, fmt.Errorf("take a safety backup: %w", err))
 	}
+	// A container started during the safety backup could be using a volume now; nothing has been written yet, so
+	// the rollback leaves the volumes alone.
+	if err = r.inUse(ctx, p); err != nil {
+		return r.rollback(ctx, p, err)
+	}
 	p.SafetyID = safetyID
 	if err = r.record(ctx, p); err == nil {
 		r.report(ctx, "Restoring the backup")
-		err = r.restoreBackup(ctx, p)
+		var created []string
+		created, err = r.create(ctx, p.Create)
+		p.Created = created
+		if err != nil {
+			err = fmt.Errorf("create the missing volumes: %w", err)
+		} else if err = r.record(ctx, p); err == nil {
+			err = r.restoreBackup(ctx, p)
+		}
 	}
 	if err == nil {
 		p.Restored = true
@@ -1399,9 +1449,6 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 }
 
 func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
-	if err := r.create(ctx, p.Create); err != nil {
-		return fmt.Errorf("create the missing volumes: %w", err)
-	}
 	if err := r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes}); err != nil {
 		return err
 	}
@@ -1424,29 +1471,33 @@ func (r restoreSteps) finish(ctx context.Context, p restorePlan) error {
 	return nil
 }
 
-// rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran.
+// rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
+// project whose safety backup could not be restored is left down rather than started on half-restored data.
 func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) error {
 	ctx = context.WithoutCancel(ctx)
-	var failures []error
+	var cleanup []error
+	var undoErr, deployErr error
 	if p.SafetyID != "" {
 		r.report(ctx, "Rolling back to the safety backup")
 		if p.Deploying {
-			failures = append(failures, r.down(ctx))
+			cleanup = append(cleanup, r.down(ctx))
 		}
-		failures = append(failures,
-			r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()}),
-			r.remove(ctx, createdNames(p.Create)),
-		)
+		undoErr = r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()})
+		cleanup = append(cleanup, r.remove(ctx, p.Created))
 	}
-	if p.Running {
-		failures = append(failures, r.deploy(ctx))
+	if p.Running && undoErr == nil {
+		deployErr = r.deploy(ctx)
 	}
 	var err error
-	switch failed := errors.Join(failures...); {
-	case failed != nil && p.SafetyID != "":
-		err = fmt.Errorf("%w; the rollback failed too (%w), so restore the safety backup %s to undo the restore", cause, failed, p.SafetyID)
+	switch failed := errors.Join(cleanup...); {
+	case undoErr != nil:
+		err = fmt.Errorf("%w; the rollback failed too (%w), so the project was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, failed), p.SafetyID)
+	case deployErr != nil && p.SafetyID != "":
+		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s, but could not be deployed: %w", cause, p.SafetyID, errors.Join(deployErr, failed))
+	case deployErr != nil:
+		err = fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, deployErr)
 	case failed != nil:
-		err = fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, failed)
+		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, p.SafetyID, failed)
 	case p.SafetyID != "":
 		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s", cause, p.SafetyID)
 	default:
@@ -1488,7 +1539,17 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 		deploy: func(ctx context.Context) error {
 			return s.deps.Deploy(ctx, projectID, input.User, nil)
 		},
-		safety:  s.safetyBackup,
+		safety: s.safetyBackup,
+		inUse: func(ctx context.Context, p restorePlan) error {
+			if len(p.Volumes) == 0 {
+				return nil
+			}
+			project, err := s.deps.Project(ctx, projectID)
+			if err != nil {
+				return err
+			}
+			return s.volumesFree(ctx, project, p.volumeNames())
+		},
 		create:  s.createVolumes,
 		restore: s.RestoreTo,
 		verify:  s.verifyRestore,
@@ -1537,17 +1598,28 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	return entry.ID, nil
 }
 
-func (s *Service) createVolumes(ctx context.Context, create []client.VolumeCreateOptions) error {
+// createVolumes creates the missing target volumes and returns the ones it created; a volume someone else created
+// since the restore was checked is refused, so the restore never takes it over or removes it.
+func (s *Service) createVolumes(ctx context.Context, create []client.VolumeCreateOptions) ([]string, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	created := make([]string, 0, len(create))
 	for _, options := range create {
-		if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
-			return fmt.Errorf("create volume %s: %w", options.Name, createErr)
+		_, inspectErr := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+		switch {
+		case inspectErr == nil:
+			return created, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created after the restore was checked", options.Name))
+		case !errdefs.IsNotFound(inspectErr):
+			return created, fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
 		}
+		if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
+			return created, fmt.Errorf("create volume %s: %w", options.Name, createErr)
+		}
+		created = append(created, options.Name)
 	}
-	return nil
+	return created, nil
 }
 
 func (s *Service) removeVolumes(ctx context.Context, names []string) error {
