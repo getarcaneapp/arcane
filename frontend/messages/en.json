@@ -4714,7 +4714,7 @@
   "stop_project_permission_required": "Stopping the project requires the projects:down and projects:deploy permissions.",
   "project_exported": "Project {name} exported",
   "project_export_failed": "Failed to export project",
-  "import_project_description": "Create a project from an archive exported by Arcane. Volume data in the archive is restored into new volumes; an external volume that already exists is kept as it is.",
+  "import_project_description": "Create a project from an archive exported by Arcane. Volume data in the archive is restored into new volumes.",
   "start_after_import": "Start after import",
   "project_imported": "Project {name} imported",
   "project_import_failed": "Failed to import project",

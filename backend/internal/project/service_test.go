@@ -11620,12 +11620,8 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 		conflict     bool
 	}{
 		{name: "creates", wantCreated: []string{"shared-data", "copy_cache"}},
-		{
-			name: "keeps existing external", existing: []string{"shared-data"}, wantCreated: []string{"copy_cache"},
-			wantMessages: []string{"Kept existing external volume shared-data; the archived data was not restored into it"},
-		},
+		{name: "refuses existing external", existing: []string{"shared-data"}, conflict: true, wantErr: "these volumes already exist: shared-data"},
 		{name: "refuses existing named", existing: []string{"copy_cache"}, conflict: true, wantErr: "these volumes already exist: copy_cache"},
-		{name: "never removes a kept external", existing: []string{"shared-data"}, failCreate: "copy_cache", wantErr: "disk full"},
 		// copy_cache exists after the failure, made by someone else, so only shared-data is removed.
 		{name: "removes only what it created", failCreate: "copy_cache", wantErr: "disk full", wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"}},
 		{
@@ -11715,7 +11711,7 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
 			assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
-			// An existing external volume is never created, restored into, or removed.
+			// An existing volume refuses the import before anything is created, restored, or removed.
 			assert.Equal(t, tt.wantCreated, names)
 			assert.Equal(t, tt.wantDeleted, deleted)
 			assert.Equal(t, tt.wantMessages, recorder.messages)

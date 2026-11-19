@@ -2095,8 +2095,7 @@ func (b projectBundles) Import(ctx context.Context, opts ImportBundleOptions) (*
 	return proj, nil
 }
 
-// importBundle imports the project and restores its included volumes into new volumes; an external volume that
-// already exists is kept as Compose expects, without restoring into it.
+// importBundle imports the project and restores its included volumes into new volumes.
 func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, manifest types.ProjectManifest, opts ImportBundleOptions) (*Project, error) {
 	included := slices.DeleteFunc(slices.Clone(manifest.Volumes), func(volume types.ProjectVolume) bool { return !volume.Included })
 	if len(included) > 0 {
@@ -2115,14 +2114,13 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 		})
 	}
 	// The manifest only predicts the names, so the check is repeated with the imported project's names.
-	if _, err := b.checkVolumeTargets(ctx, predicted); err != nil {
+	if err := b.checkVolumeTargets(ctx, predicted); err != nil {
 		return nil, err
 	}
 	var (
 		proj     *Project
 		imported types.Project
 		targets  map[string]types.ProjectVolume
-		kept     map[string]bool
 		created  []types.ProjectVolume
 	)
 	_, _, err := projects.ReadProjectBundle(archive, func(name string, size int64, body io.Reader) error {
@@ -2149,13 +2147,9 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 				}
 				resolved = append(resolved, target)
 			}
-			kept, importErr = b.checkVolumeTargets(ctx, resolved)
-			return importErr
+			return b.checkVolumeTargets(ctx, resolved)
 		}
 		target := targets[keys[name]]
-		if kept[target.Key] {
-			return nil
-		}
 		restored, err := b.restoreVolume(ctx, target, imported.ComposeName, size, body, opts.User)
 		if restored {
 			created = append(created, target)
@@ -2165,48 +2159,30 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	if err != nil {
 		return nil, b.rollback(ctx, err, proj, imported.ComposeName, created, opts.User)
 	}
-	if activityID := activity.IDFromContext(ctx); activityID != "" {
-		for _, volume := range included {
-			if !kept[volume.Key] {
-				continue
-			}
-			if _, appendErr := b.activity.AppendMessage(ctx, activityID, activity.AppendMessageRequest{
-				Level:   types.ActivityMessageLevelInfo,
-				Message: fmt.Sprintf("Kept existing external volume %s; the archived data was not restored into it", targets[volume.Key].Name),
-			}); appendErr != nil {
-				slog.WarnContext(ctx, "could not report a kept external volume", "volume", targets[volume.Key].Name, "error", appendErr)
-			}
-		}
-	}
 	return proj, nil
 }
 
-// checkVolumeTargets checks the Docker names the included volumes resolve to and returns the keys of the external
-// volumes that already exist; two volumes may not share a name, and a named volume must not exist yet.
-func (b projectBundles) checkVolumeTargets(ctx context.Context, targets []types.ProjectVolume) (map[string]bool, error) {
+// checkVolumeTargets refuses the import when two included volumes share a Docker name or any of them already exists.
+func (b projectBundles) checkVolumeTargets(ctx context.Context, targets []types.ProjectVolume) error {
 	keys := map[string]string{}
-	kept := map[string]bool{}
 	var conflicts []string
 	for _, target := range targets {
 		if other, duplicate := keys[target.Name]; duplicate {
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volumes %s and %s both resolve to the Docker volume %s", other, target.Key, target.Name))
+			return common.Classify(common.ErrValidation, fmt.Errorf("volumes %s and %s both resolve to the Docker volume %s", other, target.Key, target.Name))
 		}
 		keys[target.Name] = target.Key
 		_, exists, err := b.local.Volume(ctx, target.Name)
 		if err != nil {
-			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, err)
+			return fmt.Errorf("inspect volume %s: %w", target.Name, err)
 		}
-		switch {
-		case exists && target.Kind == types.ProjectVolumeExternal:
-			kept[target.Key] = true
-		case exists:
+		if exists {
 			conflicts = append(conflicts, target.Name)
 		}
 	}
 	if len(conflicts) > 0 {
-		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
+		return common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
 	}
-	return kept, nil
+	return nil
 }
 
 // restoreVolume creates the target volume of the imported project from its archive and reports whether it created
