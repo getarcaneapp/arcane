@@ -77,6 +77,7 @@ func New(p ModuleParams) *Module {
 			StopContainers:  p.Service.stopRunningContainers,
 			StartContainers: p.Service.restartContainers,
 			VolumesInUse:    p.Service.volumesInUseOutside,
+			LockProject:     p.Service.LockProject,
 			Project: func(ctx context.Context, projectID string) (types.Project, error) {
 				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
 			},

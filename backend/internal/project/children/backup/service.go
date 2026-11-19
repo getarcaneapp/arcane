@@ -54,6 +54,8 @@ type (
 		Settings       *settings.SettingsService
 		VolumeLocks    *concurrency.KeyedMutex
 		Project        func(ctx context.Context, projectID string) (types.Project, error)
+		// LockProject takes the project lock that deploy, down and project edits also take.
+		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// StopContainers stops the Compose project's running containers and returns those it stopped, also when it fails.
 		StopContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
 		// StartContainers starts the project's stopped containers again in Compose order.
@@ -484,6 +486,14 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (er
 
 // capture writes the manifest, stops the project when asked, and takes one snapshot of its files and volumes.
 func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (err error) {
+	// Like a consistent export, hold the project lock so nothing deploys or edits the project while it is stopped.
+	if p.StopContainers {
+		unlockProject, lockErr := s.deps.LockProject(ctx, "back up project", entry.ProjectID)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlockProject()
+	}
 	unlock, err := s.lockVolumes(ctx, p.volumeNames())
 	if err != nil {
 		return err
@@ -552,8 +562,9 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	}
 	if len(stopped) > 0 {
 		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
+		stopped = nil
 		if restartErr == nil {
-			stopped, p.Stopped = nil, nil
+			p.Stopped = nil
 		}
 		if recordErr := errors.Join(restartErr, s.record(ctx, p)); recordErr != nil {
 			return recordErr
