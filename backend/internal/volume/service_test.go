@@ -663,23 +663,29 @@ func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
 }
 
 func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
+	behind := time.Now().Add(-time.Hour)
 	for _, test := range []struct {
+		dockerNow time.Time
 		createdAt time.Time
 		name      string
 		created   bool
 	}{
-		{name: "a volume created now is the import's", createdAt: time.Now(), created: true},
-		{name: "a volume someone made earlier is refused", createdAt: time.Now().Add(-time.Hour)},
+		{name: "a volume created now is the import's", dockerNow: time.Now(), createdAt: time.Now(), created: true},
+		{name: "a daemon whose clock is behind Arcane's still counts its new volume", dockerNow: behind, createdAt: behind, created: true},
+		{name: "a volume someone made earlier is refused", dockerNow: time.Now(), createdAt: time.Now().Add(-time.Hour)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// The volume is missing when checked; Docker then hands back whatever volume has the name.
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if strings.HasSuffix(r.URL.Path, "/volumes/create") {
-					w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/info"):
+					_ = json.MarshalWrite(w, map[string]string{"SystemTime": test.dockerNow.Format(time.RFC3339Nano)})
+				case strings.HasSuffix(r.URL.Path, "/volumes/create"):
 					_ = json.MarshalWrite(w, volume.Volume{Name: "data", Driver: "local", CreatedAt: test.createdAt.Format(time.RFC3339)})
-					return
+				default:
+					http.NotFound(w, r)
 				}
-				http.NotFound(w, r)
 			}))
 			t.Cleanup(server.Close)
 			dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
