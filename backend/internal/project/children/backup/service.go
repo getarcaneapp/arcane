@@ -186,9 +186,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		s.watch(background, entry.ID, activityID)
 		releaseHeld(background)
 	}()
-	dto := entry.DTO()
-	dto.ActivityID = &activityID
-	return dto, nil
+	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
 // resolvePlan validates the request against the project; by default it captures every volume that exists and keeps its
@@ -893,9 +891,7 @@ func (s *Service) List(ctx context.Context, projectID string, params pagination.
 	}
 	backups := make([]types.ProjectBackup, 0, len(entries))
 	for i := range entries {
-		dto := entries[i].DTO()
-		dto.S3DestinationName = destinations[dto.S3DestinationID].Name
-		backups = append(backups, dto)
+		backups = append(backups, entries[i].DTO(DTOOptions{S3DestinationName: destinations[entries[i].S3DestinationID].Name}))
 	}
 	return backups, page, nil
 }
@@ -908,7 +904,7 @@ func (s *Service) Get(ctx context.Context, projectID, backupID string) (types.Pr
 	if entry.ProjectID != projectID {
 		return types.ProjectBackup{}, common.Classify(common.ErrNotFound, errors.New("project backup not found"))
 	}
-	return entry.DTO(), nil
+	return entry.DTO(DTOOptions{}), nil
 }
 
 // Delete forgets the backup's snapshots and removes its row; it shares the project's admission with running backups.

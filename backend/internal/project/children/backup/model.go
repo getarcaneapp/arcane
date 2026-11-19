@@ -27,12 +27,20 @@ type (
 		Size              int64                         `gorm:"column:size"`
 		StoppedContainers bool                          `gorm:"column:stopped_containers"`
 	}
+
+	// DTOOptions carries what a backup's API value shows but its row doesn't store.
+	DTOOptions struct {
+		ActivityID        *string
+		S3DestinationName string
+	}
 )
 
 func (ProjectBackup) TableName() string { return "project_backups" }
 
-func (b *ProjectBackup) DTO() types.ProjectBackup {
+func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 	return types.ProjectBackup{
+		ActivityID:        opts.ActivityID,
+		S3DestinationName: opts.S3DestinationName,
 		CreatedAt:         b.CreatedAt,
 		CompletedAt:       b.CompletedAt,
 		ID:                b.ID,
