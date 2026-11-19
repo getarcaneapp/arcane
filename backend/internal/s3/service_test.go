@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -164,6 +165,27 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	require.True(t, inUse)
 	require.NoError(t, gormDB.Exec("UPDATE project_backup_policies SET s3_enabled = ? WHERE s3_destination_id = ?", false, policyDestination.ID).Error)
 	inUse, err = service.DestinationInUse(ctx, policyDestination.ID)
+	require.NoError(t, err)
+	require.False(t, inUse)
+
+	// A global project backup policy keeps its destination in the projectBackupConfig setting.
+	globalDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
+		Name:            "Global project backups",
+		Bucket:          "global-project-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+	globalConfig := func(s3Enabled bool) string {
+		return fmt.Sprintf(`{"policies":[{"id":"g1","s3DestinationId":%q,"s3Enabled":%t,"localEnabled":true}]}`, globalDestination.ID, s3Enabled)
+	}
+	require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: "projectBackupConfig", Value: globalConfig(true)}).Error)
+	err = service.DeleteS3Destination(ctx, globalDestination.ID)
+	require.ErrorIs(t, err, ErrS3DestinationInUse)
+	require.NoError(t, gormDB.Model(&settings.SettingVariable{}).Where("key = ?", "projectBackupConfig").Update("value", globalConfig(false)).Error)
+	inUse, err = service.DestinationInUse(ctx, globalDestination.ID)
 	require.NoError(t, err)
 	require.False(t, inUse)
 }

@@ -3,9 +3,11 @@ package s3
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -269,6 +271,22 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 			return false, fmt.Errorf("failed to check S3 destination references: %w", err)
 		}
 		if count > 0 {
+			return true, nil
+		}
+	}
+	// Global project backup policies are stored in a setting, not a table.
+	var configs []string
+	if err := db.Table("settings").Where("key = ?", "projectBackupConfig").Pluck("value", &configs).Error; err != nil {
+		return false, fmt.Errorf("failed to check S3 destination references: %w", err)
+	}
+	for _, raw := range configs {
+		var collection types.GlobalProjectBackupPolicyCollection
+		if err := json.Unmarshal([]byte(cmp.Or(strings.TrimSpace(raw), "{}")), &collection); err != nil {
+			return false, fmt.Errorf("failed to decode global project backup policies: %w", err)
+		}
+		if slices.ContainsFunc(collection.Policies, func(policy types.GlobalProjectBackupPolicy) bool {
+			return policy.S3Enabled && policy.S3DestinationID == id
+		}) {
 			return true, nil
 		}
 	}

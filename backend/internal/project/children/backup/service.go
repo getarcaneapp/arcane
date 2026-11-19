@@ -12,6 +12,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -49,14 +50,16 @@ import (
 
 type (
 	Dependencies struct {
-		DB             *database.DB
-		Docker         *dockerInternal.DockerClientService
-		Engine         *backup.Engine
-		Repository     *backup.VolumeRepository
-		S3Destinations *s3.S3DestinationService
-		Settings       *settings.SettingsService
-		VolumeLocks    *concurrency.KeyedMutex
-		Project        func(ctx context.Context, projectID string) (types.Project, error)
+		DB         *database.DB
+		Docker     *dockerInternal.DockerClientService
+		Engine     *backup.Engine
+		Repository *backup.VolumeRepository
+		// ForgetSnapshots deletes snapshots from a repository and prunes it once.
+		ForgetSnapshots func(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password string, snapshotIDs []string) error
+		S3Destinations  *s3.S3DestinationService
+		Settings        *settings.SettingsService
+		VolumeLocks     *concurrency.KeyedMutex
+		Project         func(ctx context.Context, projectID string) (types.Project, error)
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// StopContainers stops the Compose project's running containers and returns those it stopped, also when it fails.
@@ -99,6 +102,8 @@ type (
 		restores  *flow.Workflow
 		scheduled *flow.Workflow
 		global    *flow.Workflow
+		// globalConfig serializes every read-modify-save of the global policies' setting.
+		globalConfig sync.Mutex
 	}
 
 	StartOptions struct {
@@ -1110,7 +1115,7 @@ func (s *Service) Delete(ctx context.Context, projectID, backupID string) error 
 	if entry.ProjectID != projectID {
 		return common.Classify(common.ErrNotFound, errors.New("project backup not found"))
 	}
-	return s.remove(ctx, entry)
+	return s.removeAll(ctx, []*ProjectBackup{entry})
 }
 
 // HoldBackups takes the project's admission without waiting, so retention, the sweep and Delete leave its backups alone
@@ -1123,48 +1128,107 @@ func (s *Service) HoldBackups(ctx context.Context, projectID string) (func(conte
 	return func(ctx context.Context) { release(ctx, leases) }, nil
 }
 
-// remove forgets the backup's snapshots and deletes its row; the caller holds the project's admission.
-func (s *Service) remove(ctx context.Context, entry *ProjectBackup) error {
+// removeAll forgets the backups' snapshots with one ForgetSnapshots per repository, then deletes the rows whose
+// snapshots are gone; a repository that fails keeps its rows. The caller holds each project's admission.
+func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
 	}
-	if entry.LocalSnapshotID != "" {
-		if forgetErr := s.forget(ctx, dockerClient, entry, false); forgetErr != nil {
-			return fmt.Errorf("failed to delete the local project snapshot: %w", forgetErr)
+	var localIDs []string
+	remoteGroups := make(map[string][]*ProjectBackup)
+	for _, entry := range entries {
+		if entry.LocalSnapshotID != "" {
+			localIDs = append(localIDs, entry.LocalSnapshotID)
 		}
-		entry.LocalSnapshotID = ""
+		if entry.RemoteSnapshotID != "" {
+			remoteGroups[entry.S3DestinationID] = append(remoteGroups[entry.S3DestinationID], entry)
+		}
 	}
-	if entry.RemoteSnapshotID != "" {
-		if forgetErr := s.forget(ctx, dockerClient, entry, true); forgetErr != nil {
+	var removeErr error
+	changed := make(map[string]bool)
+	if len(localIDs) > 0 {
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		if repoErr == nil {
+			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localIDs)
+		}
+		if repoErr != nil {
+			removeErr = fmt.Errorf("failed to delete the local project snapshots: %w", repoErr)
+		} else {
+			for _, entry := range entries {
+				changed[entry.ID] = changed[entry.ID] || entry.LocalSnapshotID != ""
+				entry.LocalSnapshotID = ""
+			}
+		}
+	}
+	instanceID := s.deps.Settings.GetSettingsConfig().InstanceID.Value
+	for destinationID, group := range remoteGroups {
+		repoErr := s.forgetRemote(ctx, dockerClient, destinationID, path.Join(backup.VolumeRoot, instanceID), group)
+		if repoErr != nil {
+			removeErr = errors.Join(removeErr, fmt.Errorf("failed to delete the S3 project snapshots: %w", repoErr))
+			continue
+		}
+		for _, entry := range group {
+			changed[entry.ID] = true
+			entry.RemoteSnapshotID = ""
+		}
+	}
+	var deletedIDs []string
+	for _, entry := range entries {
+		switch {
+		case entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == "":
+			deletedIDs = append(deletedIDs, entry.ID)
+		case changed[entry.ID]:
 			entry.Destination = destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
-			return errors.Join(fmt.Errorf("failed to delete the S3 project snapshot: %w", forgetErr), s.deps.DB.WithContext(ctx).Save(entry).Error)
+			removeErr = errors.Join(removeErr, s.deps.DB.WithContext(ctx).Save(entry).Error)
 		}
 	}
-	return s.deps.DB.WithContext(ctx).Delete(entry).Error
+	for batch := range slices.Chunk(deletedIDs, backup.DeletionBatchSize) {
+		removeErr = errors.Join(removeErr, s.deps.DB.WithContext(ctx).Where("id IN ?", batch).Delete(&ProjectBackup{}).Error)
+	}
+	return removeErr
 }
 
-func (s *Service) forget(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup, remote bool) error {
-	if remote {
-		instanceID := s.deps.Settings.GetSettingsConfig().InstanceID.Value
-		observation, err := backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, entry.S3DestinationID, path.Join(backup.VolumeRoot, instanceID))
-		if err != nil {
-			return err
-		}
-		if !observation.Available {
-			slog.WarnContext(ctx, "S3 repository is missing; dropping the project backup's remote snapshot reference", "backupId", entry.ID)
-			return nil
-		}
-	}
-	repository, err := s.repository(ctx, dockerClient, plan{S3DestinationID: entry.S3DestinationID}, remote)
+// forgetRemote forgets the group's snapshots in one S3 repository; a missing repository has nothing left to forget.
+func (s *Service) forgetRemote(ctx context.Context, dockerClient *client.Client, destinationID, root string, group []*ProjectBackup) error {
+	observation, err := backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, destinationID, root)
 	if err != nil {
 		return err
 	}
+	if !observation.Available {
+		slog.WarnContext(ctx, "S3 repository is missing; dropping the project backups' remote snapshot references", "destinationId", destinationID, "backups", len(group))
+		return nil
+	}
+	repository, err := s.deps.Repository.Remote(ctx, destinationID, "")
+	if err != nil {
+		return err
+	}
+	snapshotIDs := make([]string, len(group))
+	for index, entry := range group {
+		snapshotIDs[index] = entry.RemoteSnapshotID
+	}
+	return s.forgetSnapshots(ctx, dockerClient, repository, snapshotIDs)
+}
+
+func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Client, repository backup.Repository, snapshotIDs []string) error {
 	password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
 	if err != nil {
 		return err
 	}
-	return s.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, []string{kit.Ternary(remote, entry.RemoteSnapshotID, entry.LocalSnapshotID)})
+	return s.deps.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
+}
+
+// backupsByID loads the backups in batches that fit the database's parameter limit.
+func (s *Service) backupsByID(ctx context.Context, ids []string) ([]*ProjectBackup, error) {
+	entries := make([]*ProjectBackup, 0, len(ids))
+	for batch := range slices.Chunk(ids, backup.DeletionBatchSize) {
+		var loaded []*ProjectBackup
+		if err := s.deps.DB.WithContext(ctx).Where("id IN ?", batch).Find(&loaded).Error; err != nil {
+			return nil, err
+		}
+		entries = append(entries, loaded...)
+	}
+	return entries, nil
 }
 
 func (s *Service) policies(ctx context.Context, projectID string) ([]ProjectBackupPolicy, error) {
@@ -1369,9 +1433,12 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	release(context.WithoutCancel(ctx), admitted.leases)
 	if backupErr != nil {
 		slog.ErrorContext(ctx, "Scheduled project backup failed", "projectId", policy.ProjectID, "policyId", policy.ID, "error", backupErr)
+	}
+	// A failed run can leave a local snapshot too, so it counts against retention as well.
+	s.retain(ctx, policy.ProjectID, policy.ID)
+	if backupErr != nil {
 		return nil, backupErr
 	}
-	s.retain(ctx, policy.ProjectID, policy.ID)
 	if admitted.remoteDisabled {
 		return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: backup.RemoteDisabledMessage}, nil
 	}
@@ -1395,10 +1462,11 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	if errors.Is(err, backup.ErrBackupSettled) {
 		return types.SchedulerOutcome{}, false, nil
 	}
+	// A resumed run that fails keeps its snapshots, so it counts against retention as well.
+	s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, true, err
 	}
-	s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
@@ -1578,12 +1646,11 @@ func (s *Service) retain(ctx context.Context, projectID, policyID string) {
 		return
 	}
 	expired, err := backup.ExpiredRunIDs(ctx, s.deps.DB, backupsTable, policyID, keep)
-	for _, id := range expired {
-		entry, loadErr := s.load(ctx, id)
-		if loadErr == nil {
-			loadErr = s.remove(ctx, entry)
+	if err == nil {
+		var entries []*ProjectBackup
+		if entries, err = s.backupsByID(ctx, expired); err == nil {
+			err = s.removeAll(ctx, entries)
 		}
-		err = errors.Join(err, loadErr)
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Project backup retention failed", "projectId", projectID, "policyId", policyID, "error", err)
@@ -1610,33 +1677,41 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 	for _, entry := range entries {
 		byProject[entry.ProjectID] = append(byProject[entry.ProjectID], entry.ID)
 	}
-	var pruneErr error
-	for projectID, ids := range byProject {
-		pruneErr = errors.Join(pruneErr, s.pruneUnmanaged(ctx, projectID, types.UnmanagedBackupSweep{Now: now, Within: ids, Retention: retention}))
-	}
-	return pruneErr
+	return s.pruneUnmanaged(ctx, byProject, types.UnmanagedBackupSweep{Now: now, Retention: retention})
 }
 
-// pruneUnmanaged deletes the project's expired backups the sweep found, checked again under the project's admission.
-func (s *Service) pruneUnmanaged(ctx context.Context, projectID string, sweep types.UnmanagedBackupSweep) error {
-	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, admissionScope, projectID)
-	if err != nil {
-		return err
-	}
-	if !admitted {
-		slog.InfoContext(ctx, "Skipping unmanaged backup deletion for a busy project until the next run", "projectId", projectID)
-		return nil
-	}
-	defer lease.Release(context.WithoutCancel(ctx))
-	ids, err := s.expiredUnmanaged(ctx, sweep)
-	for _, id := range ids {
-		entry, loadErr := s.load(ctx, id)
-		if loadErr == nil {
-			loadErr = s.remove(ctx, entry)
+// pruneUnmanaged holds every candidate project's admission, checks the candidates again, and deletes the expired ones of
+// the projects it got in one pass, so each repository is pruned once; a busy project's backups wait for the next run.
+func (s *Service) pruneUnmanaged(ctx context.Context, candidates map[string][]string, sweep types.UnmanagedBackupSweep) error {
+	var pruneErr error
+	var leases []*runs.Lease
+	var within []string
+	defer func() { release(context.WithoutCancel(ctx), leases) }()
+	for projectID, ids := range candidates {
+		lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, admissionScope, projectID)
+		if err != nil {
+			pruneErr = errors.Join(pruneErr, err)
+			continue
 		}
-		err = errors.Join(err, loadErr)
+		if !admitted {
+			slog.InfoContext(ctx, "Skipping unmanaged backup deletion for a busy project until the next run", "projectId", projectID)
+			continue
+		}
+		leases = append(leases, lease)
+		within = append(within, ids...)
 	}
-	return err
+	if len(within) == 0 {
+		return pruneErr
+	}
+	ids, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: sweep.Now, Within: within, Retention: sweep.Retention})
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	entries, err := s.backupsByID(ctx, ids)
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	return errors.Join(pruneErr, s.removeAll(ctx, entries))
 }
 
 // expiredUnmanaged marks scheduled backups whose policy no longer exists as unmanaged and returns those, and safety
@@ -1756,6 +1831,8 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 // UpdateGlobalPolicies replaces the global project backup policies, schedules the enabled ones and unschedules the
 // rest. Listed IDs of projects that do not exist are kept, and match nothing.
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
+	s.globalConfig.Lock()
+	defer s.globalConfig.Unlock()
 	existing, err := s.globalPolicies()
 	if err != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, err
@@ -1972,9 +2049,10 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		if errors.Is(resumeErr, actor.ErrJobRejected) {
 			return types.SchedulerOutcome{}, resumeErr
 		}
+		// A resumed backup that fails keeps its snapshots, so it counts against retention as well.
+		s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
 		var outcome types.TargetOutcome
 		if resumeErr == nil {
-			s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
 			outcome = types.TargetOutcome{ResourceType: targetType, ID: recorded.ProjectID, Status: types.RunStatusSucceeded}
 		} else {
 			outcome = types.TargetOutcome{ResourceType: targetType, ID: recorded.ProjectID, Status: types.RunStatusFailed, Message: resumeErr.Error()}
@@ -2017,13 +2095,16 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		var outcome types.TargetOutcome
 		switch {
 		case backupErr == nil:
-			s.retain(ctx, projectID, seriesID)
 			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusSucceeded}
 		case errors.Is(backupErr, errProjectSkipped):
 			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusSkipped, Message: backupErr.Error()}
 		default:
 			slog.ErrorContext(ctx, "Global project backup failed", "projectId", projectID, "policyId", input.PolicyID, "error", backupErr)
 			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusFailed, Message: backupErr.Error()}
+		}
+		// A failed backup can leave a local snapshot too, so it counts against retention as well.
+		if outcome.Status != types.RunStatusSkipped {
+			s.retain(ctx, projectID, seriesID)
 		}
 		if progressErr := jobcontext.Progress(ctx, outcome); progressErr != nil {
 			return types.SchedulerOutcome{}, progressErr
@@ -2110,6 +2191,9 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 		})
 	}
 	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
+		// Read again under the lock, so a concurrent edit or another run's disable is kept.
+		s.globalConfig.Lock()
+		defer s.globalConfig.Unlock()
 		policies, loadErr := s.globalPolicies()
 		if loadErr != nil {
 			return false, loadErr
