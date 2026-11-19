@@ -110,10 +110,10 @@ var (
 		routeSurface("route.projects.variables", "/projects/variables", "Variables & Secrets", AccessScopeModeGlobalOnly, []string{
 			PermVariablesList,
 			PermVariablesRead,
-			PermSecretSourcesList,
-			PermSecretSourcesRead,
+			PermVariablesSourcesList,
+			PermVariablesSourcesRead,
 		}, 42),
-		routeSurface("route.projects.variables.sources", "", "External Secrets", AccessScopeModeGlobalOnly, []string{PermSecretSourcesList, PermSecretSourcesRead}, 0),
+		routeSurface("route.projects.variables.sources", "", "External Secrets", AccessScopeModeGlobalOnly, []string{PermVariablesSourcesList, PermVariablesSourcesRead}, 0),
 		routeSurface("route.gitops.repositories", "/gitops/repositories", "Git Repositories", AccessScopeModeGlobalOnly, []string{PermGitReposList, PermGitReposRead}, 43),
 
 		settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),

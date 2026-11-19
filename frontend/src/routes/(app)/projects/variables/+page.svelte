@@ -64,7 +64,7 @@
 	});
 
 	const canCreateVariables = $derived(hasPermission('variables:create', GLOBAL_SCOPE));
-	const canCreateSources = $derived(hasPermission('secret-sources:create', GLOBAL_SCOPE));
+	const canCreateSources = $derived(hasPermission('variables:sources:create', GLOBAL_SCOPE));
 
 	function reportSyncResults(results?: EnvironmentSyncStatus[]) {
 		const failed = results?.filter((result) => result.status === 'error') ?? [];

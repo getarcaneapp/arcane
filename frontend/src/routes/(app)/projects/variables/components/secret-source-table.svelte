@@ -41,7 +41,7 @@
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 
 	const canMutateSources = $derived(
-		hasAnyPermission(['secret-sources:update', 'secret-sources:refresh', 'secret-sources:delete'], GLOBAL_SCOPE)
+		hasAnyPermission(['variables:sources:update', 'variables:sources:refresh', 'variables:sources:delete'], GLOBAL_SCOPE)
 	);
 
 	const envNameById = $derived(new Map(environments.map((environment) => [environment.id, environment.name])));
@@ -222,13 +222,13 @@
 
 {#snippet RowActions({ item }: { item: SecretSource })}
 	<RowActionsMenu name={item.name}>
-		<IfPermitted perm="secret-sources:update" envId={GLOBAL_SCOPE}>
+		<IfPermitted perm="variables:sources:update" envId={GLOBAL_SCOPE}>
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
 		</IfPermitted>
-		<IfPermitted perm="secret-sources:refresh" envId={GLOBAL_SCOPE}>
+		<IfPermitted perm="variables:sources:refresh" envId={GLOBAL_SCOPE}>
 			<ActionMenuItem
 				icon={RefreshIcon}
 				label={m.common_refresh()}
@@ -236,7 +236,7 @@
 				onclick={() => onRefresh(item)}
 			/>
 		</IfPermitted>
-		<IfPermitted perm="secret-sources:delete" envId={GLOBAL_SCOPE}>
+		<IfPermitted perm="variables:sources:delete" envId={GLOBAL_SCOPE}>
 			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		</IfPermitted>
 	</RowActionsMenu>

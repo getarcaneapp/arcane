@@ -72,8 +72,8 @@ const presetsDir = "secretsources"
 var (
 	ErrSecretSourceNotFound   = common.Classify(common.ErrNotFound, errors.New("secret source not found"))
 	ErrSecretSourceConflict   = common.Classify(common.ErrConflict, errors.New("a secret source with this name already exists"))
-	ErrDefinitionChangeDenied = common.Classify(common.ErrForbidden, fmt.Errorf("testing a saved secret source with changed settings requires %s", authz.PermSecretSourcesUpdate))
-	ErrUnsavedTestDenied      = common.Classify(common.ErrForbidden, fmt.Errorf("testing an unsaved secret source requires %s", authz.PermSecretSourcesCreate))
+	ErrDefinitionChangeDenied = common.Classify(common.ErrForbidden, fmt.Errorf("testing a saved secret source with changed settings requires %s", authz.PermVariablesSourcesUpdate))
+	ErrUnsavedTestDenied      = common.Classify(common.ErrForbidden, fmt.Errorf("testing an unsaved secret source requires %s", authz.PermVariablesSourcesCreate))
 )
 
 func NewService(p ServiceParams) *Service {
@@ -301,10 +301,10 @@ func (s *Service) Test(ctx context.Context, req TestRequest) (types.SecretSource
 	if err != nil {
 		return types.SecretSourceTestResult{}, err
 	}
-	if id == "" && !req.Permissions.Allows(authz.PermSecretSourcesCreate, "") {
+	if id == "" && !req.Permissions.Allows(authz.PermVariablesSourcesCreate, "") {
 		return types.SecretSourceTestResult{}, ErrUnsavedTestDenied
 	}
-	if id != "" && !sameFetch(base, config) && !req.Permissions.Allows(authz.PermSecretSourcesUpdate, "") {
+	if id != "" && !sameFetch(base, config) && !req.Permissions.Allows(authz.PermVariablesSourcesUpdate, "") {
 		return types.SecretSourceTestResult{}, ErrDefinitionChangeDenied
 	}
 

@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v118SecretSourcePermissions = `["secret-sources:list","secret-sources:read","secret-sources:create","secret-sources:update","secret-sources:delete","secret-sources:refresh"]`
+	v118SecretSourcePermissions = `["variables:sources:list","variables:sources:read","variables:sources:create","variables:sources:update","variables:sources:delete","variables:sources:refresh"]`
 	v118PriorPermissions        = `[
     "users:list", "users:read", "users:create", "users:update", "users:delete", "roles:list", "roles:read",
     "apikeys:list", "apikeys:read", "apikeys:create", "apikeys:update", "apikeys:delete", "federated:list",
@@ -181,10 +181,10 @@ DROP TABLE secret_sources;
 DELETE FROM webhooks WHERE target_type = 'secretsource';
 UPDATE roles
 SET permissions = (
-    SELECT json_group_array(value) FROM json_each(roles.permissions) WHERE value NOT LIKE 'secret-sources:%'
+    SELECT json_group_array(value) FROM json_each(roles.permissions) WHERE value NOT LIKE 'variables:sources:%'
 )
-WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value LIKE 'secret-sources:%');
-DELETE FROM api_key_permissions WHERE permission LIKE 'secret-sources:%';
+WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value LIKE 'variables:sources:%');
+DELETE FROM api_key_permissions WHERE permission LIKE 'variables:sources:%';
 `
 	v118PostgresDown = `
 DROP TABLE IF EXISTS secret_source_environments;
@@ -194,10 +194,10 @@ UPDATE roles
 SET permissions = (
     SELECT COALESCE(jsonb_agg(value), '[]'::jsonb)
     FROM jsonb_array_elements_text(roles.permissions) AS value
-    WHERE value NOT LIKE 'secret-sources:%'
+    WHERE value NOT LIKE 'variables:sources:%'
 )
-WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(roles.permissions) AS value WHERE value LIKE 'secret-sources:%');
-DELETE FROM api_key_permissions WHERE permission LIKE 'secret-sources:%';
+WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(roles.permissions) AS value WHERE value LIKE 'variables:sources:%');
+DELETE FROM api_key_permissions WHERE permission LIKE 'variables:sources:%';
 `
 )
 

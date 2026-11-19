@@ -19,7 +19,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "List the built-in secret source definitions with their form metadata",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesList, h.ListPresets)
+	}, authz.PermVariablesSourcesList, h.ListPresets)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "validateSecretSourceDefinition",
@@ -29,7 +29,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Parse and validate a custom secret source definition YAML",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesRead, h.ValidateDefinition)
+	}, authz.PermVariablesSourcesRead, h.ValidateDefinition)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listSecretSources",
@@ -39,7 +39,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "List external secret sources (credentials are never returned)",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesList, h.ListSecretSources)
+	}, authz.PermVariablesSourcesList, h.ListSecretSources)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createSecretSource",
@@ -49,7 +49,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Create an external secret source, fetch it, and re-sync variables",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesCreate, h.CreateSecretSource)
+	}, authz.PermVariablesSourcesCreate, h.CreateSecretSource)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "testSecretSource",
@@ -59,7 +59,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Fetch a saved or unsaved secret source and return only the key names",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesRefresh, h.TestSecretSource)
+	}, authz.PermVariablesSourcesRefresh, h.TestSecretSource)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getSecretSource",
@@ -69,7 +69,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Get one external secret source and its fetch status",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesRead, h.GetSecretSource)
+	}, authz.PermVariablesSourcesRead, h.GetSecretSource)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateSecretSource",
@@ -79,7 +79,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Update submitted fields of a secret source; omitted credential keys are kept",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesUpdate, h.UpdateSecretSource)
+	}, authz.PermVariablesSourcesUpdate, h.UpdateSecretSource)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteSecretSource",
@@ -89,7 +89,7 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Delete a secret source and re-sync variables",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesDelete, h.DeleteSecretSource)
+	}, authz.PermVariablesSourcesDelete, h.DeleteSecretSource)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "refreshSecretSource",
@@ -99,5 +99,5 @@ func RegisterRoutes(api huma.API, h *SecretSourceHandler) {
 		Description: "Fetch a secret source now and re-sync variables",
 		Tags:        []string{"Variables"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermSecretSourcesRefresh, h.RefreshSecretSource)
+	}, authz.PermVariablesSourcesRefresh, h.RefreshSecretSource)
 }

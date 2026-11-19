@@ -121,7 +121,7 @@ var (
 			WebhookActionTypeSync: authz.PermGitOpsSync,
 		},
 		WebhookTargetTypeSecretSource: {
-			WebhookActionTypeRefresh: authz.PermSecretSourcesRefresh,
+			WebhookActionTypeRefresh: authz.PermVariablesSourcesRefresh,
 		},
 	}
 )

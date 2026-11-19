@@ -356,7 +356,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || strings.HasPrefix(permission, "secret-sources:") {
+		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || strings.HasPrefix(permission, "variables:sources:") {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -954,10 +954,10 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 		return count
 	}
 	secretSourcePermissions := slices.DeleteFunc(authz.AllPermissions(), func(permission string) bool {
-		return !strings.HasPrefix(permission, "secret-sources:")
+		return !strings.HasPrefix(permission, "variables:sources:")
 	})
 	priorPermissions := slices.DeleteFunc(authz.AllPermissions(), func(permission string) bool {
-		return strings.HasPrefix(permission, "secret-sources:")
+		return strings.HasPrefix(permission, "variables:sources:")
 	})
 	require.Len(t, secretSourcePermissions, 6)
 
@@ -993,8 +993,8 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 			require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = ?`, id).Scan(&raw))
 			require.NoError(t, json.Unmarshal([]byte(raw), target))
 		}
-		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'ka' AND permission LIKE 'secret-sources:%'`).Scan(&adminKeyGrants))
-		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kv' AND permission LIKE 'secret-sources:%'`).Scan(&variablesKeyGrants))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'ka' AND permission LIKE 'variables:sources:%'`).Scan(&adminKeyGrants))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kv' AND permission LIKE 'variables:sources:%'`).Scan(&variablesKeyGrants))
 		return admin, editor, adminKeyGrants, variablesKeyGrants
 	}
 
@@ -1002,14 +1002,14 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 	assert.Equal(t, 4, schemaObjects())
 	admin, editor, adminKeyGrants, variablesKeyGrants := state()
 	assert.ElementsMatch(t, authz.AllPermissions(), admin, "full admins keep global admin status")
-	assert.NotContains(t, editor, "secret-sources:list")
+	assert.NotContains(t, editor, "variables:sources:list")
 	assert.Equal(t, 6, adminKeyGrants)
 	assert.Zero(t, variablesKeyGrants)
 	var almostRole string
 	var almostKeyGrants int
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'almost'`).Scan(&almostRole))
-	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kn' AND permission LIKE 'secret-sources:%'`).Scan(&almostKeyGrants))
-	assert.NotContains(t, almostRole, "secret-sources:", "a role missing one prior permission is not a full admin")
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'kn' AND permission LIKE 'variables:sources:%'`).Scan(&almostKeyGrants))
+	assert.NotContains(t, almostRole, "variables:sources:", "a role missing one prior permission is not a full admin")
 	assert.Zero(t, almostKeyGrants, "an API key missing one prior permission is not a full admin")
 
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO secret_sources (id, created_at, name, kind, definition) VALUES ('s1', CURRENT_TIMESTAMP, 'vault', 'http', '{}')`)
