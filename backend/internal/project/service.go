@@ -1883,10 +1883,18 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 	if project.ComposeName == "" {
 		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
 	}
-	// The global .env can select the compose files, so the manifest records the files actually loaded.
+	// The global .env or a GitOps sync can select the compose files, so the manifest records the files actually loaded.
 	projectsDir, dirErr := b.local.projects.GetProjectsDirectory(ctx)
 	if dirErr != nil {
 		return types.ProjectManifest{}, dirErr
+	}
+	proj, projErr := b.local.projects.GetProjectFromDatabaseByID(ctx, project.ID)
+	if projErr != nil {
+		return types.ProjectManifest{}, projErr
+	}
+	composeFile, composeErr := b.local.projects.ResolveProjectComposeFile(ctx, proj)
+	if composeErr != nil {
+		return types.ProjectManifest{}, fmt.Errorf("resolve the compose file of project %s: %w", project.Name, composeErr)
 	}
 	classified := projects.ClassifyProjectVolumes(project)
 	for _, key := range request.Volumes {
@@ -1982,7 +1990,7 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  projects.LoadedComposeFiles(ctx, projectsDir, project.Path),
+		ComposeFiles:  projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: project.Path, ComposeFile: composeFile}),
 		IncludeFiles:  includeFiles,
 		Volumes:       manifestVolumes,
 		FormatVersion: types.ProjectManifestFormatVersion,

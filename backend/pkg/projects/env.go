@@ -70,6 +70,14 @@ type (
 		Files              []string
 	}
 
+	// LoadedComposeFilesOptions names a project for LoadedComposeFiles. ComposeFile is the base file the project
+	// resolves, such as a GitOps sync's compose path; when empty, the base file is detected in ProjectPath.
+	LoadedComposeFilesOptions struct {
+		GlobalEnvDirectory string
+		ProjectPath        string
+		ComposeFile        string
+	}
+
 	ComposeEnvOptions struct {
 		ConfigFiles   []string
 		Profiles      []string
@@ -835,7 +843,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 // selection's files, and fails when it still loads other files afterwards. An explicit COMPOSE_FILE turns off the
 // automatic override merge, so a selection without the override file also pins a project that has one.
 func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) error {
-	if slices.Equal(LoadedComposeFiles(ctx, selection.GlobalEnvDirectory, selection.ProjectPath), selection.Files) {
+	if slices.Equal(LoadedComposeFiles(ctx, LoadedComposeFilesOptions{GlobalEnvDirectory: selection.GlobalEnvDirectory, ProjectPath: selection.ProjectPath}), selection.Files) {
 		return nil
 	}
 	current, err := acfs.Host{}.ReadFile(ctx, filepath.Join(selection.ProjectPath, EffectiveEnvFileName))
@@ -855,16 +863,17 @@ func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) err
 	if _, selectErr := ComposeFileEnvSelection(ctx, selection.GlobalEnvDirectory, selection.ProjectPath); selectErr != nil {
 		return selectErr
 	}
-	if !slices.Equal(LoadedComposeFiles(ctx, selection.GlobalEnvDirectory, selection.ProjectPath), selection.Files) {
+	if !slices.Equal(LoadedComposeFiles(ctx, LoadedComposeFilesOptions{GlobalEnvDirectory: selection.GlobalEnvDirectory, ProjectPath: selection.ProjectPath}), selection.Files) {
 		return common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("the project cannot select the compose files %s", strings.Join(selection.Files, ", ")))
 	}
 	return nil
 }
 
 // LoadedComposeFiles returns the files a project loads, relative to its directory, the way the loader picks them:
-// the COMPOSE_FILE selection, or else the detected compose file and the standard override file merged over it.
-func LoadedComposeFiles(ctx context.Context, projectsDir, projectPath string) []string {
-	if files, err := ComposeFileEnvSelection(ctx, projectsDir, projectPath); err == nil && len(files) > 0 {
+// the COMPOSE_FILE selection, or else the base compose file and the standard override file merged over it.
+func LoadedComposeFiles(ctx context.Context, opts LoadedComposeFilesOptions) []string {
+	projectPath := opts.ProjectPath
+	if files, err := ComposeFileEnvSelection(ctx, opts.GlobalEnvDirectory, projectPath); err == nil && len(files) > 0 {
 		relative := make([]string, 0, len(files))
 		for _, file := range files {
 			rel, relErr := filepath.Rel(projectPath, file)
@@ -872,12 +881,16 @@ func LoadedComposeFiles(ctx context.Context, projectsDir, projectPath string) []
 		}
 		return relative
 	}
-	detected, _ := DetectComposeFile(ctx, projectsDir, projectPath)
-	if detected == "" {
+	base := opts.ComposeFile
+	if base == "" {
+		base, _ = DetectComposeFile(ctx, opts.GlobalEnvDirectory, projectPath)
+	}
+	if base == "" {
 		return nil
 	}
-	loaded := []string{filepath.Base(detected)}
-	if slices.Contains(ComposeFileCandidates, loaded[0]) {
+	rel, relErr := filepath.Rel(projectPath, base)
+	loaded := []string{kit.Ternary(relErr == nil && filepath.IsAbs(base), rel, filepath.Base(base))}
+	if slices.Contains(ComposeFileCandidates, filepath.Base(base)) {
 		if override := DetectComposeOverrideFile(ctx, projectPath); override != "" {
 			loaded = append(loaded, filepath.Base(override))
 		}
