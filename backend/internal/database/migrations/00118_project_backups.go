@@ -36,24 +36,27 @@ INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, cre
 SELECT
     lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' ||
         substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))),
-    source.api_key_id,
+    grants.api_key_id,
     'projects:backup',
-    source.environment_id,
+    grants.environment_id,
     CURRENT_TIMESTAMP
-FROM api_key_permissions AS source
-WHERE source.permission = 'volumes:backup'
-    AND EXISTS (
-        SELECT 1 FROM api_key_permissions AS reader
-        WHERE reader.api_key_id = source.api_key_id
-            AND reader.permission = 'projects:read'
-            AND COALESCE(reader.environment_id, '') = COALESCE(source.environment_id, '')
-    )
-    AND NOT EXISTS (
-        SELECT 1 FROM api_key_permissions AS existing
-        WHERE existing.api_key_id = source.api_key_id
-            AND existing.permission = 'projects:backup'
-            AND COALESCE(existing.environment_id, '') = COALESCE(source.environment_id, '')
-    );
+FROM (
+    SELECT DISTINCT
+        source.api_key_id AS api_key_id,
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+    FROM api_key_permissions AS source
+    JOIN api_key_permissions AS reader
+        ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'
+    WHERE source.permission = 'volumes:backup'
+        AND (COALESCE(source.environment_id, '') = '' OR COALESCE(reader.environment_id, '') = ''
+            OR reader.environment_id = source.environment_id)
+) AS grants
+WHERE NOT EXISTS (
+    SELECT 1 FROM api_key_permissions AS existing
+    WHERE existing.api_key_id = grants.api_key_id
+        AND existing.permission = 'projects:backup'
+        AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
+);
 `
 	v118PostgresUp = `
 CREATE TABLE IF NOT EXISTS project_backups (
@@ -81,21 +84,24 @@ UPDATE roles SET permissions = permissions || '["projects:backup"]'::jsonb
 WHERE permissions @> '["volumes:backup"]'::jsonb AND permissions @> '["projects:read"]'::jsonb
     AND NOT permissions @> '["projects:backup"]'::jsonb;
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
-SELECT gen_random_uuid()::text, source.api_key_id, 'projects:backup', source.environment_id, CURRENT_TIMESTAMP
-FROM api_key_permissions AS source
-WHERE source.permission = 'volumes:backup'
-    AND EXISTS (
-        SELECT 1 FROM api_key_permissions AS reader
-        WHERE reader.api_key_id = source.api_key_id
-            AND reader.permission = 'projects:read'
-            AND COALESCE(reader.environment_id, '') = COALESCE(source.environment_id, '')
-    )
-    AND NOT EXISTS (
-        SELECT 1 FROM api_key_permissions AS existing
-        WHERE existing.api_key_id = source.api_key_id
-            AND existing.permission = 'projects:backup'
-            AND COALESCE(existing.environment_id, '') = COALESCE(source.environment_id, '')
-    );
+SELECT gen_random_uuid()::text, grants.api_key_id, 'projects:backup', grants.environment_id, CURRENT_TIMESTAMP
+FROM (
+    SELECT DISTINCT
+        source.api_key_id AS api_key_id,
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+    FROM api_key_permissions AS source
+    JOIN api_key_permissions AS reader
+        ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'
+    WHERE source.permission = 'volumes:backup'
+        AND (COALESCE(source.environment_id, '') = '' OR COALESCE(reader.environment_id, '') = ''
+            OR reader.environment_id = source.environment_id)
+) AS grants
+WHERE NOT EXISTS (
+    SELECT 1 FROM api_key_permissions AS existing
+    WHERE existing.api_key_id = grants.api_key_id
+        AND existing.permission = 'projects:backup'
+        AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
+);
 `
 	v118SQLiteDown = `
 UPDATE roles

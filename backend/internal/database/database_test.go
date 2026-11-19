@@ -951,11 +951,20 @@ func TestMigration118_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 		('b1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
 		('b2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
 	require.NoError(t, err)
-	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('bk1', 'Backup key', 'hash-bk1', 'bk1')`)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('bk1', 'Backup key', 'hash-bk1', 'bk1'),
+		('bk2', 'Mixed key', 'hash-bk2', 'bk2'),
+		('bk3', 'Other env key', 'hash-bk3', 'bk3')`)
 	require.NoError(t, err)
+	// bk2 can read projects everywhere and back up volumes in environment 0, so it may back up projects there;
+	// bk3's grants are in different environments, so it gets nothing.
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
 		('bp1', 'bk1', 'volumes:backup', NULL),
-		('bp2', 'bk1', 'projects:read', NULL)`)
+		('bp2', 'bk1', 'projects:read', NULL),
+		('bp3', 'bk2', 'volumes:backup', '0'),
+		('bp4', 'bk2', 'projects:read', NULL),
+		('bp5', 'bk3', 'volumes:backup', '0'),
+		('bp6', 'bk3', 'projects:read', 'other')`)
 	require.NoError(t, err)
 	state := func() (int, string, string, int) {
 		var objects, keyGrants int
@@ -975,6 +984,12 @@ func TestMigration118_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup"]`, backups)
 	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
 	assert.Equal(t, 1, keyGrants)
+	var mixedScope string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT environment_id FROM api_key_permissions WHERE api_key_id = 'bk2' AND permission = 'projects:backup'`).Scan(&mixedScope))
+	assert.Equal(t, "0", mixedScope)
+	var otherGrants int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'bk3' AND permission = 'projects:backup'`).Scan(&otherGrants))
+	assert.Zero(t, otherGrants)
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
 	require.NoError(t, err)
 	var status, volumes string
