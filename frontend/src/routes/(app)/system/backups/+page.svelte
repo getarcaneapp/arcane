@@ -944,7 +944,7 @@
 			<SettingsSection title={m.system()} description={m.system_backups_type_system_description()} variant="plain">
 				{#snippet actions()}{@render addScheduleAction('system')}{/snippet}
 				{#if policyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
 						{#each policyCollection.policies as policy (policy.id)}
 							<BackupPolicyCard
 								{policy}
@@ -969,7 +969,7 @@
 			<SettingsSection title={m.projects_title()} description={m.back_up_selected_projects()} variant="plain">
 				{#snippet actions()}{@render addScheduleAction('project')}{/snippet}
 				{#if projectPolicyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
 						{#each projectPolicyCollection.policies as policy (policy.id)}
 							<BackupPolicyCard
 								{policy}
@@ -991,7 +991,7 @@
 			<SettingsSection title={m.resource_volumes_cap()} description={m.system_backups_type_volume_description()} variant="plain">
 				{#snippet actions()}{@render addScheduleAction('volume')}{/snippet}
 				{#if systemVolumePolicyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
 						{#each systemVolumePolicyCollection.policies as policy (policy.id)}
 							<BackupPolicyCard
 								{policy}

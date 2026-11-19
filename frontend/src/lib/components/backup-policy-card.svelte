@@ -80,19 +80,23 @@
 			/>
 		{/if}
 	</div>
-	<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-		<span>
+	<div class="col-span-full flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+		<span class="whitespace-nowrap">
 			{policy.retentionCount === 0
 				? m.volume_backup_retention_all()
 				: m.volume_backup_retention_summary({ count: policy.retentionCount })}
 		</span>
 		{#if showStopContainers}
 			<span>·</span>
-			<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
+			<span class="whitespace-nowrap"
+				>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span
+			>
 		{/if}
 		{#if policy.lastRun}
 			<span>·</span>
-			<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
+			<span class="whitespace-nowrap"
+				>{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span
+			>
 		{/if}
 	</div>
 	{#if policy.s3Enabled && s3Name}
