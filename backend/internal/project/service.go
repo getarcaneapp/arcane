@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
@@ -129,6 +130,7 @@ type (
 		Archive        io.Reader
 		ID             string
 		Tags           []string
+		ComposeFiles   []string
 		ExactName      bool
 	}
 
@@ -139,6 +141,7 @@ type (
 		ProjectPath        string
 		DirName            string
 		Name               string
+		ComposeFiles       []string
 	}
 
 	GitOpsProjectRequest struct {
@@ -1608,6 +1611,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 			ProjectPath:        projectPath,
 			DirName:            folderName,
 			Name:               name,
+			ComposeFiles:       opts.ComposeFiles,
 		})
 		if unpackErr != nil {
 			return nil, rollback(unpackErr)
@@ -1699,6 +1703,17 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
 	}
+	// A bundle's volumes belong to the compose files the source loaded, so the import loads the same files.
+	if len(unpack.ComposeFiles) > 0 {
+		if selectErr := projects.SelectComposeFiles(ctx, projects.ComposeFileSelection{
+			ProjectsRoot:       unpack.ProjectsDirectory,
+			GlobalEnvDirectory: unpack.GlobalEnvDirectory,
+			ProjectPath:        unpack.ProjectPath,
+			Files:              unpack.ComposeFiles,
+		}); selectErr != nil {
+			return "", common.Classify(common.ErrValidation, fmt.Errorf("select the exported compose files: %w", selectErr))
+		}
+	}
 	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
 	if detected == "" {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound)))
@@ -1745,17 +1760,18 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 		return nil, err
 	}
 	defer cleanupSession()
-	return s.importArchive(ctx, archive, request, user)
+	return s.importArchive(ctx, archive, request, nil, user)
 }
 
-func (s *ProjectService) importArchive(ctx context.Context, archive io.Reader, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
+func (s *ProjectService) importArchive(ctx context.Context, archive io.Reader, request types.ImportProjectArchive, composeFiles []string, user types.Actor) (*Project, error) {
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
-		Archive:   archive,
-		Actor:     user,
-		Name:      request.Name,
-		ID:        request.ProjectID,
-		Tags:      request.Tags,
-		ExactName: true,
+		Archive:      archive,
+		Actor:        user,
+		Name:         request.Name,
+		ID:           request.ProjectID,
+		Tags:         request.Tags,
+		ComposeFiles: composeFiles,
+		ExactName:    true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) {
 		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
@@ -2163,16 +2179,23 @@ func (b projectBundles) Import(ctx context.Context, opts ImportBundleOptions) (*
 	if _, err = archive.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("read project archive: %w", err)
 	}
+	// The new project stays locked until its volumes are restored and it is started, so nothing deploys it earlier.
+	opts.Request.ProjectID = cmp.Or(request.ProjectID, uuid.New().String())
+	unlock, err := b.local.projects.LockProject(ctx, "import project", opts.Request.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	var proj *Project
 	if bundle {
 		proj, err = b.importBundle(ctx, archive, manifest, opts)
 	} else {
-		proj, err = b.local.projects.importArchive(ctx, archive, request, opts.User)
+		proj, err = b.local.projects.importArchive(ctx, archive, opts.Request, nil, opts.User)
 	}
 	if err != nil || !request.Start {
 		return proj, err
 	}
-	if deployErr := b.local.DeployProject(ctx, proj.ID, opts.User); deployErr != nil {
+	if deployErr := b.local.projects.deployProject(ctx, proj.ID, opts.User, nil); deployErr != nil {
 		return nil, fmt.Errorf("project %s was imported but could not be started: %w", proj.Name, deployErr)
 	}
 	return proj, nil
@@ -2208,7 +2231,7 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	_, _, err := projects.ReadProjectBundle(archive, func(name string, size int64, body io.Reader) error {
 		if name == projects.ProjectBundleProject {
 			var importErr error
-			if proj, importErr = b.local.projects.importArchive(ctx, body, opts.Request, opts.User); importErr != nil {
+			if proj, importErr = b.local.projects.importArchive(ctx, body, opts.Request, manifest.ComposeFiles, opts.User); importErr != nil {
 				return importErr
 			}
 			if imported, importErr = b.local.Project(ctx, proj.ID); importErr != nil {
@@ -2326,7 +2349,8 @@ func (b projectBundles) rollback(ctx context.Context, cause error, proj *Project
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	if err := b.local.DestroyProject(ctx, proj.ID, user); err != nil {
+	// The import holds the project lock.
+	if err := b.local.projects.destroyProject(ctx, proj.ID, DestroyOptions{RemoveFiles: true}, user); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", proj.Name, err))
 	}
 	for _, volume := range createdVolumes {
@@ -2387,7 +2411,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
+	return s.destroyProject(ctx, projectID, opts, user)
+}
 
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

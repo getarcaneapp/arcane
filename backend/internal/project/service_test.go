@@ -11229,14 +11229,20 @@ func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
 	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
 	require.NoError(t, err)
 
+	const projectID = "5f0d3c8e-2b7a-4c1d-9e6f-8a4b2c1d0e3f"
 	var (
 		created []client.VolumeCreateOptions
 		roots   []tar.Header
+		lockErr error
 	)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
 		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
 			created = append(created, options)
 			roots = append(roots, *root)
+			// Nothing may deploy the imported project while its volumes are restored.
+			lockCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+			defer cancel()
+			_, lockErr = svc.LockProject(lockCtx, "deploy project", projectID)
 			return true, nil
 		},
 		RestoreVolume: func(context.Context, string, types.RestoreVolumeUploadRequest, types.Actor) (bool, error) {
@@ -11245,10 +11251,15 @@ func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
 	}}}
 	imported, err := bundles.Import(ctx, ImportBundleOptions{
 		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
+		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy", ProjectID: projectID},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "copy", imported.Name)
+	assert.Equal(t, projectID, imported.ID)
+	require.ErrorIs(t, lockErr, context.DeadlineExceeded)
+	unlock, err := svc.LockProject(ctx, "deploy project", projectID)
+	require.NoError(t, err)
+	unlock()
 	require.Len(t, created, 1)
 	assert.Equal(t, "copy_cache", created[0].Name)
 	assert.Equal(t, "copy", created[0].Labels[api.ProjectLabel])
@@ -11259,6 +11270,103 @@ func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
 	assert.Equal(t, 1000, roots[0].Uid)
 	assert.Equal(t, 1001, roots[0].Gid)
 	assert.Equal(t, int64(0o750), roots[0].Mode)
+}
+
+func TestProjectBundlesImportSelectsTheExportedComposeFiles(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, []container.Summary{})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+
+	// The source selected stack.yaml through COMPOSE_FILE in its .env.global, which the archive does not hold.
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "stack.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - cache:/cache\nvolumes:\n  cache:\n",
+	), 0o644))
+	var project strings.Builder
+	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
+	var volumeArchive strings.Builder
+	gzipWriter := gzip.NewWriter(&volumeArchive)
+	tarWriter := tar.NewWriter(gzipWriter)
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
+	require.NoError(t, tarWriter.Close())
+	require.NoError(t, gzipWriter.Close())
+	cacheArchive, err := projects.ProjectBundleVolumeArchive("cache")
+	require.NoError(t, err)
+	ingest := func(composeFiles ...string) string {
+		var bundle strings.Builder
+		writer, writerErr := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
+			Project:       types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
+			ComposeFiles:  composeFiles,
+			Volumes:       []types.ProjectVolume{{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true}},
+			FormatVersion: types.ProjectManifestFormatVersion,
+		})
+		require.NoError(t, writerErr)
+		require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
+		require.NoError(t, writer.Add(cacheArchive, int64(volumeArchive.Len()), strings.NewReader(volumeArchive.String())))
+		require.NoError(t, writer.Close())
+		session, ingestErr := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
+		require.NoError(t, ingestErr)
+		return session.ID
+	}
+
+	var created []string
+	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
+			created = append(created, options.Name)
+			return true, nil
+		},
+	}}}
+
+	// A recorded file the archive lacks is refused before anything is created.
+	_, err = bundles.Import(ctx, ImportBundleOptions{
+		EnvironmentID: "0",
+		Request:       types.ImportProjectArchive{UploadID: ingest("missing.yaml"), Name: "copy"},
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "missing.yaml")
+	var count int64
+	require.NoError(t, db.Model(&Project{}).Count(&count).Error)
+	assert.Zero(t, count)
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+
+	imported, err := bundles.Import(ctx, ImportBundleOptions{
+		EnvironmentID: "0",
+		Request:       types.ImportProjectArchive{UploadID: ingest("stack.yaml"), Name: "copy"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"copy_cache"}, created)
+	selected, err := projects.ComposeFileEnvSelection(ctx, projectsDir, imported.Path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(imported.Path, "stack.yaml")}, selected)
 }
 
 func TestProjectBundlesImportChecksTheImportedProjectsVolumeNames(t *testing.T) {
@@ -11798,6 +11906,10 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
 			assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
+			if tt.failCreate != "" {
+				// The rollback runs under the import's project lock.
+				require.ErrorContains(t, err, "the imported project and its volumes were removed")
+			}
 			// An existing volume refuses the import before anything is created, restored, or removed.
 			assert.Equal(t, tt.wantCreated, names)
 			assert.Equal(t, tt.wantDeleted, deleted)

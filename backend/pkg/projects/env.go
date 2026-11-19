@@ -62,6 +62,14 @@ type (
 		exists       bool
 	}
 
+	// ComposeFileSelection lists a project's compose files relative to its directory, the base file first.
+	ComposeFileSelection struct {
+		ProjectsRoot       string
+		GlobalEnvDirectory string
+		ProjectPath        string
+		Files              []string
+	}
+
 	ComposeEnvOptions struct {
 		ConfigFiles   []string
 		Profiles      []string
@@ -821,6 +829,53 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	}
 	mergeComposeEnvFiles(ctx, dir, envMap, ParseProjectEnvFile, nil)
 	return resolveComposeFileSelection(ctx, dir, envMap)
+}
+
+// SelectComposeFiles sets COMPOSE_FILE in the project .env when the project does not already resolve to the
+// selection's files, and fails when it still resolves to other files afterwards.
+func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) error {
+	if slices.Equal(selectedComposeFiles(ctx, selection.GlobalEnvDirectory, selection.ProjectPath), selection.Files) {
+		return nil
+	}
+	current, err := acfs.Host{}.ReadFile(ctx, filepath.Join(selection.ProjectPath, EffectiveEnvFileName))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read %s: %w", EffectiveEnvFileName, err)
+	}
+	content, err := BuildEffectiveEnvContent(string(current), formatEnvMap(EnvMap{
+		consts.ComposeFilePath:      strings.Join(selection.Files, defaultComposePathSeparator),
+		consts.ComposePathSeparator: defaultComposePathSeparator,
+	}))
+	if err != nil {
+		return err
+	}
+	if writeErr := WriteProjectFile(ctx, selection.ProjectsRoot, selection.ProjectPath, EffectiveEnvFileName, content); writeErr != nil {
+		return writeErr
+	}
+	if _, selectErr := ComposeFileEnvSelection(ctx, selection.GlobalEnvDirectory, selection.ProjectPath); selectErr != nil {
+		return selectErr
+	}
+	if !slices.Equal(selectedComposeFiles(ctx, selection.GlobalEnvDirectory, selection.ProjectPath), selection.Files) {
+		return common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("the project cannot select the compose files %s", strings.Join(selection.Files, ", ")))
+	}
+	return nil
+}
+
+// selectedComposeFiles returns the files a project loads relative to its directory: a multi-file COMPOSE_FILE
+// selection, or else the one detected compose file.
+func selectedComposeFiles(ctx context.Context, projectsDir, projectPath string) []string {
+	if files, err := ComposeFileEnvSelection(ctx, projectsDir, projectPath); err == nil && len(files) > 1 {
+		relative := make([]string, 0, len(files))
+		for _, file := range files {
+			rel, relErr := filepath.Rel(projectPath, file)
+			relative = append(relative, kit.Ternary(relErr == nil, rel, file))
+		}
+		return relative
+	}
+	detected, _ := DetectComposeFile(ctx, projectsDir, projectPath)
+	if detected == "" {
+		return nil
+	}
+	return []string{filepath.Base(detected)}
 }
 
 func ComposeFileEntriesFromEnv(env EnvMap) []string {
