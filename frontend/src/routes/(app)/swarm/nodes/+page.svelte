@@ -3,11 +3,11 @@
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 	import { swarmNodeListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -22,7 +22,7 @@
 	let { data } = $props();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-nodes:list'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQuery('swarm-nodes:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	const nodesQuery = createQuery(() => {

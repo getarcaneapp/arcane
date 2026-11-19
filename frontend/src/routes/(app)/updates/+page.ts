@@ -29,14 +29,14 @@ export const load: PageLoad = async ({ parent }) => {
 		} satisfies SearchPaginationSortRequest)
 	);
 
-	const operationResult = await tryCatch(
+	const updateData = await tryCatch(
 		Promise.all([
 			queryClient.query(containerListQuery(scope, readableEnvironments('containers:list'), containerRequestOptions)),
 			queryClient.query(projectListQuery(scope, readableEnvironments('projects:list'), projectRequestOptions))
 		])
 	);
-	if (operationResult.error !== null) {
-		throwPageLoadError(operationResult.error, 'Failed to load updates');
+	if (updateData.error !== null) {
+		throwPageLoadError(updateData.error, 'Failed to load updates');
 	}
 
 	return {

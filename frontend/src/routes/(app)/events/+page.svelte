@@ -47,9 +47,10 @@
 	});
 
 	function toggleSeverityFilter(severity: string) {
-		const next = activeSeverities.includes(severity)
-			? activeSeverities.filter((s) => s !== severity)
-			: [...activeSeverities, severity];
+		let next = [...activeSeverities, severity];
+		if (activeSeverities.includes(severity)) {
+			next = activeSeverities.filter((s) => s !== severity);
+		}
 		const filters = { ...requestOptions.filters };
 		if (next.length) {
 			filters['severity'] = next;
@@ -90,32 +91,32 @@
 
 	const canManageEvents = $derived(hasPermission('events:delete', GLOBAL_SCOPE));
 
-	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0 && canManageEvents
-			? [
-					{
-						id: 'remove-selected',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						label: m.common_remove_selected(),
-						onclick: handleDeleteSelected,
-						loading: isDeleting,
-						disabled: isDeleting
-					}
-				]
-			: []),
-		{
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (selectedIds.length > 0 && canManageEvents) {
+			buttons.push({
+				id: 'remove-selected',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				label: m.common_remove_selected(),
+				onclick: handleDeleteSelected,
+				loading: isDeleting,
+				disabled: isDeleting
+			});
+		}
+		buttons.push({
 			id: 'refresh',
-			action: 'refresh' as const,
+			action: 'refresh',
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

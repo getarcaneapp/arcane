@@ -3,10 +3,11 @@
 	import { untrack } from 'svelte';
 
 	import SwarmKvFormSheet from '#lib/components/sheets/swarm-kv-form-sheet.svelte';
-	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
+	import type { SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 	import { swarmKvListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { Paginated } from '#lib/types/base.js';
@@ -35,7 +36,7 @@
 	} = $props();
 
 	const queryClient = useQueryClient();
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(resource.permissions.list));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQuery(resource.permissions.list));
 	const swarm = $derived(swarmQuery.data ?? initialSwarm);
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));

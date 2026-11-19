@@ -96,11 +96,12 @@
 		});
 	}
 
-	const containerQuery = $derived(
-		projectId
-			? `from=project&projectId=${projectId}&env=${encodeURIComponent(environmentId)}`
-			: `env=${encodeURIComponent(environmentId)}`
-	);
+	const containerQuery = $derived.by(() => {
+		if (!projectId) {
+			return `env=${encodeURIComponent(environmentId)}`;
+		}
+		return `from=project&projectId=${projectId}&env=${encodeURIComponent(environmentId)}`;
+	});
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		await runContainerLifecycleAction({
@@ -123,25 +124,21 @@
 		const id = item.id;
 		actionStatus[id] = 'restarting';
 
-		const operationResult = await tryCatch(
-			(async () => {
-				await handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.restartProject(projectId, [item.name], environmentId)),
-					message: m.containers_restart_failed(),
-					setLoadingState: (value) => {
-						actionStatus[id] = value ? 'restarting' : '';
-					},
-					async onSuccess(data) {
-						toast.success(m.containers_restart_success(), activityToastOptions(extractActivityId(data)));
-						await onRefresh?.();
-					}
-				});
-			})()
+		const handled = await tryCatch(
+			handleApiResultWithCallbacks({
+				result: await tryCatch(projectService.restartProject(projectId, [item.name], environmentId)),
+				message: m.containers_restart_failed(),
+				setLoadingState: (value) => {
+					actionStatus[id] = value ? 'restarting' : '';
+				},
+				async onSuccess(data) {
+					toast.success(m.containers_restart_success(), activityToastOptions(extractActivityId(data)));
+					await onRefresh?.();
+				}
+			})
 		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Service restart failed:', error);
+		if (handled.error !== null) {
+			console.error('Service restart failed:', handled.error);
 			toast.error(m.containers_action_error());
 			actionStatus[id] = '';
 		}

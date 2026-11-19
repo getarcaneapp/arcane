@@ -16,7 +16,7 @@
 
 	let { defaults = null, isPruning = false, onConfirm = () => {}, onCancel = () => {} }: Props = $props();
 
-	function getInitialSelectionInternal() {
+	function getInitialSelection() {
 		return {
 			containerMode: defaults?.pruneContainerMode ?? 'stopped',
 			containerUntil: defaults?.pruneContainerUntil ?? '',
@@ -30,17 +30,17 @@
 		} as const;
 	}
 
-	const initialSelectionInternal = getInitialSelectionInternal();
+	const initialSelection = getInitialSelection();
 
-	let containerMode = $state<'none' | 'stopped' | 'olderThan'>(initialSelectionInternal.containerMode);
-	let containerUntil = $state(initialSelectionInternal.containerUntil);
-	let imageMode = $state<'none' | 'dangling' | 'all' | 'olderThan'>(initialSelectionInternal.imageMode);
-	let imageUntil = $state(initialSelectionInternal.imageUntil);
-	let networkMode = $state<'none' | 'unused' | 'olderThan'>(initialSelectionInternal.networkMode);
-	let networkUntil = $state(initialSelectionInternal.networkUntil);
-	let volumeMode = $state<'none' | 'anonymous' | 'all'>(initialSelectionInternal.volumeMode);
-	let buildCacheMode = $state<'none' | 'unused' | 'all' | 'olderThan'>(initialSelectionInternal.buildCacheMode);
-	let buildCacheUntil = $state(initialSelectionInternal.buildCacheUntil);
+	let containerMode = $state<'none' | 'stopped' | 'olderThan'>(initialSelection.containerMode);
+	let containerUntil = $state(initialSelection.containerUntil);
+	let imageMode = $state<'none' | 'dangling' | 'all' | 'olderThan'>(initialSelection.imageMode);
+	let imageUntil = $state(initialSelection.imageUntil);
+	let networkMode = $state<'none' | 'unused' | 'olderThan'>(initialSelection.networkMode);
+	let networkUntil = $state(initialSelection.networkUntil);
+	let volumeMode = $state<'none' | 'anonymous' | 'all'>(initialSelection.volumeMode);
+	let buildCacheMode = $state<'none' | 'unused' | 'all' | 'olderThan'>(initialSelection.buildCacheMode);
+	let buildCacheUntil = $state(initialSelection.buildCacheUntil);
 
 	const containerModes = [
 		{ value: 'none', label: m.none() },
@@ -70,7 +70,7 @@
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 
-	function buildPruneRequestInternal(): PruneAllRequest {
+	function buildPruneRequest(): PruneAllRequest {
 		const request: PruneAllRequest = {};
 		if (containerMode !== 'none') {
 			request.containers = {
@@ -102,16 +102,16 @@
 		return request;
 	}
 
-	let selectedCountInternal = $derived(Object.keys(buildPruneRequestInternal()).length);
+	let selectedCount = $derived(Object.keys(buildPruneRequest()).length);
 
-	function handleConfirmInternal() {
-		const pruneRequest = buildPruneRequestInternal();
+	function handleConfirm() {
+		const pruneRequest = buildPruneRequest();
 		if (Object.keys(pruneRequest).length > 0 && !isPruning) {
 			onConfirm(pruneRequest);
 		}
 	}
 
-	function handleCancelInternal() {
+	function handleCancel() {
 		if (!isPruning) {
 			onCancel();
 		}
@@ -181,13 +181,13 @@
 	</SettingsSection>
 
 	<div class="grid grid-cols-2 gap-3">
-		<ArcaneButton action="cancel" onclick={handleCancelInternal} disabled={isPruning} class="w-full" />
+		<ArcaneButton action="cancel" onclick={handleCancel} disabled={isPruning} class="w-full" />
 		<ArcaneButton
 			action="remove"
-			onclick={handleConfirmInternal}
-			disabled={selectedCountInternal === 0 || isPruning}
+			onclick={handleConfirm}
+			disabled={selectedCount === 0 || isPruning}
 			loading={isPruning}
-			customLabel={m.prune_button({ count: selectedCountInternal })}
+			customLabel={m.prune_button({ count: selectedCount })}
 			loadingLabel={m.common_action_pruning()}
 			class="w-full"
 		/>

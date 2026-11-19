@@ -191,24 +191,24 @@
 		});
 	}
 
+	async function reloadAfterAutoUpdate() {
+		await onAutoUpdateChanged?.();
+		await refreshRows();
+	}
+
 	// Disabling only updates the shared exclusion setting; the row stays listed.
 	async function handleToggleAutoUpdate(item: ContainerUpdateRow) {
 		const enable = item.autoUpdateDisabled;
 		togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [rowKey(item)]: true };
 		try {
-			const operationResult = await tryCatch(containerService.setAutoUpdate(item.containerId, enable, item.environmentId));
-			if (operationResult.error !== null) {
-				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
+			const saved = await tryCatch(containerService.setAutoUpdate(item.containerId, enable, item.environmentId));
+			if (saved.error !== null) {
+				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(saved.error) });
 				return;
 			}
 			toast.success(enable ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
 			// The setting is saved at this point; a failed reload must not read as a failed toggle.
-			const refreshResult = await tryCatch(
-				(async () => {
-					await onAutoUpdateChanged?.();
-					await refreshRows();
-				})()
-			);
+			const refreshResult = await tryCatch(reloadAfterAutoUpdate());
 			if (refreshResult.error !== null) {
 				toast.error(m.common_refresh_failed({ resource: m.updates() }), {
 					description: extractApiErrorMessage(refreshResult.error)
@@ -246,21 +246,22 @@
 
 	const canApplyUpdates = $derived(hasShownPermission('image-updates:apply'));
 
-	const bulkActions = $derived<BulkAction[]>(
-		canApplyUpdates
-			? [
-					{
-						id: 'update',
-						label: m.updates_bulk_update({ count: selectedIds.length }),
-						action: 'update',
-						onclick: handleBulkUpdate,
-						loading: bulkUpdating,
-						disabled: bulkUpdating,
-						icon: UpdateIcon
-					}
-				]
-			: []
-	);
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		if (!canApplyUpdates) {
+			return [];
+		}
+		return [
+			{
+				id: 'update',
+				label: m.updates_bulk_update({ count: selectedIds.length }),
+				action: 'update',
+				onclick: handleBulkUpdate,
+				loading: bulkUpdating,
+				disabled: bulkUpdating,
+				icon: UpdateIcon
+			}
+		];
+	});
 </script>
 
 {#snippet NameCell({ item }: { item: ContainerUpdateRow })}

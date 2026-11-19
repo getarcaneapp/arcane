@@ -1,7 +1,6 @@
 import { error } from '@sveltejs/kit';
 
-import { queryKeys } from '#lib/query/query-keys.js';
-import { templateService } from '#lib/services/template-service.js';
+import { templateAllQuery, templateContentQuery } from '#lib/query/templates.js';
 import type { GlobalVariable } from '#lib/types/env.js';
 import type { Template, TemplateContent } from '#lib/types/template.js';
 import { loadGlobalVariablesOrEmpty } from '#lib/utils/template-load.js';
@@ -19,33 +18,22 @@ export const load: PageLoad = async ({
 }> => {
 	const { queryClient } = await parent();
 
-	const operationResult = await tryCatch(
-		(async () => {
-			const [templateData, allTemplates, globalVariables] = await Promise.all([
-				queryClient.query({
-					queryKey: queryKeys.templates.content(params.id),
-					queryFn: () => templateService.getTemplateContent(params.id)
-				}),
-				queryClient.query({
-					queryKey: queryKeys.templates.allTemplates(),
-					queryFn: () => templateService.getAllTemplates()
-				}),
-				loadGlobalVariablesOrEmpty(queryClient)
-			]);
-
-			return {
-				templateData,
-				allTemplates,
-				globalVariables
-			};
-		})()
+	const templateLoad = await tryCatch(
+		Promise.all([
+			queryClient.query(templateContentQuery(params.id)),
+			queryClient.query(templateAllQuery()),
+			loadGlobalVariablesOrEmpty(queryClient)
+		])
 	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		console.error('Failed to load template:', err);
+	if (templateLoad.error !== null) {
+		console.error('Failed to load template:', templateLoad.error);
 		throw error(404, 'Template not found');
-	} else {
-		return operationResult.data;
 	}
+	const [templateData, allTemplates, globalVariables] = templateLoad.data;
+
+	return {
+		templateData,
+		allTemplates,
+		globalVariables
+	};
 };

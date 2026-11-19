@@ -31,11 +31,12 @@
 	} = $props();
 
 	const outputEntries = $derived(parseBuildOutput(build.output ?? ''));
-	const created = $derived(
-		build.durationMs
-			? `${formatBuildTimestamp(build.createdAt)} · ${formatBuildDuration(build.durationMs)}`
-			: formatBuildTimestamp(build.createdAt)
-	);
+	const created = $derived.by(() => {
+		if (!build.durationMs) {
+			return formatBuildTimestamp(build.createdAt);
+		}
+		return `${formatBuildTimestamp(build.createdAt)} · ${formatBuildDuration(build.durationMs)}`;
+	});
 	const details = $derived([
 		{ label: m.build_context(), value: build.contextDir || '-', mono: true },
 		{ label: m.build_provider(), value: build.provider || '-', mono: false },

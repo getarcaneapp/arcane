@@ -54,30 +54,27 @@
 		isCommitting = true;
 		let didCommit = false;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await containerService.commitContainer(
-						containerId,
-						{
-							repository: data.repository.trim() || undefined,
-							tag: data.tag?.trim() || undefined,
-							comment: data.comment.trim() || undefined,
-							author: data.author.trim() || undefined,
-							noPause: data.noPause
-						},
-						environmentId
-					);
-					toast.success(m.containers_commit_success({ imageId: result.id }));
-					didCommit = true;
-					open = false;
-					onOpenChange?.(false);
-				})()
+			const committed = await tryCatch(
+				containerService.commitContainer(
+					containerId,
+					{
+						repository: data.repository.trim() || undefined,
+						tag: data.tag?.trim() || undefined,
+						comment: data.comment.trim() || undefined,
+						author: data.author.trim() || undefined,
+						noPause: data.noPause
+					},
+					environmentId
+				)
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to commit container:', error);
+			if (committed.error !== null) {
+				console.error('Failed to commit container:', committed.error);
 				toast.error(m.containers_commit_failed({ name: containerName }));
+			} else {
+				toast.success(m.containers_commit_success({ imageId: committed.data.id }));
+				didCommit = true;
+				open = false;
+				onOpenChange?.(false);
 			}
 		} finally {
 			isCommitting = false;

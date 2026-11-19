@@ -53,7 +53,7 @@
 	const searchActive = $derived(debouncedSearch.length > 0);
 	const rows = $derived.by<PickerRow[]>(() => {
 		const result: PickerRow[] = [];
-		appendFolderRowsInternal(result, '', 0);
+		appendFolderRows(result, '', 0);
 		return result;
 	});
 	const rootLoading = $derived(pages['']?.loading === true && pages['']?.entries.length === 0);
@@ -74,25 +74,25 @@
 		estimateSize: () => 34,
 		overscan: 8,
 		onChange: (instance) => {
-			loadVisibleContinuationsInternal(instance.getVirtualItems().map((item) => item.index));
+			loadVisibleContinuations(instance.getVirtualItems().map((item) => item.index));
 		}
 	}));
 
-	function pageStateInternal(folder: string): FolderPageState {
+	function pageState(folder: string): FolderPageState {
 		return pages[folder] ?? { entries: [], loading: false, error: null, requestID: 0 };
 	}
 
-	function updatePageInternal(folder: string, state: FolderPageState) {
+	function updatePage(folder: string, state: FolderPageState) {
 		pages = { ...pages, [folder]: state };
 	}
 
-	function appendFolderRowsInternal(result: PickerRow[], folder: string, depth: number) {
+	function appendFolderRows(result: PickerRow[], folder: string, depth: number) {
 		const state = pages[folder];
 		if (!state) return;
 		for (const entry of state.entries) {
 			result.push({ kind: 'entry', entry, depth });
 			if (!searchActive && entry.isDirectory && expandedFolders.has(entry.path)) {
-				appendFolderRowsInternal(result, entry.path, depth + 1);
+				appendFolderRows(result, entry.path, depth + 1);
 			}
 		}
 		const initialNestedFolderLoad = folder !== '' && state.loading && state.entries.length === 0;
@@ -101,94 +101,92 @@
 		}
 	}
 
-	function folderLoadingInternal(folder: string): boolean {
+	function folderLoading(folder: string): boolean {
 		const state = pages[folder];
 		return state?.loading === true && state.entries.length === 0;
 	}
 
-	function resetPagesInternal() {
+	function resetPages() {
 		generation += 1;
 		pages = {};
 		expandedFolders.clear();
-		void loadPageInternal('', 0, true, generation);
+		void loadPage('', 0, true, generation);
 	}
 
-	async function loadPageInternal(folder: string, start: number, replace: boolean, requestGeneration = generation) {
-		const current = pageStateInternal(folder);
+	async function loadPage(folder: string, start: number, replace: boolean, requestGeneration = generation) {
+		const current = pageState(folder);
 		if (current.loading) return;
 		const requestID = ++nextRequestID;
 		const rootLoad = folder === '' && replace;
-		updatePageInternal(folder, { ...current, loading: true, error: null, requestID });
+		updatePage(folder, { ...current, loading: true, error: null, requestID });
 		if (rootLoad) onRootLoad?.('loading');
 
-		const requestResult1 = await tryCatch(
-			(async () => {
-				const page = await provider.browse({
-					path: searchActive ? undefined : folder,
-					search: searchActive ? debouncedSearch : undefined,
-					start: start > 0 ? start : undefined
-				});
-				const latest = pages[folder];
-				if (generation !== requestGeneration || latest?.requestID !== requestID) return;
-				const merged = replace ? page.data : [...latest.entries, ...page.data];
-				const unique = Array.from(new Map(merged.map((entry) => [entry.path, entry])).values());
-				const continuationStart = start + page.data.length;
-				updatePageInternal(folder, {
-					entries: unique,
-					continuationStart: continuationStart < page.pagination.totalItems ? continuationStart : undefined,
-					loading: false,
-					error: null,
-					requestID
-				});
-				if (rootLoad) onRootLoad?.('ready');
-			})()
+		const page = await tryCatch(
+			provider.browse({
+				path: searchActive ? undefined : folder,
+				search: searchActive ? debouncedSearch : undefined,
+				start: start > 0 ? start : undefined
+			})
 		);
-		if (requestResult1.error !== null) {
-			const latest = pages[folder];
+		const latest = pages[folder];
+		if (page.error !== null) {
 			if (generation !== requestGeneration || latest?.requestID !== requestID) return;
-			updatePageInternal(folder, { ...latest, loading: false, error: extractApiErrorMessage(requestResult1.error) });
+			updatePage(folder, { ...latest, loading: false, error: extractApiErrorMessage(page.error) });
 			if (rootLoad) onRootLoad?.('error');
 			return;
 		}
+		if (generation === requestGeneration && latest?.requestID === requestID) {
+			const merged = replace ? page.data.data : [...latest.entries, ...page.data.data];
+			const unique = Array.from(new Map(merged.map((entry) => [entry.path, entry])).values());
+			const continuationStart = start + page.data.data.length;
+			updatePage(folder, {
+				entries: unique,
+				continuationStart: continuationStart < page.data.pagination.totalItems ? continuationStart : undefined,
+				loading: false,
+				error: null,
+				requestID
+			});
+			if (rootLoad) onRootLoad?.('ready');
+		}
 		await tick();
 		if (generation === requestGeneration) {
-			loadVisibleContinuationsInternal(rowVirtualizer.virtualItems.map((item) => item.index));
+			loadVisibleContinuations(rowVirtualizer.virtualItems.map((item) => item.index));
 		}
 	}
 
-	async function toggleFolderInternal(folder: string) {
+	async function toggleFolder(folder: string) {
 		if (searchActive) return;
 		const requestGeneration = generation;
 		if (expandedFolders.has(folder)) {
 			expandedFolders.delete(folder);
 		} else {
 			expandedFolders.add(folder);
-			if (!pages[folder]) void loadPageInternal(folder, 0, true);
+			if (!pages[folder]) void loadPage(folder, 0, true);
 		}
 		await tick();
 		if (generation === requestGeneration) {
-			loadVisibleContinuationsInternal(rowVirtualizer.virtualItems.map((item) => item.index));
+			loadVisibleContinuations(rowVirtualizer.virtualItems.map((item) => item.index));
 		}
 	}
 
-	function coveringAncestorInternal(entryPath: string): string | undefined {
+	function coveringAncestor(entryPath: string): string | undefined {
 		for (const candidate of selectedSet) {
 			if (selectedDirectoryPaths.has(candidate) && entryPath.startsWith(candidate + '/')) return candidate;
 		}
 		return undefined;
 	}
 
-	function entryCheckedInternal(entry: BackupFileEntry): boolean {
-		return selectAll || selectedSet.has(entry.path) || coveringAncestorInternal(entry.path) !== undefined;
+	function entryChecked(entry: BackupFileEntry): boolean {
+		return selectAll || selectedSet.has(entry.path) || coveringAncestor(entry.path) !== undefined;
 	}
 
-	function entryIndeterminateInternal(entry: BackupFileEntry): boolean {
-		if (!entry.isDirectory || entryCheckedInternal(entry)) return false;
+	function entryIndeterminate(entry: BackupFileEntry): boolean {
+		if (!entry.isDirectory || entryChecked(entry)) return false;
 		return selectedPaths.some((candidate) => candidate.startsWith(entry.path + '/'));
 	}
 
-	function toggleEntryInternal(entry: BackupFileEntry, checked: boolean) {
-		if (selectAll || coveringAncestorInternal(entry.path)) return;
+	function toggleEntry(entry: BackupFileEntry, checked: boolean) {
+		if (selectAll || coveringAncestor(entry.path)) return;
 		if (!checked) {
 			selectedPaths = [...new Set(selectedPaths)].filter((candidate) => candidate !== entry.path);
 			return;
@@ -202,25 +200,25 @@
 		];
 	}
 
-	function selectAllInternal() {
+	function selectAllEntries() {
 		selectedPaths = [];
 		selectAll = true;
 	}
 
-	function clearSelectionInternal() {
+	function clearSelection() {
 		selectedPaths = [];
 		selectAll = false;
 	}
 
 	onMount(() => {
-		void loadPageInternal('', 0, true);
+		void loadPage('', 0, true);
 	});
 	onDestroy(() => {
 		generation += 1;
 		clearTimeout(searchTimeout);
 	});
 
-	function updateSearchInternal(value: string) {
+	function updateSearch(value: string) {
 		const query = value.trim();
 		if (selectAll && query !== search.trim()) selectAll = false;
 		search = value;
@@ -228,17 +226,17 @@
 		if (query === debouncedSearch) return;
 		searchTimeout = setTimeout(() => {
 			debouncedSearch = query;
-			resetPagesInternal();
+			resetPages();
 		}, 250);
 	}
 
-	function loadVisibleContinuationsInternal(indices: number[]) {
+	function loadVisibleContinuations(indices: number[]) {
 		for (const index of indices) {
 			const row = rows[index];
 			if (row?.kind !== 'continuation') continue;
 			const state = pages[row.folder];
 			if (state?.continuationStart !== undefined && !state.loading && !state.error) {
-				void loadPageInternal(row.folder, state.continuationStart, false);
+				void loadPage(row.folder, state.continuationStart, false);
 			}
 		}
 	}
@@ -254,18 +252,15 @@
 			expanded={expandedFolders.has(row.entry.path)}
 			showDisclosure={!searchActive}
 			selectable
-			checked={entryCheckedInternal(row.entry)}
-			indeterminate={entryIndeterminateInternal(row.entry)}
-			disabled={selectAll || coveringAncestorInternal(row.entry.path) !== undefined}
-			loading={row.entry.isDirectory && expandedFolders.has(row.entry.path) && folderLoadingInternal(row.entry.path)}
+			checked={entryChecked(row.entry)}
+			indeterminate={entryIndeterminate(row.entry)}
+			disabled={selectAll || coveringAncestor(row.entry.path) !== undefined}
+			loading={row.entry.isDirectory && expandedFolders.has(row.entry.path) && folderLoading(row.entry.path)}
 			expandLabel={m.workspace_file_expand_folder({ name: row.entry.name })}
 			collapseLabel={m.workspace_file_collapse_folder({ name: row.entry.name })}
-			onToggle={() => toggleFolderInternal(row.entry.path)}
-			onActivate={() =>
-				row.entry.isDirectory
-					? toggleFolderInternal(row.entry.path)
-					: toggleEntryInternal(row.entry, !entryCheckedInternal(row.entry))}
-			onCheckedChange={(checked) => toggleEntryInternal(row.entry, checked)}
+			onToggle={() => toggleFolder(row.entry.path)}
+			onActivate={() => (row.entry.isDirectory ? toggleFolder(row.entry.path) : toggleEntry(row.entry, !entryChecked(row.entry)))}
+			onCheckedChange={(checked) => toggleEntry(row.entry, checked)}
 		/>
 	{:else}
 		{@const state = pages[row.folder]}
@@ -280,7 +275,7 @@
 					action="base"
 					tone="ghost"
 					customLabel={m.common_retry()}
-					onclick={() => loadPageInternal(row.folder, state.continuationStart ?? 0, state.entries.length === 0)}
+					onclick={() => loadPage(row.folder, state.continuationStart ?? 0, state.entries.length === 0)}
 				/>
 			{:else}
 				{#if !searchActive}
@@ -296,15 +291,15 @@
 
 <div class="space-y-3">
 	<div class="flex items-center justify-between gap-2">
-		<Input class="h-9" placeholder={m.volume_search_files()} bind:value={() => search, updateSearchInternal} />
+		<Input class="h-9" placeholder={m.volume_search_files()} bind:value={() => search, updateSearch} />
 		<div class="flex items-center gap-2">
 			<ArcaneButton
 				action="base"
 				tone="ghost"
-				onclick={selectAllInternal}
+				onclick={selectAllEntries}
 				customLabel={search.trim() ? m.backup_file_browser_select_all_matches() : m.common_select_all()}
 			/>
-			<ArcaneButton action="base" tone="ghost" onclick={clearSelectionInternal} customLabel={m.common_clear()} />
+			<ArcaneButton action="base" tone="ghost" onclick={clearSelection} customLabel={m.common_clear()} />
 		</div>
 	</div>
 
@@ -317,7 +312,7 @@
 			<div class="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm" data-backup-file-root-error>
 				<span class="font-medium">{m.backup_file_browser_load_failed()}</span>
 				<span class="text-xs text-muted-foreground">{rootError}</span>
-				<ArcaneButton action="base" tone="ghost" customLabel={m.common_retry()} onclick={() => loadPageInternal('', 0, true)} />
+				<ArcaneButton action="base" tone="ghost" customLabel={m.common_retry()} onclick={() => loadPage('', 0, true)} />
 			</div>
 		{:else if rootEmpty}
 			<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">

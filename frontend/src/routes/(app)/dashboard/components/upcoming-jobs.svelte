@@ -40,9 +40,10 @@
 			.flatMap((entry) => {
 				const [group = ''] = entry.job.id.split(':');
 				const nextRun = parseInstant(entry.job.nextRun);
-				return USER_JOB_GROUPS.has(group) && entry.job.enabled && nextRun && Temporal.Instant.compare(nextRun, now) > 0
-					? [{ ...entry, nextRun }]
-					: [];
+				if (!USER_JOB_GROUPS.has(group) || !entry.job.enabled || !nextRun || Temporal.Instant.compare(nextRun, now) <= 0) {
+					return [];
+				}
+				return [{ ...entry, nextRun }];
 			})
 			.sort((a, b) => Temporal.Instant.compare(a.nextRun, b.nextRun))
 			.slice(0, JOB_LIMIT);

@@ -60,9 +60,9 @@
 			return `${rounded} ${cpuLimit === 1 ? m.containers_stats_cpu_unit_singular() : m.common_cpus()}`;
 		}
 		const onlineCpus = stats?.cpu_stats?.online_cpus ?? 0;
-		return onlineCpus > 0
-			? `${onlineCpus} ${onlineCpus === 1 ? m.containers_stats_cpu_unit_singular() : m.common_cpus()}`
-			: m.common_na();
+		if (onlineCpus <= 0) return m.common_na();
+		const unit = onlineCpus === 1 ? m.containers_stats_cpu_unit_singular() : m.common_cpus();
+		return `${onlineCpus} ${unit}`;
 	});
 	const memoryValue = $derived(isRunning ? (bytes.format(memoryUsageBytes, { unitSeparator: ' ' }) ?? '') : m.common_na());
 	const memoryDetail = $derived.by(() => {

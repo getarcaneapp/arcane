@@ -13,7 +13,7 @@ function createOperationWatchStore() {
 	let _onClose: (() => void) | null = null;
 	let _closeRequestHandler: (() => void) | null = null;
 
-	function runCloseHookInternal() {
+	function runCloseHook() {
 		const hook = _onClose;
 		_onClose = null;
 		hook?.();
@@ -33,7 +33,7 @@ function createOperationWatchStore() {
 			}
 			_open = value;
 			if (closing) {
-				runCloseHookInternal();
+				runCloseHook();
 			}
 		},
 		get title() {
@@ -47,7 +47,7 @@ function createOperationWatchStore() {
 		},
 
 		start(title: string) {
-			runCloseHookInternal();
+			runCloseHook();
 			_title = title;
 			_lines = [];
 			_error = '';
@@ -97,7 +97,7 @@ function createOperationWatchStore() {
 		/** Closes without the confirm prompt, running the session close hook. */
 		forceClose() {
 			_open = false;
-			runCloseHookInternal();
+			runCloseHook();
 		}
 	};
 }

@@ -2,14 +2,15 @@ import { refreshAll } from '$app/navigation';
 import { page } from '$app/state';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
+import { environmentSettingsAcrossQuery } from '#lib/query/environments.js';
 import { queryKeys } from '#lib/query/query-keys.js';
-import { emptySettings, settingsService } from '#lib/services/settings-service.js';
+import { settingsService } from '#lib/services/settings-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SettingKey, Settings } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
+import { settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	const queryClient = useQueryClient();
@@ -30,18 +31,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	const results = createQuery(() => {
 		const environments = online;
 		return {
-			queryKey: queryKeys.environments.settingsAcross(onlineScope),
-			queryFn: async () => {
-				const sum = await readEachEnvironment(
-					environments,
-					(scope, config) => settingsService.getSettingsForEnvironment(scope, config),
-					emptySettings
-				);
-				for (const { environment, data } of sum.byEnvironment) {
-					queryClient.setQueryData(queryKeys.environments.settings(environment.id), data);
-				}
-				return sum;
-			},
+			...environmentSettingsAcrossQuery(queryClient, environments),
 			enabled: environments.length > 0,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false

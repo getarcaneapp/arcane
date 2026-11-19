@@ -21,7 +21,7 @@ export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: n
 			if (!active || !payload) return;
 			const entries = Array.isArray(payload) ? payload : [payload];
 			for (const entry of entries) {
-				appendLogEntryInternal(entry);
+				appendLogEntry(entry);
 			}
 		},
 		shouldReconnect: () => active,
@@ -36,7 +36,7 @@ export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: n
 	};
 }
 
-function appendLogEntryInternal(entry: unknown) {
+function appendLogEntry(entry: unknown) {
 	if (!entry || typeof entry !== 'object') {
 		return;
 	}

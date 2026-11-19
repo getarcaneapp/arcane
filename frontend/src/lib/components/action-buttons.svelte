@@ -122,36 +122,38 @@
 
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
-		mutationFn: () =>
-			tryCatch<MessageResponse | Project>(
-				type === 'container'
-					? containerService.startContainer(id, environmentId)
-					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), environmentId)
-			),
+		mutationFn: () => {
+			if (type === 'container') {
+				return tryCatch<MessageResponse | Project>(containerService.startContainer(id, environmentId));
+			}
+			return tryCatch<MessageResponse | Project>(
+				projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), environmentId)
+			);
+		},
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
 	}));
 
 	const stopMutation = createMutation(() => ({
 		mutationKey: ['action', 'stop', type, id],
-		mutationFn: (target: ActionTarget = actionTarget()) =>
-			tryCatch<MessageResponse | Project>(
-				type === 'container'
-					? containerService.stopContainer(target.id, target.environmentId)
-					: projectService.downProject(target.id, target.environmentId)
-			),
+		mutationFn: (target: ActionTarget = actionTarget()) => {
+			if (type === 'container') {
+				return tryCatch<MessageResponse | Project>(containerService.stopContainer(target.id, target.environmentId));
+			}
+			return tryCatch<MessageResponse | Project>(projectService.downProject(target.id, target.environmentId));
+		},
 		onMutate: () => setLoading('stop', true),
 		onSettled: () => setLoading('stop', false)
 	}));
 
 	const restartMutation = createMutation(() => ({
 		mutationKey: ['action', 'restart', type, id],
-		mutationFn: () =>
-			tryCatch(
-				type === 'container'
-					? containerService.restartContainer(id, environmentId)
-					: projectService.restartProject(id, undefined, environmentId)
-			),
+		mutationFn: () => {
+			if (type === 'container') {
+				return tryCatch<MessageResponse | Project>(containerService.restartContainer(id, environmentId));
+			}
+			return tryCatch<MessageResponse | Project>(projectService.restartProject(id, undefined, environmentId));
+		},
 		onMutate: () => setLoading('restart', true),
 		onSettled: () => setLoading('restart', false)
 	}));
@@ -162,25 +164,27 @@
 
 	const redeployMutation = createMutation(() => ({
 		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: ({ watch = false, target }: { watch?: boolean; target: ActionTarget }) =>
-			tryCatch(
-				(type === 'container'
-					? containerService.redeployContainer(target.id, target.environmentId)
-					: projectService.deployProject(
-							target.id,
-							'redeploy',
-							(frame) => {
-								redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
-								if (watch) {
-									operationWatchStore.onLine(frame);
-								}
-							},
-							// Taken inside mutationFn so cancelling the confirm dialog doesn't
-							// spend the single-shot recreateVolumes opt-in.
-							deployOptionsStore.takeRequestOptions(),
-							target.environmentId
-						)) as Promise<ContainerDetails | Project>
-			),
+		mutationFn: ({ watch = false, target }: { watch?: boolean; target: ActionTarget }) => {
+			if (type === 'container') {
+				return tryCatch<ContainerDetails | Project>(containerService.redeployContainer(target.id, target.environmentId));
+			}
+			return tryCatch<ContainerDetails | Project>(
+				projectService.deployProject(
+					target.id,
+					'redeploy',
+					(frame) => {
+						redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
+						if (watch) {
+							operationWatchStore.onLine(frame);
+						}
+					},
+					// Taken inside mutationFn so cancelling the confirm dialog doesn't
+					// spend the single-shot recreateVolumes opt-in.
+					deployOptionsStore.takeRequestOptions(),
+					target.environmentId
+				)
+			);
+		},
 		onMutate: () => {
 			redeployActivityId = undefined;
 			setLoading('redeploy', true);
@@ -190,12 +194,14 @@
 
 	const removeMutation = createMutation(() => ({
 		mutationKey: ['action', 'remove', type, id],
-		mutationFn: ({ removeVolumes, target }: { removeVolumes: boolean; target: ActionTarget }) =>
-			tryCatch<MessageResponse | void>(
-				type === 'container'
-					? containerService.deleteContainer(target.id, { volumes: removeVolumes, environmentId: target.environmentId })
-					: projectService.destroyProject(target.id, removeVolumes, target.environmentId)
-			),
+		mutationFn: ({ removeVolumes, target }: { removeVolumes: boolean; target: ActionTarget }) => {
+			if (type === 'container') {
+				return tryCatch<MessageResponse | void>(
+					containerService.deleteContainer(target.id, { volumes: removeVolumes, environmentId: target.environmentId })
+				);
+			}
+			return tryCatch<MessageResponse | void>(projectService.destroyProject(target.id, removeVolumes, target.environmentId));
+		},
 		onMutate: () => setLoading('remove', true),
 		onSettled: () => setLoading('remove', false)
 	}));
@@ -243,12 +249,13 @@
 	function confirmAction(action: string) {
 		if (action === 'remove') {
 			const target = actionTarget();
+			let message = m.common_confirm_removal_message({ type: m.container() });
+			if (type === 'project') {
+				message = m.common_confirm_destroy_message({ type: m.project() });
+			}
 			openConfirmDialog({
 				title: type === 'project' ? m.compose_destroy() : m.common_confirm_removal_title(),
-				message:
-					type === 'project'
-						? m.common_confirm_destroy_message({ type: m.project() })
-						: m.common_confirm_removal_message({ type: m.container() }),
+				message,
 				confirm: {
 					label: type === 'project' ? m.compose_destroy() : m.common_remove(),
 					destructive: true,
@@ -336,7 +343,7 @@
 			return;
 		}
 		if (watch) {
-			enterInteractiveWatchInternal(operationStartedAt, target);
+			enterInteractiveWatch(operationStartedAt, target);
 		}
 		await handleApiResultWithCallbacks({
 			result,
@@ -387,39 +394,38 @@
 		}
 
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					await projectService.deployProject(
-						target.id,
-						'up',
-						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
-						options ?? deployOptionsStore.takeRequestOptions(),
-						target.environmentId
-					);
-					if (watch) {
-						enterInteractiveWatchInternal(operationStartedAt, target);
-					}
-					itemState = 'running';
-					onActionComplete('running');
-				})()
+			const deployed = await tryCatch(
+				projectService.deployProject(
+					target.id,
+					'up',
+					watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
+					options ?? deployOptionsStore.takeRequestOptions(),
+					target.environmentId
+				)
 			);
-			if (operationResult1.error !== null) {
-				const error = operationResult1.error;
-
-				const message =
-					error instanceof Error ? error.message : m.common_action_failed_with_type({ action: m.common_start(), type });
+			if (deployed.error !== null) {
+				let message: string = m.common_action_failed_with_type({ action: m.common_start(), type });
+				if (deployed.error instanceof Error) {
+					message = deployed.error.message;
+				}
 				if (watch) {
 					operationWatchStore.fail(message);
 				} else {
 					toast.error(message);
 				}
+				return;
 			}
+			if (watch) {
+				enterInteractiveWatch(operationStartedAt, target);
+			}
+			itemState = 'running';
+			onActionComplete('running');
 		} finally {
 			setLoading('start', false);
 		}
 	}
 
-	function enterInteractiveWatchInternal(operationStartedAt: number, target: ActionTarget) {
+	function enterInteractiveWatch(operationStartedAt: number, target: ActionTarget) {
 		operationWatchStore.append(`Attaching to ${name ?? id}`);
 		const detach = attachProjectLogsToWatch(target.id, operationStartedAt, target.environmentId);
 		operationWatchStore.setOnClose(() => {
@@ -474,26 +480,23 @@
 		}
 
 		try {
-			const operationResult2 = await tryCatch(
-				(async () => {
-					await projectService.pullProjectImages(
-						id,
-						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
-						environmentId
-					);
-					onActionComplete(itemState);
-				})()
+			const pulled = await tryCatch(
+				projectService.pullProjectImages(
+					id,
+					watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
+					environmentId
+				)
 			);
-			if (operationResult2.error !== null) {
-				const error = operationResult2.error;
-
-				const message = error instanceof Error ? error.message : m.images_pull_failed();
+			if (pulled.error !== null) {
+				const message = pulled.error instanceof Error ? pulled.error.message : m.images_pull_failed();
 				if (watch) {
 					operationWatchStore.fail(message);
 				} else {
 					toast.error(message);
 				}
+				return;
 			}
+			onActionComplete(itemState);
 		} finally {
 			setLoading('pull', false);
 		}
@@ -503,29 +506,30 @@
 		setLoading('build', true);
 
 		try {
-			const operationResult3 = await tryCatch(
-				(async () => {
-					const settings = environmentSettings.current;
-					const configuredProvider = (settings?.values.buildProvider as 'local' | 'depot') ?? 'local';
-					const buildProvider = configuredProvider === 'depot' && isDepotBuildAvailable(settings) ? 'depot' : 'local';
-					await projectService.buildProjectImages(
-						id,
-						{
-							provider: buildProvider,
-							push: buildProvider === 'depot',
-							load: buildProvider !== 'depot'
-						},
-						() => {},
-						environmentId
-					);
-					await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(environmentId, id) });
-				})()
+			const settings = environmentSettings.current;
+			const configuredProvider = (settings?.values.buildProvider as 'local' | 'depot') ?? 'local';
+			const buildProvider = configuredProvider === 'depot' && isDepotBuildAvailable(settings) ? 'depot' : 'local';
+			const built = await tryCatch(
+				projectService.buildProjectImages(
+					id,
+					{
+						provider: buildProvider,
+						push: buildProvider === 'depot',
+						load: buildProvider !== 'depot'
+					},
+					() => {},
+					environmentId
+				)
 			);
-			if (operationResult3.error !== null) {
-				const error = operationResult3.error;
-
-				const message = error instanceof Error ? error.message : m.build_failed();
-				toast.error(message);
+			if (built.error !== null) {
+				toast.error(built.error instanceof Error ? built.error.message : m.build_failed());
+				return;
+			}
+			const invalidated = await tryCatch(
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(environmentId, id) })
+			);
+			if (invalidated.error !== null) {
+				toast.error(invalidated.error instanceof Error ? invalidated.error.message : m.build_failed());
 			}
 		} finally {
 			setLoading('build', false);

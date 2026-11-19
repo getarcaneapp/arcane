@@ -251,7 +251,7 @@ export function plainDateToInstantString(value: Temporal.PlainDate, timeZone = l
 	return value.toZonedDateTime({ timeZone, plainTime: '00:00' }).toInstant().toString({ smallestUnit: 'millisecond' });
 }
 
-function dateTimeFormatterInternal(
+function dateTimeFormatter(
 	dateStyle: DateDisplayStyle | undefined,
 	includeTime: boolean,
 	includeSeconds: boolean,
@@ -281,16 +281,12 @@ function dateTimeFormatterInternal(
 	return formatter;
 }
 
-function formatAbsoluteDateTimeInternal(
-	value: InstantInput,
-	options: AbsoluteDateTimeFormatOptions,
-	includeTime: boolean
-): string {
+function formatAbsoluteDateTime(value: InstantInput, options: AbsoluteDateTimeFormatOptions, includeTime: boolean): string {
 	const instant = parseInstant(value);
 	if (!instant) return '';
 
 	const timeZone = options.timeZone ?? localTimeZoneId;
-	const formatter = dateTimeFormatterInternal(options.dateStyle, includeTime, options.includeSeconds ?? true, timeZone);
+	const formatter = dateTimeFormatter(options.dateStyle, includeTime, options.includeSeconds ?? true, timeZone);
 	return formatter.format(instant.epochMilliseconds);
 }
 
@@ -298,18 +294,18 @@ export function formatDate(
 	value: InstantInput,
 	options: Pick<AbsoluteDateTimeFormatOptions, 'dateStyle' | 'timeZone'> = { dateStyle: 'medium' }
 ): string {
-	return formatAbsoluteDateTimeInternal(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, false);
+	return formatAbsoluteDateTime(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, false);
 }
 
 export function formatDateTime(
 	value: InstantInput,
 	options: AbsoluteDateTimeFormatOptions = { dateStyle: 'medium', includeSeconds: true }
 ): string {
-	return formatAbsoluteDateTimeInternal(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, true);
+	return formatAbsoluteDateTime(value, { ...options, dateStyle: options.dateStyle ?? 'medium' }, true);
 }
 
 export function formatDateTimeShort(value: InstantInput): string {
-	return formatAbsoluteDateTimeInternal(value, { dateStyle: 'medium', includeSeconds: false }, true);
+	return formatAbsoluteDateTime(value, { dateStyle: 'medium', includeSeconds: false }, true);
 }
 
 export function formatOptionalDateTime(value: InstantInput, fallback = '-'): string {
@@ -323,10 +319,10 @@ export function isPastDate(value: InstantInput): boolean {
 }
 
 export function formatTime(value: InstantInput, options: { includeSeconds?: boolean } = {}): string {
-	return formatAbsoluteDateTimeInternal(value, { includeSeconds: options.includeSeconds ?? true }, true);
+	return formatAbsoluteDateTime(value, { includeSeconds: options.includeSeconds ?? true }, true);
 }
 
-function relativeTimeValueInternal(target: Temporal.Instant, base: Temporal.Instant): RelativeTimeValue {
+function relativeTimeValue(target: Temporal.Instant, base: Temporal.Instant): RelativeTimeValue {
 	const deltaSeconds = (target.epochMilliseconds - base.epochMilliseconds) / 1000;
 	const magnitude = Math.abs(deltaSeconds);
 	const direction = Math.sign(deltaSeconds) || 1;
@@ -351,7 +347,7 @@ function relativeTimeValueInternal(target: Temporal.Instant, base: Temporal.Inst
 	return { unit: 'year', value: round(365.2425 * 24 * 60 * 60) };
 }
 
-function relativeTimeFormatterInternal(numeric: 'always' | 'auto'): Intl.RelativeTimeFormat {
+function relativeTimeFormatter(numeric: 'always' | 'auto'): Intl.RelativeTimeFormat {
 	const locale = getLocale();
 	const key = `${locale}|${numeric}`;
 	const cached = relativeTimeFormatterCache.get(key);
@@ -362,22 +358,22 @@ function relativeTimeFormatterInternal(numeric: 'always' | 'auto'): Intl.Relativ
 	return formatter;
 }
 
-function relativeTimeContextInternal(value: InstantInput, options: RelativeTimeFormatOptions) {
+function relativeTimeContext(value: InstantInput, options: RelativeTimeFormatOptions) {
 	const target = parseInstant(value);
 	const base = options.base ? parseInstant(options.base) : Temporal.Now.instant();
 	if (!target || !base) return null;
-	return { target, base, relative: relativeTimeValueInternal(target, base) };
+	return { target, base, relative: relativeTimeValue(target, base) };
 }
 
 export function formatRelativeTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
-	const context = relativeTimeContextInternal(value, options);
+	const context = relativeTimeContext(value, options);
 	if (!context) return '';
 	const { relative } = context;
 	const numeric = relative.value === 0 ? 'auto' : 'always';
-	return relativeTimeFormatterInternal(numeric).format(relative.value, relative.unit);
+	return relativeTimeFormatter(numeric).format(relative.value, relative.unit);
 }
 
-function elapsedTimeFormatterInternal(unit: RelativeTimeUnit): Intl.NumberFormat {
+function elapsedTimeFormatter(unit: RelativeTimeUnit): Intl.NumberFormat {
 	const locale = getLocale();
 	const key = `${locale}|${unit}`;
 	const cached = elapsedTimeFormatterCache.get(key);
@@ -393,14 +389,12 @@ function elapsedTimeFormatterInternal(unit: RelativeTimeUnit): Intl.NumberFormat
 }
 
 export function formatElapsedTime(value: InstantInput, options: RelativeTimeFormatOptions = {}): string {
-	const context = relativeTimeContextInternal(value, options);
+	const context = relativeTimeContext(value, options);
 	if (!context) return '';
 	const { target, base, relative } = context;
-	const elapsedValue =
-		relative.value === 0
-			? Math.round(Math.abs(target.epochMilliseconds - base.epochMilliseconds) / 1000)
-			: Math.abs(relative.value);
-	return elapsedTimeFormatterInternal(relative.unit).format(elapsedValue);
+	if (relative.value !== 0) return elapsedTimeFormatter(relative.unit).format(Math.abs(relative.value));
+	const elapsedSeconds = Math.round(Math.abs(target.epochMilliseconds - base.epochMilliseconds) / 1000);
+	return elapsedTimeFormatter(relative.unit).format(elapsedSeconds);
 }
 
 export function setLocale(locale: Locale, reload = true) {

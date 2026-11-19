@@ -111,6 +111,12 @@
 		await queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(environmentStore.shownKey) });
 	}
 
+	async function checkProjectUpdates(project: ProjectRow) {
+		const result = await projectService.checkUpdates(project.id, project.environmentId);
+		summarizeUpdateCheckResult(result);
+		await refreshProjects();
+	}
+
 	async function handleCheckProjectUpdates(project: ProjectRow) {
 		if (checkingProjectIds[rowKey(project)]) {
 			return;
@@ -122,14 +128,8 @@
 		};
 
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await projectService.checkUpdates(project.id, project.environmentId);
-					summarizeUpdateCheckResult(result);
-					await refreshProjects();
-				})()
-			);
-			if (operationResult.error !== null) {
+			const checked = await tryCatch(checkProjectUpdates(project));
+			if (checked.error !== null) {
 				toast.error(m.containers_check_updates_failed());
 			}
 		} finally {

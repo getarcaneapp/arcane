@@ -67,11 +67,12 @@
 	const oidcButtonLabel = $derived(oidcProviderName || m.common_oidc());
 
 	// Only an explicit redirect goes to OIDC so the saved landing preference still wins.
-	const oidcLoginHref = $derived(
-		data.redirectTo
-			? resolve(`/(auth)/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}`)
-			: resolve('/(auth)/oidc/login')
-	);
+	const oidcLoginHref = $derived.by(() => {
+		if (!data.redirectTo) {
+			return resolve('/(auth)/oidc/login');
+		}
+		return resolve(`/(auth)/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}`);
+	});
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {

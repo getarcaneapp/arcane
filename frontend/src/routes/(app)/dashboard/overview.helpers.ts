@@ -35,9 +35,10 @@ export function createBaseEnvironmentOverview(environment: Environment): Dashboa
 }
 
 export function getRoleBadge(environment: Environment): { text: string; variant: 'primary' | 'gray' } {
-	return environment.id === LOCAL_DOCKER_ENVIRONMENT_ID
-		? { text: m.manager(), variant: 'primary' }
-		: { text: m.agent(), variant: 'gray' };
+	if (environment.id === LOCAL_DOCKER_ENVIRONMENT_ID) {
+		return { text: m.manager(), variant: 'primary' };
+	}
+	return { text: m.agent(), variant: 'gray' };
 }
 
 export function getResolvedStatusLabel(environment: Environment): string {
@@ -110,9 +111,10 @@ export function getMemoryMetric(stats: SystemStats | null): number | null {
 }
 
 export function getDiskMetric(stats: SystemStats | null): number | null {
-	return stats?.diskUsage === undefined || !stats.diskTotal || stats.diskTotal <= 0
-		? null
-		: (stats.diskUsage / stats.diskTotal) * 100;
+	if (stats?.diskUsage === undefined || !stats.diskTotal || stats.diskTotal <= 0) {
+		return null;
+	}
+	return (stats.diskUsage / stats.diskTotal) * 100;
 }
 
 export function getCpuMetricLabel(stats: SystemStats | null): string {
@@ -132,7 +134,9 @@ export function getGpuMetric(stats: SystemStats | null): number | null {
 
 export function getGpuMetricLabel(stats: SystemStats | null): string {
 	const count = stats?.gpuCount ?? 0;
-	return count > 0 ? `${count} ${count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}` : '--';
+	if (count <= 0) return '--';
+	const unit = count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices();
+	return `${count} ${unit}`;
 }
 
 export type AttentionSeverity = 'critical' | 'warning' | 'info';
@@ -352,13 +356,15 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 		const sharedName = (nameCounts.get(`${environmentId}:${displayName}`) ?? 0) > 1;
 		const name = sharedName ? m.name_with_short_id({ name: displayName, id: (event.resourceId ?? '').slice(0, 8) }) : displayName;
 		const oom = event.type === 'container.oom';
+		let title = m.name_exited_with_code({ name, code: String(event.metadata?.['exitCode'] ?? '') });
+		if (oom) {
+			title = m.name_ran_out_of_memory({ name });
+		}
 		return {
 			key: `event:${key}`,
 			severity: oom ? 'critical' : 'warning',
 			environmentId,
-			title: oom
-				? m.name_ran_out_of_memory({ name })
-				: m.name_exited_with_code({ name, code: String(event.metadata?.['exitCode'] ?? '') }),
+			title,
 			detail: formatRelativeTime(event.timestamp),
 			timestamp: event.timestamp,
 			actionLabel: m.common_logs(),
@@ -408,51 +414,54 @@ export function buildAttentionItems(sources: AttentionSources): AttentionItem[] 
 			return expiresAt ? [expiresAt] : [];
 		})
 		.sort((a, b) => Temporal.Instant.compare(a, b))[0];
-	const apiKeyItems: AttentionItem[] =
-		sources.expiringApiKeys.length > 0
-			? [
-					{
-						key: 'apikeys',
-						severity: 'warning',
-						environmentId: LOCAL_DOCKER_ENVIRONMENT_ID,
-						title: m.count_api_keys_expiring_soon({ count: sources.expiringApiKeys.length }),
-						detail: soonestKeyExpiry ? m.expires_time({ time: formatRelativeTime(soonestKeyExpiry) }) : '',
-						timestamp: null,
-						actionLabel: m.manage(),
-						target: { kind: 'link', href: resolve('/(app)/system/api-keys') }
-					}
-				]
-			: [];
+	const apiKeyItems: AttentionItem[] = [];
+	if (sources.expiringApiKeys.length > 0) {
+		apiKeyItems.push({
+			key: 'apikeys',
+			severity: 'warning',
+			environmentId: LOCAL_DOCKER_ENVIRONMENT_ID,
+			title: m.count_api_keys_expiring_soon({ count: sources.expiringApiKeys.length }),
+			detail: soonestKeyExpiry ? m.expires_time({ time: formatRelativeTime(soonestKeyExpiry) }) : '',
+			timestamp: null,
+			actionLabel: m.manage(),
+			target: { kind: 'link', href: resolve('/(app)/system/api-keys') }
+		});
+	}
 
 	return [
-		...offline.map((environment): AttentionItem => ({
-			key: `offline:${environment.id}`,
-			severity: 'critical',
-			environmentId: environment.id,
-			title: m.name_is_offline({ name: environment.name }),
-			detail: environment.lastSeen
-				? m.last_seen_time({ time: formatRelativeTime(environment.lastSeen) })
-				: getResolvedStatusLabel(environment),
-			timestamp: environment.lastSeen ?? null,
-			actionLabel: m.common_view(),
-			target: { kind: 'link', href: environmentDetailHref(environment.id) }
-		})),
+		...offline.map((environment): AttentionItem => {
+			let detail = getResolvedStatusLabel(environment);
+			if (environment.lastSeen) {
+				detail = m.last_seen_time({ time: formatRelativeTime(environment.lastSeen) });
+			}
+			return {
+				key: `offline:${environment.id}`,
+				severity: 'critical',
+				environmentId: environment.id,
+				title: m.name_is_offline({ name: environment.name }),
+				detail,
+				timestamp: environment.lastSeen ?? null,
+				actionLabel: m.common_view(),
+				target: { kind: 'link', href: environmentDetailHref(environment.id) }
+			};
+		}),
 		...online.flatMap((environment): AttentionItem[] => {
 			const unhealthy = sources.containers.get(environment.id)?.unhealthyContainers ?? 0;
-			return unhealthy > 0
-				? [
-						{
-							key: `unhealthy:${environment.id}`,
-							severity: 'critical',
-							environmentId: environment.id,
-							title: m.count_unhealthy_containers({ count: unhealthy }),
-							detail: m.health_status_unhealthy(),
-							timestamp: null,
-							actionLabel: m.common_view(),
-							target: { kind: 'link', href: resolve('/(app)/containers') }
-						}
-					]
-				: [];
+			if (unhealthy <= 0) {
+				return [];
+			}
+			return [
+				{
+					key: `unhealthy:${environment.id}`,
+					severity: 'critical',
+					environmentId: environment.id,
+					title: m.count_unhealthy_containers({ count: unhealthy }),
+					detail: m.health_status_unhealthy(),
+					timestamp: null,
+					actionLabel: m.common_view(),
+					target: { kind: 'link', href: resolve('/(app)/containers') }
+				}
+			];
 		}),
 		...containerEventItems(sources.events, sources.now),
 		...sources.findings

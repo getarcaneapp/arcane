@@ -6,8 +6,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { swarmService } from '#lib/services/swarm-service.js';
+	import { swarmServiceTasksQuery } from '#lib/query/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks.js';
 
@@ -25,9 +24,7 @@
 		const requestedEnvironmentId = environmentId;
 		const requestedServiceId = serviceId;
 		return {
-			queryKey: queryKeys.swarm.serviceTasks(requestedEnvironmentId, requestedServiceId),
-			queryFn: () =>
-				swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } }, requestedEnvironmentId),
+			...swarmServiceTasksQuery(requestedEnvironmentId, requestedServiceId),
 			enabled: !!serviceName && !!requestedServiceId && hasPermission('swarm-services:read', requestedEnvironmentId)
 		};
 	});

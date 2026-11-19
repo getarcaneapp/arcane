@@ -99,16 +99,18 @@ export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndA
 				const restartsThisBackend = environments.some((env) => env.id === MANAGER_ENVIRONMENT_ID);
 				if (restartsThisBackend) BaseAPIService.setUpgradeInProgress(true);
 				try {
-					const operationResult = await tryCatch(
-						(async () => {
-							const results = await settleAcrossEnvironments(environments, (id) => imageService.runAutoUpdate(undefined, id));
-							for (const { value } of results) summarizeUpdateResult(value);
-							await onRefresh?.();
-						})()
+					const results = await tryCatch(
+						settleAcrossEnvironments(environments, (id) => imageService.runAutoUpdate(undefined, id))
 					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-						console.error('Update all failed:', error);
+					if (results.error !== null) {
+						console.error('Update all failed:', results.error);
+						toast.error(m.updates_apply_all_failed());
+						return;
+					}
+					for (const { value } of results.data) summarizeUpdateResult(value);
+					const refreshed = await tryCatch(Promise.resolve(onRefresh?.()));
+					if (refreshed.error !== null) {
+						console.error('Update all failed:', refreshed.error);
 						toast.error(m.updates_apply_all_failed());
 					}
 				} finally {

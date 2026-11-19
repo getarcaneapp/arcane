@@ -14,9 +14,8 @@ export function podmanStateVariant(state: string | undefined): PodmanStateVarian
 
 export function quadletUnitHref(labels: Record<string, string> | null | undefined, environmentId: string): string | undefined {
 	const unit = labels?.[PODMAN_SYSTEMD_UNIT_LABEL];
-	return unit && !unit.startsWith('podman-compose@')
-		? environmentHref(`/podman/quadlets?unit=${encodeURIComponent(unit)}`, environmentId)
-		: undefined;
+	if (!unit || unit.startsWith('podman-compose@')) return undefined;
+	return environmentHref(`/podman/quadlets?unit=${encodeURIComponent(unit)}`, environmentId);
 }
 
 export function shownPodmanEnvironments(

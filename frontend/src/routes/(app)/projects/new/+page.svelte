@@ -26,7 +26,7 @@
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectDirectoriesQuery } from '#lib/query/projects.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { projectTagsQuery } from '#lib/query/projects.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ProjectTag } from '#lib/types/project.js';
@@ -65,7 +65,6 @@
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
-	import { fetchProjectTags } from '../projects-table.helpers';
 
 	let { data } = $props();
 
@@ -127,11 +126,10 @@
 	});
 	let newProjectTags = $state<ProjectTag[]>([]);
 	const projectDirectories = createQuery(() => projectDirectoriesQuery(currentEnvId, 'projects'));
-	const projectTagsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.tags(currentEnvId),
-		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
-	}));
-	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
+	const tagsQuery = createQuery(() =>
+		projectTagsQuery(currentEnvId, [{ id: currentEnvId, name: environmentName(currentEnvId) }])
+	);
+	const availableProjectTags = $derived(tagsQuery.data?.tags ?? []);
 	const validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -143,19 +141,21 @@
 	const canUseTemplates = $derived(data.templatePermissions.canListTemplates && data.templatePermissions.canReadTemplates);
 	const loadNotices = $derived(templateLoadNotices(data));
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
-	const newProjectWorkspaceLeadingRows = $derived([
-		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
-		...(envRequested
-			? [
-					{
-						key: 'env',
-						label: '.env',
-						iconClass: 'text-success',
-						menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
-					}
-				]
-			: [])
-	]);
+	const newProjectWorkspaceLeadingRows = $derived.by(() => {
+		const composeRow = { key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true };
+		if (!envRequested) {
+			return [composeRow];
+		}
+		return [
+			composeRow,
+			{
+				key: 'env',
+				label: '.env',
+				iconClass: 'text-success',
+				menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
+			}
+		];
+	});
 	const newProjectWorkspaceRootMenuItems = $derived(
 		envRequested ? [] : [{ id: 'add-env', label: m.add_env_file(), icon: CreateFileIcon, onSelect: handleAddEnv }]
 	);
@@ -227,11 +227,10 @@
 		// validation and the create payload use it (event-time write, not an effect).
 		if (composeYamlName) form.setValue('name', composeYamlName);
 		const destination = environmentId;
-		const directory = (projectDirectories.data ?? []).some(
-			(candidate) => candidate.enabled && candidate.containerPath === pickedDirectory
-		)
-			? pickedDirectory
-			: '';
+		let directory = '';
+		if ((projectDirectories.data ?? []).some((candidate) => candidate.enabled && candidate.containerPath === pickedDirectory)) {
+			directory = pickedDirectory;
+		}
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),

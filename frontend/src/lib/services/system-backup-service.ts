@@ -22,7 +22,7 @@ import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class SystemBackupService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<SystemBackupRun>> {
-		const response = await this.api.get('/backups', { params: transformPaginationParams(options) });
+		const response = await this.api.get<Paginated<SystemBackupRun>>('/backups', { params: transformPaginationParams(options) });
 		return response.data;
 	}
 
@@ -30,7 +30,10 @@ class SystemBackupService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
 	): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
-		const response = await this.api.get('/backups/history', { ...config, params: transformPaginationParams(options) });
+		const response = await this.api.get<Paginated<SystemVolumeBackupHistoryEntry>>('/backups/history', {
+			...config,
+			params: transformPaginationParams(options)
+		});
 		return response.data;
 	}
 
@@ -39,7 +42,7 @@ class SystemBackupService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
 	): Promise<Paginated<SystemVolumeBackupHistoryEntry>> {
-		const response = await this.api.get(`/agents/${environmentId}/backups/history`, {
+		const response = await this.api.get<Paginated<SystemVolumeBackupHistoryEntry>>(`/agents/${environmentId}/backups/history`, {
 			...config,
 			params: transformPaginationParams(options)
 		});
@@ -94,7 +97,7 @@ class SystemBackupService extends BaseAPIService {
 		recoveryKey: string,
 		request: BackupFileBrowseRequest
 	): Promise<Paginated<BackupFileEntry>> {
-		const response = await this.api.post(
+		const response = await this.api.post<Paginated<BackupFileEntry>>(
 			`/agents/${environmentId}/backups/${id}/files/browse`,
 			{ recoveryKey },
 			{ params: request }

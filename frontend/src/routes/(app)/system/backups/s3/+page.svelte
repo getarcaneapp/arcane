@@ -53,33 +53,31 @@
 		dialogOpen = true;
 	}
 
+	async function persistDestination(input: Required<S3DestinationCreate>) {
+		let created: S3Destination | null = null;
+		if (selected) {
+			const { secretAccessKey, ...fields } = input;
+			await s3DestinationService.update(selected.id, {
+				...changedFields(selected, fields),
+				...(secretAccessKey ? { secretAccessKey } : {})
+			});
+			toast.success(m.s3_destination_updated({ name: input.name }));
+		} else {
+			created = await s3DestinationService.create(input);
+			toast.success(m.s3_destination_created({ name: input.name }));
+		}
+		await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
+		dialogOpen = false;
+		selected = null;
+		if (created) await discoverDestinationBackups(created.id);
+	}
+
 	async function saveDestination(input: Required<S3DestinationCreate>) {
 		saving = true;
 		try {
-			let created: S3Destination | null = null;
-			const operationResult = await tryCatch(
-				(async () => {
-					if (selected) {
-						const { secretAccessKey, ...fields } = input;
-						await s3DestinationService.update(selected.id, {
-							...changedFields(selected, fields),
-							...(secretAccessKey ? { secretAccessKey } : {})
-						});
-						toast.success(m.s3_destination_updated({ name: input.name }));
-					} else {
-						created = await s3DestinationService.create(input);
-						toast.success(m.s3_destination_created({ name: input.name }));
-					}
-					await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
-					dialogOpen = false;
-					selected = null;
-					if (created) await discoverDestinationBackups(created.id);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.s3_destination_save_failed());
+			const saved = await tryCatch(persistDestination(input));
+			if (saved.error !== null) {
+				toast.error(saved.error.message || m.s3_destination_save_failed());
 			}
 		} finally {
 			saving = false;
@@ -94,18 +92,13 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
-					const operationResult = await tryCatch(
-						(async () => {
-							await s3DestinationService.delete(destination.id);
-							await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
-							toast.success(m.s3_destination_deleted({ name: destination.name }));
-						})()
-					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-
-						toast.error(error instanceof Error ? error.message : m.s3_destination_delete_failed());
+					const deleted = await tryCatch(s3DestinationService.delete(destination.id));
+					if (deleted.error !== null) {
+						toast.error(deleted.error.message || m.s3_destination_delete_failed());
+						return;
 					}
+					await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
+					toast.success(m.s3_destination_deleted({ name: destination.name }));
 				}
 			}
 		});

@@ -74,30 +74,29 @@
 	const destinationsLoading = $derived(destinationsQuery.isLoading);
 	const destinationsLoadError = $derived(destinationsQuery.error ? extractApiErrorMessage(destinationsQuery.error) : null);
 	const initialPolicy = untrack(() => policies.find((item) => item.id === policyId));
-	let form = $state<PolicyForm>(
-		initialPolicy
-			? {
-					id: initialPolicy.id,
-					enabled: initialPolicy.enabled,
-					schedule: initialPolicy.schedule,
-					retentionCount: initialPolicy.retentionCount,
-					stopContainers: initialPolicy.stopContainers ?? false,
-					s3DestinationId: initialPolicy.s3DestinationId || '',
-					destination: backupDestinationFromFlags(initialPolicy.localEnabled, initialPolicy.s3Enabled)
-				}
-			: newPolicy()
-	);
+	function initialForm(): PolicyForm {
+		if (!initialPolicy) return newPolicy();
+		return {
+			id: initialPolicy.id,
+			enabled: initialPolicy.enabled,
+			schedule: initialPolicy.schedule,
+			retentionCount: initialPolicy.retentionCount,
+			stopContainers: initialPolicy.stopContainers ?? false,
+			s3DestinationId: initialPolicy.s3DestinationId || '',
+			destination: backupDestinationFromFlags(initialPolicy.localEnabled, initialPolicy.s3Enabled)
+		};
+	}
+	let form = $state<PolicyForm>(initialForm());
 
 	const destinationList = $derived(destinations ?? loadedDestinations);
 	const scheduleError = $derived.by(() => {
 		if (!form.schedule.trim()) return m.jobs_cron_required();
 		return form.serverError ?? null;
 	});
-	const retentionError = $derived(
-		Number.isInteger(Number(form.retentionCount)) && form.retentionCount >= 0 && form.retentionCount <= 3650
-			? null
-			: m.volume_backup_retention_invalid()
-	);
+	const retentionError = $derived.by(() => {
+		if (Number.isInteger(Number(form.retentionCount)) && form.retentionCount >= 0 && form.retentionCount <= 3650) return null;
+		return m.volume_backup_retention_invalid();
+	});
 	const destinationError = $derived.by(() => {
 		if (form.destination === 'local' || destinationsLoading) return null;
 		if (!form.s3DestinationId) return m.volume_backup_s3_destination_required();
@@ -130,29 +129,29 @@
 		if (formInvalid) return;
 		saving = true;
 		try {
-			const operationResult2 = await tryCatch(
-				(async () => {
-					const current = extendUpdate({
-						id: form.id,
-						enabled: form.enabled,
-						schedule: form.schedule,
-						retentionCount: Number(form.retentionCount),
-						...backupPolicyDestinationValues(form.destination, form.s3DestinationId),
-						...(showStopContainers ? { stopContainers: form.stopContainers ?? false } : {})
-					});
-					const existing = policies.map(policyPayload);
-					const next = policyId ? existing.map((policy) => (policy.id === policyId ? current : policy)) : [...existing, current];
-					onSaved(await updatePolicies(next));
-					open = false;
-					toast.success(messages.saved);
-				})()
-			);
-			if (operationResult2.error !== null) {
-				const error = operationResult2.error;
-
-				if (extractApiErrorField(error) === 'schedule') form = { ...form, serverError: extractApiErrorMessage(error) };
-				else toast.error(messages.saveFailed, { description: extractApiErrorMessage(error) });
+			const current = extendUpdate({
+				id: form.id,
+				enabled: form.enabled,
+				schedule: form.schedule,
+				retentionCount: Number(form.retentionCount),
+				...backupPolicyDestinationValues(form.destination, form.s3DestinationId),
+				...(showStopContainers ? { stopContainers: form.stopContainers ?? false } : {})
+			});
+			const existing = policies.map(policyPayload);
+			let next = [...existing, current];
+			if (policyId) {
+				next = existing.map((policy) => (policy.id === policyId ? current : policy));
 			}
+			const saved = await tryCatch(updatePolicies(next));
+			if (saved.error !== null) {
+				if (extractApiErrorField(saved.error) === 'schedule')
+					form = { ...form, serverError: extractApiErrorMessage(saved.error) };
+				else toast.error(messages.saveFailed, { description: extractApiErrorMessage(saved.error) });
+				return;
+			}
+			onSaved(saved.data);
+			open = false;
+			toast.success(messages.saved);
 		} finally {
 			saving = false;
 		}
@@ -162,18 +161,14 @@
 		if (!policyId) return;
 		deleting = true;
 		try {
-			const operationResult3 = await tryCatch(
-				(async () => {
-					onSaved(await updatePolicies(policies.filter((policy) => policy.id !== policyId).map(policyPayload)));
-					open = false;
-					toast.success(messages.removed);
-				})()
-			);
-			if (operationResult3.error !== null) {
-				const error = operationResult3.error;
-
-				toast.error(error instanceof Error ? error.message : messages.saveFailed);
+			const removed = await tryCatch(updatePolicies(policies.filter((policy) => policy.id !== policyId).map(policyPayload)));
+			if (removed.error !== null) {
+				toast.error(removed.error instanceof Error ? removed.error.message : messages.saveFailed);
+				return;
 			}
+			onSaved(removed.data);
+			open = false;
+			toast.success(messages.removed);
 		} finally {
 			deleting = false;
 		}

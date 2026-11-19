@@ -18,6 +18,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageListQuery, imageUsageCountsQuery } from '#lib/query/images.js';
+	import { imageUploadLimitQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { emptySettings, settingsService } from '#lib/services/settings-service.js';
@@ -134,9 +135,7 @@
 	const uploadEnvironmentId = $derived(destinationEnvironmentId(pickedUploadEnvironmentId, 'images:upload'));
 	// Merged lists carry one environment's upload limit, so the destination's own is read while uploading.
 	const uploadLimitQuery = createQuery(() => ({
-		queryKey: queryKeys.images.uploadLimit(uploadEnvironmentId),
-		queryFn: async () =>
-			(await imageService.getImagesForEnvironment(uploadEnvironmentId, { pagination: { page: 1, limit: 1 } })).maxImageUploadSize,
+		...imageUploadLimitQuery(uploadEnvironmentId),
 		enabled: isUploadDialogOpen,
 		retry: false
 	}));
@@ -147,14 +146,13 @@
 		mutationFn: async ({ files, requestedEnvId }: { files: File[]; requestedEnvId: string }) => {
 			for (const file of files) {
 				try {
-					const operationResult = await tryCatch(
-						(async () => {
-							await imageService.uploadImage(file, requestedEnvId, (progress) => (uploadProgress = progress));
-							toast.success(m.images_upload_success());
-						})()
+					const uploaded = await tryCatch(
+						imageService.uploadImage(file, requestedEnvId, (progress) => (uploadProgress = progress))
 					);
-					if (operationResult.error !== null) {
+					if (uploaded.error !== null) {
 						toast.error(m.images_upload_failed());
+					} else {
+						toast.success(m.images_upload_success());
 					}
 				} finally {
 					uploadProgress = null;
@@ -217,9 +215,8 @@
 			])
 		);
 		const complete = result.data?.every((sum) => sum.failedEnvironments.length === 0) === true;
-		const [first, ...rest] = complete
-			? (result.data ?? []).flatMap((sum) => sum.byEnvironment.map(({ data }) => data.values))
-			: [];
+		const environmentValues = (result.data ?? []).flatMap((sum) => sum.byEnvironment.map(({ data }) => data.values));
+		const [first, ...rest] = complete ? environmentValues : [];
 		const agreed = rest.every(
 			(values) => values.pruneImageMode === first?.pruneImageMode && values.pruneImageUntil === first?.pruneImageUntil
 		);

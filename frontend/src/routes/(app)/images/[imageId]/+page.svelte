@@ -33,17 +33,17 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageDetailQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { imageScanResultQuery } from '#lib/query/vulnerabilities.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { VulnerabilityScanResult } from '#lib/types/vulnerability.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { stabilizeFailedVulnerabilitySummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
+	import { isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
 	import { parseImageRef } from '#lib/utils/docker.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -102,37 +102,15 @@
 		const environmentId = currentEnvId;
 		const imageId = image?.id ?? '';
 		const scope = `${environmentId}:${imageId}`;
-		const fetchScanResult = async (signal: AbortSignal) => {
-			await environmentStore.ready;
-			signal.throwIfAborted();
-			const result = await vulnerabilityService.getScanResult(imageId, environmentId);
-			if (result.status !== 'failed' || scanRequest?.scope !== scope) return result;
-			const { data: summary } = await tryCatch(
-				stabilizeFailedVulnerabilitySummary(imageId, result, (id) => vulnerabilityService.getScanSummary(id, environmentId), {
-					scanRequestedAt: scanRequest.time
-				})
-			);
-			if (!summary || summary.status === 'failed') return result;
-			if (!isVulnerabilityScanInProgress(summary.status)) return vulnerabilityService.getScanResult(imageId, environmentId);
-			return {
-				...result,
-				scanTime: summary.scanTime,
-				status: summary.status,
-				scanPhase: summary.scanPhase,
-				summary: summary.summary,
-				error: summary.error
-			};
-		};
 		return {
-			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId),
-			queryFn: async ({ signal }) => {
-				const result = await fetchScanResult(signal);
-				if (completionToastScope === scope && !isVulnerabilityScanInProgress(result.status)) {
+			...imageScanResultQuery(environmentId, imageId, {
+				requestedAt: () => (scanRequest?.scope === scope ? scanRequest.time : undefined),
+				onResult: (result) => {
+					if (completionToastScope !== scope || isVulnerabilityScanInProgress(result.status)) return;
 					completionToastScope = null;
 					toastVulnerabilityScanStatus(result);
 				}
-				return result;
-			},
+			}),
 			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
 			retry: false
 		};

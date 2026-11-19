@@ -28,19 +28,14 @@
 
 		loading = true;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					const result = await onCreate(folderName);
-					toast.success(m.common_create_success({ resource: folderName }), activityToastOptions(extractActivityId(result)));
-					open = false;
-					folderName = '';
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const e = operationResult1.error;
-
-				toast.error(e.message || m.common_create_failed({ resource: folderName }));
+			const created = await tryCatch(onCreate(folderName));
+			if (created.error !== null) {
+				toast.error(created.error.message || m.common_create_failed({ resource: folderName }));
+				return;
 			}
+			toast.success(m.common_create_success({ resource: folderName }), activityToastOptions(extractActivityId(created.data)));
+			open = false;
+			folderName = '';
 		} finally {
 			loading = false;
 		}

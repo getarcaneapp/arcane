@@ -152,11 +152,12 @@
 		return queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) });
 	}
 
-	const tableRequestOptions = $derived(
-		containers.resourceSortSupported !== true && isResourceSort(requestOptions?.sort)
-			? { ...requestOptions, sort: defaultSort }
-			: requestOptions
-	);
+	const tableRequestOptions = $derived.by(() => {
+		if (containers.resourceSortSupported !== true && isResourceSort(requestOptions?.sort)) {
+			return { ...requestOptions, sort: defaultSort };
+		}
+		return requestOptions;
+	});
 
 	function withSupportedSort(next: SearchPaginationSortRequest): SearchPaginationSortRequest {
 		if (containers.resourceSortSupported === true || !isResourceSort(next?.sort)) return next;
@@ -470,97 +471,87 @@
 		{ id: 'created', label: m.common_created(), defaultVisible: false }
 	];
 
-	const bulkActions = $derived.by<BulkAction[]>(() => [
-		...(canStartContainers
-			? [
-					{
-						id: 'start',
-						label: m.containers_bulk_start({
-							count: selectedIds?.length ?? 0
-						}),
-						action: 'start' as const,
-						onclick: handleBulkStart,
-						loading: isBulkLoading.start,
-						disabled: !resourcesCurrent || isAnyLoading,
-						icon: PlayIcon
-					}
-				]
-			: []),
-		...(canUpdateContainers && filterUpdatableContainerIds()?.length > 0
-			? [
-					{
-						id: 'update',
-						label: m.containers_bulk_update({
-							count: filterUpdatableContainerIds()?.length ?? 0
-						}),
-						action: 'update' as const,
-						onclick: handleSelectedBulkUpdate,
-						loading: isBulkLoading.update,
-						disabled: !resourcesCurrent || isAnyLoading,
-						icon: UpdateIcon
-					}
-				]
-			: []),
-		...(canStopContainers
-			? [
-					{
-						id: 'stop',
-						label: m.containers_bulk_stop({
-							count: selectedIds?.length ?? 0
-						}),
-						action: 'stop' as const,
-						onclick: handleBulkStop,
-						loading: isBulkLoading.stop,
-						disabled: !resourcesCurrent || isAnyLoading,
-						icon: StopIcon
-					}
-				]
-			: []),
-		...(canRestartContainers
-			? [
-					{
-						id: 'restart',
-						label: m.containers_bulk_restart({
-							count: selectedIds?.length ?? 0
-						}),
-						action: 'restart' as const,
-						onclick: handleBulkRestart,
-						loading: isBulkLoading.restart,
-						disabled: !resourcesCurrent || isAnyLoading,
-						icon: RefreshIcon
-					}
-				]
-			: []),
-		...(canDeleteContainers
-			? [
-					{
-						id: 'remove',
-						label: m.containers_bulk_remove({
-							count: selectedIds?.length ?? 0
-						}),
-						action: 'remove' as const,
-						onclick: handleBulkRemove,
-						loading: isBulkLoading.remove,
-						disabled: !resourcesCurrent || isAnyLoading,
-						icon: TrashIcon
-					}
-				]
-			: []),
-		...(canConvertToCompose
-			? [
-					{
-						id: 'convert',
-						label: m.containers_bulk_convert({
-							count: selectedIds?.length ?? 0
-						}),
-						action: 'base' as const,
-						onclick: handleBulkConvert,
-						disabled: !resourcesCurrent || isAnyLoading || selectedEnvironmentIds.size > 1,
-						icon: ProjectsIcon
-					}
-				]
-			: [])
-	]);
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		const actions: BulkAction[] = [];
+		if (canStartContainers) {
+			actions.push({
+				id: 'start',
+				label: m.containers_bulk_start({
+					count: selectedIds?.length ?? 0
+				}),
+				action: 'start',
+				onclick: handleBulkStart,
+				loading: isBulkLoading.start,
+				disabled: !resourcesCurrent || isAnyLoading,
+				icon: PlayIcon
+			});
+		}
+		if (canUpdateContainers && filterUpdatableContainerIds()?.length > 0) {
+			actions.push({
+				id: 'update',
+				label: m.containers_bulk_update({
+					count: filterUpdatableContainerIds()?.length ?? 0
+				}),
+				action: 'update',
+				onclick: handleSelectedBulkUpdate,
+				loading: isBulkLoading.update,
+				disabled: !resourcesCurrent || isAnyLoading,
+				icon: UpdateIcon
+			});
+		}
+		if (canStopContainers) {
+			actions.push({
+				id: 'stop',
+				label: m.containers_bulk_stop({
+					count: selectedIds?.length ?? 0
+				}),
+				action: 'stop',
+				onclick: handleBulkStop,
+				loading: isBulkLoading.stop,
+				disabled: !resourcesCurrent || isAnyLoading,
+				icon: StopIcon
+			});
+		}
+		if (canRestartContainers) {
+			actions.push({
+				id: 'restart',
+				label: m.containers_bulk_restart({
+					count: selectedIds?.length ?? 0
+				}),
+				action: 'restart',
+				onclick: handleBulkRestart,
+				loading: isBulkLoading.restart,
+				disabled: !resourcesCurrent || isAnyLoading,
+				icon: RefreshIcon
+			});
+		}
+		if (canDeleteContainers) {
+			actions.push({
+				id: 'remove',
+				label: m.containers_bulk_remove({
+					count: selectedIds?.length ?? 0
+				}),
+				action: 'remove',
+				onclick: handleBulkRemove,
+				loading: isBulkLoading.remove,
+				disabled: !resourcesCurrent || isAnyLoading,
+				icon: TrashIcon
+			});
+		}
+		if (canConvertToCompose) {
+			actions.push({
+				id: 'convert',
+				label: m.containers_bulk_convert({
+					count: selectedIds?.length ?? 0
+				}),
+				action: 'base',
+				onclick: handleBulkConvert,
+				disabled: !resourcesCurrent || isAnyLoading || selectedEnvironmentIds.size > 1,
+				icon: ProjectsIcon
+			});
+		}
+		return actions;
+	});
 
 	function getGroupIcon(_groupName: string) {
 		return ProjectsIcon;

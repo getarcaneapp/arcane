@@ -46,9 +46,9 @@
 	async function handleAutoUpdateToggle(checked: boolean) {
 		autoUpdateToggling = true;
 		try {
-			const operationResult = await tryCatch(containerService.setAutoUpdate(container.id, checked, environmentId));
-			if (operationResult.error !== null) {
-				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
+			const saved = await tryCatch(containerService.setAutoUpdate(container.id, checked, environmentId));
+			if (saved.error !== null) {
+				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(saved.error) });
 				return;
 			}
 			toast.success(checked ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());

@@ -9,11 +9,10 @@
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { swarmService } from '#lib/services/swarm-service.js';
+	import { swarmStatusQuery } from '#lib/query/swarm.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+	import { readableEnvironments } from '#lib/utils/environments.js';
 
 	import ClusterPanel from './components/cluster-panel.svelte';
 	import EasyJoinDialog from './components/easy-join-dialog.svelte';
@@ -21,11 +20,7 @@
 	const statusQuery = createQuery(() => {
 		const environments = readableEnvironments('swarm:read');
 		return {
-			queryKey: queryKeys.swarm.status(environments.map((environment) => environment.id).join(',')),
-			queryFn: () =>
-				sumAcrossEnvironments(environments, (scope, config) => swarmService.getSwarmStatus(scope, config), {
-					enabled: false
-				}),
+			...swarmStatusQuery(environments),
 			select: (status) => ({
 				failedEnvironments: status.failedEnvironments,
 				rows: environments.map((environment) => ({

@@ -32,7 +32,7 @@
 		environments.find((environment) => environment.id === environmentId)?.name ?? m.all_environments()
 	);
 
-	function handleCancelInternal() {
+	function handleCancel() {
 		if (!isPruning) {
 			onCancel();
 		}
@@ -41,7 +41,7 @@
 
 <ResponsiveDialog
 	{open}
-	onOpenChange={(isOpen) => !isOpen && handleCancelInternal()}
+	onOpenChange={(isOpen) => !isOpen && handleCancel()}
 	title={m.prune_confirm_system_title()}
 	description={m.prune_confirm_description()}
 	contentClass="sm:max-w-215"
@@ -64,7 +64,7 @@
 			</div>
 		{/if}
 		{#key defaults}
-			<PruneConfirmationDialogContent {defaults} {isPruning} {onConfirm} onCancel={handleCancelInternal} />
+			<PruneConfirmationDialogContent {defaults} {isPruning} {onConfirm} onCancel={handleCancel} />
 		{/key}
 	{/if}
 </ResponsiveDialog>

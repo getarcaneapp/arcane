@@ -15,7 +15,7 @@ import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
  * on its own — it has to be told. Without this stream the environment list is
  * frozen at whatever the root layout load happened to see.
  */
-function createEnvironmentStatusStoreInternal() {
+function createEnvironmentStatusStore() {
 	const lifecycle = createAbortLifecycle();
 
 	return {
@@ -66,4 +66,4 @@ function createEnvironmentStatusStoreInternal() {
 	};
 }
 
-export const environmentStatusStore = createEnvironmentStatusStoreInternal();
+export const environmentStatusStore = createEnvironmentStatusStore();

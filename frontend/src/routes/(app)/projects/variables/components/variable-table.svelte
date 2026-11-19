@@ -53,12 +53,13 @@
 
 	const filteredVariables = $derived.by(() => {
 		const query = (requestOptions.search ?? '').trim().toLowerCase();
-		const list = query
-			? variables.filter(
-					(variable) =>
-						variable.key.toLowerCase().includes(query) || (!variable.isSecret && variable.value.toLowerCase().includes(query))
-				)
-			: [...variables];
+		let list = [...variables];
+		if (query) {
+			list = variables.filter(
+				(variable) =>
+					variable.key.toLowerCase().includes(query) || (!variable.isSecret && variable.value.toLowerCase().includes(query))
+			);
+		}
 
 		const sort = requestOptions.sort;
 		if (sort?.column === 'key') {

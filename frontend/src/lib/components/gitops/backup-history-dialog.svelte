@@ -8,8 +8,7 @@
 	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+	import { gitOpsBackupHistoryQuery, gitOpsBackupRevisionQuery } from '#lib/query/gitops.js';
 	import type { GitOpsBackupHistoryEntry, GitOpsSync } from '#lib/types/gitops.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
@@ -26,14 +25,12 @@
 	let selectedCommit = $state<string | null>(null);
 
 	const history = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.backupHistory(environmentId, sync?.id ?? ''),
-		queryFn: () => gitOpsSyncService.getBackupHistory(environmentId, sync!.id),
+		...gitOpsBackupHistoryQuery(environmentId, sync?.id ?? ''),
 		enabled: open && !!sync
 	}));
 
 	const revision = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.backupRevision(environmentId, sync?.id ?? '', selectedCommit ?? ''),
-		queryFn: () => gitOpsSyncService.getBackupRevision(environmentId, sync!.id, selectedCommit!),
+		...gitOpsBackupRevisionQuery(environmentId, sync?.id ?? '', selectedCommit ?? ''),
 		enabled: open && !!sync && !!selectedCommit
 	}));
 

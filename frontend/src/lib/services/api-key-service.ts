@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class ApiKeyAPIService extends BaseAPIService {
 	async getApiKeys(options?: SearchPaginationSortRequest): Promise<Paginated<ApiKey>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/apikeys', { params });
+		const res = await this.api.get<Paginated<ApiKey>>('/apikeys', { params });
 		return res.data;
 	}
 

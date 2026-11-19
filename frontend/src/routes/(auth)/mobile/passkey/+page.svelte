@@ -71,37 +71,37 @@
 		status = 'ready';
 	}
 
+	async function runCeremony(ceremonyRequest: MobilePasskeyBridgeRequest) {
+		let credential: MobilePasskeyCredential;
+		if (ceremonyRequest.operation === 'authenticate') {
+			credential = await startAuthentication({
+				optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialRequestOptionsJSON
+			});
+			if (ceremonyRequest.mobileLogin) {
+				const completion = await passkeyService.finishMobileLogin(
+					ceremonyRequest.mobileLogin.ceremonyId,
+					credential,
+					ceremonyRequest.mobileLogin.codeChallenge
+				);
+				returnToArcaneMobile(makeMobilePasskeyLoginCallback(ceremonyRequest.state, completion.transactionId));
+				return;
+			}
+		} else {
+			credential = await startRegistration({
+				optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialCreationOptionsJSON
+			});
+		}
+
+		returnToArcaneMobile(makeMobilePasskeySuccessCallback(ceremonyRequest.state, credential));
+	}
+
 	async function beginCeremony() {
 		if (!request || status === 'working' || status === 'returning') return;
 		status = 'working';
 		await tick();
 
 		const ceremonyRequest = request;
-		const ceremonyResult = await tryCatch(
-			(async () => {
-				let credential: MobilePasskeyCredential;
-				if (ceremonyRequest.operation === 'authenticate') {
-					credential = await startAuthentication({
-						optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialRequestOptionsJSON
-					});
-					if (ceremonyRequest.mobileLogin) {
-						const completion = await passkeyService.finishMobileLogin(
-							ceremonyRequest.mobileLogin.ceremonyId,
-							credential,
-							ceremonyRequest.mobileLogin.codeChallenge
-						);
-						returnToArcaneMobile(makeMobilePasskeyLoginCallback(ceremonyRequest.state, completion.transactionId));
-						return;
-					}
-				} else {
-					credential = await startRegistration({
-						optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialCreationOptionsJSON
-					});
-				}
-
-				returnToArcaneMobile(makeMobilePasskeySuccessCallback(ceremonyRequest.state, credential));
-			})()
-		);
+		const ceremonyResult = await tryCatch(runCeremony(ceremonyRequest));
 		if (ceremonyResult.error !== null) {
 			returnToArcaneMobile(
 				makeMobilePasskeyErrorCallback(ceremonyRequest.state, classifyMobilePasskeyError(ceremonyResult.error))

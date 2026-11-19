@@ -50,16 +50,18 @@
 		}: {
 			registry: ContainerRegistryCreate | ContainerRegistryUpdate;
 			target: ContainerRegistry | null;
-		}) =>
-			target
-				? containerRegistryService.updateRegistry(target.id, registry as ContainerRegistryUpdate)
-				: containerRegistryService.createRegistry(registry as ContainerRegistryCreate),
+		}) => {
+			if (target) {
+				return containerRegistryService.updateRegistry(target.id, registry as ContainerRegistryUpdate);
+			}
+			return containerRegistryService.createRegistry(registry as ContainerRegistryCreate);
+		},
 		onSuccess: async (_result, { target }) => {
-			toast.success(
-				target
-					? m.common_update_success({ resource: m.resource_registry() })
-					: m.common_create_success({ resource: m.resource_registry() })
-			);
+			if (target) {
+				toast.success(m.common_update_success({ resource: m.resource_registry() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.resource_registry() }));
+			}
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
 			isRegistryDialogOpen = false;
 		},

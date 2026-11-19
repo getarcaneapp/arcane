@@ -34,7 +34,8 @@ export function extractApiErrorMessage(error: unknown): string {
 
 export function extractApiErrorField(error: unknown): string | undefined {
 	if (!(error instanceof APIError)) return undefined;
-	const field: unknown = error.response?.data?.details?.field;
+	const data = error.response?.data as { details?: { field?: unknown } } | undefined;
+	const field = data?.details?.field;
 	return typeof field === 'string' ? field : undefined;
 }
 

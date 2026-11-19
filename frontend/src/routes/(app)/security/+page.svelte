@@ -172,27 +172,31 @@
 		await parallelRefresh(
 			{
 				vulnerabilities: {
-					fetch: () =>
-						reset
-							? queryClient.resetQueries(
-									{
-										queryKey: queryKeys.vulnerabilities.allByEnvironment(requestedScope, vulnerabilityRequest(requestOptions)),
-										exact: true
-									},
-									{ throwOnError: true }
-								)
-							: vulnerabilitiesQuery.refetch({ throwOnError: true }),
+					fetch: () => {
+						if (!reset) {
+							return vulnerabilitiesQuery.refetch({ throwOnError: true });
+						}
+						return queryClient.resetQueries(
+							{
+								queryKey: queryKeys.vulnerabilities.allByEnvironment(requestedScope, vulnerabilityRequest(requestOptions)),
+								exact: true
+							},
+							{ throwOnError: true }
+						);
+					},
 					onSuccess: () => {},
 					errorMessage: m.common_refresh_failed({ resource: m.vuln_title() })
 				},
 				patches: {
-					fetch: () =>
-						reset
-							? queryClient.resetQueries(
-									{ queryKey: queryKeys.images.patchTargets(requestedScope, patchRequestOptions), exact: true },
-									{ throwOnError: true }
-								)
-							: patchTargetsQuery.refetch({ throwOnError: true }),
+					fetch: () => {
+						if (!reset) {
+							return patchTargetsQuery.refetch({ throwOnError: true });
+						}
+						return queryClient.resetQueries(
+							{ queryKey: queryKeys.images.patchTargets(requestedScope, patchRequestOptions), exact: true },
+							{ throwOnError: true }
+						);
+					},
 					onSuccess: () => {},
 					errorMessage: m.common_refresh_failed({ resource: m.patches() })
 				}
@@ -235,6 +239,88 @@
 		destroyed = true;
 	});
 
+	async function scanImagesInScope(requestedScope: string) {
+		const environments = vulnerabilityEnvironments().filter(
+			(env) => hasPermission('vulnerabilities:scan', env.id) && hasPermission('images:list', env.id)
+		);
+		const fetchImagesPage = (page: number) =>
+			fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
+				imageService.getImagesForEnvironment(id, request, config)
+			);
+		const firstPage = await fetchImagesPage(1);
+		const imagePages = [firstPage];
+		for (
+			let page = 2;
+			page <= firstPage.pagination.totalPages && imagePages.length * BULK_FETCH_PAGE_SIZE < BULK_FETCH_MAX_ITEMS;
+			page++
+		) {
+			imagePages.push(await fetchImagesPage(page));
+		}
+		const images = imagePages.flatMap((imagePage) => imagePage.data ?? []);
+		// Environments whose images could not be listed were not scanned.
+		const skipped =
+			withFailedEnvironments(firstPage, ...imagePages.slice(1).map((imagePage) => imagePage.failedEnvironments))
+				.failedEnvironments ?? [];
+		for (const { environment, message } of skipped) {
+			toast.error(m.all_environments_request_failed({ environment: environment.name }), {
+				id: `environment-request-failed-${environment.id}`,
+				description: message
+			});
+		}
+
+		if (firstPage.pagination.totalItems > images.length) {
+			toast.warning(m.security_scan_all_capped({ count: images.length, total: firstPage.pagination.totalItems }));
+		}
+
+		if (images.length === 0) {
+			toast.info(m.security_no_images_to_scan());
+			isLoading.scanningAll = false;
+			return;
+		}
+
+		scanProgress = { current: 0, total: images.length };
+
+		const BATCH_SIZE = 3;
+		let succeeded = 0;
+		let failed = 0;
+
+		for (let i = 0; i < images.length; i += BATCH_SIZE) {
+			if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
+			const batch = images.slice(i, i + BATCH_SIZE);
+
+			await Promise.all(
+				batch.map(async (image) => {
+					const scanned = await tryCatch(vulnerabilityService.scanImage(image.id, image.environmentId));
+					if (scanned.error !== null) {
+						console.error(`Failed to scan image ${image.id}:`, scanned.error);
+						failed++;
+					} else if (
+						scanned.data.status === 'completed' ||
+						scanned.data.status === 'scanning' ||
+						scanned.data.status === 'pending'
+					) {
+						succeeded++;
+					} else {
+						failed++;
+					}
+					scanProgress.current++;
+				})
+			);
+		}
+
+		if (failed === 0 && skipped.length > 0) {
+			toast.warning(m.security_scan_all_success({ count: succeeded }));
+		} else if (failed === 0) {
+			toast.success(m.security_scan_all_success({ count: succeeded }));
+		} else if (succeeded === 0) {
+			toast.error(m.security_scan_all_failed({ count: failed }));
+		} else {
+			toast.warning(m.security_scan_all_partial({ succeeded, failed }));
+		}
+
+		await refreshAll();
+	}
+
 	async function scanAllImages() {
 		if (!vulnerabilityManagementEnabled || isLoading.scanningAll) return;
 
@@ -243,95 +329,9 @@
 		scanProgress = { current: 0, total: 0 };
 
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const environments = vulnerabilityEnvironments().filter(
-						(env) => hasPermission('vulnerabilities:scan', env.id) && hasPermission('images:list', env.id)
-					);
-					const fetchImagesPage = (page: number) =>
-						fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
-							imageService.getImagesForEnvironment(id, request, config)
-						);
-					const firstPage = await fetchImagesPage(1);
-					const imagePages = [firstPage];
-					for (
-						let page = 2;
-						page <= firstPage.pagination.totalPages && imagePages.length * BULK_FETCH_PAGE_SIZE < BULK_FETCH_MAX_ITEMS;
-						page++
-					) {
-						imagePages.push(await fetchImagesPage(page));
-					}
-					const images = imagePages.flatMap((imagePage) => imagePage.data ?? []);
-					// Environments whose images could not be listed were not scanned.
-					const skipped =
-						withFailedEnvironments(firstPage, ...imagePages.slice(1).map((imagePage) => imagePage.failedEnvironments))
-							.failedEnvironments ?? [];
-					for (const { environment, message } of skipped) {
-						toast.error(m.all_environments_request_failed({ environment: environment.name }), {
-							id: `environment-request-failed-${environment.id}`,
-							description: message
-						});
-					}
-
-					if (firstPage.pagination.totalItems > images.length) {
-						toast.warning(m.security_scan_all_capped({ count: images.length, total: firstPage.pagination.totalItems }));
-					}
-
-					if (images.length === 0) {
-						toast.info(m.security_no_images_to_scan());
-						isLoading.scanningAll = false;
-						return;
-					}
-
-					scanProgress = { current: 0, total: images.length };
-
-					const BATCH_SIZE = 3;
-					let succeeded = 0;
-					let failed = 0;
-
-					for (let i = 0; i < images.length; i += BATCH_SIZE) {
-						if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
-						const batch = images.slice(i, i + BATCH_SIZE);
-
-						await Promise.all(
-							batch.map(async (image) => {
-								const operationResult = await tryCatch(
-									(async () => {
-										const result = await vulnerabilityService.scanImage(image.id, image.environmentId);
-										if (result.status === 'completed' || result.status === 'scanning' || result.status === 'pending') {
-											succeeded++;
-										} else {
-											failed++;
-										}
-									})()
-								);
-								if (operationResult.error !== null) {
-									const error = operationResult.error;
-
-									console.error(`Failed to scan image ${image.id}:`, error);
-									failed++;
-								}
-								scanProgress.current++;
-							})
-						);
-					}
-
-					if (failed === 0 && skipped.length > 0) {
-						toast.warning(m.security_scan_all_success({ count: succeeded }));
-					} else if (failed === 0) {
-						toast.success(m.security_scan_all_success({ count: succeeded }));
-					} else if (succeeded === 0) {
-						toast.error(m.security_scan_all_failed({ count: failed }));
-					} else {
-						toast.warning(m.security_scan_all_partial({ succeeded, failed }));
-					}
-
-					await refreshAll();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				console.error('Error during scan all:', error);
+			const scanned = await tryCatch(scanImagesInScope(requestedScope));
+			if (scanned.error !== null) {
+				console.error('Error during scan all:', scanned.error);
 				toast.error(m.security_scan_all_error());
 			}
 		} finally {

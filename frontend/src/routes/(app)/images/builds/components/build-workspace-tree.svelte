@@ -34,18 +34,19 @@
 
 	const disabled = $derived(!canEdit || workspace.saving);
 	const canOpenBuildSettings = $derived(hasPermission('environment-settings:read', workspace.environmentId));
-	const rootMenuItems = $derived(
-		workspace.contextPath
-			? [
-					{
-						id: 'build-context',
-						label: m.use_as_build_context(),
-						icon: FolderOpenIcon,
-						onSelect: () => (workspace.contextPath = '')
-					}
-				]
-			: []
-	);
+	const rootMenuItems = $derived.by(() => {
+		if (!workspace.contextPath) {
+			return [];
+		}
+		return [
+			{
+				id: 'build-context',
+				label: m.use_as_build_context(),
+				icon: FolderOpenIcon,
+				onSelect: () => (workspace.contextPath = '')
+			}
+		];
+	});
 
 	function rowMenuItems(entry: WorkspaceDisplayEntry) {
 		if (!entry.isDirectory) return [];

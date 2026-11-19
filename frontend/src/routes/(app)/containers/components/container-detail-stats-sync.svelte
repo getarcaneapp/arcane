@@ -32,6 +32,51 @@
 	let history: ContainerStatsHistorySample[] = [];
 	let lastStatsRead: string | null = null;
 
+	async function connectStatsStream(requestGeneration: number, requestedContainerId: string) {
+		const envId = environmentId;
+		if (requestGeneration !== generation || !enabled || requestedContainerId !== containerId) return;
+
+		const ws = createContainerStatsWebSocket({
+			getEnvId: () => envId,
+			containerId: requestedContainerId,
+			onMessage: (statsData) => {
+				if (requestGeneration !== generation) return;
+				if (statsData.removed) {
+					void refreshAll();
+					return;
+				}
+
+				if (statsData.statsHistory?.length) {
+					history = statsData.statsHistory;
+				} else if (statsData.read && statsData.read !== lastStatsRead && statsData.currentHistorySample) {
+					history = [...history, statsData.currentHistorySample].slice(-30);
+				}
+				lastStatsRead = statsData.read;
+				stats = { ...statsData, statsHistory: history };
+				hasInitialStatsLoaded = true;
+				statsError = false;
+			},
+			onOpen: () => {
+				isConnecting = false;
+				statsError = false;
+			},
+			onError: () => {
+				isConnecting = false;
+				stats = null;
+				hasInitialStatsLoaded = false;
+				statsError = true;
+			},
+			onClose: () => {
+				isConnecting = false;
+			},
+			maxBackoff: 5000,
+			shouldReconnect: () => enabled
+		});
+
+		ws.connect();
+		statsWebSocket = ws;
+	}
+
 	async function startStatsStream() {
 		if (!enabled || isConnecting || statsWebSocket || !containerId) {
 			return;
@@ -41,54 +86,9 @@
 		isConnecting = true;
 		const requestGeneration = generation;
 		const requestedContainerId = containerId;
-		const operationResult = await tryCatch(
-			(async () => {
-				const envId = environmentId;
-				if (requestGeneration !== generation || !enabled || requestedContainerId !== containerId) return;
-
-				const ws = createContainerStatsWebSocket({
-					getEnvId: () => envId,
-					containerId: requestedContainerId,
-					onMessage: (statsData) => {
-						if (requestGeneration !== generation) return;
-						if (statsData.removed) {
-							void refreshAll();
-							return;
-						}
-
-						if (statsData.statsHistory?.length) {
-							history = statsData.statsHistory;
-						} else if (statsData.read && statsData.read !== lastStatsRead && statsData.currentHistorySample) {
-							history = [...history, statsData.currentHistorySample].slice(-30);
-						}
-						lastStatsRead = statsData.read;
-						stats = { ...statsData, statsHistory: history };
-						hasInitialStatsLoaded = true;
-						statsError = false;
-					},
-					onOpen: () => {
-						isConnecting = false;
-						statsError = false;
-					},
-					onError: () => {
-						isConnecting = false;
-						stats = null;
-						hasInitialStatsLoaded = false;
-						statsError = true;
-					},
-					onClose: () => {
-						isConnecting = false;
-					},
-					maxBackoff: 5000,
-					shouldReconnect: () => enabled
-				});
-
-				ws.connect();
-				statsWebSocket = ws;
-			})()
-		);
+		const connected = await tryCatch(connectStatsStream(requestGeneration, requestedContainerId));
 		if (requestGeneration !== generation) return;
-		if (operationResult.error !== null) {
+		if (connected.error !== null) {
 			isConnecting = false;
 			statsError = true;
 		}

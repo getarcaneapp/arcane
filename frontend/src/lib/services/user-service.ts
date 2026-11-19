@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class UserAPIService extends BaseAPIService {
 	async getUsers(options?: SearchPaginationSortRequest): Promise<Paginated<User>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/users', { params });
+		const res = await this.api.get<Paginated<User>>('/users', { params });
 		return res.data;
 	}
 

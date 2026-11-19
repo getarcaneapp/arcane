@@ -13,16 +13,16 @@
 	let securitySubTab = $state('trivy');
 
 	function securityTabItems(vulnerabilityManagementEnabled: boolean): TabItem[] {
+		const items: TabItem[] = [];
+		if (vulnerabilityManagementEnabled) {
+			items.push({
+				value: 'trivy',
+				label: m.security_vulnerability_scanning_heading(),
+				icon: SearchIcon
+			});
+		}
 		return [
-			...(vulnerabilityManagementEnabled
-				? [
-						{
-							value: 'trivy',
-							label: m.security_vulnerability_scanning_heading(),
-							icon: SearchIcon
-						}
-					]
-				: []),
+			...items,
 			{
 				value: 'patching',
 				label: m.security_image_patching_heading(),

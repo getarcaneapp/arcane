@@ -1,5 +1,5 @@
-import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
+import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 import { swarmStackListQuery } from '#lib/query/swarm.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -15,20 +15,18 @@ export const load: PageLoad = async ({ parent }) => {
 		direction: 'asc'
 	});
 
-	const result = await tryCatch(
-		(async () => {
-			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm-stacks:list'));
-			const stacks = await queryClient.query(swarmStackListQuery(swarm, requestOptions));
-			return { swarm, stacks };
-		})()
-	);
-	if (result.error !== null) {
-		throwPageLoadError(result.error, m.common_load_failed({ resource: m.swarm_stacks_title() }));
+	const swarm = await tryCatch(queryClient.query(swarmEnvironmentsQuery('swarm-stacks:list')));
+	if (swarm.error !== null) {
+		throwPageLoadError(swarm.error, m.common_load_failed({ resource: m.swarm_stacks_title() }));
+	}
+	const stacks = await tryCatch(queryClient.query(swarmStackListQuery(swarm.data, requestOptions)));
+	if (stacks.error !== null) {
+		throwPageLoadError(stacks.error, m.common_load_failed({ resource: m.swarm_stacks_title() }));
 	}
 
 	return {
-		swarm: result.data.swarm,
-		stacks: result.data.stacks,
+		swarm: swarm.data,
+		stacks: stacks.data,
 		requestOptions
 	};
 };
