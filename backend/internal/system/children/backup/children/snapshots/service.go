@@ -25,7 +25,6 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -38,7 +37,9 @@ import (
 	"getarcane.dev/arcane/v3/pkg/francis"
 	git "getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -707,7 +708,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 		return backupSourceLayout{}, err
 	}
 	dataDirectory, projectsDirectory, databaseName := filepath.Dir(databaseFile), s.projectsDirectory(ctx), filepath.Base(databaseFile)
-	excludes := []string{".arcane-snapshot-*", RecoveryRequestName}
+	excludes := []string{".arcane-snapshot-*", RecoveryRequestName, rustic.TrustBundleName}
 	for _, name := range []string{databaseName, francis.StorePath(databaseName)} {
 		for _, sidecar := range sqliteSidecars {
 			excludes = append(excludes, name+sidecar)
@@ -1114,25 +1115,9 @@ func (s *Service) Create(
 		}
 		snapshotMounts = append(snapshotMounts, stagedMounts...)
 	}
-	// Rewrite volume subpath mounts as binds of the
-	// subpath on daemons before API 1.45, which ignore subpaths and mount the
-	// volume root instead.
-	if !compat.IsDockerAPIVersionAtLeast(compat.DetectDockerAPIVersion(ctx, dockerClient), "1.45") {
-		for index, resolved := range snapshotMounts {
-			if resolved.Type != mount.TypeVolume || kit.FromPtr(resolved.VolumeOptions).Subpath == "" {
-				continue
-			}
-			inspect, inspectErr := dockerClient.VolumeInspect(ctx, resolved.Source, client.VolumeInspectOptions{})
-			if inspectErr != nil {
-				return backup.Snapshot{}, fmt.Errorf("inspect volume %s for system backup: %w", resolved.Source, inspectErr)
-			}
-			snapshotMounts[index] = mount.Mount{
-				Type:     mount.TypeBind,
-				Source:   filepath.Join(inspect.Volume.Mountpoint, resolved.VolumeOptions.Subpath),
-				Target:   resolved.Target,
-				ReadOnly: resolved.ReadOnly,
-			}
-		}
+	snapshotMounts, err = volumes.BindSubpaths(ctx, dockerClient, snapshotMounts)
+	if err != nil {
+		return backup.Snapshot{}, fmt.Errorf("system backup mounts: %w", err)
 	}
 	globs := make([]string, 0, len(layout.excludes)+1)
 	for _, excluded := range layout.excludes {
