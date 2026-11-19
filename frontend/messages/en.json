@@ -4757,5 +4757,5 @@
   "backup_schedules_saved": "Backup schedules saved",
   "failed_to_save_backup_schedules": "Failed to save the backup schedules",
   "backup_schedule_removed": "Backup schedule removed",
-  "keep_newest_schedule_backups": "How many of this schedule's newest backups to keep, wherever they are stored. Set to 0 to keep all backups."
+  "keep_newest_successful_schedule_backups": "How many of this schedule's newest successful backups to keep, wherever they are stored. Failed backups that kept data are kept up to the same number, so they never push out a good one. Set to 0 to keep all backups."
 }

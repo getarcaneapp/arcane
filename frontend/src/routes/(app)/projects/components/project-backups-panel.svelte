@@ -759,7 +759,7 @@
 			defaultSchedule="0 2 * * *"
 			showStopContainers
 			stopContainersDescription={m.stop_containers_during_snapshot()}
-			retentionDescription={m.keep_newest_schedule_backups()}
+			retentionDescription={m.keep_newest_successful_schedule_backups()}
 			defaultStopContainers
 			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
 			afterFields={ScheduleVolumes}
