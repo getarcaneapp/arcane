@@ -391,16 +391,32 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	return succeeded, nil
 }
 
-// resume restarts the containers an interrupted attempt left stopped before anything else, then adopts the
-// snapshots it already wrote and finishes the backup.
+// resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
+// lock, then adopts the snapshots it already wrote and finishes the backup.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input runInput, recorded plan) error {
+	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
+	leases, err := s.admit(ctx, recorded, "")
+	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
+	if errors.Is(err, common.ErrConflict) {
+		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
+	}
+	if err != nil {
+		return err
+	}
+	defer release(context.WithoutCancel(ctx), leases)
 	if len(recorded.Stopped) > 0 {
+		unlockProject, lockErr := s.deps.LockProject(ctx, "back up project", recorded.ProjectID)
+		// The project is left stopped, so wait for its turn instead of failing.
+		if lockErr != nil {
+			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+		}
 		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if err := errors.Join(restartErr, s.record(ctx, recorded)); err != nil {
-			return err
+		if recordErr := errors.Join(restartErr, s.record(ctx, recorded)); recordErr != nil {
+			return recordErr
 		}
 	}
 	entry, err := s.load(ctx, recorded.BackupID)
@@ -413,15 +429,6 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 	case types.VolumeBackupStatusSucceeded:
 		return nil
 	}
-	leases, err := s.admit(ctx, recorded, "")
-	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
-	if errors.Is(err, common.ErrConflict) {
-		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
-	}
-	if err != nil {
-		return err
-	}
-	defer release(context.WithoutCancel(ctx), leases)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
 		return authorizeErr
 	}

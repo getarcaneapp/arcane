@@ -11,6 +11,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -20,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -211,8 +211,14 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	}
 }
 
-func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
+func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
 	entry := &ProjectBackup{
 		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()},
 		ProjectID: "p1",
@@ -220,22 +226,56 @@ func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
 		Error:     "snapshot failed",
 	}
 	require.NoError(t, db.Create(entry).Error)
+	locked := false
 	var started []container.Summary
 	service := NewService(Dependencies{
-		DB:          db,
-		VolumeLocks: &concurrency.KeyedMutex{},
+		DB:     db,
+		Engine: engine,
+		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
+			assert.Equal(t, "p1", projectID)
+			locked = true
+			return func() { locked = false }, nil
+		},
 		StartContainers: func(_ context.Context, projectID string, stopped []container.Summary) error {
 			assert.Equal(t, "p1", projectID)
+			assert.True(t, locked, "the containers start under the project lock")
 			started = append(started, stopped...)
 			return nil
 		},
 	})
 
 	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
-	recorded := plan{BackupID: "b1", ProjectID: "p1", StopContainers: true, Stopped: checkpointed}
-	err := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
-	require.ErrorIs(t, err, backup.ErrBackupSettled)
-	require.ErrorContains(t, err, "snapshot failed")
+	recorded := plan{
+		BackupID:       "b1",
+		ProjectID:      "p1",
+		Volumes:        []types.ProjectVolume{{Name: "web_data", Included: true}},
+		StopContainers: true,
+		Stopped:        checkpointed,
+	}
+	// After a restart a restore can take the project or a volume first; the resumed backup waits instead of starting
+	// the project under it.
+	for _, held := range recorded.admissions() {
+		lease, admitted, err := engine.TryAcquireRun(t.Context(), held.Scope, held.ID)
+		require.NoError(t, err)
+		require.True(t, admitted)
+
+		err = service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
+		require.ErrorIs(t, err, actor.ErrJobRejected)
+		require.Empty(t, started, held)
+		lease.Release(t.Context())
+	}
+
+	resumeErr := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
+	require.ErrorIs(t, resumeErr, backup.ErrBackupSettled)
+	require.ErrorContains(t, resumeErr, "snapshot failed")
 	// The checkpointed containers are started again through the project's Compose start.
 	require.Equal(t, checkpointed, started)
+	require.False(t, locked)
+	// The resumed run releases the admissions it took.
+	for _, key := range recorded.admissions() {
+		lease, admitted, err := engine.TryAcquireRun(t.Context(), key.Scope, key.ID)
+		require.NoError(t, err)
+		require.True(t, admitted, key)
+		lease.Release(t.Context())
+	}
 }
