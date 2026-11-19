@@ -92,17 +92,14 @@
 		ui.isLoadingTemplate = true;
 
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const templateContent = await templateService.getTemplateContent(template.id);
-					form.inputs.composeContent.value = templateContent.content ?? template.content ?? '';
-					form.inputs.envContent.value = templateContent.envContent ?? template.envContent ?? '';
-					toast.success(m.compose_template_loaded({ name: template.name }));
-				})()
-			);
-			if (operationResult.error !== null) {
-				toast.error(m.templates_download_failed(), { description: extractApiErrorMessage(operationResult.error) });
+			const templateContent = await tryCatch(templateService.getTemplateContent(template.id));
+			if (templateContent.error !== null) {
+				toast.error(m.templates_download_failed(), { description: extractApiErrorMessage(templateContent.error) });
+				return;
 			}
+			form.inputs.composeContent.value = templateContent.data.content ?? template.content ?? '';
+			form.inputs.envContent.value = templateContent.data.envContent ?? template.envContent ?? '';
+			toast.success(m.compose_template_loaded({ name: template.name }));
 		} finally {
 			ui.isLoadingTemplate = false;
 		}

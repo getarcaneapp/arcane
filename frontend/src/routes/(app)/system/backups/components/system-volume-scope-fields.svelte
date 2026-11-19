@@ -53,11 +53,11 @@
 	});
 
 	function toggleVolume(name: string, checked: boolean) {
-		onChange({
-			volumeNames: checked
-				? Array.from(new Set([...volumeNames, name])).sort()
-				: volumeNames.filter((candidate) => candidate !== name)
-		});
+		if (checked) {
+			onChange({ volumeNames: Array.from(new Set([...volumeNames, name])).sort() });
+			return;
+		}
+		onChange({ volumeNames: volumeNames.filter((candidate) => candidate !== name) });
 	}
 </script>
 

@@ -3,12 +3,11 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import NetworkDiagram from '#lib/components/network-diagram/network-diagram.svelte';
-	import { fetchEnvironmentTopology } from '#lib/components/network-diagram/topology.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { networkTopologyQuery } from '#lib/query/networks.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -19,8 +18,7 @@
 	const scope = $derived(environmentStore.shownKey);
 
 	const topologyQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.topology(scope),
-		queryFn: fetchEnvironmentTopology,
+		...networkTopologyQuery(scope),
 		initialData: data.scope === scope ? data.topology : undefined
 	}));
 	const topology = $derived(topologyQuery.data ?? null);

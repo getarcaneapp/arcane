@@ -186,15 +186,16 @@
 
 	async function handleDeleteOne(sync: SyncRow) {
 		const safeName = sync.name ?? m.common_unknown();
+		let checkboxes;
+		if (sync.targetType === 'swarm_stack') {
+			checkboxes = [{ id: 'removeStack', label: m.also_remove_deployed_swarm_stack(), initialState: false }];
+		}
 		confirmAndRun({
 			title: m.git_sync_remove_confirm(),
 			message: m.git_sync_remove_message(),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			checkboxes:
-				sync.targetType === 'swarm_stack'
-					? [{ id: 'removeStack', label: m.also_remove_deployed_swarm_stack(), initialState: false }]
-					: undefined,
+			checkboxes,
 			setLoading: (loading) => (isLoading.removing = loading),
 			run: (checkboxStates) => gitOpsSyncService.deleteSync(sync.environmentId, sync.id, checkboxStates['removeStack'] === true),
 			failureMessage: m.common_delete_failed({ resource: safeName }),

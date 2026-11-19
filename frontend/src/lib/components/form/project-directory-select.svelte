@@ -25,14 +25,13 @@
 	const options = $derived(directories.filter((directory) => directory.enabled));
 	const primary = $derived(directories.find((directory) => directory.primary));
 	const current = $derived(options.find((directory) => directory.containerPath === value) ?? primary);
-	const loadError = $derived(
-		directoriesQuery.error
-			? m.compose_optional_resource_load_failed({
-					resource: m.project_directory(),
-					message: extractApiErrorMessage(directoriesQuery.error)
-				})
-			: null
-	);
+	const loadError = $derived.by(() => {
+		if (!directoriesQuery.error) return null;
+		return m.compose_optional_resource_load_failed({
+			resource: m.project_directory(),
+			message: extractApiErrorMessage(directoriesQuery.error)
+		});
+	});
 
 	function pick(containerPath: string) {
 		value = containerPath === primary?.containerPath ? '' : containerPath;

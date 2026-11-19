@@ -60,19 +60,19 @@ export const load: PageLoad = async ({ parent }) => {
 		withVulnerabilityToggles(vulnerabilityRequestOptions, { showIgnored: false, fixAvailable: false })
 	);
 
-	const operationResult = await tryCatch(
+	const securityData = await tryCatch(
 		Promise.all([
 			queryClient.query(vulnerabilityOverviewQuery(scope)),
 			queryClient.query(vulnerabilityListQuery(scope, vulnerabilityEnvironments(), requestForApi))
 		])
 	);
-	if (operationResult.error !== null && !isCancelledError(operationResult.error)) {
-		throwPageLoadError(operationResult.error, 'Failed to load security data');
+	if (securityData.error !== null && !isCancelledError(securityData.error)) {
+		throwPageLoadError(securityData.error, 'Failed to load security data');
 	}
 
 	return {
 		featureDisabled: false,
-		overview: operationResult.data?.[0] ?? null,
+		overview: securityData.data?.[0] ?? null,
 		vulnerabilityRequestOptions,
 		patchRequestOptions
 	};

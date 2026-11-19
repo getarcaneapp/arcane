@@ -72,20 +72,18 @@
 		});
 	}
 
+	const driverColumns = $derived.by((): ColumnSpec<KvRow>[] => {
+		if (resource.kind !== 'secrets') return [];
+		return [
+			{ id: 'driver', accessorFn: (item: KvRow) => item.spec.Driver?.Name ?? '', title: m.common_driver(), cell: DriverCell }
+		];
+	});
+
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		...environmentColumns<KvRow>(),
 		{ id: 'name', accessorFn: (item) => item.spec.Name, title: m.common_name(), sortable: true, cell: NameCell },
-		...(resource.kind === 'secrets'
-			? [
-					{
-						id: 'driver',
-						accessorFn: (item: KvRow) => item.spec.Driver?.Name ?? '',
-						title: m.common_driver(),
-						cell: DriverCell
-					}
-				]
-			: []),
+		...driverColumns,
 		{ id: 'labels', accessorFn: (item) => item.spec.Labels, title: m.common_labels(), cell: LabelsCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: TimeCell },
 		{ accessorKey: 'updatedAt', title: m.common_updated(), sortable: true, cell: TimeCell }

@@ -74,28 +74,25 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		streamAbortController = controller;
 		const signal = AbortSignal.any([sessionSignal, controller.signal]);
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const response = await config.openStream(signal);
-					if (signal.aborted || !response.body) {
-						controller.abort();
-						return;
-					}
-
-					_streamConnected = true;
-					_streamFailed = false;
-					reconnectAttempt = 0;
-					config.onConnected?.();
-					await readSSEFrames(response.body, signal);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
+			const response = await tryCatch(config.openStream(signal));
+			if (response.error !== null) {
 				if (!signal.aborted && !currentSessionSignal().aborted) {
-					console.warn(`${config.label} stream disconnected:`, error);
+					console.warn(`${config.label} stream disconnected:`, response.error);
 				}
-			} else {
-				return operationResult.data;
+				return;
+			}
+			if (signal.aborted || !response.data.body) {
+				controller.abort();
+				return;
+			}
+
+			_streamConnected = true;
+			_streamFailed = false;
+			reconnectAttempt = 0;
+			config.onConnected?.();
+			const streamed = await tryCatch(readSSEFrames(response.data.body, signal));
+			if (streamed.error !== null && !signal.aborted && !currentSessionSignal().aborted) {
+				console.warn(`${config.label} stream disconnected:`, streamed.error);
 			}
 		} finally {
 			if (streamAbortController === controller) {

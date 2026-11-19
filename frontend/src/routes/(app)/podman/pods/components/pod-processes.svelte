@@ -9,8 +9,7 @@
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { LayoutListIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService } from '#lib/services/podman-service.js';
+	import { podmanPodTopQuery } from '#lib/query/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 
@@ -23,8 +22,7 @@
 	let { podId, envId, isRunning }: Props = $props();
 
 	const topQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.podTop(envId, podId),
-		queryFn: () => podmanService.getPodTop(podId, envId),
+		...podmanPodTopQuery(envId, podId),
 		enabled: isRunning,
 		retry: false
 	}));

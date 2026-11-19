@@ -10,3 +10,10 @@ export function apiKeyListQuery(requestOptions: SearchPaginationSortRequest) {
 		queryFn: () => apiKeyService.getApiKeys(requestOptions)
 	});
 }
+
+export function apiKeysMineQuery() {
+	return queryOptions({
+		queryKey: queryKeys.apiKeys.mine(),
+		queryFn: () => apiKeyService.listMine()
+	});
+}

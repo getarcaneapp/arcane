@@ -1,36 +1,28 @@
 import { error } from '@sveltejs/kit';
 
 import { m } from '#lib/paraglide/messages.js';
-import { swarmService } from '#lib/services/swarm-service.js';
+import { swarmServiceQuery } from '#lib/query/swarm.js';
+import { extractApiErrorStatus } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params, url }) => {
+export const load: PageLoad = async ({ params, parent, url }) => {
 	const serviceId = params.serviceId;
-	const envId = await resolveDetailEnvironmentId(url);
+	const [{ queryClient }, envId] = await Promise.all([parent(), resolveDetailEnvironmentId(url)]);
 
-	const operationResult = await tryCatch(
-		(async () => {
-			const service = await swarmService.getService(serviceId, envId);
-
-			if (!service) {
-				throw error(404, 'Service not found');
-			}
-
-			return { envId, service };
-		})()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		console.error('Failed to load service:', err);
-		if ('status' in err && err.status === 404) {
-			throw err;
+	const service = await tryCatch(queryClient.query({ ...swarmServiceQuery(envId, serviceId), staleTime: 0, retry: false }));
+	if (service.error !== null) {
+		console.error('Failed to load service:', service.error);
+		if (extractApiErrorStatus(service.error) === 404) {
+			throw service.error;
 		}
-		throw error(500, err.message || m.failed_to_load_service_details());
-	} else {
-		return operationResult.data;
+		throw error(500, service.error.message || m.failed_to_load_service_details());
 	}
+	if (!service.data) {
+		throw error(404, 'Service not found');
+	}
+
+	return { envId, serviceId, service: service.data };
 };

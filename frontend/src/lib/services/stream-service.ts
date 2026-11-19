@@ -1,7 +1,7 @@
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { handleUnauthorizedResponseInternal, withSessionSignal } from './api-service';
+import BaseAPIService, { handleUnauthorizedResponse, withSessionSignal } from './api-service';
 
 export const STREAM_CHANNEL_ENVIRONMENTS = 'environments';
 export const STREAM_CHANNEL_ACTIVITIES = 'activities';
@@ -30,7 +30,7 @@ class StreamService extends BaseAPIService {
 		});
 		if (response.status === 401) {
 			if (response.body) await tryCatch(response.body.cancel());
-			const action = await handleUnauthorizedResponseInternal('/stream', retry);
+			const action = await handleUnauthorizedResponse('/stream', retry);
 			if (action === 'retry') {
 				return this.openClientStream(signal, channels, params, true);
 			}

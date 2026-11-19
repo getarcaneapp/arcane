@@ -84,23 +84,23 @@
 		profileDisplayName.trim() !== (currentUser?.displayName ?? '') || profileEmail.trim() !== (currentUser?.email ?? '')
 	);
 
+	async function gravatarUrl(email: string) {
+		const encoder = new TextEncoder();
+		const data = encoder.encode(email.toLowerCase().trim());
+		const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+		const hash = Array.from(new Uint8Array(hashBuffer))
+			.map((b) => b.toString(16).padStart(2, '0'))
+			.join('');
+		return `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
+	}
+
 	async function updateAvatar(email: string | undefined, enabled: boolean) {
 		if (!enabled || !email) {
 			return getDefaultProfilePicture();
 		}
-		const operationResult = await tryCatch(
-			(async () => {
-				const encoder = new TextEncoder();
-				const data = encoder.encode(email.toLowerCase().trim());
-				const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-				const hash = Array.from(new Uint8Array(hashBuffer))
-					.map((b) => b.toString(16).padStart(2, '0'))
-					.join('');
-				return `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
-			})()
-		);
-		if (operationResult.error !== null) return getDefaultProfilePicture();
-		return operationResult.data;
+		const avatar = await tryCatch(gravatarUrl(email));
+		if (avatar.error !== null) return getDefaultProfilePicture();
+		return avatar.data;
 	}
 
 	function updateProfileField(field: 'displayName' | 'email', value: string) {
@@ -113,26 +113,22 @@
 		const submittedDraft = profileDraft;
 		profileSaving = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const updated = await userService.updateMyProfile(
-						changedFields(
-							{ ...currentUser, displayName: currentUser.displayName || null, email: currentUser.email || null },
-							{ displayName: profileDisplayName.trim() || null, email: profileEmail.trim() || null }
-						)
-					);
-					await userStore.setUser(updated);
-					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-					if (profileDraft === submittedDraft) profileDraft = null;
-					toast.success(m.account_profile_updated());
-				})()
+			const updated = await tryCatch(
+				userService.updateMyProfile(
+					changedFields(
+						{ ...currentUser, displayName: currentUser.displayName || null, email: currentUser.email || null },
+						{ displayName: profileDisplayName.trim() || null, email: profileEmail.trim() || null }
+					)
+				)
 			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				const msg = err instanceof Error ? err.message : m.common_update_failed({ resource: m.account_profile_title() });
-				toast.error(msg);
+			if (updated.error !== null) {
+				toast.error(updated.error.message || m.common_update_failed({ resource: m.account_profile_title() }));
+				return;
 			}
+			await userStore.setUser(updated.data);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+			if (profileDraft === submittedDraft) profileDraft = null;
+			toast.success(m.account_profile_updated());
 		} finally {
 			profileSaving = false;
 		}
@@ -141,24 +137,24 @@
 	async function handleCroppedAvatar(url: string) {
 		avatarUploading = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const preparedFile = await prepareAvatarUploadFile(url, avatarMaxUploadSizeBytes, ImageCropper.getFileFromUrl);
-					if (!preparedFile.ok) {
-						toast.error(m.account_avatar_size_error({ maxSizeMb: avatarMaxUploadSizeMb }));
-						return;
-					}
-
-					const updatedUser = await userService.uploadMyAvatar(preparedFile.file);
-					await userStore.setUser(updatedUser);
-					avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
-					toast.success(m.account_avatar_upload_success());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-				toast.error(err instanceof Error ? err.message : m.account_avatar_upload_failed());
+			const preparedFile = await tryCatch(prepareAvatarUploadFile(url, avatarMaxUploadSizeBytes, ImageCropper.getFileFromUrl));
+			if (preparedFile.error !== null) {
+				toast.error(preparedFile.error.message || m.account_avatar_upload_failed());
+				return;
 			}
+			if (!preparedFile.data.ok) {
+				toast.error(m.account_avatar_size_error({ maxSizeMb: avatarMaxUploadSizeMb }));
+				return;
+			}
+
+			const updatedUser = await tryCatch(userService.uploadMyAvatar(preparedFile.data.file));
+			if (updatedUser.error !== null) {
+				toast.error(updatedUser.error.message || m.account_avatar_upload_failed());
+				return;
+			}
+			await userStore.setUser(updatedUser.data);
+			avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
+			toast.success(m.account_avatar_upload_success());
 		} finally {
 			avatarUploading = false;
 			URL.revokeObjectURL(url);
@@ -178,19 +174,14 @@
 		if (!currentUser?.avatarUrl) return;
 		avatarUploading = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const updatedUser = await userService.deleteMyAvatar();
-					await userStore.setUser(updatedUser);
-					avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
-					toast.success(m.account_avatar_remove_success());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				toast.error(err instanceof Error ? err.message : m.account_avatar_remove_failed());
+			const updatedUser = await tryCatch(userService.deleteMyAvatar());
+			if (updatedUser.error !== null) {
+				toast.error(updatedUser.error.message || m.account_avatar_remove_failed());
+				return;
 			}
+			await userStore.setUser(updatedUser.data);
+			avatarCacheBuster = Temporal.Now.instant().epochMilliseconds;
+			toast.success(m.account_avatar_remove_success());
 		} finally {
 			avatarUploading = false;
 		}

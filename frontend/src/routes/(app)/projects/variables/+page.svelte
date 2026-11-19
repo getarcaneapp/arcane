@@ -82,12 +82,11 @@
 			isSheetOpen = false;
 		},
 		onError: async (error, payload) => {
-			toast.error(
-				payload.mode === 'edit'
-					? m.common_update_failed({ resource: m.variable() })
-					: m.common_create_failed({ resource: m.variable() }),
-				{ description: extractApiErrorMessage(error) }
-			);
+			let headline = m.common_create_failed({ resource: m.variable() });
+			if (payload.mode === 'edit') {
+				headline = m.common_update_failed({ resource: m.variable() });
+			}
+			toast.error(headline, { description: extractApiErrorMessage(error) });
 			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
 		}
 	}));
@@ -124,19 +123,20 @@
 		});
 	}
 
-	const actionButtons = $derived<ActionButton[]>(
-		canCreateVariables
-			? [
-					{
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_add_button({ resource: m.variable() }),
-						onclick: openCreateSheet
-					}
-				]
-			: []
-	);
+	const actionButtons = $derived.by<ActionButton[]>(() => {
+		if (!canCreateVariables) {
+			return [];
+		}
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_add_button({ resource: m.variable() }),
+				onclick: openCreateSheet
+			}
+		];
+	});
 </script>
 
 <ResourcePageLayout title={m.variables_title()} subtitle={m.variables_subtitle()} {actionButtons}>

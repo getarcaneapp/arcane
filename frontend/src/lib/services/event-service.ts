@@ -8,7 +8,7 @@ import BaseAPIService, { type APIRequestConfig } from './api-service';
 class EventService extends BaseAPIService {
 	async getEvents(options?: SearchPaginationSortRequest): Promise<Paginated<Event>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/events', { params });
+		const res = await this.api.get<Paginated<Event>>('/events', { params });
 		return res.data;
 	}
 
@@ -22,7 +22,7 @@ class EventService extends BaseAPIService {
 	}
 
 	async getEventStats(): Promise<EventSeverityCounts> {
-		const res = await this.api.get('/events/stats');
+		const res = await this.api.get<{ data: EventSeverityCounts }>('/events/stats');
 		return res.data.data;
 	}
 

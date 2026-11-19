@@ -77,26 +77,24 @@ export function backupPolicyDestinationDisplay(policy: {
 }
 
 export function backupDestinationOptions(hasS3Destinations: boolean, descriptions = false) {
+	const local = {
+		label: m.volume_backup_destination_local(),
+		value: 'local',
+		description: descriptions ? m.volume_backup_destination_local_description() : undefined
+	};
+	if (!hasS3Destinations) return [local];
 	return [
+		local,
 		{
-			label: m.volume_backup_destination_local(),
-			value: 'local',
-			description: descriptions ? m.volume_backup_destination_local_description() : undefined
+			label: m.volume_backup_destination_s3(),
+			value: 's3',
+			description: descriptions ? m.volume_backup_destination_s3_description() : undefined
 		},
-		...(hasS3Destinations
-			? [
-					{
-						label: m.volume_backup_destination_s3(),
-						value: 's3',
-						description: descriptions ? m.volume_backup_destination_s3_description() : undefined
-					},
-					{
-						label: m.backups_destination_local_s3(),
-						value: 'local_s3',
-						description: descriptions ? m.volume_backup_destination_local_s3_description() : undefined
-					}
-				]
-			: [])
+		{
+			label: m.backups_destination_local_s3(),
+			value: 'local_s3',
+			description: descriptions ? m.volume_backup_destination_local_s3_description() : undefined
+		}
 	];
 }
 

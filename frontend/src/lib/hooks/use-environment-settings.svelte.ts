@@ -1,15 +1,13 @@
 import { createQuery } from '@tanstack/svelte-query';
 
-import { queryKeys } from '#lib/query/query-keys.js';
-import { settingsService } from '#lib/services/settings-service.js';
+import { mergedSettingsQuery } from '#lib/query/settings.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 
 export function useEnvironmentSettings(envId: string | (() => string)) {
 	const environmentId = typeof envId === 'string' ? () => envId : envId;
 	const query = createQuery(() => ({
-		queryKey: queryKeys.settings.byEnvironment(environmentId()),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId()),
+		...mergedSettingsQuery(environmentId()),
 		enabled: environmentId() !== LOCAL_DOCKER_ENVIRONMENT_ID
 	}));
 	return {

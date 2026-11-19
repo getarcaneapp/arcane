@@ -19,6 +19,11 @@ export function useCategorySearch<T>({ search, filter }: UseCategorySearchOption
 	let searchError = $state<string | null>(null);
 	let currentSearchRequest = 0;
 
+	async function searchMatches(query: string) {
+		const response = await search(query);
+		return (response.results || []).filter(filter);
+	}
+
 	async function performSearch(query: string) {
 		const trimmedQuery = query.trim();
 
@@ -36,20 +41,16 @@ export function useCategorySearch<T>({ search, filter }: UseCategorySearchOption
 		showSearchResults = true;
 		searchError = null;
 
-		const operationResult = await tryCatch(
-			(async () => {
-				const response = await search(trimmedQuery);
-				if (requestId === currentSearchRequest) {
-					searchResults = (response.results || []).filter(filter);
-					isSearching = false;
-				}
-			})()
-		);
-		if (operationResult.error !== null && requestId === currentSearchRequest) {
-			searchError = extractApiErrorMessage(operationResult.error);
+		const matches = await tryCatch(searchMatches(trimmedQuery));
+		if (requestId !== currentSearchRequest) return;
+		if (matches.error !== null) {
+			searchError = extractApiErrorMessage(matches.error);
 			searchResults = [];
 			isSearching = false;
+			return;
 		}
+		searchResults = matches.data;
+		isSearching = false;
 	}
 
 	const debouncedSearch = debounced((query: string) => {

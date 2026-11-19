@@ -12,7 +12,7 @@ class ActivityService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<Activity>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/activities`, {
+		const res = await this.api.get<Paginated<Activity>>(`/agents/${environmentId}/activities`, {
 			...config,
 			params,
 			suppressAccessDeniedToast: true

@@ -26,12 +26,12 @@ class ContainerService extends BaseAPIService {
 		if (options?.groupByProject) {
 			params['groupBy'] = 'project';
 		}
-		const res = await this.api.get(`/agents/${environmentId}/containers`, { ...config, params });
+		const res = await this.api.get<ContainerPaginatedResponse>(`/agents/${environmentId}/containers`, { ...config, params });
 		return res.data;
 	}
 
 	async getContainerStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ContainerStatusCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/containers/counts`, config);
+		const res = await this.api.get<{ data: ContainerStatusCounts }>(`/agents/${environmentId}/containers/counts`, config);
 		return res.data.data;
 	}
 

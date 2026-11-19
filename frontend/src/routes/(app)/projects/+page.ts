@@ -1,5 +1,5 @@
 import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
-import { queryKeys } from '#lib/query/query-keys.js';
+import { projectTagsQuery } from '#lib/query/projects.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -8,7 +8,6 @@ import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
-import { fetchProjectTags } from './projects-table.helpers';
 
 export const load: PageLoad = async ({ parent, url }) => {
 	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
@@ -34,21 +33,17 @@ export const load: PageLoad = async ({ parent, url }) => {
 	}
 	projectRequestOptions.filters = Object.keys(filters).length ? filters : undefined;
 
-	const operationResult = await tryCatch(
+	const projectData = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...projectListQuery(scope, environments, projectRequestOptions), revalidateIfStale: true }),
 			queryClient.ensureQueryData({ ...projectStatusCountsQuery(scope, environments), revalidateIfStale: true }),
-			queryClient.ensureQueryData({
-				queryKey: queryKeys.projects.tags(scope),
-				queryFn: () => fetchProjectTags(environments),
-				revalidateIfStale: true
-			})
+			queryClient.ensureQueryData({ ...projectTagsQuery(scope, environments), revalidateIfStale: true })
 		])
 	);
-	if (operationResult.error !== null) {
-		throwPageLoadError(operationResult.error, 'Failed to load projects');
+	if (projectData.error !== null) {
+		throwPageLoadError(projectData.error, 'Failed to load projects');
 	}
-	const [projects, projectStatusCounts, projectTags] = operationResult.data;
+	const [projects, projectStatusCounts, projectTags] = projectData.data;
 
 	return { scope, projects, projectRequestOptions, projectStatusCounts, projectTags, showArchived };
 };

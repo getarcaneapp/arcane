@@ -52,18 +52,14 @@ class ImageCropperRootState {
 		if (!this.pixelCrop || !this.tempUrl) return;
 
 		const { tempUrl, pixelCrop } = this;
-		const operationResult1 = await tryCatch(
-			(async () => {
-				this.opts.src.current = await getCroppedImg(tempUrl, pixelCrop);
-				this.open = false;
-				this.opts.onCropped.current(this.opts.src.current);
-			})()
-		);
-		if (operationResult1.error !== null) {
-			const error = operationResult1.error;
-
-			this.opts.onError.current(error instanceof Error ? error : new Error('failed to crop image'));
+		const cropped = await tryCatch(getCroppedImg(tempUrl, pixelCrop));
+		if (cropped.error !== null) {
+			this.opts.onError.current(cropped.error instanceof Error ? cropped.error : new Error('failed to crop image'));
+			return;
 		}
+		this.opts.src.current = cropped.data;
+		this.open = false;
+		this.opts.onCropped.current(this.opts.src.current);
 	}
 
 	get src() {

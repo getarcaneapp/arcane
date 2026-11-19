@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -19,10 +19,14 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { swarmStackQuery, swarmStackServiceListQuery, swarmStackTaskListQuery } from '#lib/query/swarm.js';
+	import {
+		swarmStackQuery,
+		swarmStackServiceListQuery,
+		swarmStackSourceQuery,
+		swarmStackTaskListQuery
+	} from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { SwarmStackSource } from '#lib/types/swarm.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorStatus, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -32,8 +36,6 @@
 
 	let { data } = $props();
 
-	let source = $derived<SwarmStackSource | null>(data.source);
-	let sourceState = $derived<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(data.sourceState);
 	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
 	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
 
@@ -101,6 +103,21 @@
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
 	const envId = $derived(data.envId);
 	const canReadStackSource = $derived(hasPermission('swarm-stacks:read', envId));
+	const sourceQuery = createQuery(() => ({
+		...swarmStackSourceQuery(envId, data.stackName),
+		enabled: canReadStackSource,
+		retry: false
+	}));
+	const source = $derived(sourceQuery.data ?? null);
+	const sourceState = $derived.by<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(() => {
+		if (!canReadStackSource) return 'forbidden';
+		if (sourceQuery.isPending) return 'loading';
+		if (!sourceQuery.isError) return 'available';
+		const status = extractApiErrorStatus(sourceQuery.error);
+		if (status === 404) return 'missing';
+		if (status === 403) return 'forbidden';
+		return 'error';
+	});
 	const canViewSource = $derived(canReadStackSource && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: ContainersIcon }] : []),
@@ -118,45 +135,12 @@
 	const selectedTab = $derived(urlTab.value);
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
-	const stackSubtitle = $derived(
-		hasLiveStack
-			? m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName })
-			: m.swarm_stack_saved_source({ stackName })
-	);
-
-	async function refreshSource(showErrorToast = false) {
-		if (!canReadStackSource) {
-			source = null;
-			sourceState = 'forbidden';
-			return;
+	const stackSubtitle = $derived.by(() => {
+		if (!hasLiveStack) {
+			return m.swarm_stack_saved_source({ stackName });
 		}
-		const operationResult = await tryCatch(
-			(async () => {
-				source = await swarmService.getStackSource(stackName, envId);
-				sourceState = 'available';
-			})()
-		);
-		if (operationResult.error !== null) {
-			const err = operationResult.error;
-
-			if ('status' in err && err.status === 404) {
-				source = null;
-				sourceState = 'missing';
-				return;
-			}
-			if ('status' in err && err.status === 403) {
-				source = null;
-				sourceState = 'forbidden';
-				return;
-			}
-
-			source = null;
-			sourceState = 'error';
-			if (showErrorToast) {
-				toast.error(m.common_refresh_failed({ resource: `saved source (${stackName})` }));
-			}
-		}
-	}
+		return m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName });
+	});
 
 	async function refresh() {
 		isLoading.refresh = true;
@@ -179,18 +163,15 @@
 				toast.error(m.common_refresh_failed({ resource: `${m.tasks()} (${stackName})` }));
 			}
 			if (canReadStackSource) {
-				await refreshSource(true);
+				const sourceResult = await sourceQuery.refetch();
+				if (sourceResult.isError && ![403, 404].includes(extractApiErrorStatus(sourceResult.error))) {
+					toast.error(m.common_refresh_failed({ resource: `saved source (${stackName})` }));
+				}
 			}
 		} finally {
 			isLoading.refresh = false;
 		}
 	}
-
-	onMount(() => {
-		if (canReadStackSource) {
-			void refreshSource();
-		}
-	});
 
 	function handleDelete() {
 		openConfirmDialog({
@@ -215,77 +196,69 @@
 		});
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		...(hasPermission('swarm-stacks:update', envId)
-			? [
-					{
-						id: 'edit',
-						action: 'base' as const,
-						placement: 'primary' as const,
-						label: m.common_edit(),
-						icon: EditIcon,
-						onclick: () =>
-							goto(
-								resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)
-							),
-						disabled: isMutating
-					}
-				]
-			: []),
-		...(!hasLiveStack && hasPermission('swarm-stacks:update', envId)
-			? [
-					{
-						id: 'up',
-						action: 'start' as const,
-						label: m.common_up(),
-						icon: PlayIcon,
-						onclick: () =>
-							bringUpStack({
-								name: stackName,
-								environmentId: envId,
-								setLoading: (loading) => (isLoading.up = loading),
-								onSuccess: refresh
-							}),
-						loading: isLoading.up,
-						disabled: isMutating
-					}
-				]
-			: []),
-		...(hasLiveStack && hasPermission('swarm-stacks:update', envId)
-			? [
-					{
-						id: 'down',
-						action: 'stop' as const,
-						label: m.common_down(),
-						icon: StopIcon,
-						onclick: () =>
-							bringDownStack({
-								name: stackName,
-								environmentId: envId,
-								setLoading: (loading) => (isLoading.down = loading),
-								onSuccess: refresh
-							}),
-						loading: isLoading.down,
-						disabled: isMutating
-					}
-				]
-			: []),
-		...(hasPermission('swarm-stacks:delete', envId)
-			? [
-					{
-						id: 'remove',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						label: m.common_delete(),
-						icon: TrashIcon,
-						onclick: handleDelete,
-						loading: isLoading.remove,
-						disabled: isMutating
-					}
-				]
-			: []),
-		{
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		const canUpdateStack = hasPermission('swarm-stacks:update', envId);
+		if (canUpdateStack) {
+			buttons.push({
+				id: 'edit',
+				action: 'base',
+				placement: 'primary',
+				label: m.common_edit(),
+				icon: EditIcon,
+				onclick: () =>
+					goto(resolve(`/(app)/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}&env=${encodeURIComponent(envId)}`)),
+				disabled: isMutating
+			});
+		}
+		if (!hasLiveStack && canUpdateStack) {
+			buttons.push({
+				id: 'up',
+				action: 'start',
+				label: m.common_up(),
+				icon: PlayIcon,
+				onclick: () =>
+					bringUpStack({
+						name: stackName,
+						environmentId: envId,
+						setLoading: (loading) => (isLoading.up = loading),
+						onSuccess: refresh
+					}),
+				loading: isLoading.up,
+				disabled: isMutating
+			});
+		}
+		if (hasLiveStack && canUpdateStack) {
+			buttons.push({
+				id: 'down',
+				action: 'stop',
+				label: m.common_down(),
+				icon: StopIcon,
+				onclick: () =>
+					bringDownStack({
+						name: stackName,
+						environmentId: envId,
+						setLoading: (loading) => (isLoading.down = loading),
+						onSuccess: refresh
+					}),
+				loading: isLoading.down,
+				disabled: isMutating
+			});
+		}
+		if (hasPermission('swarm-stacks:delete', envId)) {
+			buttons.push({
+				id: 'remove',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				label: m.common_delete(),
+				icon: TrashIcon,
+				onclick: handleDelete,
+				loading: isLoading.remove,
+				disabled: isMutating
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'refresh',
 			placement: 'secondary',
@@ -294,8 +267,9 @@
 			onclick: refresh,
 			loading: isLoading.refresh,
 			disabled: isLoading.refresh
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

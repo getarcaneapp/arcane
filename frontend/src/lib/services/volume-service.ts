@@ -13,7 +13,7 @@ class VolumeService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<VolumesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/volumes`, { ...config, params });
+		const res = await this.api.get<VolumesPaginatedResponse>(`/agents/${environmentId}/volumes`, { ...config, params });
 		return res.data;
 	}
 
@@ -28,12 +28,12 @@ class VolumeService extends BaseAPIService {
 	}
 
 	async getVolumeUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<VolumeUsageCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/volumes/counts`, config);
+		const res = await this.api.get<{ data: VolumeUsageCounts }>(`/agents/${environmentId}/volumes/counts`, config);
 		return res.data.data;
 	}
 
 	async getVolumeSizes(environmentId: string, config?: APIRequestConfig): Promise<VolumeSizeInfo[]> {
-		const res = await this.api.get(`/agents/${environmentId}/volumes/sizes`, config);
+		const res = await this.api.get<{ data: VolumeSizeInfo[] }>(`/agents/${environmentId}/volumes/sizes`, config);
 		return res.data.data;
 	}
 

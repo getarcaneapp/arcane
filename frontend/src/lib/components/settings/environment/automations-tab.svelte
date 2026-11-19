@@ -14,11 +14,12 @@
 	import { ClockIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
+	import { jobAutomationsQuery, jobSchedulesQuery } from '#lib/query/jobs.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
-	import type { JobListResponse, JobScheduleConfig } from '#lib/types/jobschedule.js';
+	import type { JobScheduleConfig } from '#lib/types/jobschedule.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -28,7 +29,7 @@
 		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
-	import { listScopes, readEachEnvironment, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import { listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
 
@@ -52,37 +53,14 @@
 		environments.some((environment) => featureStore.isEnabled('vulnerabilityManagement', environment.id))
 	);
 
-	const EMPTY_SCHEDULES: JobScheduleConfig = {
-		environmentHealthInterval: '',
-		eventCleanupInterval: '',
-		expiredSessionsCleanupInterval: '',
-		autoUpdateInterval: '',
-		dockerClientRefreshInterval: '',
-		pollingInterval: '',
-		scheduledPruneInterval: '',
-		vulnerabilityScanInterval: '',
-		imageAutoPatchInterval: '',
-		autoHealInterval: ''
-	};
-
-	const scheduleQuery = createQuery(() => ({
-		queryKey: queryKeys.jobs.schedules(environments.map((environment) => environment.id).join(',')),
-		queryFn: () =>
-			readEachEnvironment(environments, (scope, config) => jobScheduleService.getJobSchedules(scope, config), EMPTY_SCHEDULES)
-	}));
+	const scheduleQuery = createQuery(() => jobSchedulesQuery(environments));
 	const schedulesByEnvironment = $derived(
 		new Map((scheduleQuery.data?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]))
 	);
 
 	const jobListEnvironments = $derived(environments.filter((environment) => hasPermission('jobs:list', environment.id)));
 	const jobListQuery = createQuery(() => ({
-		queryKey: queryKeys.jobs.automations(jobListEnvironments.map((environment) => environment.id).join(',')),
-		queryFn: ({ signal }) =>
-			readEachEnvironment<Pick<JobListResponse, 'timezone'>>(
-				jobListEnvironments,
-				(scope, config) => jobScheduleService.listJobs(scope, { ...config, signal }),
-				{}
-			),
+		...jobAutomationsQuery(jobListEnvironments),
 		enabled: jobListEnvironments.length > 0
 	}));
 	const scheduleTimezone = $derived(

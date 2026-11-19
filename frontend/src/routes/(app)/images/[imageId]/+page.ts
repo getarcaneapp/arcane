@@ -4,6 +4,7 @@ import { m } from '#lib/paraglide/messages.js';
 import { imageDetailQuery } from '#lib/query/images.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { ImageDetailSummary } from '#lib/types/image.js';
+import { extractApiErrorStatus } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -19,23 +20,21 @@ type ImageDetailData = {
 export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDetailData> => {
 	const [{ queryClient }, envId] = await Promise.all([parent(), resolveDetailEnvironmentId(url)]);
 
-	const operationResult = await tryCatch(
+	const imageLoad = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageDetailQuery(envId, params.imageId), revalidateIfStale: true }),
 			featureStore.load([envId])
 		])
 	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		console.error('Failed to load image:', err);
-		if ('status' in err && err.status === 404) {
-			throw err;
+	if (imageLoad.error !== null) {
+		console.error('Failed to load image:', imageLoad.error);
+		if (extractApiErrorStatus(imageLoad.error) === 404) {
+			throw imageLoad.error;
 		}
-		throw error(500, err.message || m.failed_to_load_image_details());
+		throw error(500, imageLoad.error.message || m.failed_to_load_image_details());
 	}
 
-	const [image] = operationResult.data;
+	const [image] = imageLoad.data;
 	if (!image) throw error(404, 'Image not found');
 
 	return { envId, imageId: params.imageId, image };

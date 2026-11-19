@@ -12,6 +12,7 @@
 	import { imageListQuery } from '#lib/query/images.js';
 	import { networkListQuery } from '#lib/query/networks.js';
 	import { projectListQuery } from '#lib/query/projects.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeListQuery } from '#lib/query/volumes.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PaginationResponse } from '#lib/types/base.js';
@@ -134,7 +135,7 @@
 		const resourceKind = kind;
 		const scope = environments.map((environment) => environment.id).join(',');
 		return {
-			queryKey: [resourceKind, scope, 'dashboard', 'resource-query', request],
+			queryKey: queryKeys.dashboard.resourceQuery(resourceKind, scope, request),
 			queryFn:
 				resourceKind && environments.length > 0 ? () => loadResources(resourceKind, scope, environments, request) : skipToken,
 			placeholderData: keepPreviousData

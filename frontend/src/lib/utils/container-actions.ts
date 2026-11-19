@@ -75,23 +75,21 @@ export async function runContainerLifecycleAction({
 	const config = containerLifecycleActionConfigs[action];
 	setStatus(config.status);
 
-	const operationResult = await tryCatch(
-		(async () => {
-			await handleApiResultWithCallbacks({
-				result: await tryCatch(config.run(containerId, environmentId)),
-				message: config.failure(),
-				setLoadingState: (value) => {
-					setStatus(value ? config.status : '');
-				},
-				async onSuccess(data) {
-					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
-					await onRefresh?.();
-				}
-			});
-		})()
+	const handled = await tryCatch(
+		handleApiResultWithCallbacks({
+			result: await tryCatch(config.run(containerId, environmentId)),
+			message: config.failure(),
+			setLoadingState: (value) => {
+				setStatus(value ? config.status : '');
+			},
+			async onSuccess(data) {
+				toast.success(config.success(), activityToastOptions(extractActivityId(data)));
+				await onRefresh?.();
+			}
+		})
 	);
-	if (operationResult.error !== null) {
-		const error = operationResult.error;
+	if (handled.error !== null) {
+		const error = handled.error;
 		console.error('Container action failed:', error);
 		toast.error(m.containers_action_error());
 		setStatus('');

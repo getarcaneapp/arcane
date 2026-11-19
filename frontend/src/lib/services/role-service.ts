@@ -9,12 +9,12 @@ import BaseAPIService from './api-service';
 class RoleAPIService extends BaseAPIService {
 	async getRoles(options?: SearchPaginationSortRequest): Promise<Paginated<Role>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/roles', { params });
+		const res = await this.api.get<Paginated<Role>>('/roles', { params });
 		return res.data;
 	}
 
 	async getAll(): Promise<Role[]> {
-		const res = await this.api.get('/roles', {
+		const res = await this.api.get<{ data?: Role[] }>('/roles', {
 			params: { limit: 1000, sort: 'name', order: 'asc' }
 		});
 		return res.data.data ?? [];

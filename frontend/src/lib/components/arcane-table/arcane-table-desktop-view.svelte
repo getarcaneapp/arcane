@@ -390,6 +390,7 @@
 						></Table.Head>
 					{/if}
 					{@const sorted = header.column.getIsSorted()}
+					{@const minWidthStyle = minWidths[header.column.id] ? `--col-min: ${minWidths[header.column.id]}px` : undefined}
 					<Table.Head
 						colspan={header.colSpan}
 						aria-sort={sorted ? ariaSort[sorted] : undefined}
@@ -398,11 +399,7 @@
 						data-column-id={meta?.width === 'max' || header.column.id === 'select' || header.column.id === 'actions'
 							? undefined
 							: header.column.id}
-						style={colWidth
-							? `--col-width: ${colWidth}`
-							: minWidths[header.column.id]
-								? `--col-min: ${minWidths[header.column.id]}px`
-								: undefined}
+						style={colWidth ? `--col-width: ${colWidth}` : minWidthStyle}
 						class={cn(
 							meta?.width === 'min' && 'w-0',
 							meta?.width === 'max' && 'w-full',

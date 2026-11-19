@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { networkService } from '#lib/services/network-service.js';
+import { networkDetailQuery } from '#lib/query/networks.js';
+import { extractApiErrorStatus } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -14,32 +14,20 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 
 	const { networkId } = params;
 
-	const operationResult = await tryCatch(
-		(async () => {
-			const network = await queryClient.query({
-				queryKey: queryKeys.networks.detail(envId, networkId),
-				queryFn: () => networkService.getNetworkForEnvironment(envId, networkId)
-			});
-
-			if (!network) {
-				throw error(404, 'Network not found');
-			}
-
-			return {
-				envId,
-				network
-			};
-		})()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		console.error('Failed to load network:', err);
-		if ('status' in err && err.status === 404) {
-			throw err;
+	const network = await tryCatch(queryClient.query(networkDetailQuery(envId, networkId)));
+	if (network.error !== null) {
+		console.error('Failed to load network:', network.error);
+		if (extractApiErrorStatus(network.error) === 404) {
+			throw network.error;
 		}
-		throw error(500, err.message || m.failed_to_load_network_details());
-	} else {
-		return operationResult.data;
+		throw error(500, network.error.message || m.failed_to_load_network_details());
 	}
+	if (!network.data) {
+		throw error(404, 'Network not found');
+	}
+
+	return {
+		envId,
+		network: network.data
+	};
 };

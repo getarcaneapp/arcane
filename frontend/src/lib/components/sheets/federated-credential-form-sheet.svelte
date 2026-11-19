@@ -109,7 +109,7 @@
 		return MATCH_TYPES.find((option) => option.value === value)?.label ?? m.common_select_option();
 	}
 
-	function parseAudiencesInternal(value: string): string[] {
+	function parseAudiences(value: string): string[] {
 		return value
 			.split(/[\n,]/)
 			.map((entry) => entry.trim())
@@ -125,7 +125,7 @@
 			description: data.description || null,
 			enabled: data.enabled,
 			issuerUrl: data.issuerUrl,
-			audiences: parseAudiencesInternal(data.audience),
+			audiences: parseAudiences(data.audience),
 			subjectClaim: data.subjectClaim || 'sub',
 			subjectMatch: data.subjectMatch,
 			matchType: data.matchType,

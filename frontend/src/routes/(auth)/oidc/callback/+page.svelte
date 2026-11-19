@@ -10,9 +10,8 @@
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { mergedSettingsQuery } from '#lib/query/settings.js';
 	import { authService } from '#lib/services/auth-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
@@ -45,19 +44,11 @@
 
 	async function finalizeAuthentication(user: User, redirectTo: ResolvedPathname | null) {
 		await refreshAll();
-		const operationResult = await tryCatch(
-			(async () => {
-				const settings = await queryClient.query({
-					queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
-					queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
-				});
-				settingsStore.set(settings);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const settingsError = operationResult.error;
-
-			console.warn('Skipping post-login settings fetch:', settingsError);
+		const settings = await tryCatch(queryClient.query(mergedSettingsQuery(LOCAL_DOCKER_ENVIRONMENT_ID)));
+		if (settings.error !== null) {
+			console.warn('Skipping post-login settings fetch:', settings.error);
+		} else {
+			settingsStore.set(settings.data);
 		}
 		toast.success(m.auth_login_success());
 		const landingUser = page.data['user'] ?? user;

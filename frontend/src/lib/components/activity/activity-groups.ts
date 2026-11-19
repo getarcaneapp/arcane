@@ -51,7 +51,7 @@ export function findActivityGroup(groups: ActivityGroup[], key: string): Activit
 	return groups.find((group) => activityGroupKey(group) === key);
 }
 
-function dayLabelInternal(value: string): { id: string; label: string } {
+function dayLabel(value: string): { id: string; label: string } {
 	const date = plainDateFromInstant(value);
 	const today = plainDateFromInstant(Temporal.Now.instant());
 	if (!date || !today) return { id: 'unknown', label: m.common_na() };
@@ -70,7 +70,7 @@ export function buildActivitySections(running: ActivityGroup[], history: Activit
 	const days = new Map<string, ActivitySection>();
 	for (const group of history) {
 		const lead = activityGroupLead(group);
-		const day = dayLabelInternal(lead.endedAt || lead.startedAt);
+		const day = dayLabel(lead.endedAt || lead.startedAt);
 		const existing = days.get(day.id);
 		if (existing) {
 			existing.groups.push(group);

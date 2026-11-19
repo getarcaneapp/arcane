@@ -92,11 +92,11 @@
 		onSuccess: async (_result, id) => {
 			const reg = registries.find((r) => r.id === id);
 			await invalidateTemplateData();
-			toast.success(
-				reg
-					? m.common_delete_success({ resource: `${m.resource_registry()} "${reg.url}"` })
-					: m.templates_registry_removed_success()
-			);
+			if (reg) {
+				toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${reg.url}"` }));
+			} else {
+				toast.success(m.templates_registry_removed_success());
+			}
 		},
 		onError: (error) => {
 			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });

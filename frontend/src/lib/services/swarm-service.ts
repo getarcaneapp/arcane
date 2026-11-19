@@ -55,7 +55,10 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/services`, { ...config, params });
+		const res = await this.api.get<SwarmServicesPaginatedResponse>(`/agents/${environmentId}/swarm/services`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 
@@ -81,7 +84,9 @@ class SwarmService extends BaseAPIService {
 		environmentId: string
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/services/${serviceId}/tasks`, { params });
+		const res = await this.api.get<SwarmTasksPaginatedResponse>(`/agents/${environmentId}/swarm/services/${serviceId}/tasks`, {
+			params
+		});
 		return res.data;
 	}
 
@@ -109,7 +114,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmNodesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/nodes`, { ...config, params });
+		const res = await this.api.get<SwarmNodesPaginatedResponse>(`/agents/${environmentId}/swarm/nodes`, { ...config, params });
 		return res.data;
 	}
 
@@ -160,7 +165,10 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/nodes/${nodeId}/tasks`, { ...config, params });
+		const res = await this.api.get<SwarmTasksPaginatedResponse>(`/agents/${environmentId}/swarm/nodes/${nodeId}/tasks`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 
@@ -170,7 +178,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/tasks`, { ...config, params });
+		const res = await this.api.get<SwarmTasksPaginatedResponse>(`/agents/${environmentId}/swarm/tasks`, { ...config, params });
 		return res.data;
 	}
 
@@ -180,7 +188,7 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmStacksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks`, { ...config, params });
+		const res = await this.api.get<SwarmStacksPaginatedResponse>(`/agents/${environmentId}/swarm/stacks`, { ...config, params });
 		return res.data;
 	}
 
@@ -219,7 +227,10 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks/${name}/services`, { ...config, params });
+		const res = await this.api.get<SwarmServicesPaginatedResponse>(`/agents/${environmentId}/swarm/stacks/${name}/services`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 
@@ -230,7 +241,10 @@ class SwarmService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/swarm/stacks/${name}/tasks`, { ...config, params });
+		const res = await this.api.get<SwarmTasksPaginatedResponse>(`/agents/${environmentId}/swarm/stacks/${name}/tasks`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 
@@ -297,7 +311,7 @@ class SwarmService extends BaseAPIService {
 		environmentId: string,
 		config?: APIRequestConfig
 	): Promise<Paginated<SwarmKvSummary>> {
-		const res = await this.api.get(`/agents/${environmentId}/swarm/${kind}`, {
+		const res = await this.api.get<Paginated<SwarmKvSummary>>(`/agents/${environmentId}/swarm/${kind}`, {
 			...config,
 			params: transformPaginationParams(options)
 		});

@@ -23,6 +23,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentDetailQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentVersionInfoQuery } from '#lib/query/system.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -59,14 +60,15 @@
 	const liveEnvironment = $derived(
 		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
 	);
-	let runtimeEnvironment: Environment = $derived(
-		liveEnvironment
-			? {
-					...liveEnvironment,
-					agentMTLSCertificate: environment.agentMTLSCertificate
-				}
-			: environment
-	);
+	let runtimeEnvironment: Environment = $derived.by(() => {
+		if (!liveEnvironment) {
+			return environment;
+		}
+		return {
+			...liveEnvironment,
+			agentMTLSCertificate: environment.agentMTLSCertificate
+		};
+	});
 	const queryClient = useQueryClient();
 
 	let isRefreshing = $state(false);
@@ -86,8 +88,7 @@
 	const versionQuery = createQuery(() => {
 		const environmentId = environment.id;
 		return {
-			queryKey: queryKeys.system.versionInfo(environmentId),
-			queryFn: () => environmentManagementService.getVersion(environmentId),
+			...environmentVersionInfoQuery(environmentId),
 			enabled: environmentId !== '0' && isCurrentlyOnline,
 			retry: false
 		};
@@ -325,21 +326,19 @@
 		})
 	);
 
+	async function reloadEnvironmentData() {
+		await featureStore.refresh([environment.id]);
+		if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
+		await refreshAll();
+	}
+
 	async function refreshEnvironment() {
 		if (isRefreshing) return;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isRefreshing = true;
-					await featureStore.refresh([environment.id]);
-					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
-					await refreshAll();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error('Failed to refresh environment:', err);
+			isRefreshing = true;
+			const reloaded = await tryCatch(reloadEnvironmentData());
+			if (reloaded.error !== null) {
+				console.error('Failed to refresh environment:', reloaded.error);
 				toast.error(
 					m.common_refresh_failed({
 						resource: m.resource_environment()
@@ -354,46 +353,39 @@
 	async function syncEnvironment() {
 		if (isSyncing) return;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isSyncing = true;
-					await environmentManagementService.sync(environment.id);
-					toast.success(m.sync_environment_success());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to sync environment:', error);
+			isSyncing = true;
+			const synced = await tryCatch(environmentManagementService.sync(environment.id));
+			if (synced.error !== null) {
+				console.error('Failed to sync environment:', synced.error);
 				toast.error(m.sync_environment_failed());
+				return;
 			}
+			toast.success(m.sync_environment_success());
 		} finally {
 			isSyncing = false;
 		}
 	}
 
+	async function runConnectionTest() {
+		const result = await environmentManagementService.testConnection(environment.id);
+
+		if (result.status === 'online') {
+			toast.success(m.environments_test_connection_success());
+		} else {
+			toast.error(m.environments_test_connection_error());
+		}
+
+		await refreshAll();
+	}
+
 	async function testConnection() {
 		if (isTestingConnection) return;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isTestingConnection = true;
-					const result = await environmentManagementService.testConnection(environment.id);
-
-					if (result.status === 'online') {
-						toast.success(m.environments_test_connection_success());
-					} else {
-						toast.error(m.environments_test_connection_error());
-					}
-
-					await refreshAll();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
+			isTestingConnection = true;
+			const tested = await tryCatch(runConnectionTest());
+			if (tested.error !== null) {
 				toast.error(m.environments_test_connection_failed(), {
-					description: extractApiErrorMessage(error)
+					description: extractApiErrorMessage(tested.error)
 				});
 			}
 		} finally {

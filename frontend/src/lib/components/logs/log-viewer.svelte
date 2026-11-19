@@ -227,20 +227,14 @@
 		const sessionId = ++streamSession;
 		currentStreamSession = sessionId;
 		try {
-			const requestResult1 = await tryCatch(
-				(async () => {
-					shouldBeStreaming = true;
-					error = null;
-					await startWebSocketStream(sessionId);
-					isStreaming = true;
-					onStart?.();
-					return;
-				})()
-			);
-			if (requestResult1.error !== null) {
-				const err = requestResult1.error;
-
-				console.error('Failed to start log stream:', err);
+			shouldBeStreaming = true;
+			error = null;
+			const started = await tryCatch(startWebSocketStream(sessionId));
+			if (started.error === null) {
+				isStreaming = true;
+				onStart?.();
+			} else {
+				console.error('Failed to start log stream:', started.error);
 				error = m.log_stream_failed_connect({ type: humanType });
 				isStreaming = false;
 				shouldBeStreaming = false;

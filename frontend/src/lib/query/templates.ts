@@ -17,3 +17,24 @@ export function templateRegistriesQuery() {
 		queryFn: () => templateService.getRegistries()
 	});
 }
+
+export function templateContentQuery(templateId: string) {
+	return queryOptions({
+		queryKey: queryKeys.templates.content(templateId),
+		queryFn: () => templateService.getTemplateContent(templateId)
+	});
+}
+
+export function templateAllQuery() {
+	return queryOptions({
+		queryKey: queryKeys.templates.allTemplates(),
+		queryFn: () => templateService.getAllTemplates()
+	});
+}
+
+export function templateDefaultsQuery() {
+	return queryOptions({
+		queryKey: queryKeys.templates.defaults(),
+		queryFn: () => templateService.getDefaultTemplates()
+	});
+}

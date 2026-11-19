@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/svelte-query';
 
+import { fetchEnvironmentTopology } from '#lib/components/network-diagram/topology.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { networkService } from '#lib/services/network-service.js';
 import { portService } from '#lib/services/port-service.js';
@@ -24,5 +25,26 @@ export function portListQuery(scope: string, environments: EnvironmentRef[], req
 			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
 				portService.getPortsForEnvironment(id, request, config)
 			)
+	});
+}
+
+export function networkListForEnvironmentQuery(environmentId: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.networks.list(environmentId, requestOptions),
+		queryFn: () => networkService.getNetworksForEnvironment(environmentId, requestOptions)
+	});
+}
+
+export function networkDetailQuery(environmentId: string, networkId: string) {
+	return queryOptions({
+		queryKey: queryKeys.networks.detail(environmentId, networkId),
+		queryFn: () => networkService.getNetworkForEnvironment(environmentId, networkId)
+	});
+}
+
+export function networkTopologyQuery(scope: string) {
+	return queryOptions({
+		queryKey: queryKeys.networks.topology(scope),
+		queryFn: () => fetchEnvironmentTopology()
 	});
 }

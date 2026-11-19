@@ -1,5 +1,5 @@
-import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
+import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 import { swarmKvListQuery } from '#lib/query/swarm.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -17,20 +17,18 @@ export const load: PageLoad = async ({ parent }) => {
 		direction: 'asc'
 	});
 
-	const result = await tryCatch(
-		(async () => {
-			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm-configs:list'));
-			const items = await queryClient.query(swarmKvListQuery(swarm, resource.kind, requestOptions));
-			return { swarm, items };
-		})()
-	);
-	if (result.error !== null) {
-		throwPageLoadError(result.error, m.common_load_failed({ resource: resource.title() }));
+	const swarm = await tryCatch(queryClient.query(swarmEnvironmentsQuery('swarm-configs:list')));
+	if (swarm.error !== null) {
+		throwPageLoadError(swarm.error, m.common_load_failed({ resource: resource.title() }));
+	}
+	const items = await tryCatch(queryClient.query(swarmKvListQuery(swarm.data, resource.kind, requestOptions)));
+	if (items.error !== null) {
+		throwPageLoadError(items.error, m.common_load_failed({ resource: resource.title() }));
 	}
 
 	return {
-		swarm: result.data.swarm,
-		items: result.data.items,
+		swarm: swarm.data,
+		items: items.data,
 		requestOptions
 	};
 };
