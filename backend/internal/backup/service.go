@@ -147,6 +147,7 @@ const (
 	EnvironmentSystemRoot          = "arcane-environment-recovery"
 	rusticRepositoryMissingMessage = "No repository config file found"
 	DeletionBatchSize              = 500
+	dataDirectory                  = "data"
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 
@@ -661,21 +662,22 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 			return "", fmt.Errorf("failed to pull official Rustic image: %w", pullErr)
 		}
 	}
+	arcane, inspectErr := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if inspectErr != nil || kit.FromPtr(arcane).ID == "" {
+		slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", inspectErr)
+	}
+	trust, err := rustic.TrustMounts(ctx, dockerClient, dataDirectory, kit.FromPtr(arcane).Mounts)
+	if err != nil {
+		return "", err
+	}
 	return rustic.Run(
 		ctx,
 		dockerClient,
 		password,
 		command,
 		repository.Environment,
-		append(slices.Clone(repository.Mounts), extraMounts...),
-		func() container.NetworkMode {
-			arcane, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
-			if err != nil || kit.FromPtr(arcane).ID == "" {
-				slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", err)
-				return ""
-			}
-			return container.NetworkMode("container:" + arcane.ID)
-		}(),
+		slices.Concat(repository.Mounts, extraMounts, trust),
+		container.NetworkMode(kit.Ternary(kit.FromPtr(arcane).ID == "", "", "container:"+kit.FromPtr(arcane).ID)),
 	)
 }
 

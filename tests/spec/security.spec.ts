@@ -92,12 +92,12 @@ function exportButton(page: Page) {
 	return page.getByRole('button', { name: /Export CSV/ });
 }
 
-async function exportCsv(page: Page, testInfo: { outputPath(name: string): string }) {
+async function exportCsv(page: Page, outputPath: (name: string) => string) {
 	const downloadPromise = page.waitForEvent('download');
 	await exportButton(page).click();
 	const download = await downloadPromise;
 	expect(download.suggestedFilename()).toBe(EXPORT_FILENAME);
-	const path = testInfo.outputPath(EXPORT_FILENAME);
+	const path = outputPath(EXPORT_FILENAME);
 	await download.saveAs(path);
 	return readFile(path, 'utf8');
 }
@@ -263,8 +263,9 @@ test.describe('Security Page', () => {
 	});
 
 	test('exports every matching vulnerability from any page through the backend', async ({
-		page
-	}, testInfo) => {
+		page,
+		outputPath
+	}) => {
 		const image = 'example/security:latest';
 		const rows = ['CVE-2026-0001', 'CVE-2026-0002', 'CVE-2026-0003', 'CVE-2026-0004'].map(
 			(vulnerabilityId) => ({
@@ -343,7 +344,7 @@ test.describe('Security Page', () => {
 		await expect(page.getByRole('row').filter({ hasText: 'CVE-2026-0003' })).toBeVisible();
 
 		const listRequestsBeforeExport = listRequests.length;
-		const content = await exportCsv(page, testInfo);
+		const content = await exportCsv(page, outputPath);
 
 		expect(content).toBe(EXPORT_BODY);
 		expect(exportRequests).toHaveLength(1);
@@ -362,8 +363,9 @@ test.describe('Security Page', () => {
 	});
 
 	test('exports only ignored vulnerabilities when the ignored switch is on', async ({
-		page
-	}, testInfo) => {
+		page,
+		outputPath
+	}) => {
 		let exportRequest: URLSearchParams | undefined;
 
 		await mockSecurityPageData(page, []);
@@ -382,15 +384,16 @@ test.describe('Security Page', () => {
 		await page.getByRole('switch', { name: 'Show ignored' }).click();
 		await ignoredResponse;
 
-		await exportCsv(page, testInfo);
+		await exportCsv(page, outputPath);
 		expect(exportRequest?.get('ignored')).toBe('true');
 		expect(exportRequest?.has('start')).toBe(false);
 		expect(exportRequest?.has('limit')).toBe(false);
 	});
 
 	test('blocks duplicate exports and recovers after a failed export', async ({
-		page
-	}, testInfo) => {
+		page,
+		outputPath
+	}) => {
 		let exportRequests = 0;
 		let mode: 'hold' | 'fail' | 'ok' = 'hold';
 		let releaseExport = () => {};
@@ -431,7 +434,7 @@ test.describe('Security Page', () => {
 		await expect(button).toBeEnabled();
 
 		mode = 'ok';
-		await exportCsv(page, testInfo);
+		await exportCsv(page, outputPath);
 	});
 
 	test('discards an export that finishes after leaving the page', async ({ page }) => {

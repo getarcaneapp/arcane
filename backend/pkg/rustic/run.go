@@ -63,14 +63,6 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	if bundle := trustBundle(ctx); len(bundle) > 0 {
-		copyCtx, copyCancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-		copyErr := docker.CopyToContainer(copyCtx, dockerClient, created.ID, "/", map[string][]byte{trustBundleFile: bundle})
-		copyCancel()
-		if copyErr != nil {
-			return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", copyErr)
-		}
-	}
 	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); containerStartErr != nil {
 		return "", fmt.Errorf("failed to start Rustic container: %w", containerStartErr)
 	}
