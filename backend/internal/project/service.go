@@ -1912,7 +1912,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 				CurrentContainerID: currentContainerID,
 			})
 		}) {
-			return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
+			return common.ErrSelfRedeployBlocked
 		}
 	}
 
