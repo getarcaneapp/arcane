@@ -1838,31 +1838,9 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	manifest, err := exportManifest(project, opts.Request, inUse)
+	manifest, err := b.exportManifest(ctx, project, opts.Request, inUse)
 	if err != nil {
 		return nil, err
-	}
-	var missing, outside []string
-	for _, volume := range manifest.Volumes {
-		if !volume.Included {
-			continue
-		}
-		existing, exists, inspectErr := b.local.Volume(ctx, volume.Name)
-		if inspectErr != nil {
-			return nil, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
-		}
-		switch {
-		case !exists:
-			missing = append(missing, volume.Key)
-		case volume.Kind == types.ProjectVolumeExternal && !projects.LocalVolume(existing.Driver, existing.Options):
-			outside = append(outside, volume.Key)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, common.Classify(common.ErrValidation, fmt.Errorf("these volumes have not been created yet, so they hold no data to export: %s", strings.Join(missing, ", ")))
-	}
-	if len(outside) > 0 {
-		return nil, common.Classify(common.ErrValidation, fmt.Errorf("these external volumes keep their data outside Docker, so their data cannot be exported: %s", strings.Join(outside, ", ")))
 	}
 	// The Compose model restarts the stopped services in depends_on order.
 	var restart *composetypes.Project
@@ -1880,7 +1858,8 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	return session, nil
 }
 
-func exportManifest(project types.Project, request types.ExportProjectArchive, inUse map[string]bool) (types.ProjectManifest, error) {
+// exportManifest inspects the requested volumes; volumes that name one Docker volume share the archive of the first.
+func (b projectBundles) exportManifest(ctx context.Context, project types.Project, request types.ExportProjectArchive, inUse map[string]bool) (types.ProjectManifest, error) {
 	if project.ComposeName == "" {
 		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
 	}
@@ -1895,28 +1874,71 @@ func exportManifest(project types.Project, request types.ExportProjectArchive, i
 		}
 	}
 	manifestVolumes := make([]types.ProjectVolume, 0, len(classified))
+	archived := map[string]types.ProjectVolume{}
+	var missing, outside []string
 	consistent := project.RunningCount == 0 || request.StopProject
 	for _, volume := range classified {
 		included := slices.Contains(request.Volumes, volume.Key)
 		consistent = consistent && (!included || !inUse[volume.Name])
-		archive := ""
+		first, shared := archived[volume.Name]
+		var (
+			archive      string
+			dockerLabels map[string]string
+		)
 		if included {
-			var err error
-			if archive, err = projects.ProjectBundleVolumeArchive(volume.Key); err != nil {
-				return types.ProjectManifest{}, common.Classify(common.ErrValidation, err)
+			existing, exists, err := b.local.Volume(ctx, volume.Name)
+			if err != nil {
+				return types.ProjectManifest{}, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
+			}
+			switch {
+			case !exists:
+				missing = append(missing, volume.Key)
+			case volume.Kind != types.ProjectVolumeExternal:
+			case !projects.LocalVolume(existing.Driver, existing.Options):
+				outside = append(outside, volume.Key)
+			default:
+				dockerLabels = existing.Labels
+			}
+			if err = projects.ValidateVolumeLabels(dockerLabels); err != nil {
+				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, err))
+			}
+			switch {
+			case shared && first.Kind != volume.Kind:
+				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
+					"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
+				))
+			case shared:
+				archive = first.Archive
+			default:
+				if archive, err = projects.ProjectBundleVolumeArchive(volume.Key); err != nil {
+					return types.ProjectManifest{}, common.Classify(common.ErrValidation, err)
+				}
 			}
 		}
 		// Driver options hold host paths, so the portable manifest leaves them out.
-		manifestVolumes = append(manifestVolumes, types.ProjectVolume{
-			Labels:   volume.Labels,
-			Key:      volume.Key,
-			Name:     volume.Name,
-			Kind:     volume.Kind,
-			Driver:   volume.Driver,
-			Archive:  archive,
-			Included: included,
-			InUse:    included && inUse[volume.Name],
-		})
+		manifestVolume := types.ProjectVolume{
+			Labels:       volume.Labels,
+			DockerLabels: dockerLabels,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         volume.Kind,
+			Driver:       volume.Driver,
+			Archive:      archive,
+			Included:     included,
+			InUse:        included && inUse[volume.Name],
+		}
+		manifestVolumes = append(manifestVolumes, manifestVolume)
+		if included && !shared {
+			archived[volume.Name] = manifestVolume
+		}
+	}
+	if len(missing) > 0 {
+		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("these volumes have not been created yet, so they hold no data to export: %s", strings.Join(missing, ", ")))
+	}
+	if len(outside) > 0 {
+		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
+			"these external volumes keep their data outside Docker, so their data cannot be exported: %s", strings.Join(outside, ", "),
+		))
 	}
 	includeFiles := make([]string, 0, len(project.IncludeFiles))
 	for _, file := range project.IncludeFiles {
@@ -1966,10 +1988,12 @@ func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts Expor
 			return fmt.Errorf("stop project %s: %w", name, stopErr)
 		}
 	}
+	written := map[string]bool{}
 	for _, volume := range manifest.Volumes {
-		if !volume.Included {
+		if !volume.Included || written[volume.Archive] {
 			continue
 		}
+		written[volume.Archive] = true
 		session, exportErr := b.local.ExportVolume(ctx, volume.Name)
 		if exportErr != nil {
 			return fmt.Errorf("export volume %s: %w", volume.Name, exportErr)
@@ -2162,10 +2186,8 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 			return nil, err
 		}
 	}
-	keys := map[string]string{}
 	predicted := make([]types.ProjectVolume, 0, len(included))
 	for _, volume := range included {
-		keys[volume.Archive] = volume.Key
 		predicted = append(predicted, types.ProjectVolume{
 			Key:  volume.Key,
 			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, projects.ComposeVolumeTargetName(manifest.Project.ComposeName, volume.Key, volume.Name, opts.Request.Name)),
@@ -2173,13 +2195,14 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 		})
 	}
 	// The manifest only predicts the names, so the check is repeated with the imported project's names.
-	if err := b.checkVolumeTargets(ctx, predicted); err != nil {
+	if _, err := b.checkVolumeTargets(ctx, included, predicted); err != nil {
 		return nil, err
 	}
 	var (
 		proj     *Project
 		imported types.Project
-		targets  map[string]types.ProjectVolume
+		resolved []types.ProjectVolume
+		restores map[string]int
 		created  []types.ProjectVolume
 	)
 	_, _, err := projects.ReadProjectBundle(archive, func(name string, size int64, body io.Reader) error {
@@ -2194,11 +2217,10 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 			if imported.ComposeName == "" {
 				return fmt.Errorf("the compose files of the imported project %s cannot be loaded", proj.Name)
 			}
-			targets = map[string]types.ProjectVolume{}
+			targets := map[string]types.ProjectVolume{}
 			for _, volume := range projects.ClassifyProjectVolumes(imported) {
 				targets[volume.Key] = volume
 			}
-			resolved := make([]types.ProjectVolume, 0, len(included))
 			for _, volume := range included {
 				target, ok := targets[volume.Key]
 				if !ok || target.Kind != volume.Kind || !target.Included {
@@ -2206,10 +2228,20 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 				}
 				resolved = append(resolved, target)
 			}
-			return b.checkVolumeTargets(ctx, resolved)
+			restores, importErr = b.checkVolumeTargets(ctx, included, resolved)
+			return importErr
 		}
-		target := targets[keys[name]]
-		restored, err := b.restoreVolume(ctx, target, imported.ComposeName, size, body, opts.User)
+		index := restores[name]
+		target := resolved[index]
+		external := target.Kind == types.ProjectVolumeExternal
+		restored, err := b.restoreVolume(ctx, target.Name, types.ComposeVolumeTarget{
+			// An external volume belongs to no project, so it gets its exported Docker labels instead of Compose's.
+			Labels:   kit.Ternary(external, included[index].DockerLabels, target.Labels),
+			Project:  imported.ComposeName,
+			Key:      target.Key,
+			Driver:   target.Driver,
+			External: external,
+		}, size, body, opts.User)
 		if restored {
 			created = append(created, target)
 		}
@@ -2221,58 +2253,67 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	return proj, nil
 }
 
-// checkVolumeTargets refuses the import when two included volumes share a Docker name or any of them already exists.
-func (b projectBundles) checkVolumeTargets(ctx context.Context, targets []types.ProjectVolume) error {
-	keys := map[string]string{}
+// checkVolumeTargets pairs each included volume with its target and maps each archive to the index of the one target it
+// restores. Volumes that resolve to one Docker volume must agree on kind and share an archive, and no target may exist.
+func (b projectBundles) checkVolumeTargets(ctx context.Context, included, targets []types.ProjectVolume) (map[string]int, error) {
+	byName := map[string]int{}
+	restores := map[string]int{}
 	var conflicts []string
-	for _, target := range targets {
-		if other, duplicate := keys[target.Name]; duplicate {
-			return common.Classify(common.ErrValidation, fmt.Errorf("volumes %s and %s both resolve to the Docker volume %s", other, target.Key, target.Name))
+	for index, target := range targets {
+		if first, shared := byName[target.Name]; shared {
+			switch {
+			case targets[first].Kind != target.Kind:
+				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+					"volumes %s and %s both resolve to the Docker volume %s but are %s and %s volumes", targets[first].Key, target.Key, target.Name, targets[first].Kind, target.Kind,
+				))
+			case included[first].Archive != included[index].Archive:
+				return nil, common.Classify(common.ErrValidation, fmt.Errorf("volumes %s and %s both resolve to the Docker volume %s", targets[first].Key, target.Key, target.Name))
+			}
+			continue
 		}
-		keys[target.Name] = target.Key
+		if other, shared := restores[included[index].Archive]; shared {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+				"volumes %s and %s share their data but resolve to the Docker volumes %s and %s", targets[other].Key, target.Key, targets[other].Name, target.Name,
+			))
+		}
+		byName[target.Name] = index
+		restores[included[index].Archive] = index
 		_, exists, err := b.local.Volume(ctx, target.Name)
 		if err != nil {
-			return fmt.Errorf("inspect volume %s: %w", target.Name, err)
+			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, err)
 		}
 		if exists {
 			conflicts = append(conflicts, target.Name)
 		}
 	}
 	if len(conflicts) > 0 {
-		return common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
+		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
 	}
-	return nil
+	return restores, nil
 }
 
 // restoreVolume creates the target volume of the imported project from its archive and reports whether it created
 // the volume, also when it fails.
-func (b projectBundles) restoreVolume(ctx context.Context, target types.ProjectVolume, composeName string, size int64, body io.Reader, user types.Actor) (bool, error) {
-	compose := types.ComposeVolumeTarget{
-		Labels:   target.Labels,
-		Project:  composeName,
-		Key:      target.Key,
-		Driver:   target.Driver,
-		External: target.Kind == types.ProjectVolumeExternal,
-	}
+func (b projectBundles) restoreVolume(ctx context.Context, name string, compose types.ComposeVolumeTarget, size int64, body io.Reader, user types.Actor) (bool, error) {
 	// The restore refuses empty archives, so an empty volume is only created, with the owner and mode of its root.
 	empty, root, body := projects.PeekEmptyVolumeArchive(body)
 	if empty {
-		options, err := projects.ComposeVolumeTargetCreateOptions(target.Name, compose)
+		options, err := projects.ComposeVolumeTargetCreateOptions(name, compose)
 		if err != nil {
 			return false, err
 		}
 		return b.local.deps.CreateEmptyVolume(ctx, options, root)
 	}
-	session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, target.Key+".tar.gz", size, body)
+	session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, compose.Key+".tar.gz", size, body)
 	if err != nil {
-		return false, fmt.Errorf("store the data of volume %s: %w", target.Key, err)
+		return false, fmt.Errorf("store the data of volume %s: %w", compose.Key, err)
 	}
-	created, err := b.local.deps.RestoreVolume(ctx, target.Name, types.RestoreVolumeUploadRequest{
+	created, err := b.local.deps.RestoreVolume(ctx, name, types.RestoreVolumeUploadRequest{
 		ComposeVolume: &compose,
 		UploadID:      session.ID,
 	}, user)
 	if err != nil {
-		return created, errors.Join(fmt.Errorf("restore volume %s: %w", target.Name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
+		return created, errors.Join(fmt.Errorf("restore volume %s: %w", name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
 	}
 	return created, nil
 }

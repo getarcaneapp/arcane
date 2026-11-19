@@ -64,7 +64,7 @@ type (
 	}
 
 	ComposeVolumeTarget struct {
-		Labels   map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file"`
+		Labels   map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file; an external volume's own Docker labels"`
 		Project  string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
 		Key      string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
 		Driver   string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
