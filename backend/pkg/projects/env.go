@@ -103,6 +103,7 @@ var (
 	processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 
 	envKeyLineRegex = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
+	EnvKeyPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {

@@ -114,7 +114,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'route.projects.templates'
 				},
 				{
-					title: m.variables_title(),
+					title: m.variables_and_secrets(),
 					url: resolve('/(app)/projects/variables'),
 					icon: VariableIcon,
 					accessSurfaceId: 'route.projects.variables'

@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -31,9 +30,11 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/variable/children/source"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -46,6 +47,7 @@ type (
 		tunnels         *agent.TunnelRegistry
 		settingsService *settings.SettingsService
 		kvService       *kv.KVService
+		sources         *source.Service
 		syncStatus      map[string]types.EnvironmentSyncStatus
 
 		importLocks concurrency.KeyedMutex
@@ -65,6 +67,7 @@ type (
 		Tunnels         *agent.TunnelRegistry
 		SettingsService *settings.SettingsService
 		KVService       *kv.KVService
+		DockerService   *docker.DockerClientService
 	}
 )
 
@@ -74,10 +77,13 @@ const (
 	variableSyncTimeout             = 15 * time.Second
 )
 
-var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var variableScope = environment.ScopeTable{
+	Table:       "global_variable_environments",
+	OwnerColumn: "global_variable_id",
+}
 
 func validateVariableKey(key string) error {
-	if envKeyPattern.MatchString(key) {
+	if projects.EnvKeyPattern.MatchString(key) {
 		return nil
 	}
 	return common.Classify(common.ErrInvalidEnvKey, &types.FieldError{Field: "key", Err: fmt.Errorf("invalid key %q: use letters, numbers, and underscores, and do not start with a number", key)})
@@ -91,7 +97,11 @@ func NewVariableService(p VariableServiceParams) *VariableService {
 		tunnels:         p.Tunnels,
 		settingsService: p.SettingsService,
 		kvService:       p.KVService,
-		syncStatus:      make(map[string]types.EnvironmentSyncStatus),
+		sources: source.NewService(source.ServiceParams{
+			DB:           p.DB,
+			DockerClient: p.DockerService.GetClient,
+		}),
+		syncStatus: make(map[string]types.EnvironmentSyncStatus),
 	}
 }
 
@@ -114,7 +124,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVa
 		return nil, validateKeyErr
 	}
 
-	envIDs, err := s.normalizeScope(ctx, req.AllEnvironments, req.EnvironmentIDs)
+	envIDs, err := environment.NormalizeScope(ctx, s.db, req.AllEnvironments, req.EnvironmentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +152,7 @@ func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVa
 		if createVariableErr := tx.Omit("Environments").Create(&variable).Error; createVariableErr != nil {
 			return fmt.Errorf("failed to create global variable: %w", createVariableErr)
 		}
-		return replaceVariableScopeRows(tx, variable.ID, envIDs)
+		return variableScope.Replace(tx, variable.ID, envIDs)
 	})
 	if err != nil {
 		return nil, wrapVariableMutationError(err)
@@ -174,7 +184,13 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 		return nil, err
 	}
 
-	envIDs, allEnvironments, err := s.resolveUpdatedScope(ctx, &variable, req, submitted)
+	envIDs, allEnvironments, err := environment.ResolveScope(ctx, s.db, environment.ScopeChange{
+		Submitted:       submitted,
+		Current:         variable.Environments,
+		EnvironmentIDs:  req.EnvironmentIDs,
+		AllEnvironments: req.AllEnvironments,
+		CurrentAll:      variable.AllEnvironments,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +208,7 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 		if updateVariableErr := tx.Omit("Environments").Save(&variable).Error; updateVariableErr != nil {
 			return fmt.Errorf("failed to update global variable: %w", updateVariableErr)
 		}
-		return replaceVariableScopeRows(tx, variable.ID, envIDs)
+		return variableScope.Replace(tx, variable.ID, envIDs)
 	})
 	if err != nil {
 		return nil, wrapVariableMutationError(err)
@@ -235,23 +251,6 @@ func resolveUpdatedValue(variable *GlobalVariable, reqValue string, valueSubmitt
 	}
 }
 
-func (s *VariableService) resolveUpdatedScope(ctx context.Context, variable *GlobalVariable, req types.GlobalVariable, submitted map[string]bool) ([]string, bool, error) {
-	envIDs := scopedEnvironmentIDs(variable.Environments)
-	if !submitted["allEnvironments"] && !submitted["environmentIds"] {
-		return envIDs, variable.AllEnvironments, nil
-	}
-
-	normalized, err := s.normalizeScope(
-		ctx,
-		kit.Ternary(submitted["allEnvironments"], req.AllEnvironments, variable.AllEnvironments),
-		kit.Ternary(submitted["environmentIds"], req.EnvironmentIDs, envIDs),
-	)
-	if err != nil {
-		return nil, false, err
-	}
-	return normalized, len(normalized) == 0, nil
-}
-
 func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&GlobalVariable{}, "id = ?", id)
@@ -274,13 +273,20 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 	if err != nil {
 		return nil, err
 	}
+	layers, err := s.sources.EffectiveLayers(ctx, envID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve secret sources: %w", err)
+	}
+	return mergeVariableLayers(append(layers, explicitVariables(ctx, variables, envID))...), nil
+}
 
+func explicitVariables(ctx context.Context, variables []GlobalVariable, envID string) []types.EnvVariable {
 	result := make([]types.EnvVariable, 0, len(variables))
 	positions := make(map[string]int, len(variables))
 	scopedKeys := make(map[string]bool)
 	for _, variable := range variables {
 		scoped := !variable.AllEnvironments
-		if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
+		if scoped && !slices.Contains(environment.IDs(variable.Environments), envID) {
 			continue
 		}
 		if !scoped && scopedKeys[variable.Key] {
@@ -309,7 +315,35 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 		}
 		scopedKeys[variable.Key] = scopedKeys[variable.Key] || scoped
 	}
-	return result, nil
+	return result
+}
+
+func mergeVariableLayers(layers ...[]types.EnvVariable) []types.EnvVariable {
+	var merged []types.EnvVariable
+	positions := make(map[string]int)
+	for _, layer := range layers {
+		for _, entry := range layer {
+			if index, ok := positions[entry.Key]; ok {
+				merged[index] = entry
+				continue
+			}
+			positions[entry.Key] = len(merged)
+			merged = append(merged, entry)
+		}
+	}
+	return merged
+}
+
+func (s *VariableService) GetSecretSource(ctx context.Context, id string) (types.SecretSource, error) {
+	return s.sources.Get(ctx, id)
+}
+
+func (s *VariableService) RefreshSecretSource(ctx context.Context, id string) error {
+	if _, err := s.sources.Refresh(ctx, id); err != nil {
+		return err
+	}
+	s.SyncAllBackground(ctx)
+	return nil
 }
 
 func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) error {
@@ -651,14 +685,14 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 	covered := make(map[string]bool, len(existing))
 	for _, variable := range existing {
 		if variable.AllEnvironments || scopeEnvID == "" ||
-			slices.Contains(scopedEnvironmentIDs(variable.Environments), scopeEnvID) {
+			slices.Contains(environment.IDs(variable.Environments), scopeEnvID) {
 			covered[variable.Key] = true
 		}
 	}
 
 	for _, entry := range vars {
 		key := strings.TrimSpace(entry.Key)
-		if key == "" || covered[key] || !envKeyPattern.MatchString(key) {
+		if key == "" || covered[key] || !projects.EnvKeyPattern.MatchString(key) {
 			continue
 		}
 
@@ -675,7 +709,7 @@ func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvV
 			if scopeEnvID == "" {
 				return nil
 			}
-			return replaceVariableScopeRows(tx, variable.ID, []string{scopeEnvID})
+			return variableScope.Replace(tx, variable.ID, []string{scopeEnvID})
 		})
 		if transactionErr != nil {
 			return fmt.Errorf("failed to import legacy variable %q: %w", key, transactionErr)
@@ -693,42 +727,6 @@ func (s *VariableService) loadVariables(ctx context.Context) ([]GlobalVariable, 
 		return nil, fmt.Errorf("failed to load global variables: %w", err)
 	}
 	return variables, nil
-}
-
-func (s *VariableService) normalizeScope(ctx context.Context, allEnvironments bool, envIDs []string) ([]string, error) {
-	if allEnvironments {
-		return nil, nil
-	}
-
-	unique := make([]string, 0, len(envIDs))
-	for _, id := range envIDs {
-		id = strings.TrimSpace(id)
-		if id != "" && !slices.Contains(unique, id) {
-			unique = append(unique, id)
-		}
-	}
-	// An explicitly specific scope with no environments must not silently
-	// widen to all environments.
-	if len(unique) == 0 {
-		return nil, common.Classify(
-			common.ErrGlobalVariableScopeRequired,
-			errors.New(
-				"at least one environment is required when a variable is not scoped to all environments",
-			),
-		)
-	}
-
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&environment.Environment{}).Where("id IN ?", unique).Count(&count).Error; err != nil {
-		return nil, fmt.Errorf("failed to update global variables: %w", err)
-	}
-	if count != int64(len(unique)) {
-		return nil, common.Classify(
-			common.ErrGlobalVariableUnknownEnvironment,
-			errors.New("failed to update global variables: one or more environments do not exist"),
-		)
-	}
-	return unique, nil
 }
 
 func (s *VariableService) validateScopeConflict(tx *gorm.DB, key, excludeID string, allEnvironments bool, envIDs []string) error {
@@ -754,7 +752,7 @@ func (s *VariableService) validateScopeConflict(tx *gorm.DB, key, excludeID stri
 				),
 			)
 		}
-		otherIDs := scopedEnvironmentIDs(other.Environments)
+		otherIDs := environment.IDs(other.Environments)
 		for _, id := range envIDs {
 			if slices.Contains(otherIDs, id) {
 				return common.Classify(
@@ -770,31 +768,11 @@ func (s *VariableService) validateScopeConflict(tx *gorm.DB, key, excludeID stri
 	return nil
 }
 
-func replaceVariableScopeRows(tx *gorm.DB, variableID string, envIDs []string) error {
-	if err := tx.Exec("DELETE FROM global_variable_environments WHERE global_variable_id = ?", variableID).Error; err != nil {
-		return fmt.Errorf("failed to clear variable scope: %w", err)
-	}
-	for _, envID := range envIDs {
-		if err := tx.Exec("INSERT INTO global_variable_environments (global_variable_id, environment_id) VALUES (?, ?)", variableID, envID).Error; err != nil {
-			return fmt.Errorf("failed to set variable scope: %w", err)
-		}
-	}
-	return nil
-}
-
 func wrapVariableMutationError(err error) error {
 	if err == nil || errors.Is(err, common.ErrGlobalVariableConflict) || errors.Is(err, common.ErrGlobalVariableNotFound) || errors.Is(err, common.ErrInvalidEnvKey) {
 		return err
 	}
 	return fmt.Errorf("failed to update global variables: %w", err)
-}
-
-func scopedEnvironmentIDs(environments []environment.Environment) []string {
-	ids := make([]string, 0, len(environments))
-	for _, environment := range environments {
-		ids = append(ids, environment.ID)
-	}
-	return ids
 }
 
 func environmentsFromIDs(envIDs []string) []environment.Environment {
@@ -814,7 +792,7 @@ func globalVariableToDTO(variable GlobalVariable) types.GlobalVariable {
 		IsSecret:             variable.IsSecret,
 		AllEnvironments:      variable.AllEnvironments,
 		InjectIntoContainers: variable.InjectIntoContainers,
-		EnvironmentIDs:       scopedEnvironmentIDs(variable.Environments),
+		EnvironmentIDs:       environment.IDs(variable.Environments),
 		CreatedAt:            variable.CreatedAt,
 		UpdatedAt:            variable.UpdatedAt,
 	}

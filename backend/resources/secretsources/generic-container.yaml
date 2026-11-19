@@ -1,0 +1,35 @@
+apiVersion: arcane.secretsource/v1
+id: generic-container
+name: Generic container command
+description: Run an image on the manager's Docker and read secrets from its stdout.
+kind: container
+inputs:
+  image:
+    label: Image
+    placeholder: alpine:3
+    required: true
+  command:
+    label: Shell command
+    description: Runs with sh -c. Credentials are available as SECRET_TOKEN.
+    multiline: true
+    required: true
+  format:
+    label: Output format
+    description: json or dotenv.
+    default: json
+credentials:
+  token:
+    label: Token
+    description: Passed to the container as SECRET_TOKEN.
+image: "{{ .inputs.image }}"
+args:
+  - sh
+  - -c
+  - "{{ .inputs.command }}"
+env:
+  SECRET_TOKEN: "{{ .credentials.token }}"
+  SECRET_PATH: "{{ .path }}"
+format: "{{ .inputs.format }}"
+extract:
+  - from: .
+    object: true

@@ -365,7 +365,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	{
 		Key:         "variables",
 		Label:       "Variables",
-		Description: "Global variables shared with projects",
+		Description: "Global variables shared with projects and the external secrets that feed them",
 		Scope:       PermissionScopeGlobal,
 		Actions: []PermissionCatalogAction{
 			{
@@ -408,6 +408,47 @@ var permissionCatalog = []PermissionCatalogResource{
 				Label:       "Sync",
 				Description: "Sync global variables to environments",
 				Requires:    []string{PermVariablesRead},
+			},
+			{
+				Key:         "sources-list",
+				Permission:  PermVariablesSourcesList,
+				Label:       "List external secrets",
+				Description: "List secret sources and presets",
+			},
+			{
+				Key:         "sources-read",
+				Permission:  PermVariablesSourcesRead,
+				Label:       "Read external secrets",
+				Description: "View a secret source and its fetch status",
+				Requires:    []string{PermVariablesSourcesList},
+			},
+			{
+				Key:         "sources-create",
+				Permission:  PermVariablesSourcesCreate,
+				Label:       "Create external secrets",
+				Description: "Add secret sources, which can make the manager call remote APIs and run containers",
+				Requires:    []string{PermVariablesSourcesRead},
+			},
+			{
+				Key:         "sources-update",
+				Permission:  PermVariablesSourcesUpdate,
+				Label:       "Update external secrets",
+				Description: "Change secret sources and their credentials",
+				Requires:    []string{PermVariablesSourcesRead},
+			},
+			{
+				Key:         "sources-delete",
+				Permission:  PermVariablesSourcesDelete,
+				Label:       "Delete external secrets",
+				Description: "Remove secret sources",
+				Requires:    []string{PermVariablesSourcesRead},
+			},
+			{
+				Key:         "sources-refresh",
+				Permission:  PermVariablesSourcesRefresh,
+				Label:       "Refresh external secrets",
+				Description: "Test and refresh secret sources",
+				Requires:    []string{PermVariablesSourcesRead},
 			},
 		},
 	},

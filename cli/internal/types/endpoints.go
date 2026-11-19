@@ -436,6 +436,16 @@ func Variable(id string) string { return pathf("/api/variables/%s", id) }
 
 func VariablesSync() string { return "/api/variables/sync" }
 
+func VariableSources() string { return "/api/variables/sources" }
+
+func VariableSource(id string) string { return pathf("/api/variables/sources/%s", id) }
+
+func VariableSourceRefresh(id string) string { return pathf("/api/variables/sources/%s/refresh", id) }
+
+func VariableSourcesTest() string { return "/api/variables/sources/test" }
+
+func VariableSourcePresets() string { return "/api/variables/source-presets" }
+
 func Backups() string { return "/api/backups" }
 
 func Backup(id string) string {

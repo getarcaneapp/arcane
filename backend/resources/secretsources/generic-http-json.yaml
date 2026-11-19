@@ -1,0 +1,27 @@
+apiVersion: arcane.secretsource/v1
+id: generic-http-json
+name: Generic HTTP JSON
+description: GET a JSON object of KEY/value pairs.
+kind: http
+inputs:
+  baseUrl:
+    label: URL
+    placeholder: https://secrets.example.com
+    required: true
+  endpoint:
+    label: Endpoint path
+    default: /
+    placeholder: /v1/secrets
+    required: true
+credentials:
+  token:
+    label: Bearer token
+    description: Optional.
+fetch:
+  method: GET
+  path: "{{ .inputs.endpoint }}"
+  headers:
+    Authorization: "{{ if .credentials.token }}Bearer {{ .credentials.token }}{{ end }}"
+extract:
+  - from: .
+    object: true

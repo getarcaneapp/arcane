@@ -1,6 +1,12 @@
 import { environmentListQuery } from '#lib/query/environments.js';
+import { secretSourceListQuery } from '#lib/query/secret-sources.js';
 import { variableListQuery } from '#lib/query/variables.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import { canReachAccessSurface } from '#lib/utils/access-policy.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
+import { hasAnyPermission } from '#lib/utils/auth.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
@@ -10,12 +16,20 @@ const environmentListOptions: SearchPaginationSortRequest = {
 };
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
+	const { queryClient, permissionsManifest, user } = await parent();
 
-	const [variables, environmentsPage] = await Promise.all([
-		queryClient.query(variableListQuery()),
-		queryClient.query(environmentListQuery(environmentListOptions))
-	]);
+	const showVariables = hasAnyPermission(['variables:list', 'variables:read'], GLOBAL_SCOPE);
+	const showSecretSources = canReachAccessSurface(permissionsManifest, 'route.projects.variables.sources', user);
 
-	return { variables, environments: environmentsPage.data };
+	const result = await tryCatch(
+		Promise.all([
+			showVariables ? queryClient.query(variableListQuery()) : [],
+			showSecretSources ? queryClient.query(secretSourceListQuery()) : [],
+			queryClient.query(environmentListQuery(environmentListOptions))
+		])
+	);
+	if (result.error !== null) throwPageLoadError(result.error, 'Failed to load variables');
+	const [variables, sources, environmentsPage] = result.data;
+
+	return { variables, sources, environments: environmentsPage.data, showVariables, showSecretSources };
 };
