@@ -10,6 +10,7 @@ import {
 } from '../fixtures/test.fixture';
 import { TEST_COMPOSE_YAML } from '../setup/project.data';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
+import { baseURL } from '../utils/report';
 import { openRowActionsMenu, ROW_ACTIONS_TRIGGER_NAME } from '../utils/table-actions.util';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 
@@ -417,438 +418,445 @@ async function deleteRoleThroughUI(page: Page, role: TestRole) {
 	await expect(row).toHaveCount(0);
 }
 
-test('administers scoped identities and enforces their browser access immediately', async ({
-	browser,
-	page
-}, testInfo) => {
-	test.setTimeout(180_000);
-	page.setDefaultTimeout(10_000);
-	page.setDefaultNavigationTimeout(15_000);
+test(
+	'administers scoped identities and enforces their browser access immediately',
+	{ timeout: 180_000 },
+	async ({ browser, page }) => {
+		page.setDefaultTimeout(10_000);
+		page.setDefaultNavigationTimeout(15_000);
 
-	const suffix = Date.now().toString(36);
-	const localRoleName = `E2E Container Reader ${suffix}`;
-	const remoteRoleName = `E2E Project Reader ${suffix}`;
-	const remoteEnvironmentName = `E2E Scoped Remote ${suffix}`;
-	const username = `e2e-scoped-${suffix}`;
-	const noAccessUsername = `e2e-no-access-${suffix}`;
-	const environmentAdminUsername = `e2e-env-admin-${suffix}`;
-	const environmentAdminVolumeName = `e2e-env-admin-volume-${suffix}`;
-	const password = 'E2e-RBAC-user-123!';
+		const suffix = Date.now().toString(36);
+		const localRoleName = `E2E Container Reader ${suffix}`;
+		const remoteRoleName = `E2E Project Reader ${suffix}`;
+		const remoteEnvironmentName = `E2E Scoped Remote ${suffix}`;
+		const username = `e2e-scoped-${suffix}`;
+		const noAccessUsername = `e2e-no-access-${suffix}`;
+		const environmentAdminUsername = `e2e-env-admin-${suffix}`;
+		const environmentAdminVolumeName = `e2e-env-admin-volume-${suffix}`;
+		const password = 'E2e-RBAC-user-123!';
 
-	let localRole: TestRole | null = null;
-	let remoteRole: TestRole | null = null;
-	let clonedRole: TestRole | null = null;
-	let remoteEnvironment: TestEnvironment | null = null;
-	let restrictedUser: TestUser | null = null;
-	let noAccessUser: TestUser | null = null;
-	let environmentAdminUser: TestUser | null = null;
-	let environmentAdminVolumeCreated = false;
-	let restrictedContext: BrowserContext | null = null;
-	let noAccessContext: BrowserContext | null = null;
-	let environmentAdminContext: BrowserContext | null = null;
+		let localRole: TestRole | null = null;
+		let remoteRole: TestRole | null = null;
+		let clonedRole: TestRole | null = null;
+		let remoteEnvironment: TestEnvironment | null = null;
+		let restrictedUser: TestUser | null = null;
+		let noAccessUser: TestUser | null = null;
+		let environmentAdminUser: TestUser | null = null;
+		let environmentAdminVolumeCreated = false;
+		let restrictedContext: BrowserContext | null = null;
+		let noAccessContext: BrowserContext | null = null;
+		let environmentAdminContext: BrowserContext | null = null;
 
-	try {
-		const localEnvironment = await readApiData<TestEnvironment>(
-			await page.request.get('/api/agents/0'),
-			'Get local environment'
-		);
+		try {
+			const localEnvironment = await readApiData<TestEnvironment>(
+				await page.request.get('/api/agents/0'),
+				'Get local environment'
+			);
 
-		localRole = await createRoleThroughUI(page, localRoleName, [
-			'containers:list',
-			'containers:read'
-		]);
-		await editRoleThroughUI(page, localRole);
-		clonedRole = await cloneViewerRoleThroughUI(page);
+			localRole = await createRoleThroughUI(page, localRoleName, [
+				'containers:list',
+				'containers:read'
+			]);
+			await editRoleThroughUI(page, localRole);
+			clonedRole = await cloneViewerRoleThroughUI(page);
 
-		remoteRole = await readApiData<TestRole>(
-			await page.request.post('/api/roles', {
-				data: {
-					name: remoteRoleName,
-					description: 'Playwright remote project reader',
-					permissions: ['projects:list', 'projects:read']
-				}
-			}),
-			`Create role ${remoteRoleName}`
-		);
+			remoteRole = await readApiData<TestRole>(
+				await page.request.post('/api/roles', {
+					data: {
+						name: remoteRoleName,
+						description: 'Playwright remote project reader',
+						permissions: ['projects:list', 'projects:read']
+					}
+				}),
+				`Create role ${remoteRoleName}`
+			);
 
-		remoteEnvironment = await readApiData<TestEnvironment>(
-			await page.request.post('/api/agents', {
-				data: {
-					name: remoteEnvironmentName,
-					enabled: true
-				}
-			}),
-			`Create environment ${remoteEnvironmentName}`
-		);
+			remoteEnvironment = await readApiData<TestEnvironment>(
+				await page.request.post('/api/agents', {
+					data: {
+						name: remoteEnvironmentName,
+						enabled: true
+					}
+				}),
+				`Create environment ${remoteEnvironmentName}`
+			);
 
-		restrictedUser = await createRestrictedUserThroughUI(
-			page,
-			username,
-			password,
-			localEnvironment.name,
-			localRole.name,
-			remoteEnvironment.name,
-			remoteRole.name
-		);
-		const duplicateUserResponse = await page.request.post('/api/users', {
-			data: {
-				username: `  ${username}  `,
+			restrictedUser = await createRestrictedUserThroughUI(
+				page,
+				username,
 				password,
-				displayName: 'Duplicate Browser User'
-			}
-		});
-		expect(duplicateUserResponse.status()).toBe(409);
-		expect(await duplicateUserResponse.json()).toMatchObject({
-			status: 409,
-			detail: 'username already in use'
-		});
-		await editUserThroughUI(page, restrictedUser);
-
-		noAccessUser = await readApiData<TestUser>(
-			await page.request.post('/api/users', {
+				localEnvironment.name,
+				localRole.name,
+				remoteEnvironment.name,
+				remoteRole.name
+			);
+			const duplicateUserResponse = await page.request.post('/api/users', {
 				data: {
-					username: noAccessUsername,
+					username: `  ${username}  `,
 					password,
-					displayName: 'No Access Browser User'
+					displayName: 'Duplicate Browser User'
 				}
-			}),
-			`Create user ${noAccessUsername}`
-		);
+			});
+			expect(duplicateUserResponse.status()).toBe(409);
+			expect(await duplicateUserResponse.json()).toMatchObject({
+				status: 409,
+				detail: 'username already in use'
+			});
+			await editUserThroughUI(page, restrictedUser);
 
-		const baseURL = String(testInfo.project.use.baseURL);
-		restrictedContext = await browser.newContext({
-			baseURL,
-			storageState: { cookies: [], origins: [] }
-		});
-		const remoteID = remoteEnvironment.id;
-		await restrictedContext.route(`**/api/agents/${remoteID}/projects**`, async (route) => {
-			const pathname = new URL(route.request().url()).pathname;
-			if (pathname.endsWith('/counts')) {
+			noAccessUser = await readApiData<TestUser>(
+				await page.request.post('/api/users', {
+					data: {
+						username: noAccessUsername,
+						password,
+						displayName: 'No Access Browser User'
+					}
+				}),
+				`Create user ${noAccessUsername}`
+			);
+
+			restrictedContext = await browser.newContext({
+				baseURL,
+				storageState: { cookies: [], origins: [] }
+			});
+			const remoteID = remoteEnvironment.id;
+			await restrictedContext.route(`**/api/agents/${remoteID}/projects**`, async (route) => {
+				const pathname = new URL(route.request().url()).pathname;
+				if (pathname.endsWith('/counts')) {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/json',
+						body: JSON.stringify({
+							success: true,
+							data: {
+								runningProjects: 0,
+								stoppedProjects: 0,
+								totalProjects: 0,
+								archivedProjects: 0
+							}
+						})
+					});
+					return;
+				}
+
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
 					body: JSON.stringify({
 						success: true,
-						data: {
+						data: [],
+						counts: {
 							runningProjects: 0,
 							stoppedProjects: 0,
 							totalProjects: 0,
 							archivedProjects: 0
+						},
+						pagination: {
+							currentPage: 1,
+							totalPages: 0,
+							totalItems: 0,
+							itemsPerPage: 20
 						}
 					})
 				});
-				return;
-			}
-
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					success: true,
-					data: [],
-					counts: {
-						runningProjects: 0,
-						stoppedProjects: 0,
-						totalProjects: 0,
-						archivedProjects: 0
-					},
-					pagination: {
-						currentPage: 1,
-						totalPages: 0,
-						totalItems: 0,
-						itemsPerPage: 20
-					}
-				})
 			});
-		});
-		const restrictedPage = await restrictedContext.newPage();
-		restrictedPage.setDefaultTimeout(10_000);
-		const restrictedErrors = installPageErrorCollector(restrictedPage);
-		try {
-			await loginAs(restrictedPage, username, password, '/dashboard');
-			await expect(
-				restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
-			).toBeVisible();
-			await restrictedPage.goto('/containers');
-			await expect(restrictedPage).toHaveURL('/containers');
-
-			await expect(
-				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
-			).toBeVisible();
-			await expect(
-				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
-			).toBeVisible();
-			await expect(restrictedPage.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(
-				0
-			);
-			await expect(
-				restrictedPage.getByRole('button', { name: 'Create Container', exact: true })
-			).toHaveCount(0);
-
-			const containerRow = restrictedPage
-				.getByRole('row')
-				.filter({ has: restrictedPage.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
-				.first();
-			const containerMenu = await openRowActionsMenu(restrictedPage, containerRow);
-			await expect(
-				containerMenu.getByRole('menuitem', { name: 'Inspect', exact: true })
-			).toBeVisible();
-			for (const action of ['Start', 'Stop', 'Restart', 'Remove']) {
+			const restrictedPage = await restrictedContext.newPage();
+			restrictedPage.setDefaultTimeout(10_000);
+			const restrictedErrors = installPageErrorCollector(restrictedPage);
+			try {
+				await loginAs(restrictedPage, username, password, '/dashboard');
 				await expect(
-					containerMenu.getByRole('menuitem', { name: action, exact: true })
+					restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
+				).toBeVisible();
+				await restrictedPage.goto('/containers');
+				await expect(restrictedPage).toHaveURL('/containers');
+
+				await expect(
+					restrictedPage.getByRole('link', { name: 'Containers', exact: true })
+				).toBeVisible();
+				await expect(
+					restrictedPage.getByRole('link', { name: 'Projects', exact: true })
+				).toBeVisible();
+				await expect(
+					restrictedPage.getByRole('link', { name: 'Settings', exact: true })
 				).toHaveCount(0);
-			}
-			await restrictedPage.keyboard.press('Escape');
+				await expect(
+					restrictedPage.getByRole('button', { name: 'Create Container', exact: true })
+				).toHaveCount(0);
 
-			await restrictedPage.goto('/system/backups');
-			await expect(restrictedPage).toHaveURL('/containers');
-
-			const currentUser = await readApiData<TestUser>(
-				await restrictedPage.request.get('/api/auth/me'),
-				'Get restricted current user'
-			);
-			expect(currentUser.permissionsByEnv['0']).toEqual(
-				expect.arrayContaining(['containers:list', 'containers:read'])
-			);
-			expect(currentUser.permissionsByEnv[remoteID]).toEqual(
-				expect.arrayContaining(['projects:list', 'projects:read'])
-			);
-			expect(currentUser.permissionsByEnv.global ?? []).toEqual([]);
-
-			await restrictedPage.getByRole('link', { name: 'Projects', exact: true }).click();
-			await expect(restrictedPage).toHaveURL('/projects');
-			await expect(
-				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
-			).toBeVisible();
-		} finally {
-			restrictedErrors.stop();
-			expect(
-				restrictedErrors.errors,
-				`Restricted user page errors:\n${formatPageErrors(restrictedErrors.errors)}`
-			).toEqual([]);
-		}
-
-		noAccessContext = await browser.newContext({
-			baseURL,
-			storageState: { cookies: [], origins: [] }
-		});
-		const noAccessPage = await noAccessContext.newPage();
-		noAccessPage.setDefaultTimeout(10_000);
-		const noAccessErrors = installPageErrorCollector(noAccessPage);
-		try {
-			await loginAs(noAccessPage, noAccessUsername, password, '/no-access');
-			await expect(
-				noAccessPage.getByRole('heading', { name: "You don't have access to anything yet" })
-			).toBeVisible();
-			await expect(noAccessPage.getByRole('link')).toHaveCount(0);
-		} finally {
-			noAccessErrors.stop();
-			expect(
-				noAccessErrors.errors,
-				`No-access user page errors:\n${formatPageErrors(noAccessErrors.errors)}`
-			).toEqual([]);
-		}
-
-		environmentAdminUser = await createEnvironmentAdminViaApi(
-			page,
-			environmentAdminUsername,
-			password
-		);
-		const [targetContainer] = (
-			await readApiData<TestContainer[]>(
-				await page.request.get('/api/agents/0/containers?start=0&limit=50'),
-				'List local containers'
-			)
-		).filter((container) => !container.labels?.['com.getarcaneapp.arcane.updater']);
-		expect(targetContainer, 'a container without an updater label is required').toBeTruthy();
-		await readApiData<unknown>(
-			await page.request.post('/api/agents/0/volumes', {
-				data: { name: environmentAdminVolumeName, driver: 'local' }
-			}),
-			`Create volume ${environmentAdminVolumeName}`
-		);
-		environmentAdminVolumeCreated = true;
-
-		environmentAdminContext = await browser.newContext({
-			baseURL,
-			storageState: { cookies: [], origins: [] }
-		});
-		const environmentAdminPage = await environmentAdminContext.newPage();
-		environmentAdminPage.setDefaultTimeout(10_000);
-		const environmentAdminErrors = installPageErrorCollector(environmentAdminPage);
-		const forbiddenResponses = collectForbiddenResponses(environmentAdminPage);
-		try {
-			await loginAs(environmentAdminPage, environmentAdminUsername, password, /^(?!.*\/login).*$/);
-
-			const environmentAdmin = await readApiData<TestUser>(
-				await environmentAdminPage.request.get('/api/auth/me'),
-				'Get environment admin current user'
-			);
-			expect(environmentAdmin.permissionsByEnv['0']).toEqual(
-				expect.arrayContaining([
-					'containers:autoupdate',
-					'images:list',
-					'projects:create',
-					'volumes:backup'
-				])
-			);
-			expect(environmentAdmin.permissionsByEnv.global ?? []).toEqual([]);
-
-			const environmentSettings = await environmentAdminPage.request.get('/api/agents/0/settings');
-			expect(environmentSettings.status(), 'environment settings must be readable').toBe(200);
-
-			for (const path of [
-				'/api/settings',
-				'/api/settings/authentication',
-				'/api/templates/all',
-				'/api/templates/default',
-				'/api/variables',
-				'/api/backups/s3/options',
-				`/api/agents/${remoteID}/containers`
-			]) {
-				const rejected = await environmentAdminPage.request.get(path);
-				expect(rejected.status(), `${path} must stay forbidden`).toBe(403);
-			}
-			forbiddenResponses.forbidden.length = 0;
-
-			await environmentAdminPage.goto(`/containers/${targetContainer.id}?env=0`);
-			await expect(
-				environmentAdminPage.getByRole('tab', { name: 'Overview', exact: true })
-			).toBeVisible();
-			await expect(environmentAdminPage.getByText('Auto-Update', { exact: true })).toBeVisible();
-			const initialDetails = await readApiData<{ autoUpdateEnabled?: boolean }>(
-				await environmentAdminPage.request.get(`/api/agents/0/containers/${targetContainer.id}`),
-				'Read initial container details'
-			);
-			expect(typeof initialDetails.autoUpdateEnabled).toBe('boolean');
-			await toggleAutoUpdateThroughUI(
-				environmentAdminPage,
-				targetContainer.id,
-				!initialDetails.autoUpdateEnabled
-			);
-			await toggleAutoUpdateThroughUI(
-				environmentAdminPage,
-				targetContainer.id,
-				initialDetails.autoUpdateEnabled === true
-			);
-
-			await environmentAdminPage.goto('/images');
-			await expect(
-				environmentAdminPage.getByRole('heading', { name: 'Images', exact: true })
-			).toBeVisible();
-			const imageListResponse = await environmentAdminPage.request.get(
-				'/api/agents/0/images?start=0&limit=1'
-			);
-			expect(imageListResponse.ok()).toBe(true);
-			const imageListBody = await imageListResponse.json();
-			expect(Array.isArray(imageListBody.data)).toBe(true);
-			expect(typeof imageListBody.maxImageUploadSize).toBe('number');
-
-			await environmentAdminPage.goto('/updates');
-			await expect(
-				environmentAdminPage.getByRole('heading', { name: 'Updates', exact: true })
-			).toBeVisible();
-
-			const optionalRequests: string[] = [];
-			const recordOptionalRequest = (request: Request) => {
-				const pathname = new URL(request.url()).pathname;
-				if (pathname.startsWith('/api/templates') || pathname.startsWith('/api/variables')) {
-					optionalRequests.push(`${request.method()} ${pathname}`);
+				const containerRow = restrictedPage
+					.getByRole('row')
+					.filter({ has: restrictedPage.getByRole('button', { name: ROW_ACTIONS_TRIGGER_NAME }) })
+					.first();
+				const containerMenu = await openRowActionsMenu(restrictedPage, containerRow);
+				await expect(
+					containerMenu.getByRole('menuitem', { name: 'Inspect', exact: true })
+				).toBeVisible();
+				for (const action of ['Start', 'Stop', 'Restart', 'Remove']) {
+					await expect(
+						containerMenu.getByRole('menuitem', { name: action, exact: true })
+					).toHaveCount(0);
 				}
-			};
-			environmentAdminPage.on('request', recordOptionalRequest);
-			await environmentAdminPage.goto('/projects/new?templateId=missing-template');
-			await expect(environmentAdminPage.getByText('Files', { exact: true })).toBeVisible();
-			await expect(
-				environmentAdminPage.getByText(
-					/cannot be loaded because you lack permission to read templates/
-				)
-			).toBeVisible();
-			// Without default templates the editor starts empty, which hides the
-			// create button until valid compose content is entered.
-			const composeEditor = environmentAdminPage
-				.locator('.cm-editor')
-				.filter({ visible: true })
-				.first();
-			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
-			await expect(
-				environmentAdminPage
-					.getByRole('button', { name: 'Create Project', exact: true })
-					.and(environmentAdminPage.locator('button'))
-			).toBeVisible();
-			environmentAdminPage.off('request', recordOptionalRequest);
-			expect(optionalRequests).toEqual([]);
+				await restrictedPage.keyboard.press('Escape');
 
-			await environmentAdminPage.goto(
-				`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups&env=0`
-			);
-			await expect(
-				environmentAdminPage.getByRole('button', { name: 'Add schedule', exact: true })
-			).toBeVisible();
-			await expect(
-				environmentAdminPage.getByRole('button', { name: 'Create Backup', exact: true })
-			).toBeVisible();
-			await environmentAdminPage.getByRole('button', { name: 'Add schedule', exact: true }).click();
-			const policyDialog = environmentAdminPage.getByRole('dialog');
-			await expect(policyDialog).toBeVisible();
-			await expect(policyDialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
-			await policyDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-			await expect(policyDialog).toBeHidden();
+				await restrictedPage.goto('/system/backups');
+				await expect(restrictedPage).toHaveURL('/containers');
 
-			expect(
-				forbiddenResponses.forbidden,
-				'environment admin pages must not issue forbidden requests'
-			).toEqual([]);
-		} finally {
-			forbiddenResponses.stop();
-			environmentAdminErrors.stop();
-			expect(
-				environmentAdminErrors.errors,
-				`Environment admin page errors:\n${formatPageErrors(environmentAdminErrors.errors)}`
-			).toEqual([]);
-		}
+				const currentUser = await readApiData<TestUser>(
+					await restrictedPage.request.get('/api/auth/me'),
+					'Get restricted current user'
+				);
+				expect(currentUser.permissionsByEnv['0']).toEqual(
+					expect.arrayContaining(['containers:list', 'containers:read'])
+				);
+				expect(currentUser.permissionsByEnv[remoteID]).toEqual(
+					expect.arrayContaining(['projects:list', 'projects:read'])
+				);
+				expect(currentUser.permissionsByEnv.global ?? []).toEqual([]);
 
-		await environmentAdminContext.close();
-		environmentAdminContext = null;
-		await restrictedContext.close();
-		restrictedContext = null;
-		await noAccessContext.close();
-		noAccessContext = null;
-
-		await deleteUserThroughUI(page, restrictedUser);
-		restrictedUser = null;
-		await deleteRoleThroughUI(page, clonedRole);
-		clonedRole = null;
-		await deleteRoleThroughUI(page, localRole);
-		localRole = null;
-	} finally {
-		await restrictedContext?.close();
-		await noAccessContext?.close();
-		await environmentAdminContext?.close();
-
-		if (restrictedUser) {
-			await removeApiResource(page, `/api/users/${restrictedUser.id}`);
-		}
-		if (noAccessUser) {
-			await removeApiResource(page, `/api/users/${noAccessUser.id}`);
-		}
-		if (environmentAdminUser) {
-			await page.request.delete(`/api/users/${environmentAdminUser.id}`).catch(() => undefined);
-		}
-		if (environmentAdminVolumeCreated) {
-			await page.request
-				.delete(
-					`/api/agents/0/volumes/${encodeURIComponent(environmentAdminVolumeName)}?force=true`
-				)
-				.catch(() => undefined);
-		}
-		for (const role of [clonedRole, localRole, remoteRole]) {
-			if (role) {
-				await removeApiResource(page, `/api/roles/${role.id}`);
+				await restrictedPage.getByRole('link', { name: 'Projects', exact: true }).click();
+				await expect(restrictedPage).toHaveURL('/projects');
+				await expect(
+					restrictedPage.getByRole('link', { name: 'Containers', exact: true })
+				).toBeVisible();
+			} finally {
+				restrictedErrors.stop();
+				expect(
+					restrictedErrors.errors,
+					`Restricted user page errors:\n${formatPageErrors(restrictedErrors.errors)}`
+				).toEqual([]);
 			}
-		}
-		if (remoteEnvironment) {
-			await removeApiResource(page, `/api/agents/${remoteEnvironment.id}`);
+
+			noAccessContext = await browser.newContext({
+				baseURL,
+				storageState: { cookies: [], origins: [] }
+			});
+			const noAccessPage = await noAccessContext.newPage();
+			noAccessPage.setDefaultTimeout(10_000);
+			const noAccessErrors = installPageErrorCollector(noAccessPage);
+			try {
+				await loginAs(noAccessPage, noAccessUsername, password, '/no-access');
+				await expect(
+					noAccessPage.getByRole('heading', { name: "You don't have access to anything yet" })
+				).toBeVisible();
+				await expect(noAccessPage.getByRole('link')).toHaveCount(0);
+			} finally {
+				noAccessErrors.stop();
+				expect(
+					noAccessErrors.errors,
+					`No-access user page errors:\n${formatPageErrors(noAccessErrors.errors)}`
+				).toEqual([]);
+			}
+
+			environmentAdminUser = await createEnvironmentAdminViaApi(
+				page,
+				environmentAdminUsername,
+				password
+			);
+			const [targetContainer] = (
+				await readApiData<TestContainer[]>(
+					await page.request.get('/api/agents/0/containers?start=0&limit=50'),
+					'List local containers'
+				)
+			).filter((container) => !container.labels?.['com.getarcaneapp.arcane.updater']);
+			expect(targetContainer, 'a container without an updater label is required').toBeTruthy();
+			await readApiData<unknown>(
+				await page.request.post('/api/agents/0/volumes', {
+					data: { name: environmentAdminVolumeName, driver: 'local' }
+				}),
+				`Create volume ${environmentAdminVolumeName}`
+			);
+			environmentAdminVolumeCreated = true;
+
+			environmentAdminContext = await browser.newContext({
+				baseURL,
+				storageState: { cookies: [], origins: [] }
+			});
+			const environmentAdminPage = await environmentAdminContext.newPage();
+			environmentAdminPage.setDefaultTimeout(10_000);
+			const environmentAdminErrors = installPageErrorCollector(environmentAdminPage);
+			const forbiddenResponses = collectForbiddenResponses(environmentAdminPage);
+			try {
+				await loginAs(
+					environmentAdminPage,
+					environmentAdminUsername,
+					password,
+					/^(?!.*\/login).*$/
+				);
+
+				const environmentAdmin = await readApiData<TestUser>(
+					await environmentAdminPage.request.get('/api/auth/me'),
+					'Get environment admin current user'
+				);
+				expect(environmentAdmin.permissionsByEnv['0']).toEqual(
+					expect.arrayContaining([
+						'containers:autoupdate',
+						'images:list',
+						'projects:create',
+						'volumes:backup'
+					])
+				);
+				expect(environmentAdmin.permissionsByEnv.global ?? []).toEqual([]);
+
+				const environmentSettings =
+					await environmentAdminPage.request.get('/api/agents/0/settings');
+				expect(environmentSettings.status(), 'environment settings must be readable').toBe(200);
+
+				for (const path of [
+					'/api/settings',
+					'/api/settings/authentication',
+					'/api/templates/all',
+					'/api/templates/default',
+					'/api/variables',
+					'/api/backups/s3/options',
+					`/api/agents/${remoteID}/containers`
+				]) {
+					const rejected = await environmentAdminPage.request.get(path);
+					expect(rejected.status(), `${path} must stay forbidden`).toBe(403);
+				}
+				forbiddenResponses.forbidden.length = 0;
+
+				await environmentAdminPage.goto(`/containers/${targetContainer.id}?env=0`);
+				await expect(
+					environmentAdminPage.getByRole('tab', { name: 'Overview', exact: true })
+				).toBeVisible();
+				await expect(environmentAdminPage.getByText('Auto-Update', { exact: true })).toBeVisible();
+				const initialDetails = await readApiData<{ autoUpdateEnabled?: boolean }>(
+					await environmentAdminPage.request.get(`/api/agents/0/containers/${targetContainer.id}`),
+					'Read initial container details'
+				);
+				expect(typeof initialDetails.autoUpdateEnabled).toBe('boolean');
+				await toggleAutoUpdateThroughUI(
+					environmentAdminPage,
+					targetContainer.id,
+					!initialDetails.autoUpdateEnabled
+				);
+				await toggleAutoUpdateThroughUI(
+					environmentAdminPage,
+					targetContainer.id,
+					initialDetails.autoUpdateEnabled === true
+				);
+
+				await environmentAdminPage.goto('/images');
+				await expect(
+					environmentAdminPage.getByRole('heading', { name: 'Images', exact: true })
+				).toBeVisible();
+				const imageListResponse = await environmentAdminPage.request.get(
+					'/api/agents/0/images?start=0&limit=1'
+				);
+				expect(imageListResponse.ok()).toBe(true);
+				const imageListBody = await imageListResponse.json();
+				expect(Array.isArray(imageListBody.data)).toBe(true);
+				expect(typeof imageListBody.maxImageUploadSize).toBe('number');
+
+				await environmentAdminPage.goto('/updates');
+				await expect(
+					environmentAdminPage.getByRole('heading', { name: 'Updates', exact: true })
+				).toBeVisible();
+
+				const optionalRequests: string[] = [];
+				const recordOptionalRequest = (request: Request) => {
+					const pathname = new URL(request.url()).pathname;
+					if (pathname.startsWith('/api/templates') || pathname.startsWith('/api/variables')) {
+						optionalRequests.push(`${request.method()} ${pathname}`);
+					}
+				};
+				environmentAdminPage.on('request', recordOptionalRequest);
+				await environmentAdminPage.goto('/projects/new?templateId=missing-template');
+				await expect(environmentAdminPage.getByText('Files', { exact: true })).toBeVisible();
+				await expect(
+					environmentAdminPage.getByText(
+						/cannot be loaded because you lack permission to read templates/
+					)
+				).toBeVisible();
+				// Without default templates the editor starts empty, which hides the
+				// create button until valid compose content is entered.
+				const composeEditor = environmentAdminPage
+					.locator('.cm-editor')
+					.filter({ visible: true })
+					.first();
+				await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
+				await expect(
+					environmentAdminPage
+						.getByRole('button', { name: 'Create Project', exact: true })
+						.and(environmentAdminPage.locator('button'))
+				).toBeVisible();
+				environmentAdminPage.off('request', recordOptionalRequest);
+				expect(optionalRequests).toEqual([]);
+
+				await environmentAdminPage.goto(
+					`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups&env=0`
+				);
+				await expect(
+					environmentAdminPage.getByRole('button', { name: 'Add schedule', exact: true })
+				).toBeVisible();
+				await expect(
+					environmentAdminPage.getByRole('button', { name: 'Create Backup', exact: true })
+				).toBeVisible();
+				await environmentAdminPage
+					.getByRole('button', { name: 'Add schedule', exact: true })
+					.click();
+				const policyDialog = environmentAdminPage.getByRole('dialog');
+				await expect(policyDialog).toBeVisible();
+				await expect(policyDialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+				await policyDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+				await expect(policyDialog).toBeHidden();
+
+				expect(
+					forbiddenResponses.forbidden,
+					'environment admin pages must not issue forbidden requests'
+				).toEqual([]);
+			} finally {
+				forbiddenResponses.stop();
+				environmentAdminErrors.stop();
+				expect(
+					environmentAdminErrors.errors,
+					`Environment admin page errors:\n${formatPageErrors(environmentAdminErrors.errors)}`
+				).toEqual([]);
+			}
+
+			await environmentAdminContext.close();
+			environmentAdminContext = null;
+			await restrictedContext.close();
+			restrictedContext = null;
+			await noAccessContext.close();
+			noAccessContext = null;
+
+			await deleteUserThroughUI(page, restrictedUser);
+			restrictedUser = null;
+			await deleteRoleThroughUI(page, clonedRole);
+			clonedRole = null;
+			await deleteRoleThroughUI(page, localRole);
+			localRole = null;
+		} finally {
+			await restrictedContext?.close();
+			await noAccessContext?.close();
+			await environmentAdminContext?.close();
+
+			if (restrictedUser) {
+				await removeApiResource(page, `/api/users/${restrictedUser.id}`);
+			}
+			if (noAccessUser) {
+				await removeApiResource(page, `/api/users/${noAccessUser.id}`);
+			}
+			if (environmentAdminUser) {
+				await page.request.delete(`/api/users/${environmentAdminUser.id}`).catch(() => undefined);
+			}
+			if (environmentAdminVolumeCreated) {
+				await page.request
+					.delete(
+						`/api/agents/0/volumes/${encodeURIComponent(environmentAdminVolumeName)}?force=true`
+					)
+					.catch(() => undefined);
+			}
+			for (const role of [clonedRole, localRole, remoteRole]) {
+				if (role) {
+					await removeApiResource(page, `/api/roles/${role.id}`);
+				}
+			}
+			if (remoteEnvironment) {
+				await removeApiResource(page, `/api/agents/${remoteEnvironment.id}`);
+			}
 		}
 	}
-});
+);

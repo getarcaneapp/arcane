@@ -715,7 +715,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, proje
 	if err != nil {
 		return nil, err
 	}
-	return backup.BindVolumeSubpaths(ctx, dockerClient, resolved)
+	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
 func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
