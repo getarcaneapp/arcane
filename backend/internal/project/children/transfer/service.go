@@ -451,7 +451,7 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Project %s is managed by a GitOps sync, but its copy %s on the target environment is not.", project.Name, request.Name),
 		})
 	}
-	var externalVolumes, hostVolumes, sourceVolumes, built []string
+	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
 	for _, volume := range projects.ClassifyProjectVolumes(project) {
 		switch volume.Kind {
 		case types.ProjectVolumeExternal:
@@ -459,11 +459,23 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		case types.ProjectVolumeDriverOpts:
 			hostVolumes = append(hostVolumes, volume.Name)
 		case types.ProjectVolumeNamed:
+			targetName := projects.ComposeVolumeTargetName(project.Name, volume.Key, volume.Name, request.Name)
+			if request.IncludeVolumes {
+				targetVolumes = append(targetVolumes, targetName)
+				_, exists, existsErr := source.Volume(ctx, volume.Name)
+				if existsErr != nil {
+					return fmt.Errorf("inspect source volume %s: %w", volume.Name, existsErr)
+				}
+				if !exists {
+					missingVolumes = append(missingVolumes, volume.Name)
+					continue
+				}
+			}
 			sourceVolumes = append(sourceVolumes, volume.Name)
 			plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
 				Key:        volume.Key,
 				SourceName: volume.Name,
-				TargetName: projects.ComposeVolumeTargetName(project.Name, volume.Key, volume.Name, request.Name),
+				TargetName: targetName,
 			})
 		}
 	}
@@ -472,6 +484,16 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Code:     types.ProjectTransferVolumesNotCopied,
 			Severity: types.ProjectTransferSeverityWarning,
 			Message:  fmt.Sprintf("Volume data is not included, so these volumes of project %s start empty on the target environment: %s.", project.Name, strings.Join(sourceVolumes, ", ")),
+		})
+	}
+	if len(missingVolumes) > 0 {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferVolumeMissing,
+			Severity: types.ProjectTransferSeverityWarning,
+			Message: fmt.Sprintf(
+				"These volumes of project %s do not exist on the source environment, so they are skipped and start empty on the target environment: %s.",
+				project.Name, strings.Join(missingVolumes, ", "),
+			),
 		})
 	}
 	if len(hostVolumes) > 0 {
@@ -503,10 +525,13 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	if !targetReady {
 		return nil
 	}
-	return targetChecks(ctx, plan, project, target, request, externalVolumes)
+	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes)
 }
 
-func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment, request types.ProjectTransferRequest, externalVolumes []string) error {
+func targetChecks(
+	ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment,
+	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string,
+) error {
 	existing, err := target.Projects(ctx, "")
 	if err != nil {
 		return fmt.Errorf("list target projects: %w", err)
@@ -529,16 +554,16 @@ func targetChecks(ctx context.Context, plan *types.ProjectTransferPreflight, pro
 			Message:  fmt.Sprintf("A project or Compose stack named %s already exists on the target environment.", request.Name),
 		})
 	}
-	for _, volume := range kit.Ternary(request.IncludeVolumes, plan.Volumes, nil) {
-		_, exists, existsErr := target.Volume(ctx, volume.TargetName)
+	for _, name := range targetVolumes {
+		_, exists, existsErr := target.Volume(ctx, name)
 		if existsErr != nil {
-			return fmt.Errorf("inspect target volume %s: %w", volume.TargetName, existsErr)
+			return fmt.Errorf("inspect target volume %s: %w", name, existsErr)
 		}
 		if exists {
 			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
 				Code:     types.ProjectTransferVolumeExists,
 				Severity: types.ProjectTransferSeverityError,
-				Message:  fmt.Sprintf("Volume %s already exists on the target environment.", volume.TargetName),
+				Message:  fmt.Sprintf("Volume %s already exists on the target environment.", name),
 			})
 		}
 	}

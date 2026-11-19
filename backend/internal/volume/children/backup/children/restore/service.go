@@ -566,12 +566,14 @@ func (s *Service) UploadAndRestore(
 		return created, fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
-	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
-	if err != nil {
-		return created, fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
-	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	if composeVolume == nil || !archiveRoot {
+		_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
+		if err != nil {
+			return created, fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+		}
+		if strings.TrimSpace(stderr) != "" {
+			slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+		}
 	}
 	if composeVolume != nil && archiveRoot {
 		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", first.Uid, first.Gid), "/volume"}); err != nil {
