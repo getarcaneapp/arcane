@@ -176,7 +176,7 @@ type (
 		deploy  func(ctx context.Context) error
 		safety  func(ctx context.Context, p restorePlan) (string, error)
 		inUse   func(ctx context.Context, p restorePlan) error
-		create  func(ctx context.Context, volumes []client.VolumeCreateOptions) ([]string, error)
+		create  func(ctx context.Context, options client.VolumeCreateOptions) error
 		restore func(ctx context.Context, opts RestoreToOptions) error
 		verify  func(ctx context.Context, p restorePlan) error
 		remove  func(ctx context.Context, names []string) error
@@ -505,16 +505,32 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	return succeeded, nil
 }
 
-// resume restarts the containers an interrupted attempt left stopped before anything else, then adopts the
-// snapshots it already wrote and finishes the backup.
+// resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
+// lock, then adopts the snapshots it already wrote and finishes the backup.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input runInput, recorded plan) error {
+	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
+	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
+	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
+	if errors.Is(err, common.ErrConflict) {
+		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
+	}
+	if err != nil {
+		return err
+	}
+	defer release(context.WithoutCancel(ctx), leases)
 	if len(recorded.Stopped) > 0 {
+		unlockProject, lockErr := s.deps.LockProject(ctx, "back up project", recorded.ProjectID)
+		// The project is left stopped, so wait for its turn instead of failing.
+		if lockErr != nil {
+			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+		}
 		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if err := errors.Join(restartErr, s.record(ctx, recorded)); err != nil {
-			return err
+		if recordErr := errors.Join(restartErr, s.record(ctx, recorded)); recordErr != nil {
+			return recordErr
 		}
 	}
 	entry, err := s.load(ctx, recorded.BackupID)
@@ -527,15 +543,6 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 	case types.VolumeBackupStatusSucceeded:
 		return nil
 	}
-	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
-	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
-	if errors.Is(err, common.ErrConflict) {
-		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
-	}
-	if err != nil {
-		return err
-	}
-	defer release(context.WithoutCancel(ctx), leases)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
 		return authorizeErr
 	}
@@ -1333,8 +1340,8 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	}, nil
 }
 
-// checkInPlace refuses an in-place restore that would take Arcane itself down or, when it restores the project files,
-// replace the files of other projects.
+// checkInPlace refuses an in-place restore that would take Arcane itself down, write under paused containers the
+// restore does not stop, or, when it restores the project files, replace the files of other projects.
 func (s *Service) checkInPlace(ctx context.Context, project types.Project, files bool) error {
 	runsArcane, err := s.deps.RunsArcane(ctx, project.ID)
 	if err != nil {
@@ -1342,6 +1349,21 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, files
 	}
 	if runsArcane {
 		return common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be restored in place; restore it as a new project instead", project.Name))
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+project.ComposeName),
+	})
+	if err != nil {
+		return fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range found.Items {
+		if c.State == container.StatePaused {
+			return common.Classify(common.ErrConflict, fmt.Errorf("container %s of project %s is paused; unpause or stop it before restoring", docker.ContainerNameFromNames(c.Names), project.Name))
+		}
 	}
 	if !files {
 		return nil
@@ -1437,22 +1459,25 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 		return r.rollback(ctx, p, err)
 	}
 	p.SafetyID = safetyID
-	if err = r.record(ctx, p); err == nil {
-		r.report(ctx, "Restoring the backup")
-		var created []string
-		created, err = r.create(ctx, p.Create)
-		p.Created = created
-		if err != nil {
-			err = fmt.Errorf("create the missing volumes: %w", err)
-		} else if err = r.record(ctx, p); err == nil {
-			err = r.restoreBackup(ctx, p)
+	if err = r.record(ctx, p); err != nil {
+		return r.rollback(ctx, p, err)
+	}
+	r.report(ctx, "Restoring the backup")
+	for _, options := range p.Create {
+		if err = r.create(ctx, options); err != nil {
+			return r.rollback(ctx, p, fmt.Errorf("create the missing volumes: %w", err))
+		}
+		// Saved before the next one is created, so a resumed rollback removes every volume this restore created.
+		p.Created = append(p.Created, options.Name)
+		if err = r.record(ctx, p); err != nil {
+			return r.rollback(ctx, p, err)
 		}
 	}
-	if err == nil {
-		p.Restored = true
-		err = r.record(ctx, p)
+	if err = r.restoreBackup(ctx, p); err != nil {
+		return r.rollback(ctx, p, err)
 	}
-	if err != nil {
+	p.Restored = true
+	if err = r.record(ctx, p); err != nil {
 		return r.rollback(ctx, p, err)
 	}
 	return r.finish(ctx, p)
@@ -1573,7 +1598,7 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 			}
 			return s.volumesFree(ctx, project, p.volumeNames())
 		},
-		create:  s.createVolumes,
+		create:  s.createVolume,
 		restore: s.RestoreTo,
 		verify:  s.verifyRestore,
 		remove:  s.removeVolumes,
@@ -1618,28 +1643,24 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	return entry.ID, nil
 }
 
-// createVolumes creates the missing target volumes and returns the ones it created; a volume someone else created
-// since the restore was checked is refused, so the restore never takes it over or removes it.
-func (s *Service) createVolumes(ctx context.Context, create []client.VolumeCreateOptions) ([]string, error) {
+// createVolume creates a missing target volume; one someone else created since the restore was checked is refused, so
+// the restore never takes it over or removes it.
+func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateOptions) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	created := make([]string, 0, len(create))
-	for _, options := range create {
-		_, inspectErr := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
-		switch {
-		case inspectErr == nil:
-			return created, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created after the restore was checked", options.Name))
-		case !errdefs.IsNotFound(inspectErr):
-			return created, fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
-		}
-		if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
-			return created, fmt.Errorf("create volume %s: %w", options.Name, createErr)
-		}
-		created = append(created, options.Name)
+	_, inspectErr := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+	switch {
+	case inspectErr == nil:
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created after the restore was checked", options.Name))
+	case !errdefs.IsNotFound(inspectErr):
+		return fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
 	}
-	return created, nil
+	if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
+		return fmt.Errorf("create volume %s: %w", options.Name, createErr)
+	}
+	return nil
 }
 
 func (s *Service) removeVolumes(ctx context.Context, names []string) error {

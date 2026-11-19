@@ -13,6 +13,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -23,7 +24,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -222,8 +222,14 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	}
 }
 
-func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
+func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
 	entry := &ProjectBackup{
 		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()},
 		ProjectID: "p1",
@@ -231,24 +237,58 @@ func TestResumeRestartsStoppedContainersBeforeFailing(t *testing.T) {
 		Error:     "snapshot failed",
 	}
 	require.NoError(t, db.Create(entry).Error)
+	locked := false
 	var started []container.Summary
 	service := NewService(Dependencies{
-		DB:          db,
-		VolumeLocks: &concurrency.KeyedMutex{},
+		DB:     db,
+		Engine: engine,
+		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
+			assert.Equal(t, "p1", projectID)
+			locked = true
+			return func() { locked = false }, nil
+		},
 		StartContainers: func(_ context.Context, projectID string, stopped []container.Summary) error {
 			assert.Equal(t, "p1", projectID)
+			assert.True(t, locked, "the containers start under the project lock")
 			started = append(started, stopped...)
 			return nil
 		},
 	})
 
 	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
-	recorded := plan{BackupID: "b1", ProjectID: "p1", StopContainers: true, Stopped: checkpointed}
-	err := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
-	require.ErrorIs(t, err, backup.ErrBackupSettled)
-	require.ErrorContains(t, err, "snapshot failed")
+	recorded := plan{
+		BackupID:       "b1",
+		ProjectID:      "p1",
+		Volumes:        []types.ProjectVolume{{Name: "web_data", Included: true}},
+		StopContainers: true,
+		Stopped:        checkpointed,
+	}
+	// After a restart a restore can take the project or a volume first; the resumed backup waits instead of starting
+	// the project under it.
+	for _, held := range admissions(recorded.ProjectID, recorded.volumeNames()) {
+		lease, admitted, err := engine.TryAcquireRun(t.Context(), held.Scope, held.ID)
+		require.NoError(t, err)
+		require.True(t, admitted)
+
+		err = service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
+		require.ErrorIs(t, err, actor.ErrJobRejected)
+		require.Empty(t, started, held)
+		lease.Release(t.Context())
+	}
+
+	resumeErr := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
+	require.ErrorIs(t, resumeErr, backup.ErrBackupSettled)
+	require.ErrorContains(t, resumeErr, "snapshot failed")
 	// The checkpointed containers are started again through the project's Compose start.
 	require.Equal(t, checkpointed, started)
+	require.False(t, locked)
+	// The resumed run releases the admissions it took.
+	for _, key := range admissions(recorded.ProjectID, recorded.volumeNames()) {
+		lease, admitted, err := engine.TryAcquireRun(t.Context(), key.Scope, key.ID)
+		require.NoError(t, err)
+		require.True(t, admitted, key)
+		lease.Release(t.Context())
+	}
 }
 
 func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
@@ -372,9 +412,17 @@ func TestStartRestoreRefusesRestoresThatReachBeyondTheProject(t *testing.T) {
 	}).Error)
 	sharedErr := common.Classify(common.ErrValidation, errors.New("project Web is the projects directory"))
 	passed := errors.New("past the checks")
+	containers := []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning}}
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1.41/containers/json", r.URL.Path)
+		assert.Contains(t, r.URL.Query().Get("filters"), "com.docker.compose.project=web")
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.MarshalWrite(w, containers))
+	}))
 	start := func(runsArcane bool, request types.RestoreProjectBackupRequest) error {
 		service := NewService(Dependencies{
 			DB:            db,
+			Docker:        dockerService,
 			Project:       func(context.Context, string) (types.Project, error) { return testProject(), nil },
 			RunsArcane:    func(context.Context, string) (bool, error) { return runsArcane, nil },
 			SoleDirectory: func(context.Context, types.Project) error { return sharedErr },
@@ -393,6 +441,11 @@ func TestStartRestoreRefusesRestoresThatReachBeyondTheProject(t *testing.T) {
 	err := start(true, types.RestoreProjectBackupRequest{Files: new(false)})
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.ErrorContains(t, err, "runs Arcane itself")
+	// The restore stops only running containers, so it would write under a paused one.
+	containers = append(containers, container.Summary{Names: []string{"/web-worker-1"}, State: container.StatePaused})
+	err = start(false, types.RestoreProjectBackupRequest{Files: new(false)})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "container web-worker-1 of project Web is paused; unpause or stop it before restoring")
 }
 
 func (f *fakeRestore) step(name string) error {
@@ -416,8 +469,8 @@ func (f *fakeRestore) steps() restoreSteps {
 		deploy: func(context.Context) error { return f.step("deploy") },
 		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
 		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
-		create: func(_ context.Context, volumes []client.VolumeCreateOptions) ([]string, error) {
-			return createdNames(volumes), f.step("create " + strings.Join(createdNames(volumes), ","))
+		create: func(_ context.Context, options client.VolumeCreateOptions) error {
+			return f.step("create " + options.Name)
 		},
 		restore: func(_ context.Context, opts RestoreToOptions) error {
 			names := make([]string, 0, len(opts.Volumes))
@@ -505,6 +558,33 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorIs(t, err, restoreErr)
 	require.ErrorContains(t, err, "so it was left as is; restore the safety backup s1 by hand")
 	require.Equal(t, []string{"deploy", "rolling back", "down"}, stuck.calls)
+}
+
+func TestRestoreRecordsEachCreatedVolumeBeforeTheNext(t *testing.T) {
+	p := restorePlan{
+		ID:        "r1",
+		BackupID:  "b1",
+		ProjectID: "p1",
+		Volumes:   []RestoreVolume{{Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}, {Key: "logs", Snapshot: "web_logs", Name: "shop_logs"}},
+		Create:    []client.VolumeCreateOptions{{Name: "shop_cache"}, {Name: "shop_logs"}},
+	}
+	createErr := errors.New("disk full")
+	failed := &fakeRestore{fail: map[string]error{"create shop_logs": createErr}}
+	err := failed.steps().apply(t.Context(), p)
+	require.ErrorIs(t, err, createErr)
+	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
+	require.Equal(t, []string{"safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
+
+	// Arcane stops between the two creates: the checkpoint saved after the first already names it, so the resumed run
+	// removes it.
+	index := slices.IndexFunc(failed.plans, func(recorded restorePlan) bool { return len(recorded.Created) > 0 })
+	require.GreaterOrEqual(t, index, 0)
+	require.Equal(t, []string{"shop_cache"}, failed.plans[index].Created)
+	resumed := &fakeRestore{}
+	err = resumed.steps().apply(t.Context(), failed.plans[index])
+	require.ErrorContains(t, err, "the restore was interrupted")
+	require.Contains(t, resumed.calls, "remove shop_cache")
+	require.NotContains(t, resumed.calls, "create shop_logs")
 }
 
 func TestRestoreRedeploysOnlyWhenTheProjectRanOrIsAsked(t *testing.T) {
