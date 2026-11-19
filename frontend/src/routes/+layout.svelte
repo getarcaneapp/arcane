@@ -20,7 +20,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { environmentName } from '#lib/utils/environments.js';
-	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
+	import { finishNavigation, setTelemetry, startPageView } from '#lib/utils/telemetry.js';
 
 	import type { LayoutProps } from './$types';
 
@@ -32,6 +32,17 @@
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js', { type: 'module' });
 		}
+	});
+
+	$effect(() => {
+		void setTelemetry(
+			{
+				traces: settingsStore.runtime.frontendTracingEnabled ?? false,
+				metrics: settingsStore.runtime.frontendMetricsEnabled ?? false,
+				logs: settingsStore.runtime.frontendLogsEnabled ?? false
+			},
+			data.versionInformation.currentVersion
+		);
 	});
 
 	beforeNavigate((navigation) => {

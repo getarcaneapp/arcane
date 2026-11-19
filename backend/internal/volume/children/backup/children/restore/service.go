@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -492,11 +493,14 @@ func (s *Service) UploadAndRestore(
 	if err != nil {
 		return false, fmt.Errorf("invalid archive: %w", err)
 	}
-	if _, nextErr := tar.NewReader(gzr).Next(); nextErr != nil {
+	first, nextErr := tar.NewReader(gzr).Next()
+	if nextErr != nil {
 		_ = gzr.Close()
 		return false, fmt.Errorf("invalid archive: %w", nextErr)
 	}
 	_ = gzr.Close()
+	// Extracting into an existing directory skips the archive's root entry, so a new volume takes its root owner and mode from it.
+	archiveRoot := first.Typeflag == tar.TypeDir && path.Clean(first.Name) == "."
 
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -570,9 +574,12 @@ func (s *Service) UploadAndRestore(
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
-	if composeVolume != nil {
-		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `chown "$(stat -c %u:%g "$1")" /volume && chmod "$(stat -c %a "$1")" /volume`, "sh", tmpDir}); err != nil {
+	if composeVolume != nil && archiveRoot {
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", first.Uid, first.Gid), "/volume"}); err != nil {
 			return created, fmt.Errorf("failed to restore volume root ownership: %w", err)
+		}
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(first.Mode&0o7777, 8), "/volume"}); err != nil {
+			return created, fmt.Errorf("failed to restore volume root mode: %w", err)
 		}
 	}
 
