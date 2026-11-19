@@ -11703,11 +11703,12 @@ func TestProjectServiceBackupStopsAndRestartsOnlyThisProject(t *testing.T) {
 				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
 				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"]},
 				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
+				{ID: "helper-1", Labels: volumes.Labels(), State: container.StateRunning, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "browsed_data"}}},
 			}
 			// The project label filter is what keeps other projects out.
 			if filter := r.URL.Query().Get("filters"); filter != "" {
 				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, api.ProjectLabel+"="+c.Labels[api.ProjectLabel])
+					return !strings.Contains(filter, `"`+api.ProjectLabel+"="+c.Labels[api.ProjectLabel]+`"`)
 				})
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -11749,6 +11750,7 @@ func TestProjectServiceBackupStopsAndRestartsOnlyThisProject(t *testing.T) {
 	inUse, err := svc.volumesInUseOutside(ctx, "demo")
 	require.NoError(t, err)
 	assert.True(t, inUse["demo_data"], "another project's running container mounts the volume")
+	assert.False(t, inUse["browsed_data"], "an idle file-browser helper writes nothing")
 
 	summaries, err := svc.stopRunningContainers(ctx, "demo")
 	require.NoError(t, err)

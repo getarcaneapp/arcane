@@ -174,6 +174,8 @@ type (
 		// ProjectPath receives the project files; empty leaves them out.
 		ProjectPath string
 		Volumes     []RestoreVolume
+		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
+		LockVolumes bool
 	}
 
 	// RestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
@@ -608,7 +610,13 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
 // lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
-func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) error {
+func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
+	// A resume that ends for good fails its backup, as a first attempt does; shutdown and busy admissions retry it.
+	defer func() {
+		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) && !errors.Is(err, backup.ErrBackupSettled) {
+			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
+		}
+	}()
 	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
 	// Another run holds an admission, or taking it failed; hand the task back so the stopped containers are restarted
@@ -945,7 +953,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	if err != nil {
 		return nil, err
 	}
-	return backup.BindVolumeSubpaths(ctx, dockerClient, resolved)
+	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
 func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
@@ -2936,10 +2944,30 @@ func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (typ
 }
 
 // RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
-// volumes it names; the caller holds the locks they need.
+// volumes it names; the caller holds the locks they need, or asks for the volumes' with LockVolumes.
 func (s *Service) RestoreTo(ctx context.Context, opts RestoreToOptions) error {
 	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
 		return nil
+	}
+	if opts.LockVolumes {
+		var names []string
+		var keys []types.SchedulerAdmissionKey
+		for _, volume := range opts.Volumes {
+			if !slices.Contains(names, volume.Name) {
+				names = append(names, volume.Name)
+				keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: volume.Name})
+			}
+		}
+		leases, admitErr := s.admit(ctx, keys, "restore-to:"+opts.BackupID)
+		if admitErr != nil {
+			return admitErr
+		}
+		defer release(context.WithoutCancel(ctx), leases)
+		unlock, lockErr := s.lockVolumes(ctx, names)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 	}
 	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {

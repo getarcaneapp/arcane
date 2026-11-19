@@ -883,6 +883,8 @@ func LoadedComposeFiles(ctx context.Context, opts LoadedComposeFilesOptions) []s
 	}
 	base := opts.ComposeFile
 	if base == "" {
+		// A file the loader can't pick (none, or several) means it loads none yet; SelectComposeFiles then pins its
+		// selection and checks the result again, so the error adds nothing there.
 		base, _ = DetectComposeFile(ctx, opts.GlobalEnvDirectory, projectPath)
 	}
 	if base == "" {

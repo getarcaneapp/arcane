@@ -4,14 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+
 	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/docker"
+	"kit.getarcane.app/fs"
+	"kit.getarcane.app/sys/cgroup"
+
+	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
 const (
-	trustBundleFile = "etc/ssl/certs/ca-certificates.crt"
+	TrustBundlePath = "/etc/ssl/certs/ca-certificates.crt"
+	TrustBundleName = ".arcane-rustic-ca.crt"
 )
 
 // Same lookup order as Go's crypto/x509 on Linux.
@@ -80,4 +92,48 @@ func trustBundle(ctx context.Context) []byte {
 		}
 	}
 	return bundle.Bytes()
+}
+
+func TrustMounts(ctx context.Context, dockerClient *client.Client, directory string, arcaneMounts []container.MountPoint) ([]mount.Mount, error) {
+	bundle := trustBundle(ctx)
+	if len(bundle) == 0 {
+		return nil, nil
+	}
+	bundlePath, err := filepath.Abs(filepath.Join(directory, TrustBundleName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to write CA certificates for Rustic container: %w", err)
+	}
+	if current, readErr := (acfs.Host{}).ReadFile(ctx, bundlePath); readErr != nil || !bytes.Equal(current, bundle) {
+		if err = (acfs.Host{}).MkdirAll(ctx, filepath.Dir(bundlePath), fs.DirPerm); err != nil {
+			return nil, fmt.Errorf("failed to write CA certificates for Rustic container: %w", err)
+		}
+		if err = (acfs.Host{}).Write(ctx, bundlePath, bundle, acfs.WriteOptions{Mode: fs.FilePerm}); err != nil {
+			return nil, fmt.Errorf("failed to write CA certificates for Rustic container: %w", err)
+		}
+	}
+	if _, containerErr := cgroup.CurrentContainerID(); containerErr != nil {
+		return []mount.Mount{{
+			Type:     mount.TypeBind,
+			Source:   bundlePath,
+			Target:   TrustBundlePath,
+			ReadOnly: true,
+		}}, nil
+	}
+	resolved := docker.MountForSubpath(arcaneMounts, bundlePath, TrustBundlePath)
+	if resolved == nil {
+		slog.WarnContext(ctx, "Arcane's data directory is not a bind or named volume mount; Rustic runs without Arcane's CA certificates", "path", bundlePath)
+		return nil, nil
+	}
+	mounts, err := volumes.BindSubpaths(ctx, dockerClient, []mount.Mount{{
+		Type:          resolved.Type,
+		Source:        resolved.Source,
+		Target:        resolved.Target,
+		ReadOnly:      true,
+		BindOptions:   resolved.BindOptions,
+		VolumeOptions: resolved.VolumeOptions,
+	}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount CA certificates for Rustic container: %w", err)
+	}
+	return mounts, nil
 }

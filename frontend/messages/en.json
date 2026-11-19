@@ -4754,7 +4754,7 @@
   "backup_schedules_saved": "Backup schedules saved",
   "failed_to_save_backup_schedules": "Failed to save the backup schedules",
   "backup_schedule_removed": "Backup schedule removed",
-  "keep_newest_schedule_backups": "How many of this schedule's newest backups to keep, wherever they are stored. Set to 0 to keep all backups.",
+  "keep_newest_successful_schedule_backups": "How many of this schedule's newest successful backups to keep, wherever they are stored. Failed backups that kept data are kept up to the same number, so they never push out a good one. Set to 0 to keep all backups.",
   "project_selection": "Project selection",
   "rules_checked_against_projects": "Rules are checked against this server's projects at every run. A project with its own enabled backup schedule is backed up by that schedule instead of this one.",
   "all_projects": "All projects",
@@ -4769,7 +4769,7 @@
   "no_matching_projects": "No matching projects.",
   "back_up_selected_projects": "Back up all or selected projects on this server.",
   "back_up_selected_projects_on_schedule": "Back up the selected projects according to this cron schedule.",
-  "keep_newest_backups_per_project": "How many of this schedule's newest backups to keep for each project, wherever they are stored. Set to 0 to keep all backups.",
+  "keep_newest_successful_backups_per_project": "How many of this schedule's newest successful backups to keep for each project, wherever they are stored. Failed backups that kept data are kept up to the same number, so they never push out a good one. Set to 0 to keep all backups.",
   "stop_each_project_during_snapshot": "Stop each project's running containers while its snapshot is taken, then start them again. Other containers keep running.",
   "failed_to_run_project_backups": "Failed to run the project backups."
 }

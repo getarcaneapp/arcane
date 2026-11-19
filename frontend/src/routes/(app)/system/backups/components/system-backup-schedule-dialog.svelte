@@ -197,7 +197,7 @@
 		defaultSchedule="0 2 * * *"
 		showStopContainers
 		stopContainersDescription={m.stop_each_project_during_snapshot()}
-		retentionDescription={m.keep_newest_backups_per_project()}
+		retentionDescription={m.keep_newest_successful_backups_per_project()}
 		defaultStopContainers
 		{destinations}
 		beforeFields={TypeField}

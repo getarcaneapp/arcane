@@ -36,6 +36,8 @@ import (
 	"getarcane.dev/arcane/v3/pkg/francis"
 	git "getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/rustic"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -666,7 +668,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 		return backupSourceLayout{}, err
 	}
 	dataDirectory, projectsDirectory, databaseName := filepath.Dir(databaseFile), s.projectsDirectory(ctx), filepath.Base(databaseFile)
-	excludes := []string{".arcane-snapshot-*", RecoveryRequestName}
+	excludes := []string{".arcane-snapshot-*", RecoveryRequestName, rustic.TrustBundleName}
 	for _, name := range []string{databaseName, francis.StorePath(databaseName)} {
 		for _, sidecar := range sqliteSidecars {
 			excludes = append(excludes, name+sidecar)
@@ -1075,8 +1077,9 @@ func (s *Service) Create(
 		}
 		snapshotMounts = append(snapshotMounts, stagedMounts...)
 	}
-	if snapshotMounts, err = backup.BindVolumeSubpaths(ctx, dockerClient, snapshotMounts); err != nil {
-		return backup.Snapshot{}, err
+	snapshotMounts, err = volumes.BindSubpaths(ctx, dockerClient, snapshotMounts)
+	if err != nil {
+		return backup.Snapshot{}, fmt.Errorf("system backup mounts: %w", err)
 	}
 	globs := make([]string, 0, len(layout.excludes)+1)
 	for _, excluded := range layout.excludes {
