@@ -37,6 +37,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
 
@@ -969,4 +970,20 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 	require.ErrorIs(t, err, actor.ErrJobRejected)
 	require.Zero(t, started)
 	unlock()
+}
+
+func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want []string
+		plan restorePlan
+	}{
+		{name: "a running project is stopped and deployed again", plan: restorePlan{MayStop: true}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
+		{name: "a stopped project asked to start is deployed", plan: restorePlan{Redeploy: new(true)}, want: []string{authz.PermProjectsDeploy}},
+		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{Redeploy: new(false)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, test.plan.extraPermissions())
+		})
+	}
 }

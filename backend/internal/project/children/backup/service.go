@@ -1157,20 +1157,6 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
-	var required []string
-	switch {
-	case len(active) > 0:
-		required = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
-	case kit.FromPtr(opts.Request.Redeploy):
-		required = []string{authz.PermProjectsDeploy}
-	}
-	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, required...); permissionErr != nil {
-		return "", permissionErr
-	}
-	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
-	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
-		return "", authorizeErr
-	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
 		ID:        uuid.New().String(),
@@ -1179,6 +1165,13 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		Volumes:   targets,
 		Files:     files,
 		MayStop:   len(active) > 0,
+	}
+	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()...); permissionErr != nil {
+		return "", permissionErr
+	}
+	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
+	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+		return "", authorizeErr
 	}
 	keysToAdmit := admissions(p.ProjectID, p.volumeNames())
 	leases, err := s.admit(ctx, keysToAdmit, "")
@@ -1239,6 +1232,18 @@ func restoreTargets(project types.Project, captured []types.ProjectBackupVolume,
 	return targets, nil
 }
 
+// extraPermissions are the rights a restore needs besides projects:restore: stopping and deploying a running project,
+// or deploying one it was asked to redeploy.
+func (p restorePlan) extraPermissions() []string {
+	switch {
+	case p.MayStop:
+		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
+	case kit.FromPtr(p.Redeploy):
+		return []string{authz.PermProjectsDeploy}
+	}
+	return nil
+}
+
 func (p restorePlan) volumeNames() []string {
 	names := make([]string, 0, len(p.Volumes))
 	for _, volume := range p.Volumes {
@@ -1287,8 +1292,15 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	}
 	defer unlock()
 	if !resumed {
-		if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
-			return nil, authorizeErr
+		// Rights can be revoked while a restore waits for its turn, so each one it needs is checked again before the
+		// first change; a resumed restore must finish or roll back regardless.
+		for _, permission := range append([]string{input.Requester.Permission}, p.extraPermissions()...) {
+			requester := types.BackupRequester{
+				UserID: input.Requester.UserID, APIKeyID: input.Requester.APIKeyID, EnvironmentID: input.Requester.EnvironmentID, Permission: permission,
+			}
+			if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+				return nil, authorizeErr
+			}
 		}
 		if p, err = s.prepareRestore(ctx, p); err != nil {
 			return nil, err
