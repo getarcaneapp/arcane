@@ -29,8 +29,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/docker"
-	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -668,7 +666,7 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 	if inspectErr != nil || kit.FromPtr(arcane).ID == "" {
 		slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", inspectErr)
 	}
-	trust, err := trustMounts(ctx, dockerClient, kit.FromPtr(arcane).Mounts)
+	trust, err := rustic.TrustMounts(ctx, dockerClient, dataDirectory, kit.FromPtr(arcane).Mounts)
 	if err != nil {
 		return "", err
 	}
@@ -681,41 +679,6 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 		slices.Concat(repository.Mounts, extraMounts, trust),
 		container.NetworkMode(kit.Ternary(kit.FromPtr(arcane).ID == "", "", "container:"+kit.FromPtr(arcane).ID)),
 	)
-}
-
-func trustMounts(ctx context.Context, dockerClient *client.Client, arcaneMounts []container.MountPoint) ([]mount.Mount, error) {
-	bundlePath, err := rustic.WriteTrustBundle(ctx, dataDirectory)
-	if err != nil {
-		return nil, fmt.Errorf("failed to write CA certificates for Rustic container: %w", err)
-	}
-	if bundlePath == "" {
-		return nil, nil
-	}
-	if _, containerErr := cgroup.CurrentContainerID(); containerErr != nil {
-		return []mount.Mount{{
-			Type:     mount.TypeBind,
-			Source:   bundlePath,
-			Target:   rustic.TrustBundlePath,
-			ReadOnly: true,
-		}}, nil
-	}
-	resolved := docker.MountForSubpath(arcaneMounts, bundlePath, rustic.TrustBundlePath)
-	if resolved == nil {
-		slog.WarnContext(ctx, "backup engine: Arcane's data directory is not a bind or named volume mount; Rustic runs without Arcane's CA certificates", "path", bundlePath)
-		return nil, nil
-	}
-	mounts, err := volumes.BindSubpaths(ctx, dockerClient, []mount.Mount{{
-		Type:          resolved.Type,
-		Source:        resolved.Source,
-		Target:        resolved.Target,
-		ReadOnly:      true,
-		BindOptions:   resolved.BindOptions,
-		VolumeOptions: resolved.VolumeOptions,
-	}})
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount CA certificates for Rustic container: %w", err)
-	}
-	return mounts, nil
 }
 
 func ValidateRecoveryKey(key string) error {

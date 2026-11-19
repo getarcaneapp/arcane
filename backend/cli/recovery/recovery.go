@@ -14,7 +14,6 @@ import (
 
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
@@ -99,14 +98,14 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("stop Arcane container: %w", containerStopErr)
 	}
 	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
-	if runStagesErr := runStages(ctx, dockerClient, request, request.Stages); runStagesErr != nil {
+	if runStagesErr := runStages(ctx, dockerClient, request, inspect.Container.Mounts, request.Stages); runStagesErr != nil {
 		// Arcane restarts only when the rollback succeeds; otherwise it stays
 		// stopped rather than running with mismatched data and projects.
 		runStagesErr = fmt.Errorf("rustic system restore failed: %w", runStagesErr)
 		if len(request.RollbackStages) == 0 {
 			return errors.Join(runStagesErr, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
 		}
-		if rollbackErr := runStages(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
+		if rollbackErr := runStages(context.WithoutCancel(ctx), dockerClient, request, inspect.Container.Mounts, request.RollbackStages); rollbackErr != nil {
 			return errors.Join(runStagesErr, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
 		}
 		rollbackManifest, readErr := acfs.Root{Path: "/app/data"}.ReadFile(context.WithoutCancel(ctx), "/.arcane-recovery.json")
@@ -301,13 +300,16 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-func runStages(ctx context.Context, dockerClient *client.Client, request types.RecoveryRestoreRequest, stages []types.RecoveryRestoreStage) error {
+func runStages(ctx context.Context, dockerClient *client.Client, request types.RecoveryRestoreRequest, arcaneMounts []container.MountPoint, stages []types.RecoveryRestoreStage) error {
 	for _, stage := range stages {
 		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {
 			return fmt.Errorf("restore stage for %s has no destination", stage.SourcePath)
 		}
-		mounts := append([]mount.Mount{}, stage.Repository.Mounts...)
-		mounts = append(mounts, stage.Target.Mounts...)
+		trust, err := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", arcaneMounts)
+		if err != nil {
+			return fmt.Errorf("restore %s: %w", stage.SourcePath, err)
+		}
+		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
 		command := []string{"restore", "--delete", stage.SnapshotID + ":" + stage.SourcePath, stage.Target.Path}
 		if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
 			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
