@@ -2083,7 +2083,8 @@ func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName st
 	}
 	inUse := map[string]bool{}
 	for _, c := range running.Items {
-		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName {
+		// Arcane's own containers are never stopped, so they count as in use even within this project.
+		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
 			continue
 		}
 		for _, m := range c.Mounts {
