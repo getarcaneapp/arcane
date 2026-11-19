@@ -38,6 +38,16 @@ export function projectDetailQuery(environmentId: string, projectId: string) {
 	});
 }
 
+// Fetched on every open, because which volumes are in use and whether the project runs change between opens.
+export function projectExportOptionsQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.exportOptions(environmentId, projectId),
+		queryFn: () => projectService.getExportOptions(projectId, environmentId),
+		staleTime: 0,
+		refetchOnWindowFocus: false
+	});
+}
+
 export function projectDirectoriesQuery(environmentId: string, view: 'projects' | 'settings') {
 	return queryOptions({
 		queryKey: queryKeys.projects.directories(environmentId, view),
