@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -11,6 +11,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectExportOptionsQuery } from '#lib/query/projects.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { Project, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -27,12 +28,18 @@
 		environmentId: string;
 	} = $props();
 
-	let options = $state<ProjectExportOptions | null>(null);
-	let optionsError = $state<string | null>(null);
+	const optionsQuery = createQuery(() => ({
+		...projectExportOptionsQuery(environmentId, project?.id ?? ''),
+		enabled: open && !!project
+	}));
+	// Hidden while refetching, so a reopened dialog never shows the previous open's in-use or running state.
+	const options = $derived<ProjectExportOptions | null>(optionsQuery.isFetching ? null : (optionsQuery.data ?? null));
+	const optionsError = $derived(
+		optionsQuery.error && !optionsQuery.isFetching ? extractApiErrorMessage(optionsQuery.error) : null
+	);
 	let checkedOverrides = $state<Record<string, boolean>>({});
 	let stopOverride = $state<boolean | null>(null);
 	let exporting = $state(false);
-	let optionsSeq = 0;
 
 	const canBackupVolumes = $derived(hasPermission('volumes:backup', environmentId));
 	const canStop = $derived(hasPermission('projects:down', environmentId) && hasPermission('projects:deploy', environmentId));
@@ -42,26 +49,6 @@
 	);
 	const showStop = $derived(!!options?.running && selectedVolumes.length > 0);
 	const stopProject = $derived(showStop && canStop && (stopOverride ?? true));
-
-	$effect(() => {
-		if (open && project) {
-			const projectId = project.id;
-			untrack(() => void loadOptions(projectId));
-		}
-	});
-
-	async function loadOptions(projectId: string) {
-		const seq = ++optionsSeq;
-		options = null;
-		optionsError = null;
-		const result = await tryCatch(projectService.getExportOptions(projectId, environmentId));
-		if (seq !== optionsSeq) return;
-		if (result.error) {
-			optionsError = extractApiErrorMessage(result.error);
-			return;
-		}
-		options = result.data;
-	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
 		if (volume.missing) return m.volume_not_created_yet();
@@ -80,9 +67,6 @@
 	}
 
 	function reset() {
-		optionsSeq++;
-		options = null;
-		optionsError = null;
 		checkedOverrides = {};
 		stopOverride = null;
 		open = false;
