@@ -1818,9 +1818,13 @@ func (b projectBundles) ExportOptions(ctx context.Context, projectID string) (ty
 		classified[index].Included = exists && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(existing.Driver, existing.Options))
 		classified[index].InUse = classified[index].Included && inUse[volume.Name]
 	}
+	running, err := b.local.projects.projectActive(ctx, project.ComposeName)
+	if err != nil {
+		return types.ProjectExportOptions{}, err
+	}
 	return types.ProjectExportOptions{
 		Volumes: classified,
-		Running: project.RunningCount > 0,
+		Running: running,
 	}, nil
 }
 
@@ -1892,7 +1896,11 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 	manifestVolumes := make([]types.ProjectVolume, 0, len(classified))
 	archived := map[string]types.ProjectVolume{}
 	var missing, outside []string
-	consistent := project.RunningCount == 0 || request.StopProject
+	active, activeErr := b.local.projects.projectActive(ctx, project.ComposeName)
+	if activeErr != nil {
+		return types.ProjectManifest{}, activeErr
+	}
+	consistent := !active || request.StopProject
 	for _, volume := range classified {
 		included := slices.Contains(request.Volumes, volume.Key)
 		consistent = consistent && (!included || !inUse[volume.Name])
@@ -2031,6 +2039,30 @@ func (b projectBundles) appendUpload(ctx context.Context, writer *projects.Proje
 	return writer.Add(name, consumed.Size, file)
 }
 
+// activeContainers lists the Compose project's running and restarting containers, the ones a stop would stop.
+func activeContainers(ctx context.Context, dockerClient *client.Client, composeName string) ([]container.Summary, error) {
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	return slices.DeleteFunc(found.Items, func(c container.Summary) bool {
+		return (c.State != container.StateRunning && c.State != container.StateRestarting) || labels.IsArcaneContainer(c.Labels)
+	}), nil
+}
+
+// projectActive reports whether the Compose project has running or restarting containers. Unlike the project's
+// running count, a container in a restart loop counts, since it can write to its volumes between restarts.
+func (s *ProjectService) projectActive(ctx context.Context, composeName string) (bool, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	active, err := activeContainers(ctx, dockerClient, composeName)
+	return len(active) > 0, err
+}
+
 // stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it
 // stopped, also when it fails. Paused containers are frozen, so they are left as they are, and Arcane's own containers
 // keep running.
@@ -2042,15 +2074,10 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 	var stopped []container.Summary
 	// The second pass confirms that nothing is left running.
 	for pass := range 2 {
-		found, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-			Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-		})
+		running, listErr := activeContainers(ctx, dockerClient, composeName)
 		if listErr != nil {
-			return stopped, fmt.Errorf("list containers: %w", listErr)
+			return stopped, listErr
 		}
-		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool {
-			return (c.State != container.StateRunning && c.State != container.StateRestarting) || labels.IsArcaneContainer(c.Labels)
-		})
 		switch {
 		case len(running) == 0:
 			return stopped, nil
@@ -2233,9 +2260,12 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	}
 	predicted := make([]types.ProjectVolume, 0, len(included))
 	for _, volume := range included {
+		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
+			SourceProject: manifest.Project.ComposeName, Key: volume.Key, SourceName: volume.Name, TargetProject: opts.Request.Name,
+		})
 		predicted = append(predicted, types.ProjectVolume{
 			Key:  volume.Key,
-			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, projects.ComposeVolumeTargetName(manifest.Project.ComposeName, volume.Key, volume.Name, opts.Request.Name)),
+			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, targetName),
 			Kind: volume.Kind,
 		})
 	}
