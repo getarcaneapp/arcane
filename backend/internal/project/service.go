@@ -2120,6 +2120,28 @@ func (s *ProjectService) loadedComposeFiles(ctx context.Context, projectID strin
 	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: proj.Path, ComposeFile: composeFile}), nil
 }
 
+// rewriteComposeName sets the Compose project name in the project's files, as an import does.
+func (s *ProjectService) rewriteComposeName(ctx context.Context, projectID, name string) error {
+	projectsDir, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
+	}
+	return projects.RewriteComposeProjectName(ctx, projects.ComposeProjectNameRewrite{
+		ProjectsDirectory: projectsDir,
+		ProjectPath:       proj.Path,
+		ComposeFile:       composeFile,
+		Name:              name,
+	})
+}
+
 // stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it
 // stopped, also when it fails. Paused containers are frozen, so they are left as they are, and Arcane's own containers
 // keep running.

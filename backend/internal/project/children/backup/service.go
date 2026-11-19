@@ -73,9 +73,11 @@ type (
 		// RunsArcane reports whether the project's containers include the running Arcane container.
 		RunsArcane func(ctx context.Context, projectID string) (bool, error)
 		// Down brings the project down without removing its volumes and Deploy deploys it; the caller holds the project lock.
-		Down       func(ctx context.Context, projectID string, user types.Actor) error
-		Deploy     func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
-		Activities activitylib.MessageAppender
+		Down   func(ctx context.Context, projectID string, user types.Actor) error
+		Deploy func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
+		// RewriteComposeName sets the Compose project name in the project's files, as an import does.
+		RewriteComposeName func(ctx context.Context, projectID, name string) error
+		Activities         activitylib.MessageAppender
 	}
 
 	Service struct {
@@ -141,7 +143,9 @@ type (
 		BackupID  string `json:"backupId"`
 		ProjectID string `json:"projectId"`
 		// ProjectPath is set when the project files are restored.
-		ProjectPath string                       `json:"projectPath,omitempty"`
+		ProjectPath string `json:"projectPath,omitempty"`
+		// ComposeName is the project's Compose name before the restore, which restored files must keep.
+		ComposeName string                       `json:"composeName"`
 		SafetyID    string                       `json:"safetyId,omitempty"`
 		Failure     string                       `json:"failure,omitempty"`
 		Volumes     []RestoreVolume              `json:"volumes"`
@@ -150,11 +154,12 @@ type (
 		Created []string `json:"created,omitempty"`
 		Files   bool     `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
-		MayStop   bool `json:"mayStop"`
-		Running   bool `json:"running"`
-		Started   bool `json:"started"`
-		Restored  bool `json:"restored"`
-		Deploying bool `json:"deploying"`
+		MayStop     bool `json:"mayStop"`
+		Running     bool `json:"running"`
+		Started     bool `json:"started"`
+		Restored    bool `json:"restored"`
+		Deploying   bool `json:"deploying"`
+		RollingBack bool `json:"rollingBack"`
 	}
 
 	restoreRun struct {
@@ -1319,6 +1324,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 		BackupID:    p.BackupID,
 		ProjectID:   p.ProjectID,
 		ProjectPath: kit.Ternary(p.Files, project.Path, ""),
+		ComposeName: project.ComposeName,
 		Volumes:     targets,
 		Create:      create,
 		Files:       p.Files,
@@ -1358,7 +1364,7 @@ func (s *Service) volumesFree(ctx context.Context, project types.Project, names 
 }
 
 // missingVolumes returns how to create each target that does not exist yet the way Compose would; an external volume
-// gets the Docker labels the backup recorded instead of Compose's.
+// gets the Docker labels the backup recorded instead of Compose's. An existing target must keep its data in Docker.
 func (s *Service) missingVolumes(ctx context.Context, project types.Project, manifest types.ProjectManifest, targets []RestoreVolume) ([]client.VolumeCreateOptions, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -1370,11 +1376,13 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 		if slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }) {
 			continue
 		}
-		_, inspectErr := dockerClient.VolumeInspect(ctx, target.Name, client.VolumeInspectOptions{})
-		if inspectErr == nil {
+		found, inspectErr := dockerClient.VolumeInspect(ctx, target.Name, client.VolumeInspectOptions{})
+		switch {
+		case inspectErr == nil && !projects.LocalVolume(found.Volume.Driver, found.Volume.Options):
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
+		case inspectErr == nil:
 			continue
-		}
-		if !errdefs.IsNotFound(inspectErr) {
+		case !errdefs.IsNotFound(inspectErr):
 			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, inspectErr)
 		}
 		current := classified[slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
@@ -1395,12 +1403,14 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 	return create, nil
 }
 
-// apply runs an in-place restore from its checkpoint; one resumed before its restore finished rolls back instead. On
-// any failure the project is rolled back and deployed again if it ran.
+// apply runs an in-place restore from its checkpoint; one resumed before its restore finished, or during its rollback,
+// rolls back instead. On any failure the project is rolled back and deployed again if it ran.
 func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 	switch {
 	case p.Failure != "":
 		return errors.New(p.Failure)
+	case p.RollingBack:
+		return r.rollback(ctx, p, errors.New("the restore was interrupted"))
 	case p.Restored:
 		return r.finish(ctx, p)
 	case p.Started:
@@ -1472,24 +1482,37 @@ func (r restoreSteps) finish(ctx context.Context, p restorePlan) error {
 }
 
 // rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
-// project whose safety backup could not be restored is left down rather than started on half-restored data.
+// project whose safety backup could not be restored is left down rather than started on half-restored data, and one
+// that could not be stopped is left as is.
 func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) error {
 	ctx = context.WithoutCancel(ctx)
-	var cleanup []error
-	var undoErr, deployErr error
+	p.RollingBack = true
+	cleanup := []error{r.record(ctx, p)}
+	var downErr, undoErr, deployErr error
 	if p.SafetyID != "" {
 		r.report(ctx, "Rolling back to the safety backup")
 		if p.Deploying {
-			cleanup = append(cleanup, r.down(ctx))
+			downErr = r.down(ctx)
 		}
-		undoErr = r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()})
-		cleanup = append(cleanup, r.remove(ctx, p.Created))
+		if downErr == nil {
+			undoErr = r.restore(ctx, RestoreToOptions{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()})
+			cleanup = append(cleanup, r.remove(ctx, p.Created))
+		}
 	}
-	if p.Running && undoErr == nil {
-		deployErr = r.deploy(ctx)
+	if p.Running && downErr == nil && undoErr == nil {
+		// Saved first, so a run resumed during this deploy stops the project before restoring again.
+		p.Deploying = true
+		if deployErr = r.record(ctx, p); deployErr == nil {
+			deployErr = r.deploy(ctx)
+		}
 	}
 	var err error
 	switch failed := errors.Join(cleanup...); {
+	case downErr != nil:
+		err = fmt.Errorf(
+			"%w; the project could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore",
+			cause, errors.Join(downErr, failed), p.SafetyID,
+		)
 	case undoErr != nil:
 		err = fmt.Errorf("%w; the rollback failed too (%w), so the project was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, failed), p.SafetyID)
 	case deployErr != nil && p.SafetyID != "":
@@ -1557,26 +1580,23 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 	}
 }
 
-// safetyBackup takes a local backup of the project files and the existing targets; the restore holds the locks.
+// safetyBackup takes a local backup of the project files and the existing targets, recording them as a backup does;
+// the restore holds the locks.
 func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, error) {
 	project, err := s.deps.Project(ctx, p.ProjectID)
 	if err != nil {
 		return "", err
 	}
 	created := createdNames(p.Create)
-	classified := projects.ClassifyProjectVolumes(project)
-	captured := make([]types.ProjectVolume, 0, len(classified))
-	for _, volume := range classified {
-		captured = append(captured, types.ProjectVolume{
-			Labels:     volume.Labels,
-			DriverOpts: volume.DriverOpts,
-			Key:        volume.Key,
-			Name:       volume.Name,
-			Kind:       volume.Kind,
-			Driver:     volume.Driver,
-			Included: slices.ContainsFunc(p.Volumes, func(target RestoreVolume) bool { return target.Name == volume.Name }) &&
-				!slices.Contains(created, volume.Name),
-		})
+	existing := make([]string, 0, len(p.Volumes))
+	for _, target := range p.Volumes {
+		if !slices.Contains(created, target.Name) {
+			existing = append(existing, target.Key)
+		}
+	}
+	captured, err := s.inspectVolumes(ctx, project, existing)
+	if err != nil {
+		return "", err
 	}
 	entry := &ProjectBackup{
 		BaseModel:   database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
@@ -1636,15 +1656,29 @@ func (s *Service) removeVolumes(ctx context.Context, names []string) error {
 	return errors.Join(errs...)
 }
 
-// verifyRestore fails when the restored compose files name a restored volume differently, since the project would no
-// longer use the data restored into it.
+// verifyRestore sets the project's Compose name back in restored files that declare another one, then fails when they
+// still do or name a restored volume differently, since the project would no longer use the data restored into it.
 func (s *Service) verifyRestore(ctx context.Context, p restorePlan) error {
-	if p.ProjectPath == "" || len(p.Volumes) == 0 {
+	if p.ProjectPath == "" {
 		return nil
 	}
 	project, err := s.deps.Project(ctx, p.ProjectID)
 	if err != nil {
 		return err
+	}
+	if project.ComposeName != p.ComposeName {
+		if rewriteErr := s.deps.RewriteComposeName(ctx, p.ProjectID, p.ComposeName); rewriteErr != nil {
+			return fmt.Errorf("set the Compose project name %s in the restored files: %w", p.ComposeName, rewriteErr)
+		}
+		if project, err = s.deps.Project(ctx, p.ProjectID); err != nil {
+			return err
+		}
+	}
+	if project.ComposeName != p.ComposeName {
+		return common.Classify(common.ErrConflict, fmt.Errorf(
+			"the restored files name the Compose project %q instead of %q, and it could not be changed back; restore the backup as a new project instead",
+			project.ComposeName, p.ComposeName,
+		))
 	}
 	classified := projects.ClassifyProjectVolumes(project)
 	for _, target := range p.Volumes {

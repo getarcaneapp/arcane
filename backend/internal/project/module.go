@@ -84,8 +84,9 @@ func New(p ModuleParams) *Module {
 			}
 			return p.Service.downProject(ctx, proj, user)
 		},
-		Deploy:     p.Service.deployProject,
-		Activities: p.Activity,
+		Deploy:             p.Service.deployProject,
+		RewriteComposeName: p.Service.rewriteComposeName,
+		Activities:         p.Activity,
 	})
 	return &Module{
 		service:  p.Service,

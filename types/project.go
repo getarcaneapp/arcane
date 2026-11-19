@@ -91,7 +91,7 @@ type (
 		StopContainers  *bool                   `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; other containers keep running; defaults to true"`
 		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3,local_s3" doc:"Where the backup is stored; defaults to local"`
 		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"Saved S3 destination for s3 and local_s3"`
-		Volumes         []string                `json:"volumes,omitempty" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		Volumes         []string                `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
 	}
 
 	ProjectBackupVolume struct {
@@ -124,13 +124,13 @@ type (
 	RestoreProjectBackupRequest struct {
 		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to true"`
 		Redeploy *bool    `json:"redeploy,omitempty" doc:"Deploy the project after the restore, which requires projects:deploy; defaults to true when it runs"`
-		Volumes  []string `json:"volumes,omitempty" doc:"Compose keys of the backup's volumes to restore; omitted means every volume the backup includes, empty means none"`
+		Volumes  []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore; omitted means every volume the backup includes, empty means none"`
 	}
 
 	RestoreProjectBackupAsNewRequest struct {
 		Files   *bool    `json:"files,omitempty" doc:"Restore the project files; a new project needs them, so it must be true when set"`
 		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		Volumes []string `json:"volumes,omitempty" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
+		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
 		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
 	}
 
