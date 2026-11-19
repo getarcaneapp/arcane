@@ -661,3 +661,39 @@ func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
+	for _, test := range []struct {
+		createdAt time.Time
+		name      string
+		created   bool
+	}{
+		{name: "a volume created now is the import's", createdAt: time.Now(), created: true},
+		{name: "a volume someone made earlier is refused", createdAt: time.Now().Add(-time.Hour)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// The volume is missing when checked; Docker then hands back whatever volume has the name.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/volumes/create") {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, volume.Volume{Name: "data", Driver: "local", CreatedAt: test.createdAt.Format(time.RFC3339)})
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			t.Cleanup(server.Close)
+			dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = dockerClient.Close() })
+			service := &VolumeService{dockerService: newVolumeTestDockerService(t, dockerClient)}
+
+			created, err := service.CreateEmptyVolume(t.Context(), client.VolumeCreateOptions{Name: "data"}, nil)
+			require.Equal(t, test.created, created)
+			if test.created {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, common.ErrConflict)
+			}
+		})
+	}
+}
