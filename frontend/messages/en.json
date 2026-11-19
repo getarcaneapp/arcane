@@ -4731,5 +4731,6 @@
   "refresh_external_secret_action_description": "Fetch the source and sync its keys to agents.",
   "clear_saved_value": "Clear saved value",
   "variables_and_secrets": "Variables & Secrets",
-  "variables_and_secrets_subtitle": "Global variables and the external secrets that feed them, synced to your agents"
+  "variables_and_secrets_subtitle": "Global variables and the external secrets that feed them, synced to your agents",
+  "enter_saved_value_again_or_clear": "Enter this value again or clear it. The saved value is not kept when the source changes."
 }

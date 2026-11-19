@@ -121,11 +121,10 @@ func readCredentials(cmd *cobra.Command, opts sourceFlags) (map[string]string, e
 			return nil, err
 		}
 		for number, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
+			if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
 				continue
 			}
-			key, value, ok := strings.Cut(line, "=")
+			key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "=")
 			if !ok || strings.TrimSpace(key) == "" {
 				return nil, fmt.Errorf("credentials file line %d is not KEY=VALUE", number+1)
 			}

@@ -119,7 +119,7 @@ func runContainer(ctx context.Context, dockerClient *client.Client, config conta
 	defer func() {
 		removeCtx, removeCancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 		defer removeCancel()
-		if _, removeErr := dockerClient.ContainerRemove(removeCtx, created.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
+		if _, removeErr := dockerClient.ContainerRemove(removeCtx, created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
 			slog.WarnContext(removeCtx, "failed to remove secret source container", "containerId", created.ID, "error", removeErr)
 		}
 	}()

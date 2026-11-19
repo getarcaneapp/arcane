@@ -60,6 +60,7 @@
 	let customDefinition = $state<SecretSourceDefinition | null>(null);
 	let definitionError = $state<string | null>(null);
 	let validating = $state(false);
+	let validationRun = 0;
 	let inputValues = $state<Record<string, string>>(untrack(() => ({ ...sourceToEdit?.inputs })));
 	let credentialValues = $state<Record<string, string>>({});
 	let clearedCredentials = $state<Record<string, boolean>>({});
@@ -108,8 +109,24 @@
 		return sourceToEdit?.presetId === choice ? sourceToEdit.definition : null;
 	});
 
-	function credentialIsSet(field: SecretSourceField): boolean {
+	function inputChanged(key: string): boolean {
+		return (inputValues[key] ?? '').trim() !== (sourceToEdit?.inputs?.[key] ?? '');
+	}
+
+	const dropsSavedCredentials = $derived.by(() => {
+		if (!sourceToEdit) return false;
+		if (choice !== (sourceToEdit.presetId || CUSTOM)) return true;
+		if (choice === CUSTOM && customYaml.trim() !== '') return true;
+		if (inputChanged('baseUrl')) return true;
+		return activeDefinition?.kind === 'container' && activeDefinition.inputs.some((field) => inputChanged(field.key));
+	});
+
+	function credentialIsSaved(field: SecretSourceField): boolean {
 		return !!sourceToEdit && sourceToEdit.credentialKeys.includes(field.key);
+	}
+
+	function credentialIsSet(field: SecretSourceField): boolean {
+		return credentialIsSaved(field) && !dropsSavedCredentials;
 	}
 
 	function resetTest() {
@@ -118,14 +135,16 @@
 	}
 
 	async function validateCustomDefinition(): Promise<SecretSourceDefinition | null> {
-		const text = customYaml.trim();
-		if (text === '') {
+		const run = ++validationRun;
+		if (customYaml.trim() === '') {
+			validating = false;
 			customDefinition = null;
 			definitionError = null;
 			return null;
 		}
 		validating = true;
 		const result = await tryCatch(secretSourceService.validateDefinition(customYaml));
+		if (run !== validationRun) return null;
 		validating = false;
 		if (result.error) {
 			customDefinition = null;
@@ -150,6 +169,8 @@
 	}
 
 	function handleYamlInput() {
+		validationRun += 1;
+		validating = false;
 		customDefinition = null;
 		definitionError = null;
 		resetTest();
@@ -198,8 +219,11 @@
 			}
 		}
 		for (const field of definition.credentials) {
-			if (field.required && !field.default && !credentialIsSet(field) && (credentialValues[field.key] ?? '') === '') {
+			const empty = (credentialValues[field.key] ?? '') === '';
+			if (field.required && !field.default && !credentialIsSet(field) && empty) {
 				errors[`credential:${field.key}`] = m.common_field_required({ field: field.label });
+			} else if (dropsSavedCredentials && credentialIsSaved(field) && empty && !clearedCredentials[field.key]) {
+				errors[`credential:${field.key}`] = m.enter_saved_value_again_or_clear();
 			}
 		}
 		fieldErrors = errors;
@@ -413,7 +437,7 @@
 				disabled={clearedCredentials[field.key] ?? false}
 				bind:value={() => credentialValues[field.key] ?? '', (value) => (credentialValues[field.key] = value)}
 			/>
-			{#if credentialIsSet(field) && !field.required}
+			{#if credentialIsSaved(field) && !field.required}
 				<div class="mt-2">
 					<SwitchWithLabel
 						id={`${id}-clear`}

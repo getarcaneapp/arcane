@@ -235,6 +235,12 @@ func (s *Service) Update(ctx context.Context, id string, input types.SecretSourc
 		InjectIntoContainers: kit.Ternary(submitted["injectIntoContainers"], input.InjectIntoContainers, record.InjectIntoContainers),
 		Enabled:              kit.Ternary(submitted["enabled"], input.Enabled, record.Enabled),
 	}
+	unlock, err := s.fetchLocks.LockContext(ctx, id)
+	if err != nil {
+		return types.SecretSource{}, err
+	}
+	defer unlock()
+
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if uniqueErr := ensureUniqueName(tx, name, id); uniqueErr != nil {
 			return uniqueErr
@@ -259,7 +265,7 @@ func (s *Service) Update(ctx context.Context, id string, input types.SecretSourc
 	if sameFetch(base, config) {
 		return s.Get(ctx, id)
 	}
-	return s.reload(ctx, id, true)
+	return s.refetch(ctx, id, true)
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
@@ -337,21 +343,20 @@ func (s *Service) testBase(ctx context.Context, id string) (sourceConfig, error)
 
 func (s *Service) EffectiveLayers(ctx context.Context, envID string) ([][]types.EnvVariable, error) {
 	var records []SecretSource
-	if err := s.db.WithContext(ctx).Preload("Environments").Where("enabled = ?", true).Order("created_at, id").Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Order("created_at, id").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("failed to load secret sources: %w", err)
 	}
 
 	var global, scoped [][]types.EnvVariable
 	for _, record := range records {
-		inScope := record.AllEnvironments || slices.Contains(environment.IDs(record.Environments), envID)
-		if !inScope {
-			continue
-		}
-		entries, err := s.cachedEntries(ctx, record)
+		entries, allEnvironments, err := s.scopedEntries(ctx, record.ID, envID)
 		if err != nil {
 			return nil, fmt.Errorf("secret source %q has no values: %w", record.Name, err)
 		}
-		if record.AllEnvironments {
+		if entries == nil {
+			continue
+		}
+		if allEnvironments {
 			global = append(global, entries)
 		} else {
 			scoped = append(scoped, entries)
@@ -366,7 +371,10 @@ func (s *Service) reload(ctx context.Context, id string, invalidate bool) (types
 		return types.SecretSource{}, err
 	}
 	defer unlock()
+	return s.refetch(ctx, id, invalidate)
+}
 
+func (s *Service) refetch(ctx context.Context, id string, invalidate bool) (types.SecretSource, error) {
 	record, err := s.load(ctx, id)
 	if err != nil {
 		return types.SecretSource{}, err
@@ -399,41 +407,39 @@ func (s *Service) reload(ctx context.Context, id string, invalidate bool) (types
 	return source, nil
 }
 
-func (s *Service) cachedEntries(ctx context.Context, record SecretSource) ([]types.EnvVariable, error) {
-	if entries, ok, _ := s.entries.Get(record.ID); ok {
-		return withInject(entries, record.InjectIntoContainers), nil
-	}
-	unlock, err := s.fetchLocks.LockContext(ctx, record.ID)
+func (s *Service) scopedEntries(ctx context.Context, id, envID string) ([]types.EnvVariable, bool, error) {
+	unlock, err := s.fetchLocks.LockContext(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer unlock()
 
-	current, err := s.load(ctx, record.ID)
+	current, err := s.load(ctx, id)
 	if errors.Is(err, ErrSecretSourceNotFound) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if !current.Enabled {
-		return nil, nil
+	inScope := current.AllEnvironments || slices.Contains(environment.IDs(current.Environments), envID)
+	if !current.Enabled || !inScope {
+		return nil, false, nil
 	}
 	if entries, ok, _ := s.entries.Get(current.ID); ok {
-		return withInject(entries, current.InjectIntoContainers), nil
+		return withInject(entries, current.InjectIntoContainers), current.AllEnvironments, nil
 	}
 
 	fetchCtx := context.WithoutCancel(ctx)
 	result, err := s.fetch(fetchCtx, current)
 	s.recordStatus(fetchCtx, current.ID, result, err)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	s.entries.Set(cache.Entry[string, []types.EnvVariable]{
 		Key:   current.ID,
 		Value: result.entries,
 	})
-	return withInject(result.entries, current.InjectIntoContainers), nil
+	return withInject(result.entries, current.InjectIntoContainers), current.AllEnvironments, nil
 }
 
 func withInject(entries []types.EnvVariable, inject bool) []types.EnvVariable {
