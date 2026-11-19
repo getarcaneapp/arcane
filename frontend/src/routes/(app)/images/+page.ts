@@ -17,10 +17,10 @@ export const load: PageLoad = async ({ parent }) => {
 		direction: 'desc'
 	});
 
+	void queryClient.prefetchQuery(imageUsageCountsQuery(scope, environments));
 	const result = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageListQuery(scope, environments, imageRequestOptions), revalidateIfStale: true }),
-			queryClient.prefetchQuery(imageUsageCountsQuery(scope, environments)),
 			featureStore.load(environments.map((env) => env.id))
 		])
 	);

@@ -33,17 +33,14 @@ export const load: PageLoad = async ({ parent, url }) => {
 	}
 	projectRequestOptions.filters = Object.keys(filters).length ? filters : undefined;
 
-	const projectData = await tryCatch(
-		Promise.all([
-			queryClient.ensureQueryData({ ...projectListQuery(scope, environments, projectRequestOptions), revalidateIfStale: true }),
-			queryClient.prefetchQuery(projectStatusCountsQuery(scope, environments)),
-			queryClient.prefetchQuery(projectTagsQuery(scope, environments))
-		])
+	void queryClient.prefetchQuery(projectStatusCountsQuery(scope, environments));
+	void queryClient.prefetchQuery(projectTagsQuery(scope, environments));
+	const projects = await tryCatch(
+		queryClient.ensureQueryData({ ...projectListQuery(scope, environments, projectRequestOptions), revalidateIfStale: true })
 	);
-	if (projectData.error !== null) {
-		throwPageLoadError(projectData.error, 'Failed to load projects');
+	if (projects.error !== null) {
+		throwPageLoadError(projects.error, 'Failed to load projects');
 	}
-	const [projects] = projectData.data;
 
-	return { scope, projects, projectRequestOptions, showArchived };
+	return { scope, projects: projects.data, projectRequestOptions, showArchived };
 };
