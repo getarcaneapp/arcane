@@ -1,3 +1,27 @@
+## v3.1.1
+
+### Bug fixes
+
+- quote download filenames and share download flow ([\#4871](https://github.com/getarcaneapp/arcane/pull/4871) by @kmendell)
+- skip update checks for Podman localhost images ([\#4873](https://github.com/getarcaneapp/arcane/pull/4873) by @kmendell)
+- run overlapping scheduled system backups in turn instead of skipping ([\#4876](https://github.com/getarcaneapp/arcane/pull/4876) by @neurekadev)
+- support Compose job runs in projects ([\#4877](https://github.com/getarcaneapp/arcane/pull/4877) by @kmendell)
+- align table row action button and hover corners ([\#4882](https://github.com/getarcaneapp/arcane/pull/4882) by @kmendell)
+- restore a new volume's root owner and mode from the archive ([\#4887](https://github.com/getarcaneapp/arcane/pull/4887) by @neurekadev)
+- set up frontend telemetry reactively instead of blocking load ([\#4891](https://github.com/getarcaneapp/arcane/pull/4891) by @kmendell)
+- align container create and edit page headers ([\#4892](https://github.com/getarcaneapp/arcane/pull/4892) by @kmendell)
+- skip missing volumes in project transfer and archive validation ([\#4893](https://github.com/getarcaneapp/arcane/pull/4893) by @kmendell)
+- clear pending redeploy when Arcane refuses to redeploy itself ([\#4905](https://github.com/getarcaneapp/arcane/pull/4905) by @astronaute77)
+- mount Rustic CA bundle from the data dir instead of copying it into the container ([\#4875](https://github.com/getarcaneapp/arcane/pull/4875) by @neurekadev)
+- show unreachable picked environments inline instead of erroring ([\#4908](https://github.com/getarcaneapp/arcane/pull/4908) by @kmendell)
+- run overlapping scheduled backups of the same volume in turn ([\#4879](https://github.com/getarcaneapp/arcane/pull/4879) by @neurekadev)
+
+### Other
+
+- cleanup frontend queries and remove ky as http client ([4fbe070](https://github.com/getarcaneapp/arcane/commit/4fbe070017b6bc82119aeabd6ee0003dd4544125) by @kmendell)
+- migrate Playwright E2E tests to vite-plus test runner ([\#4896](https://github.com/getarcaneapp/arcane/pull/4896) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.1.0...v3.1.1
 ## v3.1.0
 
 ### New features
