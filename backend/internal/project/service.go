@@ -2556,18 +2556,19 @@ func (b projectBundles) checkNewProject(ctx context.Context, manifest types.Proj
 	if stackExists {
 		return common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; use another name for the project", composeName))
 	}
-	predicted := make([]types.ProjectVolume, 0, len(included))
+	// As in an import, only names that can't change are checked before the project exists; the rest are checked with
+	// the new project's real names, and a conflict there rolls it back.
+	var certain, predicted []types.ProjectVolume
 	for _, volume := range included {
 		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
 			SourceProject: manifest.Project.ComposeName, Key: volume.Key, SourceName: volume.Name, TargetProject: name,
 		})
-		predicted = append(predicted, types.ProjectVolume{
-			Key:  volume.Key,
-			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, targetName),
-			Kind: volume.Kind,
-		})
+		if volume.Kind == types.ProjectVolumeExternal || targetName == volume.Name {
+			certain = append(certain, volume)
+			predicted = append(predicted, types.ProjectVolume{Key: volume.Key, Name: volume.Name, Kind: volume.Kind})
+		}
 	}
-	_, err := b.checkVolumeTargets(ctx, included, predicted)
+	_, err := b.checkVolumeTargets(ctx, certain, predicted)
 	return err
 }
 

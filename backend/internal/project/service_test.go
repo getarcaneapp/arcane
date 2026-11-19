@@ -11152,7 +11152,7 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
 }
 
-func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *testing.T) {
+func TestProjectBundlesImportRefusesExistingVolumesAndLeavesNothingBehind(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	db := setupProjectTestDB(t)
@@ -11178,6 +11178,7 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
 		BuildService:                testBuildBuilder{},
 		Uploads:                     uploads,
@@ -11198,14 +11199,17 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 		FormatVersion: types.ProjectManifestFormatVersion,
 	})
 	require.NoError(t, err)
-	project := "services:\n  app:\n    image: nginx\n"
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(len(project)), strings.NewReader(project)))
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  app:\n    image: nginx\n    volumes:\n      - data:/data\nvolumes:\n  data:\n"), 0o600))
+	var project strings.Builder
+	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
+	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
 	require.NoError(t, writer.Add(dataArchive, 4, strings.NewReader("data")))
 	require.NoError(t, writer.Close())
 	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
 	require.NoError(t, err)
 
-	// web_data becomes copy_data under the new name, which already exists, so the import must stop before creating anything.
+	// web_data becomes copy_data under the new name, which already exists; the import stops and removes what it wrote.
 	_, err = projectBundles{local: localTransferEnvironment{projects: svc}}.Import(ctx, ImportBundleOptions{
 		EnvironmentID: "0",
 		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
@@ -12320,8 +12324,11 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				entries, readErr := os.ReadDir(projectsDir)
 				require.NoError(t, readErr)
 				assert.Empty(t, entries)
+				// The new project's files may be restored before its volume names are known; no volume data is.
 				if tt.conflict && tt.failCreate == "" {
-					assert.Empty(t, snapshots.restores, "nothing is restored when the new project is refused")
+					for _, restore := range snapshots.restores {
+						assert.Empty(t, restore.Volumes, "no volume data is restored when the new project is refused")
+					}
 				}
 				return
 			}
