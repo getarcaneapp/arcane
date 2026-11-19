@@ -208,6 +208,6 @@ func TestClassifyProjectVolumes(t *testing.T) {
 	}, got)
 
 	// A default <project>_<key> name follows the new project; an explicit name: is kept.
-	assert.Equal(t, "copy_data", ComposeVolumeTargetName(project.Name, "data", "web_data", "Copy"))
-	assert.Equal(t, "shared-data", ComposeVolumeTargetName(project.Name, "shared", "shared-data", "Copy"))
+	assert.Equal(t, "copy_data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "data", SourceName: "web_data", TargetProject: "Copy"}))
+	assert.Equal(t, "shared-data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "shared", SourceName: "shared-data", TargetProject: "Copy"}))
 }

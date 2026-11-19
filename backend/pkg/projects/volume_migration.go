@@ -27,6 +27,14 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+// ComposeVolumeTargetNameOptions identifies a project volume and the project it is recreated in.
+type ComposeVolumeTargetNameOptions struct {
+	SourceProject string
+	Key           string
+	SourceName    string
+	TargetProject string
+}
+
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
 	if composeProject == nil || len(composeProject.Volumes) == 0 {
 		return nil, nil
@@ -159,13 +167,13 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	return classified
 }
 
-// ComposeVolumeTargetName names a volume of a project recreated as targetProject: Compose's default
+// ComposeVolumeTargetName names a volume of a project recreated as TargetProject: Compose's default
 // <project>_<key> name follows the project, while an explicit name is kept.
-func ComposeVolumeTargetName(sourceProject, key, sourceName, targetProject string) string {
-	if sourceName == NormalizeProjectName(sourceProject)+"_"+key {
-		return NormalizeProjectName(targetProject) + "_" + key
+func ComposeVolumeTargetName(opts ComposeVolumeTargetNameOptions) string {
+	if opts.SourceName == NormalizeProjectName(opts.SourceProject)+"_"+opts.Key {
+		return NormalizeProjectName(opts.TargetProject) + "_" + opts.Key
 	}
-	return sourceName
+	return opts.SourceName
 }
 
 // ComposeVolumeTargetCreateOptions creates a restore target's volume as Compose would; an external volume gets no

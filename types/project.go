@@ -50,7 +50,7 @@ type (
 
 	ProjectExportOptions struct {
 		Volumes []ProjectVolume `json:"volumes" doc:"The project's volumes; kind explains why external and driverOpts volumes cannot be included"`
-		Running bool            `json:"running" doc:"True when the project has running containers"`
+		Running bool            `json:"running" doc:"True when the project has running or restarting containers"`
 	}
 
 	ProjectVolumeKind string

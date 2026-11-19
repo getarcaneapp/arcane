@@ -11770,6 +11770,71 @@ func TestProjectBundlesExportIncludesLocalExternalVolumes(t *testing.T) {
 	assert.False(t, manifest.Consistent, "another project may write the shared volume during the export")
 }
 
+func TestProjectBundlesExportCountsRestartingContainersAsRunning(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json") && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
+			// The project's only container is in a restart loop, which the running count leaves out.
+			_ = json.MarshalWrite(w, []container.Summary{{
+				ID:     "app-1",
+				Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "app"},
+				State:  container.StateRestarting,
+			}})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
+			_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	projectPath := createComposeProjectDir(t, projectsDir, "demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n",
+	), 0o644))
+	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
+	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
+			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
+		},
+	}}}
+
+	options, err := bundles.ExportOptions(ctx, "proj-demo")
+	require.NoError(t, err)
+	assert.True(t, options.Running, "a restarting container can write its volumes, so stopping must be offered")
+
+	session, err := bundles.Export(ctx, ExportBundleOptions{EnvironmentID: "0", ProjectID: "proj-demo", Request: types.ExportProjectArchive{Volumes: []string{"data"}}})
+	require.NoError(t, err)
+	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+	manifest, bundle, err := projects.ReadProjectBundle(file, nil)
+	require.NoError(t, err)
+	require.True(t, bundle)
+	assert.False(t, manifest.Consistent, "the restarting container was not stopped")
+}
+
 func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 	source := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte(
