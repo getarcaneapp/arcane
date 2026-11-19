@@ -3,7 +3,7 @@ import { projectTagsQuery } from '#lib/query/projects.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { readBesideFilteredList, readableEnvironments } from '#lib/utils/environments.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -36,20 +36,14 @@ export const load: PageLoad = async ({ parent, url }) => {
 	const projectData = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...projectListQuery(scope, environments, projectRequestOptions), revalidateIfStale: true }),
-			readBesideFilteredList(
-				projectRequestOptions,
-				queryClient.ensureQueryData({ ...projectStatusCountsQuery(scope, environments), revalidateIfStale: true })
-			),
-			readBesideFilteredList(
-				projectRequestOptions,
-				queryClient.ensureQueryData({ ...projectTagsQuery(scope, environments), revalidateIfStale: true })
-			)
+			queryClient.prefetchQuery(projectStatusCountsQuery(scope, environments)),
+			queryClient.prefetchQuery(projectTagsQuery(scope, environments))
 		])
 	);
 	if (projectData.error !== null) {
 		throwPageLoadError(projectData.error, 'Failed to load projects');
 	}
-	const [projects, projectStatusCounts, projectTags] = projectData.data;
+	const [projects] = projectData.data;
 
-	return { scope, projects, projectRequestOptions, projectStatusCounts, projectTags, showArchived };
+	return { scope, projects, projectRequestOptions, showArchived };
 };
