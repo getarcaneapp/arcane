@@ -2122,9 +2122,9 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			backupErr = s.backUpScheduled(ctx, admitted)
 			release(context.WithoutCancel(ctx), admitted.leases)
 		}
-		if ctx.Err() != nil {
-			// Shutdown interrupted this project; its checkpoint resumes it.
-			return types.SchedulerOutcome{}, ctx.Err()
+		// Shutdown interrupted this project, or it could not be started again; its checkpoint resumes it first.
+		if ctx.Err() != nil || errors.Is(backupErr, actor.ErrJobRejected) {
+			return types.SchedulerOutcome{}, cmp.Or(ctx.Err(), backupErr)
 		}
 		var outcome types.TargetOutcome
 		switch {
