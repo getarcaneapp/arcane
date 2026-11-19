@@ -212,8 +212,17 @@ func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName stri
 func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (created bool, err error) {
 	name := options.Name
 	defer s.workspaceLocks.Lock(name)()
-	// Seconds, as Docker reports creation times; a volume created earlier was not made by this call.
-	checked := time.Now().Truncate(time.Second)
+	// Docker's own clock, in seconds as it reports creation times: a volume created before this was not made by this
+	// call. Arcane's clock can differ from a remote daemon's, so it is not used; without the daemon's time the check below
+	// is skipped, and Arcane's own creators are still kept out by the lock.
+	var checked time.Time
+	if info, infoErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
+	}); infoErr == nil {
+		if now, parseErr := time.Parse(time.RFC3339Nano, info.Info.SystemTime); parseErr == nil {
+			checked = now.Truncate(time.Second)
+		}
+	}
 	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
 		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	})
@@ -231,7 +240,7 @@ func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.Vo
 	}
 	// Docker returns a volume that already exists instead of failing, so one made since the check above, outside
 	// Arcane, is refused rather than claimed, changed, or removed by a rollback.
-	if createdAt, parseErr := time.Parse(time.RFC3339Nano, result.Volume.CreatedAt); parseErr == nil && createdAt.Before(checked) {
+	if createdAt, parseErr := time.Parse(time.RFC3339Nano, result.Volume.CreatedAt); parseErr == nil && !checked.IsZero() && createdAt.Before(checked) {
 		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
 	}
 	if root == nil {
