@@ -190,7 +190,7 @@ func NewService(deps Dependencies) *Service {
 		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
 			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
 			request := types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationLocal}
-			entry, err := s.CreateBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request)
+			entry, err := s.createBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request, nil)
 			if err != nil {
 				return "", err
 			}
@@ -308,10 +308,6 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 		return backupPlan{}, fmt.Errorf("load S3 destination: %w", err)
 	}
 	return plan, nil
-}
-
-func (s *Service) CreateBackup(ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest) (*types.VolumeBackup, error) {
-	return s.createBackup(ctx, volumeName, user, trigger, request, nil)
 }
 
 // createBackup runs admitted, when set, once the run is admitted and before its plan resolves, so checks made there

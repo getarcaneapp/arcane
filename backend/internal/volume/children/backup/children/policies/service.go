@@ -245,14 +245,16 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		if disableErr != nil {
 			return disableErr
 		}
-		if remoteDisabled && !current.LocalEnabled {
+		if !remoteDisabled {
+			return nil
+		}
+		// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
+		s.reschedule(ctx, &current)
+		if !current.LocalEnabled {
 			return errRemoteOnlyDisabled
 		}
 		return nil
 	})
-	if remoteDisabled {
-		s.reschedule(ctx, &current)
-	}
 	if errors.Is(err, errRemoteOnlyDisabled) {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
