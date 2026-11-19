@@ -55,13 +55,14 @@ func New(p ModuleParams) *Module {
 		deps:     p.Transfer,
 	}
 	backups := projectbackup.NewService(projectbackup.Dependencies{
-		DB:             p.Service.db,
-		Docker:         p.Service.dockerService,
-		Engine:         p.Backups.Engine,
-		Repository:     p.Backups.Repository,
-		S3Destinations: p.Backups.S3Destinations,
-		Settings:       p.Service.settingsService,
-		VolumeLocks:    p.Backups.VolumeLocks,
+		DB:              p.Service.db,
+		Docker:          p.Service.dockerService,
+		Engine:          p.Backups.Engine,
+		Repository:      p.Backups.Repository,
+		ForgetSnapshots: p.Backups.Engine.ForgetSnapshots,
+		S3Destinations:  p.Backups.S3Destinations,
+		Settings:        p.Service.settingsService,
+		VolumeLocks:     p.Backups.VolumeLocks,
 		// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
 		StopContainers:   p.Service.stopRunningContainers,
 		StartContainers:  p.Service.restartContainers,
