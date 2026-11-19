@@ -154,8 +154,8 @@ func NewService(deps Dependencies) *Service {
 			}
 			return new(entry.Entry()), nil
 		},
-		CreateBackup: func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error) {
-			return s.CreateBackup(ctx, volumeName, types.SystemUser, types.VolumeBackupTriggerScheduled, types.CreateVolumeBackupRequest{PolicyID: policyID})
+		CreateBackup: func(ctx context.Context, volumeName, policyID string, admitted func(context.Context) error) (*types.VolumeBackup, error) {
+			return s.createBackup(ctx, volumeName, types.SystemUser, types.VolumeBackupTriggerScheduled, types.CreateVolumeBackupRequest{PolicyID: policyID}, admitted)
 		},
 		Reconcile: s.ReconcileBackup,
 	})
@@ -185,7 +185,7 @@ func NewService(deps Dependencies) *Service {
 		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
 			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
 			request := types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationLocal}
-			entry, err := s.CreateBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request)
+			entry, err := s.createBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request, nil)
 			if err != nil {
 				return "", err
 			}
@@ -305,9 +305,18 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	return plan, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest) (*types.VolumeBackup, error) {
+// createBackup runs admitted, when set, once the run is admitted and before its plan resolves, so checks made there
+// see the same settings the backup runs with.
+func (s *Service) createBackup(
+	ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest, admitted func(context.Context) error,
+) (*types.VolumeBackup, error) {
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, request.PolicyID, func() (backupPlan, error) {
+		if admitted != nil {
+			if err := admitted(ctx); err != nil {
+				return backupPlan{}, err
+			}
+		}
 		return s.resolveBackupPlan(ctx, volumeName, trigger, request, nil)
 	})
 	if err != nil {
