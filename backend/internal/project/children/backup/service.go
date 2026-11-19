@@ -591,12 +591,14 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if recordErr := s.record(ctx, recorded); recordErr != nil {
-			return errors.Join(restartErr, recordErr)
-		}
-		// The project stays down until its containers start, so try again later instead of failing.
+		recordErr := s.record(ctx, recorded)
+		// The project stays down until its containers start, so try again later instead of failing; the checkpoint
+		// saved before still lists them.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
+			return recordErr
 		}
 	}
 	entry, err := s.load(ctx, recorded.BackupID)
@@ -823,12 +825,13 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		if restartErr == nil {
 			p.Stopped = nil
 		}
-		if recordErr := s.record(ctx, p); recordErr != nil {
-			return errors.Join(restartErr, recordErr)
-		}
-		// The snapshot is saved; the retry restarts the project from the checkpoint and finishes the backup.
+		recordErr := s.record(ctx, p)
+		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
+			return recordErr
 		}
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
@@ -1903,7 +1906,21 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 		release(context.WithoutCancel(ctx), leases)
 		return nil, err
 	}
-	unlockVolumes, err := s.lockVolumes(ctx, p.volumeNames())
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held, not only the targets: none of its containers starts while the targets are rewritten.
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		unlockProject()
+		release(context.WithoutCancel(ctx), leases)
+		return nil, err
+	}
+	locked := p.volumeNames()
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		if volume.Name != "" {
+			locked = append(locked, volume.Name)
+		}
+	}
+	unlockVolumes, err := s.lockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
 	if err != nil {
 		unlockProject()
 		release(context.WithoutCancel(ctx), leases)
