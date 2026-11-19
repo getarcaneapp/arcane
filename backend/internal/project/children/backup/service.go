@@ -1635,7 +1635,8 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 		return fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	defer func() {
-		if err != nil && ctx.Err() == nil {
+		// A run handed back stays running, so its retry resumes it from the checkpoint.
+		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
