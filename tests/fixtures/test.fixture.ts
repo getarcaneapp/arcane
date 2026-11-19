@@ -103,15 +103,28 @@ export const test = base.extend<TestFixtures>({
 		});
 		await context.tracing.start({ screenshots: true, snapshots: true });
 		await use(context);
-		if (task.result?.state === 'fail') {
-			for (const [index, page] of context.pages().entries()) {
-				await page.screenshot({ path: outputPath(`screenshot-${index}.png`) });
+		const failures: unknown[] = [];
+		try {
+			if (task.result?.state === 'fail') {
+				for (const [index, page] of context.pages().entries()) {
+					try {
+						await page.screenshot({ path: outputPath(`screenshot-${index}.png`) });
+					} catch (error) {
+						failures.push(error);
+					}
+				}
+				try {
+					await context.tracing.stop({ path: outputPath('trace.zip') });
+				} catch (error) {
+					failures.push(error);
+				}
+			} else {
+				await context.tracing.stop();
 			}
-			await context.tracing.stop({ path: outputPath('trace.zip') });
-		} else {
-			await context.tracing.stop();
+		} finally {
+			await context.close();
 		}
-		await context.close();
+		if (failures.length > 0) throw new AggregateError(failures, 'Failure artifact capture failed');
 	},
 	page: async ({ context }, use) => {
 		await use(await context.newPage());

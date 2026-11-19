@@ -39,7 +39,7 @@ export default defineConfig({
 					)
 				}
 			],
-			...(ci ? ['github-actions'] : [])
+			...(ci ? ['github-actions', './utils/flaky-reporter.ts'] : [])
 		],
 		projects: [
 			{

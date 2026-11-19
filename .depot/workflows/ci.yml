@@ -217,6 +217,7 @@ jobs:
           done
 
       - name: Run Playwright E2E tests
+        timeout-minutes: 35
         run: mkdir -p tests/.report && vp -C tests test run --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}

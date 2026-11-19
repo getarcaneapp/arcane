@@ -220,6 +220,7 @@ jobs:
           docker save public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 > /tmp/test-images.tar
 
       - name: Run Playwright E2E tests
+        timeout-minutes: 35
         run: vp -C tests test run ${{ matrix.database.test_projects }}
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
