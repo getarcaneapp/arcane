@@ -174,6 +174,14 @@
 		}
 	);
 
+	// A global run backs up many projects under one activity, so it only refreshes this list.
+	useBackupActivity(
+		() => environmentId,
+		(activity) => ['run_project_backups', 'scheduled_project_backups'].includes(String(activity.metadata?.['action'])),
+		invalidateBackups,
+		() => 'global-project-backups'
+	);
+
 	const restoreActivity = useBackupActivity(
 		() => environmentId,
 		(activity) => activity.metadata?.['action'] === 'restore_project_backup' && activity.resourceId === projectId,
