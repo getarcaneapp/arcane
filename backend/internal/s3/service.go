@@ -274,19 +274,36 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 			return true, nil
 		}
 	}
-	// Global project backup policies are stored in a setting, not a table.
-	var configs []string
-	if err := db.Table("settings").Where("key = ?", "projectBackupConfig").Pluck("value", &configs).Error; err != nil {
+	// Global project and volume backup schedules are stored in settings, not tables.
+	var rows []struct {
+		Key   string
+		Value string
+	}
+	if err := db.Table("settings").Select("key, value").Where("key IN ?", []string{"projectBackupConfig", "systemVolumeBackupConfig"}).Find(&rows).Error; err != nil {
 		return false, fmt.Errorf("failed to check S3 destination references: %w", err)
 	}
-	for _, raw := range configs {
-		var collection types.GlobalProjectBackupPolicyCollection
-		if err := json.Unmarshal([]byte(cmp.Or(strings.TrimSpace(raw), "{}")), &collection); err != nil {
-			return false, fmt.Errorf("failed to decode global project backup policies: %w", err)
+	for _, row := range rows {
+		raw := []byte(cmp.Or(strings.TrimSpace(row.Value), "{}"))
+		used := false
+		switch row.Key {
+		case "projectBackupConfig":
+			var collection types.GlobalProjectBackupPolicyCollection
+			if err := json.Unmarshal(raw, &collection); err != nil {
+				return false, fmt.Errorf("failed to decode global project backup policies: %w", err)
+			}
+			used = slices.ContainsFunc(collection.Policies, func(policy types.GlobalProjectBackupPolicy) bool {
+				return policy.S3Enabled && policy.S3DestinationID == id
+			})
+		case "systemVolumeBackupConfig":
+			var collection types.SystemVolumeBackupPolicyCollection
+			if err := json.Unmarshal(raw, &collection); err != nil {
+				return false, fmt.Errorf("failed to decode global volume backup policies: %w", err)
+			}
+			used = slices.ContainsFunc(collection.Policies, func(policy types.SystemVolumeBackupPolicy) bool {
+				return policy.S3Enabled && policy.S3DestinationID == id
+			})
 		}
-		if slices.ContainsFunc(collection.Policies, func(policy types.GlobalProjectBackupPolicy) bool {
-			return policy.S3Enabled && policy.S3DestinationID == id
-		}) {
+		if used {
 			return true, nil
 		}
 	}
