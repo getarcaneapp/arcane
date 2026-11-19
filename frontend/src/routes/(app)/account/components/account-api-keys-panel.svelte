@@ -1,38 +1,34 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
 	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { apiKeysMineQuery } from '#lib/query/api-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { ApiKey, ApiKeyCreatedDto } from '#lib/types/apikey.js';
 	import type { ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/ui/apikey.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let apiKeys = $state<ApiKey[]>([]);
-	let apiKeysLoading = $state(false);
+	const apiKeysQuery = createQuery(() => ({
+		...apiKeysMineQuery(),
+		staleTime: 0
+	}));
+	const apiKeys = $derived<ApiKey[]>(apiKeysQuery.data ?? []);
 	let showCreateKeyForm = $state(false);
 	let creatingKey = $state(false);
 	let deletingKeyId = $state<string | null>(null);
 	let createdKey = $state<ApiKeyCreatedDto | null>(null);
 
-	async function loadApiKeys() {
-		apiKeysLoading = true;
-		try {
-			const operationResult = await tryCatch((async () => apiKeyService.listMine())());
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.common_refresh_failed({ resource: m.api_key_page_title() }));
-			} else {
-				apiKeys = operationResult.data;
-			}
-		} finally {
-			apiKeysLoading = false;
+	async function refreshApiKeys() {
+		const refreshed = await apiKeysQuery.refetch();
+		if (refreshed.isError) {
+			toast.error(refreshed.error.message || m.common_refresh_failed({ resource: m.api_key_page_title() }));
 		}
 	}
 
@@ -43,22 +39,20 @@
 		const apiKey = submission.apiKey;
 		creatingKey = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					createdKey = await apiKeyService.createMine({
-						name: apiKey.name,
-						description: apiKey.description,
-						expiresAt: apiKey.expiresAt
-					});
-					showCreateKeyForm = false;
-					await loadApiKeys();
-				})()
+			const created = await tryCatch(
+				apiKeyService.createMine({
+					name: apiKey.name,
+					description: apiKey.description,
+					expiresAt: apiKey.expiresAt
+				})
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.api_key_create_failed({ name: apiKey.name }));
+			if (created.error !== null) {
+				toast.error(created.error.message || m.api_key_create_failed({ name: apiKey.name }));
+				return;
 			}
+			createdKey = created.data;
+			showCreateKeyForm = false;
+			await refreshApiKeys();
 		} finally {
 			creatingKey = false;
 		}
@@ -70,7 +64,7 @@
 			run: () => apiKeyService.deleteMine(id),
 			setLoading: (loading) => (deletingKeyId = loading ? id : null),
 			successMessage: () => m.account_api_key_deleted(),
-			onDeleted: loadApiKeys
+			onDeleted: refreshApiKeys
 		});
 	}
 
@@ -78,10 +72,6 @@
 		void navigator.clipboard.writeText(key);
 		toast.success(m.common_key_copied());
 	}
-
-	onMount(() => {
-		void loadApiKeys();
-	});
 </script>
 
 <section class="space-y-5">
@@ -123,9 +113,15 @@
 		</div>
 	{/if}
 
+	{#if apiKeysQuery.isError && apiKeys.length > 0}
+		<p class="text-sm text-destructive">{extractApiErrorMessage(apiKeysQuery.error)}</p>
+	{/if}
+
 	<div class="overflow-hidden rounded-xl border border-border/70 bg-card/10">
-		{#if apiKeysLoading && apiKeys.length === 0}
+		{#if apiKeysQuery.isPending}
 			<div class="p-6 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
+		{:else if apiKeysQuery.isError && apiKeys.length === 0}
+			<div class="p-6 text-center text-sm text-destructive">{extractApiErrorMessage(apiKeysQuery.error)}</div>
 		{:else if apiKeys.length === 0}
 			<div class="p-6 text-center text-sm text-muted-foreground">
 				<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />

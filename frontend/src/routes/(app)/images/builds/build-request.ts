@@ -75,21 +75,23 @@ function resolveBuildTags(
 }
 
 function unsupportedProviderFields(provider: 'local' | 'depot', request: ImageBuildRequest): string | null {
-	const unsupportedFields =
-		provider === 'local'
-			? {
-					cacheTo: (request.cacheTo?.length ?? 0) > 0,
-					entitlements: (request.entitlements?.length ?? 0) > 0,
-					privileged: request.privileged === true,
-					platforms: (request.platforms?.length ?? 0) > 1
-				}
-			: {
-					network: Boolean(request.network),
-					isolation: Boolean(request.isolation),
-					shmSize: Boolean(request.shmSize),
-					ulimits: Object.keys(request.ulimits ?? {}).length > 0,
-					extraHosts: (request.extraHosts?.length ?? 0) > 0
-				};
+	let unsupportedFields: Record<string, boolean>;
+	if (provider === 'local') {
+		unsupportedFields = {
+			cacheTo: (request.cacheTo?.length ?? 0) > 0,
+			entitlements: (request.entitlements?.length ?? 0) > 0,
+			privileged: request.privileged === true,
+			platforms: (request.platforms?.length ?? 0) > 1
+		};
+	} else {
+		unsupportedFields = {
+			network: Boolean(request.network),
+			isolation: Boolean(request.isolation),
+			shmSize: Boolean(request.shmSize),
+			ulimits: Object.keys(request.ulimits ?? {}).length > 0,
+			extraHosts: (request.extraHosts?.length ?? 0) > 0
+		};
+	}
 	const unsupported = Object.entries(unsupportedFields)
 		.filter(([, present]) => present)
 		.map(([field]) => field);

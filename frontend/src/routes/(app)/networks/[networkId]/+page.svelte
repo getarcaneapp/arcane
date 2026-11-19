@@ -56,19 +56,16 @@
 		sortDir = newSortDir;
 
 		if (data.network?.id) {
-			const operationResult = await tryCatch(
-				(async () =>
-					networkService.getNetworkForEnvironment(data.envId, data.network.id, {
-						sort: { column: sortCol, direction: sortDir }
-					}))()
+			const sorted = await tryCatch(
+				networkService.getNetworkForEnvironment(data.envId, data.network.id, {
+					sort: { column: sortCol, direction: sortDir }
+				})
 			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error('Failed to sort network containers:', err);
+			if (sorted.error !== null) {
+				console.error('Failed to sort network containers:', sorted.error);
 				toast.error(m.common_action_failed());
 			} else {
-				network = operationResult.data;
+				network = sorted.data;
 			}
 		}
 	}

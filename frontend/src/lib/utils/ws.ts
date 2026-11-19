@@ -105,8 +105,8 @@ export class ReconnectingWebSocket<T = unknown> {
 				const parser =
 					this.opts.parseMessage ??
 					((e: MessageEvent) => {
-						if (typeof e.data === 'string') return JSON.parse(e.data) as unknown as T;
-						return e.data as unknown as T;
+						if (typeof e.data === 'string') return JSON.parse(e.data) as T;
+						return e.data as T;
 					});
 				const msg = parser(evt);
 				this.opts.onMessage?.(msg);

@@ -9,7 +9,7 @@
 	let {
 		name,
 		children,
-		triggerClass = 'size-8',
+		triggerClass = 'size-7',
 		iconClass = 'size-4'
 	}: {
 		name?: string;

@@ -42,12 +42,12 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<ImageListResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/images`, { ...config, params });
+		const res = await this.api.get<ImageListResponse>(`/agents/${environmentId}/images`, { ...config, params });
 		return res.data;
 	}
 
 	async getImageUsageCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ImageUsageCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/images/counts`, config);
+		const res = await this.api.get<{ data: ImageUsageCounts }>(`/agents/${environmentId}/images/counts`, config);
 		return res.data.data;
 	}
 
@@ -100,33 +100,35 @@ class ImageService extends BaseAPIService {
 		return `/api/agents/${environmentId}/images/${encodeURIComponent(imageId)}/export`;
 	}
 
+	private async readPullStream(
+		imageName: string,
+		onLine: ((data: unknown) => void) | undefined,
+		environmentId: string
+	): Promise<ImagePullResult> {
+		const body = await this.postStream(
+			`/api/agents/${environmentId}/images/pull`,
+			{ imageName },
+			(status) => `${m.images_pull_server_error()}: HTTP ${status}`
+		);
+		await readNdjsonStream(body, (parsed: OperationStreamFrame) => {
+			onLine?.(parsed);
+			if (parsed?.error) {
+				throw new Error(typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed());
+			}
+			// The terminal frame marks success; don't wait on the network EOF.
+			return parsed?.done === true;
+		});
+		return { success: true, imageName };
+	}
+
 	async pullImageStream(
 		imageName: string,
 		onLine: ((data: unknown) => void) | undefined,
 		environmentId: string
 	): Promise<ImagePullResult> {
-		const operationResult = await tryCatch(
-			(async () => {
-				const body = await this.postStreamInternal(
-					`/api/agents/${environmentId}/images/pull`,
-					{ imageName },
-					(status) => `${m.images_pull_server_error()}: HTTP ${status}`
-				);
-				await readNdjsonStream(body, (parsed: OperationStreamFrame) => {
-					onLine?.(parsed);
-					if (parsed?.error) {
-						throw new Error(
-							typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed()
-						);
-					}
-					// The terminal frame marks success; don't wait on the network EOF.
-					return parsed?.done === true;
-				});
-				return { success: true, imageName };
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
+		const pulled = await tryCatch(this.readPullStream(imageName, onLine, environmentId));
+		if (pulled.error !== null) {
+			const error = pulled.error;
 			if (isSessionCancelledError(error)) {
 				return { success: false, imageName, cancelled: true };
 			}
@@ -135,13 +137,12 @@ class ImageService extends BaseAPIService {
 				imageName,
 				error: error instanceof Error ? error.message : m.images_pull_stream_failed()
 			};
-		} else {
-			return operationResult.data;
 		}
+		return pulled.data;
 	}
 
 	async buildImageStream(request: ImageBuildRequest, environmentId: string, onLine: (line: string) => boolean): Promise<void> {
-		const body = await this.postStreamInternal(`/api/agents/${environmentId}/images/build`, request, (status) =>
+		const body = await this.postStream(`/api/agents/${environmentId}/images/build`, request, (status) =>
 			m.build_request_failed_http({ status })
 		);
 		const reader = body.getReader();
@@ -166,7 +167,7 @@ class ImageService extends BaseAPIService {
 		}
 	}
 
-	private async postStreamInternal(
+	private async postStream(
 		url: string,
 		body: unknown,
 		failedMessage: (status: number) => string
@@ -217,7 +218,10 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<PatchTarget>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/images/patches/targets`, { ...config, params });
+		const res = await this.api.get<Paginated<PatchTarget>>(`/agents/${environmentId}/images/patches/targets`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 
@@ -250,7 +254,7 @@ class ImageService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<ImageBuildRecord>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/images/builds`, { ...config, params });
+		const res = await this.api.get<Paginated<ImageBuildRecord>>(`/agents/${environmentId}/images/builds`, { ...config, params });
 		return res.data;
 	}
 

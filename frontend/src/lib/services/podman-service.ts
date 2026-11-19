@@ -49,7 +49,7 @@ class PodmanService extends BaseAPIService {
 	}
 
 	async getPods(scope: string, options?: SearchPaginationSortRequest, config?: APIRequestConfig): Promise<Paginated<Pod>> {
-		const res = await this.api.get(`/agents/${scope}/podman/pods`, {
+		const res = await this.api.get<Paginated<Pod>>(`/agents/${scope}/podman/pods`, {
 			...config,
 			params: transformPaginationParams(options)
 		});
@@ -89,7 +89,7 @@ class PodmanService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
 	): Promise<Paginated<QuadletDetail>> {
-		const res = await this.api.get(`/agents/${scope}/podman/quadlets`, {
+		const res = await this.api.get<Paginated<QuadletDetail>>(`/agents/${scope}/podman/quadlets`, {
 			...config,
 			params: transformPaginationParams(options)
 		});
@@ -139,7 +139,7 @@ class PodmanService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		config?: APIRequestConfig
 	): Promise<Paginated<PodmanSecret>> {
-		const res = await this.api.get(`/agents/${scope}/podman/secrets`, {
+		const res = await this.api.get<Paginated<PodmanSecret>>(`/agents/${scope}/podman/secrets`, {
 			...config,
 			params: transformPaginationParams(options)
 		});

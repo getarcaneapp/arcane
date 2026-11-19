@@ -1,6 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { podmanService } from '#lib/services/podman-service.js';
+import { podmanQuadletFileQuery, podmanQuadletQuery } from '#lib/query/podman.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -12,14 +11,8 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const envId = await resolveDetailEnvironmentId(url);
 	const result = await tryCatch(
 		Promise.all([
-			queryClient.query({
-				queryKey: queryKeys.podman.quadlet(envId, params.name),
-				queryFn: () => podmanService.getQuadlet(params.name, envId)
-			}),
-			queryClient.query({
-				queryKey: queryKeys.podman.quadletFile(envId, params.name),
-				queryFn: () => podmanService.getQuadletFile(params.name, envId)
-			})
+			queryClient.query(podmanQuadletQuery(envId, params.name)),
+			queryClient.query(podmanQuadletFileQuery(envId, params.name))
 		])
 	);
 	if (result.error !== null) {

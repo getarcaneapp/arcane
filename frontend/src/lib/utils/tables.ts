@@ -3,7 +3,6 @@ import { PersistedState } from 'runed';
 
 import { decodeSort, type CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 
 const DEFAULT_LIMIT = 20;
@@ -136,32 +135,8 @@ export function resolveInitialListPageRequest(
 	} satisfies SearchPaginationSortRequest);
 }
 
-type QueryClientLike = {
-	query: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
-};
-
-type ParentWithQueryClient = () => Promise<unknown>;
-
-export async function resolveListPageLoadContext(
-	parent: ParentWithQueryClient,
-	persistKey: string,
-	sort: NonNullable<SearchPaginationSortRequest['sort']>,
-	limit = 20
-) {
-	const parentData = (await parent()) as { queryClient: QueryClientLike };
-	const environments = await environmentStore.getShownEnvironments();
-	const requestOptions = resolveInitialListPageRequest(persistKey, sort, limit);
-
-	return {
-		queryClient: parentData.queryClient,
-		environments,
-		scope: environmentStore.shownKey,
-		requestOptions
-	};
-}
-
-export function transformPaginationParams(options?: SearchPaginationSortRequest): Record<string, any> {
-	const params: Record<string, any> = {};
+export function transformPaginationParams(options?: SearchPaginationSortRequest): Record<string, string | number> {
+	const params: Record<string, string | number> = {};
 
 	if (!options) return params;
 

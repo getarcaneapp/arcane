@@ -26,16 +26,17 @@
 	const statsManager = new ContainerStatsManager();
 	onDestroy(() => statsManager.destroy());
 
-	const running = $derived(
-		isRunning
-			? containers
-					.filter((container) => container.state.toLowerCase() === 'running')
-					.map((container) => ({
-						...container,
-						key: rowKey({ id: container.id, environmentId: envId, environmentTagged: true })
-					}))
-			: []
-	);
+	const running = $derived.by(() => {
+		if (!isRunning) {
+			return [];
+		}
+		return containers
+			.filter((container) => container.state.toLowerCase() === 'running')
+			.map((container) => ({
+				...container,
+				key: rowKey({ id: container.id, environmentId: envId, environmentTagged: true })
+			}));
+	});
 	const targetIds = $derived(new Set(running.map((container) => container.key)));
 </script>
 

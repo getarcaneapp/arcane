@@ -20,18 +20,13 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	let events;
-	let eventStats;
-	const operationResult = await tryCatch(
-		(async () => Promise.all([queryClient.query(eventListQuery(eventRequestOptions)), queryClient.query(eventStatsQuery())]))()
+	const eventData = await tryCatch(
+		Promise.all([queryClient.query(eventListQuery(eventRequestOptions)), queryClient.query(eventStatsQuery())])
 	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load events');
-	} else {
-		[events, eventStats] = operationResult.data;
+	if (eventData.error !== null) {
+		throwPageLoadError(eventData.error, 'Failed to load events');
 	}
+	const [events, eventStats] = eventData.data;
 
 	return { events, eventStats, eventRequestOptions };
 };

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -43,8 +43,7 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { volumeWorkspaceFolderQuery } from '#lib/query/volumes.js';
-	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
+	import { volumeBackupHasPathQuery, volumeBackupListQuery, volumeWorkspaceFolderQuery } from '#lib/query/volumes.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
 	import type { VolumeWorkspaceFileContent } from '#lib/types/ui/volume.js';
@@ -137,8 +136,7 @@
 		const backupId = selectedWorkspaceBackupId;
 		const path = workspaceRestorePath;
 		return {
-			queryKey: queryKeys.volumes.backupHasPath(environmentId, volumeName ?? '', backupId, path),
-			queryFn: volumeName ? () => volumeBackupService.backupHasPath(backupId, `/${path}`, environmentId) : skipToken,
+			...volumeBackupHasPathQuery(environmentId, volumeName ?? '', backupId, path),
 			enabled: !!volumeName && showWorkspaceRestore && !!backupId && !!path && canReadVolume && canBackupVolume,
 			retry: false
 		};
@@ -335,39 +333,28 @@
 		const requestedEnvId = currentEnvId;
 		const requestedVolumeName = volume.name;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const file = await volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, serverPath, requestedEnvId);
-					if (
-						!active ||
-						requestedEnvId !== currentEnvId ||
-						requestedVolumeName !== volume?.name ||
-						loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
-					)
-						return;
-					workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file };
-					if (file.editable) {
-						const content = file.content ?? '';
-						loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: content };
-						if (workspaceFileContents[relativePath] === undefined) {
-							workspaceFileContents = { ...workspaceFileContents, [relativePath]: content };
-						}
-					}
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				if (
-					!active ||
-					requestedEnvId !== currentEnvId ||
-					requestedVolumeName !== volume?.name ||
-					loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
-				)
-					return;
+			const file = await tryCatch(volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, serverPath, requestedEnvId));
+			if (
+				!active ||
+				requestedEnvId !== currentEnvId ||
+				requestedVolumeName !== volume?.name ||
+				loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
+			)
+				return;
+			if (file.error !== null) {
 				workspaceFileLoadErrors = {
 					...workspaceFileLoadErrors,
-					[relativePath]: error instanceof Error ? error.message : String(error)
+					[relativePath]: file.error.message || String(file.error)
 				};
+				return;
+			}
+			workspaceFileMetadata = { ...workspaceFileMetadata, [relativePath]: file.data };
+			if (file.data.editable) {
+				const content = file.data.content ?? '';
+				loadedWorkspaceFileContents = { ...loadedWorkspaceFileContents, [relativePath]: content };
+				if (workspaceFileContents[relativePath] === undefined) {
+					workspaceFileContents = { ...workspaceFileContents, [relativePath]: content };
+				}
 			}
 		} finally {
 			if (
@@ -727,20 +714,19 @@
 		showWorkspaceRestore = true;
 		loadingWorkspaceBackups = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const response = await volumeBackupService.listBackups(name, { pagination: { page: 1, limit: 100 } }, environmentId);
-					if (!active || environmentId !== currentEnvId || name !== volume?.name || workspaceRestorePath !== relativePath) return;
-					workspaceBackups = response.data;
-					selectedWorkspaceBackupId = response.data[0]?.id ?? '';
-				})()
+			const backups = await tryCatch(
+				queryClient.fetchQuery({
+					...volumeBackupListQuery(environmentId, name, { pagination: { page: 1, limit: 100 } }),
+					staleTime: 0
+				})
 			);
 			if (!active || environmentId !== currentEnvId || name !== volume?.name || workspaceRestorePath !== relativePath) return;
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.common_failed());
+			if (backups.error !== null) {
+				toast.error(backups.error.message || m.common_failed());
+				return;
 			}
+			workspaceBackups = backups.data.data;
+			selectedWorkspaceBackupId = backups.data.data[0]?.id ?? '';
 		} finally {
 			if (active && environmentId === currentEnvId && name === volume?.name && workspaceRestorePath === relativePath) {
 				loadingWorkspaceBackups = false;
@@ -782,16 +768,10 @@
 		const volumeName = volume?.name;
 		const serverPath = workspaceFileServerPath(workspaceFileChanges, relativePath);
 		if (!active || !volumeName || serverPath === null) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				await volumeWorkspaceService.downloadWorkspaceFile(volumeName, serverPath, environmentId);
-			})()
-		);
+		const downloaded = await tryCatch(volumeWorkspaceService.downloadWorkspaceFile(volumeName, serverPath, environmentId));
 		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			toast.error(error instanceof Error ? error.message : m.common_download_error());
+		if (downloaded.error !== null) {
+			toast.error(downloaded.error.message || m.common_download_error());
 		}
 	}
 
@@ -799,9 +779,10 @@
 		if (!active || !volume) return;
 		const safeName = volumeName?.trim() || m.common_unknown();
 		if (!backupVolumeName || safeName === backupVolumeName) return;
-		const message = volume.inUse
-			? `${m.volumes_remove_confirm_message({ name: safeName })}\n\n${m.volumes_remove_in_use_warning()}`
-			: m.volumes_remove_confirm_message({ name: safeName });
+		let message: string = m.volumes_remove_confirm_message({ name: safeName });
+		if (volume.inUse) {
+			message = `${message}\n\n${m.volumes_remove_in_use_warning()}`;
+		}
 
 		// The dialog outlives navigation, so it removes the volume from the environment it was opened for.
 		const environmentId = currentEnvId;

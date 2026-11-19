@@ -55,25 +55,17 @@ export class UseClipboard {
 			clearTimeout(this.timeout);
 		}
 
-		const operationResult = await tryCatch(
-			(async () => {
-				await navigator.clipboard.writeText(text);
-
-				this.#copiedStatus = 'success';
-
-				this.timeout = setTimeout(() => {
-					this.#copiedStatus = undefined;
-				}, this.delay);
-			})()
-		);
-		if (operationResult.error !== null) {
+		const written = await tryCatch(Promise.resolve().then(() => navigator.clipboard.writeText(text)));
+		if (written.error !== null) {
 			// an error can occur when not in the browser or if the user hasn't given clipboard access
 			this.#copiedStatus = 'failure';
-
-			this.timeout = setTimeout(() => {
-				this.#copiedStatus = undefined;
-			}, this.delay);
+		} else {
+			this.#copiedStatus = 'success';
 		}
+
+		this.timeout = setTimeout(() => {
+			this.#copiedStatus = undefined;
+		}, this.delay);
 
 		return this.#copiedStatus;
 	}

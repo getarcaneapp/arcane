@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -44,14 +44,13 @@
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { volumeBackupListQuery } from '#lib/query/volumes.js';
-	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
+	import { volumeBackupListQuery, volumeBackupPoliciesQuery } from '#lib/query/volumes.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { S3Destination } from '#lib/types/backup.js';
+	import type { BackupRestoreSelection, S3Destination } from '#lib/types/backup.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider } from '#lib/types/ui/backup.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -90,9 +89,25 @@
 	// Destinations are a global resource; an environment-scoped backup grant does not cover them.
 	const canListS3Destinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 
-	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
-	let s3Destinations = $state<S3Destination[]>([]);
-	let s3DestinationsError = $state<string | null>(null);
+	const policiesQuery = createQuery(() => ({
+		...volumeBackupPoliciesQuery(currentEnvId, volumeName),
+		staleTime: 0,
+		gcTime: 0,
+		retry: false,
+		refetchOnWindowFocus: false
+	}));
+	const backupPolicies = $derived<VolumeBackupPolicy[]>(policiesQuery.data?.policies ?? []);
+	const s3DestinationsQuery = createQuery(() => ({
+		...s3DestinationAllQuery(),
+		enabled: canBackupVolume && canListS3Destinations,
+		staleTime: 0,
+		retry: false,
+		refetchOnWindowFocus: false
+	}));
+	const s3Destinations = $derived<S3Destination[]>(
+		canBackupVolume && canListS3Destinations ? (s3DestinationsQuery.data ?? []) : []
+	);
+	const s3DestinationsError = $derived(s3DestinationsQuery.error ? extractApiErrorMessage(s3DestinationsQuery.error) : null);
 	let showBackupPolicy = $state(false);
 	let policySession = $state(0);
 	let editingBackupPolicyId = $state<string | undefined>();
@@ -195,32 +210,25 @@
 		const name = volumeName;
 		const tracksActivities = canTrackActivities;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await volumeBackupService.createBackup(name, request, environmentId);
-					if (!active || environmentId !== currentEnvId || name !== volumeName) return false;
-					showS3DestinationDialog = false;
-					onDemandS3DestinationId = '';
-					creating = false;
-					let activityId: string | undefined = result.id;
-					if (tracksActivities) activityId = extractActivityId(result);
-					backupActivity.accepted(activityId);
-					toast.success(
-						m.backups_started(),
-						canReadActivities ? activityToastOptions(extractActivityId(result), false) : undefined
-					);
-					void invalidateBackups();
-					return true;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.common_failed());
+			const created = await tryCatch(volumeBackupService.createBackup(name, request, environmentId));
+			if (created.error !== null) {
+				toast.error(created.error.message || m.common_failed());
 				return false;
-			} else {
-				return operationResult.data;
 			}
+			if (!active || environmentId !== currentEnvId || name !== volumeName) return false;
+			showS3DestinationDialog = false;
+			onDemandS3DestinationId = '';
+			creating = false;
+			let activityId: string | undefined = created.data.id;
+			if (tracksActivities) activityId = extractActivityId(created.data);
+			backupActivity.accepted(activityId);
+			let toastOptions;
+			if (canReadActivities) {
+				toastOptions = activityToastOptions(extractActivityId(created.data), false);
+			}
+			toast.success(m.backups_started(), toastOptions);
+			void invalidateBackups();
+			return true;
 		} finally {
 			creating = false;
 		}
@@ -252,22 +260,17 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
-					const operationResult = await tryCatch(
-						(async () => {
-							const result = await volumeBackupService.deleteBackup(backup.id, currentEnvId);
-							toast.success(
-								m.common_delete_success({ resource: m.volumes_workspace_backup() }),
-								activityToastOptions(extractActivityId(result))
-							);
-							await invalidateBackups();
-						})()
-					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-
-						toast.error(extractApiErrorMessage(error));
+					const deleted = await tryCatch(volumeBackupService.deleteBackup(backup.id, currentEnvId));
+					if (deleted.error !== null) {
+						toast.error(extractApiErrorMessage(deleted.error));
 						await invalidateBackups();
+						return;
 					}
+					toast.success(
+						m.common_delete_success({ resource: m.volumes_workspace_backup() }),
+						activityToastOptions(extractActivityId(deleted.data))
+					);
+					await invalidateBackups();
 				}
 			}
 		});
@@ -294,22 +297,26 @@
 		});
 	}
 
+	async function performBackupAction(
+		run: () => Promise<unknown>,
+		successMessage: () => string,
+		afterRun?: () => void | Promise<void>
+	) {
+		const response = await run();
+		await afterRun?.();
+		toast.success(successMessage(), activityToastOptions(extractActivityId(response)));
+		await invalidateBackups();
+	}
+
 	async function runBackupAction(
 		run: () => Promise<unknown>,
 		successMessage: () => string,
 		failureMessage: () => string,
 		afterRun?: () => void | Promise<void>
 	) {
-		const result = await tryCatch(
-			(async () => {
-				const response = await run();
-				await afterRun?.();
-				toast.success(successMessage(), activityToastOptions(extractActivityId(response)));
-				await invalidateBackups();
-			})()
-		);
-		if (result.error !== null) {
-			toast.error(result.error instanceof Error ? result.error.message : failureMessage());
+		const performed = await tryCatch(performBackupAction(run, successMessage, afterRun));
+		if (performed.error !== null) {
+			toast.error(performed.error.message || failureMessage());
 		}
 	}
 
@@ -341,16 +348,9 @@
 		const name = volumeName;
 		const environmentId = currentEnvId;
 		let usageWarning = '';
-		const operationResult = await tryCatch(
-			(async () => {
-				const usage = await volumeService.getVolumeUsage(volumeName, environmentId);
-				if (usage.inUse && usage.containers?.length > 0) {
-					usageWarning = m.volumes_backup_restore_in_use_warning({ count: usage.containers.length });
-				}
-			})()
-		);
-		if (operationResult.error !== null) {
-			// Ignore errors checking usage
+		const usage = await tryCatch(volumeService.getVolumeUsage(volumeName, environmentId));
+		if (usage.data?.inUse && usage.data.containers?.length > 0) {
+			usageWarning = m.volumes_backup_restore_in_use_warning({ count: usage.data.containers.length });
 		}
 
 		openConfirmDialog({
@@ -373,6 +373,18 @@
 		});
 	}
 
+	async function restoreSelectedBackupFiles(
+		name: string,
+		backupId: string,
+		environmentId: string,
+		selection: BackupRestoreSelection
+	) {
+		const result = await volumeBackupService.restoreBackupFiles(name, backupId, selection, environmentId);
+		await onWorkspaceRestored?.();
+		toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
+		showRestoreFiles = false;
+	}
+
 	async function handleRestoreFiles() {
 		if (!restoreTarget) return;
 		if (!selectAllBackupFiles && !selectedPaths.length) return;
@@ -383,23 +395,14 @@
 		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles };
 		restoringFiles = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const result = await volumeBackupService.restoreBackupFiles(
-						name,
-						backupId,
-						{ ...selection, search: selection.selectAll ? backupFilesSearch.trim() : undefined },
-						environmentId
-					);
-					await onWorkspaceRestored?.();
-					toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
-					showRestoreFiles = false;
-				})()
+			const restored = await tryCatch(
+				restoreSelectedBackupFiles(name, backupId, environmentId, {
+					...selection,
+					search: selection.selectAll ? backupFilesSearch.trim() : undefined
+				})
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.common_failed());
+			if (restored.error !== null) {
+				toast.error(restored.error.message || m.common_failed());
 			}
 		} finally {
 			restoringFiles = false;
@@ -409,24 +412,6 @@
 	function formatBytes(value: number): string {
 		return bytes.format(value, { unitSeparator: ' ' }) ?? '-';
 	}
-
-	onMount(async () => {
-		await environmentStore.ready;
-		const environmentId = currentEnvId;
-		const name = volumeName;
-		const [collection, destinations] = await Promise.all([
-			volumeBackupService.getPolicies(name, environmentId),
-			canBackupVolume && canListS3Destinations ? tryCatch(s3DestinationService.listAll()) : Promise.resolve(null)
-		]);
-		if (!active || environmentId !== currentEnvId || name !== volumeName) return;
-		backupPolicies = collection.policies;
-		if (destinations === null) return;
-		if (destinations.error !== null) {
-			s3DestinationsError = extractApiErrorMessage(destinations.error);
-		} else {
-			s3Destinations = destinations.data;
-		}
-	});
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
@@ -836,7 +821,11 @@
 				saveFailed: m.volume_backup_policy_save_failed(),
 				removed: m.volume_backup_schedule_removed()
 			}}
-			onSaved={(policies) => (backupPolicies = policies)}
+			onSaved={(policies) =>
+				queryClient.setQueryData(volumeBackupPoliciesQuery(currentEnvId, volumeName).queryKey, (current) => ({
+					s3Available: current?.s3Available ?? false,
+					policies
+				}))}
 		/>
 	{/key}
 {/if}

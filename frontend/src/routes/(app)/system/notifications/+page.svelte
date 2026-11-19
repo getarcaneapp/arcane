@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -8,6 +8,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { apnsStatusQuery } from '#lib/query/notifications.js';
 	import { apnsService } from '#lib/services/apns-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { ApnsDevice } from '#lib/types/apns.js';
@@ -27,12 +28,14 @@
 	let savingMobilePush = $state(false);
 	const releaseLinksEnabled = $derived(settingsStore.current?.notificationsIncludeReleaseLinks !== false);
 	let savingReleaseLinks = $state(false);
-	let mobileDevices = $state<ApnsDevice[]>([]);
+	const queryClient = useQueryClient();
+	const mobileDevicesQuery = createQuery(() => ({
+		...apnsStatusQuery(),
+		enabled: mobilePushEnabled,
+		staleTime: 0
+	}));
+	const mobileDevices = $derived<ApnsDevice[]>(mobilePushEnabled ? (mobileDevicesQuery.data?.devices ?? []) : []);
 	let testingDeviceId = $state<string | null>(null);
-
-	onMount(() => {
-		if (mobilePushEnabled) void loadMobileDevices();
-	});
 
 	async function handleMobilePushToggle(enabled: boolean) {
 		savingMobilePush = true;
@@ -40,12 +43,8 @@
 			result: await tryCatch(settingsStore.save({ apnsEnabled: enabled })),
 			message: m.common_update_failed({ resource: m.settings() }),
 			setLoadingState: (value) => (savingMobilePush = value),
-			onSuccess: async () => {
-				if (enabled) {
-					await loadMobileDevices();
-				} else {
-					mobileDevices = [];
-				}
+			onSuccess: () => {
+				if (!enabled) queryClient.removeQueries({ queryKey: apnsStatusQuery().queryKey });
 				toast.success(m.common_update_success({ resource: m.settings() }));
 			}
 		});
@@ -61,11 +60,6 @@
 				toast.success(m.common_update_success({ resource: m.settings() }));
 			}
 		});
-	}
-
-	async function loadMobileDevices() {
-		const { data } = await tryCatch(apnsService.getStatus());
-		mobileDevices = data?.devices ?? [];
 	}
 
 	async function testMobileDevice(device: ApnsDevice) {
@@ -86,7 +80,7 @@
 			return;
 		}
 		toast.success(m.notifications_mobile_device_removed({ device: device.label || device.id }));
-		await loadMobileDevices();
+		await mobileDevicesQuery.refetch();
 	}
 </script>
 

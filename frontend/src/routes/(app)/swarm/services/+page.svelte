@@ -4,11 +4,11 @@
 	import { toast } from 'svelte-sonner';
 
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
-	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import { ContainersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 	import { swarmServiceListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm.js';
@@ -26,7 +26,7 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-services:list'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQuery('swarm-services:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 	const isLoading = $state({ creating: false });
 	let showCreateDialog = $state(false);

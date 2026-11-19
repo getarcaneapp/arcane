@@ -100,27 +100,12 @@
 	async function testDestination(destination: S3Destination) {
 		testingId = destination.id;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await s3DestinationService.test(destination.id);
-					toast.success(
-						m.s3_destination_test_success({
-							name: destination.name
-						})
-					);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(
-					error instanceof Error
-						? error.message
-						: m.s3_destination_test_failed({
-								name: destination.name
-							})
-				);
+			const tested = await tryCatch(s3DestinationService.test(destination.id));
+			if (tested.error !== null) {
+				toast.error(tested.error.message || m.s3_destination_test_failed({ name: destination.name }));
+				return;
 			}
+			toast.success(m.s3_destination_test_success({ name: destination.name }));
 		} finally {
 			testingId = null;
 		}

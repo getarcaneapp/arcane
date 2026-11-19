@@ -16,24 +16,24 @@ import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class EnvironmentManagementService extends BaseAPIService {
 	async create(dto: EnvironmentCreate): Promise<Environment> {
-		const res = await this.api.post('/agents', dto);
-		return res.data.data as Environment;
+		const res = await this.api.post<{ data: Environment }>('/agents', dto);
+		return res.data.data;
 	}
 
 	async getEnvironments(options: SearchPaginationSortRequest): Promise<Paginated<Environment>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/agents', { params });
+		const res = await this.api.get<Paginated<Environment>>('/agents', { params });
 		return res.data;
 	}
 
 	async get(environmentId: string): Promise<Environment> {
-		const res = await this.api.get(`/agents/${environmentId}`);
-		return res.data.data as Environment;
+		const res = await this.api.get<{ data: Environment }>(`/agents/${environmentId}`);
+		return res.data.data;
 	}
 
 	async update(environmentId: string, dto: EnvironmentUpdate): Promise<Environment> {
-		const res = await this.api.patch(`/agents/${environmentId}`, dto);
-		return res.data.data as Environment;
+		const res = await this.api.patch<{ data: Environment }>(`/agents/${environmentId}`, dto);
+		return res.data.data;
 	}
 
 	async delete(environmentId: string): Promise<void> {
@@ -41,13 +41,17 @@ class EnvironmentManagementService extends BaseAPIService {
 	}
 
 	async testConnection(environmentId: string): Promise<{ status: 'online' | 'offline'; message?: string }> {
-		const res = await this.api.post(`/agents/${environmentId}/test`);
-		return res.data.data as { status: 'online' | 'offline'; message?: string };
+		const res = await this.api.post<{ data: { status: 'online' | 'offline'; message?: string } }>(
+			`/agents/${environmentId}/test`
+		);
+		return res.data.data;
 	}
 
 	async restartTunnel(environmentId: string): Promise<{ reconnected: boolean; sessionId?: string }> {
-		const res = await this.api.post(`/agents/${environmentId}/tunnel/restart`);
-		return res.data.data as { reconnected: boolean; sessionId?: string };
+		const res = await this.api.post<{ data: { reconnected: boolean; sessionId?: string } }>(
+			`/agents/${environmentId}/tunnel/restart`
+		);
+		return res.data.data;
 	}
 
 	async sync(environmentId: string): Promise<void> {
@@ -59,8 +63,8 @@ class EnvironmentManagementService extends BaseAPIService {
 	}
 
 	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<VersionInfo> {
-		const res = await this.api.get(`/agents/${environmentId}/version`, config);
-		return res.data.data as VersionInfo;
+		const res = await this.api.get<{ data: VersionInfo }>(`/agents/${environmentId}/version`, config);
+		return res.data.data;
 	}
 
 	async listEnrollmentTokens(): Promise<EnrollmentToken[]> {

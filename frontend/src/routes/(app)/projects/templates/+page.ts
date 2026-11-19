@@ -22,20 +22,16 @@ export const load: PageLoad = async ({
 	} satisfies SearchPaginationSortRequest);
 
 	const [templates, registries] = await Promise.all([
-		tryCatch(queryClient.query(templateListQuery(templateRequestOptions))).then((result) =>
-			result.error
-				? {
-						data: [],
-						pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: 20 }
-					}
-				: result.data
-		),
-		tryCatch(queryClient.query(templateRegistriesQuery())).then((result) => (result.error ? [] : result.data))
+		tryCatch(queryClient.query(templateListQuery(templateRequestOptions))),
+		tryCatch(queryClient.query(templateRegistriesQuery()))
 	]);
 
 	return {
-		templates,
-		registries,
+		templates: templates.data ?? {
+			data: [],
+			pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: 20 }
+		},
+		registries: registries.data ?? [],
 		templateRequestOptions
 	};
 };

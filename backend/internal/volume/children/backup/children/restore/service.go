@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -489,11 +490,14 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	if err != nil {
 		return fmt.Errorf("invalid archive: %w", err)
 	}
-	if _, nextErr := tar.NewReader(gzr).Next(); nextErr != nil {
+	first, nextErr := tar.NewReader(gzr).Next()
+	if nextErr != nil {
 		_ = gzr.Close()
 		return fmt.Errorf("invalid archive: %w", nextErr)
 	}
 	_ = gzr.Close()
+	// Extracting into an existing directory skips the archive's root entry, so a new volume takes its root owner and mode from it.
+	archiveRoot := first.Typeflag == tar.TypeDir && path.Clean(first.Name) == "."
 
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -559,16 +563,21 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
-	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
-	if err != nil {
-		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+	if composeVolume == nil || !archiveRoot {
+		_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
+		if err != nil {
+			return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+		}
+		if strings.TrimSpace(stderr) != "" {
+			slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+		}
 	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
-	}
-	if composeVolume != nil {
-		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `chown "$(stat -c %u:%g "$1")" /volume && chmod "$(stat -c %a "$1")" /volume`, "sh", tmpDir}); err != nil {
+	if composeVolume != nil && archiveRoot {
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", first.Uid, first.Gid), "/volume"}); err != nil {
 			return fmt.Errorf("failed to restore volume root ownership: %w", err)
+		}
+		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(first.Mode&0o7777, 8), "/volume"}); err != nil {
+			return fmt.Errorf("failed to restore volume root mode: %w", err)
 		}
 	}
 

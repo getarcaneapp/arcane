@@ -12,11 +12,11 @@
 
 	const jobId = $derived(typeof activity.metadata?.['jobId'] === 'string' ? activity.metadata['jobId'] : undefined);
 	const runId = $derived(typeof activity.metadata?.['runId'] === 'string' ? activity.metadata['runId'] : undefined);
-	const environmentId = $derived(
-		typeof activity.metadata?.['environmentId'] === 'string'
-			? activity.metadata['environmentId']
-			: activity.sourceEnvironmentId || activity.environmentId
-	);
+	const environmentId = $derived.by(() => {
+		const metadataEnvironmentId = activity.metadata?.['environmentId'];
+		if (typeof metadataEnvironmentId === 'string') return metadataEnvironmentId;
+		return activity.sourceEnvironmentId || activity.environmentId;
+	});
 </script>
 
 {#if activity.type === 'job_run' && jobId && runId}

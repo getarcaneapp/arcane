@@ -34,20 +34,19 @@
 		scanning = true;
 		error = null;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (!socket) throw new Error(m.disconnected());
-					const next = (await socket.request({ type: 'leakScan' })).leakReport;
-					if (!next) return;
-					report = next;
-					onscanned?.(next);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const e = operationResult.error;
-
-				error = e instanceof Error ? e.message : m.diagnostics_error_scan_leaks();
+			if (!socket) {
+				error = m.disconnected();
+				return;
 			}
+			const scanned = await tryCatch(socket.request({ type: 'leakScan' }));
+			if (scanned.error !== null) {
+				error = scanned.error.message || m.diagnostics_error_scan_leaks();
+				return;
+			}
+			const next = scanned.data.leakReport;
+			if (!next) return;
+			report = next;
+			onscanned?.(next);
 		} finally {
 			scanning = false;
 		}
@@ -57,16 +56,13 @@
 		downloading = true;
 		error = null;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (!socket) throw new Error(m.disconnected());
-					await socket.downloadProfile('goroutineleak');
-				})()
-			);
-			if (operationResult.error !== null) {
-				const e = operationResult.error;
-
-				error = e instanceof Error ? e.message : m.diagnostics_error_download();
+			if (!socket) {
+				error = m.disconnected();
+				return;
+			}
+			const downloaded = await tryCatch(socket.downloadProfile('goroutineleak'));
+			if (downloaded.error !== null) {
+				error = downloaded.error.message || m.diagnostics_error_download();
 			}
 		} finally {
 			downloading = false;

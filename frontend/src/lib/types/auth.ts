@@ -1,3 +1,5 @@
+import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
+
 import type { Environment } from '#lib/types/environment.js';
 
 import type { Paginated } from './base';
@@ -15,10 +17,10 @@ export type PasskeyLoginAvailability = {
 	available: boolean;
 };
 
-export type PasskeyChallenge = {
+export type PasskeyChallenge<TOptions> = {
 	ceremonyId: string;
 	transactionId?: string;
-	options: Record<string, unknown>;
+	options: TOptions;
 	expiresAt: string;
 };
 
@@ -30,7 +32,7 @@ export type MobilePasskeyCompletion = {
 export type MFAChallenge = {
 	transactionId: string;
 	method: string;
-	options: Record<string, unknown>;
+	options: PublicKeyCredentialRequestOptionsJSON;
 	expiresAt: string;
 };
 

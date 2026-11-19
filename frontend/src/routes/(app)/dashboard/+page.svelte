@@ -14,11 +14,12 @@
 		return m.welcome_back();
 	});
 	const greetingUserName = $derived.by(() => currentUser?.displayName?.trim() || currentUser?.username?.trim() || '');
-	const dashboardHeroGreeting = $derived.by(() =>
-		greetingUserName
-			? m.dashboard_greeting_with_name({ greeting: greetingBase, name: greetingUserName })
-			: m.dashboard_greeting_without_name({ greeting: greetingBase })
-	);
+	const dashboardHeroGreeting = $derived.by(() => {
+		if (!greetingUserName) {
+			return m.dashboard_greeting_without_name({ greeting: greetingBase });
+		}
+		return m.dashboard_greeting_with_name({ greeting: greetingBase, name: greetingUserName });
+	});
 </script>
 
 <AllEnvironmentsView heroGreeting={dashboardHeroGreeting} />

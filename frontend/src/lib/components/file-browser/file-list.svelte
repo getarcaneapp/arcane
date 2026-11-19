@@ -120,33 +120,22 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
-					const operationResult1 = await tryCatch(
-						(async () => {
-							const result = await onDelete(file);
-							toast.success(m.common_delete_success({ resource: file.name }), activityToastOptions(extractActivityId(result)));
-							onRefresh();
-						})()
-					);
-					if (operationResult1.error !== null) {
-						const e = operationResult1.error;
-
-						toast.error(e.message || m.common_delete_failed({ resource: file.name }));
+					const deleted = await tryCatch(onDelete(file));
+					if (deleted.error !== null) {
+						toast.error(deleted.error.message || m.common_delete_failed({ resource: file.name }));
+						return;
 					}
+					toast.success(m.common_delete_success({ resource: file.name }), activityToastOptions(extractActivityId(deleted.data)));
+					onRefresh();
 				}
 			}
 		});
 	}
 
 	async function handleDownload(file: WorkspaceFileEntry) {
-		const operationResult2 = await tryCatch(
-			(async () => {
-				await onDownload(file);
-			})()
-		);
-		if (operationResult2.error !== null) {
-			const e = operationResult2.error;
-
-			toast.error(e.message || m.common_failed());
+		const downloaded = await tryCatch(onDownload(file));
+		if (downloaded.error !== null) {
+			toast.error(downloaded.error.message || m.common_failed());
 		}
 	}
 

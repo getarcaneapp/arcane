@@ -22,3 +22,17 @@ export function containerDetailQuery(environmentId: string, containerId: string)
 		queryFn: () => containerService.getContainerForEnvironment(environmentId, containerId)
 	});
 }
+
+export function containerEditConfigQuery(environmentId: string, containerId: string) {
+	return queryOptions({
+		queryKey: queryKeys.containers.editConfig(environmentId, containerId),
+		queryFn: () => containerService.getContainerEditConfig(containerId, environmentId)
+	});
+}
+
+export function containerProcessesQuery(environmentId: string, containerId: string) {
+	return queryOptions({
+		queryKey: queryKeys.containers.processes(environmentId, containerId),
+		queryFn: ({ signal }) => containerService.getContainerProcesses(containerId, signal, environmentId)
+	});
+}

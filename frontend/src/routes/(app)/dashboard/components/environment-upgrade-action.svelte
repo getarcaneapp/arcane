@@ -5,13 +5,11 @@
 	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
 	import { DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { environmentUpgradeAvailableQuery } from '#lib/query/system.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { VersionInfo } from '#lib/types/version.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { readEachEnvironment } from '#lib/utils/environments.js';
 
 	import { shouldLoadEnvironment } from '../overview.helpers';
 
@@ -47,20 +45,11 @@
 		)
 	);
 
-	const upgradeAvailabilityQuery = createQuery(() => {
-		const environments = upgradeCheckEnvironments;
-		return {
-			queryKey: queryKeys.system.environmentUpgradeAvailable(environments.map((env) => env.id).join(',')),
-			queryFn: () =>
-				readEachEnvironment(environments, (scope, config) => systemUpgradeService.checkUpgradeAvailable(scope, config), {
-					canUpgrade: false,
-					error: false,
-					message: ''
-				}),
-			enabled: shouldCheckUpgrade,
-			staleTime: 0
-		};
-	});
+	const upgradeAvailabilityQuery = createQuery(() => ({
+		...environmentUpgradeAvailableQuery(upgradeCheckEnvironments),
+		enabled: shouldCheckUpgrade,
+		staleTime: 0
+	}));
 
 	const upgradeIsAvailable = $derived.by(() => {
 		if (debug) return true;

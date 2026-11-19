@@ -193,11 +193,12 @@
 		return m.image_update_version_title();
 	});
 
-	const currentVersion = $derived(
-		effectiveUpdateInfo?.currentVersion && effectiveUpdateInfo.currentVersion.trim() !== ''
-			? effectiveUpdateInfo.currentVersion
-			: tag || m.common_unknown()
-	);
+	const currentVersion = $derived.by(() => {
+		if (effectiveUpdateInfo?.currentVersion && effectiveUpdateInfo.currentVersion.trim() !== '') {
+			return effectiveUpdateInfo.currentVersion;
+		}
+		return tag || m.common_unknown();
+	});
 
 	const currentDigest = $derived(effectiveUpdateInfo?.currentDigest?.trim() ?? '');
 	const latestDigest = $derived(effectiveUpdateInfo?.latestDigest?.trim() ?? '');

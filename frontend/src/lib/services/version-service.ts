@@ -34,15 +34,9 @@ export function toAppVersionInformation(data: Partial<VersionInfo>): VersionInfo
 }
 
 async function getVersionInformation(): Promise<VersionInfo> {
-	const operationResult = await tryCatch(
-		(async () => {
-			const res = await apiClient.get('/app/version', {
-				timeout: 2000
-			});
-			return toAppVersionInformation(res.data as Partial<VersionInfo>);
-		})()
-	);
-	return operationResult.error !== null ? toAppVersionInformation({}) : operationResult.data;
+	const response = await tryCatch(apiClient.get<Partial<VersionInfo>>('/app/version', { timeout: 2000 }));
+	if (response.error !== null) return toAppVersionInformation({});
+	return toAppVersionInformation(response.data.data);
 }
 
 async function getNewestVersion(): Promise<string | undefined> {
@@ -55,8 +49,23 @@ async function getReleaseUrl(): Promise<string | undefined> {
 	return info.releaseUrl;
 }
 
+async function getLatestGitHubRelease(): Promise<{ tag: string; body: string; publishedAt: string; url: string }> {
+	const res = await fetch('https://api.github.com/repos/getarcaneapp/arcane/releases/latest', {
+		headers: { Accept: 'application/vnd.github+json' }
+	});
+	if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+	const data: { tag_name?: string; body?: string; published_at?: string; html_url?: string } = await res.json();
+	return {
+		tag: data.tag_name ?? '',
+		body: data.body ?? '',
+		publishedAt: data.published_at ?? '',
+		url: data.html_url ?? ''
+	};
+}
+
 export default {
 	getVersionInformation,
+	getLatestGitHubRelease,
 	getNewestVersion,
 	getReleaseUrl,
 	getCurrentVersion

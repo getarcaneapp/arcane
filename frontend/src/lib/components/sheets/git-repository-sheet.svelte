@@ -153,9 +153,10 @@
 		if (!data || tokenNeedsAttention || sshKeyNeedsAttention) return;
 
 		const fields = repositoryFields(data, selectedAuthType.value, selectedSshHostKeyVerification.value);
-		const payload: GitRepositoryCreate | GitRepositoryUpdate = isEditMode
-			? changedFields(repositoryFields(formData, formData.authType, formData.sshHostKeyVerification), fields)
-			: fields;
+		let payload: GitRepositoryCreate | GitRepositoryUpdate = fields;
+		if (isEditMode) {
+			payload = changedFields(repositoryFields(formData, formData.authType, formData.sshHostKeyVerification), fields);
+		}
 
 		if (hasToken && clearToken) payload.token = '';
 		else if ((selectedAuthType.value === 'http' || hasToken) && data.token) payload.token = data.token;

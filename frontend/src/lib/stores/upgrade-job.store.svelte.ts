@@ -19,7 +19,7 @@ function isUpgradeJob(value: unknown): value is UpgradeJob {
 	return !!value && typeof value === 'object' && typeof (value as UpgradeJob).id === 'string';
 }
 
-function createUpgradeJobStoreInternal() {
+function createUpgradeJobStore() {
 	let job = $state.raw<UpgradeJob | null>(null);
 	let followedJobId: string | null = null;
 	let followedActive = $state(false);
@@ -90,4 +90,4 @@ function createUpgradeJobStoreInternal() {
 	};
 }
 
-export const upgradeJobStore = createUpgradeJobStoreInternal();
+export const upgradeJobStore = createUpgradeJobStore();

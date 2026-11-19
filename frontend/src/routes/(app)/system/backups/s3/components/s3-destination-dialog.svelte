@@ -112,22 +112,18 @@
 		testedConfiguration = null;
 		testing = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (destination) {
-						await s3DestinationService.test(destination.id, data);
-					} else {
-						await s3DestinationService.testConfiguration(data);
-					}
-					testedConfiguration = testedCandidate;
-					toast.success(m.s3_destination_test_success({ name: data.name }));
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.s3_destination_test_failed({ name: data.name }));
+			let tested;
+			if (destination) {
+				tested = await tryCatch(s3DestinationService.test(destination.id, data));
+			} else {
+				tested = await tryCatch(s3DestinationService.testConfiguration(data));
 			}
+			if (tested.error !== null) {
+				toast.error(tested.error.message || m.s3_destination_test_failed({ name: data.name }));
+				return;
+			}
+			testedConfiguration = testedCandidate;
+			toast.success(m.s3_destination_test_success({ name: data.name }));
 		} finally {
 			testing = false;
 		}

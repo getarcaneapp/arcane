@@ -6,12 +6,12 @@
 		"check": "tsc --noEmit",
 		"format": "vp fmt",
 		"format:check": "vp fmt --check",
-		"test": "playwright test"
+		"test": "vp test run"
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "^4.14.0",
-		"@playwright/test": "^1.65.1",
 		"@types/node": "^26.6.6",
+		"playwright": "^1.65.1",
 		"typescript": "^7.0.2",
 		"vite": "catalog:",
 		"vite-plus": "catalog:"

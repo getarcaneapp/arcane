@@ -6,7 +6,7 @@
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { tryCatch, trySync } from '#lib/utils/try-catch.js';
 	import { workspaceFileLanguage } from '#lib/utils/workspace-files.js';
 
 	let {
@@ -41,17 +41,17 @@
 
 	onMount(async () => {
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					const res = await fetchContent(file.path);
-					content = b64DecodeUnicode(res);
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const e = operationResult1.error;
-
-				error = e.message || 'Failed to load preview';
+			const fetched = await tryCatch(fetchContent(file.path));
+			if (fetched.error !== null) {
+				error = fetched.error.message || 'Failed to load preview';
+				return;
 			}
+			const decoded = trySync(() => b64DecodeUnicode(fetched.data));
+			if (decoded.error !== null) {
+				error = decoded.error.message || 'Failed to load preview';
+				return;
+			}
+			content = decoded.data;
 		} finally {
 			loading = false;
 		}

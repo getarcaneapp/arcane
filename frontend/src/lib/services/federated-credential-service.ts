@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class FederatedCredentialAPIService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<FederatedCredential>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/federated/credentials', { params });
+		const res = await this.api.get<Paginated<FederatedCredential>>('/federated/credentials', { params });
 		return res.data;
 	}
 

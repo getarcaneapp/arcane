@@ -12,7 +12,7 @@
 		class?: string;
 	} = $props();
 
-	function lineClassInternal(level: ActivityMessage['level']): string {
+	function lineClass(level: ActivityMessage['level']): string {
 		switch (level) {
 			case 'error':
 				return 'text-destructive';
@@ -26,7 +26,7 @@
 
 <PinnedScrollRegion itemCount={messages.length} class={cn('max-h-80 min-h-40 overflow-auto px-4 py-3', className)}>
 	{#each messages as message (message.id)}
-		<div class={cn('wrap-break-word whitespace-pre-wrap', lineClassInternal(message.level))}>
+		<div class={cn('wrap-break-word whitespace-pre-wrap', lineClass(message.level))}>
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 			{@html ansiToHtml(message.message)}
 		</div>

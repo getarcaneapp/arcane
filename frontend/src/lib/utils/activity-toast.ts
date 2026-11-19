@@ -11,13 +11,8 @@ export function activityToastOptions(activityId?: string, suppressCompletion = t
 	// The caller is about to show a response toast for this activity; keep the
 	// stream-driven completion toast from duplicating it.
 	if (suppressCompletion) markActivityToastShown(activityId);
-	if (
-		!(environmentId
-			? userStore.hasPermission('activities:read', environmentId)
-			: userStore.hasPermissionInAnyEnvironment('activities:read'))
-	) {
-		return undefined;
-	}
+	if (environmentId && !userStore.hasPermission('activities:read', environmentId)) return undefined;
+	if (!environmentId && !userStore.hasPermissionInAnyEnvironment('activities:read')) return undefined;
 
 	return {
 		action: {

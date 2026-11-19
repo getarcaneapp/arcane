@@ -36,10 +36,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
 	import { projectDetailQuery } from '#lib/query/projects.js';
+	import { projectListForEnvironmentQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
@@ -297,13 +297,11 @@
 	const projectNameRequest = $derived({ filters: { name: composeProjectName }, pagination: { page: 1, limit: 1 } });
 	const projectSearchRequest = $derived({ search: composeProjectName, pagination: { page: 1, limit: 100 } });
 	const projectNameQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.list(currentEnvId, projectNameRequest),
-		queryFn: () => projectService.getProjectsForEnvironment(currentEnvId, projectNameRequest),
+		...projectListForEnvironmentQuery(currentEnvId, projectNameRequest),
 		enabled: !!composeProjectName
 	}));
 	const projectSearchQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.list(currentEnvId, projectSearchRequest),
-		queryFn: () => projectService.getProjectsForEnvironment(currentEnvId, projectSearchRequest),
+		...projectListForEnvironmentQuery(currentEnvId, projectSearchRequest),
 		enabled: projectNameQuery.isSuccess && !projectNameQuery.data.data.some((p) => p.name === composeProjectName)
 	}));
 	const matchedProjectId = $derived(
@@ -373,15 +371,10 @@
 			if (f.content && hasServiceInContent(f.content, svcName)) {
 				return { includeFile: f };
 			}
-			const sourceResult = await tryCatch(
-				(async () => {
-					const loaded = await projectWorkspaceService.getWorkspaceFile(projectId, f.relativePath, envId);
-					if (loaded?.content && hasServiceInContent(loaded.content, svcName)) {
-						return { includeFile: { ...f, content: loaded.content } };
-					}
-				})()
-			);
-			if (sourceResult.error === null && sourceResult.data) return sourceResult.data;
+			const loaded = await tryCatch(projectWorkspaceService.getWorkspaceFile(projectId, f.relativePath, envId));
+			if (loaded.data?.content && hasServiceInContent(loaded.data.content, svcName)) {
+				return { includeFile: { ...f, content: loaded.data.content } };
+			}
 		}
 		return null;
 	}

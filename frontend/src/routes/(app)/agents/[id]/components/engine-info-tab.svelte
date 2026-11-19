@@ -8,9 +8,8 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, CheckIcon, CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService } from '#lib/services/podman-service.js';
-	import { systemService } from '#lib/services/system-service.js';
+	import { podmanInfoQuery } from '#lib/query/podman.js';
+	import { dockerInfoQuery } from '#lib/query/system.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
@@ -23,22 +22,20 @@
 		podmanUnavailableReason
 	}: { environmentId: string; podmanStatus?: PodmanStatus; podmanUnavailableReason?: string } = $props();
 
-	const dockerInfoQuery = createQuery(() => ({
-		queryKey: queryKeys.system.dockerInfo(environmentId),
-		queryFn: () => systemService.getDockerInfoForEnvironment(environmentId),
+	const dockerQuery = createQuery(() => ({
+		...dockerInfoQuery(environmentId),
 		enabled: !podmanStatus,
 		retry: false
 	}));
-	const podmanInfoQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.info(environmentId),
-		queryFn: () => podmanService.getInfo(environmentId),
+	const podmanQuery = createQuery(() => ({
+		...podmanInfoQuery(environmentId),
 		enabled: !!podmanStatus,
 		retry: false
 	}));
-	const activeQuery = $derived(podmanStatus ? podmanInfoQuery : dockerInfoQuery);
+	const activeQuery = $derived(podmanStatus ? podmanQuery : dockerQuery);
 	const view = $derived.by((): EngineView | null => {
-		if (podmanStatus) return podmanInfoQuery.data ? podmanEngineView(podmanInfoQuery.data, podmanStatus) : null;
-		return dockerInfoQuery.data ? dockerEngineView(dockerInfoQuery.data) : null;
+		if (podmanStatus) return podmanQuery.data ? podmanEngineView(podmanQuery.data, podmanStatus) : null;
+		return dockerQuery.data ? dockerEngineView(dockerQuery.data) : null;
 	});
 </script>
 

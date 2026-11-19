@@ -125,12 +125,11 @@
 			isSheetOpen = false;
 		},
 		onError: async (error, payload) => {
-			toast.error(
-				payload.mode === 'edit'
-					? m.common_update_failed({ resource: m.variable() })
-					: m.common_create_failed({ resource: m.variable() }),
-				{ description: extractApiErrorMessage(error) }
-			);
+			let headline = m.common_create_failed({ resource: m.variable() });
+			if (payload.mode === 'edit') {
+				headline = m.common_update_failed({ resource: m.variable() });
+			}
+			toast.error(headline, { description: extractApiErrorMessage(error) });
 			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
 		}
 	}));
@@ -149,27 +148,28 @@
 	}));
 
 	const saveSourceMutation = createMutation(() => ({
-		mutationFn: (payload: SecretSourceFormPayload) =>
-			payload.mode === 'edit'
-				? secretSourceService.update(payload.id, payload.source)
-				: secretSourceService.create(payload.source),
+		mutationFn: (payload: SecretSourceFormPayload) => {
+			if (payload.mode === 'edit') {
+				return secretSourceService.update(payload.id, payload.source);
+			}
+			return secretSourceService.create(payload.source);
+		},
 		onSuccess: async (response, payload) => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.secretSources.all });
-			toast.success(
-				payload.mode === 'edit'
-					? m.common_update_success({ resource: m.external_secret() })
-					: m.common_create_success({ resource: m.external_secret() })
-			);
+			if (payload.mode === 'edit') {
+				toast.success(m.common_update_success({ resource: m.external_secret() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.external_secret() }));
+			}
 			reportSyncResults(response?.syncResults);
 			isSourceSheetOpen = false;
 		},
 		onError: async (error, payload) => {
-			toast.error(
-				payload.mode === 'edit'
-					? m.common_update_failed({ resource: m.external_secret() })
-					: m.common_create_failed({ resource: m.external_secret() }),
-				{ description: extractApiErrorMessage(error) }
-			);
+			let headline = m.common_create_failed({ resource: m.external_secret() });
+			if (payload.mode === 'edit') {
+				headline = m.common_update_failed({ resource: m.external_secret() });
+			}
+			toast.error(headline, { description: extractApiErrorMessage(error) });
 			await queryClient.invalidateQueries({ queryKey: queryKeys.secretSources.all });
 		}
 	}));
@@ -243,29 +243,31 @@
 
 	const actionButtons = $derived.by<ActionButton[]>(() => {
 		if (urlTab.value === 'secrets') {
-			return canCreateSources
-				? [
-						{
-							id: 'create',
-							action: 'create',
-							placement: 'primary',
-							label: m.common_add_button({ resource: m.external_secret() }),
-							onclick: openCreateSourceSheet
-						}
-					]
-				: [];
+			if (!canCreateSources) {
+				return [];
+			}
+			return [
+				{
+					id: 'create',
+					action: 'create',
+					placement: 'primary',
+					label: m.common_add_button({ resource: m.external_secret() }),
+					onclick: openCreateSourceSheet
+				}
+			];
 		}
-		return canCreateVariables
-			? [
-					{
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_add_button({ resource: m.variable() }),
-						onclick: openCreateSheet
-					}
-				]
-			: [];
+		if (!canCreateVariables) {
+			return [];
+		}
+		return [
+			{
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_add_button({ resource: m.variable() }),
+				onclick: openCreateSheet
+			}
+		];
 	});
 </script>
 

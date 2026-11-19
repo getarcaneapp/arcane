@@ -10,6 +10,7 @@ import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 import { getCodeMirrorValue, setCodeMirrorValue } from '../utils/playwright.util';
+import { expect as vitestExpect } from 'vite-plus/test';
 
 const ROUTES = {
 	page: '/projects',
@@ -245,7 +246,7 @@ async function destroyProjectByNameViaAPI(page: Page, projectName: string) {
 			await destroyProjectByIdViaAPI(page, project.id!);
 		}
 	} catch (error) {
-		expect.soft(false, `Clean up project ${projectName}: ${String(error)}`).toBe(true);
+		vitestExpect.soft(false, `Clean up project ${projectName}: ${String(error)}`).toBe(true);
 	}
 }
 
@@ -581,9 +582,7 @@ test.describe('New Compose Project Page', () => {
 		await expect(createButton).toBeEnabled();
 	});
 
-	test('should create a new project successfully', async ({ page }) => {
-		test.slow();
-
+	test('should create a new project successfully', { timeout: 90_000 }, async ({ page }) => {
 		const projectName = `test-project-${Date.now()}`;
 		const containerName = `test-nginx-container-${Date.now()}`;
 		const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
@@ -1228,47 +1227,49 @@ test.describe('Project Detail Page', () => {
 		expect(updaterRunRequests).toBe(0);
 	});
 
-	test('should display the configured service port host IP', async ({ page }) => {
-		test.slow();
+	test(
+		'should display the configured service port host IP',
+		{ timeout: 90_000 },
+		async ({ page }) => {
+			const projectName = `test-project-port-host-${Date.now()}`;
+			const composeContent = [
+				'services:',
+				'  web:',
+				'    image: public.ecr.aws/nginx/nginx:stable-alpine',
+				'    ports:',
+				'      - "127.0.0.1:8081:80"',
+				''
+			].join('\n');
+			let projectId = '';
 
-		const projectName = `test-project-port-host-${Date.now()}`;
-		const composeContent = [
-			'services:',
-			'  web:',
-			'    image: public.ecr.aws/nginx/nginx:stable-alpine',
-			'    ports:',
-			'      - "127.0.0.1:8081:80"',
-			''
-		].join('\n');
-		let projectId = '';
+			try {
+				projectId = await createProjectViaUI(page, projectName, composeContent);
+				const servicesTab = page.getByRole('tab', { name: 'Services 1', exact: true });
+				await servicesTab.click();
+				await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
+				await expect(servicesTab).toHaveAttribute('data-state', 'active');
 
-		try {
-			projectId = await createProjectViaUI(page, projectName, composeContent);
-			const servicesTab = page.getByRole('tab', { name: 'Services 1', exact: true });
-			await servicesTab.click();
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
-			await expect(servicesTab).toHaveAttribute('data-state', 'active');
-
-			const port = page
-				.locator('a[href*=":8081"]')
-				.filter({ hasText: '80/tcp', visible: true })
-				.first();
-			await expect(port).toBeVisible();
-			await port.hover();
-			await expect(
-				page
-					.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
-					.filter({ visible: true })
-					.first()
-			).toBeVisible();
-		} finally {
-			if (projectId) {
-				await destroyProjectByIdViaAPI(page, projectId);
-			} else {
-				await destroyProjectByNameViaAPI(page, projectName);
+				const port = page
+					.locator('a[href*=":8081"]')
+					.filter({ hasText: '80/tcp', visible: true })
+					.first();
+				await expect(port).toBeVisible();
+				await port.hover();
+				await expect(
+					page
+						.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+						.filter({ visible: true })
+						.first()
+				).toBeVisible();
+			} finally {
+				if (projectId) {
+					await destroyProjectByIdViaAPI(page, projectId);
+				} else {
+					await destroyProjectByNameViaAPI(page, projectName);
+				}
 			}
 		}
-	});
+	);
 
 	test('should display configuration editors', async ({ page }) => {
 		expect(realProjects.length, 'No projects available for configuration test').toBeGreaterThan(0);
@@ -1511,101 +1512,103 @@ test.describe('Project Detail Page', () => {
 		}
 	});
 
-	test('should show retained logs for a stopped project and reload them on refresh', async ({
-		page
-	}) => {
-		test.slow();
-
-		const projectName = `test-logs-stopped-${Date.now()}`;
-		const logViewer = page.getByRole('log');
-		let projectId = '';
-		let marker = '';
-
-		try {
-			const created = await createExitedMarkerProject(page, projectName);
-			projectId = created.projectId;
-			marker = created.marker;
-
-			let logSocketCount = 0;
-			page.on('websocket', (ws) => {
-				if (/ws\/projects\/.+\/logs/.test(ws.url())) {
-					logSocketCount += 1;
-				}
-			});
-
-			await page.goto(`/projects/${projectId}?tab=services&env=0`);
-			await page.waitForLoadState('load');
-			await expect(page.getByRole('heading', { name: 'Logs', exact: true })).toBeVisible();
-			await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
-
-			const startButton = page
-				.getByRole('button', { name: 'Start', exact: true })
-				.filter({ visible: true })
-				.first();
-			const stopButton = page
-				.getByRole('button', { name: 'Stop', exact: true })
-				.filter({ visible: true })
-				.first();
-
-			await startButton.click();
-			await expect(logViewer).toHaveAttribute('data-is-streaming', 'true');
-			await expect(logViewer).toContainText(marker, { timeout: 20000 });
-			await expect(logViewer.getByText(marker).filter({ visible: true })).toHaveCount(1);
-
-			await page.getByTitle('Refresh').click();
-			await expect(logViewer).toContainText(marker, { timeout: 20000 });
-			await expect(logViewer.getByText(marker).filter({ visible: true })).toHaveCount(1);
-
-			await stopButton.click();
-			await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
-			await expect(logViewer).toContainText(marker);
-
-			const socketsAfterStop = logSocketCount;
-			await page.waitForTimeout(2000);
-			expect(logSocketCount, 'Manual stop must not resubscribe to the log stream').toBe(
-				socketsAfterStop
-			);
-		} finally {
-			await destroyProjectByNameViaAPI(page, projectName);
-		}
-	});
-
-	test('should apply the auto-start preference to stopped projects', async ({ page }) => {
-		test.slow();
-
-		const projectName = `test-log-autostart-${Date.now()}`;
-		let projectId = '';
-
-		try {
-			const created = await createExitedMarkerProject(page, projectName);
-			projectId = created.projectId;
-
-			await page.goto(`/projects/${projectId}?tab=services&env=0`);
-			await page.waitForLoadState('load');
-
+	test(
+		'should show retained logs for a stopped project and reload them on refresh',
+		{ timeout: 90_000 },
+		async ({ page }) => {
+			const projectName = `test-logs-stopped-${Date.now()}`;
 			const logViewer = page.getByRole('log');
-			await page.waitForTimeout(2000);
-			await expect(
-				logViewer,
-				'With auto-start disabled the viewer must wait for Start'
-			).toHaveAttribute('data-is-streaming', 'false');
+			let projectId = '';
+			let marker = '';
 
-			// PersistedState JSON-serializes values, so the stored form is the quoted string "true".
-			await page.evaluate(() =>
-				localStorage.setItem('arcane_log_auto_start', JSON.stringify('true'))
-			);
-			await page.reload();
-			await page.waitForLoadState('load');
+			try {
+				const created = await createExitedMarkerProject(page, projectName);
+				projectId = created.projectId;
+				marker = created.marker;
 
-			const reloadedViewer = page.getByRole('log');
-			await expect(reloadedViewer).toHaveAttribute('data-is-streaming', 'true', {
-				timeout: 15000
-			});
-			await expect(reloadedViewer).toContainText(created.marker, { timeout: 20000 });
-		} finally {
-			await destroyProjectByIdViaAPI(page, projectId);
+				let logSocketCount = 0;
+				page.on('websocket', (ws) => {
+					if (/ws\/projects\/.+\/logs/.test(ws.url())) {
+						logSocketCount += 1;
+					}
+				});
+
+				await page.goto(`/projects/${projectId}?tab=services&env=0`);
+				await page.waitForLoadState('load');
+				await expect(page.getByRole('heading', { name: 'Logs', exact: true })).toBeVisible();
+				await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
+
+				const startButton = page
+					.getByRole('button', { name: 'Start', exact: true })
+					.filter({ visible: true })
+					.first();
+				const stopButton = page
+					.getByRole('button', { name: 'Stop', exact: true })
+					.filter({ visible: true })
+					.first();
+
+				await startButton.click();
+				await expect(logViewer).toHaveAttribute('data-is-streaming', 'true');
+				await expect(logViewer).toContainText(marker, { timeout: 20000 });
+				await expect(logViewer.getByText(marker).filter({ visible: true })).toHaveCount(1);
+
+				await page.getByTitle('Refresh').click();
+				await expect(logViewer).toContainText(marker, { timeout: 20000 });
+				await expect(logViewer.getByText(marker).filter({ visible: true })).toHaveCount(1);
+
+				await stopButton.click();
+				await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
+				await expect(logViewer).toContainText(marker);
+
+				const socketsAfterStop = logSocketCount;
+				await page.waitForTimeout(2000);
+				expect(logSocketCount, 'Manual stop must not resubscribe to the log stream').toBe(
+					socketsAfterStop
+				);
+			} finally {
+				await destroyProjectByNameViaAPI(page, projectName);
+			}
 		}
-	});
+	);
+
+	test(
+		'should apply the auto-start preference to stopped projects',
+		{ timeout: 90_000 },
+		async ({ page }) => {
+			const projectName = `test-log-autostart-${Date.now()}`;
+			let projectId = '';
+
+			try {
+				const created = await createExitedMarkerProject(page, projectName);
+				projectId = created.projectId;
+
+				await page.goto(`/projects/${projectId}?tab=services&env=0`);
+				await page.waitForLoadState('load');
+
+				const logViewer = page.getByRole('log');
+				await page.waitForTimeout(2000);
+				await expect(
+					logViewer,
+					'With auto-start disabled the viewer must wait for Start'
+				).toHaveAttribute('data-is-streaming', 'false');
+
+				// PersistedState JSON-serializes values, so the stored form is the quoted string "true".
+				await page.evaluate(() =>
+					localStorage.setItem('arcane_log_auto_start', JSON.stringify('true'))
+				);
+				await page.reload();
+				await page.waitForLoadState('load');
+
+				const reloadedViewer = page.getByRole('log');
+				await expect(reloadedViewer).toHaveAttribute('data-is-streaming', 'true', {
+					timeout: 15000
+				});
+				await expect(reloadedViewer).toContainText(created.marker, { timeout: 20000 });
+			} finally {
+				await destroyProjectByIdViaAPI(page, projectId);
+			}
+		}
+	);
 
 	test('should surface a project log stream connection failure inline', async ({ page }) => {
 		expect(

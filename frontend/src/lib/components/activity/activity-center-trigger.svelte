@@ -29,7 +29,7 @@
 		return 'h-9 w-full px-3 text-sm font-medium';
 	});
 
-	function handleOpenInternal() {
+	function handleOpen() {
 		activityStore.toggleCenter();
 		onOpen?.();
 	}
@@ -40,7 +40,7 @@
 		<button
 			type="button"
 			data-activity-center-trigger
-			onclick={handleOpenInternal}
+			onclick={handleOpen}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
 			class={cn(
@@ -83,7 +83,7 @@
 		<button
 			type="button"
 			data-activity-center-trigger
-			onclick={handleOpenInternal}
+			onclick={handleOpen}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
 			class={cn(

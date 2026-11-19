@@ -177,38 +177,46 @@
 
 	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasShownPermission('templates:create'));
 
+	async function downloadAndOpenTemplate() {
+		const downloadedTemplate = await templateService.download(template.id);
+		toast.success(m.templates_downloaded_success({ name: template.name }));
+		if (downloadedTemplate?.id) {
+			await goto(resolve('/(app)/projects/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
+			return;
+		}
+		await Promise.all([
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.templates.content(template.id)
+			}),
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.templates.all
+			})
+		]);
+		await refreshAll();
+	}
+
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;
 		status.isDownloading = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const downloadedTemplate = await templateService.download(template.id);
-					toast.success(m.templates_downloaded_success({ name: template.name }));
-					if (downloadedTemplate?.id) {
-						await goto(resolve('/(app)/projects/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
-					} else {
-						await Promise.all([
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.templates.content(template.id)
-							}),
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.templates.all
-							})
-						]);
-						await refreshAll();
-					}
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error downloading template:', error);
-				toast.error(error instanceof Error ? error.message : m.templates_download_failed());
+			const downloaded = await tryCatch(downloadAndOpenTemplate());
+			if (downloaded.error !== null) {
+				console.error('Error downloading template:', downloaded.error);
+				toast.error(downloaded.error.message || m.templates_download_failed());
 			}
 		} finally {
 			status.isDownloading = false;
 		}
+	}
+
+	async function deleteTemplateAndLeave() {
+		await templateService.deleteTemplate(template.id);
+		toast.success(
+			m.common_delete_success({
+				resource: `${m.resource_template()} "${template.name}"`
+			})
+		);
+		await goto(resolve('/(app)/projects/templates'));
 	}
 
 	async function handleDelete() {
@@ -223,27 +231,11 @@
 				destructive: true,
 				action: async () => {
 					status.isDeleting = true;
-					const operationResult = await tryCatch(
-						(async () => {
-							await templateService.deleteTemplate(template.id);
-							toast.success(
-								m.common_delete_success({
-									resource: `${m.resource_template()} "${template.name}"`
-								})
-							);
-							await goto(resolve('/(app)/projects/templates'));
-						})()
-					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-
-						console.error('Error deleting template:', error);
+					const deleted = await tryCatch(deleteTemplateAndLeave());
+					if (deleted.error !== null) {
+						console.error('Error deleting template:', deleted.error);
 						toast.error(
-							error instanceof Error
-								? error.message
-								: m.common_delete_failed({
-										resource: `${m.resource_template()} "${template.name}"`
-									})
+							deleted.error.message || m.common_delete_failed({ resource: `${m.resource_template()} "${template.name}"` })
 						);
 						status.isDeleting = false;
 					}

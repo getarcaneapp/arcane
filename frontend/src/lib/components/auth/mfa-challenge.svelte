@@ -35,21 +35,25 @@
 		busy = true;
 		error = null;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					const credential = await startAuthentication({
-						optionsJSON: $state.snapshot(challenge.options) as unknown as PublicKeyCredentialRequestOptionsJSON
-					});
-					const response = await passkeyService.finishMFA(challenge.transactionId, credential);
-					await onComplete(response);
-				})()
+			const credential = await tryCatch(
+				startAuthentication({ optionsJSON: $state.snapshot(challenge.options) as PublicKeyCredentialRequestOptionsJSON })
 			);
-			if (operationResult1.error !== null) {
-				const value = operationResult1.error;
-
-				if (!isCancelledError(value)) {
-					error = normalizeAuthenticationError(value, m.auth_mfa_failed()).message;
+			if (credential.error !== null) {
+				if (!isCancelledError(credential.error)) {
+					error = normalizeAuthenticationError(credential.error, m.auth_mfa_failed()).message;
 				}
+				return;
+			}
+			const response = await tryCatch(passkeyService.finishMFA(challenge.transactionId, credential.data));
+			if (response.error !== null) {
+				if (!isCancelledError(response.error)) {
+					error = normalizeAuthenticationError(response.error, m.auth_mfa_failed()).message;
+				}
+				return;
+			}
+			const completed = await tryCatch(onComplete(response.data));
+			if (completed.error !== null && !isCancelledError(completed.error)) {
+				error = normalizeAuthenticationError(completed.error, m.auth_mfa_failed()).message;
 			}
 		} finally {
 			busy = false;
@@ -63,16 +67,14 @@
 		busy = true;
 		error = null;
 		try {
-			const operationResult2 = await tryCatch(
-				(async () => {
-					const response = await passkeyService.finishRecovery(challenge.transactionId, recoveryCode.trim());
-					await onComplete(response);
-				})()
-			);
-			if (operationResult2.error !== null) {
-				const value = operationResult2.error;
-
-				error = normalizeAuthenticationError(value, m.auth_mfa_failed()).message;
+			const response = await tryCatch(passkeyService.finishRecovery(challenge.transactionId, recoveryCode.trim()));
+			if (response.error !== null) {
+				error = normalizeAuthenticationError(response.error, m.auth_mfa_failed()).message;
+				return;
+			}
+			const completed = await tryCatch(onComplete(response.data));
+			if (completed.error !== null) {
+				error = normalizeAuthenticationError(completed.error, m.auth_mfa_failed()).message;
 			}
 		} finally {
 			busy = false;

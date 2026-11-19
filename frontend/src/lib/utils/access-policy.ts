@@ -4,8 +4,8 @@ import type { User } from '#lib/types/user.js';
 
 type SurfaceIndex = Map<string, AccessSurface>;
 
-let cachedSurfacesInternal: AccessSurface[] | undefined;
-let cachedSurfaceIndexInternal: SurfaceIndex | undefined;
+let cachedSurfaces: AccessSurface[] | undefined;
+let cachedSurfaceIndex: SurfaceIndex | undefined;
 
 export function canReachAccessSurface(
 	manifest: PermissionsManifest | null | undefined,
@@ -17,7 +17,7 @@ export function canReachAccessSurface(
 	const surfaces = manifest?.accessSurfaces;
 	if (!surfaces?.length) return false;
 
-	return canReachSurfaceInternal(getSurfaceIndexInternal(surfaces), surfaceId, user, envId, new Set());
+	return canReachSurface(getSurfaceIndex(surfaces), surfaceId, user, envId, new Set());
 }
 
 export function getRouteAccessSurfaces(manifest: PermissionsManifest | null | undefined): AccessSurface[] {
@@ -43,22 +43,22 @@ export function pathMatchesAccessSurface(path: string, surface: AccessSurface): 
 	const template = surface.url;
 	if (!template) return false;
 
-	const pathSegments = splitPathInternal(path);
-	const templateSegments = splitPathInternal(template);
+	const pathSegments = splitPath(path);
+	const templateSegments = splitPath(template);
 	if (templateSegments.length !== pathSegments.length) return false;
 
 	for (let i = 0; i < templateSegments.length; i++) {
 		const expected = templateSegments[i];
 		const actual = pathSegments[i];
 		if (!expected || !actual) return false;
-		if (isTemplateSegmentInternal(expected)) continue;
+		if (isTemplateSegment(expected)) continue;
 		if (expected !== actual) return false;
 	}
 
 	return true;
 }
 
-function canReachSurfaceInternal(
+function canReachSurface(
 	surfaces: SurfaceIndex,
 	surfaceId: string,
 	user: User,
@@ -72,9 +72,7 @@ function canReachSurfaceInternal(
 
 	if (surface.accessMode === 'any-child') {
 		visiting.add(surfaceId);
-		const reachable = (surface.children ?? []).some((childId) =>
-			canReachSurfaceInternal(surfaces, childId, user, envId, visiting)
-		);
+		const reachable = (surface.children ?? []).some((childId) => canReachSurface(surfaces, childId, user, envId, visiting));
 		visiting.delete(surfaceId);
 		return reachable;
 	}
@@ -83,13 +81,13 @@ function canReachSurfaceInternal(
 	if (permissions.length === 0) return false;
 
 	if (surface.matchMode === 'all-of') {
-		return permissions.every((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, envId));
+		return permissions.every((permission) => hasPermissionForScope(user, permission, surface.scopeMode, envId));
 	}
 
-	return permissions.some((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, envId));
+	return permissions.some((permission) => hasPermissionForScope(user, permission, surface.scopeMode, envId));
 }
 
-function hasPermissionForScopeInternal(
+function hasPermissionForScope(
 	user: User,
 	permission: string,
 	scopeMode: AccessSurface['scopeMode'],
@@ -102,7 +100,7 @@ function hasPermissionForScopeInternal(
 		case 'global-only':
 			return global.includes(permission);
 		case 'env-plus-global':
-			return permissionsForEnvInternal(user, envId).has(permission);
+			return permissionsForEnv(user, envId).has(permission);
 		case 'any-effective-scope':
 			return Object.values(user.permissionsByEnv ?? {}).some((permissions) => permissions.includes(permission));
 		default:
@@ -110,7 +108,7 @@ function hasPermissionForScopeInternal(
 	}
 }
 
-function permissionsForEnvInternal(user: User, envId: string | undefined): Set<string> {
+function permissionsForEnv(user: User, envId: string | undefined): Set<string> {
 	const out = new Set<string>();
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
 	if (global) for (const permission of global) out.add(permission);
@@ -121,26 +119,26 @@ function permissionsForEnvInternal(user: User, envId: string | undefined): Set<s
 	return out;
 }
 
-function buildSurfaceIndexInternal(surfaces: AccessSurface[]): SurfaceIndex {
+function buildSurfaceIndex(surfaces: AccessSurface[]): SurfaceIndex {
 	return new Map(surfaces.map((surface) => [surface.id, surface]));
 }
 
-function getSurfaceIndexInternal(surfaces: AccessSurface[]): SurfaceIndex {
-	if (cachedSurfacesInternal === surfaces && cachedSurfaceIndexInternal) {
-		return cachedSurfaceIndexInternal;
+function getSurfaceIndex(surfaces: AccessSurface[]): SurfaceIndex {
+	if (cachedSurfaces === surfaces && cachedSurfaceIndex) {
+		return cachedSurfaceIndex;
 	}
 
-	cachedSurfacesInternal = surfaces;
-	cachedSurfaceIndexInternal = buildSurfaceIndexInternal(surfaces);
-	return cachedSurfaceIndexInternal;
+	cachedSurfaces = surfaces;
+	cachedSurfaceIndex = buildSurfaceIndex(surfaces);
+	return cachedSurfaceIndex;
 }
 
-function splitPathInternal(path: string): string[] {
+function splitPath(path: string): string[] {
 	const withoutQuery = path.split('?')[0] ?? '';
 	const withoutHash = withoutQuery.split('#')[0] ?? '';
 	return withoutHash.split('/').filter(Boolean);
 }
 
-function isTemplateSegmentInternal(segment: string): boolean {
+function isTemplateSegment(segment: string): boolean {
 	return segment.startsWith(':') || (segment.startsWith('{') && segment.endsWith('}'));
 }

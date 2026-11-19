@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class S3DestinationService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<S3Destination>> {
 		const params = transformPaginationParams(options);
-		const response = await this.api.get('/backups/s3', { params });
+		const response = await this.api.get<Paginated<S3Destination>>('/backups/s3', { params });
 		return response.data;
 	}
 

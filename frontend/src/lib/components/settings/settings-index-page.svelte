@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
@@ -25,6 +26,7 @@
 		type IconType
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { settingsCategoriesQuery } from '#lib/query/settings.js';
 	import { settingsSearchService } from '#lib/services/settings-search.js';
 	import type { Category } from '#lib/types/category.js';
 	import type { PermissionsManifest } from '#lib/types/role.js';
@@ -64,6 +66,7 @@
 		permissionsManifest
 	}: Props = $props();
 
+	const queryClient = useQueryClient();
 	let settingsCategories = $state<Category[]>([]);
 	const categorySearch = useCategorySearch<Category>({
 		search: (query) => settingsSearchService.search(query),
@@ -153,7 +156,7 @@
 
 	onMount(async () => {
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(settingsSearchService.getCategories()),
+			result: await tryCatch(queryClient.fetchQuery(settingsCategoriesQuery())),
 			message: m.common_load_failed({ resource: title }),
 			onSuccess: (categories) => {
 				settingsCategories = categories.filter(isAccessibleCategory);

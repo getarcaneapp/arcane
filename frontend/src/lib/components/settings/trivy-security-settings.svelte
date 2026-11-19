@@ -12,8 +12,8 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { networkListForEnvironmentQuery } from '#lib/query/networks.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { networkService } from '#lib/services/network-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { SettingKey, Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -85,8 +85,7 @@
 	const networksQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		return {
-			queryKey: queryKeys.networks.list(requestedEnvironmentId, networkRequest),
-			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvironmentId, networkRequest),
+			...networkListForEnvironmentQuery(requestedEnvironmentId, networkRequest),
 			enabled: vulnerabilityManagementEnabled && hasPermission('networks:list', requestedEnvironmentId)
 		};
 	});

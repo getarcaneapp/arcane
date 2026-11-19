@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 
-import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
-import { swarmService } from '#lib/services/swarm-service.js';
+import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
+import { swarmStackSourceQuery } from '#lib/query/swarm.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import { extractApiErrorStatus, throwPageLoadError } from '#lib/utils/api.js';
 import { destinationEnvironmentId, environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
-import { loadTemplateAuthoringData, loadTemplateContent } from '#lib/utils/template-load.js';
+import { loadTemplateAuthoringData, loadTemplateContent, type SelectedTemplateLoad } from '#lib/utils/template-load.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -24,39 +24,47 @@ export const load: PageLoad = async ({ parent, url }) => {
 		envId = await resolveDetailEnvironmentId(url);
 		environments = [{ id: envId, name: environmentName(envId) }];
 	} else {
-		environments = (await queryClient.query(swarmEnvironmentsQueryOptions('swarm-stacks:create'))).managers;
+		environments = (await queryClient.query(swarmEnvironmentsQuery('swarm-stacks:create'))).managers;
 		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', 'swarm-stacks:create', environments);
 	}
 
-	const sourceStackPromise = sourceStackName
-		? tryCatch(swarmService.getStackSource(sourceStackName, envId)).then((result) => {
-				if (result.error === null) return result.data;
-				if (extractApiErrorStatus(result.error) === 404) throw error(404, m.saved_source_not_found());
-				throwPageLoadError(result.error, m.failed_to_load_saved_stack_source());
-			})
-		: Promise.resolve(null);
+	const loadSourceStack = async () => {
+		if (!sourceStackName) {
+			return null;
+		}
+		const result = await tryCatch(
+			queryClient.query({ ...swarmStackSourceQuery(envId, sourceStackName), staleTime: 0, retry: false })
+		);
+		if (result.error === null) {
+			return result.data;
+		}
+		if (extractApiErrorStatus(result.error) === 404) {
+			throw error(404, m.saved_source_not_found());
+		}
+		throwPageLoadError(result.error, m.failed_to_load_saved_stack_source());
+	};
 
 	const [{ defaultTemplates, templates: allTemplates, globalVariables, permissions, loadErrors }, sourceStack] =
-		await Promise.all([loadTemplateAuthoringData(parent), sourceStackPromise]);
+		await Promise.all([loadTemplateAuthoringData(parent), loadSourceStack()]);
 
-	const selectedTemplate = templateId
-		? await loadTemplateContent(
-				queryClient as Parameters<typeof loadTemplateContent>[0],
-				templateId,
-				permissions.canReadTemplates
-			)
-		: null;
+	let selectedTemplate: SelectedTemplateLoad | null = null;
+	if (templateId) {
+		selectedTemplate = await loadTemplateContent(queryClient, templateId, permissions.canReadTemplates);
+	}
+
+	let envTemplate = selectedTemplate?.content?.envContent ?? defaultTemplates.swarmStackEnvTemplate;
+	let defaultTemplate = selectedTemplate?.content?.content ?? defaultTemplates.swarmStackTemplate;
+	if (isEditMode) {
+		envTemplate = sourceStack?.envContent ?? '';
+		defaultTemplate = sourceStack?.composeContent ?? '';
+	}
 
 	return {
 		envId,
 		environments,
 		composeTemplates: allTemplates,
-		envTemplate: isEditMode
-			? (sourceStack?.envContent ?? '')
-			: (selectedTemplate?.content?.envContent ?? defaultTemplates.swarmStackEnvTemplate),
-		defaultTemplate: isEditMode
-			? (sourceStack?.composeContent ?? '')
-			: (selectedTemplate?.content?.content ?? defaultTemplates.swarmStackTemplate),
+		envTemplate,
+		defaultTemplate,
 		overrideTemplate: sourceStack?.overrideContent ?? '',
 		sourceFiles: sourceStack?.files ?? [],
 		isEditMode,

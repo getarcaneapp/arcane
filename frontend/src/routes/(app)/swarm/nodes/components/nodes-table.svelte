@@ -122,20 +122,17 @@
 		const node = selectedNode;
 		if (!node) return;
 		const replaceDeployment = node.agent.bindingKind === 'dedicated';
+		const bindAgentAndRefresh = async () => {
+			await swarmService.bindNodeAgent(node.id, { environmentId, rebind: true, replaceDeployment }, node.environmentId);
+			toast.success(m.swarm_node_agent_attach_success());
+			await refreshNodes();
+		};
 		const attach = async () => {
 			isAgentDeploymentLoading = true;
 			try {
-				const operationResult = await tryCatch(
-					(async () => {
-						await swarmService.bindNodeAgent(node.id, { environmentId, rebind: true, replaceDeployment }, node.environmentId);
-						toast.success(m.swarm_node_agent_attach_success());
-						await refreshNodes();
-					})()
-				);
-				if (operationResult.error !== null) {
-					const error = operationResult.error;
-
-					agentDeploymentError = extractApiErrorMessage(error);
+				const attached = await tryCatch(bindAgentAndRefresh());
+				if (attached.error !== null) {
+					agentDeploymentError = extractApiErrorMessage(attached.error);
 				}
 			} finally {
 				isAgentDeploymentLoading = false;

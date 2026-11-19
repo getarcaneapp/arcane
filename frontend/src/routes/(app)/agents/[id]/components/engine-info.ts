@@ -53,19 +53,53 @@ function formatIdMap(entries: PodmanInfoIDMap[] | undefined): string {
 }
 
 function storageDetails(entries: string[][]): EngineSection[] {
-	return entries.length > 0
-		? [
-				{
-					title: m.docker_info_storage_details_section(),
-					rows: entries.map((entry) => info(entry[0] ?? '', entry[1], false))
-				}
-			]
-		: [];
+	if (entries.length === 0) {
+		return [];
+	}
+	return [
+		{
+			title: m.docker_info_storage_details_section(),
+			rows: entries.map((entry) => info(entry[0] ?? '', entry[1], false))
+		}
+	];
 }
 
 export function dockerEngineView(docker: DockerInfo): EngineView {
 	const swarm = docker.Swarm;
 	const swarmActive = !!swarm.LocalNodeState && swarm.LocalNodeState !== 'inactive';
+
+	let noProxyRow = info(m.docker_info_no_proxy(), docker.NoProxy);
+	if (docker.NoProxy) {
+		noProxyRow = { kind: 'block', label: m.docker_info_no_proxy(), value: docker.NoProxy };
+	}
+
+	const addressPoolRows: EngineRow[] = [];
+	if (docker.DefaultAddressPools && docker.DefaultAddressPools.length > 0) {
+		addressPoolRows.push({
+			kind: 'block',
+			label: m.docker_info_address_pools_label(),
+			value: docker.DefaultAddressPools.map((pool) => `${pool.Base}/${pool.Size}`).join('  ')
+		});
+	}
+
+	const swarmSections: EngineSection[] = [];
+	if (swarmActive) {
+		swarmSections.push({
+			title: m.swarm(),
+			rows: [
+				info(m.docker_info_swarm_state_label(), swarm.LocalNodeState, false),
+				info(m.docker_info_swarm_manager_label(), swarm.ControlAvailable ? m.common_yes() : m.common_no(), false),
+				info(m.docker_info_swarm_node_id_label(), swarm.NodeID),
+				info(m.docker_info_swarm_managers_label(), swarm.Managers ?? 0, false),
+				info(m.nodes(), swarm.Nodes ?? 0, false)
+			]
+		});
+	}
+
+	const labelSections: EngineSection[] = [];
+	if (docker.Labels && docker.Labels.length > 0) {
+		labelSections.push({ title: m.docker_info_labels_section(), rows: [{ kind: 'tags', items: docker.Labels, mono: true }] });
+	}
 
 	return {
 		warnings: docker.Warnings ?? [],
@@ -131,18 +165,8 @@ export function dockerEngineView(docker: DockerInfo): EngineView {
 					info(m.docker_info_ipv4_forwarding(), docker.IPv4Forwarding ? m.common_enabled() : m.common_disabled(), false),
 					info(m.docker_info_http_proxy(), docker.HttpProxy),
 					info(m.docker_info_https_proxy(), docker.HttpsProxy),
-					docker.NoProxy
-						? { kind: 'block', label: m.docker_info_no_proxy(), value: docker.NoProxy }
-						: info(m.docker_info_no_proxy(), docker.NoProxy),
-					...(docker.DefaultAddressPools && docker.DefaultAddressPools.length > 0
-						? [
-								{
-									kind: 'block' as const,
-									label: m.docker_info_address_pools_label(),
-									value: docker.DefaultAddressPools.map((pool) => `${pool.Base}/${pool.Size}`).join('  ')
-								}
-							]
-						: [])
+					noProxyRow,
+					...addressPoolRows
 				]
 			},
 			{
@@ -169,20 +193,7 @@ export function dockerEngineView(docker: DockerInfo): EngineView {
 				],
 				rows: []
 			},
-			...(swarmActive
-				? [
-						{
-							title: m.swarm(),
-							rows: [
-								info(m.docker_info_swarm_state_label(), swarm.LocalNodeState, false),
-								info(m.docker_info_swarm_manager_label(), swarm.ControlAvailable ? m.common_yes() : m.common_no(), false),
-								info(m.docker_info_swarm_node_id_label(), swarm.NodeID),
-								info(m.docker_info_swarm_managers_label(), swarm.Managers ?? 0, false),
-								info(m.nodes(), swarm.Nodes ?? 0, false)
-							]
-						}
-					]
-				: []),
+			...swarmSections,
 			{
 				title: `${m.security()} & ${m.docker_info_runtimes()}`,
 				rows: [
@@ -191,9 +202,7 @@ export function dockerEngineView(docker: DockerInfo): EngineView {
 				]
 			},
 			...storageDetails(docker.DriverStatus ?? []),
-			...(docker.Labels && docker.Labels.length > 0
-				? [{ title: m.docker_info_labels_section(), rows: [{ kind: 'tags' as const, items: docker.Labels, mono: true }] }]
-				: [])
+			...labelSections
 		]
 	};
 }
@@ -203,6 +212,13 @@ export function podmanEngineView(podman: PodmanInfo, status: PodmanStatus): Engi
 	const { distribution: name, variant, version, codename } = host.distribution;
 	const distributionLabel = [name, variant, version === 'unknown' ? '' : version].filter(Boolean).join(' ');
 	const rootlessNetworkHelper = host.rootlessNetworkCmd === 'slirp4netns' ? host.slirp4netns : host.pasta;
+	let rootlessNetworkRows: EngineRow[] = [];
+	if (host.security.rootless) {
+		rootlessNetworkRows = present(
+			m.podman_info_rootless_network(),
+			firstLine(rootlessNetworkHelper.version) || host.rootlessNetworkCmd
+		);
+	}
 
 	return {
 		warnings: [],
@@ -258,9 +274,7 @@ export function podmanEngineView(podman: PodmanInfo, status: PodmanStatus): Engi
 					...present(m.podman_info_network_backend(), host.networkBackendInfo.version || host.networkBackend),
 					...present(m.podman_info_dns(), host.networkBackendInfo.dns.version),
 					...present(m.podman_info_default_network(), host.networkBackendInfo.defaultNetwork),
-					...(host.security.rootless
-						? present(m.podman_info_rootless_network(), firstLine(rootlessNetworkHelper.version) || host.rootlessNetworkCmd)
-						: []),
+					...rootlessNetworkRows,
 					...tags(m.podman_info_search_registries(), podman.registries.search)
 				]
 			},

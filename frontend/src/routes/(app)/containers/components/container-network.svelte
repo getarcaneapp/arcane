@@ -12,6 +12,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { NetworksIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { networkListForEnvironmentQuery } from '#lib/query/networks.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import type { ContainerDetails } from '#lib/types/container.js';
@@ -42,8 +43,7 @@
 
 	const networkListOptions = { pagination: { page: 1, limit: 500 } };
 	const networksQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.list(envId, networkListOptions),
-		queryFn: () => networkService.getNetworksForEnvironment(envId, networkListOptions),
+		...networkListForEnvironmentQuery(envId, networkListOptions),
 		enabled: canConnect
 	}));
 
@@ -62,33 +62,43 @@
 		await refreshAll();
 	}
 
+	async function connectToNetwork() {
+		const aliases = connectAliases
+			.split(',')
+			.map((alias) => alias.trim())
+			.filter(Boolean);
+		await networkService.connectContainer(
+			connectNetwork,
+			{
+				containerId: container.id,
+				aliases: aliases.length > 0 ? aliases : undefined,
+				ipv4Address: connectIp.trim() || undefined
+			},
+			envId
+		);
+		toast.success(m.network_connect_success());
+		connectNetwork = '';
+		connectAliases = '';
+		connectIp = '';
+		await refreshContainer(envId, container.id);
+	}
+
+	async function disconnectFromNetwork(networkReference: string, target: { containerId: string; environmentId: string }) {
+		await networkService.disconnectContainer(
+			networkReference,
+			{ containerId: target.containerId, force: false },
+			target.environmentId
+		);
+		toast.success(m.network_disconnect_success());
+		await refreshContainer(target.environmentId, target.containerId);
+	}
+
 	async function handleConnect() {
 		if (!connectNetwork) return;
 		connectPending = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const aliases = connectAliases
-						.split(',')
-						.map((alias) => alias.trim())
-						.filter(Boolean);
-					await networkService.connectContainer(
-						connectNetwork,
-						{
-							containerId: container.id,
-							aliases: aliases.length > 0 ? aliases : undefined,
-							ipv4Address: connectIp.trim() || undefined
-						},
-						envId
-					);
-					toast.success(m.network_connect_success());
-					connectNetwork = '';
-					connectAliases = '';
-					connectIp = '';
-					await refreshContainer(envId, container.id);
-				})()
-			);
-			await handleApiResultWithCallbacks({ result: operationResult, message: m.network_connect_failed() });
+			const connected = await tryCatch(connectToNetwork());
+			await handleApiResultWithCallbacks({ result: connected, message: m.network_connect_failed() });
 		} finally {
 			connectPending = false;
 		}
@@ -106,18 +116,8 @@
 				action: async () => {
 					disconnectPending[networkName] = true;
 					try {
-						const operationResult = await tryCatch(
-							(async () => {
-								await networkService.disconnectContainer(
-									networkId || networkName,
-									{ containerId: target.containerId, force: false },
-									target.environmentId
-								);
-								toast.success(m.network_disconnect_success());
-								await refreshContainer(target.environmentId, target.containerId);
-							})()
-						);
-						await handleApiResultWithCallbacks({ result: operationResult, message: m.network_disconnect_failed() });
+						const disconnected = await tryCatch(disconnectFromNetwork(networkId || networkName, target));
+						await handleApiResultWithCallbacks({ result: disconnected, message: m.network_disconnect_failed() });
 					} finally {
 						disconnectPending[networkName] = false;
 					}

@@ -36,9 +36,9 @@
 		'aria-describedby': ariaDescribedby
 	}: Props = $props();
 
-	const defaultDurationAmountInternal = '24';
-	const defaultDurationUnitInternal: DurationUnit = 'hours';
-	const durationUnitOptionsInternal: { value: DurationUnit; label: string }[] = [
+	const defaultDurationAmount = '24';
+	const defaultDurationUnit: DurationUnit = 'hours';
+	const durationUnitOptions: { value: DurationUnit; label: string }[] = [
 		{ value: 'minutes', label: m.prune_duration_unit_minutes() },
 		{ value: 'hours', label: m.prune_duration_unit_hours() },
 		{ value: 'days', label: m.prune_duration_unit_days() }
@@ -47,43 +47,43 @@
 	const durationUnitId = `prune-duration-unit-${useId()}`;
 	const hasOlderThan = $derived(modeOptions.some((option) => option.value === olderThanMode));
 	const selectedOption = $derived(modeOptions.find((option) => option.value === value));
-	const parsedDuration = $derived(parsePruneDurationInternal(untilValue));
+	const parsedDuration = $derived(parsePruneDuration(untilValue));
 
 	function handleModeChange(nextMode: string) {
 		if (disabled) return;
 		value = nextMode;
 		if (nextMode === olderThanMode && !untilValue) {
-			untilValue = serializePruneDurationInternal(defaultDurationAmountInternal, defaultDurationUnitInternal);
+			untilValue = serializePruneDuration(defaultDurationAmount, defaultDurationUnit);
 		}
 	}
 
-	function handleDurationAmountInputInternal(event: Event) {
-		untilValue = serializePruneDurationInternal((event.currentTarget as HTMLInputElement).value, parsedDuration.unit);
+	function handleDurationAmountInput(event: Event) {
+		untilValue = serializePruneDuration((event.currentTarget as HTMLInputElement).value, parsedDuration.unit);
 	}
 
-	function handleDurationUnitChangeInternal(nextUnit: string) {
-		untilValue = serializePruneDurationInternal(parsedDuration.amount, nextUnit as DurationUnit);
+	function handleDurationUnitChange(nextUnit: string) {
+		untilValue = serializePruneDuration(parsedDuration.amount, nextUnit as DurationUnit);
 	}
 
-	function parsePruneDurationInternal(valueToParse: string): { amount: string; unit: DurationUnit } {
+	function parsePruneDuration(valueToParse: string): { amount: string; unit: DurationUnit } {
 		const trimmed = valueToParse.trim();
 		if (!trimmed) {
-			return { amount: defaultDurationAmountInternal, unit: defaultDurationUnitInternal };
+			return { amount: defaultDurationAmount, unit: defaultDurationUnit };
 		}
 		if (trimmed.endsWith('m')) {
-			return { amount: trimmed.slice(0, -1) || defaultDurationAmountInternal, unit: 'minutes' };
+			return { amount: trimmed.slice(0, -1) || defaultDurationAmount, unit: 'minutes' };
 		}
 		if (trimmed.endsWith('h')) {
 			const rawHours = Number(trimmed.slice(0, -1));
 			if (Number.isFinite(rawHours) && rawHours > 0 && rawHours % 24 === 0) {
 				return { amount: String(rawHours / 24), unit: 'days' };
 			}
-			return { amount: trimmed.slice(0, -1) || defaultDurationAmountInternal, unit: 'hours' };
+			return { amount: trimmed.slice(0, -1) || defaultDurationAmount, unit: 'hours' };
 		}
-		return { amount: defaultDurationAmountInternal, unit: defaultDurationUnitInternal };
+		return { amount: defaultDurationAmount, unit: defaultDurationUnit };
 	}
 
-	function serializePruneDurationInternal(amount: string, unit: DurationUnit): string {
+	function serializePruneDuration(amount: string, unit: DurationUnit): string {
 		const parsedAmount = Math.max(1, Number(amount) || 1);
 		switch (unit) {
 			case 'minutes':
@@ -119,7 +119,7 @@
 				type="number"
 				min="1"
 				value={parsedDuration.amount}
-				oninput={handleDurationAmountInputInternal}
+				oninput={handleDurationAmountInput}
 				{disabled}
 				size="sm"
 				class="h-8 w-24"
@@ -133,8 +133,8 @@
 				compact
 				triggerSize="sm"
 				value={parsedDuration.unit}
-				options={durationUnitOptionsInternal}
-				onValueChange={handleDurationUnitChangeInternal}
+				options={durationUnitOptions}
+				onValueChange={handleDurationUnitChange}
 				{disabled}
 			/>
 		</div>

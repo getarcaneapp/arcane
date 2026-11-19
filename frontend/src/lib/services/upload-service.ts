@@ -12,16 +12,18 @@ class UploadService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/agents/${envId}/uploads/${kind}`, { filename: file.name, size: file.size }));
 	}
 
-	async putChunk(envId: string, kind: UploadKind, uploadId: string, index: number, chunk: Blob): Promise<UploadSession> {
-		return this.handleResponse(
+	async sendChunk(envId: string, kind: UploadKind, uploadId: string, index: number, chunk: Blob): Promise<Set<number>> {
+		const session = await this.handleResponse<UploadSession>(
 			this.api.put(`/agents/${envId}/uploads/${kind}/${uploadId}/chunks/${index}`, chunk, {
 				headers: { 'Content-Type': 'application/octet-stream' }
 			})
 		);
+		return new Set(session.receivedChunks);
 	}
 
-	async getSession(envId: string, kind: UploadKind, uploadId: string): Promise<UploadSession> {
-		return this.handleResponse(this.api.get(`/agents/${envId}/uploads/${kind}/${uploadId}`));
+	async receivedChunks(envId: string, kind: UploadKind, uploadId: string): Promise<Set<number>> {
+		const session = await this.handleResponse<UploadSession>(this.api.get(`/agents/${envId}/uploads/${kind}/${uploadId}`));
+		return new Set(session.receivedChunks);
 	}
 
 	async deleteSession(envId: string, kind: UploadKind, uploadId: string): Promise<void> {
@@ -51,26 +53,21 @@ class UploadService extends BaseAPIService {
 			const chunk = file.slice(start, Math.min(start + session.chunkSize, file.size));
 
 			for (let attempt = 1; ; attempt++) {
-				const chunkResult = await tryCatch(
-					(async () => {
-						const updated = await this.putChunk(envId, kind, session.id, index, chunk);
-						received = new Set(updated.receivedChunks);
-					})()
-				);
-				if (chunkResult.error === null) break;
+				const chunkResult = await tryCatch(this.sendChunk(envId, kind, session.id, index, chunk));
+				if (chunkResult.error === null) {
+					received = chunkResult.data;
+					break;
+				}
 				if (attempt >= chunkRetryAttempts) {
 					await tryCatch(this.deleteSession(envId, kind, session.id));
 					throw chunkResult.error;
 				}
 				await new Promise((resolve) => setTimeout(resolve, chunkRetryDelayMs * attempt));
 				// The status check is best-effort; resume anything the server already has.
-				const statusResult = await tryCatch(
-					(async () => {
-						received = new Set((await this.getSession(envId, kind, session.id)).receivedChunks);
-						return received.has(index);
-					})()
-				);
-				if (statusResult.data) break;
+				const statusResult = await tryCatch(this.receivedChunks(envId, kind, session.id));
+				if (statusResult.error !== null) continue;
+				received = statusResult.data;
+				if (received.has(index)) break;
 			}
 			report();
 		}

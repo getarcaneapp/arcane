@@ -1,5 +1,5 @@
-import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
+import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 import { swarmNodeListQuery } from '#lib/query/swarm.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -22,20 +22,18 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const result = await tryCatch(
-		(async () => {
-			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm-nodes:list'));
-			const nodes = await queryClient.query(swarmNodeListQuery(swarm, requestOptions));
-			return { swarm, nodes };
-		})()
-	);
-	if (result.error !== null) {
-		throwPageLoadError(result.error, m.common_load_failed({ resource: m.nodes() }));
+	const swarm = await tryCatch(queryClient.query(swarmEnvironmentsQuery('swarm-nodes:list')));
+	if (swarm.error !== null) {
+		throwPageLoadError(swarm.error, m.common_load_failed({ resource: m.nodes() }));
+	}
+	const nodes = await tryCatch(queryClient.query(swarmNodeListQuery(swarm.data, requestOptions)));
+	if (nodes.error !== null) {
+		throwPageLoadError(nodes.error, m.common_load_failed({ resource: m.nodes() }));
 	}
 
 	return {
-		swarm: result.data.swarm,
-		nodes: result.data.nodes,
+		swarm: swarm.data,
+		nodes: nodes.data,
 		requestOptions
 	};
 };

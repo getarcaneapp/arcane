@@ -69,17 +69,16 @@
 	}));
 
 	function refresh() {
-		return Promise.all(
-			isProject
-				? [
-						queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),
-						queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(environmentId, resourceId) })
-					]
-				: [
-						queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
-						queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, resourceId) })
-					]
-		);
+		if (isProject) {
+			return Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(environmentId, resourceId) })
+			]);
+		}
+		return Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, resourceId) })
+		]);
 	}
 
 	function run(action: QuickAction) {

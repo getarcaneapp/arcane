@@ -143,9 +143,9 @@ export function activityStatusAccentClass(status: ActivityStatus): string {
 }
 
 export function activityRunStatusLabel(activity: Activity): string {
-	return activity.type === 'job_run' && typeof activity.metadata?.['jobStatus'] === 'string'
-		? jobStatusLabel(activity.metadata['jobStatus'])
-		: activityStatusLabel(activity.status);
+	const jobStatus = activity.metadata?.['jobStatus'];
+	if (activity.type === 'job_run' && typeof jobStatus === 'string') return jobStatusLabel(jobStatus);
+	return activityStatusLabel(activity.status);
 }
 
 export function activityDurationLabel(activity: Activity | null | undefined): string {

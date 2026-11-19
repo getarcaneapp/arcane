@@ -8,8 +8,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { FolderOpenIcon, FileTextIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
+	import { gitRepositoryFilesQuery } from '#lib/query/git-repositories.js';
 	import type { FileTreeNode } from '#lib/types/gitops.js';
 
 	type FileBrowserDialogProps = {
@@ -41,9 +40,8 @@
 	let userPath = $state('');
 	const currentPath = $derived(joinPath(rootPath, userPath));
 	const pathSegments = $derived(userPath.split('/').filter(Boolean));
-	const fileTreeQuery = createQuery<{ files: FileTreeNode[] }>(() => ({
-		queryKey: queryKeys.gitRepositories.files(repositoryId, branch, currentPath),
-		queryFn: () => gitRepositoryService.browseFiles(repositoryId, branch, currentPath),
+	const fileTreeQuery = createQuery(() => ({
+		...gitRepositoryFilesQuery(repositoryId, branch, currentPath),
 		enabled: open && !!repositoryId && !!branch
 	}));
 	const files = $derived(fileTreeQuery.data?.files ?? []);

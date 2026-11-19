@@ -551,6 +551,7 @@ const (
 	ProjectTransferVolumesNotCopied                               = "volume_data_not_copied"
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
+	ProjectTransferVolumeMissing                                  = "volume_missing"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

@@ -1,13 +1,10 @@
 import { createQuery, keepPreviousData, useQueryClient } from '@tanstack/svelte-query';
 
-import { queryKeys } from '#lib/query/query-keys.js';
-import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { environmentVersionsQuery, upgradeAvailableQuery } from '#lib/query/system.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { VersionInfo } from '#lib/types/version.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { readEachEnvironment } from '#lib/utils/environments.js';
 
 type UseUpgradeCheckOptions = {
 	queryScope: 'mobile-nav' | 'sidebar';
@@ -29,18 +26,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 	const agentVersionsQuery = createQuery(() => {
 		const environments = agentEnvironments;
 		return {
-			queryKey: queryKeys.system.environmentVersions(environments.map((env) => env.id).join(',')),
-			queryFn: async () => {
-				const versions = await readEachEnvironment<Partial<VersionInfo>>(
-					environments,
-					(scope, config) => environmentManagementService.getVersion(scope, config),
-					{}
-				);
-				for (const { environment, data } of versions.byEnvironment) {
-					queryClient.setQueryData(queryKeys.system.versionInfo(environment.id), data);
-				}
-				return versions;
-			},
+			...environmentVersionsQuery(queryClient, environments),
 			enabled: environments.length > 0,
 			placeholderData: keepPreviousData,
 			staleTime: 5 * 60_000,
@@ -58,8 +44,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 		!!(updateCount > 0 && canInstallUpdates && hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) && !getDebug())
 	);
 	const upgradeAvailabilityQuery = createQuery(() => ({
-		queryKey: queryKeys.system.upgradeAvailable(queryScope),
-		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
+		...upgradeAvailableQuery(queryScope),
 		enabled: shouldCheckUpgrade,
 		staleTime: 0
 	}));
