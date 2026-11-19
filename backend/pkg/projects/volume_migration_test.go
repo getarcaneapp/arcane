@@ -189,17 +189,21 @@ func TestClassifyProjectVolumes(t *testing.T) {
 			"data":     {Name: "web_data", Driver: "local", Labels: composetypes.Labels{"tier": "db"}},
 			"shared":   {Name: "shared-data"},
 			"external": {Name: "outside", External: true},
+			"nfs":      {Name: "nfs-data", External: true, Driver: "local", DriverOpts: map[string]string{"type": "nfs"}},
+			"plugin":   {Name: "plugin-data", External: true, Driver: "rexray"},
 			"host":     {Name: "web_host", DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
 		},
 	}
 
 	got := ClassifyProjectVolumes(project)
 
-	// Sorted by key, so manifests and previews are stable; only named volumes are included by default.
+	// Sorted by key, so manifests and previews are stable; named and local external volumes are included by default.
 	require.Equal(t, []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Driver: "local", Labels: map[string]string{"tier": "db"}, Included: true},
-		{Key: "external", Name: "outside", Kind: types.ProjectVolumeExternal},
+		{Key: "external", Name: "outside", Kind: types.ProjectVolumeExternal, Included: true},
 		{Key: "host", Name: "web_host", Kind: types.ProjectVolumeDriverOpts, DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
+		{Key: "nfs", Name: "nfs-data", Kind: types.ProjectVolumeExternal, Driver: "local", DriverOpts: map[string]string{"type": "nfs"}},
+		{Key: "plugin", Name: "plugin-data", Kind: types.ProjectVolumeExternal, Driver: "rexray"},
 		{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeNamed, Included: true},
 	}, got)
 

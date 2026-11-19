@@ -44,7 +44,7 @@ type (
 	}
 
 	ExportProjectArchive struct {
-		Volumes     []string `json:"volumes,omitempty" doc:"Compose keys of the named volumes whose data the export includes; empty exports only the project files"`
+		Volumes     []string `json:"volumes,omitempty" doc:"Compose keys of the named and local external volumes whose data the export includes; empty exports only the project files"`
 		StopProject bool     `json:"stopProject,omitempty" doc:"Stop a running project while its volumes are exported and start it again afterwards"`
 	}
 
@@ -60,11 +60,12 @@ type (
 		DriverOpts map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
 		Key        string            `json:"key" doc:"Volume key in the compose file"`
 		Name       string            `json:"name" doc:"Docker volume name"`
-		Kind       ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named volumes hold Docker-managed data; external and driverOpts volumes keep their data outside the project"`
+		Kind       ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
 		Driver     string            `json:"driver,omitempty" doc:"Compose volume driver"`
 		Archive    string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle"`
-		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default only named volumes that exist are"`
-		Missing    bool              `json:"missing,omitempty" doc:"True when the named volume has not been created in Docker yet, so it has no data to export"`
+		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
+		Missing    bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
+		InUse      bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export"`
 	}
 
 	ProjectManifestProject struct {
@@ -82,7 +83,7 @@ type (
 		IncludeFiles  []string               `json:"includeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
-		Consistent    bool                   `json:"consistent" doc:"True when no project container ran while the volumes were exported"`
+		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were exported"`
 	}
 
 	ProjectTransferMode string

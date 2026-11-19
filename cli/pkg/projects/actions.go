@@ -377,7 +377,7 @@ func newExportCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:          "export <project-id|name> [output-file]",
-		Short:        "Download a project, optionally with the data of its named volumes, as a tar.gz archive",
+		Short:        "Download a project, optionally with the data of its Docker-managed volumes, as a tar.gz archive",
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -437,8 +437,8 @@ func newExportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&opts.volumes, "volume", nil, "Compose key of a named volume whose data to include (repeatable)")
-	cmd.Flags().BoolVar(&opts.allVolumes, "all-volumes", false, "Include the data of every named volume")
+	cmd.Flags().StringArrayVar(&opts.volumes, "volume", nil, "Compose key of a named or local external volume whose data to include (repeatable)")
+	cmd.Flags().BoolVar(&opts.allVolumes, "all-volumes", false, "Include the data of every volume the export includes by default")
 	cmd.Flags().BoolVar(&opts.stop, "stop", false, "Stop a running project while its volumes are exported, then start it again")
 	return cmd
 }

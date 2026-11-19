@@ -196,25 +196,45 @@ func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName stri
 	return s.backup.ExportVolumeArchive(ctx, volumeName)
 }
 
-func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
+func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
 	return s.backup.RestoreUpload(ctx, volumeName, request, user)
 }
 
-// ApplyVolumeRoot gives the volume's root directory the owner and mode of an archive's root entry.
-func (s *VolumeService) ApplyVolumeRoot(ctx context.Context, volumeName string, root tar.Header) error {
-	defer s.workspaceLocks.Lock(volumeName)()
-	containerID, cleanup, err := s.acquireVolumeHelper(ctx, volumeName)
+// CreateEmptyVolume creates a volume that does not exist yet, under the lock restores take, and gives its root
+// directory the owner and mode of an archive's root entry; created reports whether this call created the volume, also
+// when a later step fails.
+func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (created bool, err error) {
+	name := options.Name
+	defer s.workspaceLocks.Lock(name)()
+	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	})
+	switch {
+	case err == nil:
+		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
+	case !errdefs.IsNotFound(err):
+		return false, fmt.Errorf("inspect volume %s: %w", name, err)
+	}
+	if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+		return dockerClient.VolumeCreate(ctx, options)
+	}); err != nil {
+		return false, fmt.Errorf("create volume %s: %w", name, err)
+	}
+	if root == nil {
+		return true, nil
+	}
+	containerID, cleanup, err := s.acquireVolumeHelper(ctx, name)
 	if err != nil {
-		return err
+		return true, err
 	}
 	defer cleanup()
 	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", root.Uid, root.Gid), "/volume"}); err != nil {
-		return fmt.Errorf("failed to set volume %s root ownership: %w", volumeName, err)
+		return true, fmt.Errorf("failed to set volume %s root ownership: %w", name, err)
 	}
 	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chmod", strconv.FormatInt(root.Mode&0o7777, 8), "/volume"}); err != nil {
-		return fmt.Errorf("failed to set volume %s root mode: %w", volumeName, err)
+		return true, fmt.Errorf("failed to set volume %s root mode: %w", name, err)
 	}
-	return nil
+	return true, nil
 }
 
 func (s *VolumeService) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {

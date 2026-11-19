@@ -128,8 +128,13 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-// ClassifyProjectVolumes sorts a project's Compose volumes by key and includes only named volumes by default;
-// external volumes and driver_opts volumes keep their data outside Docker's volume storage.
+// LocalVolume reports whether a volume's data lives in Docker's own volume storage.
+func LocalVolume(driver string, options map[string]string) bool {
+	return cmp.Or(driver, "local") == "local" && len(options) == 0
+}
+
+// ClassifyProjectVolumes sorts a project's Compose volumes by key and includes named volumes and local external
+// volumes by default; driver_opts volumes and other external volumes keep their data outside Docker's volume storage.
 func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
@@ -148,7 +153,7 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 			Name:       config.Name,
 			Kind:       kind,
 			Driver:     config.Driver,
-			Included:   kind == types.ProjectVolumeNamed,
+			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && LocalVolume(config.Driver, config.DriverOpts)),
 		})
 	}
 	return classified
@@ -161,6 +166,18 @@ func ComposeVolumeTargetName(sourceProject, key, sourceName, targetProject strin
 		return NormalizeProjectName(targetProject) + "_" + key
 	}
 	return sourceName
+}
+
+// ComposeVolumeTargetCreateOptions creates a restore target's volume as Compose would; an external volume gets no
+// Compose labels, since Compose expects it to exist outside the project.
+func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
+	if target.External {
+		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+	}
+	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composetypes.VolumeConfig{
+		Driver: target.Driver,
+		Labels: target.Labels,
+	}, target.Key, name, target.Project), nil)
 }
 
 func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {
