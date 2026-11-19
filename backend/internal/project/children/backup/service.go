@@ -378,6 +378,20 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 	return inspected, nil
 }
 
+// mountedVolumeNames are every volume of the project, captured or not. A volume backup stops and starts the containers
+// mounting its volume under that volume's lock, so holding them all keeps any of the project's containers from being
+// started or stopped by another backup.
+func (p plan) mountedVolumeNames() []string {
+	var names []string
+	for _, volume := range p.Volumes {
+		if volume.Name != "" {
+			names = append(names, volume.Name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
 func (p plan) volumeNames() []string {
 	var names []string
 	for _, volume := range p.Volumes {
@@ -524,7 +538,14 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 		if lockErr != nil {
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
+		// A restore of any of the project's volumes finishes before its containers start again.
+		unlockVolumes, lockErr := s.lockVolumes(ctx, recorded.mountedVolumeNames())
+		if lockErr != nil {
+			unlockProject()
+			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+		}
 		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		unlockVolumes()
 		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
@@ -653,16 +674,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) err
 		}
 		defer unlockProject()
 	}
-	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
-	// the project is held: none of its containers is started or stopped by another backup while this one runs.
-	var mounted []string
-	for _, volume := range p.Volumes {
-		if volume.Name != "" {
-			mounted = append(mounted, volume.Name)
-		}
-	}
-	slices.Sort(mounted)
-	unlock, err := s.lockVolumes(ctx, slices.Compact(mounted))
+	unlock, err := s.lockVolumes(ctx, p.mountedVolumeNames())
 	if err != nil {
 		return err
 	}

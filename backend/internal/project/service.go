@@ -2035,6 +2035,29 @@ func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts Expor
 		return appendErr
 	}
 	name := manifest.Project.Name
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held from before the stop until after the restart; nothing starts them during the copy.
+	var held []string
+	for _, volume := range manifest.Volumes {
+		if volume.Name != "" {
+			held = append(held, volume.Name)
+		}
+	}
+	held = slices.Compact(slices.Sorted(slices.Values(held)))
+	unlocks := make([]func(), 0, len(held))
+	defer func() {
+		for _, unlock := range slices.Backward(unlocks) {
+			unlock()
+		}
+	}()
+	for _, volumeName := range held {
+		unlock, lockErr := b.local.deps.VolumeLocks.LockContext(ctx, volumeName)
+		if lockErr != nil {
+			return lockErr
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	ctx = volumes.WithLocked(ctx, held)
 	if restart != nil {
 		stopped, stopErr := b.local.projects.stopRunningContainers(ctx, manifest.Project.ComposeName)
 		defer func() {
