@@ -1,6 +1,7 @@
 package project
 
 import (
+	"archive/tar"
 	"bufio"
 	"cmp"
 	"context"
@@ -23,6 +24,7 @@ import (
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
@@ -202,7 +204,6 @@ type (
 	}
 
 	ExportBundleOptions struct {
-		User          types.Actor
 		EnvironmentID string
 		ProjectID     string
 		Request       types.ExportProjectArchive
@@ -1807,6 +1808,14 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	if err := requirePermissions(ctx, opts.EnvironmentID, required...); err != nil {
 		return nil, err
 	}
+	// A consistent export holds the project lock so nothing starts containers while the volumes are copied.
+	if opts.Request.StopProject {
+		unlock, lockErr := b.local.projects.LockProject(ctx, "export project", opts.ProjectID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		defer unlock()
+	}
 	proj, err := b.local.projects.GetProjectFromDatabaseByID(ctx, opts.ProjectID)
 	if err != nil {
 		return nil, err
@@ -1836,7 +1845,7 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf("these volumes have not been created yet, so they hold no data to export: %s", strings.Join(missing, ", ")))
 	}
 	session, err := b.local.projects.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+types.ProjectBundleExtension, func(w io.Writer) error {
-		return b.writeBundle(ctx, w, opts, manifest, project.RunningCount > 0 && opts.Request.StopProject)
+		return b.writeBundle(ctx, w, opts, manifest, opts.Request.StopProject)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -1901,7 +1910,8 @@ func exportManifest(project types.Project, request types.ExportProjectArchive) (
 }
 
 // writeBundle writes the manifest, the project archive, and the included volumes' archives; with stop set the
-// project is stopped while its volumes are exported and started again afterwards, even when the export fails.
+// project's running containers are stopped while its volumes are exported and started again afterwards, even when
+// the export fails.
 func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts ExportBundleOptions, manifest types.ProjectManifest, stop bool) (err error) {
 	writer, err := projects.NewProjectBundleWriter(w, manifest)
 	if err != nil {
@@ -1916,20 +1926,14 @@ func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts Expor
 	}
 	name := manifest.Project.Name
 	if stop {
+		stopped, stopErr := b.local.projects.stopRunningContainers(ctx, manifest.Project.ComposeName)
 		defer func() {
-			if startErr := b.local.DeployProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User); startErr != nil {
+			if startErr := b.local.projects.startContainers(context.WithoutCancel(ctx), stopped); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", name, startErr))
 			}
 		}()
-		if downErr := b.local.DownProject(ctx, opts.ProjectID, opts.User); downErr != nil {
-			return fmt.Errorf("stop project %s: %w", name, downErr)
-		}
-		current, currentErr := b.local.Project(ctx, opts.ProjectID)
-		if currentErr != nil {
-			return fmt.Errorf("check project %s: %w", name, currentErr)
-		}
-		if current.RunningCount > 0 {
-			return fmt.Errorf("%d container(s) of project %s are still running; volume data was not exported", current.RunningCount, name)
+		if stopErr != nil {
+			return fmt.Errorf("stop project %s: %w", name, stopErr)
 		}
 	}
 	for _, volume := range manifest.Volumes {
@@ -1955,6 +1959,57 @@ func (b projectBundles) appendUpload(ctx context.Context, writer *projects.Proje
 	}
 	defer cleanup()
 	return writer.Add(name, consumed.Size, file)
+}
+
+// stopRunningContainers stops the running containers of a Compose project and returns the ones it stopped, also
+// when it fails.
+func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName string) ([]string, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var stopped []string
+	// The second pass confirms that nothing is left running.
+	for pass := range 2 {
+		found, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+			Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+		})
+		if listErr != nil {
+			return stopped, fmt.Errorf("list containers: %w", listErr)
+		}
+		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool { return c.State != container.StateRunning })
+		switch {
+		case len(running) == 0:
+			return stopped, nil
+		case pass > 0:
+			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not exported", len(running))
+		}
+		for _, c := range running {
+			// Each stop runs to completion so the deferred restart never races a stop still in progress.
+			stopped = append(stopped, c.ID)
+			if _, err = dockerClient.ContainerStop(context.WithoutCancel(ctx), c.ID, client.ContainerStopOptions{}); err != nil {
+				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return stopped, ctxErr
+			}
+		}
+	}
+	return stopped, nil
+}
+
+func (s *ProjectService) startContainers(ctx context.Context, containerIDs []string) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, id := range containerIDs {
+		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil {
+			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Import creates a project from a project-archive upload session. A plain project archive imports as before; a bundle
@@ -2002,21 +2057,14 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 		}
 	}
 	keys := map[string]string{}
-	var conflicts []string
+	predicted := make([]string, 0, len(included))
 	for _, volume := range included {
 		keys[volume.Archive] = volume.Key
-		// The manifest only predicts the names; the restore uses the names of the imported project.
-		target := projects.ComposeVolumeTargetName(manifest.Project.ComposeName, volume.Key, volume.Name, opts.Request.Name)
-		_, exists, err := b.local.Volume(ctx, target)
-		if err != nil {
-			return nil, fmt.Errorf("inspect volume %s: %w", target, err)
-		}
-		if exists {
-			conflicts = append(conflicts, target)
-		}
+		predicted = append(predicted, projects.ComposeVolumeTargetName(manifest.Project.ComposeName, volume.Key, volume.Name, opts.Request.Name))
 	}
-	if len(conflicts) > 0 {
-		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
+	// The manifest only predicts the names, so the check is repeated with the imported project's names.
+	if err := b.refuseExistingVolumes(ctx, predicted); err != nil {
+		return nil, err
 	}
 	var (
 		proj     *Project
@@ -2040,43 +2088,27 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 			for _, volume := range projects.ClassifyProjectVolumes(imported) {
 				targets[volume.Key] = volume
 			}
-			return nil
-		}
-		key := keys[name]
-		target, ok := targets[key]
-		if !ok || target.Kind != types.ProjectVolumeNamed {
-			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project", key)
-		}
-		// The restore refuses empty archives, so an empty volume is only created.
-		empty, body := projects.PeekEmptyVolumeArchive(body)
-		if empty {
-			err := b.createEmptyVolume(ctx, target, imported.ComposeName, opts.User)
-			if !errors.Is(err, common.ErrConflict) {
-				created = append(created, target.Name)
+			names := make([]string, 0, len(included))
+			for _, volume := range included {
+				target, ok := targets[volume.Key]
+				if !ok || target.Kind != types.ProjectVolumeNamed {
+					return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project", volume.Key)
+				}
+				names = append(names, target.Name)
 			}
-			return err
+			return b.refuseExistingVolumes(ctx, names)
 		}
-		session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, key+".tar.gz", size, body)
-		if err != nil {
-			return fmt.Errorf("store the data of volume %s: %w", key, err)
+		target := targets[keys[name]]
+		err := b.restoreVolume(ctx, target, imported.ComposeName, size, body, opts.User)
+		// None of the volumes existed, so one that exists after a failure other than a conflict was created here.
+		recorded := err == nil
+		if err != nil && !errors.Is(err, common.ErrConflict) {
+			_, recorded, _ = b.local.Volume(context.WithoutCancel(ctx), target.Name)
 		}
-		err = b.local.RestoreVolume(ctx, target.Name, types.RestoreVolumeUploadRequest{
-			ComposeVolume: &types.ComposeVolumeTarget{
-				Labels:  target.Labels,
-				Project: imported.ComposeName,
-				Key:     key,
-				Driver:  target.Driver,
-			},
-			UploadID: session.ID,
-		}, opts.User)
-		// A conflict means the volume already existed, so it is not this import's to remove.
-		if !errors.Is(err, common.ErrConflict) {
+		if recorded {
 			created = append(created, target.Name)
 		}
-		if err != nil {
-			return errors.Join(fmt.Errorf("restore volume %s: %w", target.Name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return nil, b.rollback(ctx, err, proj, imported.ComposeName, created, opts.User)
@@ -2084,8 +2116,52 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	return proj, nil
 }
 
-// createEmptyVolume creates the volume with the Compose labels a restore into a new volume gives it.
-func (b projectBundles) createEmptyVolume(ctx context.Context, target types.ProjectVolume, composeName string, user types.Actor) error {
+func (b projectBundles) refuseExistingVolumes(ctx context.Context, names []string) error {
+	var conflicts []string
+	for _, name := range names {
+		_, exists, err := b.local.Volume(ctx, name)
+		if err != nil {
+			return fmt.Errorf("inspect volume %s: %w", name, err)
+		}
+		if exists {
+			conflicts = append(conflicts, name)
+		}
+	}
+	if len(conflicts) > 0 {
+		return common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
+	}
+	return nil
+}
+
+// restoreVolume creates the target volume of the imported project from its archive.
+func (b projectBundles) restoreVolume(ctx context.Context, target types.ProjectVolume, composeName string, size int64, body io.Reader, user types.Actor) error {
+	// The restore refuses empty archives, so an empty volume is only created.
+	empty, root, body := projects.PeekEmptyVolumeArchive(body)
+	if empty {
+		return b.createEmptyVolume(ctx, target, composeName, root, user)
+	}
+	session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, target.Key+".tar.gz", size, body)
+	if err != nil {
+		return fmt.Errorf("store the data of volume %s: %w", target.Key, err)
+	}
+	err = b.local.RestoreVolume(ctx, target.Name, types.RestoreVolumeUploadRequest{
+		ComposeVolume: &types.ComposeVolumeTarget{
+			Labels:  target.Labels,
+			Project: composeName,
+			Key:     target.Key,
+			Driver:  target.Driver,
+		},
+		UploadID: session.ID,
+	}, user)
+	if err != nil {
+		return errors.Join(fmt.Errorf("restore volume %s: %w", target.Name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
+	}
+	return nil
+}
+
+// createEmptyVolume creates the volume with the Compose labels a restore into a new volume gives it, and the owner
+// and mode of the archive's root.
+func (b projectBundles) createEmptyVolume(ctx context.Context, target types.ProjectVolume, composeName string, root *tar.Header, user types.Actor) error {
 	_, exists, err := b.local.Volume(ctx, target.Name)
 	if err != nil {
 		return fmt.Errorf("inspect volume %s: %w", target.Name, err)
@@ -2103,7 +2179,10 @@ func (b projectBundles) createEmptyVolume(ctx context.Context, target types.Proj
 	if _, err = b.local.deps.CreateVolume(ctx, options, user); err != nil {
 		return fmt.Errorf("create volume %s: %w", target.Name, err)
 	}
-	return nil
+	if root == nil {
+		return nil
+	}
+	return b.local.deps.ApplyVolumeRoot(ctx, target.Name, *root)
 }
 
 // rollback removes the project an import created and those of its volumes that carry the project's Compose label.

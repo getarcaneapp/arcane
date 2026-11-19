@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"archive/tar"
 	"cmp"
 	"context"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -196,6 +198,23 @@ func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName stri
 
 func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	return s.backup.RestoreUpload(ctx, volumeName, request, user)
+}
+
+// ApplyVolumeRoot gives the volume's root directory the owner and mode of an archive's root entry.
+func (s *VolumeService) ApplyVolumeRoot(ctx context.Context, volumeName string, root tar.Header) error {
+	defer s.workspaceLocks.Lock(volumeName)()
+	containerID, cleanup, err := s.acquireVolumeHelper(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", root.Uid, root.Gid), "/volume"}); err != nil {
+		return fmt.Errorf("failed to set volume %s root ownership: %w", volumeName, err)
+	}
+	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chmod", strconv.FormatInt(root.Mode&0o7777, 8), "/volume"}); err != nil {
+		return fmt.Errorf("failed to set volume %s root mode: %w", volumeName, err)
+	}
+	return nil
 }
 
 func (s *VolumeService) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {

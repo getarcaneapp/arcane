@@ -1,6 +1,7 @@
 package project
 
 import (
+	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ type (
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
 		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		ApplyVolumeRoot  func(ctx context.Context, volumeName string, root tar.Header) error
 		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
 		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
 		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
