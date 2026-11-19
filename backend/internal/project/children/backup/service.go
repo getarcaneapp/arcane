@@ -563,7 +563,13 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
 // lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
-func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) error {
+func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
+	// A resume that ends for good fails its backup, as a first attempt does; shutdown and busy admissions retry it.
+	defer func() {
+		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) && !errors.Is(err, backup.ErrBackupSettled) {
+			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
+		}
+	}()
 	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
 	// Another run holds an admission, or taking it failed; hand the task back so the stopped containers are restarted

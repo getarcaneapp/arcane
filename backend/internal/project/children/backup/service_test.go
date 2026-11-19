@@ -1226,6 +1226,30 @@ func (f policyFixture) remoteID(destinationID string) string {
 	return "volumes:s3:" + destinationID + ":" + f.service.deps.Settings.GetSettingsConfig().InstanceID.Value
 }
 
+func TestResumedRunThatCannotAdoptItsSnapshotFails(t *testing.T) {
+	f := newPolicyFixture(t)
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
+	f.storedBackup(t, ProjectBackup{
+		BaseModel: database.BaseModel{ID: "resumed", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning,
+		Trigger: types.VolumeBackupTriggerScheduled, PolicyID: policy.ID, Destination: types.VolumeBackupDestinationS3, S3DestinationID: "gone",
+	})
+	checkpoint, err := json.Marshal(plan{BackupID: "resumed", ProjectID: "p1", PolicyID: policy.ID, S3DestinationID: "gone", S3Enabled: true})
+	require.NoError(t, err)
+	// The interrupted attempt was writing to S3, whose destination is gone now.
+	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
+		{ResourceType: targetType, ID: "p1", RecoveryData: checkpoint},
+		{ResourceType: targetType, ID: "resumed:remote"},
+	}}}
+
+	_, resumed, err := f.service.resumeScheduled(t.Context(), previous)
+	require.True(t, resumed)
+	require.Error(t, err)
+	var entry ProjectBackup
+	require.NoError(t, f.db.First(&entry, "id = ?", "resumed").Error)
+	require.Equal(t, types.VolumeBackupStatusFailed, entry.Status)
+	require.NotEmpty(t, entry.Error)
+}
+
 func TestFailedResumedRunStillAppliesRetention(t *testing.T) {
 	f := newPolicyFixture(t)
 	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, S3Enabled: true, S3DestinationID: f.destination, RetentionCount: 1})
