@@ -4756,5 +4756,6 @@
   "volumes_added_later_included": "Volumes added to the project later are included too until you change the selection.",
   "backup_schedules_saved": "Backup schedules saved",
   "failed_to_save_backup_schedules": "Failed to save the backup schedules",
-  "backup_schedule_removed": "Backup schedule removed"
+  "backup_schedule_removed": "Backup schedule removed",
+  "keep_newest_schedule_backups": "How many of this schedule's newest backups to keep, wherever they are stored. Set to 0 to keep all backups."
 }

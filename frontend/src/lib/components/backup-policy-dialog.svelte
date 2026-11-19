@@ -30,6 +30,8 @@
 		defaultSchedule,
 		defaultEnabled = true,
 		showStopContainers = false,
+		stopContainersDescription,
+		retentionDescription,
 		defaultStopContainers = false,
 		destinations,
 		beforeFields,
@@ -52,6 +54,8 @@
 		defaultSchedule: string;
 		defaultEnabled?: boolean;
 		showStopContainers?: boolean;
+		stopContainersDescription?: string;
+		retentionDescription?: string;
 		defaultStopContainers?: boolean;
 		destinations?: S3Destination[];
 		beforeFields?: Snippet;
@@ -198,6 +202,8 @@
 			{enabledDescription}
 			schedulePlaceholder={defaultSchedule}
 			{showStopContainers}
+			{stopContainersDescription}
+			{retentionDescription}
 			{destinationsLoading}
 			destinationReadOnly={!destinationsAccessible}
 			{destinationsLoadError}
