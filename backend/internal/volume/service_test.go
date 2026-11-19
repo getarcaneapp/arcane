@@ -664,8 +664,8 @@ func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
 
 func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
 	for _, test := range []struct {
-		name      string
 		createdAt time.Time
+		name      string
 		created   bool
 	}{
 		{name: "a volume created now is the import's", createdAt: time.Now(), created: true},
