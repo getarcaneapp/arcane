@@ -290,7 +290,7 @@
 			onSuccess: async (project) => {
 				restoreAsNewOpen = false;
 				toast.success(m.project_restored_from_backup({ name: project.name }), activityToastOptions(project.activityId));
-				await goto(resolve('/(app)/projects/[projectId]', { projectId: project.id }));
+				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: project.id }));
 			}
 		});
 	}
