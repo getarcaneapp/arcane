@@ -163,7 +163,9 @@ export const queryKeys = {
 			['system-backups', 'history', scope, stableSerialize(options)] as const,
 		policies: () => ['system-backups', 'policies'] as const,
 		systemVolumeConfig: () => ['system-backups', 'system-volume-config'] as const,
-		systemVolumeOptions: () => ['system-backups', 'system-volume-options'] as const
+		systemVolumeOptions: () => ['system-backups', 'system-volume-options'] as const,
+		projectConfig: () => ['system-backups', 'project-config'] as const,
+		projectOptions: () => ['system-backups', 'project-options'] as const
 	},
 	s3Destinations: {
 		all: ['s3-destinations'] as const,

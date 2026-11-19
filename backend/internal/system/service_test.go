@@ -167,26 +167,31 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Config:          &config.Config{},
 	})
 
+	// System covers only Arcane's own backups.
 	systemRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
 		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "system"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, page.TotalItems)
-	require.Len(t, systemRows, 2)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, systemRows, 1)
 	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
-	require.Equal(t, "app-data", systemRows[0].ResourceName)
-	require.Equal(t, "volume", systemRows[0].ResourceType)
+	require.Equal(t, "Arcane", systemRows[0].ResourceName)
+	require.Equal(t, "system", systemRows[0].ResourceType)
 
+	// The global volume policies' backups are volume backups.
 	volumeRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
-		Search: "cache", Sort: "createdAt", Order: pagination.SortDesc, Limit: 1,
+		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "volume"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, page.TotalItems)
-	require.Len(t, volumeRows, 1)
-	require.Equal(t, types.BackupManagementTypeVolume, volumeRows[0].Type)
-	require.Equal(t, "cache", volumeRows[0].ResourceName)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, volumeRows, 2)
+	require.Equal(t, []string{"cache", "app-data"}, []string{volumeRows[0].ResourceName, volumeRows[1].ResourceName})
+	for _, row := range volumeRows {
+		require.Equal(t, types.BackupManagementTypeVolume, row.Type)
+		require.Equal(t, "volume", row.ResourceType)
+	}
 
 	// Project backups appear with their project, whose ID opens them.
 	projectRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{

@@ -35,17 +35,18 @@ export function backupTriggerLabel(trigger: BackupTrigger): string {
 	return m.backups_trigger_manual();
 }
 
+// System is only ever Arcane's own backups; the global project and volume policies' backups are projects' and volumes'.
 export function backupManagementLabel(type?: BackupManagementType): string {
-	if (type === 'system') return m.backups_system_managed();
-	if (type === 'project') return m.project_managed();
-	return m.backups_volume_managed();
+	if (type === 'system') return m.system();
+	if (type === 'project') return m.project();
+	return m.resource_volume_cap();
 }
 
 export function backupManagementFilterOptions() {
 	return [
-		{ label: m.backups_system_managed(), value: 'system' },
-		{ label: m.backups_volume_managed(), value: 'volume' },
-		{ label: m.project_managed(), value: 'project' }
+		{ label: m.system(), value: 'system' },
+		{ label: m.project(), value: 'project' },
+		{ label: m.resource_volume_cap(), value: 'volume' }
 	];
 }
 

@@ -152,6 +152,49 @@ type (
 		Policies []UpdateProjectBackupPolicy `json:"policies"`
 	}
 
+	// GlobalProjectBackupPolicy backs up all or selected projects on this server; a project's own enabled policy
+	// replaces it for that project.
+	GlobalProjectBackupPolicy struct {
+		LastRun           *ProjectBackup            `json:"lastRun,omitempty"`
+		ID                string                    `json:"id"`
+		Schedule          string                    `json:"schedule"`
+		S3DestinationID   string                    `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
+		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
+		ProjectIDs        []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; empty for all"`
+		RetentionCount    int                       `json:"retentionCount" doc:"Backups kept per project; 0 keeps all"`
+		Enabled           bool                      `json:"enabled"`
+		StopContainers    bool                      `json:"stopContainers"`
+		LocalEnabled      bool                      `json:"localEnabled"`
+		S3Enabled         bool                      `json:"s3Enabled"`
+	}
+
+	GlobalProjectBackupPolicyCollection struct {
+		Policies []GlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	UpdateGlobalProjectBackupPolicy struct {
+		StopContainers *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
+		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
+		ProjectIDs     []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		UpdateBackupPolicy
+	}
+
+	UpdateGlobalProjectBackupPolicies struct {
+		Policies []UpdateGlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	RunGlobalProjectBackupsRequest struct {
+		PolicyID string `json:"policyId"`
+	}
+
+	// GlobalProjectBackupOption is a project a global policy can select; one that no longer exists is unavailable.
+	GlobalProjectBackupOption struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
+	}
+
 	RestoreProjectBackupRequest struct {
 		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to true"`
 		Redeploy *bool    `json:"redeploy,omitempty" doc:"Deploy the project after the restore, which requires projects:deploy; defaults to true when it runs"`

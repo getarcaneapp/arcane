@@ -120,7 +120,7 @@ type (
 		S3DestinationName string                  `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
 		PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
 		Error             string                  `json:"error,omitempty" doc:"Backup error when the run failed"`
-		Type              BackupManagementType    `json:"type" doc:"Whether the backup was system-managed or volume-managed"`
+		Type              BackupManagementType    `json:"type" doc:"Kind of backup, always volume"`
 		Size              int64                   `json:"size" doc:"Total size of the backup contents"`
 	}
 

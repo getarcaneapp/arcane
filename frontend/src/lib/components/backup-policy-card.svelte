@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { EditIcon } from '#lib/icons/index.js';
+	import { EditIcon, PlayIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { BackupStatus } from '#lib/types/backup.js';
 	import type { BackupPolicy } from '#lib/types/ui/backup.js';
@@ -19,14 +19,26 @@
 		resourceType,
 		showStopContainers = false,
 		onEdit,
-		editDisabled = false
+		editDisabled = false,
+		onRun,
+		runDisabled = false,
+		running = false
 	}: {
 		policy: CardPolicy;
-		resourceType?: 'system' | 'volume';
+		resourceType?: 'system' | 'project' | 'volume';
 		showStopContainers?: boolean;
 		onEdit?: () => void;
 		editDisabled?: boolean;
+		onRun?: () => void;
+		runDisabled?: boolean;
+		running?: boolean;
 	} = $props();
+
+	const resourceLabel = $derived.by(() => {
+		if (resourceType === 'system') return m.system();
+		if (resourceType === 'project') return m.project();
+		return m.resource_volume_cap();
+	});
 
 	const s3Name = $derived(policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId || '');
 </script>
@@ -39,11 +51,22 @@
 	<code class="truncate">{policy.schedule}</code>
 	<div class="flex items-center gap-1.5 justify-self-end">
 		{#if resourceType}
-			<Badge variant="purple">
-				{resourceType === 'system' ? m.system() : m.resource_volume_cap()}
-			</Badge>
+			<Badge variant="purple">{resourceLabel}</Badge>
 		{/if}
 		<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
+		{#if onRun}
+			<ArcaneButton
+				action="start"
+				size="icon"
+				icon={PlayIcon}
+				showLabel={false}
+				customLabel={m.system_volume_backups_run_now()}
+				onclick={onRun}
+				loading={running}
+				class="size-7"
+				disabled={runDisabled || running}
+			/>
+		{/if}
 		{#if onEdit}
 			<ArcaneButton
 				action="edit"

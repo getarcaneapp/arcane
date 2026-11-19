@@ -97,10 +97,12 @@ func New(p ModuleParams) *Module {
 			}
 			return proj.Name, nil
 		},
-		Activities: p.Activity,
-		Ctx:        p.Backups.Ctx,
-		Scheduler:  p.Backups.Scheduler,
-		Admission:  p.Backups.Admission,
+		ListProjects: p.Service.ListProjectReferences,
+		Activities:   p.Activity,
+		Config:       p.Service.config,
+		Ctx:          p.Backups.Ctx,
+		Scheduler:    p.Backups.Scheduler,
+		Admission:    p.Backups.Admission,
 	})
 	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })

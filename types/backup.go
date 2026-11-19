@@ -141,6 +141,7 @@ type (
 		RecoveryKey     string `json:"recoveryKey"`
 	}
 
+	// BackupManagementType is the kind of backup: Arcane's own (system), a volume's, or a project's.
 	BackupManagementType string
 
 	SystemVolumeSelectionMode string
@@ -266,10 +267,13 @@ const (
 	SystemBackupTriggerSafety    = "safety"
 	SystemBackupTriggerManager   = "manager"
 
-	BackupManagementTypeSystem     BackupManagementType      = "system"
-	BackupManagementTypeVolume     BackupManagementType      = "volume"
-	BackupManagementTypeProject    BackupManagementType      = "project"
-	SystemVolumePolicyPrefix                                 = "system-volume:"
+	BackupManagementTypeSystem  BackupManagementType = "system"
+	BackupManagementTypeVolume  BackupManagementType = "volume"
+	BackupManagementTypeProject BackupManagementType = "project"
+	SystemVolumePolicyPrefix                         = "system-volume:"
+	// GlobalProjectPolicyPrefix starts the policy ID of each project's backups from a global project policy, followed by
+	// the policy ID, ":" and the project ID.
+	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
@@ -283,9 +287,11 @@ const (
 	VolumeBackupTriggerSafety    = "safety"
 )
 
+// BackupManagementTypeForPolicy is the kind of a volume or project backup with the policy ID; the global volume policies'
+// backups are volume backups too.
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
-	if strings.HasPrefix(policyID, SystemVolumePolicyPrefix) {
-		return BackupManagementTypeSystem
+	if strings.HasPrefix(policyID, GlobalProjectPolicyPrefix) {
+		return BackupManagementTypeProject
 	}
 	return BackupManagementTypeVolume
 }

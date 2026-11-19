@@ -78,7 +78,11 @@
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
 	] satisfies ColumnSpec<BackupRow>[];
-	const mobileFields = [{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true }, ...backupRunMobileFields()];
+	const mobileFields = [
+		{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true },
+		{ id: 'type', label: m.common_type(), defaultVisible: true },
+		...backupRunMobileFields()
+	];
 </script>
 
 {#snippet IdCell({ item }: { item: BackupRow })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
