@@ -188,6 +188,10 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 
+	DiscoverProjectBackupsRequest struct {
+		S3DestinationID string `json:"s3DestinationId" doc:"S3 destination whose project backups of this instance are recorded again"`
+	}
+
 	// GlobalProjectBackupOption is a project a global policy can select; one that no longer exists is unavailable.
 	GlobalProjectBackupOption struct {
 		ID        string `json:"id"`

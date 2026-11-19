@@ -47,21 +47,29 @@ type (
 		localRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
 		remoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
 		databaseFile        func() (string, error)
-		projectsDirectory   func(ctx context.Context) string
+		projectRoots        func(ctx context.Context) ([]string, error)
 		recoveryEnvironment func(ctx context.Context) map[string]string
 		gitWorkDirectory    string
 	}
 
 	ServiceParams struct {
-		Engine              *backup.Engine
-		SqlDB               func() (*sql.DB, error)
-		ActorStore          func() (*gorm.DB, error)
-		LocalRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
-		RemoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
-		DatabaseFile        func() (string, error)
-		ProjectsDirectory   func(ctx context.Context) string
+		Engine           *backup.Engine
+		SqlDB            func() (*sql.DB, error)
+		ActorStore       func() (*gorm.DB, error)
+		LocalRepository  func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
+		RemoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error)
+		DatabaseFile     func() (string, error)
+		// ProjectRoots lists the main projects directory first, then every additional one, enabled or not.
+		ProjectRoots        func(ctx context.Context) ([]string, error)
 		RecoveryEnvironment func(ctx context.Context) map[string]string
 		GitWorkDirectory    string
+	}
+
+	CreateOptions struct {
+		RecoveryKey string
+		BackupID    string
+		// IncludeProjects captures the main projects directory, for safety backups taken before a restore that changes projects.
+		IncludeProjects bool
 	}
 
 	systemBackupSnapshotLocation struct {
@@ -98,6 +106,12 @@ type (
 		ProjectsIncluded bool
 	}
 
+	// RestoreTarget is the running Arcane container a full system restore replaces the data of.
+	RestoreTarget struct {
+		DataDirectory string
+		Mounts        []container.MountPoint
+	}
+
 	backupSourceLayout struct {
 		dataDirectory     string
 		projectsDirectory string
@@ -107,12 +121,14 @@ type (
 		mounts            []mount.Mount
 		sources           []string
 		excludes          []string
+		excludedRoots     []string // data-relative project roots a backup without projects leaves out
 	}
 
 	snapshotLayout struct {
-		dataPath     string // "/" or "/app/data" for version 1, "/data" for version 2
-		projectsPath string // absolute snapshot path; empty when the backup omitted projects
-		databaseName string
+		dataPath      string // "/" or "/app/data" for version 1, "/data" for version 2
+		projectsPath  string // absolute snapshot path; empty when the backup omitted projects
+		databaseName  string
+		excludedRoots []string // data-relative project roots the backup left out
 	}
 
 	projectsRestoreDestination struct {
@@ -134,12 +150,12 @@ const (
 
 var (
 	errProjectsOutsideData = errors.New("the backup-time projects directory is outside Arcane's system backup data")
-	errProjectsNotInBackup = errors.New(
-		"this system backup does not include the projects directory because it was created before Arcane " +
-			"backed up separately mounted projects; create a new system backup to restore project files",
-	)
+	errArcaneOnlyBackup    = common.Classify(common.ErrValidation, errors.New(
+		"this system backup covers Arcane only; restore project files from the project's backups",
+	))
 	manifestCandidateRoots = []string{snapshotDataPath, "/", "/app/data"}
 	sqliteSidecars         = []string{"-wal", "-shm", "-journal"}
+	globEscaper            = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`)
 )
 
 func NewService(p ServiceParams) *Service {
@@ -150,7 +166,7 @@ func NewService(p ServiceParams) *Service {
 		localRepository:     p.LocalRepository,
 		remoteRepository:    p.RemoteRepository,
 		databaseFile:        p.DatabaseFile,
-		projectsDirectory:   p.ProjectsDirectory,
+		projectRoots:        p.ProjectRoots,
 		recoveryEnvironment: p.RecoveryEnvironment,
 		gitWorkDirectory:    p.GitWorkDirectory,
 	}
@@ -258,7 +274,7 @@ func (session systemBackupSnapshotSession) inspectProjectManifest(ctx context.Co
 		return systemBackupSnapshot{}, err
 	}
 	if snapshot.layout.projectsPath == "" {
-		return systemBackupSnapshot{}, errProjectsNotInBackup
+		return systemBackupSnapshot{}, errArcaneOnlyBackup
 	}
 	return snapshot, nil
 }
@@ -277,6 +293,9 @@ func (session systemBackupSnapshotSession) availableProjectSnapshots(
 	inspectErr := setupErr
 	for _, location := range locations {
 		snapshot, err := session.inspectProjectSnapshot(ctx, location, selection)
+		if errors.Is(err, errArcaneOnlyBackup) {
+			return nil, err
+		}
 		if err != nil {
 			inspectErr = errors.Join(inspectErr, err)
 			continue
@@ -344,6 +363,9 @@ func (s *Service) Browse(
 	browseErr := setupErr
 	for _, location := range locations {
 		snapshot, inspectErr := session.inspectProjectManifest(ctx, location)
+		if errors.Is(inspectErr, errArcaneOnlyBackup) {
+			return nil, pagination.Response{}, inspectErr
+		}
 		if inspectErr != nil {
 			browseErr = errors.Join(browseErr, inspectErr)
 			continue
@@ -561,8 +583,7 @@ func (s *Service) PlanRestore(
 	dockerClient *client.Client,
 	key string,
 	run types.SystemBackupRun,
-	mounts []container.MountPoint,
-	dataDirectory, projectsDirectory string,
+	target RestoreTarget,
 ) (RestorePlan, error) {
 	session := systemBackupSnapshotSession{service: s, dockerClient: dockerClient, recoveryKey: key}
 	locations, setupErr := s.backupSnapshotLocations(ctx, dockerClient, run)
@@ -570,8 +591,12 @@ func (s *Service) PlanRestore(
 	if err != nil {
 		return RestorePlan{}, err
 	}
+	roots, err := s.projectRoots(ctx)
+	if err != nil {
+		return RestorePlan{}, err
+	}
 	repository := types.RecoveryRestoreRepository{Environment: snapshot.repository.Environment, Mounts: snapshot.repository.Mounts}
-	stages, err := restoreStages(mounts, dataDirectory, projectsDirectory, repository, snapshot.snapshotID, snapshot.layout)
+	stages, err := restoreStages(target, roots, repository, snapshot.snapshotID, snapshot.layout)
 	if err != nil {
 		return RestorePlan{}, fmt.Errorf("plan system restore: %w", err)
 	}
@@ -582,10 +607,13 @@ func (s *Service) PlanRollback(
 	ctx context.Context,
 	dockerClient *client.Client,
 	key, localSnapshotID string,
-	mounts []container.MountPoint,
-	dataDirectory, projectsDirectory string,
+	target RestoreTarget,
 ) ([]types.RecoveryRestoreStage, error) {
 	localRepository, err := s.localRepository(ctx, dockerClient, true)
+	if err != nil {
+		return nil, err
+	}
+	roots, err := s.projectRoots(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +629,7 @@ func (s *Service) PlanRollback(
 		return nil, fmt.Errorf("open pre-restore system backup: %w", err)
 	}
 	repository := types.RecoveryRestoreRepository{Environment: safetyLocation.repository.Environment, Mounts: safetyLocation.repository.Mounts}
-	stages, err := restoreStages(mounts, dataDirectory, projectsDirectory, repository, localSnapshotID, safetyLayout)
+	stages, err := restoreStages(target, roots, repository, localSnapshotID, safetyLayout)
 	if err != nil {
 		return nil, fmt.Errorf("plan system restore rollback: %w", err)
 	}
@@ -635,20 +663,9 @@ func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirect
 	if path.Clean(filepath.ToSlash(dataDirectory)) == path.Clean(filepath.ToSlash(projectsDirectory)) {
 		return "", false, nil
 	}
-	var sources []string
-	for _, directory := range []string{projectsDirectory, dataDirectory} {
-		resolved := docker.MountForSubpath(mounts, directory, "")
-		if resolved == nil {
-			return "", false, nil
-		}
-		sources = append(sources, kit.Ternary(
-			resolved.Type == mount.TypeVolume,
-			path.Join("volume:"+resolved.Source, kit.FromPtr(resolved.VolumeOptions).Subpath),
-			path.Clean(filepath.ToSlash(resolved.Source)),
-		))
-	}
-	projectsSource, dataSource := sources[0], sources[1]
-	if !kit.FilePathMatches(dataSource, projectsSource) {
+	projectsSource, projectsMounted := hostSource(mounts, projectsDirectory)
+	dataSource, dataMounted := hostSource(mounts, dataDirectory)
+	if !projectsMounted || !dataMounted || !kit.FilePathMatches(dataSource, projectsSource) {
 		return "", false, nil
 	}
 	if dataSource == projectsSource {
@@ -660,12 +677,109 @@ func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirect
 	return strings.TrimPrefix(dataSource, projectsSource+"/"), true, nil
 }
 
-func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.Client) (backupSourceLayout, error) {
+// hostSource identifies the host folder or volume path behind a container directory.
+func hostSource(mounts []container.MountPoint, directory string) (string, bool) {
+	resolved := docker.MountForSubpath(mounts, directory, "")
+	if resolved == nil {
+		return "", false
+	}
+	return kit.Ternary(
+		resolved.Type == mount.TypeVolume,
+		path.Join("volume:"+resolved.Source, kit.FromPtr(resolved.VolumeOptions).Subpath),
+		path.Clean(filepath.ToSlash(resolved.Source)),
+	), true
+}
+
+// projectRootsInData returns, relative to the data directory, every project root inside it by container path, link
+// target or host folder, and refuses a root that is the data directory itself.
+func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roots []string) ([]string, error) {
+	data := path.Clean(filepath.ToSlash(dataDirectory))
+	dataSource, dataMounted := hostSource(mounts, data)
+	resolvedData := data
+	if resolved, err := filepath.EvalSymlinks(data); err == nil {
+		resolvedData = path.Clean(filepath.ToSlash(resolved))
+	}
+	relatives := make([]string, 0, len(roots))
+	for _, root := range roots {
+		cleaned := path.Clean(filepath.ToSlash(root))
+		candidates := [][2]string{{cleaned, data}}
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			candidates = append(candidates, [2]string{path.Clean(filepath.ToSlash(resolved)), resolvedData})
+		}
+		if source, mounted := hostSource(mounts, cleaned); mounted && dataMounted {
+			candidates = append(candidates, [2]string{source, dataSource})
+		}
+		for _, candidate := range candidates {
+			if !kit.FilePathMatches(candidate[0], candidate[1]) {
+				continue
+			}
+			if candidate[0] == candidate[1] {
+				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+					"the projects folder %s is Arcane's data folder. System backups cover Arcane only, so projects must "+
+						"live in their own folder, such as %s; move them there and update the projects directory setting",
+					root, path.Join(data, "projects"),
+				))
+			}
+			relatives = append(relatives, strings.TrimPrefix(candidate[0], candidate[1]+"/"))
+		}
+	}
+	slices.Sort(relatives)
+	return slices.Compact(relatives), nil
+}
+
+// withoutProjects leaves every project root inside the data directory, and the mounts at or below it, out of a data
+// layout.
+func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, roots []string) (backupSourceLayout, error) {
+	excluded, err := projectRootsInData(mounts, layout.dataDirectory, roots)
+	if err != nil {
+		return backupSourceLayout{}, err
+	}
+	excludes := slices.Clone(layout.excludes)
+	for _, relative := range excluded {
+		excludes = append(excludes, globEscaper.Replace(relative))
+	}
+	return backupSourceLayout{
+		dataDirectory: layout.dataDirectory,
+		databaseName:  layout.databaseName,
+		mounts: slices.DeleteFunc(slices.Clone(layout.mounts), func(source mount.Mount) bool {
+			return slices.ContainsFunc(excluded, func(relative string) bool {
+				return kit.FilePathMatches(source.Target, path.Join(snapshotDataPath, relative))
+			})
+		}),
+		sources:       layout.sources,
+		excludes:      excludes,
+		excludedRoots: excluded,
+	}, nil
+}
+
+// CheckProjectRoots refuses system backups while a projects folder is Arcane's data folder.
+func (s *Service) CheckProjectRoots(ctx context.Context, dockerClient *client.Client) error {
+	databaseFile, err := s.databaseFile()
+	if err != nil {
+		return err
+	}
+	roots, err := s.projectRoots(ctx)
+	if err != nil {
+		return err
+	}
+	mounts, _, err := backup.CurrentMounts(ctx, dockerClient)
+	if err != nil {
+		return err
+	}
+	_, err = projectRootsInData(mounts, filepath.Dir(databaseFile), roots)
+	return err
+}
+
+func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.Client, opts CreateOptions) (backupSourceLayout, error) {
 	databaseFile, err := s.databaseFile()
 	if err != nil {
 		return backupSourceLayout{}, err
 	}
-	dataDirectory, projectsDirectory, databaseName := filepath.Dir(databaseFile), s.projectsDirectory(ctx), filepath.Base(databaseFile)
+	roots, err := s.projectRoots(ctx)
+	if err != nil {
+		return backupSourceLayout{}, err
+	}
+	dataDirectory, projectsDirectory, databaseName := filepath.Dir(databaseFile), roots[0], filepath.Base(databaseFile)
 	excludes := []string{".arcane-snapshot-*", RecoveryRequestName}
 	for _, name := range []string{databaseName, francis.StorePath(databaseName)} {
 		for _, sidecar := range sqliteSidecars {
@@ -677,14 +791,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 		return backupSourceLayout{}, fmt.Errorf("failed to resolve the git work directory: %w", err)
 	}
 	if relative, relErr := filepath.Rel(dataDirectory, gitWorkDirectory); relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		excludes = append(excludes, path.Join(
-			strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`).Replace(filepath.ToSlash(relative)),
-			git.CloneScratchPrefix+"*",
-		))
-	}
-	projectsPath, external, err := projectsSnapshotPath(dataDirectory, projectsDirectory)
-	if err != nil {
-		return backupSourceLayout{}, err
+		excludes = append(excludes, path.Join(globEscaper.Replace(filepath.ToSlash(relative)), git.CloneScratchPrefix+"*"))
 	}
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
@@ -693,6 +800,19 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 	dataMounts, err := backup.SourceMounts(backup.SourceMountOptions{Mounts: mounts, ContainerPath: dataDirectory, Target: snapshotDataPath, InContainer: inContainer})
 	if err != nil {
 		return backupSourceLayout{}, fmt.Errorf("resolve Arcane data source: %w", err)
+	}
+	if !opts.IncludeProjects {
+		return withoutProjects(backupSourceLayout{
+			dataDirectory: dataDirectory,
+			databaseName:  databaseName,
+			mounts:        dataMounts,
+			sources:       []string{snapshotDataPath},
+			excludes:      excludes,
+		}, mounts, roots)
+	}
+	projectsPath, external, err := projectsSnapshotPath(dataDirectory, projectsDirectory)
+	if err != nil {
+		return backupSourceLayout{}, err
 	}
 	if !external {
 		return backupSourceLayout{
@@ -808,7 +928,7 @@ func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot st
 			projectsPath: path.Join(manifestRoot, relative),
 			databaseName: path.Base(databasePath),
 		}, nil
-	case 2, types.RecoveryManifestFormatVersion:
+	case 2, types.RecoveryManifestProjectsFormatVersion, types.RecoveryManifestFormatVersion:
 		dataPath, err := kit.NormalizeRelativePath(strings.TrimPrefix(manifest.DataPath, "/"))
 		if err != nil {
 			return snapshotLayout{}, fmt.Errorf("invalid data path: %w", err)
@@ -817,16 +937,23 @@ func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot st
 		if dataPath != manifestRoot {
 			return snapshotLayout{}, fmt.Errorf("records data path %s but was found at %s", dataPath, manifestRoot)
 		}
-		projectsPath, err := kit.NormalizeRelativePath(strings.TrimPrefix(manifest.ProjectsPath, "/"))
-		if err != nil {
-			return snapshotLayout{}, fmt.Errorf("invalid projects path: %w", err)
-		}
-		projectsPath = "/" + projectsPath
 		databaseName, err := kit.NormalizeRelativePath(manifest.DatabasePath)
 		if err != nil {
 			return snapshotLayout{}, fmt.Errorf("invalid database path: %w", err)
 		}
-		return snapshotLayout{dataPath: dataPath, projectsPath: projectsPath, databaseName: databaseName}, nil
+		if manifest.ProjectsExcluded {
+			for _, root := range manifest.ExcludedProjectRoots {
+				if normalized, rootErr := kit.NormalizeRelativePath(root); rootErr != nil || normalized != root {
+					return snapshotLayout{}, fmt.Errorf("invalid excluded projects folder %q", root)
+				}
+			}
+			return snapshotLayout{dataPath: dataPath, databaseName: databaseName, excludedRoots: manifest.ExcludedProjectRoots}, nil
+		}
+		projectsPath, err := kit.NormalizeRelativePath(strings.TrimPrefix(manifest.ProjectsPath, "/"))
+		if err != nil {
+			return snapshotLayout{}, fmt.Errorf("invalid projects path: %w", err)
+		}
+		return snapshotLayout{dataPath: dataPath, projectsPath: "/" + projectsPath, databaseName: databaseName}, nil
 	default:
 		return snapshotLayout{}, fmt.Errorf("uses unsupported format %d", manifest.FormatVersion)
 	}
@@ -914,7 +1041,11 @@ func restoreTarget(mounts []container.MountPoint, containerPath, target, exclude
 }
 
 func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *client.Client) (projectsRestoreDestination, error) {
-	directory := s.projectsDirectory(ctx)
+	roots, err := s.projectRoots(ctx)
+	if err != nil {
+		return projectsRestoreDestination{}, err
+	}
+	directory := roots[0]
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return projectsRestoreDestination{}, err
@@ -952,8 +1083,8 @@ func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *
 }
 
 func restoreStages(
-	mounts []container.MountPoint,
-	dataDirectory, projectsDirectory string,
+	target RestoreTarget,
+	roots []string,
 	repository types.RecoveryRestoreRepository,
 	snapshotID string,
 	layout snapshotLayout,
@@ -961,6 +1092,10 @@ func restoreStages(
 	[]types.RecoveryRestoreStage,
 	error,
 ) {
+	if layout.projectsPath == "" {
+		return stagedRestoreStages(target, roots, repository, snapshotID, layout)
+	}
+	mounts, dataDirectory, projectsDirectory := target.Mounts, target.DataDirectory, roots[0]
 	separate := (layout.projectsPath != "") && !layout.projectsCoveredByData(dataDirectory, projectsDirectory)
 	if separate && layout.projectsPath == layout.dataPath {
 		return nil, fmt.Errorf("the backup keeps projects in Arcane's data directory; set the projects directory to %s before a full restore, or restore individual project files instead", dataDirectory)
@@ -1003,16 +1138,93 @@ func restoreStages(
 	}), nil
 }
 
+// stagedRestoreStages restores a backup without projects into a staging folder, swaps Arcane's entries in around every
+// project root and nested mount, and restores each nested mount that holds no project root on its own.
+func stagedRestoreStages(
+	target RestoreTarget,
+	roots []string,
+	repository types.RecoveryRestoreRepository,
+	snapshotID string,
+	layout snapshotLayout,
+) (
+	[]types.RecoveryRestoreStage,
+	error,
+) {
+	current, err := projectRootsInData(target.Mounts, target.DataDirectory, roots)
+	if err != nil {
+		return nil, err
+	}
+	projectRoots := slices.Concat(layout.excludedRoots, current)
+	data := path.Clean(filepath.ToSlash(target.DataDirectory))
+	var nested []string
+	for _, candidate := range target.Mounts {
+		relative, inside := strings.CutPrefix(path.Clean(candidate.Destination), data+"/")
+		if !inside || slices.ContainsFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(relative, root) }) {
+			continue
+		}
+		if index := slices.IndexFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(root, relative) }); index >= 0 {
+			return nil, fmt.Errorf(
+				"%s is a separate mount that contains the projects folder %s; a system restore cannot replace it without touching "+
+					"projects, so mount the projects folder outside it first",
+				candidate.Destination, path.Join(data, projectRoots[index]),
+			)
+		}
+		nested = append(nested, relative)
+	}
+	slices.Sort(nested)
+	var outermost []string
+	for _, relative := range nested {
+		if !slices.ContainsFunc(outermost, func(outer string) bool { return kit.FilePathMatches(relative, outer) }) {
+			outermost = append(outermost, relative)
+		}
+	}
+	preserve := slices.Concat(projectRoots, outermost)
+	slices.Sort(preserve)
+	preserve = slices.Compact(preserve)
+	globs := make([]string, 0, 2*len(preserve))
+	for _, relative := range preserve {
+		globs = append(globs, "!/"+globEscaper.Replace(relative), "!/"+globEscaper.Replace(relative)+"/**")
+	}
+	dataTarget, err := restoreTarget(target.Mounts, target.DataDirectory, recoveryDataRestoreTarget, "")
+	if err != nil {
+		return nil, err
+	}
+	stages := []types.RecoveryRestoreStage{{
+		Swap:       &types.RecoveryRestoreSwap{Directory: target.DataDirectory, ID: snapshotID, Preserve: preserve},
+		Target:     types.RecoveryRestoreTarget{Mounts: dataTarget.Mounts[:1], Path: path.Join(dataTarget.Path, backup.SwapStagingPrefix+snapshotID)},
+		SnapshotID: snapshotID,
+		SourcePath: layout.dataPath,
+		Globs:      globs,
+		Repository: repository,
+	}}
+	for _, relative := range outermost {
+		mountTarget, targetErr := restoreTarget(target.Mounts, path.Join(data, relative), recoveryDataRestoreTarget, "")
+		if targetErr != nil {
+			return nil, targetErr
+		}
+		stages = append(stages, types.RecoveryRestoreStage{
+			Swap:       nil,
+			Target:     mountTarget,
+			SnapshotID: snapshotID,
+			SourcePath: path.Join(layout.dataPath, relative),
+			Globs:      nil,
+			Repository: repository,
+		})
+	}
+	return stages, nil
+}
+
 func (s *Service) Create(
 	ctx context.Context,
 	dockerClient *client.Client,
 	repository backup.Repository,
-	recoveryKey, backupID string,
+	opts CreateOptions,
 ) (
 	backup.Snapshot,
 	error,
 ) {
-	layout, err := s.backupSourceLayout(ctx, dockerClient)
+	recoveryKey, backupID := opts.RecoveryKey, opts.BackupID
+	layout, err := s.backupSourceLayout(ctx, dockerClient, opts)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -1036,12 +1248,10 @@ func (s *Service) Create(
 		return backup.Snapshot{}, err
 	}
 	databases := map[string]*sql.DB{layout.databaseName: sqlDB, francis.StorePath(layout.databaseName): actorSQLDB}
-	manifest := types.RecoveryManifest{
-		FormatVersion: types.RecoveryManifestFormatVersion, ArcaneVersion: config.Version, BackupID: backupID,
-		ActivityID: activity.IDFromContext(ctx), CreatedAt: time.Now().UTC(),
-		DataPath: snapshotDataPath, ProjectsPath: layout.projectsPath, DatabasePath: layout.databaseName,
+	manifest := layout.manifest(types.RecoveryManifest{
+		ArcaneVersion: config.Version, BackupID: backupID, ActivityID: activity.IDFromContext(ctx), CreatedAt: time.Now().UTC(),
 		Environment: s.recoveryEnvironment(ctx),
-	}
+	})
 	manifestData, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return backup.Snapshot{}, fmt.Errorf("failed to encode recovery manifest: %w", err)
@@ -1132,8 +1342,35 @@ func (s *Service) Create(
 	return backup.Snapshot{}, errors.Join(err, cleanupErr)
 }
 
+// manifest completes a recovery manifest with the layout: version 4 when the backup leaves projects out, else 3.
+func (layout backupSourceLayout) manifest(base types.RecoveryManifest) types.RecoveryManifest {
+	excluded := layout.projectsPath == ""
+	return types.RecoveryManifest{ //exhaustruct:enforce
+		CreatedAt:            base.CreatedAt,
+		Environment:          base.Environment,
+		ArcaneVersion:        base.ArcaneVersion,
+		BackupID:             base.BackupID,
+		ActivityID:           base.ActivityID,
+		DataPath:             snapshotDataPath,
+		ProjectsPath:         layout.projectsPath,
+		DatabasePath:         layout.databaseName,
+		ExcludedProjectRoots: layout.excludedRoots,
+		FormatVersion:        kit.Ternary(excluded, types.RecoveryManifestFormatVersion, types.RecoveryManifestProjectsFormatVersion),
+		ProjectsExcluded:     excluded,
+	}
+}
+
 func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]acfstypes.Entry, error) {
-	projectsEntry, statErr := acfs.Host{}.Stat(ctx, layout.projectsDirectory, acfstypes.StatOptions{FollowFinal: true})
+	// Project roots are skipped by identity too, so a root reached through a link or another mount is never walked.
+	var projectRoots []acfstypes.Entry
+	for _, root := range append([]string{layout.projectsDirectory}, layout.excludedRoots...) {
+		if root == "" {
+			continue
+		}
+		if entry, statErr := (acfs.Host{}).Stat(ctx, kit.Ternary(filepath.IsAbs(root), root, filepath.Join(layout.dataDirectory, root)), acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
+			projectRoots = append(projectRoots, entry)
+		}
+	}
 	dataEntry, err := acfs.Host{}.Stat(ctx, layout.dataDirectory, acfstypes.StatOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect system backup sources: %w", err)
@@ -1158,7 +1395,9 @@ func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[st
 			}
 			return nil
 		}
-		if entry.IsDirectory && statErr == nil && entry.Device == projectsEntry.Device && entry.Inode == projectsEntry.Inode {
+		if entry.IsDirectory && slices.ContainsFunc(projectRoots, func(root acfstypes.Entry) bool {
+			return entry.Device == root.Device && entry.Inode == root.Inode
+		}) {
 			return fs.SkipDir
 		}
 		files[filepath.Join(layout.dataDirectory, entry.Path)] = entry

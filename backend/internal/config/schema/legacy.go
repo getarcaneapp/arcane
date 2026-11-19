@@ -48,7 +48,8 @@ func RenamedEnv() map[string]string {
 }
 
 func ManifestEnvironment(manifest types.RecoveryManifest) map[string]string {
-	if manifest.FormatVersion >= types.RecoveryManifestFormatVersion {
+	// Version 3 manifests and later already use the ARCANE_ prefixed names.
+	if manifest.FormatVersion >= types.RecoveryManifestProjectsFormatVersion {
 		return manifest.Environment
 	}
 	renamed := RenamedEnv()

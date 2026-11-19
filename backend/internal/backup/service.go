@@ -228,6 +228,8 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+	// ErrRepositoryMissing reports a Rustic repository that was never initialized.
+	ErrRepositoryMissing = errors.New("the backup repository does not exist")
 
 	// VolumeRepositoryTables record the snapshots that volume and project backups write under VolumeRoot.
 	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
@@ -499,6 +501,9 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 
 func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -311,6 +311,7 @@ func registerJobs(params registerJobsParams) error {
 func registerDynamicJobs(params dynamicJobsParams) {
 	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	params.Projects.RegisterBackupJobsOnStartup(params.AppCtx)
+	params.Projects.DiscoverBackupsAfterRestore(params.AppCtx)
 	if !params.Config.AgentEnabled {
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
 	}

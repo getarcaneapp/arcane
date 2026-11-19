@@ -157,10 +157,17 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	require.Equal(t, []string{"shared", "web_data"}, p.volumeNames())
 
 	projectMounts := []mount.Mount{{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/snapshot/project", ReadOnly: true}}
-	input := snapshotInput(projectMounts, "arcane-project-backup-meta", "b1", p)
+	input := snapshotInput(projectMounts, "arcane-project-backup-meta", &ProjectBackup{
+		BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1", Trigger: types.VolumeBackupTriggerManual,
+	}, p)
 	require.Equal(t, []string{"/snapshot"}, input.Sources)
 	require.Equal(t, "/", input.AsPath)
-	require.Equal(t, []string{backup.ProjectSnapshotTag, "arcane-project:p1", "arcane-run:b1"}, input.Tags)
+	require.Equal(t, []string{backup.ProjectSnapshotTag, "arcane-project:p1", "arcane-run:b1", "arcane-trigger:manual"}, input.Tags)
+	// The replica of a scheduled backup carries its policy too, so discovery can put it back in the policy's series.
+	require.Equal(t,
+		[]string{backup.ProjectSnapshotTag, "arcane-project:p1", "arcane-run:b2", "arcane-trigger:scheduled", "arcane-policy:global-project:g1:p1"},
+		snapshotTags(&ProjectBackup{BaseModel: database.BaseModel{ID: "b2"}, ProjectID: "p1", Trigger: types.VolumeBackupTriggerScheduled, PolicyID: "global-project:g1:p1"}),
+	)
 	require.Equal(t, []mount.Mount{
 		{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/snapshot/project", ReadOnly: true},
 		{Type: mount.TypeVolume, Source: "shared", Target: "/snapshot/volumes/shared", ReadOnly: true},
@@ -946,6 +953,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		},
 		ProjectName:  func(context.Context, string) (string, error) { return "Web", nil },
 		ListProjects: func(context.Context) ([]types.ProjectReference, error) { return slices.Clone(*projects), nil },
+		SyncProjects: func(context.Context) error { return nil },
 		LockProject:  func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		StartContainers: func(_ context.Context, _ string, stopped []container.Summary) error {
 			*started = append(*started, stopped...)
@@ -1918,4 +1926,153 @@ func TestGlobalResumeAppliesRetentionAfterAFailedBackup(t *testing.T) {
 	require.Contains(t, outcome.Targets[0].Message, "replicate")
 	require.Equal(t, []string{"resumed"}, f.backupIDs(t))
 	require.Equal(t, map[string][][]string{"volumes:local": {{"local-f1", "local-f2", "local-f3"}}}, f.forgets.calls)
+}
+
+// projectSnapshot is a project snapshot found in the local repository, or on the S3 destination when one is given.
+func projectSnapshot(id, destinationID, label string, age time.Duration, tags ...string) foundSnapshot {
+	snapshot := backup.DiscoveredSnapshot{ID: id, Time: time.Now().Add(-age).UTC(), Label: label, Tags: append([]string{backup.ProjectSnapshotTag}, tags...)}
+	snapshot.Summary.TotalBytesProcessed = 2048
+	return foundSnapshot{source: snapshotSource{password: "", id: id, repository: backup.Repository{}}, s3DestinationID: destinationID, snapshot: snapshot}
+}
+
+func TestDiscoveryRecordsMissingProjectBackups(t *testing.T) {
+	f := newPolicyFixture(t)
+	*f.projects = append(*f.projects, types.ProjectReference{ID: "t1", Name: "Twin"}, types.ProjectReference{ID: "t2", Name: "Twin"})
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 5})
+	global := f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true},
+		SelectionMode:      types.SystemVolumeSelectionAll,
+	})[0]
+	f.storedBackup(t, ProjectBackup{
+		BaseModel: database.BaseModel{ID: "fill"}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded, Trigger: types.VolumeBackupTriggerManual,
+		Destination: types.VolumeBackupDestinationLocal, LocalSnapshotID: "fill-local",
+	})
+	f.storedBackup(t, ProjectBackup{
+		BaseModel: database.BaseModel{ID: "interrupted"}, ProjectID: "p1", Status: types.VolumeBackupStatusFailed, Trigger: types.VolumeBackupTriggerManual,
+		Error: "Backup interrupted by Arcane restart",
+	})
+	f.storedBackup(t, ProjectBackup{BaseModel: database.BaseModel{ID: "running"}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning, Trigger: types.VolumeBackupTriggerManual})
+	tags := func(project, run, trigger, policyID string) []string {
+		tags := []string{"arcane-project:" + project, "arcane-run:" + run}
+		if trigger != "" {
+			tags = append(tags, "arcane-trigger:"+trigger)
+		}
+		if policyID != "" {
+			tags = append(tags, "arcane-policy:"+policyID)
+		}
+		return tags
+	}
+	found := []foundSnapshot{
+		projectSnapshot("merged-local", "", "Web", 3*time.Hour, tags("p1", "merged", types.VolumeBackupTriggerScheduled, policy.ID)...),
+		projectSnapshot("merged-remote", f.destination, "Web", 2*time.Hour, tags("p1", "merged", types.VolumeBackupTriggerScheduled, policy.ID)...),
+		projectSnapshot("fill-remote", f.destination, "Web", time.Hour, tags("p1", "fill", types.VolumeBackupTriggerManual, "")...),
+		projectSnapshot("interrupted-local", "", "Web", time.Hour, tags("p1", "interrupted", types.VolumeBackupTriggerManual, "")...),
+		projectSnapshot("running-local", "", "Web", time.Hour, tags("p1", "running", types.VolumeBackupTriggerManual, "")...),
+		projectSnapshot("renamed-local", "", "Shop", time.Hour, tags("gone", "renamed", types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+global.ID+":gone")...),
+		projectSnapshot("twin-local", "", "Twin", time.Hour, tags("gone-twin", "twin", types.VolumeBackupTriggerManual, "")...),
+		projectSnapshot("older-local", "", "Shop", 400*time.Hour, tags("p2", "older", "", "")...),
+		projectSnapshot("deleted-policy-local", "", "Web", time.Hour, tags("p1", "deleted-policy", types.VolumeBackupTriggerScheduled, "removed")...),
+		projectSnapshot("safety-local", "", "Web", 400*time.Hour, tags("p1", "safety", types.VolumeBackupTriggerSafety, "")...),
+		projectSnapshot("not-held-local", "", "Wiki", time.Hour, tags("p3", "not-held", types.VolumeBackupTriggerManual, "")...),
+		projectSnapshot("untagged-run", "", "Web", time.Hour, "arcane-project:p1"),
+	}
+	manifests := 0
+	recorded, err := f.service.importSnapshots(t.Context(), found, importOptions{
+		Manifest: func(_ context.Context, snapshot foundSnapshot) (types.ProjectManifest, error) {
+			manifests++
+			return types.ProjectManifest{
+				Project: types.ProjectManifestProject{ID: "", Name: snapshot.snapshot.Label, ComposeName: strings.ToLower(snapshot.snapshot.Label)},
+				Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Included: true}},
+			}, nil
+		},
+		Held: []string{"gone-twin", "p1", "p2"},
+	})
+	require.ErrorContains(t, err, "project backup not-held changed during discovery")
+	require.Equal(t, 8, recorded)
+	require.Equal(t, 6, manifests)
+
+	rows := map[string]ProjectBackup{}
+	var stored []ProjectBackup
+	require.NoError(t, f.db.Find(&stored).Error)
+	for _, entry := range stored {
+		rows[entry.ID] = entry
+	}
+	require.NotContains(t, rows, "not-held")
+	// Local and S3 snapshots of one backup become one row, kept in its policy while the policy exists.
+	merged := rows["merged"]
+	require.Equal(t, "p1", merged.ProjectID)
+	require.Equal(t, "Web", merged.ProjectName)
+	require.Equal(t, "web", merged.ComposeName)
+	require.Equal(t, types.VolumeBackupStatusSucceeded, merged.Status)
+	require.Equal(t, types.VolumeBackupTriggerScheduled, merged.Trigger)
+	require.Equal(t, policy.ID, merged.PolicyID)
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, merged.Destination)
+	require.Equal(t, "merged-local", merged.LocalSnapshotID)
+	require.Equal(t, "merged-remote", merged.RemoteSnapshotID)
+	require.Equal(t, f.destination, merged.S3DestinationID)
+	require.Equal(t, []types.ProjectBackupVolume{{Key: "data", Name: "web_data", Included: true}}, merged.Volumes)
+	require.EqualValues(t, 2048, merged.Size)
+	require.WithinDuration(t, time.Now().Add(-3*time.Hour), merged.CreatedAt, time.Minute)
+	// Existing rows gain only the snapshots they lack; a running row is left to its run.
+	require.Equal(t, "fill-local", rows["fill"].LocalSnapshotID)
+	require.Equal(t, "fill-remote", rows["fill"].RemoteSnapshotID)
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, rows["fill"].Destination)
+	require.Equal(t, f.destination, rows["fill"].S3DestinationID)
+	require.Equal(t, types.VolumeBackupStatusSucceeded, rows["interrupted"].Status)
+	require.Empty(t, rows["interrupted"].Error)
+	require.Equal(t, "interrupted-local", rows["interrupted"].LocalSnapshotID)
+	require.Empty(t, rows["running"].LocalSnapshotID)
+	// A project found again under a new ID is matched by its unique name, and a global series follows it.
+	require.Equal(t, "p2", rows["renamed"].ProjectID)
+	require.Equal(t, types.GlobalProjectPolicyPrefix+global.ID+":p2", rows["renamed"].PolicyID)
+	require.Equal(t, types.VolumeBackupTriggerScheduled, rows["renamed"].Trigger)
+	require.Equal(t, "gone-twin", rows["twin"].ProjectID)
+	// Older snapshots without the trigger tag, and backups no policy manages, are kept like manual ones.
+	for _, id := range []string{"older", "deleted-policy", "safety"} {
+		require.Equal(t, types.VolumeBackupTriggerManual, rows[id].Trigger, id)
+		require.Empty(t, rows[id].PolicyID, id)
+	}
+	require.NotContains(t, rows, "untagged-run")
+
+	// Nothing discovery recorded is ever unmanaged, so the sweep keeps it however long it waits.
+	expired, err := f.service.expiredUnmanaged(t.Context(), types.UnmanagedBackupSweep{Now: time.Now().Add(1000 * time.Hour), Retention: time.Hour})
+	require.NoError(t, err)
+	require.Empty(t, expired)
+
+	// Running it again records nothing new.
+	recorded, err = f.service.importSnapshots(t.Context(), found[:len(found)-2], importOptions{
+		Manifest: func(context.Context, foundSnapshot) (types.ProjectManifest, error) {
+			return types.ProjectManifest{}, errors.New("unexpected manifest read")
+		},
+		Held: []string{"gone-twin", "p1", "p2", "p3"},
+	})
+	require.NoError(t, err)
+	require.Zero(t, recorded)
+}
+
+func TestDiscoveryAfterRestoreClearsItsRequestOnlyOnSuccess(t *testing.T) {
+	f := newPolicyFixture(t)
+	settingsService := f.service.deps.Settings
+	discover := func(err error) (func(context.Context, DiscoverOptions) (int, error), *[]DiscoverOptions) {
+		calls := &[]DiscoverOptions{}
+		return func(_ context.Context, opts DiscoverOptions) (int, error) {
+			*calls = append(*calls, opts)
+			return 0, err
+		}, calls
+	}
+
+	idle, idleCalls := discover(nil)
+	require.NoError(t, f.service.DiscoverAfterRestore(t.Context(), idle))
+	require.Empty(t, *idleCalls)
+
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), discoveryPendingKey, "true"))
+	failing, failingCalls := discover(errors.New("rustic exited with 1"))
+	require.ErrorContains(t, f.service.DiscoverAfterRestore(t.Context(), failing), "rustic exited with 1")
+	require.Len(t, *failingCalls, 1)
+	require.True(t, settingsService.GetBoolSetting(t.Context(), discoveryPendingKey))
+
+	succeeding, succeedingCalls := discover(nil)
+	require.NoError(t, f.service.DiscoverAfterRestore(t.Context(), succeeding))
+	require.Equal(t, []DiscoverOptions{{S3DestinationIDs: []string{f.destination, f.secondary}, Local: true}}, *succeedingCalls)
+	require.False(t, settingsService.GetBoolSetting(t.Context(), discoveryPendingKey))
 }

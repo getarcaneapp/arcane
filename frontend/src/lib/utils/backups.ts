@@ -134,6 +134,12 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	if (systemResult.error === null && systemResult.data > 0) {
 		toast.success(m.system_backups_discovered({ count: systemResult.data }));
 	}
+	const projectResult = await tryCatch(systemBackupService.discoverProjectBackups(destinationId));
+	if (projectResult.error !== null) {
+		toast.error(m.failed_to_discover_project_backups(), { description: extractApiErrorMessage(projectResult.error) });
+	} else if (projectResult.data > 0) {
+		toast.success(m.found_project_backups({ count: projectResult.data }));
+	}
 	const volumeResult = await tryCatch(volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID));
 	if (volumeResult.error === null) {
 		if (volumeResult.data.count > 0) {
@@ -150,12 +156,18 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
 	const results = await Promise.allSettled([
 		...destinations.map((item) => systemBackupService.discover(item.id, '')),
+		...destinations.map((item) => systemBackupService.discoverProjectBackups(item.id)),
 		...destinations.map((item) => volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID))
 	]);
+	const failedMessages = [
+		m.system_backups_discover_failed,
+		m.failed_to_discover_project_backups,
+		m.volume_backups_discover_failed
+	];
 	let discovered = 0;
 	for (const [index, result] of results.entries()) {
 		if (result.status === 'rejected') {
-			toast.error(index < destinations.length ? m.system_backups_discover_failed() : m.volume_backups_discover_failed(), {
+			toast.error((failedMessages[Math.floor(index / destinations.length)] ?? m.volume_backups_discover_failed)(), {
 				description: extractApiErrorMessage(result.reason)
 			});
 			continue;

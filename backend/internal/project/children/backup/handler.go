@@ -3,6 +3,7 @@ package backup
 import (
 	"cmp"
 	"context"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -58,6 +59,10 @@ type (
 
 	RunGlobalInput struct {
 		Body types.RunGlobalProjectBackupsRequest
+	}
+
+	DiscoverInput struct {
+		Body types.DiscoverProjectBackupsRequest
 	}
 
 	RestoreInput struct {
@@ -170,6 +175,20 @@ func (h *Handler) GlobalOptions(ctx context.Context, _ *struct{}) (*handlerutil.
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return &handlerutil.Out[[]types.GlobalProjectBackupOption]{Body: types.ApiResponse[[]types.GlobalProjectBackupOption]{Success: true, Data: options}}, nil
+}
+
+func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handlerutil.Out[int], error) {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Body.S3DestinationID) == "" {
+		return nil, huma.Error400BadRequest("select an S3 destination to discover")
+	}
+	count, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: []string{input.Body.S3DestinationID}, Local: false})
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[int]{Body: types.ApiResponse[int]{Success: true, Data: count}}, nil
 }
 
 func (h *Handler) RunGlobal(ctx context.Context, input *RunGlobalInput) (*handlerutil.Out[types.BackupRunAccepted], error) {

@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"
 )
 
@@ -264,7 +265,32 @@ func TestSnapshotLayoutFromManifest(t *testing.T) {
 			name: "version 2 malformed database path", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/data", DatabasePath: ""}, root: "/data",
 			errorContains: "invalid database path",
 		},
-		{name: "unsupported version", manifest: types.RecoveryManifest{FormatVersion: 4}, root: "/data", errorContains: "unsupported format 4"},
+		{
+			name:          "version 3 includes projects",
+			manifest:      types.RecoveryManifest{FormatVersion: 3, DataPath: "/data", ProjectsPath: "/data/projects", DatabasePath: "arcane.db"},
+			root:          "/data",
+			expected:      snapshotLayout{dataPath: "/data", projectsPath: "/data/projects", databaseName: "arcane.db", excludedRoots: nil},
+			errorContains: "",
+		},
+		{
+			name: "version 4 leaves projects out",
+			manifest: types.RecoveryManifest{
+				FormatVersion: 4, DataPath: "/data", DatabasePath: "arcane.db", ProjectsExcluded: true, ExcludedProjectRoots: []string{"projects", "stacks/extra"},
+			},
+			root:          "/data",
+			expected:      snapshotLayout{dataPath: "/data", projectsPath: "", databaseName: "arcane.db", excludedRoots: []string{"projects", "stacks/extra"}},
+			errorContains: "",
+		},
+		{
+			name: "version 4 escaping excluded root",
+			manifest: types.RecoveryManifest{
+				FormatVersion: 4, DataPath: "/data", DatabasePath: "arcane.db", ProjectsExcluded: true, ExcludedProjectRoots: []string{"../projects"},
+			},
+			root:          "/data",
+			expected:      snapshotLayout{},
+			errorContains: "invalid excluded projects folder",
+		},
+		{name: "unsupported version", manifest: types.RecoveryManifest{FormatVersion: 5}, root: "/data", expected: snapshotLayout{}, errorContains: "unsupported format 5"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -440,7 +466,7 @@ func TestRestoreStages(t *testing.T) {
 
 	t.Run("projects covered by data restore", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/data/projects", databaseName: "arcane.db"}
-		stages, err := restoreStages(mounts, "/app/data", "/app/data/projects", repository, "snap", layout)
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Equal(
 			t,
@@ -463,7 +489,7 @@ func TestRestoreStages(t *testing.T) {
 	})
 	t.Run("external projects restore separately", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
-		stages, err := restoreStages(mounts, "/app/data", "/srv/projects", repository, "snap", layout)
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/srv/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
 		require.Equal(t, "/data", stages[0].SourcePath)
@@ -486,13 +512,13 @@ func TestRestoreStages(t *testing.T) {
 	})
 	t.Run("changed projects directory excludes the nested mount from the data stage", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/", projectsPath: "/projects", databaseName: "arcane.db"}
-		stages, err := restoreStages(mounts, "/app/data", "/app/data/projects", repository, "snap", layout)
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
 
 		external := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
-		stages, err = restoreStages(mounts, "/app/data", "/app/data/projects", repository, "snap", external)
+		stages, err = restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", external)
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
 		require.Equal(t, []mount.Mount{dataVolume}, stages[0].Target.Mounts)
@@ -511,7 +537,7 @@ func TestRestoreStages(t *testing.T) {
 			stages[1].Target,
 		)
 
-		stages, err = restoreStages(mounts, "/app/data", "/app/data/custom/projects", repository, "snap", external)
+		stages, err = restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/custom/projects"}, repository, "snap", external)
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
 		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
@@ -530,24 +556,30 @@ func TestRestoreStages(t *testing.T) {
 			stages[1].Target,
 		)
 	})
-	t.Run("version 1 backup without projects restores data only", func(t *testing.T) {
+	t.Run("version 1 backup without projects is staged around the current projects folder", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/app/data", databaseName: "arcane.db"}
-		stages, err := restoreStages(mounts, "/app/data", "/srv/projects", repository, "snap", layout)
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
-		require.Len(t, stages, 1)
-		require.Equal(t, "/app/data", stages[0].SourcePath)
+		require.Equal(t, []types.RecoveryRestoreStage{{
+			Swap:       &types.RecoveryRestoreSwap{Directory: "/app/data", ID: "snap", Preserve: []string{"projects"}},
+			Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
+			SnapshotID: "snap",
+			SourcePath: "/app/data",
+			Globs:      []string{"!/projects", "!/projects/**"},
+			Repository: repository,
+		}}, stages)
 	})
 	t.Run("projects at data root cannot move", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/data", databaseName: "arcane.db"}
-		_, err := restoreStages(mounts, "/app/data", "/srv/projects", repository, "snap", layout)
+		_, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/srv/projects"}, repository, "snap", layout)
 		require.ErrorContains(t, err, "keeps projects in Arcane's data directory")
-		stages, err := restoreStages(mounts, "/app/data", "/app/data", repository, "snap", layout)
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
 	})
 	t.Run("unmounted destination fails", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
-		_, err := restoreStages(mounts, "/app/data", "/opt/projects", repository, "snap", layout)
+		_, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/opt/projects"}, repository, "snap", layout)
 		require.ErrorContains(t, err, "/opt/projects must be mounted")
 	})
 	t.Run("data directory inside projects on the host fails", func(t *testing.T) {
@@ -556,9 +588,239 @@ func TestRestoreStages(t *testing.T) {
 			{Type: mount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
 		}
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
-		_, err := restoreStages(hostNested, "/app/data", "/volume4/docker/dsm", repository, "snap", layout)
+		_, err := restoreStages(RestoreTarget{Mounts: hostNested, DataDirectory: "/app/data"}, []string{"/volume4/docker/dsm"}, repository, "snap", layout)
 		require.ErrorContains(t, err, "contains Arcane's data directory")
 	})
+}
+
+func TestStagedRestoreStages(t *testing.T) {
+	repository := types.RecoveryRestoreRepository{Environment: []string{"RUSTIC_REPOSITORY=/repository"}}
+	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}
+	layout := snapshotLayout{dataPath: "/data", projectsPath: "", databaseName: "arcane.db", excludedRoots: []string{"old-projects"}}
+
+	t.Run("preserves project roots and restores other nested mounts on their own", func(t *testing.T) {
+		mounts := []container.MountPoint{
+			{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+			{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+			{Type: mount.TypeBind, Source: "/host/project-data", Destination: "/app/data/projects/demo/data", RW: true},
+			{Type: mount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
+			{Type: mount.TypeBind, Source: "/host/templates-sub", Destination: "/app/data/templates/sub", RW: true},
+			{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+		}
+		roots := []string{"/app/data/projects", "/app/data/stacks/[x]", "/srv/projects"}
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, roots, repository, "snap", layout)
+		require.NoError(t, err)
+		require.Equal(t, []types.RecoveryRestoreStage{
+			{
+				Swap: &types.RecoveryRestoreSwap{
+					Directory: "/app/data",
+					ID:        "snap",
+					Preserve:  []string{"old-projects", "projects", "stacks/[x]", "templates"},
+				},
+				Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
+				SnapshotID: "snap",
+				SourcePath: "/data",
+				Globs: []string{
+					"!/old-projects", "!/old-projects/**", "!/projects", "!/projects/**",
+					`!/stacks/\[x\]`, `!/stacks/\[x\]/**`, "!/templates", "!/templates/**",
+				},
+				Repository: repository,
+			},
+			{
+				Swap: nil,
+				Target: types.RecoveryRestoreTarget{
+					Mounts: []mount.Mount{
+						{Type: mount.TypeBind, Source: "/host/templates", Target: "/restore"},
+						{Type: mount.TypeBind, Source: "/host/templates-sub", Target: "/restore/sub"},
+					},
+					Path: "/restore",
+				},
+				SnapshotID: "snap",
+				SourcePath: "/data/templates",
+				Globs:      nil,
+				Repository: repository,
+			},
+		}, stages)
+	})
+	t.Run("nested mount that contains a project root is refused", func(t *testing.T) {
+		mounts := []container.MountPoint{
+			{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+			{Type: mount.TypeBind, Source: "/host/stacks", Destination: "/app/data/stacks", RW: true},
+		}
+		_, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/stacks/projects"}, repository, "snap", layout)
+		require.ErrorContains(t, err, "/app/data/stacks is a separate mount that contains the projects folder /app/data/stacks/projects")
+	})
+	t.Run("projects at the data root are refused", func(t *testing.T) {
+		mounts := []container.MountPoint{{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}}
+		_, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data"}, repository, "snap", layout)
+		require.ErrorIs(t, err, common.ErrValidation)
+		require.ErrorContains(t, err, "is Arcane's data folder")
+	})
+	t.Run("projects that contain the data folder on the host do not block it", func(t *testing.T) {
+		mounts := []container.MountPoint{
+			{Type: mount.TypeBind, Source: "/volume4/docker/dsm/arcane/data", Destination: "/app/data", RW: true},
+			{Type: mount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
+		}
+		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/volume4/docker/dsm"}, repository, "snap", layout)
+		require.NoError(t, err)
+		require.Len(t, stages, 1)
+		require.Equal(t, []string{"old-projects"}, stages[0].Swap.Preserve)
+	})
+}
+
+func TestProjectRootsInData(t *testing.T) {
+	dataVolume := container.MountPoint{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}
+	tests := []struct {
+		name          string
+		errorContains string
+		mounts        []container.MountPoint
+		roots         []string
+		expected      []string
+	}{
+		{
+			name:          "main and extra roots inside the data folder",
+			errorContains: "",
+			mounts:        []container.MountPoint{dataVolume},
+			roots:         []string{"/app/data/projects", "/app/data/stacks/extra", "/srv/projects"},
+			expected:      []string{"projects", "stacks/extra"},
+		},
+		{
+			name:          "root mounted from a host folder inside the data folder",
+			errorContains: "",
+			mounts: []container.MountPoint{
+				{Type: mount.TypeBind, Source: "/host/arcane", Destination: "/app/data", RW: true},
+				{Type: mount.TypeBind, Source: "/host/arcane/compose", Destination: "/host/path/projects", RW: true},
+			},
+			roots:    []string{"/host/path/projects"},
+			expected: []string{"compose"},
+		},
+		{
+			name:          "root that contains the data folder",
+			errorContains: "",
+			mounts:        []container.MountPoint{dataVolume},
+			roots:         []string{"/app"},
+			expected:      []string{},
+		},
+		{
+			name:          "root at the data folder",
+			errorContains: "the projects folder /app/data is Arcane's data folder",
+			mounts:        []container.MountPoint{dataVolume},
+			roots:         []string{"/app/data/projects", "/app/data"},
+			expected:      nil,
+		},
+		{
+			name:          "root that is the data folder on the host",
+			errorContains: "the projects folder /srv/projects is Arcane's data folder",
+			mounts: []container.MountPoint{
+				{Type: mount.TypeBind, Source: "/host/shared", Destination: "/app/data", RW: true},
+				{Type: mount.TypeBind, Source: "/host/shared", Destination: "/srv/projects", RW: true},
+			},
+			roots:    []string{"/srv/projects"},
+			expected: nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			relatives, err := projectRootsInData(test.mounts, "/app/data", test.roots)
+			if test.errorContains != "" {
+				require.ErrorIs(t, err, common.ErrValidation)
+				require.ErrorContains(t, err, test.errorContains)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.expected, relatives)
+		})
+	}
+}
+
+func TestProjectRootsInDataFollowsLinks(t *testing.T) {
+	data := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(data, "real-projects"), 0o755))
+	require.NoError(t, os.Symlink("real-projects", filepath.Join(data, "projects")))
+	require.NoError(t, os.Symlink(".", filepath.Join(data, "everything")))
+
+	relatives, err := projectRootsInData(nil, data, []string{filepath.Join(data, "projects")})
+	require.NoError(t, err)
+	require.Equal(t, []string{"projects", "real-projects"}, relatives)
+	_, err = projectRootsInData(nil, data, []string{filepath.Join(data, "everything")})
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestWithoutProjects(t *testing.T) {
+	mounts := []container.MountPoint{
+		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mount.TypeBind, Source: "/host/project-db", Destination: "/app/data/projects/demo/db", RW: true},
+		{Type: mount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
+		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+	}
+	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true}
+	templates := mount.Mount{Type: mount.TypeBind, Source: "/host/templates", Target: "/data/templates", ReadOnly: true}
+	layout, err := withoutProjects(backupSourceLayout{
+		dataDirectory: "/app/data",
+		databaseName:  "arcane.db",
+		mounts: []mount.Mount{
+			dataVolume,
+			{Type: mount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
+			{Type: mount.TypeBind, Source: "/host/project-db", Target: "/data/projects/demo/db", ReadOnly: true},
+			templates,
+		},
+		sources:  []string{snapshotDataPath},
+		excludes: []string{".arcane-snapshot-*"},
+	}, mounts, []string{"/app/data/projects", "/app/data/a[b]*", "/srv/projects"})
+	require.NoError(t, err)
+	require.Equal(t, backupSourceLayout{
+		dataDirectory:     "/app/data",
+		projectsDirectory: "",
+		databaseName:      "arcane.db",
+		projectsPath:      "",
+		nestedDataPath:    "",
+		mounts:            []mount.Mount{dataVolume, templates},
+		sources:           []string{snapshotDataPath},
+		excludes:          []string{".arcane-snapshot-*", `a\[b\]\*`, "projects"},
+		excludedRoots:     []string{"a[b]*", "projects"},
+	}, layout)
+
+	manifest := layout.manifest(types.RecoveryManifest{ArcaneVersion: "test", BackupID: "backup"})
+	require.Equal(t, types.RecoveryManifestFormatVersion, manifest.FormatVersion)
+	require.True(t, manifest.ProjectsExcluded)
+	restored, err := snapshotLayoutFromManifest(manifest, snapshotDataPath)
+	require.NoError(t, err)
+	require.Equal(t, snapshotLayout{dataPath: "/data", projectsPath: "", databaseName: "arcane.db", excludedRoots: []string{"a[b]*", "projects"}}, restored)
+
+	_, err = withoutProjects(backupSourceLayout{dataDirectory: "/app/data"}, mounts, []string{"/app/data"})
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestSafetyLayoutWithProjectsWritesVersion3(t *testing.T) {
+	manifest := backupSourceLayout{databaseName: "arcane.db", projectsPath: "/data/projects"}.manifest(types.RecoveryManifest{BackupID: "safety"})
+	require.Equal(t, types.RecoveryManifestProjectsFormatVersion, manifest.FormatVersion)
+	require.False(t, manifest.ProjectsExcluded)
+	restored, err := snapshotLayoutFromManifest(manifest, snapshotDataPath)
+	require.NoError(t, err)
+	require.Equal(t, "/data/projects", restored.projectsPath)
+}
+
+func TestSnapshotSourceFilesSkipExcludedRoots(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"settings.txt", "stacks/extra/app/compose.yaml", "real-projects/demo/compose.yaml"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte("data"), 0o600))
+	}
+	require.NoError(t, os.Symlink("real-projects", filepath.Join(root, "projects")))
+	layout := backupSourceLayout{
+		dataDirectory: root,
+		databaseName:  "arcane.db",
+		excludes:      []string{".arcane-snapshot-*", "projects", "stacks/extra"},
+		excludedRoots: []string{"projects", "stacks/extra"},
+	}
+	files, err := snapshotSourceFiles(t.Context(), layout)
+	require.NoError(t, err)
+	require.Contains(t, files, filepath.Join(root, "settings.txt"))
+	require.Contains(t, files, filepath.Join(root, "stacks"))
+	for _, skipped := range []string{"projects", "stacks/extra", "real-projects", "real-projects/demo/compose.yaml"} {
+		require.NotContains(t, files, filepath.Join(root, skipped))
+	}
 }
 
 func TestSafetySnapshotContainsPath(t *testing.T) {
@@ -569,6 +831,7 @@ func TestSafetySnapshotContainsPath(t *testing.T) {
 	require.False(t, safetySnapshotContainsPath(safety, "other"))
 }
 
-func TestLegacyLayoutOmittedProjectsIsActionable(t *testing.T) {
-	require.Contains(t, errProjectsNotInBackup.Error(), "create a new system backup")
+func TestArcaneOnlyBackupRefusesProjectFiles(t *testing.T) {
+	require.ErrorIs(t, errArcaneOnlyBackup, common.ErrValidation)
+	require.EqualError(t, errArcaneOnlyBackup, "this system backup covers Arcane only; restore project files from the project's backups")
 }

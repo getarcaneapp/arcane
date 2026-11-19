@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -99,6 +100,7 @@ func New(p ModuleParams) *Module {
 			return proj.Name, nil
 		},
 		ListProjects: p.Service.ListProjectReferences,
+		SyncProjects: p.Service.SyncProjectsFromFileSystem,
 		Activities:   p.Activity,
 		Config:       p.Service.config,
 		Ctx:          p.Backups.Ctx,
@@ -148,6 +150,15 @@ func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs .
 // RegisterBackupJobsOnStartup schedules the enabled project backup policies.
 func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
+}
+
+// DiscoverBackupsAfterRestore records, in the background, the project backups whose rows a system restore left out.
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
+	go func() {
+		if err := m.backups.DiscoverAfterRestore(ctx, m.backups.DiscoverBackups); err != nil {
+			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
+		}
+	}()
 }
 
 // PruneUnmanagedBackups deletes project backups that have been unmanaged for the unmanaged backup retention.

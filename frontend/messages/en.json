@@ -3544,7 +3544,6 @@
   "system_backups_no_schedules": "No backup schedules configured yet.",
   "system_backups_schedule_description": "Each schedule has its own destination and retention policy.",
   "system_backups_schedule_type_description": "Create a schedule for Arcane recovery data, projects or Docker volumes.",
-  "system_backups_type_system_description": "Back up Arcane's recovery data.",
   "system_backups_type_volume_description": "Back up a live selection of Docker volumes.",
   "system_backups_dialog_description": "The separate recovery key encrypts this Rustic repository and is required to restore it on a fresh Arcane instance.",
   "system_backups_recovery_key": "Recovery key",
@@ -4771,5 +4770,9 @@
   "back_up_selected_projects_on_schedule": "Back up the selected projects according to this cron schedule.",
   "keep_newest_backups_per_project": "How many of this schedule's newest backups to keep for each project, wherever they are stored. Set to 0 to keep all backups.",
   "stop_each_project_during_snapshot": "Stop each project's running containers while its snapshot is taken, then start them again. Other containers keep running.",
-  "failed_to_run_project_backups": "Failed to run the project backups."
+  "failed_to_run_project_backups": "Failed to run the project backups.",
+  "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
+  "restore_leaves_projects_description": "System backups cover Arcane only, so this restore leaves project folders as they are; restore projects from their project backups. Older backups that include projects still restore them.",
+  "found_project_backups": "Found {count} project backup(s).",
+  "failed_to_discover_project_backups": "Failed to discover project backups."
 }

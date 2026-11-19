@@ -86,6 +86,10 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.post('/backups/projects/run', { policyId }));
 	}
 
+	async discoverProjectBackups(s3DestinationId: string): Promise<number> {
+		return this.handleResponse(this.api.post('/backups/projects/discover', { s3DestinationId }));
+	}
+
 	async getPolicies(): Promise<SystemBackupPolicyCollection> {
 		return this.handleResponse(this.api.get('/backups/policies'));
 	}

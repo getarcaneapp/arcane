@@ -85,6 +85,8 @@ type (
 		ProjectName func(ctx context.Context, projectID string) (string, error)
 		// ListProjects returns the ID and name of every project on this server.
 		ListProjects func(ctx context.Context) ([]types.ProjectReference, error)
+		// SyncProjects brings the project rows in line with the project folders.
+		SyncProjects func(ctx context.Context) error
 		Activities   activity.MessageAppender
 		// Config tells a manager, which runs the global policies, from an agent.
 		Config *config.Config
@@ -234,6 +236,39 @@ type (
 		id         string
 		repository backup.Repository
 	}
+
+	// DiscoverOptions selects where discovery searches: the local repository and this instance's root on S3 destinations.
+	DiscoverOptions struct {
+		S3DestinationIDs []string
+		Local            bool
+	}
+
+	// foundSnapshot is a project snapshot in the local repository or, with an S3 destination ID, on that destination.
+	foundSnapshot struct {
+		source          snapshotSource
+		s3DestinationID string
+		snapshot        backup.DiscoveredSnapshot
+	}
+
+	// discoveredBackup is what discovery records for one backup, owned by project: an existing row with its missing
+	// snapshots filled in, or the parts of a new row; reference is the snapshot whose manifest the new row reads.
+	discoveredBackup struct {
+		existing  *ProjectBackup
+		local     *foundSnapshot
+		remote    *foundSnapshot
+		id        string
+		project   string
+		trigger   string
+		policyID  string
+		label     string
+		reference foundSnapshot
+	}
+
+	// importOptions holds the projects whose admissions discovery took, and reads a found backup's manifest.
+	importOptions struct {
+		Manifest func(ctx context.Context, snapshot foundSnapshot) (types.ProjectManifest, error)
+		Held     []string
+	}
 )
 
 const (
@@ -250,6 +285,11 @@ const (
 	globalConfigKey      = "projectBackupConfig"
 	// globalPlanTarget records the projects a global policy's run backs up.
 	globalPlanTarget = "global-project-plan"
+	projectTagPrefix = "arcane-project:"
+	triggerTagPrefix = "arcane-trigger:"
+	policyTagPrefix  = "arcane-policy:"
+	// discoveryPendingKey is set by a system restore and cleared once discovery searched every repository.
+	discoveryPendingKey = "projectBackupDiscoveryPending"
 )
 
 var (
@@ -727,7 +767,7 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: types.RunStatusRunning}); progressErr != nil {
 		return progressErr
 	}
-	snapshot, err := s.deps.Engine.Replicate(ctx, dockerClient, local, entry.LocalSnapshotID, remote, password, entry.ProjectName, snapshotTags(entry.ProjectID, entry.ID)...)
+	snapshot, err := s.deps.Engine.Replicate(ctx, dockerClient, local, entry.LocalSnapshotID, remote, password, entry.ProjectName, snapshotTags(entry)...)
 	if err != nil {
 		return fmt.Errorf("failed to replicate the project snapshot to S3: %w", err)
 	}
@@ -829,7 +869,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusRunning}); progressErr != nil {
 		return progressErr
 	}
-	snapshot, err := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, project.Name, snapshotInput(projectMounts, metaVolume, entry.ID, p))
+	snapshot, err := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, project.Name, snapshotInput(projectMounts, metaVolume, entry, p))
 	if err != nil {
 		return fmt.Errorf("failed to create the project snapshot: %w", err)
 	}
@@ -914,19 +954,24 @@ func (s *Service) record(ctx context.Context, p plan) error {
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: targetType, ID: p.ProjectID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 }
 
-func snapshotTags(projectID, backupID string) []string {
-	return []string{backup.ProjectSnapshotTag, "arcane-project:" + projectID, backup.RunSnapshotTag(backupID)}
+// snapshotTags name the backup's project, run, trigger and policy, so discovery can record a backup whose row is missing.
+func snapshotTags(entry *ProjectBackup) []string {
+	tags := []string{backup.ProjectSnapshotTag, projectTagPrefix + entry.ProjectID, backup.RunSnapshotTag(entry.ID), triggerTagPrefix + entry.Trigger}
+	if entry.PolicyID != "" {
+		tags = append(tags, policyTagPrefix+entry.PolicyID)
+	}
+	return tags
 }
 
 // snapshotInput lays the project out under /snapshot: its files at project/, each captured volume at
 // volumes/<name>/, and the manifest at meta/.
-func snapshotInput(projectMounts []mount.Mount, metaVolume, backupID string, p plan) backup.CreateSnapshotInput {
+func snapshotInput(projectMounts []mount.Mount, metaVolume string, entry *ProjectBackup, p plan) backup.CreateSnapshotInput {
 	mounts := slices.Clone(projectMounts)
 	for _, name := range p.volumeNames() {
 		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(snapshotRoot, "volumes", name), ReadOnly: true})
 	}
 	mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: metaVolume, Target: path.Join(snapshotRoot, "meta"), ReadOnly: true})
-	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(p.ProjectID, backupID)}
+	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(entry)}
 }
 
 // projectSourceMounts resolves the host mounts behind the project directory source names.
@@ -1725,19 +1770,13 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 		Find(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("failed to load unmanaged project backups: %w", err)
 	}
-	globals, err := s.globalPolicies()
-	if err != nil {
-		return nil, err
-	}
 	references, err := s.deps.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var managed []string
-	for _, policy := range globals {
-		for _, project := range selectProjects(policy, references) {
-			managed = append(managed, types.GlobalProjectPolicyPrefix+policy.ID+":"+project.ID)
-		}
+	managed, err := s.globalSeries(references)
+	if err != nil {
+		return nil, err
 	}
 	var orphaned []string
 	for _, candidate := range candidates {
@@ -1746,6 +1785,324 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 		}
 	}
 	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, backupsTable, orphaned, sweep)
+}
+
+// globalSeries returns the policy ID of each series a global policy manages: one for each project it selects.
+func (s *Service) globalSeries(references []types.ProjectReference) ([]string, error) {
+	globals, err := s.globalPolicies()
+	if err != nil {
+		return nil, err
+	}
+	var series []string
+	for _, policy := range globals {
+		for _, project := range selectProjects(policy, references) {
+			series = append(series, types.GlobalProjectPolicyPrefix+policy.ID+":"+project.ID)
+		}
+	}
+	return series, nil
+}
+
+// DiscoverBackups records the project backups whose snapshots are in the selected repositories but whose rows are
+// missing, as after a system restore, and adds snapshots an existing row lacks; it never deletes anything. Only this
+// instance's root is searched on S3, since a project backup row always reads from it.
+func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (int, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return 0, err
+	}
+	list := func(ctx context.Context) ([]foundSnapshot, error) {
+		var repositories []backup.Repository
+		var destinationIDs []string
+		if opts.Local {
+			local, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
+			if localErr != nil {
+				return nil, localErr
+			}
+			repositories, destinationIDs = append(repositories, local), append(destinationIDs, "")
+		}
+		for _, destinationID := range opts.S3DestinationIDs {
+			root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
+			observation, checkErr := backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, destinationID, root)
+			if checkErr != nil {
+				return nil, fmt.Errorf("check S3 destination %s: %w", destinationID, checkErr)
+			}
+			if !observation.Available {
+				continue
+			}
+			remote, remoteErr := s.deps.Repository.Remote(ctx, destinationID, "")
+			if remoteErr != nil {
+				return nil, remoteErr
+			}
+			repositories, destinationIDs = append(repositories, remote), append(destinationIDs, destinationID)
+		}
+		var found []foundSnapshot
+		for index, repository := range repositories {
+			password, passwordErr := s.deps.Repository.Password(ctx, dockerClient, repository)
+			if passwordErr != nil {
+				return nil, passwordErr
+			}
+			listed, listErr := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, password)
+			if errors.Is(listErr, backup.ErrRepositoryMissing) {
+				continue
+			}
+			if listErr != nil {
+				return nil, fmt.Errorf("list project snapshots in %s: %w", repository.ID, listErr)
+			}
+			for _, snapshot := range listed {
+				if slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
+					found = append(found, foundSnapshot{
+						snapshot:        snapshot,
+						s3DestinationID: destinationIDs[index],
+						source:          snapshotSource{password: password, id: snapshot.ID, repository: repository},
+					})
+				}
+			}
+		}
+		return found, nil
+	}
+	found, err := list(ctx)
+	if err != nil {
+		return 0, err
+	}
+	planned, err := s.reconcileSnapshots(ctx, found)
+	if err != nil {
+		return 0, err
+	}
+	projectIDs := make([]string, 0, len(planned))
+	for _, item := range planned {
+		projectIDs = append(projectIDs, item.project)
+	}
+	slices.Sort(projectIDs)
+	projectIDs = slices.Compact(projectIDs)
+	// Each project's admission keeps its backups, retention and the sweep away while its rows are written; projects are
+	// taken in order, and only after them is the listing read again, so a snapshot forgotten meanwhile is not recorded.
+	var leases []*runs.Lease
+	defer func() { release(context.WithoutCancel(ctx), leases) }()
+	for _, projectID := range projectIDs {
+		lease, leaseErr := s.deps.Engine.AwaitRun(ctx, admissionScope, projectID)
+		if leaseErr != nil {
+			return 0, leaseErr
+		}
+		leases = append(leases, lease)
+	}
+	if found, err = list(ctx); err != nil {
+		return 0, err
+	}
+	return s.importSnapshots(ctx, found, importOptions{
+		Held: projectIDs,
+		Manifest: func(ctx context.Context, snapshot foundSnapshot) (types.ProjectManifest, error) {
+			return s.readManifest(ctx, dockerClient, snapshot.source)
+		},
+	})
+}
+
+// DiscoverAfterRestore runs the discovery a system restore asked for, after syncing the restored projects with their
+// folders; the request is cleared only when every repository was searched without an error, so a later start retries.
+func (s *Service) DiscoverAfterRestore(ctx context.Context, discover func(context.Context, DiscoverOptions) (int, error)) error {
+	if !s.deps.Settings.GetBoolSetting(ctx, discoveryPendingKey) {
+		return nil
+	}
+	if err := s.deps.SyncProjects(ctx); err != nil {
+		return fmt.Errorf("sync projects before discovering their backups: %w", err)
+	}
+	destinations, err := s.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if err != nil {
+		return err
+	}
+	destinationIDs := make([]string, 0, len(destinations))
+	for _, destination := range destinations {
+		destinationIDs = append(destinationIDs, destination.ID)
+	}
+	count, err := discover(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: true})
+	if err != nil {
+		return fmt.Errorf("discover project backups after a system restore: %w", err)
+	}
+	slog.InfoContext(ctx, "Discovered project backups after a system restore", "recorded", count)
+	return s.deps.Settings.UpdateSetting(ctx, discoveryPendingKey, "false")
+}
+
+// reconcileSnapshots works out what discovery records for each backup whose snapshots were found: a new row, or the
+// snapshots an existing row lacks. A backup keeps its policy only while that policy manages it, so nothing discovery
+// records is pruned or swept unless its own policy would; untagged and safety backups are kept like manual ones.
+func (s *Service) reconcileSnapshots(ctx context.Context, found []foundSnapshot) ([]discoveredBackup, error) {
+	groups := make(map[string][]foundSnapshot)
+	for _, snapshot := range found {
+		if backupID := snapshotTag(snapshot.snapshot.Tags, backup.RunSnapshotTag("")); backupID != "" {
+			groups[backupID] = append(groups[backupID], snapshot)
+		}
+	}
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	backupIDs := slices.Sorted(maps.Keys(groups))
+	var existing []ProjectBackup
+	if err := s.deps.DB.WithContext(ctx).Where("id IN ?", backupIDs).Find(&existing).Error; err != nil {
+		return nil, err
+	}
+	references, err := s.deps.ListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var managed []string
+	if pluckErr := s.deps.DB.WithContext(ctx).Model(&ProjectBackupPolicy{}).Pluck("id", &managed).Error; pluckErr != nil {
+		return nil, pluckErr
+	}
+	series, err := s.globalSeries(references)
+	if err != nil {
+		return nil, err
+	}
+	managed = append(managed, series...)
+	var planned []discoveredBackup
+	for _, backupID := range backupIDs {
+		snapshots := groups[backupID]
+		slices.SortFunc(snapshots, func(a, b foundSnapshot) int {
+			return cmp.Or(strings.Compare(a.s3DestinationID, b.s3DestinationID), a.snapshot.Time.Compare(b.snapshot.Time))
+		})
+		local := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID == "" })
+		if index := slices.IndexFunc(existing, func(entry ProjectBackup) bool { return entry.ID == backupID }); index >= 0 {
+			if filled, ok := fillSnapshots(existing[index], snapshots, local); ok {
+				planned = append(planned, discoveredBackup{existing: &filled, id: filled.ID, project: filled.ProjectID})
+			}
+			continue
+		}
+		remote := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID != "" })
+		first := snapshots[kit.Ternary(local >= 0, local, remote)]
+		tags := first.snapshot.Tags
+		tagged := snapshotTag(tags, projectTagPrefix)
+		projectID := tagged
+		// A project found again under a new ID is matched by its name, when exactly one project has it.
+		if !slices.ContainsFunc(references, func(project types.ProjectReference) bool { return project.ID == tagged }) {
+			named := slices.DeleteFunc(slices.Clone(references), func(project types.ProjectReference) bool { return project.Name != first.snapshot.Label })
+			if len(named) == 1 {
+				projectID = named[0].ID
+			}
+		}
+		if projectID == "" {
+			continue
+		}
+		trigger, policyID := snapshotTag(tags, triggerTagPrefix), snapshotTag(tags, policyTagPrefix)
+		// A global policy's series is per project, so it follows the project to its new ID.
+		if series, global := strings.CutPrefix(policyID, types.GlobalProjectPolicyPrefix); global && projectID != tagged {
+			owner, _, _ := strings.Cut(series, ":")
+			policyID = types.GlobalProjectPolicyPrefix + owner + ":" + projectID
+		}
+		if trigger != types.VolumeBackupTriggerScheduled || !slices.Contains(managed, policyID) {
+			trigger, policyID = types.VolumeBackupTriggerManual, ""
+		}
+		planned = append(planned, discoveredBackup{
+			local:     kit.Ternary(local >= 0, &snapshots[max(local, 0)], nil),
+			remote:    kit.Ternary(remote >= 0, &snapshots[max(remote, 0)], nil),
+			id:        backupID,
+			project:   projectID,
+			trigger:   trigger,
+			policyID:  policyID,
+			label:     first.snapshot.Label,
+			reference: first,
+		})
+	}
+	return planned, nil
+}
+
+// fillSnapshots adds the found snapshots a row lacks, its S3 one only from the row's destination; a failed row that
+// recorded no snapshot finished its capture after all. A running row belongs to a live run and is left alone.
+func fillSnapshots(entry ProjectBackup, snapshots []foundSnapshot, local int) (ProjectBackup, bool) {
+	remote := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool {
+		return snapshot.s3DestinationID != "" && cmp.Or(entry.S3DestinationID, snapshot.s3DestinationID) == snapshot.s3DestinationID
+	})
+	fillLocal, fillRemote := entry.LocalSnapshotID == "" && local >= 0, entry.RemoteSnapshotID == "" && remote >= 0
+	if entry.Status == types.VolumeBackupStatusRunning || (!fillLocal && !fillRemote) {
+		return ProjectBackup{}, false
+	}
+	captured := entry.Status == types.VolumeBackupStatusFailed && entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""
+	filled := snapshots[kit.Ternary(fillLocal, max(local, 0), max(remote, 0))]
+	localID := kit.Ternary(fillLocal, snapshots[max(local, 0)].snapshot.ID, entry.LocalSnapshotID)
+	remoteID := kit.Ternary(fillRemote, snapshots[max(remote, 0)].snapshot.ID, entry.RemoteSnapshotID)
+	return ProjectBackup{
+		BaseModel:         entry.BaseModel,
+		CompletedAt:       entry.CompletedAt,
+		OrphanedAt:        entry.OrphanedAt,
+		ProjectID:         entry.ProjectID,
+		ProjectName:       entry.ProjectName,
+		ComposeName:       entry.ComposeName,
+		Status:            kit.Ternary(captured, types.VolumeBackupStatusSucceeded, entry.Status),
+		Trigger:           entry.Trigger,
+		Destination:       destination(localID != "", remoteID != ""),
+		LocalSnapshotID:   localID,
+		RemoteSnapshotID:  remoteID,
+		S3DestinationID:   kit.Ternary(fillRemote, snapshots[max(remote, 0)].s3DestinationID, entry.S3DestinationID),
+		PolicyID:          entry.PolicyID,
+		Error:             kit.Ternary(captured, "", entry.Error),
+		Volumes:           entry.Volumes,
+		Size:              cmp.Or(entry.Size, filled.snapshot.Summary.TotalBytesProcessed),
+		StoppedContainers: entry.StoppedContainers,
+	}, true
+}
+
+// importSnapshots writes what reconcileSnapshots plans for the held projects; a new row takes its volumes and Compose
+// name from the backup's manifest. A backup it could not record leaves an error, so discovery is run again.
+func (s *Service) importSnapshots(ctx context.Context, found []foundSnapshot, opts importOptions) (int, error) {
+	planned, err := s.reconcileSnapshots(ctx, found)
+	if err != nil {
+		return 0, err
+	}
+	recorded := 0
+	var importErr error
+	for _, item := range planned {
+		if !slices.Contains(opts.Held, item.project) {
+			importErr = errors.Join(importErr, fmt.Errorf("project backup %s changed during discovery", item.id))
+			continue
+		}
+		if item.existing != nil {
+			if saveErr := s.deps.DB.WithContext(ctx).Save(item.existing).Error; saveErr != nil {
+				importErr = errors.Join(importErr, saveErr)
+				continue
+			}
+			recorded++
+			continue
+		}
+		manifest, manifestErr := opts.Manifest(ctx, item.reference)
+		if manifestErr != nil {
+			importErr = errors.Join(importErr, fmt.Errorf("read the manifest of project backup %s: %w", item.id, manifestErr))
+			continue
+		}
+		snapshots := slices.DeleteFunc([]*foundSnapshot{item.local, item.remote}, func(snapshot *foundSnapshot) bool { return snapshot == nil })
+		createdAt := slices.MinFunc(snapshots, func(a, b *foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time
+		largest := slices.MaxFunc(snapshots, func(a, b *foundSnapshot) int {
+			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
+		})
+		entry := ProjectBackup{
+			BaseModel:        database.BaseModel{ID: item.id, CreatedAt: createdAt},
+			CompletedAt:      new(createdAt),
+			ProjectID:        item.project,
+			ProjectName:      cmp.Or(item.label, manifest.Project.Name),
+			ComposeName:      manifest.Project.ComposeName,
+			Status:           types.VolumeBackupStatusSucceeded,
+			Trigger:          item.trigger,
+			Destination:      destination(item.local != nil, item.remote != nil),
+			LocalSnapshotID:  kit.FromPtr(item.local).snapshot.ID,
+			RemoteSnapshotID: kit.FromPtr(item.remote).snapshot.ID,
+			S3DestinationID:  kit.FromPtr(item.remote).s3DestinationID,
+			PolicyID:         item.policyID,
+			Volumes:          backupVolumes(manifest.Volumes),
+			Size:             largest.snapshot.Summary.TotalBytesProcessed,
+		}
+		if createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error; createErr != nil {
+			importErr = errors.Join(importErr, createErr)
+			continue
+		}
+		recorded++
+	}
+	return recorded, importErr
+}
+
+// snapshotTag returns the value of the snapshot's tag with the prefix, or empty.
+func snapshotTag(tags []string, prefix string) string {
+	for _, tag := range tags {
+		if value, found := strings.CutPrefix(tag, prefix); found {
+			return value
+		}
+	}
+	return ""
 }
 
 // globalPolicies reads the global project backup policies from their setting.
