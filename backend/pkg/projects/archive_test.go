@@ -177,9 +177,15 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	manifest := testProjectManifest(
 		types.ProjectVolume{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true},
 		types.ProjectVolume{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed},
+		// Volumes naming one Docker volume share its archive, which the bundle holds once.
+		types.ProjectVolume{
+			Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: "volumes/other.tar.gz", Included: true,
+			DockerLabels: map[string]string{"owner": "ops"},
+		},
+		types.ProjectVolume{Key: "other", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: "volumes/other.tar.gz", Included: true},
 	)
-	entries := map[string]string{ProjectBundleProject: "project files", dataArchive: "volume data"}
-	bundle := writeTestBundle(t, manifest, entries, ProjectBundleProject, dataArchive)
+	entries := map[string]string{ProjectBundleProject: "project files", dataArchive: "volume data", "volumes/other.tar.gz": "shared data"}
+	bundle := writeTestBundle(t, manifest, entries, ProjectBundleProject, dataArchive, "volumes/other.tar.gz")
 
 	// The manifest must be the first entry, because import detects bundles by it.
 	gzipReader, err := gzip.NewReader(bytes.NewReader(bundle.Bytes()))
@@ -200,7 +206,7 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, manifest.Volumes, got.Volumes)
-	assert.Equal(t, []string{ProjectBundleProject, dataArchive}, visited)
+	assert.Equal(t, []string{ProjectBundleProject, dataArchive, "volumes/other.tar.gz"}, visited)
 
 	// A writer never emits entries a reader would reject.
 	writer, err := NewProjectBundleWriter(io.Discard, manifest)
@@ -302,6 +308,33 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 				Key: "data", Name: "web_data", Archive: "../data.tar.gz", Included: true,
 			}))), regular(ProjectBundleProject, "p")},
 			wantErr: "must be archived at volumes/data.tar.gz",
+		},
+		{
+			name: "archive shared with a differently named volume",
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(included, types.ProjectVolume{
+				Key: "cache", Name: "web_cache", Archive: dataArchive, Included: true,
+			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
+			wantErr: "must be archived at volumes/cache.tar.gz",
+		},
+		{
+			name: "docker labels on a named volume",
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(types.ProjectVolume{
+				Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true, DockerLabels: map[string]string{"a": "b"},
+			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
+			wantErr: "not an included external volume",
+		},
+		{
+			name:    "docker label that is not a string",
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"formatVersion":1,"volumes":[{"key":"data","dockerLabels":{"a":1}}]}`), regular(ProjectBundleProject, "p")},
+			wantErr: "dockerLabels",
+		},
+		{
+			name: "oversized docker labels",
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(types.ProjectVolume{
+				Key: "data", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: dataArchive, Included: true,
+				DockerLabels: map[string]string{"a": strings.Repeat("x", maxVolumeLabelBytes)},
+			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
+			wantErr: "labels exceed",
 		},
 		{
 			name: "manifest key escaping volumes",

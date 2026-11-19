@@ -45,6 +45,8 @@ const (
 	maxArchiveEntries       = 200_000
 	unpackReserveBytes      = 1 << 30
 	maxProjectManifestBytes = 1 << 20
+	maxVolumeLabels         = 256
+	maxVolumeLabelBytes     = 64 << 10
 	projectBundleVolumes    = "volumes/"
 )
 
@@ -445,11 +447,12 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 }
 
 // projectBundleVolumeArchives validates the manifest's volumes and maps each included volume's archive entry to false.
+// Volumes that name the same Docker volume may share the archive of one of them.
 func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]bool, error) {
 	if manifest.FormatVersion != types.ProjectManifestFormatVersion {
 		return nil, fmt.Errorf("unsupported project bundle format version %d", manifest.FormatVersion)
 	}
-	expected := map[string]bool{}
+	owners := map[string]string{}
 	keys := map[string]struct{}{}
 	for _, volume := range manifest.Volumes {
 		if _, duplicate := keys[volume.Key]; duplicate {
@@ -463,14 +466,46 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 		switch {
 		case !volume.Included && volume.Archive != "":
 			return nil, fmt.Errorf("volume %q is not included but names archive %q", volume.Key, volume.Archive)
+		case len(volume.DockerLabels) > 0 && (!volume.Included || volume.Kind != types.ProjectVolumeExternal):
+			return nil, fmt.Errorf("volume %q records Docker labels but is not an included external volume", volume.Key)
 		case !volume.Included:
-		case volume.Archive != archive:
-			return nil, fmt.Errorf("volume %q must be archived at %s, not %q", volume.Key, archive, volume.Archive)
 		case !dockerVolumeNamePattern.MatchString(volume.Name):
 			return nil, fmt.Errorf("volume %q has invalid name %q", volume.Key, volume.Name)
-		default:
-			expected[archive] = false
+		case volume.Archive == archive:
+			owners[archive] = volume.Name
+		}
+		if labelErr := ValidateVolumeLabels(volume.DockerLabels); labelErr != nil {
+			return nil, fmt.Errorf("volume %q: %w", volume.Key, labelErr)
 		}
 	}
+	expected := map[string]bool{}
+	for _, volume := range manifest.Volumes {
+		if !volume.Included {
+			continue
+		}
+		if owner, ok := owners[volume.Archive]; !ok || owner != volume.Name {
+			archive, _ := ProjectBundleVolumeArchive(volume.Key)
+			return nil, fmt.Errorf("volume %q must be archived at %s or share the archive of another volume named %s, not %q", volume.Key, archive, volume.Name, volume.Archive)
+		}
+		expected[volume.Archive] = false
+	}
 	return expected, nil
+}
+
+// ValidateVolumeLabels bounds the Docker labels a bundle records for a volume.
+func ValidateVolumeLabels(labels map[string]string) error {
+	if len(labels) > maxVolumeLabels {
+		return fmt.Errorf("more than %d labels", maxVolumeLabels)
+	}
+	size := 0
+	for key, value := range labels {
+		if key == "" {
+			return errors.New("a label has an empty key")
+		}
+		size += len(key) + len(value)
+	}
+	if size > maxVolumeLabelBytes {
+		return fmt.Errorf("labels exceed %d bytes", maxVolumeLabelBytes)
+	}
+	return nil
 }

@@ -56,16 +56,17 @@ type (
 	ProjectVolumeKind string
 
 	ProjectVolume struct {
-		Labels     map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
-		DriverOpts map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
-		Key        string            `json:"key" doc:"Volume key in the compose file"`
-		Name       string            `json:"name" doc:"Docker volume name"`
-		Kind       ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
-		Driver     string            `json:"driver,omitempty" doc:"Compose volume driver"`
-		Archive    string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle"`
-		Included   bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
-		Missing    bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
-		InUse      bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export"`
+		Labels       map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
+		DockerLabels map[string]string `json:"dockerLabels,omitempty" doc:"Docker labels of an included external volume, which an import recreates it with"`
+		DriverOpts   map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
+		Key          string            `json:"key" doc:"Volume key in the compose file"`
+		Name         string            `json:"name" doc:"Docker volume name"`
+		Kind         ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
+		Driver       string            `json:"driver,omitempty" doc:"Compose volume driver"`
+		Archive      string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle; volumes naming one Docker volume share it"`
+		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
+		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
+		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export"`
 	}
 
 	ProjectManifestProject struct {
