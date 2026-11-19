@@ -1297,7 +1297,21 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 		release(context.WithoutCancel(ctx), leases)
 		return nil, err
 	}
-	unlockVolumes, err := s.lockVolumes(ctx, p.volumeNames())
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held, not only the targets: none of its containers starts while the targets are rewritten.
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		unlockProject()
+		release(context.WithoutCancel(ctx), leases)
+		return nil, err
+	}
+	locked := p.volumeNames()
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		if volume.Name != "" {
+			locked = append(locked, volume.Name)
+		}
+	}
+	unlockVolumes, err := s.lockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
 	if err != nil {
 		unlockProject()
 		release(context.WithoutCancel(ctx), leases)
