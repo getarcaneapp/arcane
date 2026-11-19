@@ -311,9 +311,9 @@ func runStages(ctx context.Context, dockerClient *client.Client, request types.R
 		}
 		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
 		command := []string{"restore", "--delete", stage.SnapshotID + ":" + stage.SourcePath, stage.Target.Path}
-		if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
-			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
-			return fmt.Errorf("restore %s: %w", stage.SourcePath, err)
+		if _, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); runErr != nil {
+			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", runErr)
+			return fmt.Errorf("restore %s: %w", stage.SourcePath, runErr)
 		}
 	}
 	return nil
