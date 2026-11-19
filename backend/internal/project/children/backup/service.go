@@ -413,12 +413,14 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if recordErr := s.record(ctx, recorded); recordErr != nil {
-			return errors.Join(restartErr, recordErr)
-		}
-		// The project stays down until its containers start, so try again later instead of failing.
+		recordErr := s.record(ctx, recorded)
+		// The project stays down until its containers start, so try again later instead of failing; the checkpoint
+		// saved before still lists them.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
+			return recordErr
 		}
 	}
 	entry, err := s.load(ctx, recorded.BackupID)
@@ -637,12 +639,13 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		if restartErr == nil {
 			p.Stopped = nil
 		}
-		if recordErr := s.record(ctx, p); recordErr != nil {
-			return errors.Join(restartErr, recordErr)
-		}
-		// The snapshot is saved; the retry restarts the project from the checkpoint and finishes the backup.
+		recordErr := s.record(ctx, p)
+		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
+			return recordErr
 		}
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
