@@ -829,7 +829,7 @@ func (f policyFixture) admitWhileHeld(t *testing.T, held *runs.Lease, policyID s
 
 func TestUpdatePoliciesValidatesAndKeepsTheVolumeSelection(t *testing.T) {
 	f := newPolicyFixture(t)
-	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 3, StopContainers: true, LocalEnabled: true}
+	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 3, LocalEnabled: true}
 
 	collection, err := f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{
 		{UpdateBackupPolicy: base},
@@ -869,6 +869,16 @@ func TestUpdatePoliciesValidatesAndKeepsTheVolumeSelection(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "schedule", fieldErr.Field)
 
+	// An absent stopContainers stops the containers, as a manual backup does; an explicit false is kept.
+	require.True(t, collection.Policies[0].StopContainers)
+	collection, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{
+		{UpdateBackupPolicy: base},
+		{UpdateBackupPolicy: base, StopContainers: new(false)},
+	})
+	require.NoError(t, err)
+	require.True(t, collection.Policies[0].StopContainers)
+	require.False(t, collection.Policies[1].StopContainers)
+
 	// Disabling one policy and leaving out the others unschedules all of them.
 	disabled := base
 	disabled.ID, disabled.Enabled = collection.Policies[0].ID, false
@@ -888,6 +898,32 @@ func TestUpdatePoliciesValidatesAndKeepsTheVolumeSelection(t *testing.T) {
 	var remaining int64
 	require.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Count(&remaining).Error)
 	require.Zero(t, remaining)
+}
+
+func TestUpdatePoliciesChecksOnlyChangedVolumeSelections(t *testing.T) {
+	f := newPolicyFixture(t)
+	// web_cache was removed after the policy selected it.
+	stale := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, Volumes: []string{"cache", "data"}})
+	base := types.UpdateBackupPolicy{ID: stale.ID, Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true}
+
+	// Resending the stale selection, in any order, does not block saving it or adding another policy.
+	collection, err := f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{
+		{UpdateBackupPolicy: base, Volumes: []string{"data", "cache", "data"}},
+		{UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 3 * * *", LocalEnabled: true}, Volumes: []string{"data"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 2)
+	require.Equal(t, []string{"cache", "data"}, collection.Policies[0].Volumes)
+
+	// A changed selection and a new policy are checked.
+	for name, update := range map[string]types.UpdateProjectBackupPolicy{
+		"project Web has no volume missing": {UpdateBackupPolicy: base, Volumes: []string{"data", "missing"}},
+		"volume cache has not been created": {UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 3 * * *", LocalEnabled: true}, Volumes: []string{"cache"}},
+	} {
+		_, err = f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{update})
+		require.ErrorIs(t, err, common.ErrValidation, name)
+		require.ErrorContains(t, err, name)
+	}
 }
 
 func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T) {
@@ -915,11 +951,12 @@ func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T)
 
 func TestScheduledRemoteCheckRunsOnThePolicyReadUnderTheAdmission(t *testing.T) {
 	f := newPolicyFixture(t)
-	// A retained snapshot means the destination's repository existed, so its absence is not a first backup.
-	require.NoError(t, f.db.Create(&ProjectBackup{
-		BaseModel: database.BaseModel{ID: "retained", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
-		Trigger: types.VolumeBackupTriggerManual, S3DestinationID: f.destination, RemoteSnapshotID: "remote",
-	}).Error)
+	// A retained volume backup snapshot means the repository project backups share existed, so its absence is not a
+	// first backup.
+	require.NoError(t, f.db.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"retained", "app-data", 0, time.Now(), types.VolumeBackupStatusSucceeded, f.destination, "remote",
+	).Error)
 	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, Volumes: []string{}})
 
 	// S3 was enabled while the run waited, so only the policy read under the admission checks it.
@@ -973,11 +1010,16 @@ func TestRetentionKeepsTheNewestBackupsOfThePolicy(t *testing.T) {
 	f.remoteBackup(t, "safety", types.VolumeBackupTriggerSafety, "", 10*time.Hour)
 	f.remoteBackup(t, "other", types.VolumeBackupTriggerScheduled, other.ID, 10*time.Hour)
 
-	// A busy project keeps its backups until the policy's next backup.
-	held := f.hold(t, admissionScope, "p1")
+	// A busy project keeps its backups until the policy's next backup; a restore as new holds it the same way, and
+	// fails fast while the project is busy.
+	releaseBackups, err := f.service.HoldBackups(t.Context(), "p1")
+	require.NoError(t, err)
+	_, err = f.service.HoldBackups(t.Context(), "p1")
+	require.ErrorIs(t, err, errAlreadyRunning)
+	require.ErrorIs(t, f.service.Delete(t.Context(), "p1", "s4"), errAlreadyRunning)
 	f.service.retain(t.Context(), "p1", policy.ID)
 	require.Len(t, f.backupIDs(t), 7)
-	held.Release(t.Context())
+	releaseBackups(t.Context())
 
 	f.service.retain(t.Context(), "p1", policy.ID)
 	require.Equal(t, []string{"manual", "other", "s1", "s2", "safety"}, f.backupIDs(t))

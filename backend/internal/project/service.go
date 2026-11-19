@@ -218,6 +218,7 @@ type (
 
 	// backupSnapshots reads and restores the snapshots of project backups.
 	backupSnapshots interface {
+		HoldBackups(ctx context.Context, projectID string) (func(context.Context), error)
 		Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error)
 		RestoreTo(ctx context.Context, opts projectbackup.RestoreToOptions) error
 	}
@@ -2388,6 +2389,22 @@ func (b projectBundles) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptio
 	if !*cmp.Or(request.Files, new(true)) {
 		return nil, common.Classify(common.ErrValidation, errors.New("a new project needs the project files from the backup"))
 	}
+	// The new project holds the source project's files, so reading it is required too; checked before the admission so a
+	// caller without access never holds it.
+	required := []string{authz.PermProjectsRead}
+	if request.Start {
+		required = append(required, authz.PermProjectsDeploy)
+	}
+	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, required...); permissionErr != nil {
+		return nil, permissionErr
+	}
+	// The source's admission keeps retention, the sweep and deletes off the backup until it is read; as for an in-place
+	// restore, it comes before the project lock.
+	releaseBackups, err := b.backups.HoldBackups(ctx, opts.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseBackups(ctx)
 	manifest, err := b.backups.Manifest(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {
 		return nil, err
@@ -2419,16 +2436,10 @@ func (b projectBundles) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptio
 			Included:     true,
 		})
 	}
-	// The new project holds the source project's files, so reading it is required too.
-	required := []string{authz.PermProjectsRead}
 	if len(included) > 0 {
-		required = append(required, authz.PermVolumesCreate)
-	}
-	if request.Start {
-		required = append(required, authz.PermProjectsDeploy)
-	}
-	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, required...); permissionErr != nil {
-		return nil, permissionErr
+		if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, authz.PermVolumesCreate); permissionErr != nil {
+			return nil, permissionErr
+		}
 	}
 	if checkErr := b.checkNewProject(ctx, manifest, included, request.Name); checkErr != nil {
 		return nil, checkErr
@@ -2457,6 +2468,7 @@ func (b projectBundles) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptio
 	if err == nil {
 		created, err = b.restoreBackupVolumes(ctx, opts, restored.ComposeName, included, resolved, restores)
 	}
+	releaseBackups(ctx)
 	if err != nil {
 		return nil, b.rollback(ctx, err, proj, restored.ComposeName, created, opts.User)
 	}

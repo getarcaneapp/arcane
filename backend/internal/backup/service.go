@@ -157,6 +157,13 @@ type (
 		LocalEnabled  bool
 	}
 
+	// ScheduledRemoteRequest names the S3 repository a scheduled run checks and the tables recording its snapshots.
+	ScheduledRemoteRequest struct {
+		DestinationID string
+		Root          string
+		Tables        []string
+	}
+
 	// VolumeRepository is the volumes data repository that volume and project backups share.
 	VolumeRepository struct {
 		deps           VolumeRepositoryDependencies
@@ -221,6 +228,9 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+
+	// VolumeRepositoryTables record the snapshots that volume and project backups write under VolumeRoot.
+	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
 )
 
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
@@ -1016,17 +1026,22 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 
-func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, table, destinationID, root string) error {
-	result, err := CheckRemoteRepository(ctx, destinations, destinationID, root)
+// CheckScheduledRemote treats a missing repository as a first backup only when none of the tables retains a snapshot in it.
+func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, req ScheduledRemoteRequest) error {
+	result, err := CheckRemoteRepository(ctx, destinations, req.DestinationID, req.Root)
 	if err != nil || result.Available {
 		return err
 	}
 	if result.Reason == s3util.RepositoryReasonMissingRepository {
 		var retained int64
-		if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
-			Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", destinationID).
-			Count(&retained).Error; countRetainedSnapshotsErr != nil {
-			return countRetainedSnapshotsErr
+		for _, table := range req.Tables {
+			var count int64
+			if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
+				Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID).
+				Count(&count).Error; countRetainedSnapshotsErr != nil {
+				return countRetainedSnapshotsErr
+			}
+			retained += count
 		}
 		if retained == 0 {
 			return nil

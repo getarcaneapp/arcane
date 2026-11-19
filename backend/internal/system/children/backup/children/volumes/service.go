@@ -537,8 +537,11 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		if !policy.S3Enabled {
 			return nil
 		}
-		root := path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value)
-		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
+		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, backup.ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        backup.VolumeRepositoryTables,
+		})
 	}()
 	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
 		collection, loadErr := s.settings.SystemVolumeBackupPolicies()

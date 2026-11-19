@@ -1051,14 +1051,11 @@ func (s *Service) Get(ctx context.Context, projectID, backupID string) (types.Pr
 
 // Delete forgets the backup's snapshots and removes its row; it shares the project's admission with running backups.
 func (s *Service) Delete(ctx context.Context, projectID, backupID string) error {
-	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, admissionScope, projectID)
+	releaseBackups, err := s.HoldBackups(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if !admitted {
-		return errAlreadyRunning
-	}
-	defer lease.Release(ctx)
+	defer releaseBackups(ctx)
 	entry, err := s.load(ctx, backupID)
 	if err != nil {
 		return err
@@ -1067,6 +1064,16 @@ func (s *Service) Delete(ctx context.Context, projectID, backupID string) error 
 		return common.Classify(common.ErrNotFound, errors.New("project backup not found"))
 	}
 	return s.remove(ctx, entry)
+}
+
+// HoldBackups takes the project's admission without waiting, so retention, the sweep and Delete leave its backups alone
+// until the returned release runs; a busy project fails fast.
+func (s *Service) HoldBackups(ctx context.Context, projectID string) (func(context.Context), error) {
+	leases, err := s.admit(ctx, admissions(projectID, nil), "")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) { release(ctx, leases) }, nil
 }
 
 // remove forgets the backup's snapshots and deletes its row; the caller holds the project's admission.
@@ -1165,23 +1172,25 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			if validateErr != nil {
 				return common.Classify(common.ErrValidation, validateErr)
 			}
-			// Selected volumes follow the rules of a manual backup; no selection keeps following the project's volumes.
-			if update.Volumes != nil {
-				if _, inspectErr := s.inspectVolumes(ctx, project, update.Volumes); inspectErr != nil {
+			volumes := slices.Clone(update.Volumes)
+			slices.Sort(volumes)
+			volumes = slices.Compact(volumes)
+			// A new selection follows the rules of a manual backup; an unchanged one is not checked again, so a volume
+			// that went stale does not block saving, and no selection keeps following the project's volumes.
+			if volumes != nil && (policy.ID == "" || !slices.Equal(volumes, policy.Volumes)) {
+				if _, inspectErr := s.inspectVolumes(ctx, project, volumes); inspectErr != nil {
 					return inspectErr
 				}
 			}
-			volumes := slices.Clone(update.Volumes)
-			slices.Sort(volumes)
 			*policy = ProjectBackupPolicy{
 				BaseModel:       policy.BaseModel,
 				ProjectID:       projectID,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Volumes:         slices.Compact(volumes),
+				Volumes:         volumes,
 				RetentionCount:  normalized.RetentionCount,
 				Enabled:         normalized.Enabled,
-				StopContainers:  normalized.StopContainers,
+				StopContainers:  *cmp.Or(update.StopContainers, new(true)),
 				LocalEnabled:    normalized.LocalEnabled,
 				S3Enabled:       normalized.S3Enabled,
 			}
@@ -1392,8 +1401,11 @@ func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (Project
 	}
 	var remoteErr error
 	if policy.S3Enabled {
-		root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
-		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backupsTable, policy.S3DestinationID, root)
+		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        backup.VolumeRepositoryTables,
+		})
 	}
 	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
 		return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{

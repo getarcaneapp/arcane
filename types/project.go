@@ -143,7 +143,8 @@ type (
 	}
 
 	UpdateProjectBackupPolicy struct {
-		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		StopContainers *bool    `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; defaults to true"`
+		Volumes        []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
 		UpdateBackupPolicy
 	}
 

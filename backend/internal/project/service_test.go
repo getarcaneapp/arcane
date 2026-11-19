@@ -106,12 +106,16 @@ type (
 		messages []string
 	}
 
-	// fakeBackupSnapshots serves a backup's manifest and restores its project files by writing their compose file.
+	// fakeBackupSnapshots serves a backup's manifest and restores its project files by writing their compose file; it
+	// counts the reads made without the source project's admission.
 	fakeBackupSnapshots struct {
 		fail     error
+		busy     error
 		compose  string
 		restores []projectbackup.RestoreToOptions
 		manifest types.ProjectManifest
+		unheld   int
+		held     bool
 	}
 )
 
@@ -12133,11 +12137,25 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 	}
 }
 
+func (f *fakeBackupSnapshots) HoldBackups(context.Context, string) (func(context.Context), error) {
+	if f.busy != nil {
+		return nil, f.busy
+	}
+	f.held = true
+	return func(context.Context) { f.held = false }, nil
+}
+
 func (f *fakeBackupSnapshots) Manifest(context.Context, string, string) (types.ProjectManifest, error) {
+	if !f.held {
+		f.unheld++
+	}
 	return f.manifest, nil
 }
 
 func (f *fakeBackupSnapshots) RestoreTo(_ context.Context, opts projectbackup.RestoreToOptions) error {
+	if !f.held {
+		f.unheld++
+	}
 	f.restores = append(f.restores, opts)
 	if opts.ProjectPath != "" {
 		return os.WriteFile(filepath.Join(opts.ProjectPath, "compose.yaml"), []byte(f.compose), 0o644)
@@ -12169,8 +12187,11 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 		failRestore bool
 		conflict    bool
 		stack       bool
+		busy        bool
 	}{
 		{name: "restores", wantCreated: []string{"shared-data", "copy_data"}},
+		// A backup or restore of the source holds its admission, so retention could remove the backup mid-restore.
+		{name: "fails fast while the source project is busy", busy: true, conflict: true, wantErr: "already running"},
 		// Both refusals come before the project or any volume is created.
 		{name: "refuses a running Compose stack of the same name", stack: true, conflict: true, wantErr: "docker already runs a Compose stack named copy"},
 		{name: "refuses an existing volume", existing: []string{"copy_data"}, conflict: true, wantErr: "these volumes already exist: copy_data"},
@@ -12232,7 +12253,12 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				KVService:                   kv.NewKVService(db),
 				RegistryCredentialsProvider: testRegistryCredentials,
 			})
-			snapshots := &fakeBackupSnapshots{compose: compose, manifest: manifest, fail: kit.Ternary(tt.failRestore, errors.New("rustic failed"), nil)}
+			snapshots := &fakeBackupSnapshots{
+				compose:  compose,
+				manifest: manifest,
+				fail:     kit.Ternary(tt.failRestore, errors.New("rustic failed"), nil),
+				busy:     kit.Ternary(tt.busy, common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running")), nil),
+			}
 			var (
 				created        []client.VolumeCreateOptions
 				names, deleted []string
@@ -12265,6 +12291,9 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 			})
 			assert.Equal(t, tt.wantCreated, names)
 			assert.Equal(t, tt.wantDeleted, deleted)
+			// Every read of the backup holds the source's admission, which is released on every path.
+			assert.Zero(t, snapshots.unheld)
+			assert.False(t, snapshots.held)
 			var projectCount int64
 			require.NoError(t, db.Model(&Project{}).Count(&projectCount).Error)
 			if tt.wantErr != "" {
