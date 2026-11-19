@@ -108,6 +108,6 @@ func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) 
 }
 
 func TestRunStagesInternalRejectsStagesWithoutDestination(t *testing.T) {
-	err := runStages(t.Context(), nil, types.RecoveryRestoreRequest{}, []types.RecoveryRestoreStage{{SourcePath: "/data"}})
+	err := runStages(t.Context(), nil, types.RecoveryRestoreRequest{}, nil, []types.RecoveryRestoreStage{{SourcePath: "/data"}})
 	require.ErrorContains(t, err, "restore stage for /data has no destination")
 }

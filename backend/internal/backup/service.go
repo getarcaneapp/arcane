@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"maps"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -34,7 +33,6 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/sys/crypto"
 
@@ -208,6 +206,7 @@ const (
 	EnvironmentSystemRoot          = "arcane-environment-recovery"
 	rusticRepositoryMissingMessage = "No repository config file found"
 	DeletionBatchSize              = 500
+	dataDirectory                  = "data"
 
 	RemoteDisabledMessage = "S3 backup storage is missing. Remote backups were disabled; edit the policy to resume."
 
@@ -736,21 +735,22 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 			return "", fmt.Errorf("failed to pull official Rustic image: %w", pullErr)
 		}
 	}
+	arcane, inspectErr := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if inspectErr != nil || kit.FromPtr(arcane).ID == "" {
+		slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", inspectErr)
+	}
+	trust, err := rustic.TrustMounts(ctx, dockerClient, dataDirectory, kit.FromPtr(arcane).Mounts)
+	if err != nil {
+		return "", err
+	}
 	return rustic.Run(
 		ctx,
 		dockerClient,
 		password,
 		command,
 		repository.Environment,
-		append(slices.Clone(repository.Mounts), extraMounts...),
-		func() container.NetworkMode {
-			arcane, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
-			if err != nil || kit.FromPtr(arcane).ID == "" {
-				slog.DebugContext(ctx, "backup engine: running Rustic on the default network", "error", err)
-				return ""
-			}
-			return container.NetworkMode("container:" + arcane.ID)
-		}(),
+		slices.Concat(repository.Mounts, extraMounts, trust),
+		container.NetworkMode(kit.Ternary(kit.FromPtr(arcane).ID == "", "", "container:"+kit.FromPtr(arcane).ID)),
 	)
 }
 
@@ -1420,29 +1420,4 @@ func SourceMounts(opts SourceMountOptions) ([]mount.Mount, error) {
 		})
 	}
 	return result, nil
-}
-
-// BindVolumeSubpaths rewrites volume subpath mounts as binds of the subpath on daemons before API 1.45,
-// which ignore subpaths and mount the volume root instead.
-func BindVolumeSubpaths(ctx context.Context, dockerClient *client.Client, mounts []mount.Mount) ([]mount.Mount, error) {
-	if compat.IsDockerAPIVersionAtLeast(compat.DetectDockerAPIVersion(ctx, dockerClient), "1.45") {
-		return mounts, nil
-	}
-	rewritten := slices.Clone(mounts)
-	for index, resolved := range rewritten {
-		if resolved.Type != mount.TypeVolume || kit.FromPtr(resolved.VolumeOptions).Subpath == "" {
-			continue
-		}
-		inspect, err := dockerClient.VolumeInspect(ctx, resolved.Source, client.VolumeInspectOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("inspect volume %s for backup: %w", resolved.Source, err)
-		}
-		rewritten[index] = mount.Mount{
-			Type:     mount.TypeBind,
-			Source:   filepath.Join(inspect.Volume.Mountpoint, resolved.VolumeOptions.Subpath),
-			Target:   resolved.Target,
-			ReadOnly: resolved.ReadOnly,
-		}
-	}
-	return rewritten, nil
 }
