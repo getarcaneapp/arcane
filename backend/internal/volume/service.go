@@ -211,6 +211,8 @@ func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName stri
 func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (created bool, err error) {
 	name := options.Name
 	defer s.workspaceLocks.Lock(name)()
+	// Seconds, as Docker reports creation times; a volume created earlier was not made by this call.
+	checked := time.Now().Truncate(time.Second)
 	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
 		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	})
@@ -220,10 +222,16 @@ func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.Vo
 	case !errdefs.IsNotFound(err):
 		return false, fmt.Errorf("inspect volume %s: %w", name, err)
 	}
-	if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
 		return dockerClient.VolumeCreate(ctx, options)
-	}); err != nil {
+	})
+	if err != nil {
 		return false, fmt.Errorf("create volume %s: %w", name, err)
+	}
+	// Docker returns a volume that already exists instead of failing, so one made since the check above, outside
+	// Arcane, is refused rather than claimed, changed, or removed by a rollback.
+	if createdAt, parseErr := time.Parse(time.RFC3339Nano, result.Volume.CreatedAt); parseErr == nil && createdAt.Before(checked) {
+		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
 	}
 	if root == nil {
 		return true, nil
