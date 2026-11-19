@@ -285,15 +285,31 @@ export async function fetchAcrossEnvironments<
 	}
 	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER && targets.length === 1;
 	const request: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
-	const read = await tryCatch(readAcrossEnvironments(targets, (scope, config) => fetch(scope, request, config)));
+	let reported: EnvironmentFailure[] = [];
+	const read = await tryCatch(
+		readAcrossEnvironments(targets, (scope, config) =>
+			fetch(scope, request, {
+				...config,
+				onFailedEnvironments: (failures) => {
+					reported = failures;
+					config.onFailedEnvironments?.(failures);
+				}
+			})
+		)
+	);
 	if (read.error !== null) {
 		if (picked.length === 0) throw read.error;
-		const message = extractApiErrorMessage(read.error);
+		const { included, excluded } = limitEnvironments(targets);
+		const message = extractApiErrorMessage(read.error).replace(`${included[0]!.name}: `, '');
+		const attempted = reported.length > 0 ? reported : included.map((environment) => ({ environment, message }));
 		return {
 			data: [],
 			pagination,
-			failedEnvironments: targets.map((environment) => ({ environment, message })),
-			excludedEnvironments: limitEnvironments(targets).excluded
+			failedEnvironments: attempted.map((failure) => ({
+				environment: included.find((env) => env.id === failure.environment.id) ?? failure.environment,
+				message: failure.message
+			})),
+			excludedEnvironments: excluded
 		} as unknown as EnvironmentPage<P>;
 	}
 	const { value: page, failures, excluded } = read.data;
