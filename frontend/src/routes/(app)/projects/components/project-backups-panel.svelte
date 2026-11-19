@@ -69,7 +69,16 @@
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let { projectId, environmentId }: { projectId: string; environmentId: string } = $props();
+	let {
+		projectId,
+		environmentId,
+		onRestored
+	}: {
+		projectId: string;
+		environmentId: string;
+		// Called when a restore ends, so the page reloads the files it shows.
+		onRestored?: () => Promise<unknown>;
+	} = $props();
 
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
 	const canRestore = $derived(hasPermission('projects:restore', environmentId));
@@ -186,6 +195,14 @@
 		invalidateBackups,
 		() => `project-restore:${projectId}`
 	);
+
+	// A plain variable, so the effect only reads state: it notices a restore that was running and no longer is.
+	let restoreWasRunning = false;
+	$effect(() => {
+		const running = restoreActivity.activeIds.length > 0;
+		if (restoreWasRunning && !running) void onRestored?.();
+		restoreWasRunning = running;
+	});
 
 	onMount(async () => {
 		if (!canBackup || !canListS3Destinations) return;
