@@ -39,7 +39,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
-	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -80,7 +80,7 @@ type (
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
 		// ProjectName returns the project's name without loading its compose files.
 		ProjectName func(ctx context.Context, projectID string) (string, error)
-		Activities  activitylib.MessageAppender
+		Activities  activity.MessageAppender
 		// Ctx, Scheduler and Admission register the policies' scheduled jobs.
 		Ctx       context.Context
 		Scheduler types.DynamicScheduler
@@ -251,7 +251,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Fingerprint: "0cad4244ee32070c434e67d79eb193796c68f733291ac7e89a10165ed091b758",
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
-		Activity:    activitylib.StartRequest{Type: types.ActivityTypeResourceAction},
+		Activity:    activity.StartRequest{Type: types.ActivityTypeResourceAction},
 		Labels:      map[string]string{"backup": "Creating backup"},
 		Steps:       []workflow.StepSpec{workflow.Step("backup", engine.Handler(s.run), workflow.WithMaxAttempts(1))},
 	})
@@ -265,7 +265,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Fingerprint: "34a558e74ada5f164a05b1b41ea0e7b81f7fe1634d9afc9b11a0819d3ade60b3",
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
-		Activity:    activitylib.StartRequest{Type: types.ActivityTypeResourceAction},
+		Activity:    activity.StartRequest{Type: types.ActivityTypeResourceAction},
 		Labels:      map[string]string{"restore": "Restoring backup"},
 		Steps:       []workflow.StepSpec{workflow.Step("restore", engine.Handler(s.runRestore), workflow.WithMaxAttempts(1))},
 	})
@@ -278,7 +278,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Fingerprint: "34380becc92f77613e0b2782355044258bdd8a698d1c8018fe9bb6d6c8c28d98",
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
-		Activity: activitylib.StartRequest{
+		Activity: activity.StartRequest{
 			Type: types.ActivityTypeResourceAction, ResourceType: new("project"), StartedBy: &types.SystemUser,
 			Step: "Creating scheduled backup", LatestMessage: "Creating scheduled project backup",
 		},
@@ -324,7 +324,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	}
 	p.BackupID = entry.ID
 	releaseHeld := s.hold(keys, entry.ID, leases)
-	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, Plan: p}, activitylib.StartRequest{
+	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, Plan: p}, activity.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Creating backup", LatestMessage: "Creating project backup",
 		Metadata: database.JSON{"action": "create_project_backup", "backupId": entry.ID, "destination": entry.Destination, "s3DestinationId": entry.S3DestinationID},
@@ -564,12 +564,10 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) error {
 	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
-	// Another run holds an admission; hand the task back instead of waiting inside the workflow.
-	if errors.Is(err, common.ErrConflict) {
-		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
-	}
+	// Another run holds an admission, or taking it failed; hand the task back so the stopped containers are restarted
+	// on a later attempt instead of being left down.
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
 	}
 	defer release(context.WithoutCancel(ctx), leases)
 	if len(recorded.Stopped) > 0 {
@@ -1257,7 +1255,7 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 		Workflow: s.scheduled,
 		JobName:  s.jobs.JobName(policyID),
 		Payload:  scheduledRun{PolicyID: policyID},
-		Activity: activitylib.StartRequest{
+		Activity: activity.StartRequest{
 			ResourceID: new(projectID), ResourceName: new(cmp.Or(name, projectID)),
 			Metadata: database.JSON{
 				"action": "scheduled_project_backup", "policyId": policyID, "schedule": policy.Schedule, "projectId": projectID,
@@ -1673,7 +1671,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		return "", err
 	}
 	releaseHeld := s.hold(keysToAdmit, p.ID, leases)
-	activityID, err := s.flow.Submit(ctx, s.restores, restoreRun{Requester: requester, User: opts.User, Plan: p}, activitylib.StartRequest{
+	activityID, err := s.flow.Submit(ctx, s.restores, restoreRun{Requester: requester, User: opts.User, Plan: p}, activity.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Restoring backup", LatestMessage: "Restoring project backup",
 		Metadata: database.JSON{"action": "restore_project_backup", "backupId": entry.ID},
@@ -2101,7 +2099,7 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 			return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: restoreTargetType, ID: p.ID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 		},
 		report: func(ctx context.Context, message string) {
-			if _, err := s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), activityID, activitylib.AppendMessageRequest{
+			if _, err := s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), activityID, activity.AppendMessageRequest{
 				Level:   types.ActivityMessageLevelInfo,
 				Message: message,
 			}); err != nil {
