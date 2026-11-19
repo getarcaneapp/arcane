@@ -299,7 +299,7 @@ export async function fetchAcrossEnvironments<
 			data: [],
 			pagination,
 			failedEnvironments: read.error.failures,
-			excludedEnvironments: []
+			excludedEnvironments: limitEnvironments(targets).excluded
 		} as unknown as EnvironmentPage<P>;
 	}
 	const { value: page, failures, excluded } = read.data;
@@ -310,4 +310,15 @@ export async function fetchAcrossEnvironments<
 		failedEnvironments: failures,
 		excludedEnvironments: excluded
 	};
+}
+
+export async function readBesideFilteredList<T>(
+	listOptions: SearchPaginationSortRequest,
+	read: Promise<T>
+): Promise<T | undefined> {
+	const result = await tryCatch(read);
+	if (result.error === null) return result.data;
+	const filtered = environmentFilterIds(listOptions.filters?.[ENVIRONMENT_FILTER]).length > 0;
+	if (!filtered || !(result.error instanceof EnvironmentsFailedError)) throw result.error;
+	return undefined;
 }

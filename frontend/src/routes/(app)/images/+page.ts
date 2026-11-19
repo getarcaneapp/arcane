@@ -2,7 +2,7 @@ import { imageListQuery, imageUsageCountsQuery } from '#lib/query/images.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { readableEnvironments } from '#lib/utils/environments.js';
+import { readBesideFilteredList, readableEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialListPageRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -20,7 +20,10 @@ export const load: PageLoad = async ({ parent }) => {
 	const result = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageListQuery(scope, environments, imageRequestOptions), revalidateIfStale: true }),
-			queryClient.ensureQueryData({ ...imageUsageCountsQuery(scope, environments), revalidateIfStale: true }),
+			readBesideFilteredList(
+				imageRequestOptions,
+				queryClient.ensureQueryData({ ...imageUsageCountsQuery(scope, environments), revalidateIfStale: true })
+			),
 			featureStore.load(environments.map((env) => env.id))
 		])
 	);
