@@ -1322,6 +1322,52 @@ func TestFailedResumedRunStillAppliesRetention(t *testing.T) {
 	require.Equal(t, map[string][][]string{"volumes:local": {{"local-f1", "local-f2", "local-f3"}}}, f.forgets.calls)
 }
 
+func TestInterruptedScheduledBackupsKeepTheirJobs(t *testing.T) {
+	f := newPolicyFixture(t)
+	enabled := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true})
+	disabled := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 3 * * *", Enabled: false, LocalEnabled: true})
+	idle := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 4 * * *", Enabled: false, LocalEnabled: true})
+	for _, row := range []struct{ id, policy string }{{id: "b-disabled", policy: disabled.ID}, {id: "b-deleted", policy: "deleted-policy"}} {
+		f.storedBackup(t, ProjectBackup{
+			BaseModel: database.BaseModel{ID: row.id, CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning,
+			Trigger: types.VolumeBackupTriggerScheduled, PolicyID: row.policy, Destination: types.VolumeBackupDestinationLocal,
+		})
+	}
+
+	// After a restart, a run interrupted with the project stopped can only resume through its policy's job.
+	f.service.RegisterJobsOnStartup(t.Context())
+	require.True(t, f.jobs.HasJob("project-backup:"+enabled.ID))
+	require.True(t, f.jobs.HasJob("project-backup:"+disabled.ID))
+	require.True(t, f.jobs.HasJob("project-backup:deleted-policy"))
+	require.False(t, f.jobs.HasJob("project-backup:"+idle.ID))
+
+	// Deleting a policy while its backup runs keeps the job until the backup ends.
+	_, err := f.service.UpdatePolicies(t.Context(), "p1", []types.UpdateProjectBackupPolicy{{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{ID: idle.ID, Schedule: "0 4 * * *", LocalEnabled: true},
+	}})
+	require.NoError(t, err)
+	require.True(t, f.jobs.HasJob("project-backup:"+disabled.ID))
+	require.False(t, f.jobs.HasJob("project-backup:"+enabled.ID))
+}
+
+func TestPolicySavesForAProjectRunOneAtATime(t *testing.T) {
+	f := newPolicyFixture(t)
+	// Another save of p1 is committing and updating its jobs; this one waits, so the jobs follow the commit order.
+	unlock := f.service.policyLocks.Lock("p1")
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.service.UpdatePolicies(t.Context(), "p1", nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("a save ran while another save of the project held it: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlock()
+	require.NoError(t, <-done)
+}
+
 func TestExpiredBackupsAreForgottenOncePerRepository(t *testing.T) {
 	f := newPolicyFixture(t)
 	f.available.Store(true)
