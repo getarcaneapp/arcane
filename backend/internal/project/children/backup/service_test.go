@@ -2092,3 +2092,157 @@ func TestDiscoveryAfterRestoreClearsItsRequestOnlyOnSuccess(t *testing.T) {
 	require.Equal(t, []DiscoverOptions{{S3DestinationIDs: []string{f.destination, f.secondary}, Local: true}}, *succeedingCalls)
 	require.False(t, settingsService.GetBoolSetting(t.Context(), discoveryPendingKey))
 }
+
+func TestRestoreToHoldsTheVolumesItWasAskedToLock(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{DB: db, Engine: engine, VolumeLocks: locks})
+	require.NoError(t, service.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
+	opts := RestoreToOptions{
+		ProjectID: "p1", BackupID: "missing", LockVolumes: true,
+		Volumes: []RestoreVolume{{Key: "data", Snapshot: "old_data", Name: "new_data"}},
+	}
+
+	// A volume backup of the new volume makes the restore wait its turn instead of copying under it.
+	lease, admitted, err := engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, "new_data")
+	require.NoError(t, err)
+	require.True(t, admitted)
+	require.ErrorIs(t, service.RestoreTo(t.Context(), opts), common.ErrConflict)
+	lease.Release(t.Context())
+
+	// File edits through the volume browser hold the lock the copy needs.
+	unlock := locks.Lock("new_data")
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, service.RestoreTo(waiting, opts), context.DeadlineExceeded)
+	unlock()
+
+	// Once the copy ends, either way, both are free again.
+	require.Error(t, service.RestoreTo(t.Context(), opts))
+	lease, admitted, err = engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, "new_data")
+	require.NoError(t, err)
+	require.True(t, admitted)
+	lease.Release(t.Context())
+	locks.Lock("new_data")()
+}
+
+func TestResumedRunThatCannotAdoptItsSnapshotFails(t *testing.T) {
+	f := newPolicyFixture(t)
+	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
+	f.storedBackup(t, ProjectBackup{
+		BaseModel: database.BaseModel{ID: "resumed", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning,
+		Trigger: types.VolumeBackupTriggerScheduled, PolicyID: policy.ID, Destination: types.VolumeBackupDestinationS3, S3DestinationID: "gone",
+	})
+	checkpoint, err := json.Marshal(plan{BackupID: "resumed", ProjectID: "p1", PolicyID: policy.ID, S3DestinationID: "gone", S3Enabled: true})
+	require.NoError(t, err)
+	// The interrupted attempt was writing to S3, whose destination is gone now.
+	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
+		{ResourceType: targetType, ID: "p1", RecoveryData: checkpoint},
+		{ResourceType: targetType, ID: "resumed:remote"},
+	}}}
+
+	_, resumed, err := f.service.resumeScheduled(t.Context(), previous)
+	require.True(t, resumed)
+	require.Error(t, err)
+	var entry ProjectBackup
+	require.NoError(t, f.db.First(&entry, "id = ?", "resumed").Error)
+	require.Equal(t, types.VolumeBackupStatusFailed, entry.Status)
+	require.NotEmpty(t, entry.Error)
+}
+
+func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	require.NoError(t, db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
+	}).Error)
+	startErr := errors.New("docker is restarting")
+	starts := 0
+	service := NewService(Dependencies{
+		DB:          db,
+		Engine:      engine,
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		StartContainers: func(context.Context, string, []container.Summary) error {
+			starts++
+			return startErr
+		},
+	})
+	recorded := plan{
+		BackupID: "b1", ProjectID: "p1", StopContainers: true,
+		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
+	}
+
+	// A failed start hands the run back instead of ending it with the project down.
+	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), actor.ErrJobRejected)
+	startErr = nil
+	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded))
+	require.Equal(t, 2, starts)
+}
+
+func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
+	db := newTestDB(t)
+	entry := &ProjectBackup{BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning}
+	require.NoError(t, db.Create(entry).Error)
+	service := NewService(Dependencies{DB: db})
+
+	err := service.complete(t.Context(), entry, fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.New("down")))
+	require.ErrorIs(t, err, actor.ErrJobRejected)
+	var stored ProjectBackup
+	require.NoError(t, db.First(&stored, "id = ?", "b1").Error)
+	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
+}
+
+func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{
+		DB: db, Engine: engine, VolumeLocks: locks,
+		Project:     func(context.Context, string) (types.Project, error) { return testProject(), nil },
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+	})
+	p := restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", Volumes: []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}}}
+
+	// A volume backup of the cache volume can start the project's containers; the restore of data waits for it.
+	unlock := locks.Lock("web_cache")
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err := service.lockRestore(waiting, p, "")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	unlock()
+
+	release, err := service.lockRestore(t.Context(), p, "")
+	require.NoError(t, err)
+	release()
+}
+
+func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{VolumeLocks: locks})
+	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
+		{Key: "data", Name: "web_data", Included: true},
+		{Key: "cache", Name: "web_cache", Included: false},
+	}}
+	// A volume backup of the cache volume has the project's containers stopped; the project backup waits for it.
+	unlock := locks.Lock("web_cache")
+	defer unlock()
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
+}

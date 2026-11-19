@@ -176,6 +176,8 @@ type (
 		// ProjectPath receives the project files; empty leaves them out.
 		ProjectPath string
 		Volumes     []RestoreVolume
+		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
+		LockVolumes bool
 	}
 
 	// RestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
@@ -648,7 +650,13 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
 // lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
-func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) error {
+func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
+	// A resume that ends for good fails its backup, as a first attempt does; shutdown and busy admissions retry it.
+	defer func() {
+		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) && !errors.Is(err, backup.ErrBackupSettled) {
+			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
+		}
+	}()
 	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
 	// Another run holds an admission, or taking it failed; hand the task back so the stopped containers are restarted
@@ -668,7 +676,13 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if recordErr := errors.Join(restartErr, s.record(ctx, recorded)); recordErr != nil {
+		recordErr := s.record(ctx, recorded)
+		// The project stays down until its containers start, so try again later instead of failing; the checkpoint
+		// saved before still lists them.
+		if restartErr != nil {
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
 			return recordErr
 		}
 	}
@@ -788,7 +802,16 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) err
 		}
 		defer unlockProject()
 	}
-	unlock, err := s.lockVolumes(ctx, p.volumeNames())
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held: none of its containers is started or stopped by another backup while this one runs.
+	var mounted []string
+	for _, volume := range p.Volumes {
+		if volume.Name != "" {
+			mounted = append(mounted, volume.Name)
+		}
+	}
+	slices.Sort(mounted)
+	unlock, err := s.lockVolumes(ctx, slices.Compact(mounted))
 	if err != nil {
 		return err
 	}
@@ -846,8 +869,12 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	}
 	var stopped []container.Summary
 	defer func() {
-		if len(stopped) > 0 {
-			err = errors.Join(err, s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped))
+		if len(stopped) == 0 {
+			return
+		}
+		// Left down, the project is restarted from the checkpoint when the run is tried again.
+		if restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); restartErr != nil {
+			err = fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(err, restartErr))
 		}
 	}()
 	if p.StopContainers {
@@ -883,7 +910,12 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		if restartErr == nil {
 			p.Stopped = nil
 		}
-		if recordErr := errors.Join(restartErr, s.record(ctx, p)); recordErr != nil {
+		recordErr := s.record(ctx, p)
+		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes.
+		if restartErr != nil {
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+		}
+		if recordErr != nil {
 			return recordErr
 		}
 	}
@@ -990,7 +1022,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	if err != nil {
 		return nil, err
 	}
-	return backup.BindVolumeSubpaths(ctx, dockerClient, resolved)
+	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
 func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
@@ -1054,6 +1086,10 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 }
 
 func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error) error {
+	// A run handed back stays running, so its retry resumes it.
+	if errors.Is(err, actor.ErrJobRejected) {
+		return err
+	}
 	entry.Status, entry.Error, entry.CompletedAt = types.VolumeBackupStatusSucceeded, "", new(time.Now())
 	if err != nil {
 		entry.Status, entry.Error = types.VolumeBackupStatusFailed, err.Error()
@@ -1647,7 +1683,8 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 		return fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	defer func() {
-		if err != nil && ctx.Err() == nil {
+		// A run handed back stays running, so its retry resumes it from the checkpoint.
+		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
@@ -2451,9 +2488,9 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			backupErr = s.backUpScheduled(ctx, admitted)
 			release(context.WithoutCancel(ctx), admitted.leases)
 		}
-		if ctx.Err() != nil {
-			// Shutdown interrupted this project; its checkpoint resumes it.
-			return types.SchedulerOutcome{}, ctx.Err()
+		// Shutdown interrupted this project, or it could not be started again; its checkpoint resumes it first.
+		if ctx.Err() != nil || errors.Is(backupErr, actor.ErrJobRejected) {
+			return types.SchedulerOutcome{}, cmp.Or(ctx.Err(), backupErr)
 		}
 		var outcome types.TargetOutcome
 		switch {
@@ -2840,7 +2877,21 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 		release(context.WithoutCancel(ctx), leases)
 		return nil, err
 	}
-	unlockVolumes, err := s.lockVolumes(ctx, p.volumeNames())
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held, not only the targets: none of its containers starts while the targets are rewritten.
+	project, err := s.deps.Project(ctx, p.ProjectID)
+	if err != nil {
+		unlockProject()
+		release(context.WithoutCancel(ctx), leases)
+		return nil, err
+	}
+	locked := p.volumeNames()
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		if volume.Name != "" {
+			locked = append(locked, volume.Name)
+		}
+	}
+	unlockVolumes, err := s.lockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
 	if err != nil {
 		unlockProject()
 		release(context.WithoutCancel(ctx), leases)
@@ -3299,10 +3350,30 @@ func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (typ
 }
 
 // RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
-// volumes it names; the caller holds the locks they need.
+// volumes it names; the caller holds the locks they need, or asks for the volumes' with LockVolumes.
 func (s *Service) RestoreTo(ctx context.Context, opts RestoreToOptions) error {
 	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
 		return nil
+	}
+	if opts.LockVolumes {
+		var names []string
+		var keys []types.SchedulerAdmissionKey
+		for _, volume := range opts.Volumes {
+			if !slices.Contains(names, volume.Name) {
+				names = append(names, volume.Name)
+				keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: volume.Name})
+			}
+		}
+		leases, admitErr := s.admit(ctx, keys, "restore-to:"+opts.BackupID)
+		if admitErr != nil {
+			return admitErr
+		}
+		defer release(context.WithoutCancel(ctx), leases)
+		unlock, lockErr := s.lockVolumes(ctx, names)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 	}
 	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {

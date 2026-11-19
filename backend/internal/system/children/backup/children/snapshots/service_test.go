@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/types/v3"
 )
 
@@ -562,11 +563,11 @@ func TestRestoreStages(t *testing.T) {
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Equal(t, []types.RecoveryRestoreStage{{
-			Swap:       &types.RecoveryRestoreSwap{Directory: "/app/data", ID: "snap", Preserve: []string{"projects"}},
+			Swap:       &types.RecoveryRestoreSwap{Directory: "/app/data", ID: "snap", Preserve: []string{rustic.TrustBundleName, "projects"}},
 			Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
 			SnapshotID: "snap",
 			SourcePath: "/app/data",
-			Globs:      []string{"!/projects", "!/projects/**"},
+			Globs:      []string{"!/" + rustic.TrustBundleName, "!/" + rustic.TrustBundleName + "/**", "!/projects", "!/projects/**"},
 			Repository: repository,
 		}}, stages)
 	})
@@ -616,12 +617,13 @@ func TestStagedRestoreStages(t *testing.T) {
 				Swap: &types.RecoveryRestoreSwap{
 					Directory: "/app/data",
 					ID:        "snap",
-					Preserve:  []string{"old-projects", "projects", "stacks/[x]", "templates"},
+					Preserve:  []string{rustic.TrustBundleName, "old-projects", "projects", "stacks/[x]", "templates"},
 				},
 				Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
 				SnapshotID: "snap",
 				SourcePath: "/data",
 				Globs: []string{
+					"!/" + rustic.TrustBundleName, "!/" + rustic.TrustBundleName + "/**",
 					"!/old-projects", "!/old-projects/**", "!/projects", "!/projects/**",
 					`!/stacks/\[x\]`, `!/stacks/\[x\]/**`, "!/templates", "!/templates/**",
 				},
@@ -660,7 +662,7 @@ func TestStagedRestoreStages(t *testing.T) {
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/opt/stacks"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
-		require.Equal(t, []string{"old-projects", "projects"}, stages[0].Swap.Preserve)
+		require.Equal(t, []string{rustic.TrustBundleName, "old-projects", "projects"}, stages[0].Swap.Preserve)
 	})
 	t.Run("mount that holds the projects host folder is refused", func(t *testing.T) {
 		mounts := []container.MountPoint{
@@ -685,7 +687,7 @@ func TestStagedRestoreStages(t *testing.T) {
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/volume4/docker/dsm"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
-		require.Equal(t, []string{"old-projects"}, stages[0].Swap.Preserve)
+		require.Equal(t, []string{rustic.TrustBundleName, "old-projects"}, stages[0].Swap.Preserve)
 	})
 }
 

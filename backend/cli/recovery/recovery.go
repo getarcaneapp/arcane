@@ -99,12 +99,16 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	}
 	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
 	rustic := func(ctx context.Context, stage types.RecoveryRestoreStage) error {
+		trust, trustErr := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", inspect.Container.Mounts)
+		if trustErr != nil {
+			return trustErr
+		}
 		command := []string{"restore", "--delete"}
 		for _, glob := range stage.Globs {
 			command = append(command, "--glob", glob)
 		}
 		command = append(command, stage.SnapshotID+":"+stage.SourcePath, stage.Target.Path)
-		mounts := append(slices.Clone(stage.Repository.Mounts), stage.Target.Mounts...)
+		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
 		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode))
 		return runErr
 	}

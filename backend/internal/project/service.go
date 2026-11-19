@@ -2181,7 +2181,8 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 	return stopped, nil
 }
 
-// volumesInUseOutside returns the names of the volumes that running containers outside a Compose project mount.
+// volumesInUseOutside returns the names of the volumes that running containers outside a Compose project mount. Arcane's
+// file-browser helpers only write while a file operation holds the volume's lock, so an idle one doesn't count.
 func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName string) (map[string]bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2193,6 +2194,9 @@ func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName st
 	}
 	inUse := map[string]bool{}
 	for _, c := range running.Items {
+		if volumes.IsHelperContainer(c) {
+			continue
+		}
 		// Arcane's own containers are never stopped, so they count as in use even within this project.
 		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
 			continue
@@ -2513,7 +2517,9 @@ func (b projectBundles) restoreBackupVolumes(
 		}
 		targets = append(targets, projectbackup.RestoreVolume{Key: target.Key, Snapshot: included[index].Name, Name: target.Name})
 	}
-	return created, b.backups.RestoreTo(ctx, projectbackup.RestoreToOptions{ProjectID: opts.ProjectID, BackupID: opts.BackupID, Volumes: targets})
+	return created, b.backups.RestoreTo(ctx, projectbackup.RestoreToOptions{
+		ProjectID: opts.ProjectID, BackupID: opts.BackupID, Volumes: targets, LockVolumes: true,
+	})
 }
 
 // checkNewProject refuses a name Docker already runs a Compose stack under, or whose predicted volumes already exist.

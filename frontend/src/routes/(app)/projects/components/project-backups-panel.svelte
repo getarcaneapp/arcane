@@ -132,7 +132,10 @@
 		enabled: restoreOpen,
 		staleTime: 0
 	}));
-	const projectRunning = $derived(restoreOptionsQuery.data?.running ?? false);
+	// Only a finished, successful check counts; otherwise the server decides from the project's current state.
+	const projectRunning = $derived(
+		restoreOptionsQuery.isSuccess && !restoreOptionsQuery.isFetching && (restoreOptionsQuery.data?.running ?? false)
+	);
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -172,6 +175,14 @@
 				return result.data.filter((backup) => backup.status === 'running').map((backup) => backup.id);
 			};
 		}
+	);
+
+	// A global run backs up many projects under one activity, so it only refreshes this list.
+	useBackupActivity(
+		() => environmentId,
+		(activity) => ['run_project_backups', 'scheduled_project_backups'].includes(String(activity.metadata?.['action'])),
+		invalidateBackups,
+		() => 'global-project-backups'
 	);
 
 	const restoreActivity = useBackupActivity(
@@ -291,7 +302,8 @@
 			setLoadingState: (value) => (restoring = value),
 			onSuccess: (data) => {
 				restoreOpen = false;
-				restoreActivity.accepted(data.activityId);
+				// Only activities say when a restore ends; without them the server still refuses a second one.
+				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
 			}
 		});
@@ -319,7 +331,7 @@
 			onSuccess: async (project) => {
 				restoreAsNewOpen = false;
 				toast.success(m.project_restored_from_backup({ name: project.name }), activityToastOptions(project.activityId));
-				await goto(resolve('/(app)/projects/[projectId]', { projectId: project.id }));
+				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: project.id }));
 			}
 		});
 	}
@@ -759,7 +771,7 @@
 			defaultSchedule="0 2 * * *"
 			showStopContainers
 			stopContainersDescription={m.stop_containers_during_snapshot()}
-			retentionDescription={m.keep_newest_schedule_backups()}
+			retentionDescription={m.keep_newest_successful_schedule_backups()}
 			defaultStopContainers
 			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
 			afterFields={ScheduleVolumes}
@@ -796,7 +808,7 @@
 			<Alert.Description>{m.restore_replaces_current_data()}</Alert.Description>
 		</Alert.Root>
 		{@render RestoreParts(false)}
-		{#if restoreOptionsQuery.isPending}
+		{#if restoreOptionsQuery.isFetching}
 			<div class="flex items-center gap-2 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 				<span>{m.common_loading()}</span>
@@ -825,7 +837,7 @@
 			customLabel={m.volumes_backups_restore()}
 			onclick={handleRestore}
 			loading={restoring}
-			disabled={restoring || restoreOptionsQuery.isPending || (!restoreFiles && selectedRestoreVolumes.length === 0)}
+			disabled={restoring || restoreOptionsQuery.isFetching || (!restoreFiles && selectedRestoreVolumes.length === 0)}
 			data-testid="project-restore-submit"
 		/>
 	{/snippet}
