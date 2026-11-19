@@ -155,6 +155,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			RetargetWebhooks:  p.Webhooks.RetargetProjectWebhooks,
 			CountWebhooks:     p.Webhooks.CountProjectWebhooks,
 			ExportVolume:      p.Volumes.ExportVolumeArchive,
+			VolumeLocks:       p.Volumes.WorkspaceLocks(),
 			RestoreVolume:     p.Volumes.RestoreVolumeUpload,
 			CreateEmptyVolume: p.Volumes.CreateEmptyVolume,
 			DeleteVolume:      p.Volumes.DeleteVolume,

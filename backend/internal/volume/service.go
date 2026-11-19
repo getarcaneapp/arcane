@@ -162,6 +162,11 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
+// WorkspaceLocks serializes changes to each volume's contents, including backups and restores.
+func (s *VolumeService) WorkspaceLocks() *concurrency.KeyedMutex {
+	return &s.workspaceLocks
+}
+
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	s.backup.RegisterJobsOnStartup(ctx)
 }

@@ -982,13 +982,16 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ExportVolumeArchive packs the volume under the lock restores and file edits take, so they wait until it is read.
+// ExportVolumeArchive packs the volume under the lock restores and file edits take, so they wait until it is read; a
+// caller that already holds it, such as a project export, isn't made to wait for it again.
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
-	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
-	if err != nil {
-		return nil, err
+	if !volumes.Locked(ctx, volumeName) {
+		unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
 	}
-	defer unlock()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
