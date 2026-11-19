@@ -98,7 +98,6 @@
 		const queryScope = scope;
 		return {
 			...projectStatusCountsQuery(queryScope, readableEnvironments('projects:list')),
-			initialData: data.scope === queryScope ? data.projectStatusCounts : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
@@ -108,7 +107,6 @@
 		const environments = readableEnvironments('projects:list');
 		return {
 			...projectTagsQuery(queryScope, environments),
-			initialData: data.scope === queryScope ? data.projectTags : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
