@@ -11344,7 +11344,7 @@ func TestProjectBundlesImportChecksTheImportedProjectsVolumeNames(t *testing.T) 
 	assert.Zero(t, count)
 }
 
-func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
+func TestProjectBundlesExportStopsAndRestartsActiveContainers(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	db := setupProjectTestDB(t)
@@ -11359,8 +11359,10 @@ func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
 	var (
 		mu               sync.Mutex
 		stopped, started []string
+		composeStarted   []types.ComposeTarget
 	)
-	states := map[string]container.ContainerState{"web-1": container.StateRunning, "worker-1": container.StateExited}
+	// db sits in a restart loop, which can write to the volume as soon as it comes up.
+	states := map[string]container.ContainerState{"web-1": container.StateRunning, "db-1": container.StateRestarting, "worker-1": container.StateExited}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -11369,6 +11371,7 @@ func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, []container.Summary{
 				{ID: "web-1", Names: []string{"/demo-web-1"}, Labels: composeLabels("web"), State: states["web-1"]},
+				{ID: "db-1", Names: []string{"/demo-db-1"}, Labels: composeLabels("db"), State: states["db-1"]},
 				{ID: "worker-1", Names: []string{"/demo-worker-1"}, Labels: composeLabels("worker"), State: states["worker-1"]},
 			})
 		case strings.HasSuffix(r.URL.Path, "/stop"):
@@ -11389,6 +11392,17 @@ func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
+	originalComposeStart := composeStartProjectServices
+	t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
+	composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
+		mu.Lock()
+		defer mu.Unlock()
+		composeStarted = append(composeStarted, target)
+		for _, service := range target.Services {
+			states[service+"-1"] = container.StateRunning
+		}
+		return nil
+	}
 	uploads := upload.NewUploadService(settingsService)
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
@@ -11402,16 +11416,18 @@ func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
 	})
 	projectPath := createComposeProjectDir(t, projectsDir, "demo")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  web:\n    image: nginx:alpine\n    volumes:\n      - data:/data\n  worker:\n    image: nginx:alpine\nvolumes:\n  data:\n",
+		"services:\n  web:\n    image: nginx:alpine\n    depends_on:\n      db:\n        condition: service_healthy\n    volumes:\n      - data:/data\n"+
+			"  db:\n    image: postgres:alpine\n    volumes:\n      - data:/var/lib/postgresql/data\n  worker:\n    image: nginx:alpine\nvolumes:\n  data:\n",
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
 
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			mu.Lock()
-			running := states["web-1"]
+			web, database := states["web-1"], states["db-1"]
 			mu.Unlock()
-			assert.Equal(t, container.StateExited, running, "the volume is copied while the project is stopped")
+			assert.Equal(t, container.StateExited, web, "the volume is copied while the project is stopped")
+			assert.Equal(t, container.StateExited, database, "a restarting container is stopped too")
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
 	}}}
@@ -11421,9 +11437,80 @@ func TestProjectBundlesExportStopsOnlyRunningContainers(t *testing.T) {
 		Request:       types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true},
 	})
 	require.NoError(t, err)
-	// The stopped worker stays stopped; only the running web container is stopped and started again.
-	assert.Equal(t, []string{"web-1"}, stopped)
-	assert.Equal(t, []string{"web-1"}, started)
+	// The stopped worker stays stopped; web and the restarting db are stopped and started again through Compose,
+	// which starts db before web and waits for it to be healthy.
+	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
+	assert.Empty(t, started)
+	require.Len(t, composeStarted, 1)
+	assert.Equal(t, []string{"web", "db"}, composeStarted[0].Services)
+	assert.Equal(t, composetypes.ServiceConditionHealthy, composeStarted[0].Project.Services["web"].DependsOn["db"].Condition)
+	assert.Equal(t, container.StateExited, states["worker-1"])
+}
+
+func TestProjectServiceStartContainersStartsOnlyTheStoppedOnes(t *testing.T) {
+	composeLabels := func(service string) map[string]string {
+		return map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: service}
+	}
+	oneOff := composeLabels("web")
+	oneOff[api.OneoffLabel] = "True"
+	stopped := []container.Summary{
+		{ID: "web-1", Labels: composeLabels("web")},
+		{ID: "api-1", Labels: composeLabels("api")},
+		{ID: "web-run", Labels: oneOff},
+	}
+	compose := &composetypes.Project{Name: "demo", Services: composetypes.Services{
+		"web": {Name: "web"},
+		"api": {Name: "api"},
+	}}
+	for _, tc := range []struct {
+		name       string
+		composeErr error
+		started    []string
+	}{
+		// api-2 was already stopped, so Compose must not start api; the one-off has no service to start.
+		{name: "compose", started: []string{"api-1", "web-run"}},
+		// A failing Compose start must not leave the project down.
+		{name: "compose fails", composeErr: errors.New("db is unhealthy"), started: []string{"api-1", "web-run", "web-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				mu       sync.Mutex
+				started  []string
+				services [][]string
+			)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, append(slices.Clone(stopped), container.Summary{ID: "api-2", Labels: composeLabels("api"), State: container.StateExited}))
+				case strings.HasSuffix(r.URL.Path, "/start"):
+					started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+			originalComposeStart := composeStartProjectServices
+			t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
+			composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
+				services = append(services, target.Services)
+				return tc.composeErr
+			}
+			svc := &ProjectService{dockerService: newSettingsDockerService(t, newTestDockerClient(t, server))}
+
+			err := svc.startContainers(t.Context(), compose, stopped)
+			if tc.composeErr != nil {
+				require.ErrorIs(t, err, tc.composeErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, [][]string{{"web"}}, services)
+			assert.Equal(t, tc.started, started)
+		})
+	}
 }
 
 func TestProjectBundlesExportSkipsVolumesNotCreatedYet(t *testing.T) {

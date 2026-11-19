@@ -226,8 +226,9 @@ const (
 )
 
 var (
-	composeStopProjectServices = projects.ComposeStop
-	composeUpProjectServices   = projects.ComposeUp
+	composeStartProjectServices = projects.ComposeStart
+	composeStopProjectServices  = projects.ComposeStop
+	composeUpProjectServices    = projects.ComposeUp
 )
 
 func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSync *GitOpsSync, project *Project) error {
@@ -1863,8 +1864,15 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	if len(outside) > 0 {
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf("these external volumes keep their data outside Docker, so their data cannot be exported: %s", strings.Join(outside, ", ")))
 	}
+	// The Compose model restarts the stopped services in depends_on order.
+	var restart *composetypes.Project
+	if opts.Request.StopProject {
+		if restart, err = b.local.projects.loadComposeProjectForProject(ctx, proj, nil); err != nil {
+			return nil, fmt.Errorf("load compose project: %w", err)
+		}
+	}
 	session, err := b.local.projects.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+types.ProjectBundleExtension, func(w io.Writer) error {
-		return b.writeBundle(ctx, w, opts, manifest, opts.Request.StopProject)
+		return b.writeBundle(ctx, w, opts, manifest, restart)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -1931,10 +1939,10 @@ func exportManifest(project types.Project, request types.ExportProjectArchive, i
 	}, nil
 }
 
-// writeBundle writes the manifest, the project archive, and the included volumes' archives; with stop set the
-// project's running containers are stopped while its volumes are exported and started again afterwards, even when
-// the export fails.
-func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts ExportBundleOptions, manifest types.ProjectManifest, stop bool) (err error) {
+// writeBundle writes the manifest, the project archive, and the included volumes' archives; with a restart project
+// the project's running containers are stopped while its volumes are exported and started again afterwards, even
+// when the export fails.
+func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts ExportBundleOptions, manifest types.ProjectManifest, restart *composetypes.Project) (err error) {
 	writer, err := projects.NewProjectBundleWriter(w, manifest)
 	if err != nil {
 		return err
@@ -1947,10 +1955,10 @@ func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts Expor
 		return appendErr
 	}
 	name := manifest.Project.Name
-	if stop {
+	if restart != nil {
 		stopped, stopErr := b.local.projects.stopRunningContainers(ctx, manifest.Project.ComposeName)
 		defer func() {
-			if startErr := b.local.projects.startContainers(context.WithoutCancel(ctx), stopped); startErr != nil {
+			if startErr := b.local.projects.startContainers(context.WithoutCancel(ctx), restart, stopped); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", name, startErr))
 			}
 		}()
@@ -1983,14 +1991,14 @@ func (b projectBundles) appendUpload(ctx context.Context, writer *projects.Proje
 	return writer.Add(name, consumed.Size, file)
 }
 
-// stopRunningContainers stops the running containers of a Compose project and returns the ones it stopped, also
-// when it fails.
-func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName string) ([]string, error) {
+// stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it
+// stopped, also when it fails. Paused containers are frozen, so they are left as they are.
+func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var stopped []string
+	var stopped []container.Summary
 	// The second pass confirms that nothing is left running.
 	for pass := range 2 {
 		found, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{
@@ -1999,7 +2007,9 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 		if listErr != nil {
 			return stopped, fmt.Errorf("list containers: %w", listErr)
 		}
-		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool { return c.State != container.StateRunning })
+		running := slices.DeleteFunc(found.Items, func(c container.Summary) bool {
+			return c.State != container.StateRunning && c.State != container.StateRestarting
+		})
 		switch {
 		case len(running) == 0:
 			return stopped, nil
@@ -2008,7 +2018,7 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 		}
 		for _, c := range running {
 			// Each stop runs to completion so the deferred restart never races a stop still in progress.
-			stopped = append(stopped, c.ID)
+			stopped = append(stopped, c)
 			if _, err = dockerClient.ContainerStop(context.WithoutCancel(ctx), c.ID, client.ContainerStopOptions{}); err != nil {
 				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
 			}
@@ -2044,12 +2054,61 @@ func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName st
 	return inUse, nil
 }
 
-func (s *ProjectService) startContainers(ctx context.Context, containerIDs []string) error {
+// startContainers starts the stopped containers again. Services whose stopped containers are all they have to start
+// go through Compose, so depends_on order and conditions hold; the rest is started directly, as is everything when
+// Compose or the container list fails, so the project never stays down.
+func (s *ProjectService) startContainers(ctx context.Context, compose *composetypes.Project, stopped []container.Summary) error {
+	if len(stopped) == 0 {
+		return nil
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 	var errs []error
+	found, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+compose.Name),
+	})
+	if listErr != nil {
+		errs = append(errs, fmt.Errorf("list containers: %w", listErr))
+	}
+	wasStopped := map[string]bool{}
+	for _, c := range stopped {
+		wasStopped[c.ID] = true
+	}
+	serviceContainer := func(c container.Summary) bool {
+		return c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == ""
+	}
+	// Compose start would also start these services' other stopped containers.
+	direct := map[string]bool{}
+	for _, c := range found.Items {
+		if serviceContainer(c) && !wasStopped[c.ID] && c.State != container.StateRunning {
+			direct[c.Labels[composeapi.ServiceLabel]] = true
+		}
+	}
+	var services, containerIDs, serviceContainerIDs []string
+	for _, c := range stopped {
+		service := c.Labels[composeapi.ServiceLabel]
+		_, enabled := compose.Services[service]
+		_, disabled := compose.DisabledServices[service]
+		switch {
+		// Without the list Compose could start other stopped containers.
+		case listErr != nil || direct[service] || (!enabled && !disabled) || !serviceContainer(c):
+			containerIDs = append(containerIDs, c.ID)
+		default:
+			serviceContainerIDs = append(serviceContainerIDs, c.ID)
+			if !slices.Contains(services, service) {
+				services = append(services, service)
+			}
+		}
+	}
+	if len(services) > 0 {
+		if startErr := composeStartProjectServices(ctx, types.ComposeTarget{Project: compose, DockerHost: s.dockerService.DockerHost(), Services: services}); startErr != nil {
+			errs = append(errs, fmt.Errorf("start services %s: %w", strings.Join(services, ", "), startErr))
+			containerIDs = append(containerIDs, serviceContainerIDs...)
+		}
+	}
 	for _, id := range containerIDs {
 		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil {
 			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
