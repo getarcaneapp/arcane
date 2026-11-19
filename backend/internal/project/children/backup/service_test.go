@@ -1518,7 +1518,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 	unlock := locks.Lock("web_cache")
 	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	err := service.resume(waiting, types.SchedulerRun{}, runInput{}, recorded)
+	err := service.resume(waiting, types.SchedulerRun{}, nil, recorded)
 	require.ErrorIs(t, err, actor.ErrJobRejected)
 	require.Zero(t, started)
 	unlock()
