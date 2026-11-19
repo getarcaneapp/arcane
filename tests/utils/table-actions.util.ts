@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from 'playwright/test';
 
 export const ROW_ACTIONS_TRIGGER_NAME = /^(Open menu|Actions for .+)$/;
 

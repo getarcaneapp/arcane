@@ -8,6 +8,7 @@ import {
 	type Request,
 	type Route
 } from '../fixtures/test.fixture';
+import { expect as vitestExpect } from 'vite-plus/test';
 
 type DeploymentSnippet = {
 	enrollmentToken: string;
@@ -130,7 +131,6 @@ test.describe('Settings', () => {
 	}
 
 	test.describe('Environment Settings UI', () => {
-		test.describe.configure({ mode: 'serial' });
 		const settingKeys = new Set([
 			'baseServerUrl',
 			'followProjectSymlinks',
@@ -186,7 +186,7 @@ test.describe('Settings', () => {
 					)
 				).toEqual(originalSettings);
 			} catch (error) {
-				expect.soft(false, `Restore environment settings: ${String(error)}`).toBe(true);
+				vitestExpect.soft(false, `Restore environment settings: ${String(error)}`).toBe(true);
 			}
 		});
 
@@ -231,76 +231,79 @@ test.describe('Settings', () => {
 			await expect(page.locator('#job-history-job')).toContainText('Event Cleanup');
 		});
 
-		test('should update and save environment details', async ({ page, registerCleanup }) => {
-			test.setTimeout(120_000);
-			const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
-			const updatedName = `${envName}-updated`;
-			const activityStatuses = new Map<string, number>();
-			page.on('response', (response) => {
-				const match = new URL(response.url()).pathname.match(
-					/^\/api\/agents\/([^/]+)\/activities$/
+		test(
+			'should update and save environment details',
+			{ timeout: 120_000 },
+			async ({ page, registerCleanup }) => {
+				const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
+				const updatedName = `${envName}-updated`;
+				const activityStatuses = new Map<string, number>();
+				page.on('response', (response) => {
+					const match = new URL(response.url()).pathname.match(
+						/^\/api\/agents\/([^/]+)\/activities$/
+					);
+					if (match) activityStatuses.set(match[1], response.status());
+				});
+				const environmentIds = new Set<string>();
+
+				registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
+				const { id: environmentId, enrollmentToken } = await createAgentEnvironmentViaUI(
+					page,
+					envName,
+					environmentIds
 				);
-				if (match) activityStatuses.set(match[1], response.status());
-			});
-			const environmentIds = new Set<string>();
+				const environmentPath = `/api/agents/${environmentId}`;
+				await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
+				expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
+				await expect(page).toHaveURL('/agents?tab=environments');
+				await page.getByRole('button', { name: envName, exact: true }).click();
+				await expect(page).toHaveURL(/\/agents\/[^/?]+\?tab=[a-z]+$/);
+				await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
 
-			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId, enrollmentToken } = await createAgentEnvironmentViaUI(
-				page,
-				envName,
-				environmentIds
-			);
-			const environmentPath = `/api/agents/${environmentId}`;
-			await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
-			expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
-			await expect(page).toHaveURL('/agents?tab=environments');
-			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(/\/agents\/[^/?]+\?tab=[a-z]+$/);
-			await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
+				await renameEnvironmentInHeader(page, updatedName);
+				const nameRequest = await saveAndWaitForPatch(page, environmentPath);
+				expect(nameRequest.postDataJSON()).toEqual({ name: updatedName });
 
-			await renameEnvironmentInHeader(page, updatedName);
-			const nameRequest = await saveAndWaitForPatch(page, environmentPath);
-			expect(nameRequest.postDataJSON()).toEqual({ name: updatedName });
+				await page.reload();
+				await expect(environmentTitleButton(page)).toHaveText(updatedName);
 
-			await page.reload();
-			await expect(environmentTitleButton(page)).toHaveText(updatedName);
+				await page.getByRole('tab', { name: 'Connection & Agent', exact: true }).click();
+				const deploymentPath = `${environmentPath}/deployment`;
+				await page.getByRole('button', { name: 'Generate Enrollment Token', exact: true }).click();
+				const tokenDialog = page.getByRole('dialog');
+				await expect(
+					tokenDialog.getByRole('heading', { name: 'Generate Enrollment Token', exact: true })
+				).toBeVisible();
+				const tokenResponsePromise = page.waitForResponse(
+					(response) =>
+						response.request().method() === 'POST' &&
+						new URL(response.url()).pathname === deploymentPath
+				);
+				await tokenDialog
+					.getByRole('button', { name: 'Generate Enrollment Token', exact: true })
+					.click();
+				const tokenResponse = await tokenResponsePromise;
+				expect(tokenResponse.ok(), 'Generate enrollment token').toBeTruthy();
+				const generated = await readApiData<DeploymentSnippet>(
+					tokenResponse,
+					'Generate enrollment token'
+				);
+				expect(generated.enrollmentToken.startsWith('arc_etkn_')).toBe(true);
+				expect(generated.enrollmentToken === enrollmentToken).toBe(false);
 
-			await page.getByRole('tab', { name: 'Connection & Agent', exact: true }).click();
-			const deploymentPath = `${environmentPath}/deployment`;
-			await page.getByRole('button', { name: 'Generate Enrollment Token', exact: true }).click();
-			const tokenDialog = page.getByRole('dialog');
-			await expect(
-				tokenDialog.getByRole('heading', { name: 'Generate Enrollment Token', exact: true })
-			).toBeVisible();
-			const tokenResponsePromise = page.waitForResponse(
-				(response) =>
-					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === deploymentPath
-			);
-			await tokenDialog
-				.getByRole('button', { name: 'Generate Enrollment Token', exact: true })
-				.click();
-			const tokenResponse = await tokenResponsePromise;
-			expect(tokenResponse.ok(), 'Generate enrollment token').toBeTruthy();
-			const generated = await readApiData<DeploymentSnippet>(
-				tokenResponse,
-				'Generate enrollment token'
-			);
-			expect(generated.enrollmentToken.startsWith('arc_etkn_')).toBe(true);
-			expect(generated.enrollmentToken === enrollmentToken).toBe(false);
+				await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeVisible();
+				const generatedSnippet = page
+					.locator('pre code')
+					.filter({ hasText: `ARCANE_AGENT_TOKEN=${generated.enrollmentToken}` });
+				await expect(generatedSnippet.first()).toBeVisible();
+				await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+				await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeHidden();
 
-			await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeVisible();
-			const generatedSnippet = page
-				.locator('pre code')
-				.filter({ hasText: `ARCANE_AGENT_TOKEN=${generated.enrollmentToken}` });
-			await expect(generatedSnippet.first()).toBeVisible();
-			await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
-			await expect(page.getByText(generated.enrollmentToken, { exact: true })).toBeHidden();
-
-			await renameEnvironmentInHeader(page, `${updatedName}-again`);
-			const secondNameRequest = await saveAndWaitForPatch(page, environmentPath);
-			expect(secondNameRequest.postDataJSON()).toEqual({ name: `${updatedName}-again` });
-		});
+				await renameEnvironmentInHeader(page, `${updatedName}-again`);
+				const secondNameRequest = await saveAndWaitForPatch(page, environmentPath);
+				expect(secondNameRequest.postDataJSON()).toEqual({ name: `${updatedName}-again` });
+			}
+		);
 
 		test('should update and save the base server URL in Docker settings', async ({ page }) => {
 			await openLocalSettings(page, 'docker');
@@ -452,74 +455,77 @@ test.describe('Settings', () => {
 			}
 		});
 
-		test('should save decimal trivy CPU limits and reject negative values', async ({ page }) => {
-			test.setTimeout(120_000);
-			const settingsPath = `/api/agents/${LOCAL_ENV_ID}/settings`;
-			const settingsResponse = await page.request.get(settingsPath);
-			expect(settingsResponse.ok()).toBeTruthy();
-			const { settings } = (await settingsResponse.json()) as {
-				settings: Array<{ key: string; value: string }>;
-			};
-			const originalSettings = Object.fromEntries(
-				settings
-					.filter(({ key }) =>
-						['trivyResourceLimitsEnabled', 'trivyCpuLimit', 'trivyMemoryLimitMb'].includes(key)
-					)
-					.map(({ key, value }) => [key, value])
-			);
-			expect(Object.keys(originalSettings)).toHaveLength(3);
-
-			try {
-				await openLocalSettings(page, 'security');
-				await page.locator('#trivyResourceLimitsEnabledSwitch').setChecked(true);
-				const cpuInput = page.getByRole('spinbutton', { name: 'CPU Limit (cores)', exact: true });
-				await expect(cpuInput).toHaveAttribute('min', '0');
-				await expect(cpuInput).toHaveAttribute('step', 'any');
-
-				const values = ['0.5', '1.5', '2.5', '0.25', '1', '0'];
-				if ((await cpuInput.inputValue()) === values[0]) values.reverse();
-
-				for (const value of values) {
-					await cpuInput.fill(value);
-					expect(await cpuInput.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(
-						true
-					);
-					const requestPromise = page.waitForRequest(
-						(request) =>
-							request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath
-					);
-					await saveAndWaitForPatch(page, settingsPath);
-					const payload = (await requestPromise).postDataJSON() as Record<string, unknown>;
-					expect(payload.trivyCpuLimit).toBe(value);
-					expect(payload.trivyResourceLimitsEnabled ?? 'true').toBe('true');
-					await page.reload();
-					await expect(cpuInput).toHaveValue(value);
-				}
-
-				const writes: Request[] = [];
-				const recordWrite = (request: Request) => {
-					if (request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath) {
-						writes.push(request);
-					}
+		test(
+			'should save decimal trivy CPU limits and reject negative values',
+			{ timeout: 120_000 },
+			async ({ page }) => {
+				const settingsPath = `/api/agents/${LOCAL_ENV_ID}/settings`;
+				const settingsResponse = await page.request.get(settingsPath);
+				expect(settingsResponse.ok()).toBeTruthy();
+				const { settings } = (await settingsResponse.json()) as {
+					settings: Array<{ key: string; value: string }>;
 				};
-				page.on('request', recordWrite);
+				const originalSettings = Object.fromEntries(
+					settings
+						.filter(({ key }) =>
+							['trivyResourceLimitsEnabled', 'trivyCpuLimit', 'trivyMemoryLimitMb'].includes(key)
+						)
+						.map(({ key, value }) => [key, value])
+				);
+				expect(Object.keys(originalSettings)).toHaveLength(3);
+
 				try {
-					await cpuInput.fill('-0.5');
-					await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-					await expect(
-						page.getByText('Please check the form for errors.', { exact: true })
-					).toBeVisible();
-					expect(writes).toHaveLength(0);
-					await page.reload();
-					await expect(cpuInput).toHaveValue(values[values.length - 1]);
+					await openLocalSettings(page, 'security');
+					await page.locator('#trivyResourceLimitsEnabledSwitch').setChecked(true);
+					const cpuInput = page.getByRole('spinbutton', { name: 'CPU Limit (cores)', exact: true });
+					await expect(cpuInput).toHaveAttribute('min', '0');
+					await expect(cpuInput).toHaveAttribute('step', 'any');
+
+					const values = ['0.5', '1.5', '2.5', '0.25', '1', '0'];
+					if ((await cpuInput.inputValue()) === values[0]) values.reverse();
+
+					for (const value of values) {
+						await cpuInput.fill(value);
+						expect(await cpuInput.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(
+							true
+						);
+						const requestPromise = page.waitForRequest(
+							(request) =>
+								request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath
+						);
+						await saveAndWaitForPatch(page, settingsPath);
+						const payload = (await requestPromise).postDataJSON() as Record<string, unknown>;
+						expect(payload.trivyCpuLimit).toBe(value);
+						expect(payload.trivyResourceLimitsEnabled ?? 'true').toBe('true');
+						await page.reload();
+						await expect(cpuInput).toHaveValue(value);
+					}
+
+					const writes: Request[] = [];
+					const recordWrite = (request: Request) => {
+						if (request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath) {
+							writes.push(request);
+						}
+					};
+					page.on('request', recordWrite);
+					try {
+						await cpuInput.fill('-0.5');
+						await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+						await expect(
+							page.getByText('Please check the form for errors.', { exact: true })
+						).toBeVisible();
+						expect(writes).toHaveLength(0);
+						await page.reload();
+						await expect(cpuInput).toHaveValue(values[values.length - 1]);
+					} finally {
+						page.off('request', recordWrite);
+					}
 				} finally {
-					page.off('request', recordWrite);
+					const restored = await page.request.patch(settingsPath, { data: originalSettings });
+					expect(restored.ok()).toBeTruthy();
 				}
-			} finally {
-				const restored = await page.request.patch(settingsPath, { data: originalSettings });
-				expect(restored.ok()).toBeTruthy();
 			}
-		});
+		);
 
 		test('should update and save the trivy network mode including auto', async ({ page }) => {
 			await openLocalSettings(page, 'security');

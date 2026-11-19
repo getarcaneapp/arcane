@@ -121,6 +121,7 @@ var (
 	ErrVulnerabilityScanNotFound               = Classify(ErrNotFound, errors.New("Vulnerability scan not found"))
 	ErrInvalidNotificationPayloadTemplate      = Classify(ErrValidation, errors.New("invalid generic webhook payload template"))
 	ErrRedeployAfterSyncFailed                 = errors.New("redeploy failed")
+	ErrSelfRedeployBlocked                     = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	ErrGitOpsSyncProjectBindingBroken          = errors.New("GitOps sync project binding broken")
 	ErrProjectRollbackFailed                   = errors.New("project file rollback failed")
 	ErrUploadSessionNotFound                   = Classify(ErrNotFound, errors.New("Upload session not found"))
