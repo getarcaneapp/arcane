@@ -11116,6 +11116,9 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, []container.Summary{})
 		case strings.HasSuffix(r.URL.Path, "/volumes/copy_data"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, volume.Volume{Name: "copy_data", Driver: "local"})
@@ -11878,8 +11881,11 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 		wantMessages []string
 		failCreated  bool
 		conflict     bool
+		stack        bool
 	}{
 		{name: "creates", wantCreated: []string{"shared-data", "copy_cache"}},
+		// A Compose stack named copy that Arcane does not manage would lose its containers to a rollback.
+		{name: "refuses a running Compose stack of the same name", stack: true, conflict: true, wantErr: "docker already runs a Compose stack named copy"},
 		{name: "refuses existing external", existing: []string{"shared-data"}, conflict: true, wantErr: "these volumes already exist: shared-data"},
 		{name: "refuses existing named", existing: []string{"copy_cache"}, conflict: true, wantErr: "these volumes already exist: copy_cache"},
 		// copy_cache exists after the failure, made by someone else, so only shared-data is removed.
@@ -11910,6 +11916,9 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				name := filepath.Base(r.URL.Path)
 				labels, exists := existing[name]
 				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json") && tt.stack && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, []container.Summary{{ID: "app-1", Labels: map[string]string{api.ProjectLabel: "copy"}, State: container.StateRunning}})
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
 					w.Header().Set("Content-Type", "application/json")
 					_ = json.MarshalWrite(w, []container.Summary{})
@@ -11940,7 +11949,7 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				created        []client.VolumeCreateOptions
 				names, deleted []string
 			)
-			bundles := projectBundles{activity: recorder, local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+			bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
 				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
 					mu.Lock()
 					defer mu.Unlock()
@@ -12116,7 +12125,14 @@ func TestProjectBundlesImportRejectsVolumesSharingADockerName(t *testing.T) {
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
 			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", t.TempDir()))
-			server := httptest.NewServer(http.NotFoundHandler())
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/containers/json") {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.MarshalWrite(w, []container.Summary{})
+			}))
 			t.Cleanup(server.Close)
 			uploads := upload.NewUploadService(settingsService)
 			svc := NewProjectService(ProjectServiceParams{

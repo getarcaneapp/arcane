@@ -66,7 +66,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
-	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -187,6 +186,8 @@ type (
 	DestroyOptions struct {
 		RemoveFiles   bool
 		RemoveVolumes bool
+		// SkipDown leaves containers alone, for a project that never started any.
+		SkipDown bool
 	}
 
 	ServiceUpdateOptions struct {
@@ -204,8 +205,7 @@ type (
 
 	// projectBundles exports and imports projects with their volume data through the volume operations injected for transfers.
 	projectBundles struct {
-		local    localTransferEnvironment
-		activity activity.MessageAppender
+		local localTransferEnvironment
 	}
 
 	ExportBundleOptions struct {
@@ -1883,6 +1883,11 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 	if project.ComposeName == "" {
 		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
 	}
+	// The global .env can select the compose files, so the manifest records the files actually loaded.
+	projectsDir, dirErr := b.local.projects.GetProjectsDirectory(ctx)
+	if dirErr != nil {
+		return types.ProjectManifest{}, dirErr
+	}
 	classified := projects.ClassifyProjectVolumes(project)
 	for _, key := range request.Volumes {
 		index := slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == key })
@@ -1977,7 +1982,7 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  kit.Ternary(len(project.ComposeFiles) > 0, project.ComposeFiles, []string{project.ComposeFileName}),
+		ComposeFiles:  projects.LoadedComposeFiles(ctx, projectsDir, project.Path),
 		IncludeFiles:  includeFiles,
 		Volumes:       manifestVolumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
@@ -2237,6 +2242,15 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 			return nil, err
 		}
 	}
+	// A Compose stack that Docker runs under this name is not Arcane's; importing would take over its containers.
+	composeName := projects.NormalizeProjectName(opts.Request.Name)
+	stackExists, stackErr := b.local.ComposeProjectInUse(ctx, composeName)
+	if stackErr != nil {
+		return nil, fmt.Errorf("check Compose project %s: %w", composeName, stackErr)
+	}
+	if stackExists {
+		return nil, common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
+	}
 	predicted := make([]types.ProjectVolume, 0, len(included))
 	for _, volume := range included {
 		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
@@ -2380,8 +2394,8 @@ func (b projectBundles) rollback(ctx context.Context, cause error, proj *Project
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	// The import holds the project lock.
-	if err := b.local.projects.destroyProject(ctx, proj.ID, DestroyOptions{RemoveFiles: true}, user); err != nil {
+	// The import holds the project lock, and never started containers, so a Compose stack of the same name is left alone.
+	if err := b.local.projects.destroyProject(ctx, proj.ID, DestroyOptions{RemoveFiles: true, SkipDown: true}, user); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", proj.Name, err))
 	}
 	for _, volume := range createdVolumes {
@@ -2459,8 +2473,10 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.SkipDown {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {

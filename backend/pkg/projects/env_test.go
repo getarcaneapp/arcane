@@ -552,8 +552,17 @@ func TestSelectComposeFiles(t *testing.T) {
 		// Setting COMPOSE_FILE here would stop the override file from merging.
 		projectsDir, dir := setup(t, "", "compose.yaml", "compose.override.yaml")
 
-		require.NoError(t, SelectComposeFiles(t.Context(), selection(projectsDir, dir, "compose.yaml")))
+		require.NoError(t, SelectComposeFiles(t.Context(), selection(projectsDir, dir, "compose.yaml", "compose.override.yaml")))
 		assert.NoFileExists(t, filepath.Join(dir, ".env"))
+	})
+
+	t.Run("pins a single file so an unused override does not merge", func(t *testing.T) {
+		t.Parallel()
+		// The source selected only compose.yaml, e.g. through its global .env, so its override never loaded.
+		projectsDir, dir := setup(t, "", "compose.yaml", "compose.override.yaml")
+
+		require.NoError(t, SelectComposeFiles(t.Context(), selection(projectsDir, dir, "compose.yaml")))
+		assert.Equal(t, []string{"compose.yaml"}, LoadedComposeFiles(t.Context(), projectsDir, dir))
 	})
 
 	t.Run("refuses files the project does not have", func(t *testing.T) {
