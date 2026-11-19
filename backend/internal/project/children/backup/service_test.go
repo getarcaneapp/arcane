@@ -1710,13 +1710,13 @@ func TestExpiredBackupsAreForgottenOncePerRepository(t *testing.T) {
 	f.available.Store(true)
 	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
 	rows := []struct{ id, local, remote, destination string }{
-		{"keep", "local-keep", "", ""},
-		{"la1", "local-la1", "remote-la1", f.destination},
-		{"la2", "local-la2", "remote-la2", f.destination},
-		{"ra1", "", "remote-ra1", f.destination},
-		{"lb1", "local-lb1", "remote-lb1", f.secondary},
-		{"rb1", "", "remote-rb1", f.secondary},
-		{"l1", "local-l1", "", ""},
+		{id: "keep", local: "local-keep"},
+		{id: "la1", local: "local-la1", remote: "remote-la1", destination: f.destination},
+		{id: "la2", local: "local-la2", remote: "remote-la2", destination: f.destination},
+		{id: "ra1", remote: "remote-ra1", destination: f.destination},
+		{id: "lb1", local: "local-lb1", remote: "remote-lb1", destination: f.secondary},
+		{id: "rb1", remote: "remote-rb1", destination: f.secondary},
+		{id: "l1", local: "local-l1"},
 	}
 	for i, row := range rows {
 		f.storedBackup(t, ProjectBackup{
@@ -1753,7 +1753,9 @@ func TestExpiredBackupsAreForgottenOncePerRepository(t *testing.T) {
 func TestUnmanagedSweepForgetsOncePerRepositoryAcrossProjects(t *testing.T) {
 	f := newPolicyFixture(t)
 	f.available.Store(true)
-	for _, row := range []struct{ id, project string }{{"o1", "p1"}, {"o2", "p2"}, {"o3", "p2"}} {
+	for _, row := range []struct{ id, project string }{
+		{id: "o1", project: "p1"}, {id: "o2", project: "p2"}, {id: "o3", project: "p2"},
+	} {
 		f.storedBackup(t, ProjectBackup{
 			BaseModel: database.BaseModel{ID: row.id, CreatedAt: time.Now()}, ProjectID: row.project, Status: types.VolumeBackupStatusSucceeded,
 			Trigger: types.VolumeBackupTriggerScheduled, PolicyID: "deleted-policy", Destination: types.VolumeBackupDestinationS3,
