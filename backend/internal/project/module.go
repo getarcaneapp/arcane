@@ -73,7 +73,7 @@ func New(p ModuleParams) *Module {
 			S3Destinations: p.Backups.S3Destinations,
 			Settings:       p.Service.settingsService,
 			VolumeLocks:    p.Backups.VolumeLocks,
-			// The containers are stopped and started again, and other projects' volumes found, as for an export.
+			// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
 			StopContainers:  p.Service.stopRunningContainers,
 			StartContainers: p.Service.restartContainers,
 			VolumesInUse:    p.Service.volumesInUseOutside,

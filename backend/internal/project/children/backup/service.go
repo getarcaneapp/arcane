@@ -497,7 +497,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	// Other projects keep running, so a volume they mount may change while it is captured.
+	// Containers outside the project keep running, so a volume they mount may change while it is captured.
 	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
 	if err != nil {
 		return err
