@@ -1051,99 +1051,102 @@ test.describe('S3 storage', () => {
 	}
 
 	test.describe('S3 Backups', () => {
-		test('creates, tests, edits, and deletes a destination through settings', async ({ page }) => {
-			test.setTimeout(120_000);
-			const suffix = Date.now();
-			const name = `e2e-minio-ui-${suffix}`;
-			const updatedName = `${name}-updated`;
-			let destinationId: string | undefined;
+		test(
+			'creates, tests, edits, and deletes a destination through settings',
+			{ timeout: 120_000 },
+			async ({ page }) => {
+				const suffix = Date.now();
+				const name = `e2e-minio-ui-${suffix}`;
+				const updatedName = `${name}-updated`;
+				let destinationId: string | undefined;
 
-			try {
-				await page.goto('/system/backups/s3');
-				await page.getByRole('button', { name: 'Add destination', exact: true }).first().click();
+				try {
+					await page.goto('/system/backups/s3');
+					await page.getByRole('button', { name: 'Add destination', exact: true }).first().click();
 
-				let dialog = page.getByRole('dialog');
-				await expect(dialog.getByRole('heading', { name: 'Add S3 destination' })).toBeVisible();
-				await dialog.getByLabel('Name', { exact: true }).fill(name);
-				await dialog.getByLabel('Endpoint', { exact: true }).fill(S3_ENDPOINT);
-				await dialog.getByLabel('Bucket', { exact: true }).fill(S3_BUCKET);
-				await dialog.getByLabel('Access key ID', { exact: true }).fill(S3_ACCESS_KEY_ID);
-				await dialog.getByLabel('Secret access key', { exact: true }).fill(S3_SECRET_ACCESS_KEY);
-				await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}`);
+					let dialog = page.getByRole('dialog');
+					await expect(dialog.getByRole('heading', { name: 'Add S3 destination' })).toBeVisible();
+					await dialog.getByLabel('Name', { exact: true }).fill(name);
+					await dialog.getByLabel('Endpoint', { exact: true }).fill(S3_ENDPOINT);
+					await dialog.getByLabel('Bucket', { exact: true }).fill(S3_BUCKET);
+					await dialog.getByLabel('Access key ID', { exact: true }).fill(S3_ACCESS_KEY_ID);
+					await dialog.getByLabel('Secret access key', { exact: true }).fill(S3_SECRET_ACCESS_KEY);
+					await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}`);
 
-				const sslSwitch = dialog.getByRole('switch', { name: 'Use SSL', exact: true });
-				if (await sslSwitch.isChecked()) await sslSwitch.click();
+					const sslSwitch = dialog.getByRole('switch', { name: 'Use SSL', exact: true });
+					if (await sslSwitch.isChecked()) await sslSwitch.click();
 
-				await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
-				await expect(
-					page.getByText(`Connection to ${name} succeeded`, { exact: true })
-				).toBeVisible();
-				await expect(
-					page.getByText('Connection verified. You can now save this destination.')
-				).toBeVisible();
-				await dialog.getByRole('button', { name: 'Add S3 destination', exact: true }).click();
+					await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
+					await expect(
+						page.getByText(`Connection to ${name} succeeded`, { exact: true })
+					).toBeVisible();
+					await expect(
+						page.getByText('Connection verified. You can now save this destination.')
+					).toBeVisible();
+					await dialog.getByRole('button', { name: 'Add S3 destination', exact: true }).click();
 
-				await expect(page.getByText(`Created ${name}`, { exact: true })).toBeVisible();
-				let destinationRow = page.getByRole('row').filter({ hasText: name });
-				await expect(destinationRow).toBeVisible();
+					await expect(page.getByText(`Created ${name}`, { exact: true })).toBeVisible();
+					let destinationRow = page.getByRole('row').filter({ hasText: name });
+					await expect(destinationRow).toBeVisible();
 
-				const listResponse = await page.request.get('/api/backups/s3?start=0&limit=100');
-				expect(listResponse.status(), await listResponse.text()).toBe(200);
-				const destinations = (await listResponse.json()).data as S3Destination[];
-				destinationId = destinations.find((destination) => destination.name === name)?.id;
-				expect(destinationId).toBeTruthy();
+					const listResponse = await page.request.get('/api/backups/s3?start=0&limit=100');
+					expect(listResponse.status(), await listResponse.text()).toBe(200);
+					const destinations = (await listResponse.json()).data as S3Destination[];
+					destinationId = destinations.find((destination) => destination.name === name)?.id;
+					expect(destinationId).toBeTruthy();
 
-				let menu = await openRowActionsMenu(page, destinationRow);
-				await menu.getByRole('menuitem', { name: 'Test Connection', exact: true }).click();
-				await expect(
-					page.getByText(`Connection to ${name} succeeded`, { exact: true }).last()
-				).toBeVisible();
+					let menu = await openRowActionsMenu(page, destinationRow);
+					await menu.getByRole('menuitem', { name: 'Test Connection', exact: true }).click();
+					await expect(
+						page.getByText(`Connection to ${name} succeeded`, { exact: true }).last()
+					).toBeVisible();
 
-				menu = await openRowActionsMenu(page, destinationRow);
-				await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-				dialog = page.getByRole('dialog');
-				await expect(dialog.getByRole('heading', { name: 'Edit S3 destination' })).toBeVisible();
-				await dialog.getByLabel('Name', { exact: true }).fill(updatedName);
-				await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}/updated`);
-				await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
-				await expect(
-					page.getByText(`Connection to ${updatedName} succeeded`, { exact: true })
-				).toBeVisible();
-				await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
+					menu = await openRowActionsMenu(page, destinationRow);
+					await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+					dialog = page.getByRole('dialog');
+					await expect(dialog.getByRole('heading', { name: 'Edit S3 destination' })).toBeVisible();
+					await dialog.getByLabel('Name', { exact: true }).fill(updatedName);
+					await dialog.getByLabel('Path prefix', { exact: true }).fill(`e2e/ui/${suffix}/updated`);
+					await dialog.getByRole('button', { name: 'Test Connection', exact: true }).click();
+					await expect(
+						page.getByText(`Connection to ${updatedName} succeeded`, { exact: true })
+					).toBeVisible();
+					await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
-				await expect(page.getByText(`Updated ${updatedName}`, { exact: true })).toBeVisible();
-				destinationRow = page.getByRole('row').filter({ hasText: updatedName });
-				await expect(destinationRow).toBeVisible();
-				await expect
-					.poll(() => countRemoteEnvironments(page), {
-						message: 'Expected temporary remote environments to be removed before S3 deletion',
-						timeout: 90_000,
-						intervals: [1_000, 2_000]
-					})
-					.toBe(0);
+					await expect(page.getByText(`Updated ${updatedName}`, { exact: true })).toBeVisible();
+					destinationRow = page.getByRole('row').filter({ hasText: updatedName });
+					await expect(destinationRow).toBeVisible();
+					await expect
+						.poll(() => countRemoteEnvironments(page), {
+							message: 'Expected temporary remote environments to be removed before S3 deletion',
+							timeout: 90_000,
+							intervals: [1_000, 2_000]
+						})
+						.toBe(0);
 
-				menu = await openRowActionsMenu(page, destinationRow);
-				await menu.getByRole('menuitem', { name: 'Delete', exact: true }).click();
-				const confirmDialog = page.getByRole('dialog', { name: `Delete ${updatedName}` });
-				await expect(
-					confirmDialog.getByRole('heading', { name: `Delete ${updatedName}` })
-				).toBeVisible();
-				const deleteResponsePromise = page.waitForResponse(
-					(response) =>
-						response.request().method() === 'DELETE' &&
-						new URL(response.url()).pathname === `/api/backups/s3/${destinationId}`
-				);
-				await confirmDialog.getByRole('button', { name: 'Delete', exact: true }).click();
-				const deleteResponse = await deleteResponsePromise;
-				expect(deleteResponse.ok(), await deleteResponse.text()).toBe(true);
+					menu = await openRowActionsMenu(page, destinationRow);
+					await menu.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+					const confirmDialog = page.getByRole('dialog', { name: `Delete ${updatedName}` });
+					await expect(
+						confirmDialog.getByRole('heading', { name: `Delete ${updatedName}` })
+					).toBeVisible();
+					const deleteResponsePromise = page.waitForResponse(
+						(response) =>
+							response.request().method() === 'DELETE' &&
+							new URL(response.url()).pathname === `/api/backups/s3/${destinationId}`
+					);
+					await confirmDialog.getByRole('button', { name: 'Delete', exact: true }).click();
+					const deleteResponse = await deleteResponsePromise;
+					expect(deleteResponse.ok(), await deleteResponse.text()).toBe(true);
 
-				await expect(page.getByText(`Deleted ${updatedName}`, { exact: true })).toBeVisible();
-				await expect(destinationRow).toHaveCount(0);
-				destinationId = undefined;
-			} finally {
-				if (destinationId) await deleteDestinationViaApi(page, destinationId);
+					await expect(page.getByText(`Deleted ${updatedName}`, { exact: true })).toBeVisible();
+					await expect(destinationRow).toHaveCount(0);
+					destinationId = undefined;
+				} finally {
+					if (destinationId) await deleteDestinationViaApi(page, destinationId);
+				}
 			}
-		});
+		);
 
 		test('creates a destination and verifies connectivity against MinIO', async ({ page }) => {
 			const destination = await createDestinationViaApi(page);
@@ -1181,98 +1184,102 @@ test.describe('S3 storage', () => {
 			}
 		});
 
-		test('backs a volume up to S3 and restores it from the bucket', async ({ page }) => {
-			test.setTimeout(300000);
+		test(
+			'backs a volume up to S3 and restores it from the bucket',
+			{ timeout: 300000 },
+			async ({ page }) => {
+				const volumeName = `e2e-s3-backup-${Date.now()}`;
+				const fileContent = `arcane-e2e-${Date.now()}`;
+				const destination = await createDestinationViaApi(page);
+				let backupId: string | undefined;
 
-			const volumeName = `e2e-s3-backup-${Date.now()}`;
-			const fileContent = `arcane-e2e-${Date.now()}`;
-			const destination = await createDestinationViaApi(page);
-			let backupId: string | undefined;
+				try {
+					await createVolumeViaApi(page, volumeName);
+					await writeVolumeFile(page, volumeName, 'payload.txt', fileContent);
+					expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
 
-			try {
-				await createVolumeViaApi(page, volumeName);
-				await writeVolumeFile(page, volumeName, 'payload.txt', fileContent);
-				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
+					const created = await createBackupViaApi(page, volumeName, {
+						destination: 's3',
+						s3DestinationId: destination.id
+					});
+					backupId = created.id;
+					const backup = await waitForBackup(page, volumeName, created.id);
 
-				const created = await createBackupViaApi(page, volumeName, {
-					destination: 's3',
-					s3DestinationId: destination.id
-				});
-				backupId = created.id;
-				const backup = await waitForBackup(page, volumeName, created.id);
+					expect(backup.destination).toBe('s3');
+					expect(backup.format).toBe('rustic');
+					expect(backup.remoteSnapshotId, 'no snapshot was recorded in S3').toBeTruthy();
+					expect(backup.localSnapshotId ?? '').toBe('');
 
-				expect(backup.destination).toBe('s3');
-				expect(backup.format).toBe('rustic');
-				expect(backup.remoteSnapshotId, 'no snapshot was recorded in S3').toBeTruthy();
-				expect(backup.localSnapshotId ?? '').toBe('');
+					// Rustic can only list these paths by reading the repository back out
+					// of the bucket, so this proves the snapshot really landed in MinIO.
+					const files = await page.request.get(`/api/agents/0/volumes/backups/${created.id}/files`);
+					expect(files.status(), await files.text()).toBe(200);
+					expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
 
-				// Rustic can only list these paths by reading the repository back out
-				// of the bucket, so this proves the snapshot really landed in MinIO.
-				const files = await page.request.get(`/api/agents/0/volumes/backups/${created.id}/files`);
-				expect(files.status(), await files.text()).toBe(200);
-				expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
+					const replacementContent = 'x'.repeat(fileContent.length);
+					await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent, 'update_file');
+					expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
-				const replacementContent = 'x'.repeat(fileContent.length);
-				await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent, 'update_file');
-				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
-
-				const restore = await page.request.post(
-					`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
-					{ data: {}, timeout: 180000 }
-				);
-				expect(restore.status(), await restore.text()).toBe(200);
-				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
-			} finally {
-				if (backupId) {
-					await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
+					const restore = await page.request.post(
+						`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
+						{ data: {}, timeout: 180000 }
+					);
+					expect(restore.status(), await restore.text()).toBe(200);
+					expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
+				} finally {
+					if (backupId) {
+						await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
+					}
+					await removeVolumeViaApi(page, volumeName);
+					await deleteDestinationViaApi(page, destination.id);
 				}
-				await removeVolumeViaApi(page, volumeName);
-				await deleteDestinationViaApi(page, destination.id);
 			}
-		});
+		);
 
-		test('blocks deleting a destination a backup still references', async ({ page }) => {
-			test.setTimeout(300000);
+		test(
+			'blocks deleting a destination a backup still references',
+			{ timeout: 300000 },
+			async ({ page }) => {
+				const volumeName = `e2e-s3-inuse-${Date.now()}`;
+				const destination = await createDestinationViaApi(page);
+				let backupId: string | undefined;
 
-			const volumeName = `e2e-s3-inuse-${Date.now()}`;
-			const destination = await createDestinationViaApi(page);
-			let backupId: string | undefined;
+				try {
+					await createVolumeViaApi(page, volumeName);
+					await writeVolumeFile(page, volumeName, 'payload.txt', 'in-use');
 
-			try {
-				await createVolumeViaApi(page, volumeName);
-				await writeVolumeFile(page, volumeName, 'payload.txt', 'in-use');
+					const created = await createBackupViaApi(page, volumeName, {
+						destination: 's3',
+						s3DestinationId: destination.id
+					});
+					backupId = created.id;
+					await waitForBackup(page, volumeName, created.id);
 
-				const created = await createBackupViaApi(page, volumeName, {
-					destination: 's3',
-					s3DestinationId: destination.id
-				});
-				backupId = created.id;
-				await waitForBackup(page, volumeName, created.id);
+					const blocked = await page.request.delete(`/api/backups/s3/${destination.id}`);
+					expect(blocked.status()).toBe(409);
 
-				const blocked = await page.request.delete(`/api/backups/s3/${destination.id}`);
-				expect(blocked.status()).toBe(409);
+					const removed = await page.request.delete(`/api/agents/0/volumes/backups/${created.id}`);
+					expect(removed.ok(), await removed.text()).toBe(true);
+					backupId = undefined;
 
-				const removed = await page.request.delete(`/api/agents/0/volumes/backups/${created.id}`);
-				expect(removed.ok(), await removed.text()).toBe(true);
-				backupId = undefined;
-
-				const remoteEnvironments = await countRemoteEnvironments(page);
-				const allowed = await page.request.delete(`/api/backups/s3/${destination.id}`);
-				if (remoteEnvironments === 0) {
-					expect(allowed.status(), await allowed.text()).toBe(200);
-				} else {
-					// A registered environment that cannot be checked keeps the
-					// destination, so the local reference is no longer the blocker.
-					expect([200, 409]).toContain(allowed.status());
+					const remoteEnvironments = await countRemoteEnvironments(page);
+					const allowed = await page.request.delete(`/api/backups/s3/${destination.id}`);
+					if (remoteEnvironments === 0) {
+						expect(allowed.status(), await allowed.text()).toBe(200);
+					} else {
+						// A registered environment that cannot be checked keeps the
+						// destination, so the local reference is no longer the blocker.
+						expect([200, 409]).toContain(allowed.status());
+					}
+				} finally {
+					if (backupId) {
+						await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
+					}
+					await removeVolumeViaApi(page, volumeName);
+					await deleteDestinationViaApi(page, destination.id);
 				}
-			} finally {
-				if (backupId) {
-					await removeApiResource(page, `/api/agents/0/volumes/backups/${backupId}`);
-				}
-				await removeVolumeViaApi(page, volumeName);
-				await deleteDestinationViaApi(page, destination.id);
 			}
-		});
+		);
 	});
 });
 

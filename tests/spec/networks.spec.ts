@@ -89,8 +89,6 @@ async function createNetworkViaApi(page: Page, networkName: string) {
 }
 
 test.describe('Networks Page', () => {
-	test.describe.configure({ mode: 'serial' });
-
 	test('Stat cards show correct counts', async ({ page }) => {
 		await navigateToNetworks(page);
 

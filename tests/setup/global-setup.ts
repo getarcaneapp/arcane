@@ -2,7 +2,8 @@ import { execFileSync } from 'child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { reportDirectory } from '../utils/report';
+import { baseURL, composeFile, reportDirectory } from '../utils/report';
+import globalTeardown from './global-teardown';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,14 +60,7 @@ function ensureProjectsDirIsContainerWritable(projectsDir: string) {
 }
 
 async function globalSetup() {
-	process.env.ARCANE_E2E_COMPOSE_FILE = process.env.COMPOSE_FILE
-		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
-		: path.resolve(__dirname, 'compose.yaml');
 	console.log('\nStarting global setup...');
-
-	const composeFile = process.env.COMPOSE_FILE
-		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
-		: path.resolve(__dirname, 'compose.yaml');
 
 	const projectsDir = path.resolve(__dirname, 'projects');
 
@@ -98,7 +92,6 @@ async function globalSetup() {
 		throw error;
 	}
 
-	const baseURL = process.env.BASE_URL || 'http://localhost:3000';
 	console.log(`Waiting for server at ${baseURL}...`);
 
 	const maxAttempts = 60;
@@ -125,6 +118,7 @@ async function globalSetup() {
 	}
 
 	console.log('Global setup complete.\n');
+	return globalTeardown;
 }
 
 export default globalSetup;

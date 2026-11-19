@@ -513,12 +513,15 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 	switch {
 	case running || sync.RedeployAfterSync || sync.PendingRedeploy:
 		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running, "pending", sync.PendingRedeploy)
-		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true}); redeployErr != nil {
+		redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true})
+		if redeployErr == nil || errors.Is(redeployErr, common.ErrSelfRedeployBlocked) {
+			if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
+				slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+			}
+		}
+		if redeployErr != nil {
 			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
-		}
-		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
-			slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
 		}
 	case sync.PullImageAfterSync:
 		credentials, credentialsErr := s.projectService.ResolveRegistryCredentials(ctx)
