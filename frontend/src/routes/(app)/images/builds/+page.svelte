@@ -7,13 +7,13 @@
 	import { ClockIcon, FolderOpenIcon, HammerIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerRegistryListQuery } from '#lib/query/container-registries.js';
 	import { imageBuildListQuery } from '#lib/query/images.js';
+	import { buildWorkspaceQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { mergedSettingsQuery } from '#lib/query/settings.js';
 	import { isSessionCancelledError } from '#lib/services/api-service.js';
-	import { buildWorkspaceService } from '#lib/services/build-workspace-service.js';
-	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord, ImageBuildRequest } from '#lib/types/image.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -44,10 +44,6 @@
 		isGitBuildContextSource
 	} from './image-build-history';
 
-	const buildSettingsOptions = (environmentId: string) => ({
-		queryKey: queryKeys.settings.byEnvironment(environmentId),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId)
-	});
 	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
 		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
 	const historyRequestOptions = {
@@ -62,7 +58,7 @@
 	let pickedEnvironmentId = $state('');
 	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
 	const queryClient = useQueryClient();
-	const buildSettingsQuery = createQuery(() => buildSettingsOptions(buildEnvironmentId));
+	const buildSettingsQuery = createQuery(() => mergedSettingsQuery(buildEnvironmentId));
 	const buildsRoot = $derived(buildsRootOf(buildSettingsQuery.data));
 	const buildsRootLabel = $derived.by(() => {
 		if (buildsRoot.length <= 36) return buildsRoot;
@@ -79,8 +75,7 @@
 	]);
 
 	const workspaceQuery = createQuery(() => ({
-		queryKey: queryKeys.buildWorkspace.workspace(buildEnvironmentId),
-		queryFn: () => buildWorkspaceService.getWorkspace(buildEnvironmentId),
+		...buildWorkspaceQuery(buildEnvironmentId),
 		refetchOnMount: false
 	}));
 	const workspace = $derived(
@@ -160,10 +155,9 @@
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
 
 	const registriesQuery = createQuery(() => ({
-		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
+		...containerRegistryListQuery(registryRequestOptions),
 		enabled: isPushMode,
-		staleTime: 0,
-		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
+		staleTime: 0
 	}));
 	const registries = $derived(registriesQuery.data?.data ?? []);
 	const registryOptions = $derived<SelectOption[]>(
@@ -182,11 +176,17 @@
 	const repositoryOptions = $derived<SelectOption[]>(
 		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
 	);
-	const fullImageReference = $derived(
-		isPushMode && selectedRegistry
-			? buildImageReference(selectedRegistry.host, selectedRegistry.namespace, inputs.repositoryName.value, inputs.pushTag.value)
-			: ''
-	);
+	const fullImageReference = $derived.by(() => {
+		if (!isPushMode || !selectedRegistry) {
+			return '';
+		}
+		return buildImageReference(
+			selectedRegistry.host,
+			selectedRegistry.namespace,
+			inputs.repositoryName.value,
+			inputs.pushTag.value
+		);
+	});
 
 	const historyCountQuery = createQuery(() =>
 		imageBuildListQuery(environmentStore.shownKey, readableEnvironments('images:list'), historyRequestOptions)
@@ -233,7 +233,7 @@
 	async function applyBuildConfig(build: ImageBuildRecord, environmentId: string) {
 		const apply = ++latestApply;
 		const remote = isGitBuildContextSource(build.contextDir);
-		const settings = remote ? undefined : await tryCatch(queryClient.ensureQueryData(buildSettingsOptions(environmentId)));
+		const settings = remote ? undefined : await tryCatch(queryClient.ensureQueryData(mergedSettingsQuery(environmentId)));
 		if (apply !== latestApply) return;
 		if (settings?.error) {
 			toast.error(m.common_load_failed({ resource: m.settings() }), { description: extractApiErrorMessage(settings.error) });
@@ -309,7 +309,7 @@
 			return;
 		}
 		if (isSessionCancelledError(result.error)) return;
-		const message = result.error instanceof Error ? result.error.message : m.build_failed();
+		const message = result.error.message || m.build_failed();
 		if (!run.error) run.fail(message);
 		toast.error(run.error);
 	}

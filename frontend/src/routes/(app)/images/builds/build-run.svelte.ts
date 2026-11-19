@@ -42,9 +42,11 @@ export class BuildRun {
 	fail(message: string) {
 		const clean = sanitizeLogText(message);
 		this.error = clean;
-		this.statusText = clean.toLowerCase().startsWith(m.build_failed().toLowerCase())
-			? clean
-			: m.build_failed_with_error({ error: clean });
+		if (clean.toLowerCase().startsWith(m.build_failed().toLowerCase())) {
+			this.statusText = clean;
+		} else {
+			this.statusText = m.build_failed_with_error({ error: clean });
+		}
 		this.append(m.build_error_log({ error: clean }));
 	}
 

@@ -562,9 +562,10 @@
 				return;
 			}
 			clientSortOverride = null;
-			const sortState = first
-				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
-				: undefined;
+			let sortState: { column: string; direction: 'asc' | 'desc' } | undefined;
+			if (first) {
+				sortState = { column: String(first.id), direction: first.desc ? 'desc' : 'asc' };
+			}
 			if (enablePersist && prefs) {
 				prefs.current = {
 					...prefs.current,

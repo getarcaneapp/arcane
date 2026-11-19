@@ -56,18 +56,14 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 		settingsForm.setLoading(true);
 
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await settingsForm.updateSettings(data);
-					toast.success(successMessage);
-					onSuccess?.();
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				applyApiFieldError(formInputs, error);
-				toast.error(errorMessage, { description: extractApiErrorMessage(error) });
+			const updated = await tryCatch(settingsForm.updateSettings(data));
+			if (updated.error !== null) {
+				applyApiFieldError(formInputs, updated.error);
+				toast.error(errorMessage, { description: extractApiErrorMessage(updated.error) });
+				return;
 			}
+			toast.success(successMessage);
+			onSuccess?.();
 		} finally {
 			settingsForm.setLoading(false);
 		}

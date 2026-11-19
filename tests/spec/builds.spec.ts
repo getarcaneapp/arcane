@@ -57,7 +57,7 @@ async function openAdvancedBuildOptions(page: Page) {
 }
 
 async function selectBuildProvider(page: Page, provider: 'local' | 'depot') {
-	const providerTrigger = page.locator('[data-slot="select-trigger"]').first();
+	const providerTrigger = page.getByRole('combobox', { name: 'Build Provider' });
 	await expect(providerTrigger).toBeVisible();
 	await providerTrigger.click();
 

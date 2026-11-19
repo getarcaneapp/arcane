@@ -35,22 +35,17 @@
 		if (!passwordValid || passwordSaving) return;
 		passwordSaving = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await userService.changePassword({ currentPassword, newPassword });
-					toast.success(m.account_password_updated());
-					currentPassword = '';
-					newPassword = '';
-					confirmPassword = '';
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
+			const changed = await tryCatch(userService.changePassword({ currentPassword, newPassword }));
+			if (changed.error !== null) {
 				toast.error(m.common_update_failed({ resource: m.common_password() }), {
-					description: extractApiErrorMessage(error)
+					description: extractApiErrorMessage(changed.error)
 				});
+				return;
 			}
+			toast.success(m.account_password_updated());
+			currentPassword = '';
+			newPassword = '';
+			confirmPassword = '';
 		} finally {
 			passwordSaving = false;
 		}
@@ -60,17 +55,12 @@
 		if (revokingAll) return;
 		revokingAll = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await userService.logoutAllOtherSessions();
-					toast.success(m.account_sessions_signed_out());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(error instanceof Error ? error.message : m.common_action_failed());
+			const signedOut = await tryCatch(userService.logoutAllOtherSessions());
+			if (signedOut.error !== null) {
+				toast.error(signedOut.error.message || m.common_action_failed());
+				return;
 			}
+			toast.success(m.account_sessions_signed_out());
 		} finally {
 			revokingAll = false;
 		}

@@ -112,12 +112,11 @@
 		const { id: rawId, name: rawName, description, light, dark } = parsed.data;
 		const name = typeof rawName === 'string' ? rawName.trim() : '';
 		const id = typeof rawId === 'string' && rawId.startsWith('custom-') ? rawId : `custom-${slugify(name)}`.slice(0, MAX_LENGTH);
-		const idErrors = [
-			...(id.length > MAX_LENGTH || id.split('').some((character) => !ID_CHARACTERS.includes(character))
-				? [m.theme_id_invalid()]
-				: []),
-			...(customThemes.some((theme) => theme.id === id) ? [m.theme_id_in_use({ id })] : [])
-		];
+		const idErrors: string[] = [];
+		if (id.length > MAX_LENGTH || id.split('').some((character) => !ID_CHARACTERS.includes(character))) {
+			idErrors.push(m.theme_id_invalid());
+		}
+		if (customThemes.some((theme) => theme.id === id)) idErrors.push(m.theme_id_in_use({ id }));
 		const nameLength = [...name].length;
 
 		errors = Object.fromEntries(

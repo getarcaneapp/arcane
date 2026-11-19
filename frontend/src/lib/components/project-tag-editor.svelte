@@ -30,13 +30,13 @@
 	let search = $state('');
 	let pending = $state<string | null>(null);
 	let selectedColor = $state<ProjectTagColor>('gray');
-	const normalizedSearch = $derived(normalizeTagInternal(search));
+	const normalizedSearch = $derived(normalizeTag(search));
 	const visibleTags = $derived(tags.slice(0, maxVisible));
 	const overflow = $derived(Math.max(tags.length - maxVisible, 0));
 	const options = $derived.by(() => {
 		const byName = new Map<string, ProjectTagOption>([
 			...availableTags.flatMap((tag): [string, ProjectTagOption][] => {
-				const name = normalizeTagInternal(tag.name);
+				const name = normalizeTag(tag.name);
 				return name ? [[name, { name, color: tag.color ?? 'gray' }]] : [];
 			}),
 			...tags.map((tag): [string, ProjectTagOption] => [tag.name, { name: tag.name, color: tag.color ?? 'gray' }])
@@ -46,7 +46,7 @@
 	const canCreate = $derived(
 		canEdit &&
 			normalizedSearch.length > 0 &&
-			isValidTagInternal(normalizedSearch) &&
+			isValidTag(normalizedSearch) &&
 			!options.some((option) => option.name === normalizedSearch)
 	);
 	const colorOptions = $derived([
@@ -60,19 +60,19 @@
 		{ value: 'pink' as const, label: m.project_tags_color_pink() }
 	]);
 
-	function normalizeTagInternal(value: string): string {
+	function normalizeTag(value: string): string {
 		return value.trim().toLowerCase();
 	}
 
-	function isValidTagInternal(value: string): boolean {
+	function isValidTag(value: string): boolean {
 		return value.length > 0 && Array.from(value).length <= 64 && !value.includes(',');
 	}
 
-	function isComposeTagInternal(tag: ProjectTag | undefined): boolean {
+	function isComposeTag(tag: ProjectTag | undefined): boolean {
 		return tag?.sources.includes('compose') ?? false;
 	}
 
-	function tagColorClassInternal(color: ProjectTagColor | undefined): string {
+	function tagColorClass(color: ProjectTagColor | undefined): string {
 		switch (color) {
 			case 'purple':
 				return 'bg-violet';
@@ -93,36 +93,32 @@
 		}
 	}
 
-	async function toggleTagInternal(name: string, color: ProjectTagColor = 'gray') {
-		const normalized = normalizeTagInternal(name);
-		if (!canEdit || !isValidTagInternal(normalized) || pending) return;
+	async function toggleTag(name: string, color: ProjectTagColor = 'gray') {
+		const normalized = normalizeTag(name);
+		if (!canEdit || !isValidTag(normalized) || pending) return;
 		const existing = tags.find((tag) => tag.name === normalized);
-		if (isComposeTagInternal(existing)) return;
+		if (isComposeTag(existing)) return;
 
 		const previous = tags;
 		const attached = !existing;
 		const resolvedColor = existing?.color ?? color;
-		tags = attached
-			? [...tags, { name: normalized, color: resolvedColor, sources: ['ui'] } satisfies ProjectTag].sort((a, b) =>
-					a.name.localeCompare(b.name)
-				)
-			: tags.filter((tag) => tag.name !== normalized);
+		if (attached) {
+			const added: ProjectTag = { name: normalized, color: resolvedColor, sources: ['ui'] };
+			tags = [...tags, added].sort((a, b) => a.name.localeCompare(b.name));
+		} else {
+			tags = tags.filter((tag) => tag.name !== normalized);
+		}
 		pending = normalized;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					const updated = await onToggle?.(normalized, attached, resolvedColor);
-					if (updated) tags = updated;
-					search = '';
-					selectedColor = 'gray';
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const error = operationResult1.error;
-
+			const toggled = await tryCatch(Promise.resolve().then(() => onToggle?.(normalized, attached, resolvedColor)));
+			if (toggled.error !== null) {
 				tags = previous;
-				toast.error(error instanceof Error ? error.message : m.common_error());
+				toast.error(toggled.error instanceof Error ? toggled.error.message : m.common_error());
+				return;
 			}
+			if (toggled.data) tags = toggled.data;
+			search = '';
+			selectedColor = 'gray';
 		} finally {
 			pending = null;
 		}
@@ -138,13 +134,13 @@
 			<button {...triggerProps} type="button" class="flex min-h-7 max-w-full items-center gap-1 text-left {className}">
 				{#each visibleTags as tag (tag.name)}
 					<Badge
-						variant={isComposeTagInternal(tag) ? 'gray' : 'outline'}
+						variant={isComposeTag(tag) ? 'gray' : 'outline'}
 						size="sm"
-						title={isComposeTagInternal(tag) ? m.project_tags_defined_in_compose() : undefined}
+						title={isComposeTag(tag) ? m.project_tags_defined_in_compose() : undefined}
 					>
-						<span class="size-2 shrink-0 rounded-full {tagColorClassInternal(tag.color)}"></span>
+						<span class="size-2 shrink-0 rounded-full {tagColorClass(tag.color)}"></span>
 						{tag.name}
-						{#if isComposeTagInternal(tag)}<LockIcon class="size-3" />{/if}
+						{#if isComposeTag(tag)}<LockIcon class="size-3" />{/if}
 					</Badge>
 				{/each}
 				{#if overflow > 0}<Badge variant="gray" size="sm">+{overflow}</Badge>{/if}
@@ -166,13 +162,13 @@
 							<div class="flex items-center gap-2">
 								<Select.Root type="single" bind:value={selectedColor}>
 									<Select.Trigger class="h-9 min-w-28">
-										<span class="block size-2.5 shrink-0 rounded-full {tagColorClassInternal(selectedColor)}"></span>
+										<span class="block size-2.5 shrink-0 rounded-full {tagColorClass(selectedColor)}"></span>
 										{colorOptions.find((option) => option.value === selectedColor)?.label}
 									</Select.Trigger>
 									<Select.Content>
 										{#each colorOptions as option (option.value)}
 											<Select.Item value={option.value}>
-												<span class="block size-2.5 shrink-0 rounded-full {tagColorClassInternal(option.value)}"></span>
+												<span class="block size-2.5 shrink-0 rounded-full {tagColorClass(option.value)}"></span>
 												{option.label}
 											</Select.Item>
 										{/each}
@@ -184,7 +180,7 @@
 									disabled={pending !== null}
 									onclick={(event) => {
 										event.stopPropagation();
-										void toggleTagInternal(normalizedSearch, selectedColor);
+										void toggleTag(normalizedSearch, selectedColor);
 									}}
 								>
 									{m.common_create()}
@@ -198,16 +194,16 @@
 				<Command.Group>
 					{#each options as option (option.name)}
 						{@const tag = tags.find((item) => item.name === option.name)}
-						{@const locked = isComposeTagInternal(tag)}
+						{@const locked = isComposeTag(tag)}
 						<Command.Item
 							disabled={!canEdit || locked || pending !== null}
-							onSelect={() => toggleTagInternal(option.name, option.color)}
+							onSelect={() => toggleTag(option.name, option.color)}
 							title={locked ? m.project_tags_defined_in_compose() : undefined}
 						>
 							<span class="flex size-4 items-center justify-center rounded-sm border">
 								{#if tag}<CheckIcon class="size-4" />{/if}
 							</span>
-							<span class="size-2.5 shrink-0 rounded-full {tagColorClassInternal(option.color)}"></span>
+							<span class="size-2.5 shrink-0 rounded-full {tagColorClass(option.color)}"></span>
 							<span class="min-w-0 flex-1 truncate">{option.name}</span>
 							{#if locked}<LockIcon class="size-4" /><span class="sr-only">{m.project_tags_defined_in_compose()}</span>{/if}
 						</Command.Item>

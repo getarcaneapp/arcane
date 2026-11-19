@@ -10,7 +10,7 @@ type VersionStreamEvent = {
 	info?: Partial<VersionInfo>;
 };
 
-function createVersionStoreInternal() {
+function createVersionStore() {
 	let current = $state.raw<VersionInfo | undefined>();
 	let loaded = $state.raw<VersionInfo | undefined>();
 	const buildChanged = $derived(
@@ -62,4 +62,4 @@ function createVersionStoreInternal() {
 	};
 }
 
-export const versionStore = createVersionStoreInternal();
+export const versionStore = createVersionStore();

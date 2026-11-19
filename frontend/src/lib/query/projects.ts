@@ -4,9 +4,14 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-import type { ProjectStatusCounts } from '#lib/types/project.js';
+import type { ProjectStatusCounts, ProjectTagOption } from '#lib/types/project.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+import {
+	fetchAcrossEnvironments,
+	readAcrossEnvironments,
+	sumAcrossEnvironments,
+	type EnvironmentFailure
+} from '#lib/utils/environments.js';
 
 const emptyStatusCounts: ProjectStatusCounts = {
 	runningProjects: 0,
@@ -66,5 +71,29 @@ export function projectStatusCountsQuery(scope: string, environments: Environmen
 				(id, config) => projectService.getProjectStatusCountsForEnvironment(id, config),
 				emptyStatusCounts
 			)
+	});
+}
+
+export type ProjectTagOptions = { tags: ProjectTagOption[]; failedEnvironments: EnvironmentFailure[] };
+
+/** Tag options from every shown environment, one per name, with the environments that failed. */
+async function fetchProjectTags(environments: EnvironmentRef[]): Promise<ProjectTagOptions> {
+	const { value, failures } = await readAcrossEnvironments(environments, (scope, config) =>
+		projectService.getProjectTagsForEnvironment(scope, config)
+	);
+	return { tags: value, failedEnvironments: failures };
+}
+
+export function projectTagsQuery(scope: string, environments: EnvironmentRef[]) {
+	return queryOptions({
+		queryKey: queryKeys.projects.tags(scope),
+		queryFn: () => fetchProjectTags(environments)
+	});
+}
+
+export function projectListForEnvironmentQuery(environmentId: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.projects.list(environmentId, requestOptions),
+		queryFn: () => projectService.getProjectsForEnvironment(environmentId, requestOptions)
 	});
 }

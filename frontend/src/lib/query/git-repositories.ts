@@ -17,3 +17,10 @@ export function gitRepositoryBranchesQuery(repositoryId: string) {
 		queryFn: () => gitRepositoryService.getBranches(repositoryId)
 	});
 }
+
+export function gitRepositoryFilesQuery(repositoryId: string, branch: string, path: string) {
+	return queryOptions({
+		queryKey: queryKeys.gitRepositories.files(repositoryId, branch, path),
+		queryFn: () => gitRepositoryService.browseFiles(repositoryId, branch, path)
+	});
+}

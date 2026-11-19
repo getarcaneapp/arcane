@@ -4,10 +4,10 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
-	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import { LayersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { swarmEnvironmentsQuery } from '#lib/query/swarm.js';
 	import { swarmStackListQuery, swarmStacksScope } from '#lib/query/swarm.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -21,7 +21,7 @@
 	let { data } = $props();
 
 	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm-stacks:list'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQuery('swarm-stacks:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	const stacksScope = $derived(swarmStacksScope(swarm));

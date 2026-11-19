@@ -26,6 +26,7 @@
 		RefreshIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { gitOpsBackupHistoryQuery, gitOpsProjectBackupQuery } from '#lib/query/gitops.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import type { GitOpsBackupHistoryEntry, GitOpsBackupState } from '#lib/types/gitops.js';
@@ -66,12 +67,7 @@
 	let disconnecting = $state(false);
 
 	const backups = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.projectBackup(environmentId, projectId),
-		queryFn: () =>
-			gitOpsSyncService.getSyncs(environmentId, {
-				pagination: { page: 1, limit: 1 },
-				filters: { projectId, mode: 'backup,bidirectional' }
-			}),
+		...gitOpsProjectBackupQuery(environmentId, projectId),
 		enabled: !!environmentId && !!projectId
 	}));
 
@@ -87,8 +83,7 @@
 
 	const RECENT_LIMIT = 5;
 	const history = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.backupHistory(environmentId, sync?.id ?? '', RECENT_LIMIT),
-		queryFn: () => gitOpsSyncService.getBackupHistory(environmentId, sync!.id, RECENT_LIMIT),
+		...gitOpsBackupHistoryQuery(environmentId, sync?.id ?? '', RECENT_LIMIT),
 		enabled: !!sync && canBackup
 	}));
 	const recentEntries = $derived<GitOpsBackupHistoryEntry[]>(history.data?.entries ?? []);
@@ -167,10 +162,12 @@
 	function disconnect() {
 		if (!sync) return;
 		const syncId = sync.id;
+		let title = m.disconnect_backup_title({ name: projectName });
+		if (isBidirectional) {
+			title = m.disconnect_git_sync_title({ name: projectName });
+		}
 		confirmAndRun({
-			title: isBidirectional
-				? m.disconnect_git_sync_title({ name: projectName })
-				: m.disconnect_backup_title({ name: projectName }),
+			title,
 			message: isBidirectional ? m.disconnect_git_sync_message() : m.disconnect_backup_message(),
 			confirmLabel: m.common_disconnect(),
 			destructive: true,

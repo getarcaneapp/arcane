@@ -2,17 +2,19 @@ import { browser } from '$app/env';
 import { invalidate } from '$app/navigation';
 import { page } from '$app/state';
 import { redirect } from '@sveltejs/kit';
-import { QueryClient, type QueryKey } from '@tanstack/svelte-query';
+import { QueryClient, type QueryExecuteOptions, type QueryKey } from '@tanstack/svelte-query';
 
+import { autoLoginAttemptQuery, autoLoginConfigQuery, sessionBootstrapQuery } from '#lib/query/auth.js';
+import { environmentListQuery } from '#lib/query/environments.js';
+import { podmanStatusQuery } from '#lib/query/podman.js';
 import { queryKeys } from '#lib/query/query-keys.js';
+import { permissionsManifestQuery } from '#lib/query/roles.js';
+import { mergedSettingsQuery, publicSettingsQuery } from '#lib/query/settings.js';
+import { swarmStatusQuery } from '#lib/query/swarm.js';
+import { appVersionQuery } from '#lib/query/system.js';
 import { isSessionCancelledError } from '#lib/services/api-service.js';
 import { authService } from '#lib/services/auth-service.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { podmanService } from '#lib/services/podman-service.js';
-import { roleService } from '#lib/services/role-service.js';
-import { settingsService } from '#lib/services/settings-service.js';
-import { swarmService } from '#lib/services/swarm-service.js';
-import versionService, { toAppVersionInformation } from '#lib/services/version-service.js';
+import { toAppVersionInformation } from '#lib/services/version-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
@@ -23,7 +25,6 @@ import type { SessionBootstrap } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
 import { type PodmanStatus } from '#lib/types/podman.js';
 import type { PermissionsManifest } from '#lib/types/role.js';
-import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { PODMAN_STATUS_DEPENDENCY } from '#lib/types/ui/podman.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { SWARM_STATUS_DEPENDENCY } from '#lib/types/ui/swarm.js';
@@ -32,7 +33,7 @@ import type { VersionInfo } from '#lib/types/version.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
-import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -66,16 +67,6 @@ const ROOT_STALE_TIME = 30_000;
 const ROOT_DEPENDENCY = 'app:root';
 const SECONDARY_DISCOVERY_TIMEOUT = 1_500;
 const ENVIRONMENT_LIST_OPTIONS = { pagination: { page: 1, limit: -1 } };
-const EMPTY_SWARM_STATUS: SwarmRuntimeStatus = { enabled: false };
-const EMPTY_PODMAN_STATUS: PodmanStatus = {
-	detected: false,
-	podCount: 0,
-	rootless: false,
-	quadletsSupported: false,
-	quadletAppsSupported: false,
-	autoUpdateMode: 'unavailable',
-	systemdAvailable: false
-};
 let knownPodmanStatuses: Record<string, PodmanStatus> = {};
 let knownSwarmEnabled: boolean | undefined;
 let knownSwarmScope = '';
@@ -87,9 +78,7 @@ let appliedVersion: VersionInfo | undefined;
 let seededBootstrap: SessionBootstrap | undefined;
 let rootRevalidated = false;
 
-type RootQuery<T> = { queryKey: QueryKey; queryFn: () => Promise<T>; staleTime: number; retry: false };
-
-function rootData<T>(options: RootQuery<T>, navigating: boolean): Promise<T> {
+function rootData<T, TKey extends QueryKey>(options: QueryExecuteOptions<T, Error, T, T, TKey>, navigating: boolean): Promise<T> {
 	const cached = navigating ? queryClient.getQueryData<T>(options.queryKey) : undefined;
 	if (cached === undefined) return queryClient.query(options);
 	void tryCatch(queryClient.query(options)).then((result) => {
@@ -132,19 +121,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	const navigating = url.href !== page.url.href;
 	const rootQuery = { staleTime: navigating || rootRevalidated ? ROOT_STALE_TIME : 0, retry: false as const };
 	if (!navigating) rootRevalidated = false;
-	const sessionResult = await tryCatch(
-		rootData(
-			{
-				...rootQuery,
-				queryKey: queryKeys.auth.sessionBootstrap(),
-				queryFn: async () => {
-					const loaded = await authService.getSessionBootstrap();
-					return { ...loaded, version: toAppVersionInformation(loaded.version) };
-				}
-			},
-			navigating
-		)
-	);
+	const sessionResult = await tryCatch(rootData({ ...sessionBootstrapQuery(), ...rootQuery }, navigating));
 	// Only an explicit rejection signs the user out; transient check failures keep the known user.
 	const sessionRejected =
 		sessionResult.error !== null && (isAuthRejectionError(sessionResult.error) || isSessionCancelledError(sessionResult.error));
@@ -154,33 +131,17 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	let user: User | null = bootstrap?.user ?? (sessionRejected ? null : userStore.current);
 	const versionInformation =
 		bootstrap?.version ??
-		(await dataOrNull(
-			queryClient.query({
-				...rootQuery,
-				queryKey: queryKeys.system.appVersion(),
-				queryFn: () => versionService.getVersionInformation()
-			})
-		)) ??
+		(await dataOrNull(queryClient.query({ ...appVersionQuery(), ...rootQuery }))) ??
 		versionStore.current ??
 		toAppVersionInformation({});
-	const autoLoginConfig =
-		browser && versionInformation.enabledFeatures?.includes('autologin')
-			? await dataOrNull(
-					queryClient.query({
-						queryKey: queryKeys.auth.autoLoginConfig(),
-						queryFn: () => authService.getAutoLoginConfig()
-					})
-				)
-			: null;
+	let autoLoginConfig = null;
+	if (browser && versionInformation.enabledFeatures?.includes('autologin')) {
+		autoLoginConfig = await dataOrNull(queryClient.query(autoLoginConfigQuery()));
+	}
 
 	settingsStore.autoLoginEnabled.set(autoLoginConfig?.enabled === true);
 	if (autoLoginConfig?.enabled && !user) {
-		user = await dataOrNull(
-			queryClient.query({
-				queryKey: queryKeys.auth.autoLoginAttempt(),
-				queryFn: () => authService.attemptAutoLogin()
-			})
-		);
+		user = await dataOrNull(queryClient.query(autoLoginAttemptQuery()));
 	}
 
 	const nextAuthenticatedUserId = user?.id ?? null;
@@ -208,22 +169,14 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
-		const environmentsRequest = tryCatch(
-			bootstrap
-				? Promise.resolve(bootstrap.environments)
-				: queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.environments.list(ENVIRONMENT_LIST_OPTIONS),
-						queryFn: () => environmentManagementService.getEnvironments(ENVIRONMENT_LIST_OPTIONS)
-					})
-		);
+		let environmentsRequest;
+		if (bootstrap) {
+			environmentsRequest = tryCatch(Promise.resolve(bootstrap.environments));
+		} else {
+			environmentsRequest = tryCatch(queryClient.query({ ...environmentListQuery(ENVIRONMENT_LIST_OPTIONS), ...rootQuery }));
+		}
 		const permissionsManifestRequest = dataOrNull(
-			queryClient.query({
-				retry: false,
-				staleTime: Infinity,
-				queryKey: queryKeys.roles.permissionsManifest(),
-				queryFn: () => roleService.getPermissionsManifest()
-			})
+			queryClient.query({ ...permissionsManifestQuery(), retry: false, staleTime: Infinity })
 		);
 		const environments = await environmentsRequest;
 		if (!environments.error) {
@@ -239,18 +192,12 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			featureStore.connect(queryClient);
 			clientStream.connect(queryClient);
 		}
-		const settingsRequest = passwordChangePending
-			? Promise.resolve(null)
-			: dataOrNull(
-					rootData(
-						{
-							...rootQuery,
-							queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
-							queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
-						},
-						navigating
-					)
-				);
+		let settingsRequest;
+		if (passwordChangePending) {
+			settingsRequest = Promise.resolve(null);
+		} else {
+			settingsRequest = dataOrNull(rootData({ ...mergedSettingsQuery(LOCAL_DOCKER_ENVIRONMENT_ID), ...rootQuery }, navigating));
+		}
 		const featureEnvironments = environmentStore.available.filter((env) => env.enabled && !passwordChangePending);
 		const featuresRequest = Promise.race([
 			Promise.all([
@@ -263,24 +210,12 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			afterDiscoveryTimeout()
 		]);
 		const swarmEnvironments = passwordChangePending ? [] : readableEnvironments('swarm:read');
-		const swarmStatusRequest =
-			swarmEnvironments.length > 0
-				? dataOrNull(
-						rootData(
-							{
-								...rootQuery,
-								queryKey: queryKeys.swarm.status(swarmEnvironments.map((env) => env.id).join(',')),
-								queryFn: () =>
-									sumAcrossEnvironments(
-										swarmEnvironments,
-										(scope, config) => swarmService.getSwarmStatus(scope, config),
-										EMPTY_SWARM_STATUS
-									)
-							},
-							navigating
-						)
-					)
-				: Promise.resolve(null);
+		let swarmStatusRequest;
+		if (swarmEnvironments.length > 0) {
+			swarmStatusRequest = dataOrNull(rootData({ ...swarmStatusQuery(swarmEnvironments), ...rootQuery }, navigating));
+		} else {
+			swarmStatusRequest = Promise.resolve(null);
+		}
 		const swarmScope = `${user.id}:${swarmEnvironments.map((env) => env.id).join(',')}`;
 		if (swarmScope !== knownSwarmScope) {
 			knownSwarmScope = swarmScope;
@@ -288,25 +223,13 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		}
 		const swarmStatusDiscovery = Promise.race([swarmStatusRequest, afterDiscoveryTimeout()]);
 		const podmanEnvironments = passwordChangePending ? [] : readableEnvironments('podman:read');
-		const podmanStatusRequest = (
-			podmanEnvironments.length > 0
-				? dataOrNull(
-						rootData(
-							{
-								...rootQuery,
-								queryKey: queryKeys.podman.status(podmanEnvironments.map((env) => env.id).join(',')),
-								queryFn: () =>
-									sumAcrossEnvironments(
-										podmanEnvironments,
-										(scope, config) => podmanService.getStatus(scope, config),
-										EMPTY_PODMAN_STATUS
-									)
-							},
-							navigating
-						)
-					)
-				: Promise.resolve(null)
-		).then((loaded) =>
+		let podmanStatusLoad;
+		if (podmanEnvironments.length > 0) {
+			podmanStatusLoad = dataOrNull(rootData({ ...podmanStatusQuery(podmanEnvironments), ...rootQuery }, navigating));
+		} else {
+			podmanStatusLoad = Promise.resolve(null);
+		}
+		const podmanStatusRequest = podmanStatusLoad.then((loaded) =>
 			Object.fromEntries(
 				(loaded?.byEnvironment ?? []).flatMap(({ environment, data }) =>
 					data.detected || data.reason ? [[environment.id, data] as const] : []
@@ -336,13 +259,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 		}
 		settings =
 			loadedSettings ??
-			(await dataOrNull(
-				queryClient.query({
-					...rootQuery,
-					queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
-					queryFn: () => settingsService.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID)
-				})
-			));
+			(await dataOrNull(queryClient.query({ ...publicSettingsQuery(LOCAL_DOCKER_ENVIRONMENT_ID), ...rootQuery })));
 		await featuresRequest;
 		if (discoveredSwarmStatus === undefined) {
 			swarmEnabled = swarmScope === knownSwarmScope ? knownSwarmEnabled : undefined;
@@ -364,13 +281,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	} else {
 		await environmentStore.initialize([]);
 
-		settings = await dataOrNull(
-			queryClient.query({
-				...rootQuery,
-				queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
-				queryFn: () => settingsService.getPublicSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID)
-			})
-		);
+		settings = await dataOrNull(queryClient.query({ ...publicSettingsQuery(LOCAL_DOCKER_ENVIRONMENT_ID), ...rootQuery }));
 	}
 
 	// Settings saves and the version stream update the stores directly, so only new results replace them.

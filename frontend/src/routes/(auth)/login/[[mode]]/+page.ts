@@ -1,7 +1,7 @@
 import { browser } from '$app/env';
 import { error as httpError, redirect } from '@sveltejs/kit';
 
-import { passkeyService } from '#lib/services/passkey-service.js';
+import { passkeyLoginAvailabilityQuery } from '#lib/query/auth.js';
 import { isInAppPath } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -26,9 +26,9 @@ export const load: PageLoad = async ({ parent, url, params }) => {
 		throw redirect(302, redirectTo ?? getEffectiveLandingPage());
 	}
 
-	const passkeyAvailability = await tryCatch(passkeyService.getLoginAvailability()).then((result) =>
-		result.error ? null : result.data
-	);
+	const passkeyAvailability = await tryCatch(
+		data.queryClient.query({ ...passkeyLoginAvailabilityQuery(), staleTime: 0, retry: false })
+	).then((result) => (result.error ? null : result.data));
 
 	const error = url.searchParams.get('error');
 	const storedErrorMessage = browser ? sessionStorage.getItem('oidc_login_error') : null;

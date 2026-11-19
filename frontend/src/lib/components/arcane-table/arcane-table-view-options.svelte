@@ -37,11 +37,10 @@
 		if (!fields) return visible;
 		return fields.find((field) => field.id === columnId)?.visible ?? true;
 	}
-	const sortableColumns = $derived(
-		showSorting && table
-			? table.getAllColumns().filter((col) => col.getCanSort() && isSortVisible(col.id, col.getIsVisible()))
-			: []
-	);
+	const sortableColumns = $derived.by(() => {
+		if (!showSorting || !table) return [];
+		return table.getAllColumns().filter((col) => col.getCanSort() && isSortVisible(col.id, col.getIsVisible()));
+	});
 	const activeSort = $derived(table?.atoms.sorting.get()[0]);
 	const activeSortColumn = $derived(activeSort ? sortableColumns.find((col) => col.id === String(activeSort.id)) : undefined);
 	const activeSortDirection = $derived.by(() => {

@@ -140,47 +140,47 @@
 				}
 			});
 			return !result.error && !assignmentsFailed;
-		} else {
-			if (!user.username) {
-				toast.error(m.common_username_required());
-				isLoading[loading] = false;
-				return false;
-			}
-
-			const safeUsername = user.username!.trim() || m.common_unknown();
-
-			const createUser: UserCreate = {
-				username: user.username!,
-				displayName: user.displayName,
-				email: user.email,
-				password: user.password!
-			};
-
-			const result = await tryCatch(userService.create(createUser));
-			await handleApiResultWithCallbacks({
-				result,
-				message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
-				setLoadingState: (value) => (isLoading[loading] = value),
-				onSuccess: async (created) => {
-					if (isAdmin && user.roleAssignments && created?.id) {
-						const assignmentsResult = await tryCatch(
-							roleService.setUserAssignments(created.id, { assignments: user.roleAssignments })
-						);
-						await handleApiResultWithCallbacks({
-							result: assignmentsResult,
-							message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
-						});
-						assignmentsFailed = assignmentsResult.error !== null;
-					}
-					if (!assignmentsFailed) {
-						toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
-					}
-					isDialogOpen.create = false;
-					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-				}
-			});
-			return !result.error;
 		}
+
+		if (!user.username) {
+			toast.error(m.common_username_required());
+			isLoading[loading] = false;
+			return false;
+		}
+
+		const safeUsername = user.username!.trim() || m.common_unknown();
+
+		const createUser: UserCreate = {
+			username: user.username!,
+			displayName: user.displayName,
+			email: user.email,
+			password: user.password!
+		};
+
+		const result = await tryCatch(userService.create(createUser));
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
+			setLoadingState: (value) => (isLoading[loading] = value),
+			onSuccess: async (created) => {
+				if (isAdmin && user.roleAssignments && created?.id) {
+					const assignmentsResult = await tryCatch(
+						roleService.setUserAssignments(created.id, { assignments: user.roleAssignments })
+					);
+					await handleApiResultWithCallbacks({
+						result: assignmentsResult,
+						message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
+					});
+					assignmentsFailed = assignmentsResult.error !== null;
+				}
+				if (!assignmentsFailed) {
+					toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
+				}
+				isDialogOpen.create = false;
+				await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+			}
+		});
+		return !result.error;
 	}
 
 	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));

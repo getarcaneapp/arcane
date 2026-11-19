@@ -8,7 +8,7 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmJoinCandidatesQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { SwarmJoinCandidate, SwarmJoinEnvironmentResult, SwarmJoinEnvironmentTarget } from '#lib/types/swarm.js';
@@ -28,8 +28,7 @@
 	const candidatesQuery = createQuery(() => {
 		const environmentId = managerEnvironmentId;
 		return {
-			queryKey: queryKeys.swarm.joinCandidates(environmentId ?? null, userStore.current),
-			queryFn: () => swarmService.getSwarmJoinCandidates(environmentId!),
+			...swarmJoinCandidatesQuery(environmentId, userStore.current),
 			enabled: open && !!environmentId && hasPermission('swarm:join', environmentId)
 		};
 	});

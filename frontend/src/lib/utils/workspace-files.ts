@@ -8,7 +8,7 @@ import type {
 	WorkspaceFileEntry as WorkspaceFileDto,
 	WorkspaceReadOnlyReason
 } from '#lib/types/workspace.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
+import { tryCatch, trySync } from '#lib/utils/try-catch.js';
 
 export interface WorkspaceDisplayEntry extends Omit<WorkspaceFileDto, 'editable' | 'isSymlink' | 'modTime' | 'readOnlyReason'> {
 	modTime?: string;
@@ -204,18 +204,13 @@ export async function readWorkspaceUpload(
 ): Promise<{ content?: string; binary: boolean; error?: string }> {
 	if (file.size > maxFileSizeMb * 1024 * 1024) return { binary: false, error: m.workspace_upload_too_large({ maxFileSizeMb }) };
 
-	const operationResult = await tryCatch(
-		(async () => {
-			const bytes = new Uint8Array(await file.arrayBuffer());
-			if (bytes.includes(0)) return { binary: true };
-			return { binary: false, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
-		})()
-	);
-	if (operationResult.error !== null) {
-		return { binary: true };
-	} else {
-		return operationResult.data;
-	}
+	const buffer = await tryCatch(file.arrayBuffer());
+	if (buffer.error !== null) return { binary: true };
+	const bytes = new Uint8Array(buffer.data);
+	if (bytes.includes(0)) return { binary: true };
+	const decoded = trySync(() => new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+	if (decoded.error !== null) return { binary: true };
+	return { binary: false, content: decoded.data };
 }
 
 export function workspaceReadOnlyMessage(reason: WorkspaceReadOnlyReason | undefined, maxFileSizeMb: number): string {
@@ -297,9 +292,8 @@ export function workspaceFileLanguage(relativePath: string): CodeLanguage {
 		return WORKSPACE_LANGUAGE_EXTENSIONS[extension] ?? 'plaintext';
 	}
 	if (basename === 'dockerfile' || basename.startsWith('dockerfile.')) return 'dockerfile';
-	return lower.includes('.') && Object.hasOwn(WORKSPACE_LANGUAGE_EXTENSIONS, extension)
-		? (WORKSPACE_LANGUAGE_EXTENSIONS[extension] ?? 'plaintext')
-		: 'plaintext';
+	if (!lower.includes('.') || !Object.hasOwn(WORKSPACE_LANGUAGE_EXTENSIONS, extension)) return 'plaintext';
+	return WORKSPACE_LANGUAGE_EXTENSIONS[extension] ?? 'plaintext';
 }
 
 export function compareWorkspaceFileEntries(a: WorkspaceDisplayEntry, b: WorkspaceDisplayEntry): number {
@@ -329,9 +323,10 @@ function remapWorkspaceDisplayEntries(entries: Map<string, WorkspaceDisplayEntry
 }
 
 function workspaceFileChangeTargetPath(change: WorkspaceDisplayFileChange, relativePath: string): string {
-	return change.operation === 'rename' && change.newName
-		? joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName)
-		: joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
+	if (change.operation === 'rename' && change.newName) {
+		return joinWorkspaceFilePath(workspaceFileParentPath(relativePath), change.newName);
+	}
+	return joinWorkspaceFilePath(change.newParentPath ?? '', workspaceFileBasename(relativePath));
 }
 
 // Maps a displayed path back through staged renames and moves; null means a staged change created or replaced it.

@@ -29,15 +29,15 @@ export function saveUserPreferences(patch: Partial<UserPreferences>): Promise<vo
 			pending.shift();
 			return;
 		}
-		const operationResult = await tryCatch(userService.updateMyProfile({ preferences: patch }));
+		const updated = await tryCatch(userService.updateMyProfile({ preferences: patch }));
 		pending.shift();
 		if (!signedIn()) return;
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
+		if (updated.error !== null) {
+			const error = updated.error;
 
 			toast.error(error instanceof Error ? error.message : m.common_update_failed({ resource: m.account_preferences() }));
 		} else {
-			confirmed = operationResult.data;
+			confirmed = updated.data;
 		}
 		const saved = confirmed ?? current;
 		await userStore.setUser({ ...saved, preferences: Object.assign({}, saved.preferences, ...pending) });

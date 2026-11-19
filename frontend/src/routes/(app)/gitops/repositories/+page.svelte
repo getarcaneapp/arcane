@@ -42,16 +42,18 @@
 		}: {
 			repository: GitRepositoryCreate | GitRepositoryUpdate;
 			target: GitRepository | null;
-		}) =>
-			target
-				? gitRepositoryService.updateRepository(target.id, repository as GitRepositoryUpdate)
-				: gitRepositoryService.createRepository(repository as GitRepositoryCreate),
+		}) => {
+			if (target) {
+				return gitRepositoryService.updateRepository(target.id, repository as GitRepositoryUpdate);
+			}
+			return gitRepositoryService.createRepository(repository as GitRepositoryCreate);
+		},
 		onSuccess: async (_result, { target }) => {
-			toast.success(
-				target
-					? m.common_update_success({ resource: m.resource_repository() })
-					: m.common_create_success({ resource: m.resource_repository() })
-			);
+			if (target) {
+				toast.success(m.common_update_success({ resource: m.resource_repository() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.resource_repository() }));
+			}
 			await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 			clearToken = false;
 			clearSshKey = false;

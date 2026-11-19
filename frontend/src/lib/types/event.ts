@@ -22,7 +22,7 @@ export interface Event {
 	userId?: string;
 	username?: string;
 	environmentId?: string;
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 	timestamp: string;
 	createdAt: string;
 	updatedAt?: string;

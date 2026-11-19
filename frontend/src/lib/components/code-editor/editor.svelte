@@ -554,10 +554,10 @@
 				create() {
 					const dom = document.createElement('div');
 					dom.className = 'arcane-hover';
-					const examples =
-						doc.examples && doc.examples.length > 0
-							? `<div><strong>${m.examples()}:</strong> ${doc.examples.join(', ')}</div>`
-							: '';
+					let examples = '';
+					if (doc.examples && doc.examples.length > 0) {
+						examples = `<div><strong>${m.examples()}:</strong> ${doc.examples.join(', ')}</div>`;
+					}
 					dom.innerHTML = `
 						<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
 						${doc.description ? `<div>${doc.description}</div>` : ''}

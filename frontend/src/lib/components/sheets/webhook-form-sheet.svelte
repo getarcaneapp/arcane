@@ -103,6 +103,23 @@
 
 	const form = createForm<typeof formSchema>(formSchema, { name: '' });
 
+	async function fetchTargetOptions(type: WebhookTargetType, envId: string) {
+		const request = { pagination: { page: 1, limit: 200 } };
+		if (type === 'container') {
+			const res = await containerService.getContainersForEnvironment(envId, request);
+			return res.data.map((c) => ({ value: c.id, label: c.names[0] ?? c.id }));
+		}
+		if (type === 'project') {
+			const res = await projectService.getProjectsForEnvironment(envId, request);
+			return res.data.map((p) => ({ value: p.id, label: p.name }));
+		}
+		if (type === 'gitops') {
+			const res = await gitOpsSyncService.getSyncs(envId, request);
+			return res.data.map((s) => ({ value: s.id, label: s.name }));
+		}
+		return [];
+	}
+
 	async function loadTargetOptions(type: WebhookTargetType, envId: string) {
 		if (type === 'updater') {
 			targetOptions = [];
@@ -113,30 +130,14 @@
 		const generation = ++loadGeneration;
 		targetOptionsLoading = true;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					let options: { label: string; value: string }[] = [];
-					if (type === 'container') {
-						const res = await containerService.getContainersForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
-						options = res.data.map((c) => ({ value: c.id, label: c.names[0] ?? c.id }));
-					} else if (type === 'project') {
-						const res = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
-						options = res.data.map((p) => ({ value: p.id, label: p.name }));
-					} else if (type === 'gitops') {
-						const res = await gitOpsSyncService.getSyncs(envId, { pagination: { page: 1, limit: 200 } });
-						options = res.data.map((s) => ({ value: s.id, label: s.name }));
-					}
-					if (generation === loadGeneration) {
-						targetOptions = options;
-						selectedTargetId = options[0]?.value ?? '';
-					}
-				})()
-			);
-			if (operationResult1.error !== null) {
-				if (generation === loadGeneration) {
-					targetOptions = [];
-				}
+			const options = await tryCatch(fetchTargetOptions(type, envId));
+			if (generation !== loadGeneration) return;
+			if (options.error !== null) {
+				targetOptions = [];
+				return;
 			}
+			targetOptions = options.data;
+			selectedTargetId = options.data[0]?.value ?? '';
 		} finally {
 			if (generation === loadGeneration) {
 				targetOptionsLoading = false;

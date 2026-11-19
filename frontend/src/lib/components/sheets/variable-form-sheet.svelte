@@ -123,9 +123,8 @@
 	}
 
 	function scopeDto(): Pick<GlobalVariable, 'allEnvironments' | 'environmentIds'> {
-		return scope === 'all'
-			? { allEnvironments: true, environmentIds: [] }
-			: { allEnvironments: false, environmentIds: [...selectedEnvIds] };
+		if (scope === 'all') return { allEnvironments: true, environmentIds: [] };
+		return { allEnvironments: false, environmentIds: [...selectedEnvIds] };
 	}
 
 	async function handleSubmit() {
@@ -164,11 +163,14 @@
 			injectIntoContainers: data.injectIntoContainers,
 			...scopeDto()
 		};
-		const error =
-			isEditMode && variableToEdit
-				? await onSubmit({ mode: 'edit', id: variableToEdit.id, variable: changedFields(variableToEdit, variable) })
-				: await onSubmit({ mode: 'create', variable });
-		applyApiFieldError(inputs, error);
+		if (isEditMode && variableToEdit) {
+			applyApiFieldError(
+				inputs,
+				await onSubmit({ mode: 'edit', id: variableToEdit.id, variable: changedFields(variableToEdit, variable) })
+			);
+			return;
+		}
+		applyApiFieldError(inputs, await onSubmit({ mode: 'create', variable }));
 	}
 </script>
 

@@ -39,7 +39,7 @@
 		);
 		runningJob = '';
 		if (result.error === null) return;
-		const message = result.error instanceof Error ? result.error.message : m.job_run_failed();
+		const message = result.error.message || m.job_run_failed();
 		if (operationWatchStore.open) {
 			operationWatchStore.fail(message);
 		} else {

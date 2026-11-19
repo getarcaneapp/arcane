@@ -39,31 +39,22 @@
 		onOpenChange?.(nextOpen);
 	}
 
+	async function submitTag(repository: string, tag: string | undefined) {
+		await imageService.tagImage(imageId, { repository, tag }, environmentId);
+		toast.success(m.images_tag_success());
+		await onTagged?.();
+		handleOpenChange(false);
+	}
+
 	async function handleSubmit() {
 		const data = form.validate();
 		if (!data || isTagging) return;
 
 		isTagging = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await imageService.tagImage(
-						imageId,
-						{
-							repository: data.repository.trim(),
-							tag: data.tag?.trim() || undefined
-						},
-						environmentId
-					);
-					toast.success(m.images_tag_success());
-					await onTagged?.();
-					handleOpenChange(false);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to tag image:', error);
+			const tagged = await tryCatch(submitTag(data.repository.trim(), data.tag?.trim() || undefined));
+			if (tagged.error !== null) {
+				console.error('Failed to tag image:', tagged.error);
 				toast.error(m.images_tag_failed());
 			}
 		} finally {

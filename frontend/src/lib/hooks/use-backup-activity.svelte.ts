@@ -3,11 +3,10 @@ import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { activityService } from '#lib/services/activity-service.js';
+import { backupActivityIdsQuery } from '#lib/query/backups.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import type { Activity, ActivityStreamEvent } from '#lib/types/activity.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -21,37 +20,13 @@ export function useBackupActivity(
 	getDiscovery: () => ((environmentId: string) => Promise<string[]>) | undefined = () => undefined
 ) {
 	const queryClient = useQueryClient();
-	const queryKey = $derived(queryKeys.backupActivities.active(getEnvironmentId(), getResourceKey(), !!getDiscovery()));
-	const activeQuery = createQuery(() => {
-		const environmentId = getEnvironmentId();
-		const discover = getDiscovery();
-		return {
-			queryKey,
-			queryFn: async ({ signal }): Promise<string[]> => {
-				await environmentStore.ready;
-				signal.throwIfAborted();
-				if (discover) return discover(environmentId);
-				const activities: Activity[] = [];
-				for (const status of ['queued', 'running']) {
-					let page = 1;
-					let hasNextPage = false;
-					do {
-						const result = await activityService.getActivities(
-							{ pagination: { page, limit: 100 }, filters: { status } },
-							environmentId
-						);
-						signal.throwIfAborted();
-						activities.push(...result.data);
-						hasNextPage = result.pagination.hasNextPage ?? false;
-						page++;
-					} while (hasNextPage);
-				}
-				return activities.filter(matches).map((activity) => activity.id);
-			},
-			enabled: !!discover || userStore.hasPermission('activities:list', environmentId),
-			staleTime: 0
-		};
-	});
+	const activeQueryOptions = $derived(backupActivityIdsQuery(getEnvironmentId(), getResourceKey(), matches, getDiscovery()));
+	const queryKey = $derived(activeQueryOptions.queryKey);
+	const activeQuery = createQuery(() => ({
+		...activeQueryOptions,
+		enabled: !!getDiscovery() || userStore.hasPermission('activities:list', getEnvironmentId()),
+		staleTime: 0
+	}));
 	const activeIds = $derived(activeQuery.data ?? []);
 
 	function refreshHistory() {

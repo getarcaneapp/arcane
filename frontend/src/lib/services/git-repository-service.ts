@@ -9,7 +9,7 @@ import BaseAPIService from './api-service';
 class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/gitops/repositories', { params });
+		const res = await this.api.get<Paginated<GitRepository>>('/gitops/repositories', { params });
 		return res.data;
 	}
 

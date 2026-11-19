@@ -35,18 +35,15 @@
 	async function handleSave() {
 		isSaving = true;
 		try {
-			const operationResult1 = await tryCatch(
-				(async () => {
-					await onSave();
-					toast.success(m.container_compose_save_success());
-					await refreshAll();
-				})()
-			);
-			if (operationResult1.error !== null) {
-				const err = operationResult1.error;
-
-				const message = err instanceof Error ? err.message : m.container_compose_save_failed();
-				toast.error(message);
+			const saved = await tryCatch(onSave());
+			if (saved.error !== null) {
+				toast.error(saved.error instanceof Error ? saved.error.message : m.container_compose_save_failed());
+				return;
+			}
+			toast.success(m.container_compose_save_success());
+			const refreshed = await tryCatch(refreshAll());
+			if (refreshed.error !== null) {
+				toast.error(refreshed.error instanceof Error ? refreshed.error.message : m.container_compose_save_failed());
 			}
 		} finally {
 			isSaving = false;

@@ -400,10 +400,6 @@ snapshots:
 					"specifier": "^2.1.0",
 					"version": "2.1.0",
 				},
-				"ky": {
-					"specifier": "^2.2.0",
-					"version": "2.2.0",
-				},
 				"marked": {
 					"specifier": "^18.2.1",
 					"version": "18.2.1",
@@ -5598,11 +5594,6 @@ snapshots:
 			"dependencies": {
 				"@keyv/serialize": "1.1.1",
 			},
-		},
-
-		"ky@2.2.0": {
-			"integrity": "sha512-4+B63kyZt+Y8snQiUGydK1vgY9xYQJZEh9K/nIAIEts+gYJzy1EiAw3BbK8xpWRuWUpN70SNCMjqRGTm75xxIA==",
-			"engines": {"node": ">=22"},
 		},
 
 		"kysely@0.29.9": {

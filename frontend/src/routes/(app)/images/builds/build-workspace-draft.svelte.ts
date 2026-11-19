@@ -227,10 +227,11 @@ export class BuildWorkspaceDraft {
 				(change.operation === 'create_file' || change.operation === 'create_folder') &&
 				workspaceFilePathMatches(relativePath, change.relativePath)
 		);
-		this.changes =
-			insideCreated && !touchedByPathChange
-				? this.changes.filter((change) => !workspaceFilePathMatches(change.relativePath, relativePath))
-				: [...this.changes, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+		if (insideCreated && !touchedByPathChange) {
+			this.changes = this.changes.filter((change) => !workspaceFilePathMatches(change.relativePath, relativePath));
+		} else {
+			this.changes = [...this.changes, { operation: 'delete', relativePath, recursive: entry.isDirectory }];
+		}
 		this.#removeState(relativePath);
 	};
 

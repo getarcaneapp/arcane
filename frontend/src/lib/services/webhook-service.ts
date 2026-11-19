@@ -5,7 +5,7 @@ import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class WebhookAPIService extends BaseAPIService {
 	async getWebhooks(environmentId: string, config?: APIRequestConfig): Promise<Webhook[]> {
-		const res = await this.api.get(`/agents/${environmentId}/webhooks`, config);
+		const res = await this.api.get<{ data: Webhook[] }>(`/agents/${environmentId}/webhooks`, config);
 		return res.data.data;
 	}
 

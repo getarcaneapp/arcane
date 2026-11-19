@@ -175,21 +175,22 @@
 		});
 	}
 
-	const bulkActions = $derived<BulkAction[]>(
-		hasShownPermission('image-updates:apply')
-			? [
-					{
-						id: 'update',
-						label: m.updates_bulk_update({ count: selectedIds.length }),
-						action: 'update',
-						onclick: handleBulkUpdate,
-						loading: bulkUpdating,
-						disabled: bulkUpdating,
-						icon: UpdateIcon
-					}
-				]
-			: []
-	);
+	const bulkActions = $derived.by<BulkAction[]>(() => {
+		if (!hasShownPermission('image-updates:apply')) {
+			return [];
+		}
+		return [
+			{
+				id: 'update',
+				label: m.updates_bulk_update({ count: selectedIds.length }),
+				action: 'update',
+				onclick: handleBulkUpdate,
+				loading: bulkUpdating,
+				disabled: bulkUpdating,
+				icon: UpdateIcon
+			}
+		];
+	});
 </script>
 
 {#snippet VersionCell({ item, view }: { item: ProjectUpdateRow; view: TableViewMode })}

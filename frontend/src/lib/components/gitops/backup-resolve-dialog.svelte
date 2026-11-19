@@ -7,6 +7,7 @@
 	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { gitOpsBackupPreviewQuery } from '#lib/query/gitops.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import type { GitOpsBackupFileChange, GitOpsResolveBackupConflictStrategy, GitOpsSync } from '#lib/types/gitops.js';
@@ -32,8 +33,7 @@
 	const isBidirectional = $derived(sync?.mode === 'bidirectional');
 
 	const preview = createQuery(() => ({
-		queryKey: queryKeys.gitOpsSyncs.backupPreview(environmentId, sync?.id ?? ''),
-		queryFn: () => gitOpsSyncService.previewBackup(environmentId, sync!.id),
+		...gitOpsBackupPreviewQuery(environmentId, sync?.id ?? ''),
 		enabled: open && !!sync
 	}));
 

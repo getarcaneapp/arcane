@@ -1,9 +1,6 @@
 <script lang="ts">
-	import {
-		browserSupportsWebAuthn,
-		startRegistration,
-		type PublicKeyCredentialCreationOptionsJSON
-	} from '@simplewebauthn/browser';
+	import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -14,6 +11,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { AddIcon, AlertIcon, ApiKeyIcon, CopyIcon, EditIcon, ShieldCheckIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { mfaStatusQuery, passkeyCapabilitiesQuery, passkeysQuery } from '#lib/query/auth.js';
 	import { passkeyService } from '#lib/services/passkey-service.js';
 	import type { MFAStatus, Passkey, PasskeyCapabilities, StepUpGrant } from '#lib/types/auth.js';
 	import { formatDate, parseInstant } from '#lib/utils/formatting.js';
@@ -22,11 +20,24 @@
 	import MFADialog from './mfa-dialog.svelte';
 	import StepUpDialog from './step-up-dialog.svelte';
 
-	let passkeys = $state.raw<Passkey[]>([]);
-	let capabilities = $state<PasskeyCapabilities | null>(null);
-	let mfaStatus = $state<MFAStatus | null>(null);
-	let loading = $state(true);
-	let loadError = $state('');
+	const queryClient = useQueryClient();
+	const accountQueryOptions = {
+		staleTime: 0,
+		retry: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false
+	} as const;
+	const passkeysListQuery = createQuery(() => ({ ...passkeysQuery(), ...accountQueryOptions }));
+	const capabilitiesQuery = createQuery(() => ({ ...passkeyCapabilitiesQuery(), ...accountQueryOptions }));
+	const mfaQuery = createQuery(() => ({ ...mfaStatusQuery(), ...accountQueryOptions }));
+	const passkeys = $derived<Passkey[]>(passkeysListQuery.data ?? []);
+	const capabilities = $derived<PasskeyCapabilities | null>(capabilitiesQuery.data ?? null);
+	const mfaStatus = $derived<MFAStatus | null>(mfaQuery.data ?? null);
+	const loading = $derived(passkeysListQuery.isFetching || capabilitiesQuery.isFetching || mfaQuery.isFetching);
+	const loadError = $derived.by(() => {
+		const failed = [passkeysListQuery, capabilitiesQuery, mfaQuery].find((query) => query.isError);
+		return failed ? passkeyErrorDescription(failed.error, m.account_passkey_load_failed_description()) : '';
+	});
 	let passkeySupported = $state(false);
 	let passkeySupportChecked = $state(false);
 	let adding = $state(false);
@@ -71,51 +82,18 @@
 
 	function activeStepUpToken(): string {
 		// Small margin so a grant does not expire between check and request.
-		return grantToken &&
-			grantExpiresAt &&
-			Temporal.Instant.compare(grantExpiresAt.subtract({ seconds: 5 }), Temporal.Now.instant()) > 0
-			? grantToken
-			: '';
+		if (!grantToken || !grantExpiresAt) return '';
+		if (Temporal.Instant.compare(grantExpiresAt.subtract({ seconds: 5 }), Temporal.Now.instant()) <= 0) return '';
+		return grantToken;
 	}
 
-	async function loadAccountData(): Promise<PasskeyCapabilities | null> {
-		loading = true;
-		loadError = '';
-		try {
-			const [passkeysResult, capabilitiesResult, mfaStatusResult] = await Promise.allSettled([
-				passkeyService.listMine(),
-				passkeyService.getCapabilities(),
-				passkeyService.getMFAStatus()
-			]);
-
-			if (passkeysResult.status === 'fulfilled') passkeys = passkeysResult.value;
-			if (capabilitiesResult.status === 'fulfilled') capabilities = capabilitiesResult.value;
-			if (mfaStatusResult.status === 'fulfilled') mfaStatus = mfaStatusResult.value;
-
-			const failure = [passkeysResult, capabilitiesResult, mfaStatusResult].find((result) => result.status === 'rejected');
-			if (failure?.status === 'rejected') {
-				loadError = passkeyErrorDescription(failure.reason, m.account_passkey_load_failed_description());
-			}
-
-			return capabilitiesResult.status === 'fulfilled' ? capabilitiesResult.value : capabilities;
-		} finally {
-			loading = false;
-		}
+	async function loadAccountData() {
+		await Promise.all([passkeysListQuery.refetch(), capabilitiesQuery.refetch(), mfaQuery.refetch()]);
 	}
 
 	async function refreshCapabilities(): Promise<PasskeyCapabilities | null> {
-		const requestResult1 = await tryCatch(
-			(async () => {
-				const loadedCapabilities = await passkeyService.getCapabilities();
-				capabilities = loadedCapabilities;
-				return loadedCapabilities;
-			})()
-		);
-		if (requestResult1.error !== null) {
-			return null;
-		} else {
-			return requestResult1.data;
-		}
+		const result = await capabilitiesQuery.refetch();
+		return result.data ?? null;
 	}
 
 	async function runWithStepUp(action: (token: string) => Promise<void>) {
@@ -152,15 +130,9 @@
 		pendingAction = null;
 		if (!action) return;
 
-		const operationResult1 = await tryCatch(
-			(async () => {
-				await action(grant.token);
-			})()
-		);
-		if (operationResult1.error !== null) {
-			const value = operationResult1.error;
-
-			showPasskeyError(m.account_passkey_step_up_failed(), value, m.account_passkey_request_failed_description());
+		const actionResult = await tryCatch(action(grant.token));
+		if (actionResult.error !== null) {
+			showPasskeyError(m.account_passkey_step_up_failed(), actionResult.error, m.account_passkey_request_failed_description());
 		}
 	}
 
@@ -168,28 +140,22 @@
 		pendingAction = null;
 	}
 
+	async function registerPasskey(stepUpToken: string) {
+		const challenge = await passkeyService.beginRegistration(stepUpToken || undefined);
+		const credential = await startRegistration({ optionsJSON: challenge.options });
+		const created = await passkeyService.finishRegistration(challenge.ceremonyId, credential);
+		queryClient.setQueryData(passkeysQuery().queryKey, (current = []) => [...current, created]);
+		toast.success(m.account_passkey_added());
+		await loadAccountData();
+	}
+
 	async function addPasskey() {
 		await runWithStepUp(async (stepUpToken) => {
 			adding = true;
 			try {
-				const operationResult2 = await tryCatch(
-					(async () => {
-						const challenge = await passkeyService.beginRegistration(stepUpToken || undefined);
-						const credential = await startRegistration({
-							optionsJSON: challenge.options as unknown as PublicKeyCredentialCreationOptionsJSON
-						});
-						const created = await passkeyService.finishRegistration(challenge.ceremonyId, credential);
-						passkeys = [...passkeys, created];
-						toast.success(m.account_passkey_added());
-						await loadAccountData();
-					})()
-				);
-				if (operationResult2.error !== null) {
-					const value = operationResult2.error;
-
-					if (!(value instanceof Error && value.name === 'NotAllowedError')) {
-						showPasskeyError(m.account_passkey_add_failed(), value, m.account_passkey_add_failed_description());
-					}
+				const registered = await tryCatch(registerPasskey(stepUpToken));
+				if (registered.error !== null && !(registered.error instanceof Error && registered.error.name === 'NotAllowedError')) {
+					showPasskeyError(m.account_passkey_add_failed(), registered.error, m.account_passkey_add_failed_description());
 				}
 			} finally {
 				adding = false;
@@ -213,19 +179,17 @@
 			return;
 		}
 		await runWithStepUp(async (stepUpToken) => {
-			const operationResult3 = await tryCatch(
-				(async () => {
-					const updated = await passkeyService.rename(passkey.id, editingName, stepUpToken);
-					passkeys = passkeys.map((item) => (item.id === updated.id ? updated : item));
-					cancelRename();
-					toast.success(m.account_passkey_renamed());
-				})()
-			);
-			if (operationResult3.error !== null) {
-				const value = operationResult3.error;
-
-				showPasskeyError(m.account_passkey_rename_failed(), value, m.account_passkey_request_failed_description());
+			const renameResult = await tryCatch(passkeyService.rename(passkey.id, editingName, stepUpToken));
+			if (renameResult.error !== null) {
+				showPasskeyError(m.account_passkey_rename_failed(), renameResult.error, m.account_passkey_request_failed_description());
+				return;
 			}
+			const updated = renameResult.data;
+			queryClient.setQueryData(passkeysQuery().queryKey, (current = []) =>
+				current.map((item) => (item.id === updated.id ? updated : item))
+			);
+			cancelRename();
+			toast.success(m.account_passkey_renamed());
 		});
 	}
 
@@ -238,18 +202,18 @@
 				destructive: true,
 				action: () => {
 					void runWithStepUp(async (stepUpToken) => {
-						const operationResult4 = await tryCatch(
-							(async () => {
-								await passkeyService.deleteMine(passkey.id, stepUpToken);
-								passkeys = passkeys.filter((item) => item.id !== passkey.id);
-								toast.success(m.account_passkey_deleted());
-								await loadAccountData();
-							})()
+						const deleted = await tryCatch(passkeyService.deleteMine(passkey.id, stepUpToken));
+						if (deleted.error !== null) {
+							showPasskeyError(m.account_passkey_delete_failed(), deleted.error, m.account_passkey_request_failed_description());
+							return;
+						}
+						queryClient.setQueryData(passkeysQuery().queryKey, (current = []) =>
+							current.filter((item) => item.id !== passkey.id)
 						);
-						if (operationResult4.error !== null) {
-							const value = operationResult4.error;
-
-							showPasskeyError(m.account_passkey_delete_failed(), value, m.account_passkey_request_failed_description());
+						toast.success(m.account_passkey_deleted());
+						const reloaded = await tryCatch(loadAccountData());
+						if (reloaded.error !== null) {
+							showPasskeyError(m.account_passkey_delete_failed(), reloaded.error, m.account_passkey_request_failed_description());
 						}
 					});
 				}
@@ -259,67 +223,66 @@
 
 	async function enableMFA() {
 		await runWithStepUp(async (stepUpToken) => {
-			const operationResult5 = await tryCatch(
-				(async () => {
-					const generated = await passkeyService.enableMFA(stepUpToken);
-					recoveryCodes = generated.codes;
-					toast.success(m.account_passkey_mfa_enabled());
-					await loadAccountData();
-				})()
-			);
-			if (operationResult5.error !== null) {
-				const value = operationResult5.error;
-
-				showPasskeyError(m.account_passkey_mfa_enable_failed(), value, m.account_passkey_request_failed_description());
+			const generated = await tryCatch(passkeyService.enableMFA(stepUpToken));
+			if (generated.error !== null) {
+				showPasskeyError(m.account_passkey_mfa_enable_failed(), generated.error, m.account_passkey_request_failed_description());
+				return;
+			}
+			recoveryCodes = generated.data.codes;
+			toast.success(m.account_passkey_mfa_enabled());
+			const reloaded = await tryCatch(loadAccountData());
+			if (reloaded.error !== null) {
+				showPasskeyError(m.account_passkey_mfa_enable_failed(), reloaded.error, m.account_passkey_request_failed_description());
 			}
 		});
 	}
 
 	async function disableMFA() {
 		await runWithStepUp(async (stepUpToken) => {
-			const operationResult6 = await tryCatch(
-				(async () => {
-					await passkeyService.disableMFA(stepUpToken);
-					recoveryCodes = [];
-					toast.success(m.account_passkey_mfa_disabled());
-					await loadAccountData();
-				})()
-			);
-			if (operationResult6.error !== null) {
-				const value = operationResult6.error;
-
-				showPasskeyError(m.account_passkey_mfa_disable_failed(), value, m.account_passkey_request_failed_description());
+			const disabled = await tryCatch(passkeyService.disableMFA(stepUpToken));
+			if (disabled.error !== null) {
+				showPasskeyError(m.account_passkey_mfa_disable_failed(), disabled.error, m.account_passkey_request_failed_description());
+				return;
+			}
+			recoveryCodes = [];
+			toast.success(m.account_passkey_mfa_disabled());
+			const reloaded = await tryCatch(loadAccountData());
+			if (reloaded.error !== null) {
+				showPasskeyError(m.account_passkey_mfa_disable_failed(), reloaded.error, m.account_passkey_request_failed_description());
 			}
 		});
 	}
 
 	async function regenerateRecoveryCodes() {
 		await runWithStepUp(async (stepUpToken) => {
-			const operationResult7 = await tryCatch(
-				(async () => {
-					const generated = await passkeyService.regenerateRecoveryCodes(stepUpToken);
-					recoveryCodes = generated.codes;
-					await loadAccountData();
-				})()
-			);
-			if (operationResult7.error !== null) {
-				const value = operationResult7.error;
-
-				showPasskeyError(m.account_passkey_mfa_regenerate_failed(), value, m.account_passkey_request_failed_description());
+			const generated = await tryCatch(passkeyService.regenerateRecoveryCodes(stepUpToken));
+			if (generated.error !== null) {
+				showPasskeyError(
+					m.account_passkey_mfa_regenerate_failed(),
+					generated.error,
+					m.account_passkey_request_failed_description()
+				);
+				return;
+			}
+			recoveryCodes = generated.data.codes;
+			const reloaded = await tryCatch(loadAccountData());
+			if (reloaded.error !== null) {
+				showPasskeyError(
+					m.account_passkey_mfa_regenerate_failed(),
+					reloaded.error,
+					m.account_passkey_request_failed_description()
+				);
 			}
 		});
 	}
 
 	async function copyRecoveryCodes() {
-		const operationResult8 = await tryCatch(
-			(async () => {
-				await navigator.clipboard.writeText(recoveryCodes.join('\n'));
-				toast.success(m.account_passkey_mfa_codes_copied());
-			})()
-		);
-		if (operationResult8.error !== null) {
+		const copyResult = await tryCatch(Promise.resolve().then(() => navigator.clipboard.writeText(recoveryCodes.join('\n'))));
+		if (copyResult.error !== null) {
 			toast.error(m.common_copy_failed());
+			return;
 		}
+		toast.success(m.account_passkey_mfa_codes_copied());
 	}
 
 	function dismissRecoveryCodes() {
@@ -329,7 +292,6 @@
 	onMount(() => {
 		passkeySupported = browserSupportsWebAuthn();
 		passkeySupportChecked = true;
-		void loadAccountData();
 	});
 </script>
 

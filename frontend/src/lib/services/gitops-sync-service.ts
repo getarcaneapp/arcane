@@ -25,7 +25,10 @@ class GitOpsSyncService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<PaginatedWithCounts<GitOpsSync, GitOpsSyncCounts>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/gitops/syncs`, { ...config, params });
+		const res = await this.api.get<PaginatedWithCounts<GitOpsSync, GitOpsSyncCounts>>(`/agents/${environmentId}/gitops/syncs`, {
+			...config,
+			params
+		});
 		return res.data;
 	}
 

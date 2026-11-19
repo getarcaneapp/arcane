@@ -59,27 +59,31 @@
 	// Personal keys carry no grants; they inherit the owner's role permissions.
 	const hidePermissions = $derived(mode === 'personal' || apiKeyToEdit?.kind === 'personal');
 
+	function permissionsSchema() {
+		if (untrack(() => hidePermissions)) return z.array(z.string()).default([]);
+		return z.array(z.string()).min(1, m.pick_at_least_one_permission());
+	}
+
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
 		description: z.string().optional(),
 		expiresAt: z.instanceof(Temporal.PlainDate).optional(),
-		permissions: untrack(() => hidePermissions)
-			? z.array(z.string()).default([])
-			: z.array(z.string()).min(1, m.pick_at_least_one_permission())
+		permissions: permissionsSchema()
 	});
 
 	function formValues() {
+		let permissions: string[] = [];
+		if (!hidePermissions && manifest) {
+			permissions = normalizePermissionSelection(
+				manifest,
+				availablePermissions.map((p) => p.permission)
+			);
+		}
 		return {
 			name: apiKeyToEdit?.name || '',
 			description: apiKeyToEdit?.description || '',
 			expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
-			permissions:
-				hidePermissions || !manifest
-					? []
-					: normalizePermissionSelection(
-							manifest,
-							availablePermissions.map((p) => p.permission)
-						)
+			permissions
 		};
 	}
 

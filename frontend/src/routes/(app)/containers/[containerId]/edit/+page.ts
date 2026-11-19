@@ -1,7 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 
-import { queryKeys } from '#lib/query/query-keys.js';
-import { containerService } from '#lib/services/container-service.js';
+import { containerEditConfigQuery } from '#lib/query/containers.js';
 import { environmentHref, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 
 import type { PageLoad } from './$types';
@@ -11,10 +10,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
 
-	const editConfig = await queryClient.query({
-		queryKey: queryKeys.containers.editConfig(envId, containerId),
-		queryFn: () => containerService.getContainerEditConfig(containerId, envId)
-	});
+	const editConfig = await queryClient.query(containerEditConfigQuery(envId, containerId));
 
 	// Compose-managed containers are edited via their project; the running
 	// Arcane server or agent container cannot be edited at all.

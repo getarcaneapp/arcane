@@ -9,23 +9,25 @@ import BaseAPIService from './api-service';
 class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
 		const params = transformPaginationParams(options);
-		const response = await this.api.get('/templates', { params });
+		const response = await this.api.get<Paginated<Template>>('/templates', { params });
 		return response.data;
 	}
 
 	async getAllTemplates(): Promise<Template[]> {
-		const response = await this.api.get('/templates/all');
+		const response = await this.api.get<{ data?: Template[] }>('/templates/all');
 		return response.data?.data ?? [];
 	}
 
 	async getTemplateContent(id: string): Promise<TemplateContent> {
 		const encodedId = encodeURIComponent(id);
-		const response = await this.api.get(`/templates/${encodedId}/content`);
+		const response = await this.api.get<{ data: TemplateContent }>(`/templates/${encodedId}/content`);
 		return response.data?.data;
 	}
 
 	async download(id: string): Promise<Template> {
-		const response = await this.api.post(`/templates/${encodeURIComponent(id)}`, undefined, { params: { action: 'download' } });
+		const response = await this.api.post<{ data: Template }>(`/templates/${encodeURIComponent(id)}`, undefined, {
+			params: { action: 'download' }
+		});
 		return response.data?.data;
 	}
 
@@ -35,7 +37,9 @@ class TemplateService extends BaseAPIService {
 		swarmStackEnvTemplate: string;
 		envTemplate: string;
 	}> {
-		const response = await this.api.get('/templates/default');
+		const response = await this.api.get<{
+			data?: Partial<{ composeTemplate: string; swarmStackTemplate: string; swarmStackEnvTemplate: string; envTemplate: string }>;
+		}>('/templates/default');
 		const data = response.data?.data;
 		return {
 			composeTemplate: data?.composeTemplate ?? '',
@@ -53,14 +57,14 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async getRegistries(): Promise<TemplateRegistry[]> {
-		const response = await this.api.get('/templates/registries');
+		const response = await this.api.get<{ data?: TemplateRegistry[]; registries?: TemplateRegistry[] }>('/templates/registries');
 		const out = response.data?.data ?? response.data?.registries ?? response.data;
 		return Array.isArray(out) ? out : [];
 	}
 
 	async addRegistry(registry: TemplateRegistryCreate): Promise<TemplateRegistry> {
-		const response = await this.api.post('/templates/registries', registry);
-		return response.data?.data ?? response.data;
+		const response = await this.api.post<{ data?: TemplateRegistry }>('/templates/registries', registry);
+		return response.data?.data ?? (response.data as TemplateRegistry);
 	}
 
 	async updateRegistry(id: string, registry: TemplateRegistryUpdate): Promise<void> {
@@ -68,8 +72,8 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async fetchRegistry(url: string): Promise<TemplateRemoteRegistry> {
-		const response = await this.api.get(`/templates/fetch?url=${encodeURIComponent(url)}`);
-		const manifest = response.data?.data ?? response.data;
+		const response = await this.api.get<{ data?: TemplateRemoteRegistry }>(`/templates/fetch?url=${encodeURIComponent(url)}`);
+		const manifest = response.data?.data ?? (response.data as TemplateRemoteRegistry);
 		if (!manifest || typeof manifest !== 'object' || !manifest.name || !Array.isArray(manifest.templates)) {
 			throw new Error('Invalid registry format: missing required fields (name, templates)');
 		}
@@ -81,7 +85,7 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async updateTemplate(id: string, template: TemplateUpdate): Promise<Template> {
-		const response = await this.api.patch(`/templates/${encodeURIComponent(id)}`, template);
+		const response = await this.api.patch<{ data: Template }>(`/templates/${encodeURIComponent(id)}`, template);
 		return response.data?.data;
 	}
 
@@ -90,7 +94,7 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async createTemplate(template: TemplateCreate): Promise<Template> {
-		const response = await this.api.post('/templates', template);
+		const response = await this.api.post<{ data: Template }>('/templates', template);
 		return response.data?.data;
 	}
 }

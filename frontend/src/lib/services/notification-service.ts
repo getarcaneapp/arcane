@@ -5,12 +5,12 @@ import BaseAPIService from './api-service';
 
 class NotificationService extends BaseAPIService {
 	async getSettings(): Promise<NotificationSettings[]> {
-		const res = await this.api.get('/notifications/settings');
+		const res = await this.api.get<NotificationSettings[]>('/notifications/settings');
 		return res.data;
 	}
 
 	async updateSettings(settings: NotificationSettingsUpsert): Promise<NotificationSettings> {
-		const res = await this.api.post('/notifications/settings', settings);
+		const res = await this.api.post<NotificationSettings>('/notifications/settings', settings);
 		return res.data;
 	}
 

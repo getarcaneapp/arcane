@@ -1,9 +1,8 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
 import { projectWorkspaceFolderQuery } from '#lib/query/projects.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { projectService } from '#lib/services/project-service.js';
-import { variableService } from '#lib/services/variable-service.js';
+import { projectDetailQuery } from '#lib/query/projects.js';
+import { variableListQuery } from '#lib/query/variables.js';
 import { extractApiErrorMessage, throwPageLoadError } from '#lib/utils/api.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
@@ -11,13 +10,9 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
-async function loadGlobalVariables(queryClient: QueryClient) {
-	const result = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.variables.list(),
-			queryFn: () => variableService.list()
-		})
-	);
+async function loadGlobalVariables(queryClient: QueryClient, canList: boolean) {
+	if (!canList) return { globalVariables: [], globalVariablesError: null };
+	const result = await tryCatch(queryClient.query(variableListQuery()));
 	if (result.error !== null) return { globalVariables: [], globalVariablesError: extractApiErrorMessage(result.error) };
 	return { globalVariables: result.data, globalVariablesError: null };
 }
@@ -26,29 +21,18 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient, user } = await parent();
 	const envId = await resolveDetailEnvironmentId(url);
 
-	type ProjectData = Awaited<ReturnType<typeof projectService.getProjectForEnvironment>>;
-
-	let project: ProjectData;
-	const operationResult = await tryCatch(
-		(async () =>
-			queryClient.query({
-				queryKey: queryKeys.projects.detail(envId, params.projectId),
-				queryFn: () => projectService.getProjectForEnvironment(envId, params.projectId)
-			}))()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load project');
-	} else {
-		project = operationResult.data;
+	const projectLoad = await tryCatch(queryClient.query(projectDetailQuery(envId, params.projectId)));
+	if (projectLoad.error !== null) {
+		throwPageLoadError(projectLoad.error, 'Failed to load project');
 	}
+	const project = projectLoad.data;
 
 	void queryClient.prefetchQuery(projectWorkspaceFolderQuery(envId, params.projectId, ''));
 
-	const { globalVariables, globalVariablesError } = userHasPermission(user, 'variables:list')
-		? await loadGlobalVariables(queryClient)
-		: { globalVariables: [], globalVariablesError: null };
+	const { globalVariables, globalVariablesError } = await loadGlobalVariables(
+		queryClient,
+		userHasPermission(user, 'variables:list')
+	);
 
 	const editorState = {
 		name: project.name || '',

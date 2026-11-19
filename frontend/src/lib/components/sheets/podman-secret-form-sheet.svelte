@@ -12,7 +12,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { PodmanSecret } from '#lib/types/podman.js';
+	import type { PodmanSecret, PodmanSecretCreateResponse } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { destinationEnvironmentId, type EnvironmentRow } from '#lib/utils/environments.js';
@@ -48,19 +48,18 @@
 	const canManage = $derived(hasPermission(existing ? 'podman-secrets:update' : 'podman-secrets:create', environmentId));
 	const valueLabel = $derived(existing ? m.podman_secrets_new_value_label() : m.value());
 
-	const description = $derived(
-		existing
-			? [
-					existing.spec.name,
-					existing.environmentName,
-					existing.spec.driver.name,
-					`${m.common_created()} ${formatRelativeTime(existing.createdAt) || m.common_unknown()}`,
-					`${m.common_updated()} ${formatRelativeTime(existing.updatedAt) || m.common_unknown()}`
-				]
-					.filter(Boolean)
-					.join(' · ')
-			: m.podman_secrets_subtitle()
-	);
+	const description = $derived.by(() => {
+		if (!existing) return m.podman_secrets_subtitle();
+		return [
+			existing.spec.name,
+			existing.environmentName,
+			existing.spec.driver.name,
+			`${m.common_created()} ${formatRelativeTime(existing.createdAt) || m.common_unknown()}`,
+			`${m.common_updated()} ${formatRelativeTime(existing.updatedAt) || m.common_unknown()}`
+		]
+			.filter(Boolean)
+			.join(' · ');
+	});
 
 	async function handleSubmit() {
 		const trimmedName = name.trim();
@@ -80,12 +79,14 @@
 		};
 		const resourceName = `${m.swarm_secret()} "${trimmedName}"`;
 		submitting = true;
+		let saved: Promise<PodmanSecret | PodmanSecretCreateResponse>;
+		if (existing) {
+			saved = podmanService.updateSecret(trimmedName, request, environmentId);
+		} else {
+			saved = podmanService.createSecret({ ...request, name: trimmedName }, environmentId);
+		}
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(
-				existing
-					? podmanService.updateSecret(trimmedName, request, environmentId)
-					: podmanService.createSecret({ ...request, name: trimmedName }, environmentId)
-			),
+			result: await tryCatch(saved),
 			message: existing ? m.common_update_failed({ resource: resourceName }) : m.swarm_secrets_create_failed(),
 			setLoadingState: (loading) => (submitting = loading),
 			onSuccess: async () => {

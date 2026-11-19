@@ -39,11 +39,11 @@ type ActivityEnvironmentState = StreamEnvStateBase & {
 	activities: Activity[];
 };
 
-function sortActivitiesInternal(items: Activity[]): Activity[] {
-	const sortTimeMs = new Map(items.map((a) => [a, getActivitySortTimeInternal(a)]));
+function sortActivities(items: Activity[]): Activity[] {
+	const sortTimeMs = new Map(items.map((a) => [a, getActivitySortTime(a)]));
 	return [...items].sort((a, b) => {
-		const aActive = isActiveStatusInternal(a.status);
-		const bActive = isActiveStatusInternal(b.status);
+		const aActive = isActiveStatus(a.status);
+		const bActive = isActiveStatus(b.status);
 		if (aActive !== bActive) return aActive ? -1 : 1;
 		const diff = (sortTimeMs.get(b) ?? 0) - (sortTimeMs.get(a) ?? 0);
 		if (diff !== 0) return diff;
@@ -53,16 +53,16 @@ function sortActivitiesInternal(items: Activity[]): Activity[] {
 
 // Mirrors the backend default order: active rows keep their immutable createdAt
 // so progress updates never reshuffle them; terminal rows sort by endedAt.
-function getActivitySortTimeInternal(activity: Activity): number {
+function getActivitySortTime(activity: Activity): number {
 	const value = activity.endedAt || activity.createdAt || activity.startedAt;
 	return instantEpochMilliseconds(value) ?? 0;
 }
 
-function isActiveStatusInternal(status: ActivityStatus): boolean {
+function isActiveStatus(status: ActivityStatus): boolean {
 	return status === 'queued' || status === 'running';
 }
 
-function activitySearchHaystackInternal(activity: Activity): string {
+function activitySearchHaystack(activity: Activity): string {
 	// Mirrors the backend LIKE search fields, plus the environment name.
 	return [
 		activity.type,
@@ -77,7 +77,7 @@ function activitySearchHaystackInternal(activity: Activity): string {
 		.toLowerCase();
 }
 
-function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
+function groupActivities(items: Activity[]): ActivityGroup[] {
 	const batchItems = Map.groupBy(
 		items.filter((activity) => activity.batchId),
 		(activity) => activity.batchId
@@ -90,11 +90,11 @@ function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
 		if (members[0] !== activity) {
 			return [];
 		}
-		return [batchGroupInternal(activity.batchId, members)];
+		return [batchGroup(activity.batchId, members)];
 	});
 }
 
-function batchGroupInternal(batchId: string, items: Activity[]): ActivityBatchGroup {
+function batchGroup(batchId: string, items: Activity[]): ActivityBatchGroup {
 	const jobActivity = items.find((item) => item.type === 'job_run');
 	const operations = jobActivity ? items.filter((item) => item.type !== 'job_run') : items;
 	const failed = operations.filter((item) => item.status === 'failed').length;
@@ -103,14 +103,14 @@ function batchGroupInternal(batchId: string, items: Activity[]): ActivityBatchGr
 		batchId,
 		items,
 		total: operations.length,
-		done: operations.filter((item) => !isActiveStatusInternal(item.status)).length,
+		done: operations.filter((item) => !isActiveStatus(item.status)).length,
 		failed,
-		status: jobActivity?.status ?? batchStatusInternal(items, failed)
+		status: jobActivity?.status ?? batchStatus(items, failed)
 	};
 }
 
-function batchStatusInternal(items: Activity[], failed: number): ActivityStatus {
-	if (items.some((item) => isActiveStatusInternal(item.status))) {
+function batchStatus(items: Activity[], failed: number): ActivityStatus {
+	if (items.some((item) => isActiveStatus(item.status))) {
 		return items.some((item) => item.status === 'running') ? 'running' : 'queued';
 	}
 	if (failed > 0) {
@@ -122,22 +122,21 @@ function batchStatusInternal(items: Activity[], failed: number): ActivityStatus 
 	return 'success';
 }
 
-function groupStatusIsActiveInternal(group: ActivityGroup): boolean {
-	return group.kind === 'batch' ? isActiveStatusInternal(group.status) : isActiveStatusInternal(group.activity.status);
+function groupStatusIsActive(group: ActivityGroup): boolean {
+	return group.kind === 'batch' ? isActiveStatus(group.status) : isActiveStatus(group.activity.status);
 }
 
-function activeUpdateKeysInternal(activities: readonly Activity[]): Set<string> {
+function activeUpdateKeys(activities: readonly Activity[]): Set<string> {
 	return new Set(
 		activities
 			.filter(
-				(activity) =>
-					activity.type === 'auto_update' && activity.resourceType === 'container' && isActiveStatusInternal(activity.status)
+				(activity) => activity.type === 'auto_update' && activity.resourceType === 'container' && isActiveStatus(activity.status)
 			)
 			.map((activity) => `${activity.sourceEnvironmentId || activity.environmentId}:${activity.resourceId}`)
 	);
 }
 
-function omitKeyInternal<T>(record: Record<string, T>, key: string): Record<string, T> {
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
 	return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
@@ -156,7 +155,7 @@ type ActivityStoreState = {
 	focusedKey: string | null;
 };
 
-function initialStateInternal(): ActivityStoreState {
+function initialState(): ActivityStoreState {
 	return {
 		environmentActivities: {},
 		details: {},
@@ -173,12 +172,12 @@ function initialStateInternal(): ActivityStoreState {
 	};
 }
 
-function sourceEnvironmentIdInternal(activity: Activity | null | undefined): string {
+function sourceEnvironmentId(activity: Activity | null | undefined): string {
 	return activity?.sourceEnvironmentId || activity?.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
 }
 
 function createActivityStore() {
-	let state = $state.raw<ActivityStoreState>(initialStateInternal());
+	let state = $state.raw<ActivityStoreState>(initialState());
 	let _activities = $state.raw<Activity[]>([]);
 	let _activeUpdateKeys = $state.raw<ReadonlySet<string>>(new Set());
 	let session = new AbortController();
@@ -187,22 +186,22 @@ function createActivityStore() {
 	const completionToastQueuedIds = new Set<string>();
 	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
 
-	function setActivitiesInternal(activities: Activity[]) {
+	function setActivities(activities: Activity[]) {
 		_activities = activities;
-		const keys = activeUpdateKeysInternal(activities);
+		const keys = activeUpdateKeys(activities);
 		if (keys.size !== _activeUpdateKeys.size || [...keys].some((key) => !_activeUpdateKeys.has(key))) {
 			_activeUpdateKeys = keys;
 		}
 	}
 
-	function notifyActivitySubscribersInternal() {
+	function notifyActivitySubscribers() {
 		for (const subscriber of activitySubscribers) subscriber(_activities);
 	}
 
-	function noteActivityStatusInternal(activity: Activity) {
+	function noteActivityStatus(activity: Activity) {
 		const prev = observedStatusById.get(activity.id);
 		observedStatusById.set(activity.id, activity.status);
-		if (!prev || !isActiveStatusInternal(prev) || prev === activity.status || completionToastQueuedIds.has(activity.id)) {
+		if (!prev || !isActiveStatus(prev) || prev === activity.status || completionToastQueuedIds.has(activity.id)) {
 			return;
 		}
 		if (activity.status !== 'success' && activity.status !== 'failed') {
@@ -216,7 +215,7 @@ function createActivityStore() {
 			return;
 		}
 		completionToastQueuedIds.add(activity.id);
-		queueActivityCompletionToast(activity, openCenterInternal);
+		queueActivityCompletionToast(activity, openCenter);
 	}
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
@@ -237,16 +236,16 @@ function createActivityStore() {
 		applyEvent(environmentId, event) {
 			switch (event.type) {
 				case 'snapshot':
-					replaceEnvironmentSnapshotInternal(environmentId, event.activities ?? []);
+					replaceEnvironmentSnapshot(environmentId, event.activities ?? []);
 					break;
 				case 'activity':
 					if (event.activity) {
-						mergeActivityInternal(normalizeActivityInternal(event.activity, environmentId));
+						mergeActivity(normalizeActivity(event.activity, environmentId));
 					}
 					break;
 				case 'message':
 					if (event.message) {
-						mergeMessageInternal(event.message);
+						mergeMessage(event.message);
 					}
 					break;
 				case 'error':
@@ -254,24 +253,20 @@ function createActivityStore() {
 					break;
 			}
 		},
-		fetchSnapshots: fetchSnapshotsInternal,
+		fetchSnapshots,
 		onEnvironmentRemoved(environmentId) {
 			state = {
 				...state,
-				environmentActivities: omitKeyInternal(state.environmentActivities, environmentId)
+				environmentActivities: omitKey(state.environmentActivities, environmentId)
 			};
-			rebuildActivitiesInternal();
+			rebuildActivities();
 		},
 		onEnvironmentRenamed(environmentId, name) {
 			const existing = core.environmentState(environmentId);
-			const updatedActivities = (state.environmentActivities[environmentId] ?? existing?.activities ?? []).map((activity) =>
-				activity.sourceEnvironmentName
-					? activity
-					: {
-							...activity,
-							sourceEnvironmentName: name
-						}
-			);
+			const updatedActivities = (state.environmentActivities[environmentId] ?? existing?.activities ?? []).map((activity) => {
+				if (activity.sourceEnvironmentName) return activity;
+				return { ...activity, sourceEnvironmentName: name };
+			});
 			state = {
 				...state,
 				environmentActivities: {
@@ -284,11 +279,11 @@ function createActivityStore() {
 				name,
 				activities: updatedActivities
 			}));
-			rebuildActivitiesInternal();
+			rebuildActivities();
 		}
 	});
 
-	function normalizeActivityInternal(activity: Activity, environmentId: string): Activity {
+	function normalizeActivity(activity: Activity, environmentId: string): Activity {
 		if (activity.type === 'job_run') {
 			const current = state.details[activity.id]?.activity ?? _activities.find((item) => item.id === activity.id);
 			const currentTime = parseInstant(current?.updatedAt);
@@ -304,7 +299,7 @@ function createActivityStore() {
 		};
 	}
 
-	async function fetchSnapshotsInternal(requestedIds: string[], signal: AbortSignal): Promise<void> {
+	async function fetchSnapshots(requestedIds: string[], signal: AbortSignal): Promise<void> {
 		const environmentIds = requestedIds.filter((id) => core.environmentState(id));
 		if (environmentIds.length === 0) return;
 		for (const environmentId of environmentIds) {
@@ -333,43 +328,41 @@ function createActivityStore() {
 		if (result.error !== null) {
 			for (const environment of included) {
 				const failure = reported.find((entry) => entry.environment.id === environment.id);
-				setSnapshotErrorInternal(environment.id, failure ? new Error(failure.message) : result.error);
+				setSnapshotError(environment.id, failure ? new Error(failure.message) : result.error);
 			}
 		} else {
 			const rows = result.data.value.data ?? [];
 			for (const environment of included) {
 				const failure = result.data.failures.find((entry) => entry.environment.id === environment.id);
 				if (failure) {
-					setSnapshotErrorInternal(environment.id, new Error(failure.message));
+					setSnapshotError(environment.id, new Error(failure.message));
 					continue;
 				}
 				const environmentRows = included.length > 1 ? rows.filter((row) => row.environmentId === environment.id) : rows;
-				replaceEnvironmentSnapshotInternal(environment.id, environmentRows);
+				replaceEnvironmentSnapshot(environment.id, environmentRows);
 			}
 		}
 
-		await fetchSnapshotsInternal(
+		await fetchSnapshots(
 			excluded.map((environment) => environment.id),
 			signal
 		);
 	}
 
-	function setSnapshotErrorInternal(environmentId: string, error: unknown) {
+	function setSnapshotError(environmentId: string, error: unknown) {
 		if (!core.environmentState(environmentId)) return;
 		console.warn('Failed to refresh activities:', error);
 		core.setEnvironmentError(environmentId, error);
 	}
 
-	function replaceEnvironmentSnapshotInternal(environmentId: string, activities: Activity[]) {
+	function replaceEnvironmentSnapshot(environmentId: string, activities: Activity[]) {
 		if (!core.environmentState(environmentId)) {
 			return;
 		}
-		const normalizedActivities = sortActivitiesInternal(
-			activities.map((activity) => normalizeActivityInternal(activity, environmentId))
-		);
+		const normalizedActivities = sortActivities(activities.map((activity) => normalizeActivity(activity, environmentId)));
 		let details = state.details;
 		for (const activity of normalizedActivities) {
-			noteActivityStatusInternal(activity);
+			noteActivityStatus(activity);
 			const detail = details[activity.id];
 			if (activity.type === 'job_run' && detail) details = { ...details, [activity.id]: { ...detail, activity } };
 		}
@@ -388,12 +381,12 @@ function createActivityStore() {
 			streamError: false,
 			errorMessage: undefined
 		}));
-		rebuildActivitiesInternal();
+		rebuildActivities();
 	}
 
-	function rebuildActivitiesInternal() {
-		const activities = sortActivitiesInternal(Object.values(state.environmentActivities).flat());
-		setActivitiesInternal(activities);
+	function rebuildActivities() {
+		const activities = sortActivities(Object.values(state.environmentActivities).flat());
+		setActivities(activities);
 
 		const present = new Set(activities.map((activity) => activity.id));
 		state = {
@@ -411,26 +404,26 @@ function createActivityStore() {
 				completionToastQueuedIds.delete(id);
 			}
 		}
-		notifyActivitySubscribersInternal();
+		notifyActivitySubscribers();
 	}
 
-	function mergeActivityInternal(activity: Activity) {
-		const environmentId = sourceEnvironmentIdInternal(activity);
-		const normalized = normalizeActivityInternal(activity, environmentId);
-		noteActivityStatusInternal(normalized);
+	function mergeActivity(activity: Activity) {
+		const environmentId = sourceEnvironmentId(activity);
+		const normalized = normalizeActivity(activity, environmentId);
+		noteActivityStatus(normalized);
 		const currentActivities =
 			state.environmentActivities[environmentId] ?? core.environmentState(environmentId)?.activities ?? [];
 		const index = currentActivities.findIndex((item) => item.id === normalized.id);
 		const previous = index >= 0 ? currentActivities[index] : undefined;
 		const orderingUnchanged =
 			previous !== undefined &&
-			isActiveStatusInternal(previous.status) === isActiveStatusInternal(normalized.status) &&
-			getActivitySortTimeInternal(previous) === getActivitySortTimeInternal(normalized);
-		const merged =
-			index >= 0
-				? [...currentActivities.slice(0, index), normalized, ...currentActivities.slice(index + 1)]
-				: [normalized, ...currentActivities];
-		const activities = (orderingUnchanged ? merged : sortActivitiesInternal(merged)).slice(0, ACTIVITY_LIST_LIMIT);
+			isActiveStatus(previous.status) === isActiveStatus(normalized.status) &&
+			getActivitySortTime(previous) === getActivitySortTime(normalized);
+		let merged = [normalized, ...currentActivities];
+		if (index >= 0) {
+			merged = [...currentActivities.slice(0, index), normalized, ...currentActivities.slice(index + 1)];
+		}
+		const activities = (orderingUnchanged ? merged : sortActivities(merged)).slice(0, ACTIVITY_LIST_LIMIT);
 		state = {
 			...state,
 			environmentActivities: {
@@ -444,15 +437,15 @@ function createActivityStore() {
 			streamError: false,
 			errorMessage: undefined
 		}));
-		const globalIndex =
-			orderingUnchanged && activities.length === currentActivities.length
-				? _activities.findIndex((item) => item.id === normalized.id)
-				: -1;
+		let globalIndex = -1;
+		if (orderingUnchanged && activities.length === currentActivities.length) {
+			globalIndex = _activities.findIndex((item) => item.id === normalized.id);
+		}
 		if (globalIndex >= 0) {
-			setActivitiesInternal([..._activities.slice(0, globalIndex), normalized, ..._activities.slice(globalIndex + 1)]);
-			notifyActivitySubscribersInternal();
+			setActivities([..._activities.slice(0, globalIndex), normalized, ..._activities.slice(globalIndex + 1)]);
+			notifyActivitySubscribers();
 		} else {
-			rebuildActivitiesInternal();
+			rebuildActivities();
 		}
 
 		const existingDetail = state.details[normalized.id];
@@ -470,7 +463,7 @@ function createActivityStore() {
 		}
 	}
 
-	function mergeMessageInternal(message: ActivityMessage) {
+	function mergeMessage(message: ActivityMessage) {
 		const detail = state.details[message.activityId];
 		if (!detail) {
 			return;
@@ -490,55 +483,44 @@ function createActivityStore() {
 		};
 	}
 
-	function activityEnvironmentIdInternal(activityId: string): string {
+	function activityEnvironmentId(activityId: string): string {
 		const activity = state.details[activityId]?.activity ?? _activities.find((item) => item.id === activityId) ?? null;
-		return activity ? sourceEnvironmentIdInternal(activity) : requestedEnvironments[activityId] || LOCAL_DOCKER_ENVIRONMENT_ID;
+		return activity ? sourceEnvironmentId(activity) : requestedEnvironments[activityId] || LOCAL_DOCKER_ENVIRONMENT_ID;
 	}
 
-	async function loadDetailInternal(activityId: string) {
+	async function loadDetail(activityId: string) {
 		if (state.details[activityId] || state.detailLoadingIds[activityId]) {
 			return;
 		}
-		if (!userStore.hasPermission('activities:read', activityEnvironmentIdInternal(activityId))) {
+		if (!userStore.hasPermission('activities:read', activityEnvironmentId(activityId))) {
 			return;
 		}
 
 		const signal = session.signal;
 		state = { ...state, detailLoadingIds: { ...state.detailLoadingIds, [activityId]: true } };
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const detail = await activityService.getActivity(
-						activityId,
-						activityEnvironmentIdInternal(activityId),
-						ACTIVITY_DETAIL_LIMIT
-					);
-					if (signal.aborted) {
-						return;
-					}
-					const environmentId = activityEnvironmentIdInternal(activityId);
-					const normalized = {
-						...detail,
-						activity: normalizeActivityInternal(detail.activity, environmentId)
-					};
-					state = { ...state, details: { ...state.details, [activityId]: normalized } };
-					mergeActivityInternal(normalized.activity);
-					if (normalized.activity.batchId) setBatchExpandedInternal(normalized.activity.batchId, true);
-					state = { ...state, detailErrors: omitKeyInternal(state.detailErrors, activityId) };
-				})()
+			const detailResult = await tryCatch(
+				activityService.getActivity(activityId, activityEnvironmentId(activityId), ACTIVITY_DETAIL_LIMIT)
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				if (signal.aborted) {
-					return;
-				}
-				state = { ...state, detailErrors: { ...state.detailErrors, [activityId]: extractApiErrorMessage(error) } };
-			} else {
-				return operationResult.data;
+			if (signal.aborted) {
+				return;
 			}
+			if (detailResult.error !== null) {
+				state = { ...state, detailErrors: { ...state.detailErrors, [activityId]: extractApiErrorMessage(detailResult.error) } };
+				return;
+			}
+			const environmentId = activityEnvironmentId(activityId);
+			const normalized = {
+				...detailResult.data,
+				activity: normalizeActivity(detailResult.data.activity, environmentId)
+			};
+			state = { ...state, details: { ...state.details, [activityId]: normalized } };
+			mergeActivity(normalized.activity);
+			if (normalized.activity.batchId) setBatchExpanded(normalized.activity.batchId, true);
+			state = { ...state, detailErrors: omitKey(state.detailErrors, activityId) };
 		} finally {
 			if (!signal.aborted) {
-				state = { ...state, detailLoadingIds: omitKeyInternal(state.detailLoadingIds, activityId) };
+				state = { ...state, detailLoadingIds: omitKey(state.detailLoadingIds, activityId) };
 			}
 		}
 	}
@@ -553,12 +535,12 @@ function createActivityStore() {
 				return;
 			}
 			state = { ...state, expandedActivityIds: { ...state.expandedActivityIds, [activityId]: true } };
-			void loadDetailInternal(activityId);
+			void loadDetail(activityId);
 		} else {
 			if (!state.expandedActivityIds[activityId]) {
 				return;
 			}
-			state = { ...state, expandedActivityIds: omitKeyInternal(state.expandedActivityIds, activityId) };
+			state = { ...state, expandedActivityIds: omitKey(state.expandedActivityIds, activityId) };
 		}
 	}
 
@@ -566,39 +548,38 @@ function createActivityStore() {
 		setActivityExpanded(activityId, !state.expandedActivityIds[activityId]);
 	}
 
-	function setBatchExpandedInternal(batchId: string, expanded: boolean) {
+	function setBatchExpanded(batchId: string, expanded: boolean) {
 		if (!batchId) {
 			return;
 		}
-		state = {
-			...state,
-			expandedBatchIds: expanded
-				? { ...state.expandedBatchIds, [batchId]: true }
-				: omitKeyInternal(state.expandedBatchIds, batchId)
-		};
+		if (expanded) {
+			state = { ...state, expandedBatchIds: { ...state.expandedBatchIds, [batchId]: true } };
+		} else {
+			state = { ...state, expandedBatchIds: omitKey(state.expandedBatchIds, batchId) };
+		}
 	}
 
-	function openCenterInternal(activityId?: string, batchId?: string, environmentId?: string) {
+	function openCenter(activityId?: string, batchId?: string, environmentId?: string) {
 		if (activityId && environmentId) requestedEnvironments = { ...requestedEnvironments, [activityId]: environmentId };
 		state = { ...state, open: true };
 		discardPendingActivityToasts();
-		focusInternal(activityId ?? (batchId ? `batch:${batchId}` : null));
+		focus(activityId ?? (batchId ? `batch:${batchId}` : null));
 		if (activityId) {
 			setActivityExpanded(activityId, true);
 		}
 		if (batchId) {
-			setBatchExpandedInternal(batchId, true);
+			setBatchExpanded(batchId, true);
 		}
 	}
 
-	function focusInternal(key: string | null) {
+	function focus(key: string | null) {
 		state = { ...state, focusedKey: key };
 		if (key && !key.startsWith('batch:')) {
-			void loadDetailInternal(key);
+			void loadDetail(key);
 		}
 	}
 
-	function environmentFailuresInternal(): ActivityEnvironmentFailure[] {
+	function environmentFailures(): ActivityEnvironmentFailure[] {
 		return Object.values(core.environmentStates)
 			.filter((environmentState) => environmentState.streamError)
 			.map((environmentState) => ({
@@ -612,7 +593,7 @@ function createActivityStore() {
 	const statusFilters = $derived(state.statusFilters);
 	const typeFilters = $derived(state.typeFilters);
 
-	function matchesFiltersInternal(activity: Activity): boolean {
+	function matchesFilters(activity: Activity): boolean {
 		if (statusFilters.length > 0 && !statusFilters.includes(activity.status)) {
 			return false;
 		}
@@ -620,29 +601,29 @@ function createActivityStore() {
 			return false;
 		}
 		const term = searchTerm.trim().toLowerCase();
-		if (term && !activitySearchHaystackInternal(activity).includes(term)) {
+		if (term && !activitySearchHaystack(activity).includes(term)) {
 			return false;
 		}
 		return true;
 	}
 
-	const allGroups = $derived(groupActivitiesInternal(_activities));
-	const filteredGroups = $derived(groupActivitiesInternal(_activities.filter(matchesFiltersInternal)));
-	const runningGroups = $derived(filteredGroups.filter(groupStatusIsActiveInternal));
-	const historyGroups = $derived(filteredGroups.filter((group) => !groupStatusIsActiveInternal(group)));
-	const activeCount = $derived(_activities.filter((activity) => isActiveStatusInternal(activity.status)).length);
+	const allGroups = $derived(groupActivities(_activities));
+	const filteredGroups = $derived(groupActivities(_activities.filter(matchesFilters)));
+	const runningGroups = $derived(filteredGroups.filter(groupStatusIsActive));
+	const historyGroups = $derived(filteredGroups.filter((group) => !groupStatusIsActive(group)));
+	const activeCount = $derived(_activities.filter((activity) => isActiveStatus(activity.status)).length);
 
 	return {
 		acceptActivity: (activity: Activity) => {
 			const current = _activities.find((item) => item.id === activity.id);
 			if (current) {
-				if (!isActiveStatusInternal(current.status) && isActiveStatusInternal(activity.status)) {
+				if (!isActiveStatus(current.status) && isActiveStatus(activity.status)) {
 					observedStatusById.set(activity.id, activity.status);
-					noteActivityStatusInternal(current);
+					noteActivityStatus(current);
 				}
 				return;
 			}
-			mergeActivityInternal(activity);
+			mergeActivity(activity);
 		},
 		subscribeActivities(subscriber: (activities: readonly Activity[]) => void): () => void {
 			activitySubscribers.add(subscriber);
@@ -669,7 +650,7 @@ function createActivityStore() {
 		get focusedKey(): string | null {
 			return state.focusedKey;
 		},
-		focus: focusInternal,
+		focus,
 		get activeCount(): number {
 			return activeCount;
 		},
@@ -701,7 +682,7 @@ function createActivityStore() {
 			return core.streamFailed || Object.values(core.environmentStates).some((environmentState) => environmentState.streamError);
 		},
 		get environmentFailures(): ActivityEnvironmentFailure[] {
-			return environmentFailuresInternal();
+			return environmentFailures();
 		},
 		isExpanded(activityId: string): boolean {
 			return !!state.expandedActivityIds[activityId];
@@ -709,7 +690,7 @@ function createActivityStore() {
 		isBatchExpanded(batchId: string): boolean {
 			return !!state.expandedBatchIds[batchId];
 		},
-		setBatchExpanded: setBatchExpandedInternal,
+		setBatchExpanded,
 		isDetailLoading(activityId: string): boolean {
 			return !!state.detailLoadingIds[activityId];
 		},
@@ -739,8 +720,8 @@ function createActivityStore() {
 				observedStatusById.clear();
 				completionToastQueuedIds.clear();
 				discardPendingActivityToasts();
-				setActivitiesInternal([]);
-				state = initialStateInternal();
+				setActivities([]);
+				state = initialState();
 			}
 			return wasStarted;
 		},
@@ -749,15 +730,15 @@ function createActivityStore() {
 			if (
 				!activityId ||
 				state.cancellingIds[activityId] ||
-				!userStore.hasPermission('activities:cancel', activityEnvironmentIdInternal(activityId))
+				!userStore.hasPermission('activities:cancel', activityEnvironmentId(activityId))
 			) {
 				return;
 			}
 			state = { ...state, cancellingIds: { ...state.cancellingIds, [activityId]: true } };
 			try {
-				await activityService.cancelActivity(activityId, activityEnvironmentIdInternal(activityId));
+				await activityService.cancelActivity(activityId, activityEnvironmentId(activityId));
 			} finally {
-				state = { ...state, cancellingIds: omitKeyInternal(state.cancellingIds, activityId) };
+				state = { ...state, cancellingIds: omitKey(state.cancellingIds, activityId) };
 			}
 		},
 		clearHistory: async (): Promise<ActivityClearHistorySummary> => {
@@ -769,18 +750,18 @@ function createActivityStore() {
 					.filter((environmentState) => userStore.hasPermission('activities:delete', environmentState.id))
 					.map(async (environmentState) => ({
 						environmentState,
-						operationResult: await tryCatch(activityService.clearHistory(environmentState.id))
+						cleared: await tryCatch(activityService.clearHistory(environmentState.id))
 					}))
 			);
 			const summary: ActivityClearHistorySummary = {
-				deleted: results.reduce((total, { operationResult }) => total + (operationResult.data?.deleted ?? 0), 0),
-				succeeded: results.filter(({ operationResult }) => operationResult.error === null).length,
+				deleted: results.reduce((total, { cleared }) => total + (cleared.data?.deleted ?? 0), 0),
+				succeeded: results.filter(({ cleared }) => cleared.error === null).length,
 				failed: results
-					.filter(({ operationResult }) => operationResult.error !== null)
-					.map(({ environmentState, operationResult }) => ({
+					.filter(({ cleared }) => cleared.error !== null)
+					.map(({ environmentState, cleared }) => ({
 						environmentId: environmentState.id,
 						environmentName: environmentState.name,
-						message: streamErrorMessage(operationResult.error)
+						message: streamErrorMessage(cleared.error)
 					}))
 			};
 
@@ -803,20 +784,18 @@ function createActivityStore() {
 			state = { ...state, searchTerm: term };
 		},
 		toggleStatusFilter: (status: ActivityStatus) => {
-			state = {
-				...state,
-				statusFilters: state.statusFilters.includes(status)
-					? state.statusFilters.filter((item) => item !== status)
-					: [...state.statusFilters, status]
-			};
+			if (state.statusFilters.includes(status)) {
+				state = { ...state, statusFilters: state.statusFilters.filter((item) => item !== status) };
+			} else {
+				state = { ...state, statusFilters: [...state.statusFilters, status] };
+			}
 		},
 		toggleTypeFilter: (type: ActivityType) => {
-			state = {
-				...state,
-				typeFilters: state.typeFilters.includes(type)
-					? state.typeFilters.filter((item) => item !== type)
-					: [...state.typeFilters, type]
-			};
+			if (state.typeFilters.includes(type)) {
+				state = { ...state, typeFilters: state.typeFilters.filter((item) => item !== type) };
+			} else {
+				state = { ...state, typeFilters: [...state.typeFilters, type] };
+			}
 		},
 		clearFilters: () => {
 			state = { ...state, searchTerm: '', statusFilters: [], typeFilters: [] };
@@ -827,21 +806,21 @@ function createActivityStore() {
 				discardPendingActivityToasts();
 			}
 		},
-		openCenter: openCenterInternal,
+		openCenter,
 		toggleCenter: () => {
 			if (state.open) {
 				state = { ...state, open: false };
 				return;
 			}
-			openCenterInternal();
+			openCenter();
 		},
 		retryLoadDetail: (activityId: string) => {
 			state = {
 				...state,
-				detailErrors: omitKeyInternal(state.detailErrors, activityId),
-				details: omitKeyInternal(state.details, activityId)
+				detailErrors: omitKey(state.detailErrors, activityId),
+				details: omitKey(state.details, activityId)
 			};
-			void loadDetailInternal(activityId);
+			void loadDetail(activityId);
 		},
 		retryStream: () => core.retryStream(),
 		setActivityExpanded,

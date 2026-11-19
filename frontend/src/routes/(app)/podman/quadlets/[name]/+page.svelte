@@ -19,6 +19,7 @@
 	import { AlertIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanQuadletQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanQuadletAction } from '#lib/types/ui/podman.js';
@@ -49,8 +50,7 @@
 	const systemdAvailable = $derived(status?.systemdAvailable === true);
 
 	const quadletQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.quadlet(envId, data.quadlet.name),
-		queryFn: () => podmanService.getQuadlet(data.quadlet.name, envId),
+		...podmanQuadletQuery(envId, data.quadlet.name),
 		initialData: data.quadlet,
 		retry: false
 	}));
@@ -132,35 +132,38 @@
 
 	const isActive = $derived(podmanStateVariant(quadlet.unitStatus?.activeState ?? quadlet.status) === 'green');
 
-	const actions: ActionButton[] = $derived([
-		...(isActive ? lifecycleButton('stop', 'primary') : lifecycleButton('start', 'primary')),
-		...lifecycleButton('restart', 'secondary'),
-		...(hasPermission('podman-quadlets:delete', envId)
-			? [
-					{
-						id: 'remove',
-						action: 'remove' as const,
-						group: 'danger' as const,
-						destructive: true,
-						placement: 'menu' as const,
-						label: m.common_remove(),
-						onclick: () => confirmRemoveQuadlet(quadlet.name, envId, () => goto(resolve('/(app)/podman/quadlets')))
-					}
-				]
-			: [])
-	]);
+	const actions: ActionButton[] = $derived.by(() => {
+		const buttons = [...lifecycleButton(isActive ? 'stop' : 'start', 'primary'), ...lifecycleButton('restart', 'secondary')];
+		if (hasPermission('podman-quadlets:delete', envId)) {
+			buttons.push({
+				id: 'remove',
+				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				placement: 'menu',
+				label: m.common_remove(),
+				onclick: () => confirmRemoveQuadlet(quadlet.name, envId, () => goto(resolve('/(app)/podman/quadlets')))
+			});
+		}
+		return buttons;
+	});
+
+	const unitStatusItems = $derived.by(() => {
+		if (!quadlet.unitStatus) {
+			return [];
+		}
+		return [
+			{ label: m.podman_unit_load_state(), value: quadlet.unitStatus.loadState },
+			{
+				label: m.podman_unit_active_state(),
+				value: `${quadlet.unitStatus.activeState} (${quadlet.unitStatus.subState})`
+			}
+		];
+	});
 
 	const metaItems = $derived([
 		{ icon: InfoIcon, label: m.podman_unit(), value: quadlet.unitName || '-', mono: true },
-		...(quadlet.unitStatus
-			? [
-					{ label: m.podman_unit_load_state(), value: quadlet.unitStatus.loadState },
-					{
-						label: m.podman_unit_active_state(),
-						value: `${quadlet.unitStatus.activeState} (${quadlet.unitStatus.subState})`
-					}
-				]
-			: []),
+		...unitStatusItems,
 		...(quadlet.app ? [{ icon: ContainersIcon, label: m.podman_quadlet_app(), value: quadlet.app }] : [])
 	]);
 </script>

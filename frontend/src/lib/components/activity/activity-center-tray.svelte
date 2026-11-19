@@ -34,7 +34,7 @@
 		activityStore.allGroups.filter((group) => !isActiveActivityStatus(activityGroupStatus(group))).slice(0, RECENT_LIMIT)
 	);
 
-	function viewAllInternal() {
+	function viewAll() {
 		if (onExpand) {
 			onExpand();
 			return;
@@ -78,7 +78,7 @@
 	{:else}
 		<ActivityPanelHeader {titleId} {dialogTitle}>
 			<ActivityOptionsMenu />
-			<ActivityIconButton label={m.activity_open_full_view()} onclick={viewAllInternal}>
+			<ActivityIconButton label={m.activity_open_full_view()} onclick={viewAll}>
 				<ExpandIcon class="size-4" aria-hidden="true" />
 			</ActivityIconButton>
 		</ActivityPanelHeader>

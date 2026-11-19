@@ -40,7 +40,7 @@ class ProjectService extends BaseAPIService {
 		config?: APIRequestConfig
 	): Promise<Paginated<Project>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/agents/${environmentId}/projects`, { ...config, params });
+		const res = await this.api.get<Paginated<Project>>(`/agents/${environmentId}/projects`, { ...config, params });
 		return res.data;
 	}
 
@@ -64,11 +64,14 @@ class ProjectService extends BaseAPIService {
 		optionsOrEnvironmentId: ProjectDeployOptions | string | undefined,
 		maybeEnvironmentId?: string
 	): Promise<Project> {
-		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
-		const options = onLine
-			? (optionsOrEnvironmentId as ProjectDeployOptions | undefined)
-			: (onLineOrOptions as ProjectDeployOptions);
-		const environmentId = (onLine ? maybeEnvironmentId : optionsOrEnvironmentId) as string;
+		let onLine: ((data: unknown) => void) | undefined;
+		let options = onLineOrOptions as ProjectDeployOptions | undefined;
+		let environmentId = optionsOrEnvironmentId as string;
+		if (typeof onLineOrOptions === 'function') {
+			onLine = onLineOrOptions;
+			options = optionsOrEnvironmentId as ProjectDeployOptions | undefined;
+			environmentId = maybeEnvironmentId as string;
+		}
 		const url = `/api/agents/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
@@ -189,7 +192,7 @@ class ProjectService extends BaseAPIService {
 	}
 
 	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
-		const res = await this.api.get(`/agents/${environmentId}/projects/counts`, config);
+		const res = await this.api.get<{ data: ProjectStatusCounts }>(`/agents/${environmentId}/projects/counts`, config);
 		return res.data.data;
 	}
 
@@ -300,7 +303,7 @@ class ProjectService extends BaseAPIService {
 		options: SearchPaginationSortRequest | undefined,
 		environmentId: string
 	): Promise<Paginated<ProjectBackup>> {
-		const res = await this.api.get(`/agents/${environmentId}/projects/${projectId}/backups`, {
+		const res = await this.api.get<Paginated<ProjectBackup>>(`/agents/${environmentId}/projects/${projectId}/backups`, {
 			params: transformPaginationParams(options)
 		});
 		return res.data;

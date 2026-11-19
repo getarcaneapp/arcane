@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -22,6 +23,7 @@
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { AlertIcon, ArrowLeftIcon, CreateFileIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmSyncFile } from '#lib/types/swarm.js';
 	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable } from '#lib/types/ui/swarm.js';
@@ -47,6 +49,8 @@
 	import EditableName from '../../../projects/components/editable-name.svelte';
 
 	let { data } = $props();
+
+	const queryClient = useQueryClient();
 	let destinationId = $state(untrack(() => data.envId));
 	const destinationSettings = useEnvironmentSettings(() => destinationId);
 	const workspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
@@ -140,38 +144,31 @@
 		planMove: planWorkspaceFileMove
 	});
 	const stackFileEntries = $derived(stackWorkspace.entries);
-	const stackWorkspaceLeadingRows = $derived.by(() => [
-		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
-		...(overrideActive
-			? [
-					{
-						key: 'override',
-						label: 'compose.override.yaml',
-						iconClass: 'text-purple',
-						locked: true,
-						menuItems: [
-							{
-								id: 'remove',
-								label: m.compose_override_remove(),
-								icon: TrashIcon,
-								destructive: true,
-								onSelect: removeOverride
-							}
-						]
-					}
-				]
-			: []),
-		...(envActive
-			? [
-					{
-						key: 'env',
-						label: '.env',
-						iconClass: 'text-success',
-						menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
-					}
-				]
-			: [])
-	]);
+	const stackWorkspaceLeadingRows = $derived.by(() => {
+		const composeRow = { key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true };
+		const overrideRow = {
+			key: 'override',
+			label: 'compose.override.yaml',
+			iconClass: 'text-purple',
+			locked: true,
+			menuItems: [
+				{
+					id: 'remove',
+					label: m.compose_override_remove(),
+					icon: TrashIcon,
+					destructive: true,
+					onSelect: removeOverride
+				}
+			]
+		};
+		const envRow = {
+			key: 'env',
+			label: '.env',
+			iconClass: 'text-success',
+			menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
+		};
+		return [composeRow, overrideActive ? overrideRow : null, envActive ? envRow : null].filter((row) => row !== null);
+	});
 	const stackWorkspaceRootMenuItems = $derived(
 		[
 			{
@@ -278,6 +275,7 @@
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.stackSource(destinationId, name) });
 				goto(resolve('/(app)/swarm/stacks'), { refreshAll: true });
 			}
 		});
@@ -309,6 +307,7 @@
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.stackSource(destinationId, name) });
 				goto(resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(destinationId)}`, { name: encodeURIComponent(name) }), {
 					refreshAll: true
 				});

@@ -18,11 +18,9 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArrowDownIcon, ArrowLeftIcon, CloseIcon, LayersIcon, TerminalIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanKubeGenerateSourcesQuery, podmanKubeNetworksQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { containerService } from '#lib/services/container-service.js';
-	import { networkService } from '#lib/services/network-service.js';
 	import { podmanService } from '#lib/services/podman-service.js';
-	import { volumeService } from '#lib/services/volume-service.js';
 	import { type KubeGenerateType, PODMAN_KUBE_GENERATE_TYPES } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
@@ -51,21 +49,19 @@
 	type EnvironmentSelection = { environmentId: string; networks: string[]; generateNames: string[]; resultLines: string[] };
 
 	let storedSelection = $state<EnvironmentSelection>({ environmentId: '', networks: [], generateNames: [], resultLines: [] });
-	const selection = $derived<EnvironmentSelection>(
-		storedSelection.environmentId === environmentId
-			? storedSelection
-			: { environmentId, networks: [], generateNames: [], resultLines: [] }
-	);
+	const selection = $derived.by<EnvironmentSelection>(() => {
+		if (storedSelection.environmentId === environmentId) {
+			return storedSelection;
+		}
+		return { environmentId, networks: [], generateNames: [], resultLines: [] };
+	});
 
 	function updateSelection(patch: Partial<Omit<EnvironmentSelection, 'environmentId'>>) {
 		storedSelection = { ...selection, ...patch };
 	}
 
-	const listAll = { pagination: { page: 1, limit: -1 } };
-
 	const networksQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.kubeNetworks(environmentId),
-		queryFn: () => networkService.getNetworksForEnvironment(environmentId, listAll),
+		...podmanKubeNetworksQuery(environmentId),
 		enabled: podmanEnvs.length > 0 && hasPermission('networks:list', environmentId)
 	}));
 
@@ -74,26 +70,7 @@
 	);
 
 	const generateSourcesQuery = createQuery(() => ({
-		queryKey: queryKeys.podman.kubeGenerateSources(environmentId),
-		queryFn: async () => {
-			const [pods, containers, volumes] = await Promise.all([
-				hasPermission('podman-pods:list', environmentId) ? podmanService.getPods(environmentId, listAll) : { data: [] },
-				hasPermission('containers:list', environmentId)
-					? containerService.getContainersForEnvironment(environmentId, listAll)
-					: { data: [] },
-				hasPermission('volumes:list', environmentId)
-					? volumeService.getVolumesForEnvironment(environmentId, listAll)
-					: { data: [] }
-			]);
-			return [
-				...pods.data.map((pod) => ({ value: pod.name, label: pod.name, hint: m.podman_pod() })),
-				...containers.data.map((container) => {
-					const name = container.names[0] ?? container.id;
-					return { value: name, label: name, hint: m.resource_container() };
-				}),
-				...volumes.data.map((volume) => ({ value: volume.name, label: volume.name, hint: m.resource_volume() }))
-			].filter((item, index, all) => all.findIndex((other) => other.value === item.value) === index);
-		},
+		...podmanKubeGenerateSourcesQuery(environmentId),
 		enabled: generateOpen
 	}));
 

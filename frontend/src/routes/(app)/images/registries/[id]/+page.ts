@@ -1,6 +1,9 @@
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { containerRegistryService } from '#lib/services/container-registry-service.js';
+import {
+	containerRegistryDetailQuery,
+	containerRegistryRepositoriesQuery,
+	containerRegistryTagsQuery
+} from '#lib/query/container-registries.js';
 import type { Paginated } from '#lib/types/base.js';
 import type { ContainerRegistryRepositoryRow, ContainerRegistryRepositoryTagRow } from '#lib/types/ui/containerregistry.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -15,12 +18,7 @@ const tagsPageSize = 50;
 export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient } = await parent();
 
-	const registryResult = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.containerRegistries.detail(params.id),
-			queryFn: () => containerRegistryService.getRegistry(params.id)
-		})
-	);
+	const registryResult = await tryCatch(queryClient.query(containerRegistryDetailQuery(params.id)));
 	if (registryResult.error !== null) {
 		throwPageLoadError(registryResult.error, m.common_load_failed({ resource: m.resource_registry() }));
 	}
@@ -40,11 +38,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 			sort: { column: 'name', direction: 'asc' }
 		};
 		const catalogResult = await tryCatch(
-			queryClient.query({
-				queryKey: queryKeys.containerRegistries.repositories(params.id, catalogRequest),
-				queryFn: () => containerRegistryService.getRepositories(params.id, catalogRequest),
-				staleTime: 30_000
-			})
+			queryClient.query({ ...containerRegistryRepositoriesQuery(params.id, catalogRequest), staleTime: 30_000 })
 		);
 		if (catalogResult.error === null) {
 			catalog = catalogResult.data;
@@ -64,12 +58,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	};
 	let tagsError: string | null = null;
 	if (repository) {
-		const tagsResult = await tryCatch(
-			queryClient.query({
-				queryKey: queryKeys.containerRegistries.tags(params.id, repository, tagsRequest),
-				queryFn: () => containerRegistryService.getTags(params.id, repository, tagsRequest)
-			})
-		);
+		const tagsResult = await tryCatch(queryClient.query(containerRegistryTagsQuery(params.id, repository, tagsRequest)));
 		if (tagsResult.error === null) {
 			tags = tagsResult.data;
 		} else {

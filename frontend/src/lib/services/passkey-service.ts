@@ -1,4 +1,9 @@
-import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
+import type {
+	AuthenticationResponseJSON,
+	PublicKeyCredentialCreationOptionsJSON,
+	PublicKeyCredentialRequestOptionsJSON,
+	RegistrationResponseJSON
+} from '@simplewebauthn/browser';
 
 import type {
 	AuthenticationResponse,
@@ -20,7 +25,7 @@ class PasskeyService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/auth/passkey/login/availability', { cache: 'no-store', timeout: 5000 }));
 	}
 
-	async beginLogin(): Promise<PasskeyChallenge> {
+	async beginLogin(): Promise<PasskeyChallenge<PublicKeyCredentialRequestOptionsJSON>> {
 		return this.handleResponse(this.api.post('/auth/passkey/login/begin'));
 	}
 
@@ -72,7 +77,7 @@ class PasskeyService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/auth/me/passkeys/capabilities'));
 	}
 
-	async beginRegistration(stepUpToken?: string): Promise<PasskeyChallenge> {
+	async beginRegistration(stepUpToken?: string): Promise<PasskeyChallenge<PublicKeyCredentialCreationOptionsJSON>> {
 		return this.handleResponse(this.api.post('/auth/me/passkeys/register/begin', undefined, this.stepUpConfig(stepUpToken)));
 	}
 
@@ -96,7 +101,7 @@ class PasskeyService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/auth/me/passkeys/${encodeURIComponent(id)}`, this.stepUpConfig(stepUpToken)));
 	}
 
-	async beginStepUp(): Promise<PasskeyChallenge> {
+	async beginStepUp(): Promise<PasskeyChallenge<PublicKeyCredentialRequestOptionsJSON>> {
 		return this.handleResponse(this.api.post('/auth/me/passkeys/reauth/begin'));
 	}
 

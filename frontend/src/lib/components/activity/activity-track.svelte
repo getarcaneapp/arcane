@@ -26,12 +26,11 @@
 	const lead = $derived(activityGroupLead(group));
 	const target = $derived(activityGroupTarget(group));
 	const cancelable = $derived(group.kind === 'single' && lead.type !== 'job_run');
-	const message = $derived(
-		group.kind === 'batch'
-			? (activityGroupMembers(group).find((item) => item.status === 'running' && item.latestMessage)?.latestMessage ??
-					lead.latestMessage)
-			: lead.latestMessage
-	);
+	const message = $derived.by(() => {
+		if (group.kind !== 'batch') return lead.latestMessage;
+		const running = activityGroupMembers(group).find((item) => item.status === 'running' && item.latestMessage);
+		return running?.latestMessage ?? lead.latestMessage;
+	});
 </script>
 
 <div

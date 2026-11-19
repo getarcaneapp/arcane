@@ -8,6 +8,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerListQuery } from '#lib/query/containers.js';
 	import { projectListQuery } from '#lib/query/projects.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { DashboardResourceKind } from '#lib/types/user.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -61,7 +62,7 @@
 		const target = environment;
 		const term = search.trim();
 		return {
-			queryKey: [resourceKind, target?.id, 'dashboard', 'resource-picker', term],
+			queryKey: queryKeys.dashboard.resourcePicker(resourceKind, target?.id, term),
 			queryFn: resourceKind && target ? () => loadResources(resourceKind, target, term) : skipToken,
 			placeholderData: keepPreviousData
 		};

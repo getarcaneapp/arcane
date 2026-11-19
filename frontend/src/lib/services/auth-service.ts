@@ -173,11 +173,13 @@ class AuthService extends BaseAPIService {
 		const expiryBefore = this.getStoredExpiry();
 
 		const coordinated = typeof navigator !== 'undefined' && 'locks' in navigator;
-		const operationResult = await tryCatch(
-			coordinated
-				? navigator.locks.request(REFRESH_LOCK_NAME, () => this.requestTokenRefresh(expiryBefore, session))
-				: this.requestTokenRefresh(expiryBefore, session)
-		);
+		let refreshRequest: Promise<string | null>;
+		if (coordinated) {
+			refreshRequest = navigator.locks.request(REFRESH_LOCK_NAME, () => this.requestTokenRefresh(expiryBefore, session));
+		} else {
+			refreshRequest = this.requestTokenRefresh(expiryBefore, session);
+		}
+		const refreshResult = await tryCatch(refreshRequest);
 
 		const subscribers = generation === this.refreshGeneration ? this.refreshSubscribers : [];
 		if (generation === this.refreshGeneration) {
@@ -190,12 +192,12 @@ class AuthService extends BaseAPIService {
 			subscribers.forEach((callback) => callback(null, cancelled));
 			throw cancelled;
 		}
-		if (operationResult.error === null) {
-			subscribers.forEach((callback) => callback(operationResult.data));
-			return operationResult.data;
+		if (refreshResult.error === null) {
+			subscribers.forEach((callback) => callback(refreshResult.data));
+			return refreshResult.data;
 		}
 
-		const error = operationResult.error;
+		const error = refreshResult.error;
 		const rejected = error instanceof APIError && error.status === 401;
 		if (rejected && (coordinated ? this.refreshedElsewhere(expiryBefore) : await this.refreshedElsewhereSoon(expiryBefore))) {
 			subscribers.forEach((callback) => callback(null));
@@ -241,22 +243,18 @@ class AuthService extends BaseAPIService {
 	}
 
 	async getCurrentUser(): Promise<User | null> {
-		const operationResult = await tryCatch(
-			(async () => {
-				const response = await this.api.get('/auth/me');
-				const user = (response.data.user as User) || (response.data.data as User);
-
-				await userStore.setUser(user);
-
-				return user;
-			})()
-		);
-		if (operationResult.error !== null) {
+		const response = await tryCatch(this.api.get<{ user?: User; data?: User }>('/auth/me'));
+		if (response.error !== null) {
 			userStore.clearUser();
 			return null;
-		} else {
-			return operationResult.data;
 		}
+		const user = (response.data.data.user || response.data.data.data) as User;
+		const stored = await tryCatch(userStore.setUser(user));
+		if (stored.error !== null) {
+			userStore.clearUser();
+			return null;
+		}
+		return user;
 	}
 
 	async getAuthUrl(redirectUri: string): Promise<string> {

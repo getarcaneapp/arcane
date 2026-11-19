@@ -74,45 +74,44 @@
 	const canCreateContainers = $derived(hasShownPermission('containers:create'));
 	const canApplyUpdates = $derived(hasShownPermission('image-updates:apply'));
 
-	const actionButtons: ActionButton[] = $derived(
-		[
-			canCreateContainers
-				? {
-						id: 'create',
-						action: 'create',
-						placement: 'primary',
-						label: m.common_create_button({ resource: m.container() }),
-						onclick: () => goto(resolve('/(app)/containers/new')),
-						disabled: !resourcesReady
-					}
-				: null,
-			canApplyUpdates
-				? {
-						id: 'check-updates',
-						action: 'update',
-						label: m.containers_check_updates(),
-						onclick: () =>
-							confirmAndApplyAllUpdates({
-								setLoading: (loading) => (isApplyingUpdates = loading),
-								onRefresh: () => queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(pageState.scope) })
-							}),
-						loading: isApplyingUpdates,
-						disabled: !resourcesReady || isApplyingUpdates
-					}
-				: null,
-			pinViewAction('containers', pageState.requestOptions, readableEnvironments('containers:list')),
-			{
-				id: 'refresh',
-				action: 'refresh',
-				placement: 'secondary',
-				iconOnly: true,
-				label: m.common_refresh(),
-				onclick: () => containersQuery.refetch(),
-				loading: isRefreshing,
-				disabled: isRefreshing
-			}
-		].filter((b) => b !== null) as ActionButton[]
-	);
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateContainers) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				placement: 'primary',
+				label: m.common_create_button({ resource: m.container() }),
+				onclick: () => goto(resolve('/(app)/containers/new')),
+				disabled: !resourcesReady
+			});
+		}
+		if (canApplyUpdates) {
+			buttons.push({
+				id: 'check-updates',
+				action: 'update',
+				label: m.containers_check_updates(),
+				onclick: () =>
+					confirmAndApplyAllUpdates({
+						setLoading: (loading) => (isApplyingUpdates = loading),
+						onRefresh: () => queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(pageState.scope) })
+					}),
+				loading: isApplyingUpdates,
+				disabled: !resourcesReady || isApplyingUpdates
+			});
+		}
+		buttons.push(pinViewAction('containers', pageState.requestOptions, readableEnvironments('containers:list')), {
+			id: 'refresh',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
+			label: m.common_refresh(),
+			onclick: () => containersQuery.refetch(),
+			loading: isRefreshing,
+			disabled: isRefreshing
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

@@ -417,7 +417,7 @@ export async function analyzeComposeContent(
 		strict: true,
 		uniqueKeys: false,
 		merge: true
-	}) as unknown as YamlDocLike;
+	}) as YamlDocLike;
 
 	const diagnostics: Diagnostic[] = [];
 	diagnostics.push(...buildTabDiagnostics(source));
