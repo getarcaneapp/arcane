@@ -46,6 +46,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -11285,6 +11286,7 @@ func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
 		lockErr error
 	)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
 			created = append(created, options)
 			roots = append(roots, *root)
@@ -11387,6 +11389,7 @@ func TestProjectBundlesImportSelectsTheExportedComposeFiles(t *testing.T) {
 
 	var created []string
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
 			created = append(created, options.Name)
 			return true, nil
@@ -11478,6 +11481,7 @@ func TestProjectBundlesImportChecksTheImportedProjectsVolumeNames(t *testing.T) 
 
 	var restored, deleted []string
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		// Like the real restore, fail on the archive before any conflict check.
 		RestoreVolume: func(_ context.Context, name string, _ types.RestoreVolumeUploadRequest, _ types.Actor) (bool, error) {
 			restored = append(restored, name)
@@ -11578,13 +11582,21 @@ func TestProjectBundlesExportStopsAndRestartsActiveContainers(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
 
+	locks := &concurrency.KeyedMutex{}
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: locks,
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			mu.Lock()
 			web, database := states["web-1"], states["db-1"]
 			mu.Unlock()
 			assert.Equal(t, container.StateExited, web, "the volume is copied while the project is stopped")
 			assert.Equal(t, container.StateExited, database, "a restarting container is stopped too")
+			// No volume backup can start or stop the project's containers until the export ends.
+			if unlock, free := locks.TryLock(name); free {
+				unlock()
+				t.Errorf("volume %s is not held during the export", name)
+			}
+			assert.True(t, volumes.Locked(ctx, name), "the export knows it holds the volume")
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
 	}}}
@@ -11875,6 +11887,7 @@ func TestProjectBundlesExportIncludesLocalExternalVolumes(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
@@ -11958,6 +11971,7 @@ func TestProjectBundlesExportCountsRestartingContainersAsRunning(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
@@ -12090,6 +12104,7 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				names, deleted []string
 			)
 			bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+				VolumeLocks: &concurrency.KeyedMutex{},
 				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
 					mu.Lock()
 					defer mu.Unlock()
@@ -12382,6 +12397,7 @@ func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
 		created []client.VolumeCreateOptions
 	)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			exports = append(exports, name)
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(empty.Len()), strings.NewReader(empty.String()))
