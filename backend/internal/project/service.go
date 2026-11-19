@@ -1795,7 +1795,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 
 // ExportOptions lists the project's volumes as an export classifies them; a volume not created in Docker yet has no
 // data, so it is marked missing and not included, and an external volume on another driver or with options is not
-// included either. A volume that a running container of another project mounts is marked in use.
+// included either. A volume mounted by a running container that is not stopped is marked in use.
 func (b projectBundles) ExportOptions(ctx context.Context, projectID string) (types.ProjectExportOptions, error) {
 	project, err := b.local.Project(ctx, projectID)
 	if err != nil {
@@ -1849,7 +1849,7 @@ func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	// Other projects are not stopped, so a volume they mount makes the export inconsistent.
+	// Containers outside the project are not stopped, so a volume they mount makes the export inconsistent.
 	inUse, err := b.local.projects.volumesInUseOutside(ctx, project.ComposeName)
 	if err != nil {
 		return nil, err

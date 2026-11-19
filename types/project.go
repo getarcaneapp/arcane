@@ -66,7 +66,7 @@ type (
 		Archive      string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle; volumes naming one Docker volume share it"`
 		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
 		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
-		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container of another project mounts the volume, so its data may change during an export"`
+		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container that is not stopped mounts the volume, so its data may change during an export"`
 	}
 
 	ProjectManifestProject struct {
