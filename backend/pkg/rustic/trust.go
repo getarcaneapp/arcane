@@ -4,27 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
-	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
-
-	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
 
 	"kit.getarcane.app/acfs"
-	"kit.getarcane.app/docker"
-
-	"getarcane.dev/arcane/v3/pkg/timeouts"
-	"getarcane.dev/arcane/v3/pkg/volumes"
+	"kit.getarcane.app/fs"
 )
 
 const (
-	trustBundleDir      = "/etc/ssl/certs"
-	trustBundleName     = "ca-certificates.crt"
-	stagerRemoveRetries = 12
+	TrustBundlePath = "/etc/ssl/certs/ca-certificates.crt"
+	TrustBundleName = ".arcane-rustic-ca.crt"
 )
 
 // Same lookup order as Go's crypto/x509 on Linux.
@@ -95,63 +84,23 @@ func trustBundle(ctx context.Context) []byte {
 	return bundle.Bytes()
 }
 
-// stageTrustBundle copies the bundle into a volume through a stager that mounts
-// only that volume; copying into the Rustic container fails when it has file
-// mounts under read-only mounts. Run cleanup after Rustic exits: removing the
-// stager right after the copy fails on ZFS while its dataset is busy.
-func stageTrustBundle(ctx context.Context, dockerClient *client.Client, bundle []byte) (string, func(), error) {
-	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Labels: volumes.Labels()})
+func WriteTrustBundle(ctx context.Context, directory string) (string, error) {
+	bundle := trustBundle(ctx)
+	if len(bundle) == 0 {
+		return "", nil
+	}
+	bundlePath, err := filepath.Abs(filepath.Join(directory, TrustBundleName))
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-	stagerID := ""
-	cleanup := func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		if stagerID != "" {
-			removeStager(cleanupCtx, dockerClient, stagerID)
-		}
-		removeCtx, cancel := context.WithTimeout(cleanupCtx, timeouts.DefaultDockerAPI)
-		defer cancel()
-		if _, removeErr := dockerClient.VolumeRemove(removeCtx, created.Volume.Name, client.VolumeRemoveOptions{Force: true}); removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
-			slog.WarnContext(cleanupCtx, "failed to remove Rustic CA certificate volume", "volumeName", created.Volume.Name, "error", removeErr)
-		}
+	if current, readErr := (acfs.Host{}).ReadFile(ctx, bundlePath); readErr == nil && bytes.Equal(current, bundle) {
+		return bundlePath, nil
 	}
-	stager, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image:  DefaultImage,
-			Labels: volumes.Labels(),
-		},
-		HostConfig: &container.HostConfig{
-			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: created.Volume.Name, Target: trustBundleDir}},
-		},
-	})
-	if err != nil {
-		cleanup()
-		return "", nil, err
+	if err = (acfs.Host{}).MkdirAll(ctx, filepath.Dir(bundlePath), fs.DirPerm); err != nil {
+		return "", err
 	}
-	stagerID = stager.ID
-	copyCtx, copyCancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-	err = docker.CopyToContainer(copyCtx, dockerClient, stager.ID, trustBundleDir, map[string][]byte{trustBundleName: bundle})
-	copyCancel()
-	if err != nil {
-		cleanup()
-		return "", nil, err
+	if err = (acfs.Host{}).Write(ctx, bundlePath, bundle, acfs.WriteOptions{Mode: fs.FilePerm}); err != nil {
+		return "", err
 	}
-	return created.Volume.Name, cleanup, nil
-}
-
-func removeStager(ctx context.Context, dockerClient *client.Client, containerID string) {
-	for attempt := 1; ; attempt++ {
-		attemptCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-		_, err := dockerClient.ContainerRemove(attemptCtx, containerID, volumes.RemoveOptions())
-		cancel()
-		if err == nil || cerrdefs.IsNotFound(err) {
-			return
-		}
-		if attempt == stagerRemoveRetries {
-			slog.WarnContext(ctx, "failed to remove Rustic CA certificate stager", "containerId", containerID, "error", err)
-			return
-		}
-		time.Sleep(5 * time.Second)
-	}
+	return bundlePath, nil
 }

@@ -33,15 +33,6 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	)
 	allMounts := append([]mount.Mount{}, mounts...)
 	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
-	if bundle := trustBundle(ctx); len(bundle) > 0 {
-		trustVolume, cleanup, stageErr := stageTrustBundle(ctx, dockerClient, bundle)
-		if stageErr != nil {
-			return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", stageErr)
-		}
-		// Deferred before the Rustic container's removal so it runs after it.
-		defer cleanup()
-		allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: trustVolume, Target: trustBundleDir, ReadOnly: true})
-	}
 	hostConfig := volumes.HostConfig(DefaultImage, nil, allMounts)
 	hostConfig.AutoRemove = false
 	hostConfig.NetworkMode = networkMode
