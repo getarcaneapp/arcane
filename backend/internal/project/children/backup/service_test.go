@@ -3,6 +3,8 @@ package backup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -21,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -209,6 +212,68 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 		require.True(t, admitted, key)
 		lease.Release(t.Context())
 	}
+}
+
+func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	require.NoError(t, db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
+	}).Error)
+	startErr := errors.New("docker is restarting")
+	starts := 0
+	service := NewService(Dependencies{
+		DB:          db,
+		Engine:      engine,
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		StartContainers: func(context.Context, string, []container.Summary) error {
+			starts++
+			return startErr
+		},
+	})
+	recorded := plan{
+		BackupID: "b1", ProjectID: "p1", StopContainers: true,
+		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
+	}
+
+	// A failed start hands the run back instead of ending it with the project down.
+	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded), actor.ErrJobRejected)
+	startErr = nil
+	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded))
+	require.Equal(t, 2, starts)
+}
+
+func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{VolumeLocks: locks})
+	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
+		{Key: "data", Name: "web_data", Included: true},
+		{Key: "cache", Name: "web_cache", Included: false},
+	}}
+	// A volume backup of the cache volume has the project's containers stopped; the project backup waits for it.
+	unlock := locks.Lock("web_cache")
+	defer unlock()
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
+}
+
+func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
+	db := newTestDB(t)
+	entry := &ProjectBackup{BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning}
+	require.NoError(t, db.Create(entry).Error)
+	service := NewService(Dependencies{DB: db})
+
+	err := service.complete(t.Context(), entry, fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.New("down")))
+	require.ErrorIs(t, err, actor.ErrJobRejected)
+	var stored ProjectBackup
+	require.NoError(t, db.First(&stored, "id = ?", "b1").Error)
+	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
 }
 
 func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {

@@ -413,8 +413,12 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 		if restartErr == nil {
 			recorded.Stopped = nil
 		}
-		if recordErr := errors.Join(restartErr, s.record(ctx, recorded)); recordErr != nil {
-			return recordErr
+		if recordErr := s.record(ctx, recorded); recordErr != nil {
+			return errors.Join(restartErr, recordErr)
+		}
+		// The project stays down until its containers start, so try again later instead of failing.
+		if restartErr != nil {
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
 		}
 	}
 	entry, err := s.load(ctx, recorded.BackupID)
@@ -531,7 +535,16 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		}
 		defer unlockProject()
 	}
-	unlock, err := s.lockVolumes(ctx, p.volumeNames())
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held: none of its containers is started or stopped by another backup while this one runs.
+	var mounted []string
+	for _, volume := range p.Volumes {
+		if volume.Name != "" {
+			mounted = append(mounted, volume.Name)
+		}
+	}
+	slices.Sort(mounted)
+	unlock, err := s.lockVolumes(ctx, slices.Compact(mounted))
 	if err != nil {
 		return err
 	}
@@ -583,8 +596,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	}
 	var stopped []container.Summary
 	defer func() {
-		if len(stopped) > 0 {
-			err = errors.Join(err, s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped))
+		if len(stopped) == 0 {
+			return
+		}
+		// Left down, the project is restarted from the checkpoint when the run is tried again.
+		if restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); restartErr != nil {
+			err = fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(err, restartErr))
 		}
 	}()
 	if p.StopContainers {
@@ -620,8 +637,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		if restartErr == nil {
 			p.Stopped = nil
 		}
-		if recordErr := errors.Join(restartErr, s.record(ctx, p)); recordErr != nil {
-			return recordErr
+		if recordErr := s.record(ctx, p); recordErr != nil {
+			return errors.Join(restartErr, recordErr)
+		}
+		// The snapshot is saved; the retry restarts the project from the checkpoint and finishes the backup.
+		if restartErr != nil {
+			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, restartErr)
 		}
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
@@ -779,6 +800,10 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 }
 
 func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error) error {
+	// A run handed back stays running, so its retry resumes it.
+	if errors.Is(err, actor.ErrJobRejected) {
+		return err
+	}
 	entry.Status, entry.Error, entry.CompletedAt = types.VolumeBackupStatusSucceeded, "", new(time.Now())
 	if err != nil {
 		entry.Status, entry.Error = types.VolumeBackupStatusFailed, err.Error()
