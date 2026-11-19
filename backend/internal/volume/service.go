@@ -493,8 +493,8 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	if strings.TrimSpace(options.Name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
 	}
-	// A restore checks that its volumes are missing, then creates them, under this lock; a long backup or restore
-	// holding it makes the create fail rather than wait.
+	// An import or restore checks that its volumes are missing, then creates them, under this lock; a long backup or
+	// restore holding it makes the create fail rather than wait.
 	waitCtx, cancel := context.WithTimeout(ctx, volumeLockWait)
 	unlock, err := s.workspaceLocks.LockContext(waitCtx, options.Name)
 	cancel()
