@@ -348,19 +348,47 @@ func TestRestoreTargetsMapKeysToTheProjectsCurrentVolumes(t *testing.T) {
 	require.Equal(t, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}, {Key: "shared", Snapshot: "shared", Name: "shared"}}, targets)
 
 	// After a rename the snapshot's web_data restores into the volume the project now uses for the key.
-	renamed := testProject()
-	renamed.ComposeName = "shop"
-	renamed.Volumes["data"] = composetypes.VolumeConfig{Name: "shop_data"}
+	renamed := types.Project{
+		ID:          "p1",
+		Name:        "Web",
+		ComposeName: "shop",
+		Path:        "/app/data/projects/web",
+		Volumes: composetypes.Volumes{
+			"data":   {Name: "shop_data"},
+			"cache":  {Name: "web_cache"},
+			"shared": {Name: "shared", External: true},
+			"nfs":    {Name: "web_nfs", DriverOpts: map[string]string{"type": "nfs"}},
+		},
+	}
 	targets, err = restoreTargets(renamed, captured, []string{"data"})
 	require.NoError(t, err)
 	require.Equal(t, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "shop_data"}}, targets)
 
-	gone := testProject()
-	delete(gone.Volumes, "data")
+	gone := types.Project{
+		ID:          "p1",
+		Name:        "Web",
+		ComposeName: "web",
+		Path:        "/app/data/projects/web",
+		Volumes: composetypes.Volumes{
+			"cache":  {Name: "web_cache"},
+			"shared": {Name: "shared", External: true},
+			"nfs":    {Name: "web_nfs", DriverOpts: map[string]string{"type": "nfs"}},
+		},
+	}
 	_, err = restoreTargets(gone, captured, []string{"data"})
 	require.ErrorContains(t, err, "no longer has volume data")
-	outside := testProject()
-	outside.Volumes["data"] = composetypes.VolumeConfig{Name: "web_data", DriverOpts: map[string]string{"type": "nfs"}}
+	outside := types.Project{
+		ID:          "p1",
+		Name:        "Web",
+		ComposeName: "web",
+		Path:        "/app/data/projects/web",
+		Volumes: composetypes.Volumes{
+			"data":   {Name: "web_data", DriverOpts: map[string]string{"type": "nfs"}},
+			"cache":  {Name: "web_cache"},
+			"shared": {Name: "shared", External: true},
+			"nfs":    {Name: "web_nfs", DriverOpts: map[string]string{"type": "nfs"}},
+		},
+	}
 	_, err = restoreTargets(outside, captured, []string{"data"})
 	require.ErrorContains(t, err, "keeps its data outside Docker")
 	_, err = restoreTargets(testProject(), captured, []string{"cache"})

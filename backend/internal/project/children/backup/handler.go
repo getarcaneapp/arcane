@@ -9,7 +9,7 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -68,7 +68,7 @@ func (h *Handler) Create(ctx context.Context, input *CreateInput) (*handlerutil.
 	if err != nil {
 		return nil, err
 	}
-	entry, err := h.service.StartBackup(activitylib.ActivityRuntimeContext(ctx, h.appCtx), StartOptions{
+	entry, err := h.service.StartBackup(activity.ActivityRuntimeContext(ctx, h.appCtx), StartOptions{
 		User:          *user,
 		EnvironmentID: input.EnvironmentID,
 		ProjectID:     input.ProjectID,
@@ -100,7 +100,7 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreInput) (*handleruti
 	if err != nil {
 		return nil, err
 	}
-	activityID, err := h.service.StartRestore(activitylib.ActivityRuntimeContext(ctx, h.appCtx), StartRestoreOptions{
+	activityID, err := h.service.StartRestore(activity.ActivityRuntimeContext(ctx, h.appCtx), StartRestoreOptions{
 		User:          *user,
 		EnvironmentID: input.EnvironmentID,
 		ProjectID:     input.ProjectID,
