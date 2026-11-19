@@ -291,7 +291,8 @@
 			setLoadingState: (value) => (restoring = value),
 			onSuccess: (data) => {
 				restoreOpen = false;
-				restoreActivity.accepted(data.activityId);
+				// Only activities say when a restore ends; without them the server still refuses a second one.
+				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
 			}
 		});
@@ -319,7 +320,7 @@
 			onSuccess: async (project) => {
 				restoreAsNewOpen = false;
 				toast.success(m.project_restored_from_backup({ name: project.name }), activityToastOptions(project.activityId));
-				await goto(resolve('/(app)/projects/[projectId]', { projectId: project.id }));
+				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: project.id }));
 			}
 		});
 	}

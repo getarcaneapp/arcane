@@ -27,6 +27,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/sys/crypto"
 
@@ -252,6 +253,45 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 		require.True(t, admitted, key)
 		lease.Release(t.Context())
 	}
+}
+
+func TestRestoreToHoldsTheVolumesItWasAskedToLock(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{DB: db, Engine: engine, VolumeLocks: locks})
+	require.NoError(t, service.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
+	opts := RestoreToOptions{
+		ProjectID: "p1", BackupID: "missing", LockVolumes: true,
+		Volumes: []RestoreVolume{{Key: "data", Snapshot: "old_data", Name: "new_data"}},
+	}
+
+	// A volume backup of the new volume makes the restore wait its turn instead of copying under it.
+	lease, admitted, err := engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, "new_data")
+	require.NoError(t, err)
+	require.True(t, admitted)
+	require.ErrorIs(t, service.RestoreTo(t.Context(), opts), common.ErrConflict)
+	lease.Release(t.Context())
+
+	// File edits through the volume browser hold the lock the copy needs.
+	unlock := locks.Lock("new_data")
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, service.RestoreTo(waiting, opts), context.DeadlineExceeded)
+	unlock()
+
+	// Once the copy ends, either way, both are free again.
+	require.Error(t, service.RestoreTo(t.Context(), opts))
+	lease, admitted, err = engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, "new_data")
+	require.NoError(t, err)
+	require.True(t, admitted)
+	lease.Release(t.Context())
+	locks.Lock("new_data")()
 }
 
 func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {

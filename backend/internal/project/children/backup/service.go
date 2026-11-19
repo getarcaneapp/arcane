@@ -152,6 +152,8 @@ type (
 		// ProjectPath receives the project files; empty leaves them out.
 		ProjectPath string
 		Volumes     []RestoreVolume
+		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
+		LockVolumes bool
 	}
 
 	// RestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
@@ -2334,10 +2336,30 @@ func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (typ
 }
 
 // RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
-// volumes it names; the caller holds the locks they need.
+// volumes it names; the caller holds the locks they need, or asks for the volumes' with LockVolumes.
 func (s *Service) RestoreTo(ctx context.Context, opts RestoreToOptions) error {
 	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
 		return nil
+	}
+	if opts.LockVolumes {
+		var names []string
+		var keys []types.SchedulerAdmissionKey
+		for _, volume := range opts.Volumes {
+			if !slices.Contains(names, volume.Name) {
+				names = append(names, volume.Name)
+				keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: volume.Name})
+			}
+		}
+		leases, admitErr := s.admit(ctx, keys, "restore-to:"+opts.BackupID)
+		if admitErr != nil {
+			return admitErr
+		}
+		defer release(context.WithoutCancel(ctx), leases)
+		unlock, lockErr := s.lockVolumes(ctx, names)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 	}
 	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {
