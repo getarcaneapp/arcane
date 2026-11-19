@@ -32,11 +32,12 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
-		CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
-		Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
-		Ctx            context.Context
-		Scheduler      types.DynamicScheduler
-		Admission      *runs.Admission
+		// CreateBackup runs admitted under the volume's admission, before the backup reads its policy.
+		CreateBackup func(ctx context.Context, volumeName, policyID string, admitted func(context.Context) error) (*types.VolumeBackup, error)
+		Reconcile    func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
+		Ctx          context.Context
+		Scheduler    types.DynamicScheduler
+		Admission    *runs.Admission
 	}
 
 	Service struct {
@@ -54,6 +55,9 @@ type (
 const (
 	defaultSchedule = "0 2 * * *"
 )
+
+// errRemoteOnlyDisabled stops a scheduled run whose only destination, S3, was just disabled for a missing repository.
+var errRemoteOnlyDisabled = errors.New("the S3 repository is missing and the policy has no local destination")
 
 func NewService(deps Dependencies) *Service {
 	return &Service{
@@ -211,30 +215,47 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		}
 		return nil, err
 	}
-	var remoteErr error
-	if policy.S3Enabled {
-		root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
-		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", policy.S3DestinationID, root)
-	}
-	remoteDisabled, disableErr := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{
-			Model:         &VolumeBackupPolicy{},
-			ID:            policy.ID,
-			DestinationID: policy.S3DestinationID,
-			LocalEnabled:  policy.LocalEnabled,
-			Field:         field,
+	// The remote is checked once the run is admitted, against the policy the backup then runs with, so S3 enabled or
+	// moved while the run waited is checked too. A missing repository disables S3 (or the policy) before the plan
+	// resolves, so the backup never recreates it.
+	var remoteDisabled bool
+	current := policy
+	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID, func(ctx context.Context) error {
+		if loadErr := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", policy.ID, true).First(&current).Error; loadErr != nil {
+			if errors.Is(loadErr, gorm.ErrRecordNotFound) {
+				return common.ErrVolumeBackupPolicyNotFound
+			}
+			return loadErr
+		}
+		var remoteErr error
+		if current.S3Enabled {
+			root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
+			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", current.S3DestinationID, root)
+		}
+		var disableErr error
+		remoteDisabled, disableErr = backup.DisableMissingRemote(remoteErr, current.LocalEnabled, &current.S3Enabled, &current.Enabled, func(field string) (bool, error) {
+			return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{
+				Model:         &VolumeBackupPolicy{},
+				ID:            current.ID,
+				DestinationID: current.S3DestinationID,
+				LocalEnabled:  current.LocalEnabled,
+				Field:         field,
+			})
 		})
+		if disableErr != nil {
+			return disableErr
+		}
+		if remoteDisabled && !current.LocalEnabled {
+			return errRemoteOnlyDisabled
+		}
+		return nil
 	})
-	if disableErr != nil {
-		return nil, disableErr
-	}
 	if remoteDisabled {
-		s.reschedule(ctx, &policy)
+		s.reschedule(ctx, &current)
 	}
-	if remoteDisabled && !policy.LocalEnabled {
+	if errors.Is(err, errRemoteOnlyDisabled) {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID)
 	// The backup re-reads the policy once admitted, so a wait can still find it disabled or deleted.
 	if errors.Is(err, common.ErrVolumeBackupPolicyNotFound) {
 		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
