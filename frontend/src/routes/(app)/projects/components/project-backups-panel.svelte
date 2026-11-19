@@ -261,7 +261,8 @@
 			setLoadingState: (value) => (restoring = value),
 			onSuccess: (data) => {
 				restoreOpen = false;
-				restoreActivity.accepted(data.activityId);
+				// Only activities say when a restore ends; without them the server still refuses a second one.
+				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
 			}
 		});

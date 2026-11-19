@@ -2498,7 +2498,9 @@ func (b projectBundles) restoreBackupVolumes(
 		}
 		targets = append(targets, projectbackup.RestoreVolume{Key: target.Key, Snapshot: included[index].Name, Name: target.Name})
 	}
-	return created, b.backups.RestoreTo(ctx, projectbackup.RestoreToOptions{ProjectID: opts.ProjectID, BackupID: opts.BackupID, Volumes: targets})
+	return created, b.backups.RestoreTo(ctx, projectbackup.RestoreToOptions{
+		ProjectID: opts.ProjectID, BackupID: opts.BackupID, Volumes: targets, LockVolumes: true,
+	})
 }
 
 // checkNewProject refuses a name Docker already runs a Compose stack under, or whose predicted volumes already exist.
