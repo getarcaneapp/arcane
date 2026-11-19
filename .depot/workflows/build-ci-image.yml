@@ -79,7 +79,7 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$DEPOT_TOKEN" | docker login g7r5wqb57k.registry.depot.dev --username x-token --password-stdin
-          version="$(vp -C tests exec node -p 'require("@playwright/test/package.json").version')"
+          version="$(vp -C tests exec node -p 'require("playwright/package.json").version')"
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull public.ecr.aws/docker/library/busybox:1.37
           docker pull "g7r5wqb57k.registry.depot.dev/mirrors/playwright:v$version-noble"

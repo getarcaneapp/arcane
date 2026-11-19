@@ -1,9 +1,9 @@
 import { expect, test } from '../fixtures/test.fixture';
 
-test('navigation matches the configured mobile or tablet viewport', async ({ page }, testInfo) => {
+test('navigation matches the configured mobile or tablet viewport', async ({ page, task }) => {
 	await page.goto('/dashboard');
 
-	if (testInfo.project.name === 'mobile-chromium') {
+	if (task.file.projectName === 'mobile-chromium') {
 		await expect(page.getByTestId('mobile-floating-nav')).toBeVisible();
 		await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0);
 

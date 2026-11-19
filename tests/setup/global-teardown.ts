@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { composeFile } from '../utils/report';
 import { captureComposeDiagnostics } from './global-setup';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -10,9 +11,6 @@ const __dirname = path.dirname(__filename);
 async function globalTeardown() {
 	console.log('\nStarting global teardown...');
 
-	const composeFile = process.env.COMPOSE_FILE
-		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
-		: path.resolve(__dirname, 'compose.yaml');
 	const projectsDir = path.resolve(__dirname, 'projects');
 	const failures: unknown[] = [];
 	captureComposeDiagnostics(composeFile);

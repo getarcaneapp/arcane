@@ -179,11 +179,11 @@ jobs:
           - name: sqlite
             compose_file: setup/compose.yaml
             port: 3000
-            playwright_projects: --project=chromium --project=mobile-chromium --project=tablet-chromium --project=accessibility
+            test_projects: --project=chromium --project=mobile-chromium --project=tablet-chromium --project=accessibility
           - name: postgres
             compose_file: setup/compose-postgres.yaml
             port: 3001
-            playwright_projects: --project=chromium
+            test_projects: --project=chromium
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,7 +211,7 @@ jobs:
 
       - name: Pull and save test images
         run: |
-          version="$(vp -C tests exec node -p 'require("@playwright/test/package.json").version')"
+          version="$(vp -C tests exec node -p 'require("playwright/package.json").version')"
           docker pull "$PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY:v$version-noble"
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull public.ecr.aws/docker/library/busybox:1.37
@@ -220,10 +220,11 @@ jobs:
           docker save public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 > /tmp/test-images.tar
 
       - name: Run Playwright E2E tests
-        run: vp -C tests exec playwright test ${{ matrix.database.playwright_projects }}
+        timeout-minutes: 35
+        run: vp -C tests test run ${{ matrix.database.test_projects }}
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
-          BASE_URL: http://localhost:${{ matrix.database.port }}
+          E2E_BASE_URL: http://localhost:${{ matrix.database.port }}
 
       - name: Upload Playwright HTML report
         if: always()
@@ -285,10 +286,10 @@ jobs:
         run: vp -C tests install
 
       - name: Run CLI E2E tests
-        run: vp -C tests exec playwright test --project=cli
+        run: vp -C tests test run --project=cli
         env:
           COMPOSE_FILE: setup/compose.yaml
-          BASE_URL: http://localhost:3000
+          E2E_BASE_URL: http://localhost:3000
           PLAYWRIGHT_DOCKER_BROWSER: '0'
           E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
 

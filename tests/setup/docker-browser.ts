@@ -1,25 +1,24 @@
-import { expect, type FullConfig } from '@playwright/test';
+import { expect } from 'playwright/test';
+import type { TestProject } from 'vite-plus/test/node';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { reportDirectory } from '../utils/report';
 
-export default async function dockerBrowserSetup(config: FullConfig) {
+export default async function dockerBrowserSetup(project: TestProject) {
 	if (
 		process.env.PLAYWRIGHT_DOCKER_BROWSER === '0' ||
-		process.env.PW_TEST_CONNECT_WS_ENDPOINT ||
-		config.projects.every((project) => project.use.connectOptions) ||
+		project.vitest.projects.every((candidate) => candidate.name === 'cli') ||
 		(process.platform !== 'linux' && process.env.PLAYWRIGHT_DOCKER_BROWSER !== '1')
 	)
 		return;
-	const version = createRequire(import.meta.url)('@playwright/test/package.json').version as string;
+	const version = createRequire(import.meta.url)('playwright/package.json').version as string;
 	const imageRepository =
 		process.env.PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY || 'mcr.microsoft.com/playwright';
 	const name = `arcane-e2e-browser-${process.pid}-${Date.now()}`;
 	let created = false;
 	const cleanup = () => {
-		delete process.env.ARCANE_PLAYWRIGHT_WS_ENDPOINT;
 		if (created) {
 			const directory = path.join(reportDirectory, 'browser');
 			try {
@@ -86,7 +85,7 @@ export default async function dockerBrowserSetup(config: FullConfig) {
 				{ timeout: 90_000, message: 'Playwright browser server must be ready' }
 			)
 			.toBe(true);
-		process.env.ARCANE_PLAYWRIGHT_WS_ENDPOINT = `ws://${address}/`;
+		project.provide('browserEndpoint', `ws://${address}/`);
 		console.log(`Playwright browser server ready: ${name}`);
 	} catch (error) {
 		try {

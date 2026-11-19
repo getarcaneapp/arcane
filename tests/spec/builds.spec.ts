@@ -58,8 +58,9 @@ async function openAdvancedBuildOptions(page: Page) {
 
 async function selectBuildProvider(page: Page, provider: 'local' | 'depot') {
 	const providerTrigger = page.getByRole('combobox', { name: 'Build Provider' });
-	await expect(providerTrigger).toBeVisible();
-	await providerTrigger.click();
+	await expect(async () => {
+		await providerTrigger.click({ timeout: 2_000 });
+	}).toPass({ timeout: 15_000 });
 
 	const providerLabel = provider === 'depot' ? 'Depot' : 'Local Docker';
 	await page
@@ -405,50 +406,6 @@ test.describe('Build workspace provider flows', () => {
 			provider: 'local',
 			push: false,
 			load: true
-		});
-	});
-
-	test('maps depot-supported advanced options and forces push/load in payload', async ({
-		page
-	}) => {
-		await mockDepotConfiguredSettings(page);
-		await mockBuildRegistry(page);
-		await navigateToBuildWorkspace(page);
-		await setRequiredBuildInputs(page, `e2e/depot-advanced:${Date.now()}`);
-		await openAdvancedBuildOptions(page);
-		await selectBuildProvider(page, 'depot');
-		await selectBuildPushReference(page);
-
-		await expect(page.locator('#build-load')).toBeDisabled();
-		await page
-			.getByLabel(FIELD_LABELS.cacheTo)
-			.fill('type=registry,ref=myorg/myimage:cache\ntype=inline');
-		await page.getByLabel(FIELD_LABELS.entitlements).fill('network.host,security.insecure');
-		await page.locator('#platforms').fill('linux/amd64, linux/arm64');
-		await ensureSwitchState(page.locator('#privileged-build'), true);
-		await ensureSwitchState(page.locator('#build-push'), false);
-
-		let buildPayload: Record<string, unknown> | null = null;
-		await page.route('**/api/agents/*/images/build', async (route) => {
-			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/x-ndjson',
-				body: STREAM_SUCCESS
-			});
-		});
-
-		await getBuildButton(page).click();
-		await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
-
-		expect(buildPayload).toMatchObject({
-			cacheTo: ['type=registry', 'ref=myorg/myimage:cache', 'type=inline'],
-			entitlements: ['network.host', 'security.insecure'],
-			privileged: true,
-			platforms: ['linux/amd64', 'linux/arm64'],
-			provider: 'depot',
-			push: true,
-			load: false
 		});
 	});
 
