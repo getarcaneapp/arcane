@@ -60,6 +60,8 @@ type (
 		StopContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
 		// StartContainers starts the project's stopped containers again in Compose order.
 		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
+		// ProjectActive reports whether the Compose project has running or restarting containers.
+		ProjectActive func(ctx context.Context, composeName string) (bool, error)
 		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
 		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
 	}
@@ -515,7 +517,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	for index, volume := range p.Volumes {
 		p.Volumes[index].InUse = volume.Included && inUse[volume.Name]
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p))
+	// A restarting container is left out of the running count but can still write its volumes.
+	active, err := s.deps.ProjectActive(ctx, project.ComposeName)
+	if err != nil {
+		return err
+	}
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, active))
 	if err != nil {
 		return err
 	}
@@ -617,7 +624,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, proje
 	return backup.BindVolumeSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool) types.ProjectManifest {
 	includeFiles := make([]string, 0, len(project.IncludeFiles))
 	for _, file := range project.IncludeFiles {
 		includeFiles = append(includeFiles, file.RelativePath)
@@ -635,7 +642,7 @@ func backupManifest(project types.Project, p plan) types.ProjectManifest {
 		IncludeFiles:  includeFiles,
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
-		Consistent:    (p.StopContainers || project.RunningCount == 0) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
+		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 	}
 }
 

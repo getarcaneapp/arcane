@@ -137,22 +137,22 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 
 func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
-	project.RunningCount = 2
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p)
+	manifest := backupManifest(project, p, true)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
+	require.True(t, backupManifest(project, p, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p).Consistent)
+	require.True(t, backupManifest(project, p, true).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p).Consistent)
+	require.False(t, backupManifest(project, p, true).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
