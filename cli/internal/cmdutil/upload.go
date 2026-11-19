@@ -22,6 +22,12 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+// DownloadOptions says where DownloadFileInChunks saves a session and whether it shows progress.
+type DownloadOptions struct {
+	OutputPath   string
+	ShowProgress bool
+}
+
 const (
 	uploadChunkAttempts = 3
 )
@@ -103,12 +109,12 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 	}
 }
 
-// DownloadFileInChunks saves a complete upload session to outputPath chunk by chunk, then deletes the session. A
+// DownloadFileInChunks saves a complete upload session to OutputPath chunk by chunk, then deletes the session. A
 // regular file is replaced only once the download is complete; a special file such as /dev/stdout is written directly.
-func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.UploadSession, outputPath string, showProgress bool) (written int64, err error) {
+func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
 	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
 
-	absPath, err := filepath.Abs(outputPath)
+	absPath, err := filepath.Abs(opts.OutputPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create output file: %w", err)
 	}
@@ -123,7 +129,7 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 				err = fmt.Errorf("failed to write output file: %w", closeErr)
 			}
 		}()
-		return downloadChunks(ctx, c, session, file, showProgress)
+		return downloadChunks(ctx, c, session, file, opts.ShowProgress)
 	}
 	if entry, statErr := (acfs.Host{}).Stat(ctx, absPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
 		// A symbolic link keeps pointing at the replaced file.
@@ -144,7 +150,7 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), tempPath)
 		}
 	}()
-	return downloadChunks(ctx, c, session, file, showProgress)
+	return downloadChunks(ctx, c, session, file, opts.ShowProgress)
 }
 
 func downloadChunks(ctx context.Context, c *client.Client, session types.UploadSession, file io.Writer, showProgress bool) (written int64, err error) {

@@ -422,7 +422,7 @@ func newExportCmd() *cobra.Command {
 			if len(args) == 2 {
 				outputFile = args[1]
 			}
-			written, err := cmdutil.DownloadFileInChunks(cmd.Context(), c, exported.Data, outputFile, !cmdutil.JSONOutputEnabled(cmd))
+			written, err := cmdutil.DownloadFileInChunks(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{OutputPath: outputFile, ShowProgress: !cmdutil.JSONOutputEnabled(cmd)})
 			if err != nil {
 				return fmt.Errorf("failed to download project archive: %w", err)
 			}
