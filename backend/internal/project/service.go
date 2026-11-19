@@ -2317,19 +2317,20 @@ func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, man
 	if stackExists {
 		return nil, common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
 	}
-	predicted := make([]types.ProjectVolume, 0, len(included))
+	// Only names that can't change are checked before the files are written: an external volume's, and one the import
+	// doesn't rename. A default Compose name may also be set explicitly in the compose file, which keeps it, so those
+	// are checked once the imported project's names are known.
+	var certain, predicted []types.ProjectVolume
 	for _, volume := range included {
 		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
 			SourceProject: manifest.Project.ComposeName, Key: volume.Key, SourceName: volume.Name, TargetProject: opts.Request.Name,
 		})
-		predicted = append(predicted, types.ProjectVolume{
-			Key:  volume.Key,
-			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, targetName),
-			Kind: volume.Kind,
-		})
+		if volume.Kind == types.ProjectVolumeExternal || targetName == volume.Name {
+			certain = append(certain, volume)
+			predicted = append(predicted, types.ProjectVolume{Key: volume.Key, Name: volume.Name, Kind: volume.Kind})
+		}
 	}
-	// The manifest only predicts the names, so the check is repeated with the imported project's names.
-	if _, err := b.checkVolumeTargets(ctx, included, predicted); err != nil {
+	if _, err := b.checkVolumeTargets(ctx, certain, predicted); err != nil {
 		return nil, err
 	}
 	var (
