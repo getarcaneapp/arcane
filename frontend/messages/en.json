@@ -4732,6 +4732,5 @@
   "files_only": "Files only",
   "project_backup": "Project backup",
   "remove_this_backup": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
-  "failed_to_start_project_backup": "Failed to start the project backup",
-  "failed_to_load_project_backups": "Failed to load project backups"
+  "failed_to_start_project_backup": "Failed to start the project backup"
 }

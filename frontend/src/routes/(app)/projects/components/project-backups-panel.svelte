@@ -83,11 +83,6 @@
 		backupsQuery.data ?? { data: [], pagination: { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 } }
 	);
 
-	$effect(() => {
-		const error = backupsQuery.error;
-		if (error) toast.error(m.failed_to_load_project_backups(), { description: extractApiErrorMessage(error) });
-	});
-
 	function invalidateBackups() {
 		return queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) });
 	}
@@ -333,6 +328,8 @@
 		{mobileFields}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCard}
+		onRetry={() => backupsQuery.refetch()}
+		refreshError={backupsQuery.error}
 	/>
 </div>
 
