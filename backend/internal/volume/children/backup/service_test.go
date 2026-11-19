@@ -16,13 +16,17 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -282,4 +286,22 @@ func TestExportVolumeArchiveUnderAHeldLockDoesNotWaitForIt(t *testing.T) {
 	defer cancel()
 	_, err = service.ExportVolumeArchive(waiting, "app-data")
 	require.ErrorIs(t, err, common.ErrNotFound)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }
