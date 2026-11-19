@@ -43,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
 
@@ -110,6 +111,7 @@ func newTestDB(t *testing.T) *database.DB {
 }
 
 // volumeServer answers volume inspects for the existing volumes and 404 for the rest.
+
 func volumeServer(t *testing.T, existing ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name, found := strings.CutPrefix(r.URL.Path, "/v1.41/volumes/")
@@ -317,8 +319,9 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	locked := false
 	var started []container.Summary
 	service := NewService(Dependencies{
-		DB:     db,
-		Engine: engine,
+		DB:          db,
+		Engine:      engine,
+		VolumeLocks: &concurrency.KeyedMutex{},
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
 			locked = true
@@ -1999,6 +2002,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:          db,
 		Engine:      engine,
+		VolumeLocks: &concurrency.KeyedMutex{},
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		StartContainers: func(context.Context, string, []container.Summary) error {
 			starts++
@@ -2072,4 +2076,56 @@ func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
+}
+
+func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	locks := &concurrency.KeyedMutex{}
+	started := 0
+	service := NewService(Dependencies{
+		DB:          db,
+		Engine:      engine,
+		VolumeLocks: locks,
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		StartContainers: func(context.Context, string, []container.Summary) error {
+			started++
+			return nil
+		},
+	})
+	recorded := plan{
+		BackupID: "b1", ProjectID: "p1", StopContainers: true,
+		Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Included: true}, {Key: "cache", Name: "web_cache"}},
+		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
+	}
+
+	// A restore of the cache volume, which this backup didn't capture, is still writing it; the containers wait.
+	unlock := locks.Lock("web_cache")
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	err := service.resume(waiting, types.SchedulerRun{}, nil, recorded)
+	require.ErrorIs(t, err, actor.ErrJobRejected)
+	require.Zero(t, started)
+	unlock()
+}
+
+func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want []string
+		plan restorePlan
+	}{
+		{name: "a running project is stopped and deployed again", plan: restorePlan{MayStop: true}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
+		{name: "a stopped project asked to start is deployed", plan: restorePlan{Redeploy: new(true)}, want: []string{authz.PermProjectsDeploy}},
+		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{Redeploy: new(false)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, test.plan.extraPermissions())
+		})
+	}
 }

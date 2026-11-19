@@ -4,22 +4,31 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -260,4 +269,39 @@ func TestExportVolumeArchiveWaitsForTheVolumeLock(t *testing.T) {
 	defer cancel()
 	_, err := service.ExportVolumeArchive(waiting, "app-data")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestExportVolumeArchiveUnderAHeldLockDoesNotWaitForIt(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+	locks := &concurrency.KeyedMutex{}
+	service := NewService(Dependencies{Locks: locks, Docker: newVolumeTestDockerService(t, dockerClient)})
+	// A project export holds the volume through the whole copy and tells the export so.
+	unlock := locks.Lock("app-data")
+	defer unlock()
+	waiting, cancel := context.WithTimeout(volumes.WithLocked(t.Context(), []string{"app-data"}), time.Second)
+	defer cancel()
+	_, err = service.ExportVolumeArchive(waiting, "app-data")
+	require.ErrorIs(t, err, common.ErrNotFound)
+}
+
+func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+	t.Helper()
+
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gormDB}
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
 }
