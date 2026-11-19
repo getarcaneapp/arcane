@@ -85,7 +85,7 @@
 
 	$effect(() => {
 		const error = backupsQuery.error;
-		if (error) toast.error(m.project_backups_load_failed(), { description: extractApiErrorMessage(error) });
+		if (error) toast.error(m.failed_to_load_project_backups(), { description: extractApiErrorMessage(error) });
 	});
 
 	function invalidateBackups() {
@@ -146,7 +146,7 @@
 					environmentId
 				)
 			),
-			message: m.project_backup_failed(),
+			message: m.failed_to_start_project_backup(),
 			setLoadingState: (value) => (creating = value),
 			onSuccess: (data) => {
 				dialogOpen = false;
@@ -160,7 +160,7 @@
 	function handleDelete(backup: ProjectBackup) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.project_backup() }),
-			message: m.project_backup_delete_confirm(),
+			message: m.remove_this_backup(),
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
@@ -179,16 +179,16 @@
 	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
-		if (volume.missing) return m.project_backup_volume_missing();
-		if (volume.kind === 'driverOpts') return m.project_backup_volume_driver_opts();
-		if (volume.kind === 'external' && !volume.included) return m.project_backup_volume_external();
+		if (volume.missing) return m.not_created_yet_nothing_to_back_up();
+		if (volume.kind === 'driverOpts') return m.driver_options_not_backed_up();
+		if (volume.kind === 'external' && !volume.included) return m.external_volume_not_backed_up();
 		if (volume.inUse) return m.volume_in_use_elsewhere();
 		return null;
 	}
 
 	function includedVolumes(backup: ProjectBackup): string {
 		const keys = backup.volumes.filter((volume) => volume.included).map((volume) => volume.key);
-		return keys.length ? keys.join(', ') : m.project_backup_files_only();
+		return keys.length ? keys.join(', ') : m.files_only();
 	}
 
 	const columns = [
@@ -307,7 +307,7 @@
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-start">
 		<Alert.Root size="sm" class="min-w-0 flex-1">
 			<InfoIcon class="size-4" />
-			<Alert.Description>{m.project_backups_description()}</Alert.Description>
+			<Alert.Description>{m.one_snapshot_per_backup()}</Alert.Description>
 		</Alert.Root>
 		{#if canBackup}
 			<ArcaneButton
@@ -339,7 +339,7 @@
 <ResponsiveDialog
 	bind:open={dialogOpen}
 	title={m.back_up_now()}
-	description={m.project_backup_create_description()}
+	description={m.back_up_files_and_volumes()}
 	contentClass="sm:max-w-xl"
 	dismissible={!creating}
 >
@@ -356,7 +356,7 @@
 			</div>
 		{:else}
 			{#if options.volumes.length === 0}
-				<p class="text-sm text-muted-foreground">{m.project_backup_no_volumes()}</p>
+				<p class="text-sm text-muted-foreground">{m.no_volumes_files_only()}</p>
 			{:else}
 				<div class="min-w-0 space-y-2">
 					<p class="text-sm font-medium">{m.include_volume_data()}</p>
@@ -387,7 +387,7 @@
 				id="project-backup-stop-containers"
 				checked={stopContainers}
 				label={m.volume_backup_stop_containers()}
-				description={m.project_backup_stop_containers_description()}
+				description={m.stop_containers_during_snapshot()}
 				disabled={creating}
 				onCheckedChange={(next) => (stopContainers = next)}
 			/>
