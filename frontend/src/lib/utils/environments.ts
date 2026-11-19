@@ -160,6 +160,15 @@ export function limitEnvironments(environments: EnvironmentRef[]): { included: E
 	return { included: environments.slice(0, limit), excluded: environments.slice(limit) };
 }
 
+export class EnvironmentsFailedError extends Error {
+	readonly failures: EnvironmentFailure[];
+
+	constructor(failures: EnvironmentFailure[]) {
+		super(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
+		this.failures = failures;
+	}
+}
+
 export async function readAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (scope: string, config: APIRequestConfig) => Promise<T>,
@@ -178,15 +187,13 @@ export async function readAcrossEnvironments<T>(
 	);
 	if (result.error !== null) {
 		if (!reportInline || included.length > 1) throw result.error;
-		throw new Error(`${included[0]!.name}: ${extractApiErrorMessage(result.error)}`);
+		throw new EnvironmentsFailedError([{ environment: included[0]!, message: extractApiErrorMessage(result.error) }]);
 	}
 	const failures = reported.map(({ environment, message }) => ({
 		environment: included.find((env) => env.id === environment.id) ?? environment,
 		message
 	}));
-	if (failures.length > 0 && failures.length === included.length) {
-		throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
-	}
+	if (failures.length > 0 && failures.length === included.length) throw new EnvironmentsFailedError(failures);
 	return { value: result.data, failures, excluded };
 }
 
@@ -279,17 +286,23 @@ export async function fetchAcrossEnvironments<
 	// Picks are checked against every shown environment, so picking only ones this page skips shows nothing.
 	const picked = environmentFilterIds(environmentFilter);
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
+	const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 	if (targets.length === 0) {
-		const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 		return { data: [], pagination, failedEnvironments: [], excludedEnvironments: [] } as unknown as EnvironmentPage<P>;
 	}
 	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER && targets.length === 1;
 	const request: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
-	const {
-		value: page,
-		failures,
-		excluded
-	} = await readAcrossEnvironments(targets, (scope, config) => fetch(scope, request, config));
+	const read = await tryCatch(readAcrossEnvironments(targets, (scope, config) => fetch(scope, request, config)));
+	if (read.error !== null) {
+		if (picked.length === 0 || !(read.error instanceof EnvironmentsFailedError)) throw read.error;
+		return {
+			data: [],
+			pagination,
+			failedEnvironments: read.error.failures,
+			excludedEnvironments: []
+		} as unknown as EnvironmentPage<P>;
+	}
+	const { value: page, failures, excluded } = read.data;
 	return {
 		...page,
 		data: environmentRows(page.data, targets),
