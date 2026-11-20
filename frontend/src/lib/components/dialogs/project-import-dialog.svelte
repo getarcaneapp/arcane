@@ -4,7 +4,12 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import { displaySize, FileDropZone, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
+	import {
+		displaySize,
+		FileDropZone,
+		fileRejectedMessage,
+		type FileDropZoneProps
+	} from '#lib/components/ui/file-drop-zone/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
@@ -53,7 +58,7 @@
 	};
 
 	const onFileRejected: FileDropZoneProps['onFileRejected'] = async ({ reason, file: rejected }) => {
-		toast.error(m.project_import_failed(), { description: `${rejected.name}: ${reason}` });
+		toast.error(m.project_import_failed(), { description: `${rejected.name}: ${fileRejectedMessage(reason)}` });
 	};
 
 	function reset() {
