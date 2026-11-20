@@ -59,17 +59,20 @@ export function summarizeUpdateResults(results: UpdaterResult[]) {
 		results.reduce((total, result) => total + (result.failed ?? 0), 0) - items.filter((item) => item.status === 'blocked').length
 	);
 
+	const blockedOptions = { ...options, description: blocked?.error || m.update_blocked_by_vulnerability_limits() };
+
 	if (failed > 0 && updated > 0) {
-		toast.warning(m.updates_apply_partial({ updated, failed }), options);
+		toast.warning(m.updates_apply_partial({ updated, failed }), blocked ? blockedOptions : options);
 	} else if (failed > 0) {
-		toast.error(m.updates_apply_failed({ failed }), options);
+		toast.error(m.updates_apply_failed({ failed }), blocked ? blockedOptions : options);
+	} else if (updated > 0 && blocked) {
+		toast.warning(m.updates_apply_success({ updated }), blockedOptions);
 	} else if (updated > 0) {
 		toast.success(m.updates_apply_success({ updated }), options);
-	} else if (!blocked) {
-		toast.info(m.image_update_up_to_date_title(), options);
-	}
-	if (blocked) {
+	} else if (blocked) {
 		toast.warning(m.update_blocked_by_vulnerability_limits(), { ...options, description: blocked.error });
+	} else {
+		toast.info(m.image_update_up_to_date_title(), options);
 	}
 }
 
