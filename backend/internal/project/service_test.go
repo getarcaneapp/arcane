@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -5403,7 +5405,10 @@ func TestProjectService_RecoversABackupStopByStartingOnlyItsContainers(t *testin
 	}
 	// The backup stopped web-1, a service since dropped from compose.yaml; someone stopped app-1 on purpose.
 	containers := []container.Summary{
-		{ID: "web-1", Names: []string{"/backed-up-web-1"}, Labels: labelsFor("web"), State: container.StateExited},
+		{
+			ID: "web-1", Names: []string{"/backed-up-web-1"}, Labels: labelsFor("web"), State: container.StateExited,
+			Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "backed-up_web-data"}},
+		},
 		{ID: "app-1", Names: []string{"/backed-up-app-1"}, Labels: labelsFor("app"), State: container.StateExited},
 	}
 	var (
@@ -5440,7 +5445,11 @@ func TestProjectService_RecoversABackupStopByStartingOnlyItsContainers(t *testin
 		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	unlocked := func([]string) (func(), error) { return func() {}, nil }
+	var locked []string
+	unlocked := func(names []string) (func(), error) {
+		locked = slices.Clone(names)
+		return func() {}, nil
+	}
 
 	// Compose files that no longer load still get the stopped containers started.
 	require.NoError(t, svc.startStoppedContainers(ctx, "project-missing", containers[:1]))
@@ -5450,6 +5459,8 @@ func TestProjectService_RecoversABackupStopByStartingOnlyItsContainers(t *testin
 	require.NoError(t, svc.noteStopped(ctx, "project-backed-up", types.SystemUser, containers[:1]))
 	require.NoError(t, svc.startStoppedProjects(ctx, unlocked))
 	assert.Equal(t, []string{"web-1", "web-1"}, started)
+	// web-1 still mounts a volume compose.yaml no longer names, and a restore of it must finish before web-1 starts.
+	assert.Contains(t, locked, "backed-up_web-data")
 	_, noted, err := svc.kv.Get(ctx, stoppedKeyPrefix+"project-backed-up")
 	require.NoError(t, err)
 	assert.False(t, noted)

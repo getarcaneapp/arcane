@@ -321,6 +321,17 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsExport, h.GetProjectExportOptions)
 
+	// A backup picks its volumes from the same options, under the backup permission rather than the export one.
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-backup-options",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/backup-options",
+		Summary:     "Get project backup options",
+		Description: "List the project's volumes, which of them a backup includes by default, and whether the project is running",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsBackup, h.GetProjectExportOptions)
+
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-project-archive",
 		Method:      http.MethodPost,

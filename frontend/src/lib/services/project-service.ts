@@ -298,6 +298,10 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
 	}
 
+	async getBackupOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backup-options`));
+	}
+
 	async listBackups(
 		projectId: string,
 		options: SearchPaginationSortRequest | undefined,
