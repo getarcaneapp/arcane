@@ -36,6 +36,7 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { SessionCancelledError } from '#lib/services/api-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -47,7 +48,13 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
+	import {
+		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
+		hasShownPermission,
+		rowKey
+	} from '#lib/utils/environments.js';
 	import { bytes, formatDate, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { hardenedImageDisplay, hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { blockedUpdateTitle } from '#lib/utils/image-updates.js';
@@ -120,20 +127,35 @@
 		});
 	}
 
-	function pullableTag(image: Pick<ImageSummary, 'repoTags'>): string | undefined {
+	function pullableTag(image: ImageSummary): string | undefined {
 		const tags = image.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? [];
 		return tags.find((tag) => !tag.includes('@')) ?? tags[0];
 	}
 
+	let selectedPullTags = $state.raw(new Map<string, string>());
+	const pullableIds = $derived((selectedIds ?? []).filter((id) => selectedPullTags.has(id)));
+
+	function setSelectedIds(next: string[]) {
+		const pageTags = new Map(images.data.map((image) => [rowKey(image), pullableTag(image)]));
+		const tags = new Map<string, string>();
+		for (const id of next) {
+			const tag = pageTags.has(id) ? pageTags.get(id) : selectedPullTags.get(id);
+			if (tag) tags.set(id, tag);
+		}
+		selectedPullTags = tags;
+		selectedIds = next;
+	}
+
 	async function pullSelectedImage(id: string, environmentId: string) {
-		const repoTag = pullableTag(await imageService.getImageForEnvironment(environmentId, id));
-		if (!repoTag) throw new Error(m.images_pull_no_tag());
+		const repoTag = selectedPullTags.get(rowKey({ id, environmentId, environmentTagged: true })) ?? '';
 		const pulled = await imageService.pullImageStream(repoTag, undefined, environmentId);
+		if (pulled.cancelled) throw new SessionCancelledError();
 		if (!pulled.success) throw new Error(pulled.error ?? m.images_pull_failed());
 		return pulled;
 	}
 
-	function handlePullSelected(ids: string[]) {
+	function handlePullSelected() {
+		const ids = pullableIds;
 		bulkConfirmAndRun({
 			ids,
 			title: m.pull_count_images({ count: ids.length }),
@@ -338,11 +360,12 @@
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'pull',
-			label: m.pull_selected_count({ count: selectedIds?.length ?? 0 }),
+			label: m.pull_selected_count({ count: pullableIds.length }),
 			action: 'pull',
 			onclick: handlePullSelected,
 			loading: isLoading.pulling,
-			disabled: !canPullImage || isLoading.pulling,
+			disabled: !canPullImage || isLoading.pulling || pullableIds.length === 0,
+			disabledReason: pullableIds.length === 0 ? m.images_pull_no_tag() : undefined,
 			icon: DownloadIcon
 		},
 		{
@@ -691,7 +714,7 @@
 	persistKey="arcane-image-table"
 	items={images}
 	bind:requestOptions
-	bind:selectedIds
+	bind:selectedIds={() => selectedIds, setSelectedIds}
 	bind:mobileFieldVisibility
 	{bulkActions}
 	{onRetry}
