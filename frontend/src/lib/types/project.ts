@@ -253,6 +253,7 @@ export interface ProjectVolume {
 	included: boolean;
 	missing?: boolean;
 	inUse?: boolean;
+	backupStore?: boolean;
 }
 
 export interface ProjectExportOptions {

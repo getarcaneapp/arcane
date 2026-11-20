@@ -59,6 +59,7 @@ func New(p ModuleParams) *Module {
 			Docker:       p.Service.dockerService,
 			Uploads:      p.Service.uploads,
 			ComposeFiles: p.Service.LoadedComposeFiles,
+			BackupStore:  p.Backups.Repository.StorageVolume,
 			LockProject: func(ctx context.Context, projectID string) (func(), error) {
 				return p.Service.LockProject(ctx, "export or import project", projectID)
 			},
@@ -91,6 +92,7 @@ func New(p ModuleParams) *Module {
 			VolumeLocks:    p.Backups.VolumeLocks,
 			Project:        p.Service.GetProjectDetails,
 			Volume:         local.Volume,
+			BackupStore:    p.Backups.Repository.StorageVolume,
 			ComposeProject: p.Service.composeProject,
 			ComposeFiles:   p.Service.LoadedComposeFiles,
 			LockProject:    p.Service.LockProject,
