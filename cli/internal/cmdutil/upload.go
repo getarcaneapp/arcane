@@ -3,9 +3,11 @@ package cmdutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -116,6 +118,7 @@ func DownloadUploadSession(ctx context.Context, c *client.Client, session types.
 		return 0, fmt.Errorf("failed to download file: %w", err)
 	}
 	defer func() {
+		// The body is read to the end or the download already failed; closing it can't change the file written.
 		_ = resp.Body.Close()
 	}()
 	if statusErr := EnsureSuccessStatus(resp); statusErr != nil {
@@ -151,8 +154,11 @@ func DownloadUploadSession(ctx context.Context, c *client.Client, session types.
 		if err == nil {
 			err = acfs.Host{}.Rename(ctx, tempPath, absPath)
 		}
+		// A partial file left behind is reported along with the failure.
 		if err != nil {
-			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), tempPath)
+			if removeErr := (acfs.Host{}).Remove(context.WithoutCancel(ctx), tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("remove partial download %s: %w", tempPath, removeErr))
+			}
 		}
 	}()
 	return copyUploadSession(ctx, file, resp.Body, session, opts.ShowProgress)
