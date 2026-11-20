@@ -29,7 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -69,7 +69,7 @@ func (e *stoppedEnvironment) ExportVolume(ctx context.Context, _ string) (types.
 	return *session, err
 }
 
-func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.DockerClientService {
+func newTestDockerService(t *testing.T, handler http.Handler) *docker.DockerClientService {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -85,7 +85,7 @@ func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.Do
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
 }
 
 func TestExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
