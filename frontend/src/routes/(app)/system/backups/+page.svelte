@@ -52,7 +52,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
@@ -442,29 +442,25 @@
 	// Restores the files and every volume the backup includes, as the project's own restore-as-new does by default.
 	async function restoreProjectAsNew() {
 		if (!restoreAsNewTarget || restoringAsNew || !restoreAsNewName.trim()) return;
+		const environmentId = restoreAsNewTarget.environmentId;
 		restoringAsNew = true;
-		try {
-			const environmentId = restoreAsNewTarget.environmentId;
-			const restored = await tryCatch(
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(
 				projectService.restoreBackupAsNew(
 					restoreAsNewTarget.resourceId ?? '',
 					restoreAsNewTarget.id,
 					{ name: restoreAsNewName.trim(), files: true, start: restoreAsNewStart && canStartRestoredAsNew },
 					environmentId
 				)
-			);
-			if (restored.error !== null) {
-				toast.error(m.failed_to_restore_backup(), { description: extractApiErrorMessage(restored.error) });
-				return;
+			),
+			message: m.failed_to_restore_backup(),
+			setLoadingState: (value) => (restoringAsNew = value),
+			onSuccess: async (restored) => {
+				restoreAsNewOpen = false;
+				toast.success(m.project_restored_from_backup({ name: restored.name }), activityToastOptions(restored.activityId));
+				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.id }));
 			}
-			restoreAsNewOpen = false;
-			toast.success(m.project_restored_from_backup({ name: restored.data.name }), activityToastOptions(restored.data.activityId));
-			await goto(
-				resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.data.id })
-			);
-		} finally {
-			restoringAsNew = false;
-		}
+		});
 	}
 
 	let autoDiscovered = false;
