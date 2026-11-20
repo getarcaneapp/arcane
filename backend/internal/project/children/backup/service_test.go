@@ -248,7 +248,7 @@ func TestBackupManifestKind(t *testing.T) {
 	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
-	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
+	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web", Path: project.Path}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
 	require.False(t, manifest.ExternalEnv)
@@ -418,7 +418,7 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			// As RestoreTo does: the backup stored contents only for a .env leading outside the project directory.
 			opts := types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: restored, OwnEnv: test.own, Report: report}
 			if test.own {
-				require.NoError(t, s.ownEnvLink(t.Context(), opts))
+				require.NoError(t, ownEnvLink(t.Context(), restored, projectPath))
 			}
 			if !test.inside {
 				require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, opts, "TOKEN=restored"))

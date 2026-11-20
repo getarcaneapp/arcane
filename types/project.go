@@ -75,6 +75,7 @@ type (
 		ID          string `json:"id"`
 		Name        string `json:"name"`
 		ComposeName string `json:"composeName"`
+		Path        string `json:"path,omitempty" doc:"Project directory the backup was taken from"`
 	}
 
 	ProjectManifest struct {
