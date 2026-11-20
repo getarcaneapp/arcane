@@ -4745,5 +4745,15 @@
   "restore_started": "Restore started",
   "restore_in_progress": "Restore in progress",
   "failed_to_restore_backup": "Failed to restore the backup",
-  "project_restored_from_backup": "Project {name} restored from the backup"
+  "project_restored_from_backup": "Project {name} restored from the backup",
+  "pull_selected_count": "Pull Selected ({count})",
+  "pull_count_images": "Pull {count} Image(s)",
+  "pull_images_confirm_message": "Pull the latest version of {count} image(s)?",
+  "pulled_count_images": "Successfully pulled {count} image(s)",
+  "pulled_images_partial": "Pulled {success} of {total} image(s). {failed} failed.",
+  "destroy_count": "Destroy ({count})",
+  "destroy_count_projects": "Destroy {count} Project(s)",
+  "destroy_projects_confirm_message": "Are you sure you want to destroy {count} project(s)? This action cannot be undone.",
+  "destroyed_count_projects": "Successfully destroyed {count} project(s)",
+  "destroyed_projects_partial": "Destroyed {success} of {total} project(s). {failed} failed."
 }
