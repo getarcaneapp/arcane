@@ -352,17 +352,22 @@ func isProjectBundleVolumeArchive(name string) bool {
 	return ok && err == nil && archive == name
 }
 
-func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+// IsProjectBundle reports whether r starts with an export's manifest. It reads only that bounded first entry, so it never
+// expands the rest of an untrusted archive; ReadProjectBundle validates the whole bundle.
+func IsProjectBundle(r io.Reader) bool {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
-		return types.ProjectManifest{}, false, nil
+		return false
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
-	tarReader := tar.NewReader(gzipReader)
+	_, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
+	return bundled
+}
+
+// readProjectBundleManifest reads the archive's first entry and reports whether it is an export's manifest.
+func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {
 	header, err := tarReader.Next()
 	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
 		return types.ProjectManifest{}, false, nil
@@ -384,18 +389,36 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
 	}
+	return manifest, true, nil
+}
+
+func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return types.ProjectManifest{}, false, nil
+	}
+	defer func() {
+		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
+		// returned as they happen.
+		_ = gzipReader.Close()
+	}()
+	tarReader := tar.NewReader(gzipReader)
+	manifest, bundled, err := readProjectBundleManifest(tarReader)
+	if !bundled || err != nil {
+		return manifest, bundled, err
+	}
 	expected, err := projectBundleVolumeArchives(manifest)
 	if err != nil {
 		return manifest, true, err
 	}
 	projectSeen := false
 	for {
-		header, err = tarReader.Next()
-		if errors.Is(err, io.EOF) {
+		header, nextErr := tarReader.Next()
+		if errors.Is(nextErr, io.EOF) {
 			break
 		}
-		if err != nil {
-			return manifest, true, fmt.Errorf("read project bundle: %w", err)
+		if nextErr != nil {
+			return manifest, true, fmt.Errorf("read project bundle: %w", nextErr)
 		}
 		name, pathErr := archiveEntryPath(header)
 		if pathErr != nil {

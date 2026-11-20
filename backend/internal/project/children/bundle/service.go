@@ -494,8 +494,8 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 	if err != nil {
 		return "", err
 	}
-	// Only the first chunk is read here, so a bundle cut short reads as an error; the full bundle is validated on import.
-	_, bundled, _ := projects.ReadProjectBundle(bytes.NewReader(head), nil)
+	// Only the first chunk's manifest is read here; the full bundle is validated on import, under its size checks.
+	bundled := projects.IsProjectBundle(bytes.NewReader(head))
 	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
 	// being copied.
 	request := types.ImportProjectArchive{
