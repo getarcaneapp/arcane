@@ -4716,5 +4716,14 @@
   "auto_shell_description": "bash when the container has it, otherwise sh",
   "container_default_user": "Container default",
   "environment_default": "Environment default",
-  "default_shell_preference_description": "Shell for container terminals. A shell picked on a container still wins."
+  "default_shell_preference_description": "Shell for container terminals. A shell picked on a container still wins.",
+  "other_labels": "Other Labels",
+  "traefik": "Traefik",
+  "oci_image_metadata": "OCI Image Metadata",
+  "ofelia": "Ofelia",
+  "watchtower": "Watchtower",
+  "router": "Router",
+  "middleware": "Middleware",
+  "rule": "Rule",
+  "hours_short": "{hours}h"
 }
