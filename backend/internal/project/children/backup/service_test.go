@@ -1493,6 +1493,50 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	require.Equal(t, []string{"web-1", "web-1"}, started())
 }
 
+// A snapshot rejected after the copy keeps its backup running while the containers stay down, since a running backup
+// keeps a disabled schedule's recovery; once they start, the backup fails instead of completing the snapshot.
+func TestResumeFailsARejectedSnapshotOnlyOnceTheContainersStart(t *testing.T) {
+	db := newTestDB(t)
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(harness.Runtime))
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
+	harness.Start(t)
+	require.NoError(t, db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning,
+	}).Error)
+	var fail atomic.Bool
+	fail.Store(true)
+	dockerService, started := startServer(t, &fail)
+	service := NewService(Dependencies{
+		DB:          db,
+		Docker:      dockerService,
+		Engine:      engine,
+		VolumeLocks: &concurrency.KeyedMutex{},
+		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
+			return &composetypes.Project{}, nil
+		},
+	})
+	recorded := plan{
+		BackupID: "b1", ProjectID: "p1", StopContainers: true, Rejected: "a volume was replaced while it was copied",
+		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
+	}
+	status := func() string {
+		var stored ProjectBackup
+		require.NoError(t, db.First(&stored, "id = ?", "b1").Error)
+		return stored.Status
+	}
+
+	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), actor.ErrJobRejected)
+	require.Equal(t, string(types.VolumeBackupStatusRunning), status())
+	fail.Store(false)
+	require.ErrorContains(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), "a volume was replaced while it was copied")
+	require.Equal(t, []string{"web-1", "web-1"}, started())
+	require.Equal(t, string(types.VolumeBackupStatusFailed), status())
+}
+
 func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
