@@ -1149,7 +1149,7 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 	var removeErr error
 	changed := make(map[string]bool)
 	if len(localIDs) > 0 {
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localIDs)
 		}
