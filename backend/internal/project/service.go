@@ -2188,6 +2188,23 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 		case pass > 0:
 			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
+		// A one-off started to remove itself (docker compose run --rm) is deleted by the stop and can't be started again,
+		// so nothing is stopped while one runs.
+		for _, c := range running {
+			if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
+				continue
+			}
+			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			if inspectErr != nil {
+				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
+			}
+			if inspected.Container.HostConfig != nil && inspected.Container.HostConfig.AutoRemove {
+				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
+					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
+					docker.ContainerNameFromNames(c.Names),
+				))
+			}
+		}
 		for _, c := range running {
 			// Each stop runs to completion so the deferred restart never races a stop still in progress.
 			stopped = append(stopped, c)
@@ -2287,7 +2304,8 @@ func (s *ProjectService) startContainers(ctx context.Context, compose *composety
 		}
 	}
 	for _, id := range containerIDs {
-		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil {
+		// A container removed since it was stopped has nothing left to start.
+		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
 			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
 		}
 	}
