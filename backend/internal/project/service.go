@@ -1955,7 +1955,9 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 			case !projects.LocalVolume(existing.Driver, existing.Options):
 				outside = append(outside, volume.Key)
 			default:
-				dockerLabels = existing.Labels
+				// The claim mark belongs to the volume's own creation, so another system recreates it without one.
+				dockerLabels = maps.Clone(existing.Labels)
+				delete(dockerLabels, volumes.ClaimLabel)
 			}
 			if err = projects.ValidateVolumeLabels(dockerLabels); err != nil {
 				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, err))
