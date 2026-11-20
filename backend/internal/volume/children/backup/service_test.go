@@ -21,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/types/v3"
 )
 
@@ -80,6 +81,18 @@ func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 	expired, err := backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, 1)
 	require.NoError(t, err)
 	require.Equal(t, []string{"failed-snap-old"}, expired)
+}
+
+// ARCANE_BACKUPS_DISABLED must stop the user-facing entry points before any helper image,
+// container or repository work happens.
+func TestVolumeBackupDisabledRejectsBackupEntryPoints(t *testing.T) {
+	service := NewService(Dependencies{BackupsDisabled: true, AlreadyRunning: errors.New("a backup is already running for this volume")})
+
+	_, err := service.StartBackup(t.Context(), "0", "app-data", types.Actor{}, types.CreateVolumeBackupRequest{})
+	require.ErrorIs(t, err, rustic.ErrDisabled)
+
+	_, err = service.CreateSystemManagedBackup(t.Context(), "app-data", types.Actor{}, types.VolumeBackupTriggerManual, "system-1", types.UpdateBackupPolicy{})
+	require.ErrorIs(t, err, rustic.ErrDisabled)
 }
 
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {

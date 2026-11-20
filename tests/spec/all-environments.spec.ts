@@ -80,8 +80,12 @@ async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) 
 	await page.route(/\/api\/agents(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) })
 	);
+	// The merged request names the current environment first, which is the remote one when the
+	// spec selects it, so match either order.
 	await page.route(
-		new RegExp(`/api/agents/0(?:,|%2C)${remoteEnvironment.id}/containers(?:\\?.*)?$`),
+		new RegExp(
+			`/api/agents/(?:0|${remoteEnvironment.id})(?:,|%2C)(?:0|${remoteEnvironment.id})/containers(?:\\?.*)?$`
+		),
 		async (route) => {
 			const url = new URL(route.request().url());
 			const query = new URLSearchParams(url.search);

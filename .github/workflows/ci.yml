@@ -1,11 +1,11 @@
 name: CI
 
 on:
-  # The fork keeps its v3 line on its own branch, so it runs here on push as well as in PRs.
+  # The fork's 2.x maintenance branch still needs lint and tests on push.
   push:
-    branches: [main, v3]
+    branches: [main, 2.x]
   pull_request:
-    branches: [main, v3, 'release/**', 'breaking/**']
+    branches: [main, 'release/**', 'breaking/**']
 
 permissions:
   contents: read

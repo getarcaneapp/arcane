@@ -176,7 +176,9 @@ test.describe('Volumes Page', () => {
 		await page.goto('/volumes');
 		await page.waitForLoadState('load');
 
-		await expect(page.getByText(`${volumeCount.total} Total Volumes`)).toBeVisible();
+		// The stat card renders the value as a heading and its label beside it, not as one string.
+		const totalCard = page.getByRole('heading', { name: String(volumeCount.total) }).locator('..');
+		await expect(totalCard).toContainText(/Total Volume/);
 	});
 
 	test('Inspect Volume', async ({ page }) => {
