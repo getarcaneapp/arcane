@@ -70,6 +70,8 @@ A ready-to-edit version of that file, including the agent side, is in
   running an agent. The manager serves those environments in-process against that
   daemon: containers, projects, backups, events and scheduled jobs all run against it.
   Create one from _Environments → New environment → Docker host environment_.
+- **Docker host dashboard stats.** The dashboard reports a docker-host environment's own
+  CPU and container stats, and never falls back to the manager's daemon figures for it.
 - **Per-environment backup history.** Volume backup history and policies are scoped to the
   environment that owns the volume, so two daemons can each have an `app-data` volume.
 - **Backup kill switch.** `ARCANE_BACKUPS_DISABLED=true` turns the Rustic engine off: no
