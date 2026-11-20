@@ -47,13 +47,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import {
-		environmentHref,
-		type EnvironmentPage,
-		type EnvironmentRow,
-		hasShownPermission,
-		rowKey
-	} from '#lib/utils/environments.js';
+	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatDate, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { hardenedImageDisplay, hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { blockedUpdateTitle } from '#lib/utils/image-updates.js';
@@ -126,28 +120,26 @@
 		});
 	}
 
-	function pullableTag(image: ImageSummary): string | undefined {
+	function pullableTag(image: Pick<ImageSummary, 'repoTags'>): string | undefined {
 		const tags = image.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? [];
 		return tags.find((tag) => !tag.includes('@')) ?? tags[0];
 	}
 
-	const pullTags = $derived(new Map(images.data.map((image) => [rowKey(image), pullableTag(image)])));
-	const pullableIds = $derived((selectedIds ?? []).filter((id) => pullTags.get(id)));
+	async function pullSelectedImage(id: string, environmentId: string) {
+		const repoTag = pullableTag(await imageService.getImageForEnvironment(environmentId, id));
+		if (!repoTag) throw new Error(m.images_pull_no_tag());
+		const pulled = await imageService.pullImageStream(repoTag, undefined, environmentId);
+		if (!pulled.success) throw new Error(pulled.error ?? m.images_pull_failed());
+		return pulled;
+	}
 
-	function handlePullSelected() {
-		const ids = pullableIds;
+	function handlePullSelected(ids: string[]) {
 		bulkConfirmAndRun({
 			ids,
 			title: m.pull_count_images({ count: ids.length }),
 			message: m.pull_images_confirm_message({ count: ids.length }),
 			confirmLabel: m.pull(),
-			runInEnvironment: (id, environmentId) =>
-				imageService.pullImage(
-					pullTags.get(rowKey({ id, environmentId, environmentTagged: true })) ?? '',
-					undefined,
-					undefined,
-					environmentId
-				),
+			runInEnvironment: pullSelectedImage,
 			messages: {
 				success: (count) => m.pulled_count_images({ count }),
 				partial: (success, total, failed) => m.pulled_images_partial({ success, total, failed }),
@@ -346,12 +338,11 @@
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'pull',
-			label: m.pull_selected_count({ count: pullableIds.length }),
+			label: m.pull_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'pull',
 			onclick: handlePullSelected,
 			loading: isLoading.pulling,
-			disabled: !canPullImage || isLoading.pulling || pullableIds.length === 0,
-			disabledReason: pullableIds.length === 0 ? m.images_pull_no_tag() : undefined,
+			disabled: !canPullImage || isLoading.pulling,
 			icon: DownloadIcon
 		},
 		{
