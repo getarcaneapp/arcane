@@ -53,19 +53,18 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		VolumeLocks    *concurrency.KeyedMutex
-		Project        func(ctx context.Context, projectID string) (types.Project, error)
+		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// StopContainers stops the Compose project's running containers and returns those it stopped, also when it fails.
 		StopContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
 		// StartContainers starts the project's stopped containers again in Compose order.
 		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
-		// ActiveContainers lists the Compose project's running and restarting containers, the ones a stop stops.
-		ActiveContainers func(ctx context.Context, composeName string) ([]container.Summary, error)
+		// ContainerUse lists the Compose project's running and restarting containers, the ones a stop stops, and the
+		// volumes running containers outside it mount.
+		ContainerUse func(ctx context.Context, composeName string) ([]container.Summary, map[string]bool, error)
 		// ComposeFiles returns the compose files the project loads, relative to its directory.
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
-		// VolumesInUse returns the volumes that running containers outside the Compose project mount.
-		VolumesInUse func(ctx context.Context, composeName string) (map[string]bool, error)
 	}
 
 	Service struct {
@@ -106,7 +105,13 @@ const (
 	targetType     = "project_backup"
 )
 
-var errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup of this project is already running"))
+var (
+	errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup of this project is already running"))
+	projectDetails    = types.ProjectDetailsOptions{
+		IncludeServiceConfigs: true,
+		IncludeIncludeFiles:   true,
+	}
+)
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -131,7 +136,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 // StartBackup admits the run, records its row, and hands it to the workflow; a busy project or volume fails fast.
 func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.ProjectBackup, error) {
 	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsBackup)
-	project, err := s.deps.Project(ctx, opts.ProjectID)
+	project, err := s.deps.Project(ctx, opts.ProjectID, projectDetails)
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
@@ -565,7 +570,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	project, err := s.deps.Project(ctx, entry.ProjectID)
+	project, err := s.deps.Project(ctx, entry.ProjectID, projectDetails)
 	if err != nil {
 		return err
 	}
@@ -573,17 +578,13 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if planErr := checkPlanVolumes(project, p); planErr != nil {
 		return planErr
 	}
-	// Containers outside the project keep running, so a volume they mount may change while it is captured.
-	inUse, err := s.deps.VolumesInUse(ctx, project.ComposeName)
+	// Containers outside the project keep running, so a volume they mount may change while it is captured. A
+	// restarting container is left out of the running count but can still write its volumes.
+	active, inUse, err := s.deps.ContainerUse(ctx, project.ComposeName)
 	if err != nil {
 		return err
 	}
 	p.Volumes = markInUse(p.Volumes, inUse)
-	// A restarting container is left out of the running count but can still write its volumes.
-	active, err := s.deps.ActiveContainers(ctx, project.ComposeName)
-	if err != nil {
-		return err
-	}
 	composeFiles, err := s.deps.ComposeFiles(ctx, entry.ProjectID)
 	if err != nil {
 		return err

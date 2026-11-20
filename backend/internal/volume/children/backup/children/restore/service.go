@@ -487,8 +487,6 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-// UploadAndRestore restores an uploaded archive into a volume, first creating it when composeVolume is set; created
-// reports whether this call created the volume, also when a later step fails.
 func (s *Service) UploadAndRestore(
 	ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor,
 ) (created bool, err error) {
@@ -660,7 +658,6 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if err != nil {
 		return err
 	}
-	// One made since the check above, outside Arcane, is refused rather than restored over or removed on rollback.
 	created, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
 		return volumes.CreateClaimed(ctx, dockerClient, createOptions)
 	})

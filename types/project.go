@@ -282,6 +282,12 @@ type (
 		HasUpdate          bool                                `json:"hasUpdate"`
 	}
 
+	ProjectDestroyOptions struct {
+		RemoveFiles   bool
+		RemoveVolumes bool
+		SkipDown      bool
+	}
+
 	ProjectDetailsOptions struct {
 		IncludeComposeContent  bool
 		IncludeEnvState        bool

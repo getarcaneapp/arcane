@@ -197,7 +197,6 @@ func TestClassifyProjectVolumes(t *testing.T) {
 
 	got := ClassifyProjectVolumes(project)
 
-	// Sorted by key, so manifests and previews are stable; named and local external volumes are included by default.
 	require.Equal(t, []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Driver: "local", Labels: map[string]string{"tier": "db"}, Included: true},
 		{Key: "external", Name: "outside", Kind: types.ProjectVolumeExternal, Included: true},
@@ -207,7 +206,6 @@ func TestClassifyProjectVolumes(t *testing.T) {
 		{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeNamed, Included: true},
 	}, got)
 
-	// A default <project>_<key> name follows the new project; an explicit name: is kept.
 	assert.Equal(t, "copy_data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "data", SourceName: "web_data", TargetProject: "Copy"}))
 	assert.Equal(t, "shared-data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "shared", SourceName: "shared-data", TargetProject: "Copy"}))
 }

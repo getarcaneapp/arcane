@@ -185,7 +185,7 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 		DB:     db,
 		Docker: dockerService,
 		Engine: engine,
-		Project: func(context.Context, string) (types.Project, error) {
+		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
 	})

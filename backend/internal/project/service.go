@@ -18,14 +18,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
@@ -53,7 +50,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
-	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -66,7 +63,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
-	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -183,13 +179,6 @@ type (
 		ImageService    *image.ImageService
 	}
 
-	DestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
-		// SkipDown leaves containers alone, for a project that never started any.
-		SkipDown bool
-	}
-
 	ServiceUpdateOptions struct {
 		PinnedImages map[string]string
 		User         types.Actor
@@ -202,23 +191,6 @@ type (
 		Color    types.ProjectTagColor
 		Attached bool
 	}
-
-	// projectBundles exports and imports projects with their volume data through the volume operations injected for transfers.
-	projectBundles struct {
-		local localTransferEnvironment
-	}
-
-	ExportBundleOptions struct {
-		EnvironmentID string
-		ProjectID     string
-		Request       types.ExportProjectArchive
-	}
-
-	ImportBundleOptions struct {
-		User          types.Actor
-		EnvironmentID string
-		Request       types.ImportProjectArchive
-	}
 )
 
 const (
@@ -229,9 +201,8 @@ const (
 )
 
 var (
-	composeStartProjectServices = projects.ComposeStart
-	composeStopProjectServices  = projects.ComposeStop
-	composeUpProjectServices    = projects.ComposeUp
+	composeStopProjectServices = projects.ComposeStop
+	composeUpProjectServices   = projects.ComposeUp
 )
 
 func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSync *GitOpsSync, project *Project) error {
@@ -1186,17 +1157,17 @@ func ParseExtraMountsText(raw *string) ([]types.LifecycleExtraMount, error) {
 		if len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw" {
 			return nil, fmt.Errorf("line %d: invalid mode %q (expected \"ro\" or \"rw\")", lineNum, parts[2])
 		}
-		extra := types.LifecycleExtraMount{Source: parts[0], Target: parts[1], Readonly: len(parts) == 3 && parts[2] == "ro"}
+		mount := types.LifecycleExtraMount{Source: parts[0], Target: parts[1], Readonly: len(parts) == 3 && parts[2] == "ro"}
 
 		// path.IsAbs, not filepath.IsAbs: the daemon reads these as POSIX paths on every host OS.
-		if !path.IsAbs(filepath.ToSlash(extra.Source)) {
-			return nil, fmt.Errorf("line %d: source %q must be an absolute path", lineNum, extra.Source)
+		if !path.IsAbs(filepath.ToSlash(mount.Source)) {
+			return nil, fmt.Errorf("line %d: source %q must be an absolute path", lineNum, mount.Source)
 		}
-		if !path.IsAbs(filepath.ToSlash(extra.Target)) {
-			return nil, fmt.Errorf("line %d: target %q must be an absolute path", lineNum, extra.Target)
+		if !path.IsAbs(filepath.ToSlash(mount.Target)) {
+			return nil, fmt.Errorf("line %d: target %q must be an absolute path", lineNum, mount.Target)
 		}
 
-		mounts = append(mounts, extra)
+		mounts = append(mounts, mount)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read extra mounts config: %w", err)
@@ -1702,7 +1673,6 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
 	}
-	// A bundle's volumes belong to the compose files the source loaded, so the import loads the same files.
 	if len(unpack.ComposeFiles) > 0 {
 		if selectErr := projects.SelectComposeFiles(ctx, projects.ComposeFileSelection{
 			ProjectsRoot:       unpack.ProjectsDirectory,
@@ -1753,29 +1723,35 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	return detected, nil
 }
 
-func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
+func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
 	archive, _, cleanupSession, err := s.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer cleanupSession()
-	return s.importArchive(ctx, archive, request, nil, user)
+	return s.importArchive(ctx, bundle.ProjectArchive{
+		Archive: archive,
+		Request: request,
+	}, user)
 }
 
-func (s *ProjectService) importArchive(ctx context.Context, archive io.Reader, request types.ImportProjectArchive, composeFiles []string, user types.Actor) (*Project, error) {
+func (s *ProjectService) importArchive(ctx context.Context, archive bundle.ProjectArchive, user types.Actor) (string, error) {
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
-		Archive:      archive,
+		Archive:      archive.Archive,
 		Actor:        user,
-		Name:         request.Name,
-		ID:           request.ProjectID,
-		Tags:         request.Tags,
-		ComposeFiles: composeFiles,
+		Name:         archive.Request.Name,
+		ID:           archive.Request.ProjectID,
+		Tags:         archive.Request.Tags,
+		ComposeFiles: archive.ComposeFiles,
 		ExactName:    true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) {
-		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
+		return "", common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", archive.Request.Name))
 	}
-	return proj, err
+	if err != nil {
+		return "", err
+	}
+	return proj.ID, nil
 }
 
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {
@@ -1783,731 +1759,14 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", func(w io.Writer) error {
+	pack := func(w io.Writer) error {
 		return projects.PackProjectDirectory(ctx, proj.Path, w)
-	})
+	}
+	session, err := s.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", pack)
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
 	}
 	return session, nil
-}
-
-// ExportOptions lists the project's volumes as an export classifies them; a volume not created in Docker yet has no
-// data, so it is marked missing and not included, and an external volume on another driver or with options is not
-// included either. A volume mounted by a running container that is not stopped is marked in use.
-func (b projectBundles) ExportOptions(ctx context.Context, projectID string) (types.ProjectExportOptions, error) {
-	project, err := b.local.Project(ctx, projectID)
-	if err != nil {
-		return types.ProjectExportOptions{}, err
-	}
-	inUse, err := b.local.projects.volumesInUseOutside(ctx, project.ComposeName)
-	if err != nil {
-		return types.ProjectExportOptions{}, err
-	}
-	classified := projects.ClassifyProjectVolumes(project)
-	for index, volume := range classified {
-		if !volume.Included {
-			continue
-		}
-		existing, exists, inspectErr := b.local.Volume(ctx, volume.Name)
-		if inspectErr != nil {
-			return types.ProjectExportOptions{}, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
-		}
-		classified[index].Missing = !exists
-		classified[index].Included = exists && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(existing.Driver, existing.Options))
-		classified[index].InUse = classified[index].Included && inUse[volume.Name]
-	}
-	running, err := b.local.projects.projectActive(ctx, project.ComposeName)
-	if err != nil {
-		return types.ProjectExportOptions{}, err
-	}
-	return types.ProjectExportOptions{
-		Volumes: classified,
-		Running: running,
-	}, nil
-}
-
-// Export packages the project archive and the data of the requested volumes into a bundle upload session.
-func (b projectBundles) Export(ctx context.Context, opts ExportBundleOptions) (*types.UploadSession, error) {
-	required := []string{authz.PermVolumesBackup}
-	if opts.Request.StopProject {
-		required = append(required, authz.PermProjectsDown, authz.PermProjectsDeploy)
-	}
-	if err := requirePermissions(ctx, opts.EnvironmentID, required...); err != nil {
-		return nil, err
-	}
-	// A consistent export holds the project lock so nothing starts containers while the volumes are copied.
-	if opts.Request.StopProject {
-		unlock, lockErr := b.local.projects.LockProject(ctx, "export project", opts.ProjectID)
-		if lockErr != nil {
-			return nil, lockErr
-		}
-		defer unlock()
-	}
-	proj, err := b.local.projects.GetProjectFromDatabaseByID(ctx, opts.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	project, err := b.local.projects.GetProjectDetails(ctx, opts.ProjectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
-	if err != nil {
-		return nil, err
-	}
-	// Containers outside the project are not stopped, so a volume they mount makes the export inconsistent.
-	inUse, err := b.local.projects.volumesInUseOutside(ctx, project.ComposeName)
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := b.exportManifest(ctx, project, opts.Request, inUse)
-	if err != nil {
-		return nil, err
-	}
-	// The Compose model restarts the stopped services in depends_on order.
-	var restart *composetypes.Project
-	if opts.Request.StopProject {
-		if restart, err = b.local.projects.loadComposeProjectForProject(ctx, proj, nil); err != nil {
-			return nil, fmt.Errorf("load compose project: %w", err)
-		}
-	}
-	session, err := b.local.projects.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+types.ProjectBundleExtension, func(w io.Writer) error {
-		return b.writeBundle(ctx, w, opts, manifest, restart)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
-	}
-	return session, nil
-}
-
-// exportManifest inspects the requested volumes; volumes that name one Docker volume share the archive of the first.
-func (b projectBundles) exportManifest(ctx context.Context, project types.Project, request types.ExportProjectArchive, inUse map[string]bool) (types.ProjectManifest, error) {
-	if project.ComposeName == "" {
-		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
-	}
-	composeFiles, composeErr := b.local.projects.loadedComposeFiles(ctx, project.ID)
-	if composeErr != nil {
-		return types.ProjectManifest{}, composeErr
-	}
-	classified := projects.ClassifyProjectVolumes(project)
-	for _, key := range request.Volumes {
-		index := slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == key })
-		if index < 0 {
-			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
-		}
-		if !classified[index].Included {
-			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so its data cannot be exported", key, classified[index].Kind))
-		}
-	}
-	manifestVolumes := make([]types.ProjectVolume, 0, len(classified))
-	archived := map[string]types.ProjectVolume{}
-	var missing, outside []string
-	active, activeErr := b.local.projects.projectActive(ctx, project.ComposeName)
-	if activeErr != nil {
-		return types.ProjectManifest{}, activeErr
-	}
-	consistent := !active || request.StopProject
-	for _, volume := range classified {
-		included := slices.Contains(request.Volumes, volume.Key)
-		consistent = consistent && (!included || !inUse[volume.Name])
-		first, shared := archived[volume.Name]
-		var (
-			archive      string
-			dockerLabels map[string]string
-		)
-		if included {
-			existing, exists, err := b.local.Volume(ctx, volume.Name)
-			if err != nil {
-				return types.ProjectManifest{}, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
-			}
-			switch {
-			case !exists:
-				missing = append(missing, volume.Key)
-			case volume.Kind != types.ProjectVolumeExternal:
-			case !projects.LocalVolume(existing.Driver, existing.Options):
-				outside = append(outside, volume.Key)
-			default:
-				// The claim mark belongs to the volume's own creation, so another system recreates it without one.
-				dockerLabels = maps.Clone(existing.Labels)
-				delete(dockerLabels, volumes.ClaimLabel)
-			}
-			if err = projects.ValidateVolumeLabels(dockerLabels); err != nil {
-				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, err))
-			}
-			switch {
-			case shared && first.Kind != volume.Kind:
-				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
-					"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
-				))
-			case shared:
-				archive = first.Archive
-			default:
-				if archive, err = projects.ProjectBundleVolumeArchive(volume.Key); err != nil {
-					return types.ProjectManifest{}, common.Classify(common.ErrValidation, err)
-				}
-			}
-		}
-		// Driver options hold host paths, so the portable manifest leaves them out.
-		manifestVolume := types.ProjectVolume{
-			Labels:       volume.Labels,
-			DockerLabels: dockerLabels,
-			Key:          volume.Key,
-			Name:         volume.Name,
-			Kind:         volume.Kind,
-			Driver:       volume.Driver,
-			Archive:      archive,
-			Included:     included,
-			InUse:        included && inUse[volume.Name],
-		}
-		manifestVolumes = append(manifestVolumes, manifestVolume)
-		if included && !shared {
-			archived[volume.Name] = manifestVolume
-		}
-	}
-	if len(missing) > 0 {
-		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("these volumes have not been created yet, so they hold no data to export: %s", strings.Join(missing, ", ")))
-	}
-	if len(outside) > 0 {
-		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
-			"these external volumes keep their data outside Docker, so their data cannot be exported: %s", strings.Join(outside, ", "),
-		))
-	}
-	includeFiles := make([]string, 0, len(project.IncludeFiles))
-	for _, file := range project.IncludeFiles {
-		includeFiles = append(includeFiles, file.RelativePath)
-	}
-	return types.ProjectManifest{
-		CreatedAt:     time.Now().UTC(),
-		Kind:          types.ProjectManifestKindExport,
-		ArcaneVersion: config.Version,
-		Project: types.ProjectManifestProject{
-			ID:          project.ID,
-			Name:        project.Name,
-			ComposeName: project.ComposeName,
-		},
-		ComposeFiles:  composeFiles,
-		IncludeFiles:  includeFiles,
-		Volumes:       manifestVolumes,
-		FormatVersion: types.ProjectManifestFormatVersion,
-		Consistent:    consistent,
-	}, nil
-}
-
-// writeBundle writes the manifest, the project archive, and the included volumes' archives; with a restart project
-// the project's running containers are stopped while its volumes are exported and started again afterwards, even
-// when the export fails.
-func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts ExportBundleOptions, manifest types.ProjectManifest, restart *composetypes.Project) (err error) {
-	writer, err := projects.NewProjectBundleWriter(w, manifest)
-	if err != nil {
-		return err
-	}
-	files, err := b.local.ExportProject(ctx, opts.ProjectID)
-	if err != nil {
-		return fmt.Errorf("export project files: %w", err)
-	}
-	if appendErr := b.appendUpload(ctx, writer, types.UploadKindProjectArchive, projects.ProjectBundleProject, files); appendErr != nil {
-		return appendErr
-	}
-	name := manifest.Project.Name
-	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
-	// the project is held from before the stop until after the restart; nothing starts them during the copy.
-	var held []string
-	for _, volume := range manifest.Volumes {
-		if volume.Name != "" {
-			held = append(held, volume.Name)
-		}
-	}
-	held = slices.Compact(slices.Sorted(slices.Values(held)))
-	unlocks := make([]func(), 0, len(held))
-	defer func() {
-		for _, unlock := range slices.Backward(unlocks) {
-			unlock()
-		}
-	}()
-	for _, volumeName := range held {
-		unlock, lockErr := b.local.deps.VolumeLocks.LockContext(ctx, volumeName)
-		if lockErr != nil {
-			return lockErr
-		}
-		unlocks = append(unlocks, unlock)
-	}
-	ctx = volumes.WithLocked(ctx, held)
-	if restart != nil {
-		stopped, stopErr := b.local.projects.stopRunningContainers(ctx, manifest.Project.ComposeName)
-		defer func() {
-			if startErr := b.local.projects.startContainers(context.WithoutCancel(ctx), restart, stopped); startErr != nil {
-				err = errors.Join(err, fmt.Errorf("start project %s again: %w", name, startErr))
-			}
-		}()
-		if stopErr != nil {
-			return fmt.Errorf("stop project %s: %w", name, stopErr)
-		}
-	}
-	written := map[string]bool{}
-	for _, volume := range manifest.Volumes {
-		if !volume.Included || written[volume.Archive] {
-			continue
-		}
-		written[volume.Archive] = true
-		session, exportErr := b.local.ExportVolume(ctx, volume.Name)
-		if exportErr != nil {
-			return fmt.Errorf("export volume %s: %w", volume.Name, exportErr)
-		}
-		if appendErr := b.appendUpload(ctx, writer, types.UploadKindVolumeBackup, volume.Archive, session); appendErr != nil {
-			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
-		}
-	}
-	return writer.Close()
-}
-
-// appendUpload moves a complete upload session into the bundle.
-func (b projectBundles) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, kind, name string, session types.UploadSession) error {
-	file, consumed, cleanup, err := b.local.projects.uploads.Consume(ctx, kind, session.ID)
-	if err != nil {
-		return errors.Join(err, b.local.DeleteUpload(context.WithoutCancel(ctx), kind, session.ID))
-	}
-	defer cleanup()
-	return writer.Add(name, consumed.Size, file)
-}
-
-// activeContainers lists the Compose project's running and restarting containers, the ones a stop would stop.
-func activeContainers(ctx context.Context, dockerClient *client.Client, composeName string) ([]container.Summary, error) {
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
-	}
-	return slices.DeleteFunc(found.Items, func(c container.Summary) bool {
-		return (c.State != container.StateRunning && c.State != container.StateRestarting) || labels.IsArcaneContainer(c.Labels)
-	}), nil
-}
-
-// projectActive reports whether the Compose project has running or restarting containers. Unlike the project's
-// running count, a container in a restart loop counts, since it can write to its volumes between restarts.
-func (s *ProjectService) projectActive(ctx context.Context, composeName string) (bool, error) {
-	active, err := s.activeProjectContainers(ctx, composeName)
-	return len(active) > 0, err
-}
-
-// activeProjectContainers lists the Compose project's running and restarting containers.
-func (s *ProjectService) activeProjectContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return activeContainers(ctx, dockerClient, composeName)
-}
-
-// loadedComposeFiles returns the compose files a project loads, relative to its directory. The global .env or a GitOps
-// sync can select them, so they are resolved as the loader resolves them.
-func (s *ProjectService) loadedComposeFiles(ctx context.Context, projectID string) ([]string, error) {
-	projectsDir, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
-	if err != nil {
-		return nil, fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
-	}
-	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: proj.Path, ComposeFile: composeFile}), nil
-}
-
-// stopRunningContainers stops the running and restarting containers of a Compose project and returns the ones it
-// stopped, also when it fails. Paused containers are frozen, so they are left as they are, and Arcane's own containers
-// keep running.
-func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var stopped []container.Summary
-	// The second pass confirms that nothing is left running.
-	for pass := range 2 {
-		running, listErr := activeContainers(ctx, dockerClient, composeName)
-		if listErr != nil {
-			return stopped, listErr
-		}
-		switch {
-		case len(running) == 0:
-			return stopped, nil
-		case pass > 0:
-			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
-		}
-		// A one-off started to remove itself (docker compose run --rm) is deleted by the stop and can't be started again,
-		// so nothing is stopped while one runs.
-		for _, c := range running {
-			if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
-				continue
-			}
-			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
-			if inspectErr != nil {
-				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
-			}
-			if inspected.Container.HostConfig != nil && inspected.Container.HostConfig.AutoRemove {
-				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
-					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
-					docker.ContainerNameFromNames(c.Names),
-				))
-			}
-		}
-		for _, c := range running {
-			// Each stop runs to completion so the deferred restart never races a stop still in progress.
-			stopped = append(stopped, c)
-			if _, err = dockerClient.ContainerStop(context.WithoutCancel(ctx), c.ID, client.ContainerStopOptions{}); err != nil {
-				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return stopped, ctxErr
-			}
-		}
-	}
-	return stopped, nil
-}
-
-// volumesInUseOutside returns the names of the volumes that running containers outside a Compose project mount.
-func (s *ProjectService) volumesInUseOutside(ctx context.Context, composeName string) (map[string]bool, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
-	}
-	inUse := map[string]bool{}
-	for _, c := range running.Items {
-		// Arcane's own containers are never stopped, so they count as in use even within this project.
-		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
-			continue
-		}
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume {
-				inUse[m.Name] = true
-			}
-		}
-	}
-	return inUse, nil
-}
-
-// startContainers starts the stopped containers again. Services whose stopped containers are all they have to start
-// go through Compose, so depends_on order and conditions hold; the rest is started directly, as is everything when
-// Compose or the container list fails, so the project never stays down.
-func (s *ProjectService) startContainers(ctx context.Context, compose *composetypes.Project, stopped []container.Summary) error {
-	if len(stopped) == 0 {
-		return nil
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	found, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+compose.Name),
-	})
-	if listErr != nil {
-		errs = append(errs, fmt.Errorf("list containers: %w", listErr))
-	}
-	wasStopped := map[string]bool{}
-	for _, c := range stopped {
-		wasStopped[c.ID] = true
-	}
-	serviceContainer := func(c container.Summary) bool {
-		return c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == ""
-	}
-	// Compose start would also start these services' other stopped containers.
-	direct := map[string]bool{}
-	for _, c := range found.Items {
-		if serviceContainer(c) && !wasStopped[c.ID] && c.State != container.StateRunning {
-			direct[c.Labels[composeapi.ServiceLabel]] = true
-		}
-	}
-	var services, containerIDs, serviceContainerIDs []string
-	for _, c := range stopped {
-		service := c.Labels[composeapi.ServiceLabel]
-		_, enabled := compose.Services[service]
-		_, disabled := compose.DisabledServices[service]
-		switch {
-		// Without the list Compose could start other stopped containers.
-		case listErr != nil || direct[service] || (!enabled && !disabled) || !serviceContainer(c):
-			containerIDs = append(containerIDs, c.ID)
-		default:
-			serviceContainerIDs = append(serviceContainerIDs, c.ID)
-			if !slices.Contains(services, service) {
-				services = append(services, service)
-			}
-		}
-	}
-	if len(services) > 0 {
-		if startErr := composeStartProjectServices(ctx, types.ComposeTarget{Project: compose, DockerHost: s.dockerService.DockerHost(), Services: services}); startErr != nil {
-			errs = append(errs, fmt.Errorf("start services %s: %w", strings.Join(services, ", "), startErr))
-			containerIDs = append(containerIDs, serviceContainerIDs...)
-		}
-	}
-	for _, id := range containerIDs {
-		// A container removed since it was stopped has nothing left to start.
-		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
-			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// restartContainers starts a project's stopped containers again with startContainers; when its Compose files no
-// longer load, they are started directly.
-func (s *ProjectService) restartContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
-	if len(stopped) == 0 {
-		return nil
-	}
-	compose := &composetypes.Project{Name: docker.ComposeProjectLabel(stopped[0].Labels)}
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err == nil {
-		var loaded *composetypes.Project
-		if loaded, err = s.loadComposeProjectForProject(ctx, proj, nil); err == nil {
-			compose = loaded
-		}
-	}
-	if err != nil {
-		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
-	}
-	return s.startContainers(ctx, compose, stopped)
-}
-
-// Import creates a project from a project-archive upload session. A plain project archive imports as before; a bundle
-// also restores its included volumes, and when one fails the project and the volumes it created are removed again,
-// so an import either completes or leaves nothing behind.
-func (b projectBundles) Import(ctx context.Context, opts ImportBundleOptions) (*Project, error) {
-	request := opts.Request
-	if request.Start {
-		if err := requirePermissions(ctx, opts.EnvironmentID, authz.PermProjectsDeploy); err != nil {
-			return nil, err
-		}
-	}
-	archive, _, cleanupSession, err := b.local.projects.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanupSession()
-	manifest, bundle, err := projects.ReadProjectBundle(archive, nil)
-	if err != nil {
-		return nil, common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
-	}
-	if _, err = archive.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("read project archive: %w", err)
-	}
-	// The new project stays locked until its volumes are restored and it is started, so nothing deploys it earlier.
-	opts.Request.ProjectID = cmp.Or(request.ProjectID, uuid.New().String())
-	unlock, err := b.local.projects.LockProject(ctx, "import project", opts.Request.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	var proj *Project
-	if bundle {
-		proj, err = b.importBundle(ctx, archive, manifest, opts)
-	} else {
-		proj, err = b.local.projects.importArchive(ctx, archive, opts.Request, nil, opts.User)
-	}
-	if err != nil || !request.Start {
-		return proj, err
-	}
-	if deployErr := b.local.projects.deployProject(ctx, proj.ID, opts.User, nil); deployErr != nil {
-		return nil, fmt.Errorf("project %s was imported but could not be started: %w", proj.Name, deployErr)
-	}
-	return proj, nil
-}
-
-// importBundle imports the project and restores its included volumes into new volumes.
-func (b projectBundles) importBundle(ctx context.Context, archive io.Reader, manifest types.ProjectManifest, opts ImportBundleOptions) (*Project, error) {
-	included := slices.DeleteFunc(slices.Clone(manifest.Volumes), func(volume types.ProjectVolume) bool { return !volume.Included })
-	if len(included) > 0 {
-		if err := requirePermissions(ctx, opts.EnvironmentID, authz.PermVolumesCreate, authz.PermVolumesUpload); err != nil {
-			return nil, err
-		}
-	}
-	// A Compose stack that Docker runs under this name is not Arcane's; importing would take over its containers.
-	composeName := projects.NormalizeProjectName(opts.Request.Name)
-	stackExists, stackErr := b.local.ComposeProjectInUse(ctx, composeName)
-	if stackErr != nil {
-		return nil, fmt.Errorf("check Compose project %s: %w", composeName, stackErr)
-	}
-	if stackExists {
-		return nil, common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
-	}
-	// Only names that can't change are checked before the files are written: an external volume's, and one the import
-	// doesn't rename. A default Compose name may also be set explicitly in the compose file, which keeps it, so those
-	// are checked once the imported project's names are known.
-	var certain, predicted []types.ProjectVolume
-	for _, volume := range included {
-		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
-			SourceProject: manifest.Project.ComposeName, Key: volume.Key, SourceName: volume.Name, TargetProject: opts.Request.Name,
-		})
-		if volume.Kind == types.ProjectVolumeExternal || targetName == volume.Name {
-			certain = append(certain, volume)
-			predicted = append(predicted, types.ProjectVolume{Key: volume.Key, Name: volume.Name, Kind: volume.Kind})
-		}
-	}
-	if _, err := b.checkVolumeTargets(ctx, certain, predicted); err != nil {
-		return nil, err
-	}
-	var (
-		proj     *Project
-		imported types.Project
-		resolved []types.ProjectVolume
-		restores map[string]int
-		created  []types.ProjectVolume
-	)
-	_, _, err := projects.ReadProjectBundle(archive, func(name string, size int64, body io.Reader) error {
-		if name == projects.ProjectBundleProject {
-			var importErr error
-			if proj, importErr = b.local.projects.importArchive(ctx, body, opts.Request, manifest.ComposeFiles, opts.User); importErr != nil {
-				return importErr
-			}
-			if imported, importErr = b.local.Project(ctx, proj.ID); importErr != nil {
-				return fmt.Errorf("load the imported project: %w", importErr)
-			}
-			if imported.ComposeName == "" {
-				return fmt.Errorf("the compose files of the imported project %s cannot be loaded", proj.Name)
-			}
-			targets := map[string]types.ProjectVolume{}
-			for _, volume := range projects.ClassifyProjectVolumes(imported) {
-				targets[volume.Key] = volume
-			}
-			for _, volume := range included {
-				target, ok := targets[volume.Key]
-				if !ok || target.Kind != volume.Kind || !target.Included {
-					return fmt.Errorf("volume %s is not a Docker-managed %s volume of the imported project", volume.Key, volume.Kind)
-				}
-				resolved = append(resolved, target)
-			}
-			restores, importErr = b.checkVolumeTargets(ctx, included, resolved)
-			return importErr
-		}
-		index := restores[name]
-		target := resolved[index]
-		external := target.Kind == types.ProjectVolumeExternal
-		restored, err := b.restoreVolume(ctx, target.Name, types.ComposeVolumeTarget{
-			// An external volume belongs to no project, so it gets its exported Docker labels instead of Compose's.
-			Labels:   kit.Ternary(external, included[index].DockerLabels, target.Labels),
-			Project:  imported.ComposeName,
-			Key:      target.Key,
-			Driver:   target.Driver,
-			External: external,
-		}, size, body, opts.User)
-		if restored {
-			created = append(created, target)
-		}
-		return err
-	})
-	if err != nil {
-		return nil, b.rollback(ctx, err, proj, imported.ComposeName, created, opts.User)
-	}
-	return proj, nil
-}
-
-// checkVolumeTargets pairs each included volume with its target and maps each archive to the index of the one target it
-// restores. Volumes that resolve to one Docker volume must agree on kind and share an archive, and no target may exist.
-func (b projectBundles) checkVolumeTargets(ctx context.Context, included, targets []types.ProjectVolume) (map[string]int, error) {
-	byName := map[string]int{}
-	restores := map[string]int{}
-	var conflicts []string
-	for index, target := range targets {
-		if first, shared := byName[target.Name]; shared {
-			switch {
-			case targets[first].Kind != target.Kind:
-				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
-					"volumes %s and %s both resolve to the Docker volume %s but are %s and %s volumes", targets[first].Key, target.Key, target.Name, targets[first].Kind, target.Kind,
-				))
-			case included[first].Archive != included[index].Archive:
-				return nil, common.Classify(common.ErrValidation, fmt.Errorf("volumes %s and %s both resolve to the Docker volume %s", targets[first].Key, target.Key, target.Name))
-			}
-			continue
-		}
-		if other, shared := restores[included[index].Archive]; shared {
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf(
-				"volumes %s and %s share their data but resolve to the Docker volumes %s and %s", targets[other].Key, target.Key, targets[other].Name, target.Name,
-			))
-		}
-		byName[target.Name] = index
-		restores[included[index].Archive] = index
-		_, exists, err := b.local.Volume(ctx, target.Name)
-		if err != nil {
-			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, err)
-		}
-		if exists {
-			conflicts = append(conflicts, target.Name)
-		}
-	}
-	if len(conflicts) > 0 {
-		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
-	}
-	return restores, nil
-}
-
-// restoreVolume creates the target volume of the imported project from its archive and reports whether it created
-// the volume, also when it fails.
-func (b projectBundles) restoreVolume(ctx context.Context, name string, compose types.ComposeVolumeTarget, size int64, body io.Reader, user types.Actor) (bool, error) {
-	// The restore refuses empty archives, so an empty volume is only created, with the owner and mode of its root.
-	empty, root, body := projects.PeekEmptyVolumeArchive(body)
-	if empty {
-		options, err := projects.ComposeVolumeTargetCreateOptions(name, compose)
-		if err != nil {
-			return false, err
-		}
-		return b.local.deps.CreateEmptyVolume(ctx, options, root)
-	}
-	session, err := b.local.projects.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, compose.Key+".tar.gz", size, body)
-	if err != nil {
-		return false, fmt.Errorf("store the data of volume %s: %w", compose.Key, err)
-	}
-	created, err := b.local.deps.RestoreVolume(ctx, name, types.RestoreVolumeUploadRequest{
-		ComposeVolume: &compose,
-		UploadID:      session.ID,
-	}, user)
-	if err != nil {
-		return created, errors.Join(fmt.Errorf("restore volume %s: %w", name, err), b.local.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID))
-	}
-	return created, nil
-}
-
-// rollback removes the project an import created and the volumes it reported creating: an external volume has no
-// Compose label, so it is removed by name, and any other only when it carries the project's Compose label.
-func (b projectBundles) rollback(ctx context.Context, cause error, proj *Project, composeName string, createdVolumes []types.ProjectVolume, user types.Actor) error {
-	if proj == nil {
-		return cause
-	}
-	ctx = context.WithoutCancel(ctx)
-	var leftovers []string
-	// The import holds the project lock, and never started containers, so a Compose stack of the same name is left alone.
-	if err := b.local.projects.destroyProject(ctx, proj.ID, DestroyOptions{RemoveFiles: true, SkipDown: true}, user); err != nil {
-		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", proj.Name, err))
-	}
-	for _, volume := range createdVolumes {
-		existing, exists, err := b.local.Volume(ctx, volume.Name)
-		owned := volume.Kind == types.ProjectVolumeExternal || (composeName != "" && docker.ComposeProjectLabel(existing.Labels) == composeName)
-		if err == nil && exists && owned {
-			err = b.local.DeleteVolume(ctx, volume.Name, user)
-		}
-		if err != nil {
-			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", volume.Name, err))
-		}
-	}
-	if len(leftovers) > 0 {
-		return fmt.Errorf("%w; could not remove %s", cause, strings.Join(leftovers, ", "))
-	}
-	return fmt.Errorf("%w; the imported project and its volumes were removed", cause)
-}
-
-func requirePermissions(ctx context.Context, environmentID string, required ...string) error {
-	permissions, _ := middleware.PermissionsFromContext(ctx)
-	for _, perm := range required {
-		if !permissions.Allows(perm, environmentID) {
-			return common.Classify(common.ErrForbidden, errors.New("permission denied: "+perm))
-		}
-	}
-	return nil
 }
 
 func (s *ProjectService) createRootDirectory(ctx context.Context, directory string) (string, error) {
@@ -2529,7 +1788,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -2545,7 +1804,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	return s.destroyProject(ctx, projectID, opts, user)
 }
 
-func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

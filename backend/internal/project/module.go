@@ -6,18 +6,16 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"kit.getarcane.app/concurrency"
-
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -26,7 +24,7 @@ type (
 		activity *activity.ActivityService
 		transfer *transfer.Service
 		backups  *projectbackup.Service
-		bundles  projectBundles
+		bundles  *bundle.Service
 	}
 
 	ModuleParams struct {
@@ -36,12 +34,11 @@ type (
 		Backups  BackupDependencies
 	}
 
-	// BackupDependencies are the shared backup plumbing project backups run on; volume locks come from the volume domain.
+	// BackupDependencies are the shared backup plumbing project backups run on.
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
-		VolumeLocks    *concurrency.KeyedMutex
 	}
 )
 
@@ -50,10 +47,28 @@ func New(p ModuleParams) *Module {
 		projects: p.Service,
 		deps:     p.Transfer,
 	}
+	bundles := bundle.New(bundle.Dependencies{
+		Docker:         p.Service.dockerService,
+		Uploads:        p.Service.uploads,
+		VolumeLocks:    p.Transfer.VolumeLocks,
+		Project:        p.Service.GetProjectDetails,
+		ComposeFiles:   p.Service.loadedComposeFiles,
+		ComposeProject: p.Service.composeProject,
+		Lock:           p.Service.LockProject,
+		ExportProject:  p.Service.ExportProjectArchive,
+		Import:         p.Service.importArchive,
+		Deploy:         p.Service.deployProject,
+		Destroy:        p.Service.destroyProject,
+		Volume:         local.Volume,
+		ExportVolume:   p.Transfer.ExportVolume,
+		RestoreVolume:  p.Transfer.RestoreVolume,
+		DeleteVolume:   p.Transfer.DeleteVolume,
+		DeleteUpload:   local.DeleteUpload,
+	})
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  projectBundles{local: local},
+		bundles:  bundles,
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,
@@ -72,17 +87,14 @@ func New(p ModuleParams) *Module {
 			Repository:     p.Backups.Repository,
 			S3Destinations: p.Backups.S3Destinations,
 			Settings:       p.Service.settingsService,
-			VolumeLocks:    p.Backups.VolumeLocks,
+			VolumeLocks:    p.Transfer.VolumeLocks,
 			// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
-			StopContainers:   p.Service.stopRunningContainers,
-			StartContainers:  p.Service.restartContainers,
-			VolumesInUse:     p.Service.volumesInUseOutside,
-			ActiveContainers: p.Service.activeProjectContainers,
-			ComposeFiles:     p.Service.loadedComposeFiles,
-			LockProject:      p.Service.LockProject,
-			Project: func(ctx context.Context, projectID string) (types.Project, error) {
-				return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
-			},
+			StopContainers:  bundles.StopContainers,
+			StartContainers: bundles.StartContainers,
+			ContainerUse:    bundles.ContainerUse,
+			ComposeFiles:    p.Service.loadedComposeFiles,
+			LockProject:     p.Service.LockProject,
+			Project:         p.Service.GetProjectDetails,
 		}),
 	}
 }

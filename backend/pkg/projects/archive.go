@@ -28,13 +28,11 @@ import (
 )
 
 type (
-	// ProjectBundleWriter writes a project bundle: a tar.gz holding the manifest, the project archive, and volume archives.
 	ProjectBundleWriter struct {
 		gzip *gzip.Writer
 		tar  *tar.Writer
 	}
 
-	// ProjectBundleVisitor receives each archive entry of a bundle; body is valid only during the call.
 	ProjectBundleVisitor func(name string, size int64, body io.Reader) error
 )
 
@@ -283,7 +281,6 @@ func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Re
 	return 0, fmt.Errorf("unsupported entry type %q", header.Typeflag)
 }
 
-// ProjectBundleVolumeArchive names the bundle entry that holds the data archive of the volume with the Compose key.
 func ProjectBundleVolumeArchive(key string) (string, error) {
 	if !composeVolumeKeyPattern.MatchString(key) || key == "." || key == ".." {
 		return "", fmt.Errorf("volume key %q cannot name a bundle entry", key)
@@ -291,8 +288,6 @@ func ProjectBundleVolumeArchive(key string) (string, error) {
 	return projectBundleVolumes + key + ".tar.gz", nil
 }
 
-// NewProjectBundleWriter starts a bundle with its manifest, which readers expect as the first entry.
-// The inner archives are already compressed, so the outer gzip uses the fastest level.
 func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*ProjectBundleWriter, error) {
 	content, err := json.Marshal(manifest)
 	if err != nil {
@@ -312,7 +307,6 @@ func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*Proje
 	return writer, nil
 }
 
-// Add appends the project archive or a volume archive named by ProjectBundleVolumeArchive.
 func (w *ProjectBundleWriter) Add(name string, size int64, body io.Reader) error {
 	if name != ProjectBundleProject && !isProjectBundleVolumeArchive(name) {
 		return fmt.Errorf("unexpected bundle entry %q", name)
@@ -345,29 +339,6 @@ func (w *ProjectBundleWriter) Close() error {
 	return nil
 }
 
-// PeekEmptyVolumeArchive reports whether the tar.gz volume archive in r holds nothing but its root directory, which is
-// how an empty volume exports, and returns that root entry. It reads only the first entries, and replay yields all of r again.
-func PeekEmptyVolumeArchive(r io.Reader) (empty bool, root *tar.Header, replay io.Reader) {
-	var peeked bytes.Buffer
-	replay = io.MultiReader(&peeked, r)
-	gzipReader, err := gzip.NewReader(io.TeeReader(r, &peeked))
-	if err != nil {
-		return false, nil, replay
-	}
-	tarReader := tar.NewReader(gzipReader)
-	for range 2 {
-		header, nextErr := tarReader.Next()
-		if errors.Is(nextErr, io.EOF) {
-			return true, root, replay
-		}
-		if nextErr != nil || header.Typeflag != tar.TypeDir || path.Clean(header.Name) != "." {
-			return false, nil, replay
-		}
-		root = header
-	}
-	return false, nil, replay
-}
-
 func isProjectBundleVolumeArchive(name string) bool {
 	key, ok := strings.CutPrefix(name, projectBundleVolumes)
 	if !ok {
@@ -378,9 +349,6 @@ func isProjectBundleVolumeArchive(name string) bool {
 	return ok && err == nil && archive == name
 }
 
-// ReadProjectBundle reports whether r is a project bundle, a tar.gz whose first entry is the manifest, and checks
-// every entry against the manifest. Anything else is a plain project archive and returns false without an error.
-// When visit is set it receives the project archive and then each included volume archive.
 func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
@@ -446,8 +414,6 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	return manifest, true, nil
 }
 
-// projectBundleVolumeArchives validates the manifest's volumes and maps each included volume's archive entry to false.
-// Volumes that name the same Docker volume may share the archive of one of them.
 func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]bool, error) {
 	if manifest.FormatVersion != types.ProjectManifestFormatVersion {
 		return nil, fmt.Errorf("unsupported project bundle format version %d", manifest.FormatVersion)
@@ -492,7 +458,6 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 	return expected, nil
 }
 
-// ValidateVolumeLabels bounds the Docker labels a bundle records for a volume.
 func ValidateVolumeLabels(labels map[string]string) error {
 	if len(labels) > maxVolumeLabels {
 		return fmt.Errorf("more than %d labels", maxVolumeLabels)
