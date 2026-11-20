@@ -209,22 +209,22 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
+	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false, "")
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
-	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web", Path: project.Path}, manifest.Project)
+	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
 	require.False(t, manifest.ExternalEnv)
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true, "").ExternalEnv)
+	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false, "").Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false, "").Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false, "").Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -339,7 +339,8 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// The projects root is reached through a link, so paths that aren't fully resolved name files differently.
 			projectsRoot := filepath.Join(t.TempDir(), "projects")
-			require.NoError(t, os.Symlink(t.TempDir(), projectsRoot))
+			realRoot := t.TempDir()
+			require.NoError(t, os.Symlink(realRoot, projectsRoot))
 			projectPath := filepath.Join(projectsRoot, "web")
 			workerPath := filepath.Join(projectsRoot, "worker")
 			require.NoError(t, os.Mkdir(projectPath, 0o755))
@@ -354,7 +355,8 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			restored := projectPath
 			if test.inside {
 				external = filepath.Join(projectPath, "values.env")
-				link = external
+				// Spelled through the resolved root, which the project's recorded path doesn't use.
+				link = filepath.Join(realRoot, "web", "values.env")
 				restored = filepath.Join(projectsRoot, "shop")
 				require.NoError(t, os.Mkdir(restored, 0o755))
 				require.NoError(t, os.WriteFile(filepath.Join(restored, "values.env"), []byte("TOKEN=restored"), 0o600))
@@ -379,10 +381,18 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			var reported []string
 			report := func(_ context.Context, message string) { reported = append(reported, message) }
 
+			// As the backup does: it records a link into the project directory relative to it.
+			envLink, linkErr := projects.EnvLinkInside(t.Context(), projectPath)
+			require.NoError(t, linkErr)
+			if test.inside {
+				assert.Equal(t, "values.env", envLink)
+			} else {
+				assert.Empty(t, envLink)
+			}
 			// As RestoreTo does: the backup stored contents only for a .env leading outside the project directory.
 			opts := types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: restored, OwnEnv: test.own, Report: report}
 			if test.own {
-				require.NoError(t, ownEnvLink(t.Context(), restored, projectPath))
+				require.NoError(t, ownEnvLink(t.Context(), restored, envLink))
 			}
 			if !test.inside {
 				require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, opts, "TOKEN=restored"))
