@@ -106,6 +106,19 @@ func New(p ModuleParams) *Module {
 				}
 				return proj.ID, nil
 			},
+			LockProject: func(ctx context.Context, projectID string) (func(), error) {
+				return p.Service.LockProject(ctx, "export project", projectID)
+			},
+			StopProject: func(ctx context.Context, projectID string, user types.Actor) error {
+				project, err := p.Service.getMutableProject(ctx, projectID)
+				if err != nil {
+					return err
+				}
+				return p.Service.downProject(ctx, project, user)
+			},
+			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
+				return p.Service.deployProject(ctx, projectID, user, nil)
+			},
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{

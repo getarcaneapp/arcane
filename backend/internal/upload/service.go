@@ -310,7 +310,9 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	}
 	defer func() {
 		if err != nil {
-			_ = acfs.Root{Path: s.root}.RemoveAll(context.WithoutCancel(ctx), sessionDir)
+			if removeErr := (acfs.Root{Path: s.root}).RemoveAll(context.WithoutCancel(ctx), sessionDir); removeErr != nil {
+				err = errors.Join(err, fmt.Errorf("remove the partial upload session: %w", removeErr))
+			}
 		}
 	}()
 	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{

@@ -1844,7 +1844,10 @@ func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateO
 	}
 	// Docker hands back a volume made between the check above and this create, so only one carrying this call's claim
 	// is the restore's.
-	created, createErr := volumes.CreateClaimed(ctx, dockerClient, options)
+	created, createErr := volumes.CreateClaimed(ctx, dockerClient, volumes.ClaimedVolume{
+		Options: options,
+		Claim:   "",
+	})
 	if createErr != nil {
 		return createErr
 	}
