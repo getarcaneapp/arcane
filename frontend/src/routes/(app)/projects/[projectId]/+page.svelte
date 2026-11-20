@@ -2602,8 +2602,10 @@
 				<ProjectBackupsPanel
 					projectId={project.id}
 					environmentId={envId}
-					onRestored={() =>
-						refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })}
+					onRestored={({ files }) =>
+						files
+							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })
+							: refreshProjectDetails()}
 				/>
 			</Tabs.Content>
 		{/snippet}
