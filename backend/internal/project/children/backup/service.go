@@ -201,10 +201,10 @@ type (
 		SafetyID    string                             `json:"safetyId,omitempty"`
 		Failure     string                             `json:"failure,omitempty"`
 		Volumes     []types.ProjectBackupRestoreVolume `json:"volumes"`
-		Create      []client.VolumeCreateOptions       `json:"create,omitempty"`
-		// Created are the volumes this restore created; only these are removed on rollback.
-		Created []string `json:"created,omitempty"`
-		Files   bool     `json:"files"`
+		// Create are the volumes the restore creates, claimed with restoreOwner and its ID; a rollback removes those
+		// that carry the claim.
+		Create []client.VolumeCreateOptions `json:"create,omitempty"`
+		Files  bool                         `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
 		MayStop bool `json:"mayStop"`
 		// Stopped records that the project had stopped containers, which the restore removes; projects:down was checked.
@@ -231,10 +231,10 @@ type (
 		deploy  func(ctx context.Context) error
 		safety  func(ctx context.Context, p restorePlan) (string, error)
 		inUse   func(ctx context.Context, p restorePlan) error
-		create  func(ctx context.Context, options client.VolumeCreateOptions) error
+		create  func(ctx context.Context, volume volumes.ClaimedVolume) error
 		restore func(ctx context.Context, opts types.ProjectBackupRestore) error
 		verify  func(ctx context.Context, p restorePlan) error
-		remove  func(ctx context.Context, names []string) error
+		remove  func(ctx context.Context, names []string, claim string) error
 	}
 
 	snapshotSource struct {
@@ -876,11 +876,11 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
 	}
-	envLink, err := projects.EnvLinkInside(ctx, project.Path)
+	links, err := projects.LinksInside(ctx, project.Path)
 	if err != nil {
-		return fmt.Errorf("read the .env link of project %s: %w", project.Name, err)
+		return fmt.Errorf("read the links of project %s: %w", project.Name, err)
 	}
-	manifest := backupManifest(project, p, len(active) > 0, composeFiles, externalEnv, envLink)
+	manifest := backupManifest(project, p, len(active) > 0, composeFiles, externalEnv, links)
 	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, manifest, env)
 	if err != nil {
 		return err
@@ -1225,7 +1225,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool, envLink string) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool, links map[string]string) types.ProjectManifest {
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -1240,7 +1240,7 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 		ExternalEnv:   externalEnv,
-		EnvLink:       envLink,
+		Links:         links,
 	}
 }
 
@@ -3465,14 +3465,11 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 		return r.rollback(ctx, p, err)
 	}
 	r.report(ctx, "Restoring the backup")
+	// The claim marks each volume as this restore's from the moment Docker creates it, so a rollback, resumed or not,
+	// removes it even when the restore stopped before learning it was created.
 	for _, options := range p.Create {
-		if err = r.create(ctx, options); err != nil {
+		if err = r.create(ctx, volumes.ClaimedVolume{Options: options, Claim: restoreOwner + p.ID}); err != nil {
 			return r.rollback(ctx, p, fmt.Errorf("create the missing volumes: %w", err))
-		}
-		// Saved before the next one is created, so a resumed rollback removes every volume this restore created.
-		p.Created = append(p.Created, options.Name)
-		if err = r.record(ctx, p); err != nil {
-			return r.rollback(ctx, p, err)
 		}
 	}
 	if err = r.restoreBackup(ctx, p); err != nil {
@@ -3527,7 +3524,7 @@ func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) 
 			undoErr = r.restore(ctx, types.ProjectBackupRestore{
 				ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID, Report: r.report,
 			})
-			cleanup = append(cleanup, r.remove(ctx, p.Created))
+			cleanup = append(cleanup, r.remove(ctx, createdNames(p.Create), restoreOwner+p.ID))
 		}
 	}
 	if p.Running && downErr == nil && undoErr == nil {
@@ -3740,9 +3737,10 @@ func removeLeftovers(ctx context.Context, dockerClient *client.Client, owner str
 	return nil
 }
 
-// createVolume creates a missing target volume; one someone else created since the restore was checked is refused, so
-// the restore never takes it over or removes it.
-func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateOptions) error {
+// createVolume creates a missing target volume with the restore's claim; one someone else created since the restore was
+// checked is refused, so the restore never takes it over or removes it.
+func (s *Service) createVolume(ctx context.Context, volume volumes.ClaimedVolume) error {
+	options := volume.Options
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -3754,12 +3752,9 @@ func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateO
 	case !errdefs.IsNotFound(inspectErr):
 		return fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
 	}
-	// Docker hands back a volume made between the check above and this create, so only one carrying this call's claim
-	// is the restore's.
-	created, createErr := volumes.CreateClaimed(ctx, dockerClient, volumes.ClaimedVolume{
-		Options: options,
-		Claim:   "",
-	})
+	// Docker hands back a volume made between the check above and this create, so only one carrying the restore's
+	// claim is the restore's.
+	created, createErr := volumes.CreateClaimed(ctx, dockerClient, volume)
 	if createErr != nil {
 		return createErr
 	}
@@ -3769,14 +3764,20 @@ func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateO
 	return nil
 }
 
-func (s *Service) removeVolumes(ctx context.Context, names []string) error {
+// removeVolumes removes the named volumes that carry claim, so one that existed before the restore, or that someone
+// else created, is left alone.
+func (s *Service) removeVolumes(ctx context.Context, names []string, claim string) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 	var errs []error
 	for _, name := range names {
-		if _, removeErr := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
+		found, removeErr := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+		if removeErr == nil && found.Volume.Labels[volumes.ClaimLabel] == claim {
+			_, removeErr = dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
+		}
+		if removeErr != nil && !errdefs.IsNotFound(removeErr) {
 			errs = append(errs, fmt.Errorf("remove volume %s: %w", name, removeErr))
 		}
 	}
@@ -3910,7 +3911,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
 	if opts.OwnEnv && opts.ProjectPath != "" {
-		if linkErr := ownEnvLink(ctx, opts.ProjectPath, manifest.EnvLink); linkErr != nil {
+		if linkErr := ownLinks(ctx, opts.ProjectPath, manifest.Links); linkErr != nil {
 			return linkErr
 		}
 	}
@@ -3954,19 +3955,17 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 	return nil
 }
 
-// ownEnvLink replaces a new project's restored .env link with the target the backup recorded, so it leads to the copy's
+// ownLinks replaces a new project's restored links with the targets the backup recorded, so each leads to the copy's
 // own file.
-func ownEnvLink(ctx context.Context, projectPath, target string) error {
-	if target == "" {
-		return nil
-	}
+func ownLinks(ctx context.Context, projectPath string, links map[string]string) error {
 	root := acfs.Root{Path: projectPath}
-	envLink := "/" + projects.EffectiveEnvFileName
-	if removeErr := root.Remove(ctx, envLink); removeErr != nil {
-		return fmt.Errorf("replace the restored .env link: %w", removeErr)
-	}
-	if linkErr := root.Symlink(ctx, target, envLink); linkErr != nil {
-		return fmt.Errorf("replace the restored .env link: %w", linkErr)
+	for _, link := range slices.Sorted(maps.Keys(links)) {
+		if removeErr := root.Remove(ctx, link); removeErr != nil {
+			return fmt.Errorf("replace the restored link %s: %w", link, removeErr)
+		}
+		if linkErr := root.Symlink(ctx, links[link], link); linkErr != nil {
+			return fmt.Errorf("replace the restored link %s: %w", link, linkErr)
+		}
 	}
 	return nil
 }
