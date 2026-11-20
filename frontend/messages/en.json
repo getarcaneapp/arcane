@@ -4770,5 +4770,6 @@
   "back_up_selected_projects_on_schedule": "Back up the selected projects according to this cron schedule.",
   "keep_newest_successful_backups_per_project": "How many of this schedule's newest successful backups to keep for each project, wherever they are stored. Failed backups that kept data are kept up to the same number, so they never push out a good one. Set to 0 to keep all backups.",
   "stop_each_project_during_snapshot": "Stop each project's running containers while its snapshot is taken, then start them again. Other containers keep running.",
-  "failed_to_run_project_backups": "Failed to run the project backups."
+  "failed_to_run_project_backups": "Failed to run the project backups.",
+  "restore_backup_as_new_project_description": "Create a project from this backup's files and the data of every volume it includes, restored into new volumes."
 }

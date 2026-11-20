@@ -35,6 +35,7 @@
 	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
 	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { projectService } from '#lib/services/project-service.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -120,6 +121,14 @@
 	let restoreFilesSearch = $state('');
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
+	let restoreAsNewOpen = $state(false);
+	let restoreAsNewTarget = $state<EnvironmentRow<SystemVolumeBackupHistoryEntry> | null>(null);
+	let restoreAsNewName = $state('');
+	let restoreAsNewStart = $state(false);
+	let restoringAsNew = $state(false);
+	const canStartRestoredAsNew = $derived(
+		restoreAsNewTarget !== null && hasPermission('projects:deploy', restoreAsNewTarget.environmentId)
+	);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
@@ -149,6 +158,7 @@
 	// ever uses this instance's stored key.
 	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
 	const selectedRemote = $derived(selected !== null && selected.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID);
+	const selectedProject = $derived(selected?.resourceType === 'project');
 	const restoreFilesRemote = $derived(
 		restoreFilesTarget !== null && restoreFilesTarget.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID
 	);
@@ -348,18 +358,21 @@
 	function dialogTitle() {
 		if (action === 'restore') return m.system_backups_restore_title();
 		if (action === 'upload') return m.system_backups_upload_title();
+		if (action === 'delete' && selectedProject) return m.common_delete_title({ resource: m.project_backup() });
 		if (action === 'delete') return m.system_backups_delete_title();
 		if (action === 'discover') return m.system_backups_discover_title();
 		return m.volumes_backup_create();
 	}
 	function dialogDescription() {
 		if (action === 'restore') return m.system_backups_restore_description();
+		if (action === 'delete' && selectedProject) return m.remove_this_backup();
 		if (action === 'delete') return m.system_backups_delete_description();
 		if (action === 'discover') return m.system_backups_discover_description();
 		return backupType === 'volume' ? m.system_volume_backups_description() : m.system_backups_dialog_description();
 	}
 	function actionFailedMessage() {
 		if (action === 'restore') return m.system_backups_restore_failed();
+		if (action === 'delete' && selectedProject) return m.common_delete_failed({ resource: m.project_backup() });
 		if (action === 'delete') return m.system_backups_delete_failed();
 		if (action === 'upload') return m.backups_upload_s3_failed();
 		if (action === 'discover') return m.system_backups_discover_failed();
@@ -408,6 +421,41 @@
 				projectId: encodeURIComponent(backup.resourceId ?? '')
 			})
 		);
+	}
+
+	function openRestoreAsNew(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
+		restoreAsNewTarget = backup;
+		restoreAsNewName = `${backup.resourceName}-restored`;
+		restoreAsNewStart = false;
+		restoreAsNewOpen = true;
+	}
+
+	// Restores the files and every volume the backup includes, as the project's own restore-as-new does by default.
+	async function restoreProjectAsNew() {
+		if (!restoreAsNewTarget || restoringAsNew || !restoreAsNewName.trim()) return;
+		restoringAsNew = true;
+		try {
+			const environmentId = restoreAsNewTarget.environmentId;
+			const restored = await tryCatch(
+				projectService.restoreBackupAsNew(
+					restoreAsNewTarget.resourceId ?? '',
+					restoreAsNewTarget.id,
+					{ name: restoreAsNewName.trim(), files: true, start: restoreAsNewStart && canStartRestoredAsNew },
+					environmentId
+				)
+			);
+			if (restored.error !== null) {
+				toast.error(m.failed_to_restore_backup(), { description: extractApiErrorMessage(restored.error) });
+				return;
+			}
+			restoreAsNewOpen = false;
+			toast.success(m.project_restored_from_backup({ name: restored.data.name }), activityToastOptions(restored.data.activityId));
+			await goto(
+				resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.data.id })
+			);
+		} finally {
+			restoringAsNew = false;
+		}
 	}
 
 	let autoDiscovered = false;
@@ -546,6 +594,10 @@
 		} else if (action === 'upload' && selected) {
 			await systemBackupService.upload(selected.environmentId, selected.id, s3DestinationId, recoveryKey);
 			toast.success(m.backups_upload_s3_success());
+			await refresh();
+		} else if (action === 'delete' && selected?.resourceType === 'project') {
+			await projectService.deleteBackup(selected.resourceId ?? '', selected.id, selected.environmentId);
+			toast.success(m.common_delete_success({ resource: m.project_backup() }));
 			await refresh();
 		} else if (action === 'delete' && selected) {
 			await systemBackupService.delete(selected.environmentId, selected.id, recoveryKey);
@@ -856,6 +908,45 @@
 	</ResponsiveDialog>
 {/snippet}
 
+{#snippet restoreAsNewDialog()}
+	<ResponsiveDialog
+		bind:open={restoreAsNewOpen}
+		title={m.restore_as_new_project()}
+		description={m.restore_backup_as_new_project_description()}
+		contentClass="sm:max-w-140"
+		dismissible={!restoringAsNew}
+	>
+		<div class="grid min-w-0 gap-y-4 py-2">
+			<TextInputWithLabel
+				id="system-backup-restore-name"
+				value={restoreAsNewName}
+				onChange={(value) => (restoreAsNewName = value)}
+				label={m.project_name()}
+				disabled={restoringAsNew}
+			/>
+			{#if canStartRestoredAsNew}
+				<LabeledSwitch
+					id="system-backup-restore-start"
+					checked={restoreAsNewStart}
+					label={m.start_after_restore()}
+					disabled={restoringAsNew}
+					onCheckedChange={(value) => (restoreAsNewStart = value)}
+				/>
+			{/if}
+		</div>
+		{#snippet footer()}
+			<ArcaneButton action="cancel" onclick={() => (restoreAsNewOpen = false)} disabled={restoringAsNew} />
+			<ArcaneButton
+				action="create"
+				customLabel={m.restore_as_new_project()}
+				onclick={restoreProjectAsNew}
+				loading={restoringAsNew}
+				disabled={restoringAsNew || !restoreAsNewName.trim()}
+			/>
+		{/snippet}
+	</ResponsiveDialog>
+{/snippet}
+
 {#snippet restoreFilesDialog()}
 	<ResponsiveDialog
 		bind:open={restoreFilesOpen}
@@ -1046,6 +1137,7 @@
 				onRestoreFiles={openRestoreFiles}
 				onRestoreVolume={openVolumeRestore}
 				onOpenProject={openProjectBackups}
+				onRestoreProjectAsNew={openRestoreAsNew}
 				onUpload={(item) => openAction('upload', item)}
 				onDelete={(item) => openAction('delete', item)}
 				onOpenVolume={openVolumeBackups}
@@ -1087,5 +1179,6 @@
 		{@render importKeyDialog()}
 		{@render actionDialog()}
 		{@render restoreFilesDialog()}
+		{@render restoreAsNewDialog()}
 	{/snippet}
 </SettingsPageLayout>

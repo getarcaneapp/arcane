@@ -38,6 +38,8 @@ type (
 const (
 	toolsRepoPath  = "getarcaneapp/tools"
 	ContainerLabel = "com.getarcaneapp.volume-helper"
+	// ClaimLabel marks the attempt that created a volume, since Docker returns an existing volume instead of failing.
+	ClaimLabel = "com.getarcaneapp.volume-claim"
 )
 
 func ToolsImage(registrySetting string) string {
