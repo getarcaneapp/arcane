@@ -2,34 +2,40 @@ package bundle
 
 import (
 	"context"
+	"encoding/json/v2"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
+	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
-// stoppedEnvironment reports the project stopped until startAfter project reads, as if something started it mid-export.
+// stoppedEnvironment reports the project stopped and serves its files and volume data.
 type stoppedEnvironment struct {
 	Environment
 
-	uploads    *upload.UploadService
-	reads      atomic.Int32
-	startAfter int32
+	uploads *upload.UploadService
 }
 
 func (e *stoppedEnvironment) Project(context.Context, string) (types.Project, error) {
-	running := 0
-	if e.reads.Add(1) > e.startAfter {
-		running = 1
-	}
-	return types.Project{ID: "p1", Name: "demo", RunningCount: running}, nil
+	return types.Project{ID: "p1", Name: "demo"}, nil
 }
 
 func (e *stoppedEnvironment) ExportProject(ctx context.Context, _ string) (types.UploadSession, error) {
@@ -42,6 +48,25 @@ func (e *stoppedEnvironment) ExportVolume(ctx context.Context, _ string) (types.
 	return *session, err
 }
 
+func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.DockerClientService {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+	require.NoError(t, err)
+	// The test server is gone by cleanup time; a failed close of its client changes nothing.
+	t.Cleanup(func() { _ = dockerClient.Close() })
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx: t.Context(), DB: &database.DB{DB: gormDB}, Config: &config.Config{}, Env: settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
+}
+
 func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 	archive, err := projects.ProjectBundleVolumeArchive("data")
 	require.NoError(t, err)
@@ -52,18 +77,42 @@ func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 	}
 	opts := ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}}
 	for _, test := range []struct {
-		name       string
-		startAfter int32
-		conflict   bool
+		name     string
+		events   []events.Message
+		conflict bool
 	}{
-		{name: "a project that stays stopped is exported", startAfter: 2},
-		// A volume backup that had stopped the project finishes and starts it while the volume is copied.
-		{name: "a project started during the copy fails the export", startAfter: 1, conflict: true},
+		{name: "a project that stays stopped is exported"},
+		// A volume backup that had stopped the project starts it again during the copy.
+		{name: "a project started during the copy fails the export", events: []events.Message{
+			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "web-1"}},
+		}, conflict: true},
+		// The container that started is gone again before the copy ends, so only its start event shows it.
+		{name: "a container started and removed during the copy fails the export", events: []events.Message{
+			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "job-1"}},
+		}, conflict: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			var since, until string
+			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/info"):
+					_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"})
+				case strings.HasSuffix(r.URL.Path, "/events"):
+					since, until = r.URL.Query().Get("since"), r.URL.Query().Get("until")
+					for _, message := range test.events {
+						_ = json.MarshalWrite(w, message)
+					}
+				default:
+					http.NotFound(w, r)
+				}
+			}))
 			uploads := upload.NewUploadService(nil)
-			service := &Service{deps: Dependencies{Uploads: uploads, Environment: &stoppedEnvironment{uploads: uploads, startAfter: test.startAfter}}}
+			service := &Service{deps: Dependencies{Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
 			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
+			// The window is the daemon's own clock from before the copy to after it.
+			require.Equal(t, "1795136400.500000000", since)
+			require.Equal(t, since, until)
 			if test.conflict {
 				require.ErrorIs(t, writeErr, common.ErrConflict)
 				require.ErrorContains(t, writeErr, "started while its volumes were copied")

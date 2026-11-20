@@ -318,10 +318,19 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	// A stopped project must stay stopped while its volumes are copied. Something else, such as a volume backup that
-	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent.
+	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent. Docker's
+	// start events across the copy are checked, so even a container that started and was removed again is seen.
+	var since string
 	if opts.Request.StopProject {
-		if stoppedErr := s.checkStopped(ctx, opts.ProjectID, "volume data was not copied"); stoppedErr != nil {
-			return stoppedErr
+		current, currentErr := s.deps.Environment.Project(ctx, opts.ProjectID)
+		if currentErr != nil {
+			return fmt.Errorf("check project %s: %w", manifest.Project.Name, currentErr)
+		}
+		if current.RunningCount > 0 {
+			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
+		}
+		if since, err = s.dockerNow(ctx); err != nil {
+			return err
 		}
 	}
 	written := map[string]bool{}
@@ -339,23 +348,58 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	if opts.Request.StopProject {
-		if stoppedErr := s.checkStopped(ctx, opts.ProjectID, "it was started while its volumes were copied; export it again"); stoppedErr != nil {
-			return stoppedErr
+		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, since); startErr != nil {
+			return startErr
 		}
 	}
 	return writer.Close()
 }
 
-// checkStopped fails when any of the project's containers runs, which would make a consistent bundle hold live data.
-func (s *Service) checkStopped(ctx context.Context, projectID, consequence string) error {
-	current, err := s.deps.Environment.Project(ctx, projectID)
+// dockerNow is the Docker daemon's clock as an events timestamp, so event windows don't depend on Arcane's clock.
+func (s *Service) dockerNow(ctx context.Context) (string, error) {
+	info, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
+	})
 	if err != nil {
-		return fmt.Errorf("check project %s: %w", projectID, err)
+		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
 	}
-	if current.RunningCount > 0 {
-		return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; %s", current.RunningCount, current.Name, consequence))
+	now, err := time.Parse(time.RFC3339Nano, info.Info.SystemTime)
+	if err != nil {
+		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
 	}
-	return nil
+	return fmt.Sprintf("%d.%09d", now.Unix(), now.Nanosecond()), nil
+}
+
+// checkNoStarts fails when any container of the Compose project started since the given daemon time, including one
+// removed again since; events that can't be read fail it too, as the copy can't be shown to be consistent.
+func (s *Service) checkNoStarts(ctx context.Context, composeName, since string) error {
+	until, err := s.dockerNow(ctx)
+	if err != nil {
+		return err
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	result := dockerClient.Events(ctx, client.EventsListOptions{
+		Since: since,
+		Until: until,
+		Filters: make(client.Filters).Add("type", "container").Add("event", "start").
+			Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+	})
+	for {
+		select {
+		case <-result.Messages:
+			return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
+		case streamErr := <-result.Err:
+			if errors.Is(streamErr, io.EOF) || streamErr == nil {
+				return nil
+			}
+			return fmt.Errorf("check that project %s stayed stopped: %w", composeName, streamErr)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {

@@ -122,6 +122,7 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			return err
 		}
 		defer func() {
+			// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 			_ = reader.Close()
 		}()
 		if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -161,6 +162,8 @@ func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error
 		return fmt.Errorf("open project archive: %w", err)
 	}
 	defer func() {
+		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
+		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 
@@ -355,6 +358,8 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 		return types.ProjectManifest{}, false, nil
 	}
 	defer func() {
+		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
+		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 	tarReader := tar.NewReader(gzipReader)
