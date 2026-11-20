@@ -487,19 +487,17 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(
-	ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor,
-) (created bool, err error) {
+func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
 	if err != nil {
-		return false, fmt.Errorf("invalid archive: %w", err)
+		return fmt.Errorf("invalid archive: %w", err)
 	}
 	first, nextErr := tar.NewReader(gzr).Next()
 	if nextErr != nil {
 		_ = gzr.Close()
-		return false, fmt.Errorf("invalid archive: %w", nextErr)
+		return fmt.Errorf("invalid archive: %w", nextErr)
 	}
 	_ = gzr.Close()
 	// Extracting into an existing directory skips the archive's root entry, so a new volume takes its root owner and mode from it.
@@ -509,9 +507,8 @@ func (s *Service) UploadAndRestore(
 	defer unlock()
 	if composeVolume != nil {
 		if createErr := s.createComposeVolume(ctx, volumeName, *composeVolume); createErr != nil {
-			return false, createErr
+			return createErr
 		}
-		created = true
 		defer func() {
 			if err == nil {
 				return
@@ -520,8 +517,6 @@ func (s *Service) UploadAndRestore(
 			_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
 				return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{})
 			})
-			// Removed here, a failed restore leaves the caller nothing to roll back; otherwise the caller removes it.
-			created = removeErr != nil
 			err = errors.Join(err, stopHelperErr, removeErr)
 		}()
 	}
@@ -534,13 +529,13 @@ func (s *Service) UploadAndRestore(
 		}
 	}()
 	if err != nil {
-		return created, err
+		return err
 	}
 	preBackupID := ""
 	if composeVolume == nil {
 		preBackupID, err = s.deps.SafetyBackup(ctx, volumeName, user)
 		if err != nil {
-			return created, fmt.Errorf("failed to create pre-restore backup: %w", err)
+			return fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
 		defer func() {
 			if err != nil {
@@ -551,19 +546,19 @@ func (s *Service) UploadAndRestore(
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
-		return created, err
+		return err
 	}
 
 	containerID, cleanup, err := s.deps.AcquireHelper(ctx, volumeName)
 	if err != nil {
-		return created, err
+		return err
 	}
 	defer cleanup()
 
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
 	_, stderr, err := s.deps.Exec(ctx, containerID, "", []string{"mkdir", "-p", tmpDir})
 	if err != nil {
-		return created, fmt.Errorf("failed to create temp restore dir: %w", err)
+		return fmt.Errorf("failed to create temp restore dir: %w", err)
 	}
 	replaceStarted := false
 	defer func() {
@@ -577,20 +572,20 @@ func (s *Service) UploadAndRestore(
 	}
 
 	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return created, fmt.Errorf("failed to read uploaded archive: %w", seekErr)
+		return fmt.Errorf("failed to read uploaded archive: %w", seekErr)
 	}
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
 		DestinationPath: tmpDir,
 		Content:         archive,
 	})
 	if err != nil {
-		return created, fmt.Errorf("failed to restore from uploaded archive: %w", err)
+		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
 	if composeVolume == nil || !archiveRoot {
 		_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
 		if err != nil {
-			return created, fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+			return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
 		}
 		if strings.TrimSpace(stderr) != "" {
 			slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -598,17 +593,17 @@ func (s *Service) UploadAndRestore(
 	}
 	if composeVolume != nil && archiveRoot {
 		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", first.Uid, first.Gid), "/volume"}); err != nil {
-			return created, fmt.Errorf("failed to restore volume root ownership: %w", err)
+			return fmt.Errorf("failed to restore volume root ownership: %w", err)
 		}
 		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(first.Mode&0o7777, 8), "/volume"}); err != nil {
-			return created, fmt.Errorf("failed to restore volume root mode: %w", err)
+			return fmt.Errorf("failed to restore volume root mode: %w", err)
 		}
 	}
 
 	replaceStarted = true
 	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", replaceVolumeScript, "sh", tmpDir})
 	if err != nil {
-		return created, fmt.Errorf("failed to replace volume contents: %w", err)
+		return fmt.Errorf("failed to replace volume contents: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore replace stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -618,7 +613,7 @@ func (s *Service) UploadAndRestore(
 		stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
-			return created, err
+			return err
 		}
 	}
 
@@ -641,7 +636,7 @@ func (s *Service) UploadAndRestore(
 		slog.WarnContext(ctx, "could not log volume backup upload restore event", "volume", volumeName, "error", logErr.Error())
 	}
 
-	return created, nil
+	return nil
 }
 
 func (s *Service) createComposeVolume(ctx context.Context, volumeName string, target types.ComposeVolumeTarget) error {

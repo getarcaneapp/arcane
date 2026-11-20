@@ -189,7 +189,6 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			RetargetWebhooks: p.Webhooks.RetargetProjectWebhooks,
 			CountWebhooks:    p.Webhooks.CountProjectWebhooks,
 			ExportVolume:     p.Volumes.ExportVolumeArchive,
-			VolumeLocks:      p.Volumes.WorkspaceLocks(),
 			RestoreVolume:    p.Volumes.RestoreVolumeUpload,
 			DeleteVolume:     p.Volumes.DeleteVolume,
 			CreateVolume:     p.Volumes.CreateVolume,
@@ -199,6 +198,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			S3Destinations: p.S3Destinations,
+			VolumeLocks:    p.Volumes.WorkspaceLocks(),
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

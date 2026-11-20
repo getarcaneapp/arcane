@@ -599,40 +599,21 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 	if err != nil {
 		return nil, err
 	}
-	session, err := h.exportProject(ctx, input, user)
-	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("Failed to export project: " + err.Error())
-	}
-	return &handlerutil.Out[types.UploadSession]{
-		Body: types.ApiResponse[types.UploadSession]{
-			Success: true,
-			Data:    *session,
-		},
-	}, nil
-}
-
-func (h *ProjectHandler) exportProject(ctx context.Context, input *ExportProjectArchiveInput, user *types.Actor) (*types.UploadSession, error) {
 	request := kit.FromPtr(input.Body)
-	if len(request.Volumes) == 0 {
-		return h.projectService.ExportProjectArchive(ctx, input.ProjectID)
-	}
-	required := []string{authz.PermVolumesBackup}
-	if request.StopProject {
-		required = append(required, authz.PermProjectsDown, authz.PermProjectsDeploy)
-	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	for _, perm := range required {
-		if !permissions.Allows(perm, input.EnvironmentID) {
-			return nil, common.Classify(common.ErrForbidden, errors.New("permission denied: "+perm))
-		}
+	if len(request.Volumes) > 0 && !permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
+	}
+	if request.StopProject && !permissions.Allows(authz.PermProjectsDown, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDown)
+	}
+	if request.StopProject && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
 	}
 
 	var session *types.UploadSession
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
-	_, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+	_, err = activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "project",
@@ -646,12 +627,24 @@ func (h *ProjectHandler) exportProject(ctx context.Context, input *ExportProject
 	}, func(runtimeCtx context.Context) error {
 		var exportErr error
 		session, exportErr = h.bundles.Export(runtimeCtx, bundle.ExportOptions{
+			User:      *user,
 			ProjectID: input.ProjectID,
 			Request:   request,
 		})
 		return exportErr
 	})
-	return session, err
+	if err != nil {
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		return nil, huma.Error500InternalServerError("Failed to export project: " + err.Error())
+	}
+	return &handlerutil.Out[types.UploadSession]{
+		Body: types.ApiResponse[types.UploadSession]{
+			Success: true,
+			Data:    *session,
+		},
+	}, nil
 }
 
 func (h *ProjectHandler) GetProjectExportOptions(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.ProjectExportOptions], error) {
@@ -760,7 +753,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			"removeVolumes": kit.FromPtr(input.Body).RemoveVolumes,
 		},
 		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DestroyProject(runtimeCtx, projectID, types.ProjectDestroyOptions{
+			return h.projectService.DestroyProject(runtimeCtx, projectID, DestroyOptions{
 				RemoveFiles:   mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true),
 				RemoveVolumes: kit.FromPtr(input.Body).RemoveVolumes,
 			}, user)

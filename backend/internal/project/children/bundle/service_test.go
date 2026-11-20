@@ -2,132 +2,74 @@ package bundle
 
 import (
 	"context"
-	"encoding/json/v2"
-	"errors"
-	"net/http"
-	"net/http/httptest"
-	"path"
-	"slices"
+	"io"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
-	composeapi "github.com/docker/compose/v5/pkg/api"
-	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 
-	"kit.getarcane.app/docker/streams/bus"
-
-	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
-func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
-	labelsFor := func(project, service string) map[string]string {
-		return map[string]string{composeapi.ProjectLabel: project, composeapi.ServiceLabel: service}
-	}
-	arcane := labelsFor("demo", "arcane")
-	arcane["com.getarcaneapp.arcane"] = "true"
-	var (
-		mu      sync.Mutex
-		stopped []string
-		started []string
-	)
-	states := map[string]container.ContainerState{
-		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
-		"arcane-1": container.StateRunning, "other-1": container.StateRunning,
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			all := []container.Summary{
-				{ID: "web-1", Labels: labelsFor("demo", "web"), State: states["web-1"]},
-				{ID: "db-1", Labels: labelsFor("demo", "db"), State: states["db-1"]},
-				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
-				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_config"}}},
-				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
-			}
-			// The project label filter is what keeps other projects out.
-			if filter := r.URL.Query().Get("filters"); filter != "" {
-				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, composeapi.ProjectLabel+"="+c.Labels[composeapi.ProjectLabel])
-				})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, all)
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			id := path.Base(path.Dir(r.URL.Path))
-			stopped = append(stopped, id)
-			states[id] = container.StateExited
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			id := path.Base(path.Dir(r.URL.Path))
-			started = append(started, id)
-			states[id] = container.StateRunning
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	service := New(Dependencies{
-		Docker: newTestDockerService(t, server.URL),
-		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
-			return nil, errors.New("compose.yaml: invalid")
-		},
-	})
+// stoppedEnvironment reports the project stopped until startAfter project reads, as if something started it mid-export.
+type stoppedEnvironment struct {
+	Environment
 
-	active, inUse, err := service.ContainerUse(t.Context(), "demo")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"web-1", "db-1"}, containerIDs(active))
-	// Another project's container and Arcane itself keep running, so their volumes count as in use.
-	assert.Equal(t, map[string]bool{"demo_config": true, "demo_data": true}, inUse)
-
-	summaries, err := service.StopContainers(t.Context(), "demo")
-	require.NoError(t, err)
-	// The paused cache, Arcane itself, and the other project keep their state.
-	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
-	assert.Equal(t, container.StatePaused, states["cache-1"])
-
-	// Compose files that no longer load still get the stopped containers started.
-	require.NoError(t, service.StartContainers(t.Context(), "proj-demo", summaries))
-	assert.Equal(t, []string{"web-1", "db-1"}, started)
+	uploads    *upload.UploadService
+	reads      atomic.Int32
+	startAfter int32
 }
 
-func containerIDs(summaries []container.Summary) []string {
-	ids := make([]string, 0, len(summaries))
-	for _, c := range summaries {
-		ids = append(ids, c.ID)
+func (e *stoppedEnvironment) Project(context.Context, string) (types.Project, error) {
+	running := 0
+	if e.reads.Add(1) > e.startAfter {
+		running = 1
 	}
-	return ids
+	return types.Project{ID: "p1", Name: "demo", RunningCount: running}, nil
 }
 
-func newTestDockerService(t *testing.T, host string) *docker.DockerClientService {
-	t.Helper()
-	dockerClient, err := client.New(client.WithHost(host), client.WithAPIVersion("1.41"))
+func (e *stoppedEnvironment) ExportProject(ctx context.Context, _ string) (types.UploadSession, error) {
+	session, err := e.uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.tar.gz", 5, strings.NewReader("files"))
+	return *session, err
+}
+
+func (e *stoppedEnvironment) ExportVolume(ctx context.Context, _ string) (types.UploadSession, error) {
+	session, err := e.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, "data.tar.gz", 4, strings.NewReader("data"))
+	return *session, err
+}
+
+func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
+	archive, err := projects.ProjectBundleVolumeArchive("data")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = dockerClient.Close() })
-	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
-	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
-		Ctx:    t.Context(),
-		DB:     db,
-		Config: &config.Config{},
-		Env:    settings.Env{},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+	manifest := types.ProjectManifest{
+		Project:       types.ProjectManifestProject{ID: "p1", Name: "demo", ComposeName: "demo"},
+		Volumes:       []types.ProjectVolume{{Key: "data", Name: "demo_data", Kind: types.ProjectVolumeNamed, Archive: archive, Included: true}},
+		FormatVersion: types.ProjectManifestFormatVersion,
+	}
+	opts := ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}}
+	for _, test := range []struct {
+		name       string
+		startAfter int32
+		conflict   bool
+	}{
+		{name: "a project that stays stopped is exported", startAfter: 2},
+		// A volume backup that had stopped the project finishes and starts it while the volume is copied.
+		{name: "a project started during the copy fails the export", startAfter: 1, conflict: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			uploads := upload.NewUploadService(nil)
+			service := &Service{deps: Dependencies{Uploads: uploads, Environment: &stoppedEnvironment{uploads: uploads, startAfter: test.startAfter}}}
+			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
+			if test.conflict {
+				require.ErrorIs(t, writeErr, common.ErrConflict)
+				require.ErrorContains(t, writeErr, "started while its volumes were copied")
+				return
+			}
+			require.NoError(t, writeErr)
+		})
+	}
 }

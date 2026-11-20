@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -23,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 
@@ -74,6 +79,33 @@ func volumeServer(t *testing.T, existing ...string) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: name}))
 	})
+}
+
+// startServer lists no containers and records each container start; while fail is set, starts fail.
+func startServer(t *testing.T, fail *atomic.Bool) (*docker.DockerClientService, func() []string) {
+	var (
+		mu      sync.Mutex
+		started []string
+	)
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			mu.Lock()
+			started = append(started, path.Base(path.Dir(r.URL.Path)))
+			mu.Unlock()
+			w.WriteHeader(kit.Ternary(fail.Load(), http.StatusInternalServerError, http.StatusNoContent))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return dockerService, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(started)
+	}
 }
 
 func testProject() types.Project {
@@ -225,16 +257,17 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	require.NoError(t, db.Create(&ProjectBackup{
 		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
 	}).Error)
-	startErr := errors.New("docker is restarting")
-	starts := 0
+	var fail atomic.Bool
+	fail.Store(true)
+	dockerService, started := startServer(t, &fail)
 	service := NewService(Dependencies{
 		DB:          db,
+		Docker:      dockerService,
 		Engine:      engine,
 		VolumeLocks: &concurrency.KeyedMutex{},
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		StartContainers: func(context.Context, string, []container.Summary) error {
-			starts++
-			return startErr
+		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
+			return &composetypes.Project{}, nil
 		},
 	})
 	recorded := plan{
@@ -244,9 +277,9 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 
 	// A failed start hands the run back instead of ending it with the project down.
 	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded), actor.ErrJobRejected)
-	startErr = nil
+	fail.Store(false)
 	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded))
-	require.Equal(t, 2, starts)
+	require.Equal(t, []string{"web-1", "web-1"}, started())
 }
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
@@ -273,15 +306,15 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	harness.Start(t)
 	locks := &concurrency.KeyedMutex{}
-	started := 0
+	dockerService, started := startServer(t, &atomic.Bool{})
 	service := NewService(Dependencies{
 		DB:          db,
+		Docker:      dockerService,
 		Engine:      engine,
 		VolumeLocks: locks,
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		StartContainers: func(context.Context, string, []container.Summary) error {
-			started++
-			return nil
+		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
+			return &composetypes.Project{}, nil
 		},
 	})
 	recorded := plan{
@@ -296,7 +329,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 	defer cancel()
 	err := service.resume(waiting, types.SchedulerRun{}, runInput{}, recorded)
 	require.ErrorIs(t, err, actor.ErrJobRejected)
-	require.Zero(t, started)
+	require.Empty(t, started())
 	unlock()
 }
 
@@ -329,9 +362,10 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	}
 	require.NoError(t, db.Create(entry).Error)
 	locked := false
-	var started []container.Summary
+	dockerService, started := startServer(t, &atomic.Bool{})
 	service := NewService(Dependencies{
 		DB:          db,
+		Docker:      dockerService,
 		Engine:      engine,
 		VolumeLocks: &concurrency.KeyedMutex{},
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
@@ -339,11 +373,10 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 			locked = true
 			return func() { locked = false }, nil
 		},
-		StartContainers: func(_ context.Context, projectID string, stopped []container.Summary) error {
+		ComposeProject: func(_ context.Context, projectID string) (*composetypes.Project, error) {
 			assert.Equal(t, "p1", projectID)
 			assert.True(t, locked, "the containers start under the project lock")
-			started = append(started, stopped...)
-			return nil
+			return &composetypes.Project{}, nil
 		},
 	})
 
@@ -364,15 +397,15 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 
 		err = service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
 		require.ErrorIs(t, err, actor.ErrJobRejected)
-		require.Empty(t, started, held)
+		require.Empty(t, started(), held)
 		lease.Release(t.Context())
 	}
 
 	resumeErr := service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded)
 	require.ErrorIs(t, resumeErr, backup.ErrBackupSettled)
 	require.ErrorContains(t, resumeErr, "snapshot failed")
-	// The checkpointed containers are started again through the project's Compose start.
-	require.Equal(t, checkpointed, started)
+	// The checkpointed containers are started again.
+	require.Equal(t, []string{"web-1"}, started())
 	require.False(t, locked)
 	// The resumed run releases the admissions it took.
 	for _, key := range recorded.admissions() {
@@ -381,4 +414,85 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 		require.True(t, admitted, key)
 		lease.Release(t.Context())
 	}
+}
+
+func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
+	labelsFor := func(project, service string) map[string]string {
+		return map[string]string{composeapi.ProjectLabel: project, composeapi.ServiceLabel: service}
+	}
+	arcane := labelsFor("demo", "arcane")
+	arcane["com.getarcaneapp.arcane"] = "true"
+	var (
+		mu      sync.Mutex
+		stopped []string
+		started []string
+	)
+	states := map[string]container.ContainerState{
+		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
+		"arcane-1": container.StateRunning, "other-1": container.StateRunning,
+	}
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			all := []container.Summary{
+				{ID: "web-1", Labels: labelsFor("demo", "web"), State: states["web-1"]},
+				{ID: "db-1", Labels: labelsFor("demo", "db"), State: states["db-1"]},
+				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
+				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_config"}}},
+				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
+			}
+			// The project label filter is what keeps other projects out.
+			if filter := r.URL.Query().Get("filters"); filter != "" {
+				all = slices.DeleteFunc(all, func(c container.Summary) bool {
+					return !strings.Contains(filter, composeapi.ProjectLabel+"="+c.Labels[composeapi.ProjectLabel])
+				})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, all))
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			id := path.Base(path.Dir(r.URL.Path))
+			stopped = append(stopped, id)
+			states[id] = container.StateExited
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			id := path.Base(path.Dir(r.URL.Path))
+			started = append(started, id)
+			states[id] = container.StateRunning
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	service := NewService(Dependencies{
+		Docker: dockerService,
+		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
+			return nil, errors.New("compose.yaml: invalid")
+		},
+	})
+
+	active, inUse, err := service.containerUse(t.Context(), "demo")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"web-1", "db-1"}, containerIDs(active))
+	// Another project's container and Arcane itself keep running, so their volumes count as in use.
+	assert.Equal(t, map[string]bool{"demo_config": true, "demo_data": true}, inUse)
+
+	summaries, err := service.stopContainers(t.Context(), "demo")
+	require.NoError(t, err)
+	// The paused cache, Arcane itself, and the other project keep their state.
+	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
+	assert.Equal(t, container.StatePaused, states["cache-1"])
+
+	// Compose files that no longer load still get the stopped containers started.
+	require.NoError(t, service.startContainers(t.Context(), "p1", summaries))
+	assert.Equal(t, []string{"web-1", "db-1"}, started)
+}
+
+func containerIDs(summaries []container.Summary) []string {
+	ids := make([]string, 0, len(summaries))
+	for _, c := range summaries {
+		ids = append(ids, c.ID)
+	}
+	return ids
 }

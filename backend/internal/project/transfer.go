@@ -9,7 +9,6 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/mapping"
 
@@ -30,8 +29,7 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
-		VolumeLocks      *concurrency.KeyedMutex
-		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error)
+		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
 		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
 		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
@@ -130,7 +128,11 @@ func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID s
 }
 
 func (e localTransferEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
-	return e.projects.ImportProjectArchive(ctx, request, user)
+	imported, err := e.projects.ImportProjectArchive(ctx, request, user)
+	if err != nil {
+		return "", err
+	}
+	return imported.ID, nil
 }
 
 func (e localTransferEnvironment) CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error) {
@@ -175,8 +177,7 @@ func (e localTransferEnvironment) ExportVolume(ctx context.Context, name string)
 }
 
 func (e localTransferEnvironment) RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
-	_, err := e.deps.RestoreVolume(ctx, name, request, user)
-	return err
+	return e.deps.RestoreVolume(ctx, name, request, user)
 }
 
 func (e localTransferEnvironment) DeployProject(ctx context.Context, projectID string, user types.Actor) error {
@@ -188,7 +189,7 @@ func (e localTransferEnvironment) DownProject(ctx context.Context, projectID str
 }
 
 func (e localTransferEnvironment) DestroyProject(ctx context.Context, projectID string, user types.Actor) error {
-	return e.projects.DestroyProject(ctx, projectID, types.ProjectDestroyOptions{RemoveFiles: true}, user)
+	return e.projects.DestroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
 }
 
 func (e localTransferEnvironment) DeleteVolume(ctx context.Context, name string, user types.Actor) error {

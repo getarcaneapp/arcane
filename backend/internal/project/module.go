@@ -6,6 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"kit.getarcane.app/concurrency"
+
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -39,6 +41,7 @@ type (
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
+		VolumeLocks    *concurrency.KeyedMutex
 	}
 )
 
@@ -47,28 +50,15 @@ func New(p ModuleParams) *Module {
 		projects: p.Service,
 		deps:     p.Transfer,
 	}
-	bundles := bundle.New(bundle.Dependencies{
-		Docker:         p.Service.dockerService,
-		Uploads:        p.Service.uploads,
-		VolumeLocks:    p.Transfer.VolumeLocks,
-		Project:        p.Service.GetProjectDetails,
-		ComposeFiles:   p.Service.loadedComposeFiles,
-		ComposeProject: p.Service.composeProject,
-		Lock:           p.Service.LockProject,
-		ExportProject:  p.Service.ExportProjectArchive,
-		Import:         p.Service.importArchive,
-		Deploy:         p.Service.deployProject,
-		Destroy:        p.Service.destroyProject,
-		Volume:         local.Volume,
-		ExportVolume:   p.Transfer.ExportVolume,
-		RestoreVolume:  p.Transfer.RestoreVolume,
-		DeleteVolume:   p.Transfer.DeleteVolume,
-		DeleteUpload:   local.DeleteUpload,
-	})
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  bundles,
+		bundles: bundle.New(bundle.Dependencies{
+			Environment:  local,
+			Docker:       p.Service.dockerService,
+			Uploads:      p.Service.uploads,
+			ComposeFiles: p.Service.LoadedComposeFiles,
+		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,
@@ -87,14 +77,11 @@ func New(p ModuleParams) *Module {
 			Repository:     p.Backups.Repository,
 			S3Destinations: p.Backups.S3Destinations,
 			Settings:       p.Service.settingsService,
-			VolumeLocks:    p.Transfer.VolumeLocks,
-			// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
-			StopContainers:  bundles.StopContainers,
-			StartContainers: bundles.StartContainers,
-			ContainerUse:    bundles.ContainerUse,
-			ComposeFiles:    p.Service.loadedComposeFiles,
-			LockProject:     p.Service.LockProject,
-			Project:         p.Service.GetProjectDetails,
+			VolumeLocks:    p.Backups.VolumeLocks,
+			Project:        p.Service.GetProjectDetails,
+			ComposeProject: p.Service.composeProject,
+			ComposeFiles:   p.Service.LoadedComposeFiles,
+			LockProject:    p.Service.LockProject,
 		}),
 	}
 }

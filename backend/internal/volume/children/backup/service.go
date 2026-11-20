@@ -119,6 +119,13 @@ type (
 	}
 
 	// lockHeld marks a context whose caller already holds the volume's workspace lock.
+	lockHeld struct {
+		service    *Service
+		volumeName string
+	}
+
+	lockHeldKey struct{}
+
 	remoteRepositoryKey struct {
 		destinationID string
 		instanceID    string
@@ -177,7 +184,7 @@ func NewService(deps Dependencies) *Service {
 		Containers: deps.Containers,
 		// The safety backup runs under the restore's workspace lock, so executeBackup must not take it again.
 		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
-			ctx = volumes.WithLocked(ctx, []string{volumeName})
+			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
 			request := types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationLocal}
 			entry, err := s.createBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request, nil)
 			if err != nil {
@@ -434,7 +441,7 @@ func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup,
 func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, user types.Actor, plan backupPlan) (err error) {
 	defer concurrency.RecoverToError(&err, "volume backup")
 	volumeName := entry.VolumeName
-	if !volumes.Locked(ctx, volumeName) {
+	if held, _ := ctx.Value(lockHeldKey{}).(lockHeld); held.service != s || held.volumeName != volumeName {
 		defer s.deps.Locks.Lock(volumeName)()
 	}
 	if cancelErr := ctx.Err(); cancelErr != nil {
@@ -982,13 +989,11 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 }
 
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
-	if !volumes.Locked(ctx, volumeName) {
-		unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
-		if err != nil {
-			return nil, err
-		}
-		defer unlock()
+	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1024,10 +1029,10 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 	return session, nil
 }
 
-func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
+func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer cleanup()
 	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)

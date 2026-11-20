@@ -50,7 +50,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
-	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -177,6 +176,11 @@ type (
 		EventService    *event.EventService
 		DockerService   *dockerInternal.DockerClientService
 		ImageService    *image.ImageService
+	}
+
+	DestroyOptions struct {
+		RemoveFiles   bool
+		RemoveVolumes bool
 	}
 
 	ServiceUpdateOptions struct {
@@ -876,6 +880,14 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 		}
 		return composeFile, nil
 	})
+}
+
+func (s *ProjectService) composeProject(ctx context.Context, projectID string) (*composetypes.Project, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.loadComposeProjectForProject(ctx, proj, nil)
 }
 
 // loadComposeProjectForProject runs prepare before host path translation; read paths pass nil.
@@ -1723,35 +1735,45 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	return detected, nil
 }
 
-func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
+func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (*Project, error) {
 	archive, _, cleanupSession, err := s.uploads.Consume(ctx, types.UploadKindProjectArchive, request.UploadID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer cleanupSession()
-	return s.importArchive(ctx, bundle.ProjectArchive{
-		Archive: archive,
-		Request: request,
-	}, user)
-}
-
-func (s *ProjectService) importArchive(ctx context.Context, archive bundle.ProjectArchive, user types.Actor) (string, error) {
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
-		Archive:      archive.Archive,
+		Archive:      archive,
 		Actor:        user,
-		Name:         archive.Request.Name,
-		ID:           archive.Request.ProjectID,
-		Tags:         archive.Request.Tags,
-		ComposeFiles: archive.ComposeFiles,
+		Name:         request.Name,
+		ID:           request.ProjectID,
+		Tags:         request.Tags,
+		ComposeFiles: request.ComposeFiles,
 		ExactName:    true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) {
-		return "", common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", archive.Request.Name))
+		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
 	}
+	return proj, err
+}
+
+func (s *ProjectService) LoadedComposeFiles(ctx context.Context, projectID string) ([]string, error) {
+	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return proj.ID, nil
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return nil, fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
+	}
+	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{
+		GlobalEnvDirectory: projectsDirectory,
+		ProjectPath:        proj.Path,
+		ComposeFile:        composeFile,
+	}), nil
 }
 
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {
@@ -1788,7 +1810,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -1801,10 +1823,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
-	return s.destroyProject(ctx, projectID, opts, user)
-}
 
-func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1818,10 +1837,8 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if !opts.SkipDown {
-		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-			return fmt.Errorf("failed to bring down project: %w", downErr)
-		}
+	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+		return fmt.Errorf("failed to bring down project: %w", downErr)
 	}
 
 	if opts.RemoveVolumes {

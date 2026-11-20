@@ -199,7 +199,7 @@ func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName stri
 	return s.backup.ExportVolumeArchive(ctx, volumeName)
 }
 
-func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
+func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	return s.backup.RestoreUpload(ctx, volumeName, request, user)
 }
 
