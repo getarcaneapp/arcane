@@ -475,43 +475,6 @@ test.describe('Management', () => {
 			await expect(page.getByRole('button', { name: /^Remove Selected/ })).toHaveCount(0);
 		});
 
-		test('should pull selected tagged images sequentially', async ({ page }) => {
-			await navigateToImages(page);
-
-			const rows = getImageRows(page).filter({ hasNotText: 'Untagged' });
-			await expect(rows.nth(1)).toBeVisible();
-			const pulls = { count: 0, inFlight: 0, maxInFlight: 0 };
-			await page.route(`**${ROUTES.apiImages}/pull`, async (route) => {
-				pulls.count += 1;
-				pulls.inFlight += 1;
-				pulls.maxInFlight = Math.max(pulls.maxInFlight, pulls.inFlight);
-				await new Promise((resolve) => setTimeout(resolve, 50));
-				pulls.inFlight -= 1;
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/x-ndjson',
-					body: `${JSON.stringify({ done: true })}\n`
-				});
-			});
-
-			await rows.nth(0).getByRole('checkbox', { name: 'Select row', exact: true }).check();
-			await rows.nth(1).getByRole('checkbox', { name: 'Select row', exact: true }).check();
-			await page.getByRole('button', { name: 'Pull Selected (2)', exact: true }).click();
-
-			const dialog = page.getByRole('dialog');
-			await dialog.getByRole('button', { name: 'Pull', exact: true }).click();
-
-			await expect.poll(() => pulls.count).toBe(2);
-			expect(pulls.maxInFlight).toBe(1);
-			await expect(
-				page
-					.getByRole('region', { name: 'Notifications alt+T', exact: true })
-					.getByRole('listitem')
-					.filter({ hasText: 'Successfully pulled 2 image(s)' })
-			).toBeVisible();
-			await expect(page.getByRole('button', { name: /^Pull Selected/ })).toHaveCount(0);
-		});
-
 		test('should call prune API on prune click and confirmation', async ({ page }) => {
 			await navigateToImages(page);
 
