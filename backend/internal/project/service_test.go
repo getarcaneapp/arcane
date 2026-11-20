@@ -11146,6 +11146,10 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			// No container started or volume was mounted during the copy.
 		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
 			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
 		default:
@@ -11191,6 +11195,14 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
 			},
 			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
+				// The new project is locked while its volumes are restored, so nothing can start it on half-copied data.
+				var imported Project
+				require.NoError(t, svc.db.WithContext(ctx).Where("name = ?", "copy").First(&imported).Error)
+				unlock, free := svc.opLock.TryLock("0:project:" + imported.ID)
+				if free {
+					unlock()
+				}
+				assert.False(t, free, "the imported project is not locked during the volume restore")
 				restored = append(restored, name)
 				targets = append(targets, *request.ComposeVolume)
 				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
@@ -11298,4 +11310,53 @@ func TestProjectServiceCreatesARestoredProject(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(proj.Path, "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "name: copy")
+}
+
+func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	uploads := upload.NewUploadService(nil)
+	svc := &ProjectService{uploads: uploads}
+	write := func(origin, originID string) string {
+		session, err := uploads.WriteSession(t.Context(), upload.WriteSessionOptions{
+			Write: func(w io.Writer) error {
+				_, err := w.Write([]byte("archive"))
+				return err
+			},
+			Kind:     types.UploadKindProjectArchive,
+			Filename: "demo.tar.gz",
+			Origin:   origin,
+			OriginID: originID,
+		})
+		require.NoError(t, err)
+		return session.ID
+	}
+	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
+	require.NoError(t, err)
+	for _, test := range []struct {
+		wantErr    error
+		name       string
+		uploadID   string
+		volumeData bool
+	}{
+		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
+		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantErr: common.ErrNotFound},
+		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
+		{name: "an upload for an import", uploadID: imported.ID, wantErr: common.ErrNotFound},
+		{name: "a bundle without volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), wantErr: common.ErrForbidden},
+		{name: "a bundle with volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), volumeData: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID, VolumeData: test.volumeData})
+			if test.wantErr == nil {
+				require.NoError(t, openErr)
+				require.Equal(t, test.uploadID, session.ID)
+				require.NoError(t, reader.Close())
+				return
+			}
+			require.ErrorIs(t, openErr, test.wantErr)
+			// A refused download leaves the session for whoever may read it.
+			_, getErr := uploads.GetSession(t.Context(), types.UploadKindProjectArchive, test.uploadID)
+			require.NoError(t, getErr)
+		})
+	}
 }

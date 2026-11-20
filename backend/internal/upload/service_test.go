@@ -159,9 +159,13 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	ctx := t.Context()
 	payload := bytes.Repeat([]byte("x"), int(types.UploadDefaultChunkSize)+10)
 
-	session, err := service.WriteSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", func(w io.Writer) error {
-		_, writeErr := w.Write(payload)
-		return writeErr
+	session, err := service.WriteSession(ctx, WriteSessionOptions{
+		Write: func(w io.Writer) error {
+			_, writeErr := w.Write(payload)
+			return writeErr
+		},
+		Kind:     types.UploadKindProjectArchive,
+		Filename: "web.arcane.tar.gz",
 	})
 	if err != nil {
 		t.Fatalf("WriteSession: %v", err)
@@ -203,9 +207,14 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	}
 
 	writeErr := errors.New("export failed")
-	if _, err = service.WriteSession(ctx, types.UploadKindProjectArchive, "web.tar.gz", func(w io.Writer) error {
-		_, _ = w.Write([]byte("partial"))
-		return writeErr
+	if _, err = service.WriteSession(ctx, WriteSessionOptions{
+		Write: func(w io.Writer) error {
+			// The callback fails anyway; what it wrote before failing is what the test needs on disk.
+			_, _ = w.Write([]byte("partial"))
+			return writeErr
+		},
+		Kind:     types.UploadKindProjectArchive,
+		Filename: "web.tar.gz",
 	}); !errors.Is(err, writeErr) {
 		t.Fatalf("failed WriteSession error = %v, want %v", err, writeErr)
 	}

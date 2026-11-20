@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
+	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -92,6 +93,12 @@ type (
 		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
+	}
+
+	DownloadProjectExportInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+		UploadID      string `path:"uploadId" doc:"ID of the session an export of this project wrote"`
 	}
 
 	ImportProjectArchiveInput struct {
@@ -649,6 +656,23 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 		return nil, huma.Error500InternalServerError("Failed to restore project backup: " + err.Error())
 	}
 	return h.createProjectResponse(ctx, proj, activityID)
+}
+
+func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *DownloadProjectExportInput) (*huma.StreamResponse, error) {
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	reader, session, err := h.projectService.OpenExport(ctx, OpenExportOptions{
+		ProjectID:  input.ProjectID,
+		UploadID:   input.UploadID,
+		VolumeData: permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID),
+	})
+	if err != nil {
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
 
 func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {

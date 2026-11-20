@@ -20,6 +20,7 @@ type BulkLoadingState = {
 	down: boolean;
 	redeploy: boolean;
 	archive: boolean;
+	destroy: boolean;
 };
 
 type ActionDeps = {
@@ -52,6 +53,7 @@ type ProjectActions = {
 	handleBulkDown: (ids: string[]) => Promise<void>;
 	handleBulkRedeploy: (ids: string[]) => Promise<void>;
 	handleBulkArchive: (ids: string[]) => Promise<void>;
+	handleBulkDestroy: (ids: string[]) => void;
 };
 
 const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
@@ -287,6 +289,30 @@ export function createProjectActions({
 		});
 	}
 
+	function handleBulkDestroy(ids: string[]): void {
+		bulkConfirmAndRun({
+			ids,
+			title: m.destroy_count_projects({ count: ids.length }),
+			message: m.destroy_projects_confirm_message({ count: ids.length }),
+			confirmLabel: m.compose_destroy(),
+			destructive: true,
+			checkboxes: [{ id: 'volumes', label: m.confirm_remove_volumes_warning(), initialState: false }],
+			runInEnvironment: (id, environmentId, checkboxStates) =>
+				projectService.destroyProject(id, !!checkboxStates['volumes'], environmentId),
+			messages: {
+				success: (count) => m.destroyed_count_projects({ count }),
+				partial: (success, total, failed) => m.destroyed_projects_partial({ success, total, failed }),
+				failure: () => m.compose_destroy_failed()
+			},
+			setLoading: (loading) => {
+				isBulkLoading.destroy = loading;
+			},
+			onComplete: () => refreshProjects(getRequestOptions()),
+			clearSelection: () => setSelectedIds([]),
+			sequential: true
+		});
+	}
+
 	return {
 		performProjectAction,
 		handleDestroyProject,
@@ -294,6 +320,7 @@ export function createProjectActions({
 		handleBulkUp,
 		handleBulkDown,
 		handleBulkRedeploy,
-		handleBulkArchive
+		handleBulkArchive,
+		handleBulkDestroy
 	};
 }

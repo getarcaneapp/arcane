@@ -424,6 +424,7 @@ func newExportCmd() *cobra.Command {
 			special := statErr == nil && !info.Mode().IsRegular()
 			written, err := cmdutil.DownloadUploadSession(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{
 				OutputPath:   outputFile,
+				Path:         clitypes.ProjectExportDownload(c.EnvID(), resolved.ID, exported.Data.ID),
 				Special:      special,
 				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
 			})

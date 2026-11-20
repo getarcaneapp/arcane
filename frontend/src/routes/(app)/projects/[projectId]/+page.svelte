@@ -1706,7 +1706,7 @@
 				onclick: () => (transferOpen = true)
 			});
 		}
-		if (!project?.isDiscovered && hasPermission('projects:create', envId)) {
+		if (!project?.isDiscovered && hasPermission('projects:read', envId)) {
 			list.push({
 				id: 'export',
 				action: 'base',

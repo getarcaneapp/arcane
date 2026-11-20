@@ -10,4 +10,6 @@ export interface UploadSession {
 	chunkSize: number;
 	totalChunks: number;
 	complete: boolean;
+	origin?: 'project-export' | 'project-bundle';
+	originId?: string;
 }
