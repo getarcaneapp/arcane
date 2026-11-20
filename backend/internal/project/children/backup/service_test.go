@@ -245,22 +245,23 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false, nil)
+	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
 	require.False(t, manifest.ExternalEnv)
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true, nil).ExternalEnv)
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false, nil).Consistent, "nothing runs, so a live backup is consistent")
+	require.Equal(t, []string{project.Path}, manifest.ProjectDirs, "a path that doesn't resolve is recorded as configured")
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
+	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false, nil).Consistent)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false, nil).Consistent)
+	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -424,19 +425,15 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			var reported []string
 			report := func(_ context.Context, message string) { reported = append(reported, message) }
 
-			// As the backup does: it records each link into the project directory that leaves it on the way, relative to
-			// the link.
-			links, linkErr := projects.LinksInside(t.Context(), projectPath)
-			require.NoError(t, linkErr)
-			if test.inside {
-				assert.Equal(t, map[string]string{"/.env": "values.env", "/config/current.json": "v2.json"}, links)
-			} else {
-				assert.Empty(t, links)
-			}
+			// As the backup does: it records the project directory as configured and resolved, which the links name.
+			manifest := backupManifest(types.Project{Path: projectPath}, plan{}, false, nil, false)
+			resolvedPath, resolveErr := filepath.EvalSymlinks(projectPath)
+			require.NoError(t, resolveErr)
+			assert.Equal(t, []string{projectPath, resolvedPath}, manifest.ProjectDirs)
 			// As RestoreTo does: the backup stored contents only for a .env leading outside the project directory.
 			opts := types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: restored, OwnEnv: test.own, Report: report}
 			if test.own {
-				require.NoError(t, ownLinks(t.Context(), restored, links))
+				require.NoError(t, projects.OwnLinks(t.Context(), restored, manifest.ProjectDirs, report))
 			}
 			if !test.inside {
 				require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, opts, "TOKEN=restored"))
@@ -961,7 +958,6 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		"shared":   {Name: "shared", Driver: "local", Labels: map[string]string{"team": "ops"}},
 	}
 	var manifest types.ProjectManifest
-	projectPath := t.TempDir()
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/v1.41")
 		w.Header().Set("Content-Type", "application/json")
@@ -1000,11 +996,8 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		DB:          db,
 		Docker:      dockerService,
 		Settings:    settingsService,
-		// The backup reads the links of the project directory, so it must exist.
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
-			project := testProject()
-			project.Path = projectPath
-			return project, nil
+			return testProject(), nil
 		},
 		Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
 			found, ok := live[name]

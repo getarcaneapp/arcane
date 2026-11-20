@@ -152,6 +152,7 @@ func New(p ModuleParams) *Module {
 			StopProject:   p.Service.stopForExport,
 			StartProject:  p.Service.deployProject,
 			RemoveProject: p.Service.destroyProject,
+			Activities:    p.Activity,
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
