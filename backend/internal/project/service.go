@@ -1241,7 +1241,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
-		Project: compProj, DockerHost: s.dockerService.DockerHost(), Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
+		Project: compProj, DockerHost: s.dockerService.ResolveHostForContext(ctx), Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.deployment.ImageOperations(&options.User, credentials, options.PinnedImages), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
@@ -1387,7 +1387,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	projectModel, err := s.composeCoordinator.Deploy(ctx, types.ComposeDeployment{
-		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: s.dockerService.DockerHost(), Options: options,
+		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: s.dockerService.ResolveHostForContext(ctx), Options: options,
 		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy"),
 		GitOpsManaged:     strings.TrimSpace(kit.FromPtr(projectFromDb.GitOpsManagedBy)) != "",
 		WaitTimeout:       timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
@@ -1464,7 +1464,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 
 	if composeDownErr := projects.ComposeDown(ctx, types.ComposeDownOptions{
 		Project:    proj,
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: s.dockerService.ResolveHostForContext(ctx),
 	}); composeDownErr != nil {
 		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
@@ -1829,7 +1829,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 			if derr := projects.ComposeDown(ctx, types.ComposeDownOptions{
 				Project:       compProj,
-				DockerHost:    s.dockerService.DockerHost(),
+				DockerHost:    s.dockerService.ResolveHostForContext(ctx),
 				RemoveVolumes: true,
 			}); derr != nil && !missing(derr) {
 				return fmt.Errorf("failed to remove project volumes: %w", derr)
@@ -2067,7 +2067,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	if composeRestartErr := projects.ComposeRestart(ctx, types.ComposeTarget{
 		Project:    compProj,
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: s.dockerService.ResolveHostForContext(ctx),
 		Services:   services,
 	}); composeRestartErr != nil {
 		s.restoreRuntimeProjectStatus(ctx, projectID)
@@ -3934,7 +3934,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
 	}
 	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
-	return projectdetails.Logs(ctx, s.dockerService.DockerHost(), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, opts)
+	return projectdetails.Logs(ctx, s.dockerService.ResolveHostForContext(ctx), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, opts)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {

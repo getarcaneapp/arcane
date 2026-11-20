@@ -241,6 +241,7 @@ func applicationOptions(
 			},
 			initializeStartupState,
 			startJobScheduler,
+			startDockerHostEventWatcher,
 			registerJobs,
 			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {
 				if !cfg.AgentEnabled {

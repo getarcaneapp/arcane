@@ -23,6 +23,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"
 )
@@ -35,18 +36,21 @@ type (
 		mutations    concurrency.KeyedMutex
 		store        *kv.KVService
 		service      *actor.Service
-		runtime      *francis.Runtime
-		cancel       context.CancelFunc
-		done         chan struct{}
-		wake         chan struct{}
-		execute      func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
-		reconcile    func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
-		location     *time.Location
-		owner        string
-		mu           sync.Mutex
-		enabled      atomic.Bool
-		stopping     bool
-		started      bool
+		// environmentTarget reports the Docker endpoint of an environment the manager serves
+		// in-process (a docker-host environment), or "" for the local and agent-backed ones.
+		environmentTarget func(context.Context, string) string
+		runtime           *francis.Runtime
+		cancel            context.CancelFunc
+		done              chan struct{}
+		wake              chan struct{}
+		execute           func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+		reconcile         func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+		location          *time.Location
+		owner             string
+		mu                sync.Mutex
+		enabled           atomic.Bool
+		stopping          bool
+		started           bool
 	}
 
 	coordinatorSummary struct {
@@ -460,8 +464,20 @@ func (q *Coordinator) nextRun(runs []types.SchedulerRun) (*types.SchedulerRun, t
 	return nil, nextRetry
 }
 
+// SetEnvironmentTargetResolver installs the lookup that scopes a run to the daemon of the
+// environment it belongs to. Jobs for a docker-host environment must receive that target, or their
+// work would run against the manager's own daemon.
+func (q *Coordinator) SetEnvironmentTargetResolver(resolve func(context.Context, string) string) {
+	q.environmentTarget = resolve
+}
+
 func (q *Coordinator) ExecutionContext(ctx context.Context, run types.SchedulerRun, instanceID string) context.Context {
 	ctx = activity.WithActivityBatchID(ctx, run.ID)
+	if envID := strings.TrimSpace(run.EnvironmentID); envID != "" && q.environmentTarget != nil {
+		if dockerHost := q.environmentTarget(ctx, envID); dockerHost != "" {
+			ctx = envcontext.WithTarget(ctx, envcontext.Target{EnvironmentID: envID, DockerHost: dockerHost})
+		}
+	}
 	return jobcontext.WithExecution(ctx, run, func(target types.TargetOutcome) error {
 		return q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
 			if !kit.Ternary(instanceID == "", current.Status == types.RunStatusRunning && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {

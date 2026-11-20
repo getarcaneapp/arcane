@@ -370,7 +370,7 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
-	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.DockerHost(), "", input.Body.ContainerIDs)
+	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.ResolveHostForContext(ctx), "", input.Body.ContainerIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate compose file: " + err.Error())
 	}

@@ -20,6 +20,7 @@ import (
 
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 )
 
 type (
@@ -82,6 +83,11 @@ type (
 		InContainer             bool          `env:"ARCANE_IN_CONTAINER" default:"false"`
 		LogJson                 bool          `env:"ARCANE_LOG_JSON" default:"false"`
 		UIConfigurationDisabled bool          `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
+		// BackupsDisabled switches the Rustic-backed backup engine off. Every backup and recovery
+		// entry point reports the engine as unavailable instead of pulling or running its helper
+		// image, so a host that never backs anything up does not pay for the engine. Accepts 1,
+		// true, yes and on.
+		BackupsDisabled bool `env:"ARCANE_BACKUPS_DISABLED" default:"false"`
 
 		AgentEnabled         bool `env:"ARCANE_AGENT" default:"false"`
 		UpgradeKeepContainer bool `env:"ARCANE_UPGRADE_KEEP_CONTAINER" default:"false"`
@@ -102,6 +108,8 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	applyOptions(cfg)
+	// The switch accepts yes/on as well as true, so the engine's own parser decides.
+	cfg.BackupsDisabled = cfg.BackupsDisabled || rustic.DisabledFromEnv()
 	applyProxyDefaults(cfg)
 
 	key := strings.TrimSpace(cfg.EncryptionKey)

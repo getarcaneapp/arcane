@@ -52,19 +52,32 @@
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
 	let agentMTLSEnabled = $state(false);
+	let dockerHostMode = $state(false);
 
 	const agentFormSchema = z.object({
-		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
+		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long()),
+		dockerHost: z.string()
 	});
 
 	const agentForm = createForm<typeof agentFormSchema>(agentFormSchema, {
-		name: ''
+		name: '',
+		dockerHost: ''
 	});
 	let agentInputs = $derived(agentForm.inputs);
 
 	function handleAgentSubmit() {
 		const data = agentForm.validate();
 		if (!data) return;
+
+		if (dockerHostMode) {
+			const dockerHost = data.dockerHost.trim();
+			if (!dockerHost) {
+				toast.error(m.environments_docker_host_required());
+				return;
+			}
+			createEnvironmentMutation.mutate({ dto: { name: data.name, dockerHost }, useMTLS: false });
+			return;
+		}
 
 		createEnvironmentMutation.mutate({ dto: { name: data.name }, useMTLS: agentMTLSEnabled });
 	}
@@ -143,13 +156,30 @@
 				<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={agentInputs.name} />
 
 				<LabeledSwitch
-					id="new-agent-mtls"
-					label={m.environments_agent_mtls_enable()}
-					description={m.environments_agent_mtls_desc()}
-					checked={agentMTLSEnabled}
-					onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
+					id="new-environment-docker-host"
+					label={m.environments_docker_host_enable()}
+					description={m.environments_docker_host_desc()}
+					checked={dockerHostMode}
+					onCheckedChange={(checked) => (dockerHostMode = checked)}
 					disabled={isSubmittingNewAgent}
 				/>
+
+				{#if dockerHostMode}
+					<FormInput
+						label={m.environments_docker_host_label()}
+						placeholder="tcp://192.168.2.33:2375"
+						bind:input={agentInputs.dockerHost}
+					/>
+				{:else}
+					<LabeledSwitch
+						id="new-agent-mtls"
+						label={m.environments_agent_mtls_enable()}
+						description={m.environments_agent_mtls_desc()}
+						checked={agentMTLSEnabled}
+						onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
+						disabled={isSubmittingNewAgent}
+					/>
+				{/if}
 
 				<ArcaneButton
 					action="confirm"

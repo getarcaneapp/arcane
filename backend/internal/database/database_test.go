@@ -441,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -904,7 +904,7 @@ func TestMigration116_AddsLdapUserColumns(t *testing.T) {
 	assert.Zero(t, schemaObjects())
 }
 
-func TestMigration117_GrantsProjectsJobsRun(t *testing.T) {
+func TestMigration119_GrantsProjectsJobsRun(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-projects-jobs-run.db")
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 116))
@@ -930,7 +930,7 @@ func TestMigration117_GrantsProjectsJobsRun(t *testing.T) {
 		return deployer, reader, scopes
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	deployer, reader, scopes := granted()
 	assert.JSONEq(t, `["projects:list","projects:read","projects:deploy","projects:jobs:run"]`, deployer)
 	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)

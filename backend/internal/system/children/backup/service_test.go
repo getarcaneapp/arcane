@@ -152,7 +152,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	francistest.Start(t, runtime)
 	engine := backupengine.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
 		return nil
-	})
+	}, false)
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	dockerClient, err := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)

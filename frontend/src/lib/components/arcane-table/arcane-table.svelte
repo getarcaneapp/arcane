@@ -837,15 +837,15 @@
 		{/if}
 
 		{#if items.failedEnvironments?.length}
+			{@const failedEnvironmentNames = items.failedEnvironments.map(({ environment }) => environment.name).join(', ')}
+			{@const failedEnvironmentDetails = items.failedEnvironments
+				.map(({ environment, message }) => `${environment.name}: ${message}`)
+				.join('\n')}
 			<div class="shrink-0 px-3 pt-3">
 				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
 					<div class="flex flex-wrap items-center justify-between gap-2">
-						<Alert.Description>
-							{m.all_environments_unavailable({
-								environments: items.failedEnvironments
-									.map(({ environment, message }) => `${environment.name} (${message})`)
-									.join(', ')
-							})}
+						<Alert.Description title={failedEnvironmentDetails}>
+							{m.all_environments_unavailable({ environments: failedEnvironmentNames })}
 						</Alert.Description>
 						{#if onRetry}
 							{@render RetryButton(onRetry)}

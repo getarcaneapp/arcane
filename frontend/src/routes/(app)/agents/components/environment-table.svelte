@@ -84,6 +84,7 @@
 
 	function getEnvironmentTypeLabel(item: Environment): string {
 		if (item.id === '0') return m.local();
+		if (item.dockerHost?.trim()) return m.environments_docker_host_label();
 		const transport = resolveEnvironmentTransport(item);
 		if (!transport) return m.environments_agent_label();
 		if (transport === 'websocket') return m.environments_agent_websocket_label();
@@ -91,6 +92,7 @@
 	}
 
 	function getEnvironmentTypeVariant(item: Environment): 'gray' | 'purple' | 'blue' {
+		if (item.dockerHost?.trim()) return 'blue';
 		const transport = resolveEnvironmentTransport(item);
 		if (item.id === '0' || !transport) return 'gray';
 		return transport === 'websocket' ? 'purple' : 'blue';
@@ -303,7 +305,6 @@
 		icon={{ component: StatsIcon, variant: 'emerald' }}
 		title={(item: Environment) => item.name || item.id}
 		subtitle={(item: Environment) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		badges={[{ variant: 'green', text: m.resource_environment_cap() }]}
 		fields={[
 			{
 				label: m.common_status(),

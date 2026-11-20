@@ -91,6 +91,9 @@ type (
 		held      map[types.SchedulerAdmissionKey]heldLease
 		authorize func(context.Context, types.BackupRequester) error
 		mu        sync.Mutex
+		// backupsDisabled reports ARCANE_BACKUPS_DISABLED: every entry point short-circuits to
+		// rustic.ErrDisabled instead of touching the helper image.
+		backupsDisabled bool
 	}
 
 	heldLease struct {
@@ -192,13 +195,14 @@ func NewRequester(ctx context.Context, requestedBy types.Actor, environmentID, p
 	return types.BackupRequester{UserID: requestedBy.ID, APIKeyID: keyID, EnvironmentID: environmentID, Permission: permission}
 }
 
-func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
+func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error, backupsDisabled bool) *Engine {
 	return &Engine{
-		imageService: imageService,
-		admission:    admission,
-		authorize:    authorize,
-		repositories: make(map[string]*sync.Mutex),
-		held:         make(map[types.SchedulerAdmissionKey]heldLease),
+		imageService:    imageService,
+		admission:       admission,
+		authorize:       authorize,
+		backupsDisabled: backupsDisabled,
+		repositories:    make(map[string]*sync.Mutex),
+		held:            make(map[types.SchedulerAdmissionKey]heldLease),
 	}
 }
 
@@ -621,6 +625,9 @@ func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Cli
 }
 
 func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
+	if e.backupsDisabled {
+		return Snapshot{}, rustic.ErrDisabled
+	}
 	temporaryVolume := "arcane-rustic-copy-" + uuid.New().String()
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumes.Labels()}); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to create temporary Rustic copy volume: %w", err)
@@ -648,6 +655,9 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, fro
 }
 
 func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
+	if e.backupsDisabled {
+		return "", rustic.ErrDisabled
+	}
 	unlock, err := e.lockRepository(ctx, repository.ID)
 	if err != nil {
 		return "", err

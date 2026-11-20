@@ -48,6 +48,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 RUN mkdir -p /out/rootfs/app/data
 
+# Files the distroless base normally provides and a scratch runtime needs: a minimal account
+# table and a world-writable /tmp.
+RUN mkdir -p /out/lean-rootfs/tmp /out/lean-rootfs/etc \
+    && chmod 1777 /out/lean-rootfs/tmp \
+    && printf 'root:x:0:0:root:/root:/bin/sh\nnonroot:x:65532:65532:nonroot:/app/data:/bin/sh\n' > /out/lean-rootfs/etc/passwd \
+    && printf 'root:x:0:\nnonroot:x:65532:\n' > /out/lean-rootfs/etc/group
+
 FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS agent
 ARG TARGETARCH
 
@@ -74,5 +81,39 @@ ENV ARCANE_ENVIRONMENT=production \
 VOLUME ["/app/data"]
 
 LABEL com.getarcaneapp.arcane.agent="true"
+
+CMD ["./arcane-agent"]
+
+# Lean agent image: the same static binary on an empty base, without the distroless runtime.
+# Built with the timetzdata tag so zoneinfo travels inside the binary. Selected with
+# --target agent-lean by the fork's publish workflow.
+FROM scratch AS agent-lean
+
+ARG TARGETARCH
+
+ENV ARCANE_ENVIRONMENT=production
+ENV ARCANE_IN_CONTAINER=true
+ENV ARCANE_AGENT=true
+ENV PATH="/app:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    ROCR_VISIBLE_DEVICES=all \
+    HIP_VISIBLE_DEVICES=all \
+    ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib64:/usr/lib:/lib64:/lib
+
+WORKDIR /app
+
+USER 0:0
+
+COPY --from=agent-builder --chown=65532:65532 /out/rootfs/app/ /app/
+COPY --from=agent-builder --chown=65532:65532 /out/lean-rootfs/ /
+COPY --from=ghcr.io/getarcaneapp/base:distroless /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=agent-builder --chown=65532:65532 /out/arcane-agent ./arcane-agent
+
+VOLUME ["/app/data"]
+
+LABEL com.getarcaneapp.arcane.agent="true" \
+      com.getarcaneapp.arcane.base="scratch"
 
 CMD ["./arcane-agent"]

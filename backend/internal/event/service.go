@@ -843,6 +843,12 @@ func (s *EventService) RunStreamProducer(ctx context.Context, ps *authz.Permissi
 }
 
 func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run func(context.Context) error, cleanup func()) {
+	return s.SubscribeDockerEventsForEnvironment(eventBus, "")
+}
+
+// SubscribeDockerEventsForEnvironment subscribes to a daemon bus and tags every recorded event with
+// the environment that daemon belongs to. An empty environmentID records local daemon events.
+func (s *EventService) SubscribeDockerEventsForEnvironment(eventBus *bus.DockerEventBus, environmentID string) (run func(context.Context) error, cleanup func()) {
 	containers, unsubscribeContainers := eventBus.Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
 	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
 	volumes, unsubscribeVolumes := eventBus.Subscribe(events.VolumeEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
@@ -881,11 +887,11 @@ func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run 
 			forwarders.Wait()
 			close(swarmEvents)
 		}()
-		return s.runDockerEvents(ctx, containers, images, volumes, networks, swarmEvents)
+		return s.runDockerEvents(ctx, environmentID, containers, images, volumes, networks, swarmEvents)
 	}, cleanup
 }
 
-func (s *EventService) runDockerEvents(ctx context.Context, containers, images, volumes, networks, swarmEvents <-chan events.Message) error {
+func (s *EventService) runDockerEvents(ctx context.Context, environmentID string, containers, images, volumes, networks, swarmEvents <-chan events.Message) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for containers != nil || images != nil || volumes != nil || networks != nil || swarmEvents != nil {
@@ -923,27 +929,49 @@ func (s *EventService) runDockerEvents(ctx context.Context, containers, images, 
 			s.correlation.Prune()
 			continue
 		}
-		s.RecordDockerEvent(ctx, msg)
+		if environmentID == "" {
+			s.RecordDockerEvent(ctx, msg)
+			continue
+		}
+		s.RecordDockerHostEvent(ctx, environmentID, msg)
 	}
 	return nil
 }
 
+// RecordDockerEvent records an event from the manager's own daemon.
 func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message) {
+	s.recordDockerEventForEnvironment(ctx, "", msg)
+}
+
+// RecordDockerHostEvent records an event from a docker-host environment's daemon, tagged with that
+// environment so the event log and the activity feed stay scoped to the daemon that reported it.
+func (s *EventService) RecordDockerHostEvent(ctx context.Context, environmentID string, msg events.Message) {
+	if strings.TrimSpace(environmentID) == "" {
+		s.RecordDockerEvent(ctx, msg)
+		return
+	}
+	s.recordDockerEventForEnvironment(ctx, strings.TrimSpace(environmentID), msg)
+}
+
+func (s *EventService) recordDockerEventForEnvironment(ctx context.Context, environmentID string, msg events.Message) {
 	if ctx.Err() != nil {
 		return
 	}
 	req, ok := mapDaemonEvent(msg)
+	if environmentID != "" {
+		req.EnvironmentID = new(environmentID)
+	}
 	if !ok {
 		switch {
 		case slices.Contains(swarmDaemonEventTypes, msg.Type):
-			s.PublishChange("0", "swarm")
+			s.PublishChange(cmp.Or(environmentID, "0"), "swarm")
 		case msg.Type == events.NetworkEventType:
-			s.PublishChange("0", string(events.NetworkEventType))
+			s.PublishChange(cmp.Or(environmentID, "0"), string(events.NetworkEventType))
 		}
 		return
 	}
 	if s.ShouldSuppressDaemonEvent(string(msg.Type), msg.Actor.ID, *req.ResourceName, msg.Actor.Attributes["com.docker.compose.project"]) {
-		s.PublishChange("0", string(msg.Type))
+		s.PublishChange(cmp.Or(environmentID, "0"), string(msg.Type))
 		return
 	}
 	if msg.TimeNano != 0 {

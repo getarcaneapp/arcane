@@ -1,0 +1,135 @@
+# Fork-local image publishing.
+#
+# Upstream's release workflow runs on Depot runners and publishes to the upstream
+# namespaces, so it cannot build this fork's images. This workflow builds the manager
+# and agent images on GitHub-hosted runners, then publishes one multi-arch manifest
+# per image.
+name: Publish Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image version, e.g. 2.17.1+cdf.7
+        required: true
+        type: string
+      move_latest:
+        description: Also move the latest tag
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: publish-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The lean stages put the same static binary on scratch instead of the distroless base,
+          # which drops the glibc/libcrypto/libcurl stack the binary does not need. timetzdata
+          # keeps zoneinfo inside the binary because the scratch image ships no
+          # /usr/share/zoneinfo.
+          - image: arcane
+            dockerfile: docker/Dockerfile
+            target: runner-lean
+            build_tags: timetzdata
+            arch: amd64
+            runner: ubuntu-latest
+          - image: arcane
+            dockerfile: docker/Dockerfile
+            target: runner-lean
+            build_tags: timetzdata
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - image: arcane-agent
+            dockerfile: docker/Dockerfile-agent
+            target: agent-lean
+            build_tags: exclude_frontend,timetzdata
+            arch: amd64
+            runner: ubuntu-latest
+          - image: arcane-agent
+            dockerfile: docker/Dockerfile-agent
+            target: agent-lean
+            build_tags: exclude_frontend,timetzdata
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v4
+
+      - name: Read the build timestamp
+        id: buildtime
+        run: echo "value=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          provenance: false
+          target: ${{ matrix.target }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ inputs.version }}
+            REVISION=${{ github.sha }}
+            BUILD_TIME=${{ steps.buildtime.outputs.value }}
+            BUILD_TAGS=${{ matrix.build_tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+  manifest:
+    name: Publish ${{ matrix.image }} manifests
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [arcane, arcane-agent]
+    steps:
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # A "+" is not allowed in an image tag, so 2.17.1+cdf.7 is published as 2.17.1-cdf.7.
+      - name: Create the versioned multi-arch manifest
+        run: |
+          image="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}"
+          docker buildx imagetools create -t "$image:${INPUT_VERSION//+/-}" "$image:arm64" "$image:amd64"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+
+      - name: Move the latest tag
+        if: inputs.move_latest
+        run: |
+          image="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}"
+          docker buildx imagetools create -t "$image:latest" "$image:${INPUT_VERSION//+/-}"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}

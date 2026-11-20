@@ -254,12 +254,14 @@ func newRouter(p RouterParams) *echo.Echo {
 		},
 		p.HandlerDeps.Environment.Service().IsKnownAccessToken,
 	))
-	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
+	envResolver := func(ctx context.Context, id string) (middleware.ResolvedEnvironment, error) {
 		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
-			return nil, false, err
+			return middleware.ResolvedEnvironment{}, err
 		}
-		return env.AccessToken, env.Enabled, nil
+		// A docker-host environment is served in-process against its own daemon, so the proxy
+		// middleware needs that endpoint to route the request instead of forwarding to an agent.
+		return middleware.ResolvedEnvironment{AccessToken: env.AccessToken, DockerHost: env.DockerHostURL(), Enabled: env.Enabled}, nil
 	}
 
 	permissionMatcher := authz.NewPermissionMatcher()

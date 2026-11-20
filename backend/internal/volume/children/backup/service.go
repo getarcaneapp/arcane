@@ -44,6 +44,7 @@ import (
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	s3util "getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -93,6 +94,7 @@ type (
 		Admission        *runs.Admission
 		BackupVolumeName string
 		EncryptionKey    string
+		BackupsDisabled  bool
 	}
 
 	Service struct {
@@ -102,8 +104,8 @@ type (
 		flow     *flow.Engine
 		// backupWorkflow runs manual backups that StartBackup accepted.
 		backupWorkflow *flow.Workflow
-		deps           Dependencies
 		rekeyed        sync.Map
+		deps           Dependencies
 	}
 
 	// backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
@@ -242,8 +244,8 @@ func (s *Service) RemovePolicies(ctx context.Context, volumeName string) {
 }
 
 // RenamePolicies moves a renamed volume's backup policies inside the caller's transaction.
-func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
-	return s.policies.Rename(tx, oldName, newName)
+func (s *Service) RenamePolicies(ctx context.Context, tx *gorm.DB, oldName, newName string) error {
+	return s.policies.Rename(ctx, tx, oldName, newName)
 }
 
 func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
@@ -317,6 +319,9 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 func (s *Service) createBackup(
 	ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest, admitted func(context.Context) error,
 ) (*types.VolumeBackup, error) {
+	if s.deps.BackupsDisabled {
+		return nil, rustic.ErrDisabled
+	}
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, request.PolicyID, func() (backupPlan, error) {
 		if admitted != nil {
@@ -335,6 +340,9 @@ func (s *Service) createBackup(
 
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
 func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName string, user types.Actor, trigger, policyID string, policy types.UpdateBackupPolicy) (*types.VolumeBackup, error) {
+	if s.deps.BackupsDisabled {
+		return nil, rustic.ErrDisabled
+	}
 	if !strings.HasPrefix(policyID, types.SystemVolumePolicyPrefix) {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("invalid system-managed volume backup policy id"))
 	}
@@ -1193,6 +1201,9 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, n
 }
 
 func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
+	if s.deps.BackupsDisabled {
+		return types.VolumeBackupEntry{}, rustic.ErrDisabled
+	}
 	requester := backup.NewRequester(ctx, user, environmentID, authz.PermVolumesBackup)
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, types.VolumeBackupTriggerManual, request.PolicyID, func() (backupPlan, error) {
 		plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)

@@ -281,7 +281,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		SettingsService: settingsService,
 		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
 			return nil
-		}),
+		}, false),
 		S3Destinations: s3Destinations,
 		RecoveryKeys:   recoveryKeys,
 		Config:         &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},

@@ -23,6 +23,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -92,7 +93,9 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 
 func (s *Service) policies(ctx context.Context, volumeName string) ([]VolumeBackupPolicy, error) {
 	var policies []VolumeBackupPolicy
-	if err := s.deps.DB.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at ASC").Find(&policies).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).
+		Where("volume_name = ? AND environment_id = ?", volumeName, envcontext.EnvironmentIDOrDefault(ctx)).
+		Order("created_at ASC").Find(&policies).Error; err != nil {
 		return nil, fmt.Errorf("failed to load volume backup policies: %w", err)
 	}
 	return policies, nil
@@ -111,7 +114,9 @@ func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*Vol
 		return nil, nil
 	}
 	var policy VolumeBackupPolicy
-	err := s.deps.DB.WithContext(ctx).Where("id = ? AND volume_name = ?", policyID, volumeName).First(&policy).Error
+	err := s.deps.DB.WithContext(ctx).
+		Where("id = ? AND volume_name = ? AND environment_id = ?", policyID, volumeName, envcontext.EnvironmentIDOrDefault(ctx)).
+		First(&policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -185,7 +190,8 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
 	var count int64
 	if err := s.deps.DB.WithContext(ctx).Model(&VolumeBackupPolicy{}).
-		Where("volume_name = ? AND enabled = ?", volumeName, true).Count(&count).Error; err != nil {
+		Where("volume_name = ? AND enabled = ? AND environment_id = ?", volumeName, true, envcontext.EnvironmentIDOrDefault(ctx)).
+		Count(&count).Error; err != nil {
 		return false, fmt.Errorf("failed to load volume backup policy override: %w", err)
 	}
 	return count > 0, nil
@@ -208,7 +214,9 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		break
 	}
 	var policy VolumeBackupPolicy
-	if err := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", input.PolicyID, true).First(&policy).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).
+		Where("id = ? AND enabled = ? AND environment_id = ?", input.PolicyID, true, envcontext.EnvironmentIDOrDefault(ctx)).
+		First(&policy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
 		}
@@ -296,7 +304,9 @@ func (s *Service) reschedule(ctx context.Context, policy *VolumeBackupPolicy) {
 		},
 		ScheduleFn: func(ctx context.Context) string {
 			var current VolumeBackupPolicy
-			if err := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error; err != nil {
+			if err := s.deps.DB.WithContext(ctx).
+				Where("id = ? AND environment_id = ?", policyID, envcontext.EnvironmentIDOrDefault(ctx)).
+				First(&current).Error; err != nil {
 				return defaultSchedule
 			}
 			return current.Schedule
@@ -327,11 +337,15 @@ func (s *Service) Remove(ctx context.Context, volumeName string) {
 	for i := range policies {
 		s.jobs.Unregister(ctx, policies[i].ID)
 	}
-	if deleteBackupPolicyErr := s.deps.DB.WithContext(ctx).Where("volume_name = ?", volumeName).Delete(&VolumeBackupPolicy{}).Error; deleteBackupPolicyErr != nil {
+	if deleteBackupPolicyErr := s.deps.DB.WithContext(ctx).
+		Where("volume_name = ? AND environment_id = ?", volumeName, envcontext.EnvironmentIDOrDefault(ctx)).
+		Delete(&VolumeBackupPolicy{}).Error; deleteBackupPolicyErr != nil {
 		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", deleteBackupPolicyErr)
 	}
 }
 
-func (s *Service) Rename(tx *gorm.DB, oldName, newName string) error {
-	return tx.Model(&VolumeBackupPolicy{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error
+func (s *Service) Rename(ctx context.Context, tx *gorm.DB, oldName, newName string) error {
+	return tx.Model(&VolumeBackupPolicy{}).
+		Where("volume_name = ? AND environment_id = ?", oldName, envcontext.EnvironmentIDOrDefault(ctx)).
+		Update("volume_name", newName).Error
 }

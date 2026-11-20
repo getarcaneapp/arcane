@@ -1,6 +1,7 @@
 package environment
 
 import (
+	"strings"
 	"time"
 
 	"getarcane.dev/arcane/v3/internal/database"
@@ -16,6 +17,7 @@ type (
 		ApiKeyID              *string    `json:"-" gorm:"column:api_key_id"`
 		ParentEnvironmentID   *string    `json:"-" gorm:"column:parent_environment_id"`
 		SwarmNodeID           *string    `json:"-" gorm:"column:swarm_node_id"`
+		DockerHost            *string    `json:"dockerHost" gorm:"column:docker_host"`
 		EnrollmentRequestHash *string    `json:"-" gorm:"column:enrollment_request_hash"`
 
 		Name    string `json:"name" sortable:"true" unorm:"nfc" trim:"true"`
@@ -36,3 +38,18 @@ const (
 )
 
 func (Environment) TableName() string { return "environments" }
+
+// DockerHostURL returns the configured Docker API endpoint for a docker-host environment, or an
+// empty string for agent-backed environments.
+func (e Environment) DockerHostURL() string {
+	if e.DockerHost == nil {
+		return ""
+	}
+	return strings.TrimSpace(*e.DockerHost)
+}
+
+// IsDockerHost reports whether the manager talks to this environment's Docker API directly
+// instead of routing through an Arcane agent tunnel.
+func (e Environment) IsDockerHost() bool {
+	return e.DockerHostURL() != ""
+}

@@ -41,7 +41,17 @@
 
 	let live = $derived(Boolean(environment.connected));
 
+	// A docker-host environment is served in-process against its own daemon: there is no agent
+	// tunnel to describe, so the panel reports the endpoint instead.
+	let dockerHost = $derived(environment.dockerHost?.trim() ?? '');
+
 	let status = $derived.by((): { label: string; description?: string } => {
+		if (dockerHost) {
+			return {
+				label: m.environments_docker_host_label(),
+				description: dockerHost
+			};
+		}
 		if (live) {
 			return {
 				label: m.environments_agent_status_connected()
@@ -180,24 +190,26 @@
 		{/if}
 	</div>
 
-	<div class="flow-agent flex items-start gap-3">
-		{@render endpoint(EnvironmentsIcon, window.location.host)}
-		<div class={cn('flow-track flow-track-manager mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
-		<div class="flex shrink-0 flex-col items-center gap-1.5">
-			<div class="flex size-9 items-center justify-center rounded-md border border-border">
-				{#if environment.agentSecurityMode === 'mtls'}
-					<ShieldCheckIcon class="size-4" />
-				{:else}
-					<LockIcon class="size-4" />
-				{/if}
+	{#if !dockerHost}
+		<div class="flow-agent flex items-start gap-3">
+			{@render endpoint(EnvironmentsIcon, window.location.host)}
+			<div class={cn('flow-track flow-track-manager mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
+			<div class="flex shrink-0 flex-col items-center gap-1.5">
+				<div class="flex size-9 items-center justify-center rounded-md border border-border">
+					{#if environment.agentSecurityMode === 'mtls'}
+						<ShieldCheckIcon class="size-4" />
+					{:else}
+						<LockIcon class="size-4" />
+					{/if}
+				</div>
+				<span class="text-xs whitespace-nowrap text-muted-foreground">
+					{pathCaption || securityLabel}
+				</span>
 			</div>
-			<span class="text-xs whitespace-nowrap text-muted-foreground">
-				{pathCaption || securityLabel}
-			</span>
+			<div class={cn('flow-track flow-track-agent mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
+			{@render endpoint(AgentIcon, environment.name)}
 		</div>
-		<div class={cn('flow-track flow-track-agent mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
-		{@render endpoint(AgentIcon, environment.name)}
-	</div>
+	{/if}
 
 	{#if environment.connected}
 		<div class="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-border/50 pt-5 lg:grid-cols-4">

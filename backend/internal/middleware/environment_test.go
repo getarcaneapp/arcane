@@ -17,6 +17,7 @@ import (
 
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
@@ -33,9 +34,9 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
 		localID:   "0",
 		paramName: "id",
-		resolver: func(ctx context.Context, id string) (*string, bool, error) {
+		resolver: func(ctx context.Context, id string) (ResolvedEnvironment, error) {
 			_ = ctx
-			return nil, true, nil
+			return ResolvedEnvironment{Enabled: true}, nil
 		},
 		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
@@ -75,6 +76,77 @@ func TestEnvironmentMiddleware_ReturnsServiceUnavailableForAgentResourcesWithout
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "Agent is not connected")
 	assert.False(t, localHandlerHit)
+}
+
+// A docker-host environment has no agent, so its requests are served in-process against that
+// daemon: the middleware re-dispatches onto the local route set with the environment as target.
+func TestEnvironmentMiddleware_ServesDockerHostEnvironmentInProcess(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	middleware.resolver = func(ctx context.Context, id string) (ResolvedEnvironment, error) {
+		_ = ctx
+		return ResolvedEnvironment{Enabled: true, DockerHost: "tcp://192.168.2.33:2375"}, nil
+	}
+
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
+
+	var seenTarget envcontext.Target
+	var seenID string
+	api.GET("/agents/:id/containers", func(c *echo.Context) error {
+		target, _ := envcontext.TargetFromContext(c.Request().Context())
+		seenTarget = target
+		seenID = c.Param("id")
+		return c.JSON(http.StatusOK, map[string]any{"success": true, "query": c.QueryParams().Get("all")})
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/agents/env-dh/containers?all=1", http.NoBody))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"query":"1"`, "the query string survives the re-dispatch")
+	assert.Equal(t, "env-dh", seenID, "the re-dispatch keeps the environment id in the route")
+	assert.Equal(t, envcontext.Target{EnvironmentID: "env-dh", DockerHost: "tcp://192.168.2.33:2375"}, seenTarget)
+}
+
+// A docker-host request must not be treated as a proxied request: no tunnel is required.
+func TestEnvironmentMiddleware_DockerHostEnvironmentNeedsNoTunnel(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	middleware.resolver = func(ctx context.Context, id string) (ResolvedEnvironment, error) {
+		_ = ctx
+		return ResolvedEnvironment{Enabled: true, DockerHost: "tcp://192.168.2.33:2375"}, nil
+	}
+
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
+	api.GET("/agents/:id/containers", func(c *echo.Context) error { return c.NoContent(http.StatusNoContent) })
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/agents/env-dh/containers", http.NoBody))
+
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+}
+
+// A disabled docker-host environment is still rejected before anything is served.
+func TestEnvironmentMiddleware_RejectsDisabledDockerHostEnvironment(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	middleware.resolver = func(ctx context.Context, id string) (ResolvedEnvironment, error) {
+		_ = ctx
+		return ResolvedEnvironment{Enabled: false, DockerHost: "tcp://192.168.2.33:2375"}, nil
+	}
+
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
+	served := false
+	api.GET("/agents/:id/containers", func(c *echo.Context) error {
+		served = true
+		return c.NoContent(http.StatusOK)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/agents/env-dh/containers", http.NoBody))
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, served)
 }
 
 func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t *testing.T) {
@@ -361,9 +433,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedHeadersOnly(t *testing.T) {
 			mw := &EnvironmentMiddleware{
 				localID:   "0",
 				paramName: "id",
-				resolver: func(ctx context.Context, id string) (*string, bool, error) {
+				resolver: func(ctx context.Context, id string) (ResolvedEnvironment, error) {
 					_, _ = ctx, id
-					return nil, true, nil
+					return ResolvedEnvironment{Enabled: true}, nil
 				},
 				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					_, _ = ctx, c
@@ -490,8 +562,8 @@ func TestEnvironmentMiddleware_RequiresForwardedPermissionsCapability(t *testing
 			api := attachMiddleware(router, &EnvironmentMiddleware{
 				localID:   "0",
 				paramName: "id",
-				resolver: func(context.Context, string) (*string, bool, error) {
-					return nil, true, nil
+				resolver: func(context.Context, string) (ResolvedEnvironment, error) {
+					return ResolvedEnvironment{Enabled: true}, nil
 				},
 				authValidator: func(context.Context, *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					return tt.perms, &types.Actor{}, true

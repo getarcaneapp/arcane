@@ -14,6 +14,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
@@ -54,6 +55,28 @@ func (o *claimingObserverFake) ActivityID(run types.SchedulerRun) string {
 }
 
 func (o *claimingObserverFake) SyncRunActivity(context.Context, types.SchedulerRun) error { return nil }
+
+// A job belonging to a docker-host environment must run against that environment's daemon, so the
+// execution context it receives carries the endpoint; local and agent-backed runs stay unscoped.
+func TestExecutionContextScopesDockerHostRunsToTheirDaemon(t *testing.T) {
+	q := newTestCoordinator(t)
+	q.SetEnvironmentTargetResolver(func(_ context.Context, environmentID string) string {
+		if environmentID == "dh-1" {
+			return "tcp://192.168.2.33:2375"
+		}
+		return ""
+	})
+
+	dockerHostRun := types.SchedulerRun{EnvironmentID: "dh-1"}
+	target, ok := envcontext.TargetFromContext(q.ExecutionContext(t.Context(), dockerHostRun, ""))
+	require.True(t, ok)
+	require.Equal(t, envcontext.Target{EnvironmentID: "dh-1", DockerHost: "tcp://192.168.2.33:2375"}, target)
+
+	for _, run := range []types.SchedulerRun{{EnvironmentID: "0"}, {EnvironmentID: "env-agent"}, {}} {
+		_, scoped := envcontext.TargetFromContext(q.ExecutionContext(t.Context(), run, ""))
+		require.False(t, scoped, "environment %q must not be scoped to a daemon", run.EnvironmentID)
+	}
+}
 
 func TestSubmitRetryAfterClaimAppendsFreshRun(t *testing.T) {
 	q := newTestCoordinator(t)

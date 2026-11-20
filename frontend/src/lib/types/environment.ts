@@ -36,6 +36,8 @@ export type Environment = {
 	id: string;
 	name: string;
 	apiUrl: string;
+	// Docker API endpoint a docker-host environment points at; the manager serves it in-process.
+	dockerHost?: string;
 	status: EnvironmentStatus;
 	enabled: boolean;
 	agentTransport?: 'grpc' | 'websocket';

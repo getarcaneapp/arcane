@@ -1,0 +1,60 @@
+# Fork deployment example: manager plus an optional agent.
+#
+# The manager serves the local Docker daemon and any docker-host environments you add in the
+# UI. The agent block is only needed for a remote machine that should run Arcane's agent
+# instead of exposing its Docker API.
+services:
+  arcane:
+    image: ghcr.io/viogus/arcane:latest
+    container_name: arcane
+    ports:
+      - '3552:3552'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - arcane-data:/app/data
+      - /host/path/to/projects:/host/path/to/projects
+      - /host/path/to/builds:/builds
+    environment:
+      - ARCANE_ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - ARCANE_PROJECTS_DIRECTORY=/host/path/to/projects
+      # Optional: extra directories scanned for Compose projects. Mount each one too.
+      # - 'ARCANE_PROJECTS_DIRECTORIES=[{"path":"/host/path/to/more-projects","enabled":true}]'
+      # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
+      # - PUID=1000
+      # - PGID=1000
+      # Optional: turn the Rustic backup engine off entirely (no helper image, no volume).
+      # - ARCANE_BACKUPS_DISABLED=true
+      - TZ=UTC
+    # Use host cgroup namespace for better container self-detection.
+    cgroup: host
+    healthcheck:
+      test: ['CMD', './arcane', 'health', '--timeout', '2s']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+  # Optional: run this block on the remote machine instead of exposing its Docker API to the
+  # manager, then pair it from Environments → New environment.
+  arcane-agent:
+    image: ghcr.io/viogus/arcane-agent:latest
+    container_name: arcane-agent
+    profiles: ['agent']
+    environment:
+      - ARCANE_AGENT=true
+      - ARCANE_AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      - ARCANE_MANAGER_API_URL=https://your-manager.example.com
+      # auto (default) prefers gRPC and falls back to websocket; grpc or websocket forces one.
+      - ARCANE_AGENT_TRANSPORT=auto
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - agent-data:/app/data
+    cgroup: host
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  arcane-data:
+  agent-data:

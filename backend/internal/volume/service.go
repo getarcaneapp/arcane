@@ -42,6 +42,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
 	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -138,6 +139,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		StopHelper:       service.StopHelper,
 		Exec:             service.execInContainer,
 		BackupVolumeName: backupVolumeName,
+		BackupsDisabled:  p.Config.BackupsDisabled,
 		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
 		StopContainer:    p.ContainerService.StopContainer,
 		StartContainer:   p.ContainerService.StartContainer,
@@ -265,7 +267,10 @@ func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previous
 func (s *VolumeService) backupStore() volumebackup.Store {
 	return volumebackup.Store{
 		Create: func(ctx context.Context, record *types.VolumeBackup) error {
+			// Every writer goes through this store, so stamping here keeps one daemon's history out
+			// of another's.
 			entry := volumeBackupFromRecord(record)
+			entry.EnvironmentID = envcontext.EnvironmentIDOrDefault(ctx)
 			if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
 				return err
 			}
@@ -274,6 +279,7 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 		},
 		Save: func(ctx context.Context, record *types.VolumeBackup) error {
 			entry := volumeBackupFromRecord(record)
+			entry.EnvironmentID = envcontext.EnvironmentIDOrDefault(ctx)
 			if err := s.db.WithContext(ctx).Save(entry).Error; err != nil {
 				return err
 			}
@@ -281,14 +287,20 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 			return nil
 		},
 		Fail: func(ctx context.Context, backupID, message string) error {
-			return s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("id = ?", backupID).Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": message}).Error
+			return s.db.WithContext(ctx).Model(&VolumeBackup{}).
+				Where("id = ? AND environment_id = ?", backupID, envcontext.EnvironmentIDOrDefault(ctx)).
+				Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": message}).Error
 		},
 		Delete: func(ctx context.Context, backupID string) error {
-			return s.db.WithContext(ctx).Where("id = ?", backupID).Delete(&VolumeBackup{}).Error
+			return s.db.WithContext(ctx).
+				Where("id = ? AND environment_id = ?", backupID, envcontext.EnvironmentIDOrDefault(ctx)).
+				Delete(&VolumeBackup{}).Error
 		},
 		Run: func(ctx context.Context, backupID string) (*types.VolumeBackup, error) {
 			var entry VolumeBackup
-			if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
+			if err := s.db.WithContext(ctx).
+				Where("id = ? AND environment_id = ?", backupID, envcontext.EnvironmentIDOrDefault(ctx)).
+				First(&entry).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, common.Classify(common.ErrNotFound, errors.New("volume backup not found"))
 				}
@@ -298,7 +310,9 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 		},
 		Runs: func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error) {
 			var entries []VolumeBackup
-			if err := s.db.WithContext(ctx).Where("id IN ?", backupIDs).Find(&entries).Error; err != nil {
+			if err := s.db.WithContext(ctx).
+				Where("id IN ? AND environment_id = ?", backupIDs, envcontext.EnvironmentIDOrDefault(ctx)).
+				Find(&entries).Error; err != nil {
 				return nil, err
 			}
 			records := make([]*types.VolumeBackup, 0, len(entries))
@@ -309,7 +323,9 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 		},
 		Latest: func(ctx context.Context, policyID string) (*types.VolumeBackup, error) {
 			var entry VolumeBackup
-			err := s.db.WithContext(ctx).Where("policy_id = ?", policyID).Order("created_at DESC").First(&entry).Error
+			err := s.db.WithContext(ctx).
+				Where("policy_id = ? AND environment_id = ?", policyID, envcontext.EnvironmentIDOrDefault(ctx)).
+				Order("created_at DESC").First(&entry).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, nil
 			}
@@ -336,7 +352,9 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 
 // listBackups pages one volume's backup history; both or neither management type selected means no type filter.
 func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
-	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
+	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).
+		Where("volume_name = ?", volumeName).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx))
 	var system, managed bool
 	for value := range strings.SplitSeq(params.Filters["type"], ",") {
 		switch types.BackupManagementType(strings.TrimSpace(value)) {
@@ -952,7 +970,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
 	slog.DebugContext(
 		ctx, "volume service: listed volumes",
-		"dockerHost", s.dockerService.DockerHost(),
+		"dockerHost", s.dockerService.ResolveHostForContext(ctx),
 		"requestedSort", params.Sort,
 		"requestedOrder", params.Order,
 		"effectiveSort", effectiveParams.Sort,
@@ -1141,10 +1159,12 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 // so renaming volume_name requires no job rescheduling.
 func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newName string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&VolumeBackup{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
+		if err := tx.Model(&VolumeBackup{}).
+			Where("volume_name = ? AND environment_id = ?", oldName, envcontext.EnvironmentIDOrDefault(ctx)).
+			Update("volume_name", newName).Error; err != nil {
 			return fmt.Errorf("rename volume backup history: %w", err)
 		}
-		if err := s.backup.RenamePolicies(tx, oldName, newName); err != nil {
+		if err := s.backup.RenamePolicies(ctx, tx, oldName, newName); err != nil {
 			return fmt.Errorf("rename volume backup policies: %w", err)
 		}
 		return nil

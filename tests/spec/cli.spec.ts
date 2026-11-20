@@ -414,7 +414,9 @@ test.describe('arcane-cli e2e', () => {
 					updateAvailable: expect.any(Boolean)
 				})
 			);
-			expect(version.currentVersion).toMatch(/^(v?\d+\.\d+\.\d+|dev)$/);
+			// The fork labels its builds with semver build metadata (3.1.0+cdf.1), which the
+			// reference implementation rejects here.
+			expect(version.currentVersion).toMatch(/^(v?\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?|dev)$/);
 		});
 	});
 

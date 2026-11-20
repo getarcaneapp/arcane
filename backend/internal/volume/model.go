@@ -21,6 +21,9 @@ type (
 		ActivityID      *string   `json:"activityId,omitempty" gorm:"-"`
 		RemoteAvailable *bool     `json:"remoteAvailable,omitempty" gorm:"-"`
 
+		// EnvironmentID is the environment whose daemon owns this backup. Two daemons can each have a
+		// volume called "app-data", so history is scoped by environment, never by name alone.
+		EnvironmentID     string                        `json:"environmentId" gorm:"column:environment_id;not null;default:'0';index"`
 		VolumeName        string                        `json:"volumeName" gorm:"column:volume_name;index"`
 		Status            VolumeBackupStatus            `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
 		Trigger           VolumeBackupTrigger           `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`

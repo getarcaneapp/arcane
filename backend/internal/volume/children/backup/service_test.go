@@ -100,7 +100,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	require.NoError(t, gate.Register(harness.Runtime))
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
 		return nil
-	})
+	}, false)
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	service := NewService(Dependencies{

@@ -68,13 +68,18 @@ type (
 
 		AgentHost *AgentHostInfo `json:"agentHost,omitempty" readOnly:"true"`
 
-		AgentTunnelStats  *AgentTunnelStats `json:"agentTunnelStats,omitempty" readOnly:"true"`
-		ID                string            `json:"id" readOnly:"true"`
-		Name              string            `json:"name,omitempty" unorm:"nfc" trim:"true"`
-		ApiUrl            string            `json:"apiUrl" readOnly:"true"`
-		Status            string            `json:"status" readOnly:"true"`
-		AgentCapabilities []string          `json:"agentCapabilities,omitempty" readOnly:"true"`
-		Enabled           bool              `json:"enabled" required:"false"`
+		AgentTunnelStats *AgentTunnelStats `json:"agentTunnelStats,omitempty" readOnly:"true"`
+
+		// DockerHost is the Docker API endpoint a "docker-host" environment points at, for example
+		// tcp://192.168.2.33:2375. When set, the manager serves that environment in-process against
+		// that daemon and the environment has no agent to pair.
+		DockerHost        *string  `json:"dockerHost,omitempty"`
+		ID                string   `json:"id" readOnly:"true"`
+		Name              string   `json:"name,omitempty" unorm:"nfc" trim:"true"`
+		ApiUrl            string   `json:"apiUrl" readOnly:"true"`
+		Status            string   `json:"status" readOnly:"true"`
+		AgentCapabilities []string `json:"agentCapabilities,omitempty" readOnly:"true"`
+		Enabled           bool     `json:"enabled" required:"false"`
 	}
 
 	EnvironmentStreamEvent struct {

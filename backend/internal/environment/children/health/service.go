@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
-
-	"github.com/moby/moby/client"
 
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/agent"
@@ -27,14 +26,15 @@ func New(dockerService *docker.DockerClientService, tunnels *agent.TunnelRegistr
 	}
 }
 
-func (s *Service) Probe(ctx context.Context, id string, authenticated func(context.Context) (int, error)) (string, error) {
-	if id == "0" {
+// Probe reports an environment's status: the manager's own daemon and docker-host environments are
+// reached over the Docker API, everything else over its agent tunnel.
+func (s *Service) Probe(ctx context.Context, id, dockerHost string, authenticated func(context.Context) (int, error)) (string, error) {
+	if id == "0" || strings.TrimSpace(dockerHost) != "" {
 		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		if _, pingErr := s.dockerService.Call(reqCtx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
-			return cli.Ping(ctx, client.PingOptions{})
-		}); pingErr != nil {
+		pingErr := s.dockerService.PingHost(reqCtx, dockerHost)
+		if pingErr != nil {
 			return "offline", fmt.Errorf("docker ping failed: %w", pingErr)
 		}
 		return "online", nil

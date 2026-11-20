@@ -122,7 +122,7 @@
 					</div>
 
 					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-						{#if environment.id !== '0'}
+						{#if environment.id !== '0' && !environment.dockerHost?.trim()}
 							<span>{getAgentTransportLabel(environment)}</span>
 							<span>•</span>
 							<span>{getAgentConnectionStateLabel(environment)}</span>

@@ -89,6 +89,7 @@ type (
 		Volume             *volume.VolumeService
 		System             *system.SystemService
 		GitOpsSync         *gitops.GitOpsSyncService
+		Environment        *environment.EnvironmentService
 	}
 
 	settingsSubscriptionsParams struct {
@@ -133,6 +134,11 @@ func startJobScheduler(p startJobSchedulerParams) {
 				}
 			}()
 			slog.InfoContext(p.AppCtx, "Starting scheduler", "timezone", p.Config.TimezoneName(), "utcOffset", time.Now().In(p.Config.GetLocation()).Format("-07:00"))
+			// A docker-host environment's jobs run in this process against that environment's own
+			// daemon, so every run is scoped to the endpoint it belongs to.
+			p.Coordinator.SetEnvironmentTargetResolver(func(ctx context.Context, environmentID string) string {
+				return p.Environment.DockerHostForEnvironment(ctx, environmentID)
+			})
 			if startErr := p.Coordinator.Start(ctx, schedulerCtx); startErr != nil {
 				return fmt.Errorf("initialize scheduler: %w", startErr)
 			}

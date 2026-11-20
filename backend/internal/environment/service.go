@@ -426,12 +426,18 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 	if err := normalization.Normalize(env); err != nil {
 		return nil, err
 	}
+	if validateErr := validateEnvironmentTargetInternal(env); validateErr != nil {
+		return nil, validateErr
+	}
 	id := uuid.New().String()
 	now := time.Now()
-	apiURL := cmp.Or(env.ApiUrl, "agent://"+cmp.Or(strings.Trim(agentSlugPattern.ReplaceAllString(strings.ToLower(env.Name), "-"), "-"), id))
-	var apiURLTaken int64
-	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("lower(api_url) = ?", strings.ToLower(apiURL)).Count(&apiURLTaken).Error; err != nil {
-		return nil, fmt.Errorf("failed to check environment api url: %w", err)
+	// A docker-host environment has no agent endpoint, so it keeps an empty API URL.
+	apiURL := kit.Ternary(env.IsDockerHost(), "", cmp.Or(env.ApiUrl, "agent://"+cmp.Or(strings.Trim(agentSlugPattern.ReplaceAllString(strings.ToLower(env.Name), "-"), "-"), id)))
+	apiURLTaken := int64(0)
+	if apiURL != "" {
+		if err := s.db.WithContext(ctx).Model(&Environment{}).Where("lower(api_url) = ?", strings.ToLower(apiURL)).Count(&apiURLTaken).Error; err != nil {
+			return nil, fmt.Errorf("failed to check environment api url: %w", err)
+		}
 	}
 	*env = Environment{ //exhaustruct:enforce
 		BaseModel: database.BaseModel{
@@ -452,6 +458,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		ParentEnvironmentID:   env.ParentEnvironmentID,
 		SwarmNodeID:           env.SwarmNodeID,
 		EnrollmentRequestHash: env.EnrollmentRequestHash,
+		DockerHost:            env.DockerHost,
 	}
 
 	if err := s.db.WithContext(ctx).Create(env).Error; err != nil {
@@ -487,8 +494,12 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if name, ok := updates["name"].(string); ok {
 		updates["name"] = normalization.Text(name, normalization.TextOptions{Trim: true, NFC: true})
 	}
-	if _, err := s.GetEnvironmentByID(ctx, id); err != nil {
+	current, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
 		return nil, err
+	}
+	if applyErr := applyDockerHostUpdateInternal(updates, current); applyErr != nil {
+		return nil, applyErr
 	}
 
 	updates["updated_at"] = new(time.Now())
@@ -504,6 +515,12 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 		return nil, err
 	}
 	s.remoteEnvs.put(*updated)
+
+	// The daemon endpoint may have changed or gone away entirely: drop the cached client instead of
+	// leaking it and reading a stale daemon on the next request.
+	if s.dockerService != nil && current.DockerHostURL() != updated.DockerHostURL() {
+		s.dockerService.CloseHostClient(ctx, current.DockerHostURL())
+	}
 
 	if _, ok := updates["access_token"]; ok {
 		s.agentTokens.sync(id, "")
@@ -694,6 +711,7 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 			ApiKeyID:              &newApiKeyID,
 			ParentEnvironmentID:   envRecord.ParentEnvironmentID,
 			SwarmNodeID:           envRecord.SwarmNodeID,
+			DockerHost:            envRecord.DockerHost,
 			EnrollmentRequestHash: envRecord.EnrollmentRequestHash,
 		}
 	}
@@ -704,6 +722,40 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 		"API Key Regenerated", "Environment API key was regenerated and status set to pending", event.EventSeverityInfo, new(userID), new(username))
 
 	return nil
+}
+
+// ListDockerHostEnvironments returns every enabled docker-host environment the manager serves
+// in-process, keyed by environment id. Background work uses it to watch those daemons.
+func (s *EnvironmentService) ListDockerHostEnvironments(ctx context.Context) (map[string]string, error) {
+	var records []Environment
+	if err := s.db.WithContext(ctx).
+		Where("enabled = ?", true).
+		Where("docker_host IS NOT NULL AND docker_host <> ''").
+		Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("failed to list docker host environments: %w", err)
+	}
+	hosts := make(map[string]string, len(records))
+	for i := range records {
+		if host := records[i].DockerHostURL(); host != "" {
+			hosts[records[i].ID] = host
+		}
+	}
+	return hosts, nil
+}
+
+// DockerHostForEnvironment returns the Docker API endpoint the manager uses for an environment it
+// serves in-process, or "" for the local environment and for agent-backed environments. Background
+// work uses it to scope a run to the daemon it belongs to.
+func (s *EnvironmentService) DockerHostForEnvironment(ctx context.Context, environmentID string) string {
+	environmentID = strings.TrimSpace(environmentID)
+	if environmentID == "" || environmentID == LocalEnvironmentID {
+		return ""
+	}
+	env, err := s.GetEnvironmentByIDCached(ctx, environmentID)
+	if err != nil || env == nil {
+		return ""
+	}
+	return env.DockerHostURL()
 }
 
 func (s *EnvironmentService) GetDB() *database.DB {
@@ -1120,7 +1172,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (str
 		return "error", err
 	}
 
-	status, err := s.health.Probe(ctx, id,
+	status, err := s.health.Probe(ctx, id, envRecord.DockerHostURL(),
 		func(probeCtx context.Context) (int, error) {
 			resp, executeErr := s.ExecuteRemoteRequest(probeCtx, envRecord.ID, http.MethodHead, "/api/agents/0/system/health", nil)
 			if executeErr != nil {

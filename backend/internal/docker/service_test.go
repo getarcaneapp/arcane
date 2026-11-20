@@ -26,6 +26,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -64,6 +65,66 @@ func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
 			assert.NotEqual(t, client.MaxAPIVersion, cli.ClientVersion())
 		})
 	}
+}
+
+// A docker-host environment is served in-process against its own daemon, so a request that carries
+// an environment target must reach that endpoint while the manager's own client stays untouched.
+func TestDockerClientService_GetClientUsesEnvironmentTargetDaemon(t *testing.T) {
+	managerServer := newDockerPingTestServer(t, func() string { return "1.41" })
+	endpointA := newDockerPingTestServer(t, func() string { return "1.42" })
+	endpointB := newDockerPingTestServer(t, func() string { return "1.43" })
+
+	svc := newDockerClientServiceForTest(t, managerServer.URL)
+	t.Cleanup(svc.Close)
+
+	managerClient, err := svc.GetClient(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, managerServer.URL, managerClient.DaemonHost())
+
+	ctxA := envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-a", DockerHost: endpointA.URL})
+	clientA, err := svc.GetClient(ctxA)
+	require.NoError(t, err)
+	assert.Equal(t, endpointA.URL, clientA.DaemonHost())
+	assert.Equal(t, "1.42", clientA.ClientVersion())
+
+	ctxB := envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-b", DockerHost: endpointB.URL})
+	clientB, err := svc.GetClient(ctxB)
+	require.NoError(t, err)
+	assert.Equal(t, endpointB.URL, clientB.DaemonHost())
+	assert.Equal(t, "1.43", clientB.ClientVersion())
+
+	// Each endpoint keeps its own cached client, and the manager's client is untouched.
+	again, err := svc.GetClient(ctxA)
+	require.NoError(t, err)
+	assert.Same(t, clientA, again)
+
+	managerAgain, err := svc.GetClient(t.Context())
+	require.NoError(t, err)
+	assert.Same(t, managerClient, managerAgain)
+
+	// A target that names the manager's own daemon must not create a second client.
+	sameHost, err := svc.GetClient(envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "0", DockerHost: managerServer.URL}))
+	require.NoError(t, err)
+	assert.Same(t, managerClient, sameHost)
+
+	// Dropping an endpoint's client reconnects on the next request instead of reusing the closed one.
+	svc.CloseHostClient(t.Context(), endpointA.URL)
+	reconnected, err := svc.GetClient(ctxA)
+	require.NoError(t, err)
+	assert.NotSame(t, clientA, reconnected)
+	assert.Equal(t, endpointA.URL, reconnected.DaemonHost())
+}
+
+func TestDockerClientService_HostForContext(t *testing.T) {
+	server := newDockerPingTestServer(t, func() string { return "1.41" })
+	svc := newDockerClientServiceForTest(t, server.URL)
+	t.Cleanup(svc.Close)
+
+	assert.Empty(t, svc.HostForContext(t.Context()), "background work has no docker-host target")
+	assert.Empty(t, svc.HostForContext(envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "0", DockerHost: server.URL})),
+		"a target naming the manager's own daemon is not a docker-host target")
+	assert.Equal(t, "tcp://192.0.2.10:2375",
+		svc.HostForContext(envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-1", DockerHost: " tcp://192.0.2.10:2375 "})))
 }
 
 func TestDockerClientService_GetClientReturnsCachedClientUntilRefresh(t *testing.T) {

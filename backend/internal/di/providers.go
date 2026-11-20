@@ -139,7 +139,7 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 			return errors.New("requesting user no longer has permission for this backup")
 		}
 		return nil
-	})
+	}, p.Config.BackupsDisabled)
 	p.Lifecycle.Append(fx.Hook{OnStop: engine.Stop})
 	return engine
 }

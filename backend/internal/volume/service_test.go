@@ -31,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -474,6 +475,48 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	require.Len(t, backups, 1)
 	require.Equal(t, types.VolumeBackupDestinationLocalS3, backups[0].Destination)
 	require.Equal(t, "Offsite", backups[0].S3DestinationName)
+}
+
+// Two daemons can each have a volume called "app-data", so its backup history must be scoped to the
+// environment that owns it: a list, a lookup and a delete in one environment never see the other's.
+func TestVolumeBackup_HistoryIsScopedToEnvironment(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-environment-scope?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
+	db := &database.DB{DB: gormDB}
+	service := NewVolumeService(VolumeServiceParams{
+		Config:          &config.Config{},
+		DB:              db,
+		SettingsService: newVolumeTestSettingsService(t),
+	})
+
+	managerCtx := t.Context()
+	dockerHostCtx := envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-1", DockerHost: "tcp://192.168.2.33:2375"})
+
+	store := service.backupStore()
+	managerRecord := &types.VolumeBackup{VolumeName: "app-data"}
+	require.NoError(t, store.Create(managerCtx, managerRecord))
+	remoteRecord := &types.VolumeBackup{VolumeName: "app-data"}
+	require.NoError(t, store.Create(dockerHostCtx, remoteRecord))
+
+	managerRows, _, err := service.backup.List(managerCtx, "app-data", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Len(t, managerRows, 1)
+	require.Equal(t, managerRecord.ID, managerRows[0].ID)
+
+	remoteRows, _, err := service.backup.List(dockerHostCtx, "app-data", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Len(t, remoteRows, 1)
+	require.Equal(t, remoteRecord.ID, remoteRows[0].ID)
+
+	// A guessed id from the other daemon must not be readable or deletable.
+	_, err = store.Run(managerCtx, remoteRecord.ID)
+	require.ErrorIs(t, err, common.ErrNotFound)
+	require.NoError(t, store.Delete(managerCtx, remoteRecord.ID))
+
+	var surviving VolumeBackup
+	require.NoError(t, gormDB.Where("id = ?", remoteRecord.ID).First(&surviving).Error)
+	require.Equal(t, "dh-1", surviving.EnvironmentID)
 }
 
 func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicyFromStore(t *testing.T) {

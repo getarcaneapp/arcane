@@ -439,7 +439,7 @@ func TestProjectTransfer(t *testing.T) {
 				return errors.New("permission denied")
 			}
 			return nil
-		}),
+		}, false),
 	})
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
@@ -937,7 +937,7 @@ func TestCreateTransferResource(t *testing.T) {
 						return errors.New("permission denied")
 					}
 					return nil
-				}),
+				}, false),
 			})
 			err := service.CreateResource(t.Context(), ResourceOptions{
 				User:                types.Actor{ID: "user-1", Username: "admin"},

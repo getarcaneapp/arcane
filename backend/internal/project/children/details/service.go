@@ -84,7 +84,7 @@ func (s *Service) ComposeServices(
 	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
 	containers, err := projects.ComposePs(ctx, types.ComposePsOptions{
 		Project:    &composetypes.Project{Name: runtimeName},
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: s.dockerService.ResolveHostForContext(ctx),
 		All:        true,
 	})
 	if err != nil {

@@ -63,6 +63,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/types/v3"
 )
 
@@ -1673,6 +1674,9 @@ func (s *Service) pruneUnmanagedRuns(ctx context.Context) error {
 }
 
 func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
+	if s.config.BackupsDisabled {
+		return nil, rustic.ErrDisabled
+	}
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err

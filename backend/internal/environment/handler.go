@@ -737,15 +737,24 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	defer cancel()
 
 	var versionInfo types.VersionInfo
-	if env.ID == LocalEnvironmentID {
+	switch {
+	case env.ID == LocalEnvironmentID:
 		versionInfo = *h.localVersion(reqCtx)
-	} else if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app/version", nil, &versionInfo); proxyErr != nil {
-		return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
+	case env.IsDockerHost():
+		// The manager serves docker-host environments directly; there is no agent to query.
+		versionInfo = types.VersionInfo{}
+	default:
+		if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app/version", nil, &versionInfo); proxyErr != nil {
+			return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
+		}
 	}
 
-	// A successful reply proves the environment is online.
-	if updateErr := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); updateErr != nil {
-		slog.WarnContext(ctx, "Failed to update environment heartbeat", "environmentId", input.ID, "error", updateErr)
+	// A successful reply proves an agent environment is online. Docker-host environments have no
+	// agent, and their heartbeat is owned by the environment health check.
+	if !env.IsDockerHost() {
+		if updateErr := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); updateErr != nil {
+			slog.WarnContext(ctx, "Failed to update environment heartbeat", "environmentId", input.ID, "error", updateErr)
+		}
 	}
 
 	return &handlerutil.Out[types.VersionInfo]{

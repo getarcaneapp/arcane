@@ -13,6 +13,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )
 
@@ -110,7 +111,13 @@ func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) b
 			return ps.Allows(perm, id)
 		})
 	}
-	return ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), ""))
+	envID := kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), "")
+	// A docker-host request is re-dispatched onto the local route set, whose path carries no
+	// environment; the resolved target is the authoritative environment for the permission check.
+	if target := envcontext.EnvironmentIDFromContext(ctx.Context()); target != "" && authz.IsEnvScoped(perm) {
+		envID = target
+	}
+	return ps.Allows(perm, envID)
 }
 
 func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {

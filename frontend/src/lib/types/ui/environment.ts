@@ -1,7 +1,7 @@
 import type { Environment } from '../environment';
 import type { CreateRequest, UpdateRequest } from './pagination';
 
-export type EnvironmentWritable = 'name' | 'enabled';
+export type EnvironmentWritable = 'name' | 'enabled' | 'dockerHost';
 
 export type EnvironmentCreate = CreateRequest<Environment, EnvironmentWritable, 'name'>;
 

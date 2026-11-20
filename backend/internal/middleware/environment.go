@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -18,13 +19,22 @@ import (
 
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
 )
 
 type (
-	EnvResolver func(ctx context.Context, id string) (*string, bool, error)
+	// ResolvedEnvironment is what the proxy needs to know about an environment: its agent access
+	// token, whether it is enabled, and the daemon endpoint when the manager serves it directly.
+	ResolvedEnvironment struct {
+		AccessToken *string
+		DockerHost  string
+		Enabled     bool
+	}
+
+	EnvResolver func(ctx context.Context, id string) (ResolvedEnvironment, error)
 
 	// Sudo permission sets (internal agent proxies) bypass authorization.
 	AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
@@ -96,6 +106,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		return next(c)
 	}
+	// A docker-host request re-dispatches to the local route set; the target is already resolved.
+	if envcontext.IsDockerHostTarget(ctx) {
+		return next(c)
+	}
 
 	_, rest, hasMarker := strings.Cut(req.URL.Path, environmentsPathMarker)
 	pathEnvID, _, _ := strings.Cut(rest, "/")
@@ -138,13 +152,20 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 	}
 
-	accessToken, enabled, err := m.resolver(ctx, envID)
+	resolved, err := m.resolver(ctx, envID)
 	if err != nil {
 		return writeProxyError(c, http.StatusNotFound, "Environment not found")
 	}
-	if !enabled {
+	if !resolved.Enabled {
 		return writeProxyError(c, http.StatusBadRequest, "Environment is disabled")
 	}
+	// A docker-host environment has no agent: the manager serves its daemon in-process, so the
+	// request is re-dispatched against the local route set with that daemon as its target.
+	// Authorization is enforced by the local route stack, which reads the target environment.
+	if dockerHost := strings.TrimSpace(resolved.DockerHost); dockerHost != "" {
+		return m.serveInProcess(c, req, envID, dockerHost, suffix)
+	}
+	accessToken := resolved.AccessToken
 
 	if !m.proxyPermitted(c, perms, envID, suffix) {
 		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
@@ -173,6 +194,38 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 		lost = tunnel
 	}
+}
+
+// serveInProcess re-dispatches an environment-scoped request against the manager's own routes with
+// the docker-host daemon as its target, instead of forwarding it to an agent that does not exist.
+func (m *EnvironmentMiddleware) serveInProcess(c *echo.Context, req *http.Request, envID, dockerHost, suffix string) error {
+	target, err := url.Parse("/api/agents/" + url.PathEscape(envID) + suffix)
+	if err != nil {
+		return writeProxyError(c, http.StatusInternalServerError, "Invalid environment path")
+	}
+	target.RawQuery = req.URL.RawQuery
+
+	innerCtx := envcontext.WithTarget(req.Context(), envcontext.Target{
+		EnvironmentID: envID,
+		DockerHost:    dockerHost,
+	})
+
+	c.Echo().ServeHTTP(c.Response(), (&http.Request{
+		Method:        req.Method,
+		URL:           target,
+		Proto:         req.Proto,
+		ProtoMajor:    req.ProtoMajor,
+		ProtoMinor:    req.ProtoMinor,
+		Header:        req.Header.Clone(),
+		Body:          req.Body,
+		GetBody:       req.GetBody,
+		ContentLength: req.ContentLength,
+		Host:          req.Host,
+		RemoteAddr:    req.RemoteAddr,
+		RequestURI:    target.RequestURI(),
+		TLS:           req.TLS,
+	}).WithContext(innerCtx))
+	return nil
 }
 
 func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunnel, route proxyRoute) (bool, error) {

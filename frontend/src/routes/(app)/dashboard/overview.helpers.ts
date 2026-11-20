@@ -20,6 +20,12 @@ import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker
 import type { EnvironmentRow } from '#lib/utils/environments.js';
 import { bytes, formatDateTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 
+function metadataText(value: unknown): string {
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	return '';
+}
+
 export function shouldLoadEnvironment(environment: Environment): boolean {
 	return environment.enabled && isEnvironmentOnline(environment);
 }
@@ -38,6 +44,9 @@ export function getRoleBadge(environment: Environment): { text: string; variant:
 	if (environment.id === LOCAL_DOCKER_ENVIRONMENT_ID) {
 		return { text: m.manager(), variant: 'primary' };
 	}
+	if (environment.dockerHost?.trim()) {
+		return { text: m.environments_docker_host_label(), variant: 'gray' };
+	}
 	return { text: m.agent(), variant: 'gray' };
 }
 
@@ -55,6 +64,7 @@ export function getResolvedStatusLabel(environment: Environment): string {
 }
 
 export function getAgentTransportLabel(environment: Environment): string {
+	if (environment.dockerHost?.trim()) return m.environments_docker_host_label();
 	const transport = environment.connected ? environment.agentTransport : undefined;
 	switch (transport ?? environment.lastAgentTransport) {
 		case 'websocket':
@@ -328,7 +338,7 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 			started.set(key, Math.max(started.get(key) ?? 0, at.epochMilliseconds));
 			continue;
 		}
-		const failedExit = event.type === 'container.die' && String(event.metadata?.['exitCode'] ?? '0') !== '0';
+		const failedExit = event.type === 'container.die' && metadataText(event.metadata?.['exitCode'] ?? '0') !== '0';
 		if (failedExit) failures.set(key, (failures.get(key) ?? 0) + 1);
 		if (!failedExit && event.type !== 'container.oom') continue;
 		const existing = latest.get(key);
@@ -346,7 +356,7 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 		.map(([key, entry]) => ({
 			key,
 			entry,
-			name: entry.event.resourceName || String(entry.event.metadata?.['name'] ?? entry.event.resourceId)
+			name: entry.event.resourceName || metadataText(entry.event.metadata?.['name']) || entry.event.resourceId || ''
 		}));
 	const nameCounts = new Map<string, number>();
 	for (const { entry, name } of failing) {
@@ -356,7 +366,7 @@ function containerEventItems(events: EnvironmentEvent[], now: Temporal.Instant):
 		const sharedName = (nameCounts.get(`${environmentId}:${displayName}`) ?? 0) > 1;
 		const name = sharedName ? m.name_with_short_id({ name: displayName, id: (event.resourceId ?? '').slice(0, 8) }) : displayName;
 		const oom = event.type === 'container.oom';
-		let title = m.name_exited_with_code({ name, code: String(event.metadata?.['exitCode'] ?? '') });
+		let title = m.name_exited_with_code({ name, code: metadataText(event.metadata?.['exitCode'] ?? '') });
 		if (oom) {
 			title = m.name_ran_out_of_memory({ name });
 		}

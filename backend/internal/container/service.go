@@ -776,7 +776,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				return "", fmt.Errorf("compose redeploy failed for %s/%s: %w", projectName, serviceName, updateProjectServicesErr)
 			}
 
-			newID, lookupErr := projects.FindComposeServiceContainerID(ctx, s.dockerService.DockerHost(), projectName, serviceName)
+			newID, lookupErr := projects.FindComposeServiceContainerID(ctx, s.dockerService.ResolveHostForContext(ctx), projectName, serviceName)
 			if lookupErr != nil {
 				slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy", "project", projectName, "service", serviceName, "err", lookupErr)
 			}

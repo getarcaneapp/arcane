@@ -9,6 +9,8 @@ type (
 	VolumeBackupPolicy struct {
 		database.BaseModel
 
+		// EnvironmentID is the environment whose daemon owns the volume this policy applies to.
+		EnvironmentID   string `json:"environmentId" gorm:"column:environment_id;not null;default:'0';index"`
 		VolumeName      string `json:"volumeName" gorm:"column:volume_name;not null;index"`
 		Schedule        string `json:"schedule" gorm:"column:schedule;type:text;not null"`
 		S3DestinationID string `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`

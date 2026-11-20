@@ -56,7 +56,7 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetype
 	}
 	summaries, err := projects.ComposePs(ctx, types.ComposePsOptions{
 		Project:    compProj,
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: s.dockerService.ResolveHostForContext(ctx),
 		Services:   deps,
 		All:        true,
 	})
