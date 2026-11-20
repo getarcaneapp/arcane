@@ -32,7 +32,6 @@
 		...projectExportOptionsQuery(environmentId, project?.id ?? ''),
 		enabled: open && !!project
 	}));
-	// Hidden while refetching, so a reopened dialog never shows the previous open's in-use or running state.
 	const options = $derived<ProjectExportOptions | null>(optionsQuery.isFetching ? null : (optionsQuery.data ?? null));
 	const optionsError = $derived(
 		optionsQuery.error && !optionsQuery.isFetching ? extractApiErrorMessage(optionsQuery.error) : null

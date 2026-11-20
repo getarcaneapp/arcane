@@ -1749,7 +1749,7 @@ func TestGitOpsBackup_DeletingProjectRemovesBackupSync(t *testing.T) {
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
 	require.NoError(t, os.Remove(filepath.Join(env.projectPath, "compose.yaml")))
 
-	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, projectpkg.DestroyOptions{
+	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, types.ProjectDestroyOptions{
 		RemoveFiles: true,
 	}, types.SystemUser))
 

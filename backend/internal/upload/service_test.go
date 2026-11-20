@@ -173,7 +173,6 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 		t.Fatalf("ReadChunk(1) = %d bytes, %v", len(tail), err)
 	}
 
-	// A partial download keeps the session for a retry; a complete one deletes it.
 	partial, _, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
 	if err != nil {
 		t.Fatalf("DownloadSession: %v", err)

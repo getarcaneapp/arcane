@@ -32,7 +32,6 @@ type (
 		root            string
 	}
 
-	// downloadReader calls done on Close once the session's data was read to the end.
 	downloadReader struct {
 		io.ReadCloser
 		done func()
@@ -90,19 +89,26 @@ func (s *UploadService) createSessionDir(ctx context.Context) (string, error) {
 	return sessionDir, nil
 }
 
+func (s *UploadService) validateSize(ctx context.Context, kind string, size int64) error {
+	if size <= 0 {
+		return fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
+	}
+	if kind == types.UploadKindImage {
+		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
+		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; size > maxSizeBytes {
+			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
+		}
+	}
+	return nil
+}
+
 func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
 	filename, err := sessionFilename(kind, request.Filename)
 	if err != nil {
 		return nil, err
 	}
-	if request.Size <= 0 {
-		return nil, fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
-	}
-	if kind == types.UploadKindImage {
-		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
-		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; request.Size > maxSizeBytes {
-			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
-		}
+	if sizeErr := s.validateSize(ctx, kind, request.Size); sizeErr != nil {
+		return nil, sizeErr
 	}
 	chunkSize := cmp.Or(request.ChunkSize, types.UploadDefaultChunkSize)
 	if chunkSize < types.UploadMinChunkSize || chunkSize > types.UploadMaxChunkSize {
@@ -258,26 +264,18 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 }
 
 func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*types.UploadSession, error) {
-	session, err := s.CreateSession(ctx, kind, types.CreateUploadSessionRequest{Filename: filename, Size: size})
-	if err != nil {
+	if err := s.validateSize(ctx, kind, size); err != nil {
 		return nil, err
 	}
-	if _, writeFromErr := (acfs.Root{Path: s.root}).WriteFrom(ctx, path.Join("/", session.ID, sessionDataFilename), source, acfs.WriteFromOptions{Size: size, Mode: 0o600}); writeFromErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
-		return nil, fmt.Errorf("write uploaded file: %w", writeFromErr)
+	write := func(w io.Writer) error {
+		if _, err := io.CopyN(w, source, size); err != nil {
+			return fmt.Errorf("write uploaded file: %w", err)
+		}
+		return nil
 	}
-	for index := range session.TotalChunks {
-		session.ReceivedChunks = append(session.ReceivedChunks, index)
-	}
-	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
-		return nil, writeMetaErr
-	}
-	return session, nil
+	return s.WriteSession(ctx, kind, filename, write)
 }
 
-// WriteSession creates a complete session holding what write produces, streamed straight into the session's data
-// file; the session is removed when write fails.
 func (s *UploadService) WriteSession(ctx context.Context, kind, filename string, write func(io.Writer) error) (session *types.UploadSession, err error) {
 	if filename, err = sessionFilename(kind, filename); err != nil {
 		return nil, err
@@ -291,7 +289,12 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 			_ = acfs.Root{Path: s.root}.RemoveAll(context.WithoutCancel(ctx), sessionDir)
 		}
 	}()
-	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{Mode: 0o600, Write: true, Create: true, Exclusive: true})
+	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{
+		Mode:      0o600,
+		Write:     true,
+		Create:    true,
+		Exclusive: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
@@ -330,8 +333,6 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	return session, nil
 }
 
-// DownloadSession opens the data of a complete session for streaming. Closing the reader after it was read to the
-// end deletes the session; after a partial read the session stays for a retry until it expires.
 func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID string) (io.ReadCloser, *types.UploadSession, error) {
 	defer s.locks.RLock(uploadID)()
 

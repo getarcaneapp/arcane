@@ -62,7 +62,6 @@ type (
 		exists       bool
 	}
 
-	// ComposeFileSelection lists a project's compose files relative to its directory, the base file first.
 	ComposeFileSelection struct {
 		ProjectsRoot       string
 		GlobalEnvDirectory string
@@ -70,8 +69,6 @@ type (
 		Files              []string
 	}
 
-	// LoadedComposeFilesOptions names a project for LoadedComposeFiles. ComposeFile is the base file the project
-	// resolves, such as a GitOps sync's compose path; when empty, the base file is detected in ProjectPath.
 	LoadedComposeFilesOptions struct {
 		GlobalEnvDirectory string
 		ProjectPath        string
@@ -839,9 +836,6 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	return resolveComposeFileSelection(ctx, dir, envMap)
 }
 
-// SelectComposeFiles sets COMPOSE_FILE in the project .env when the project does not already load exactly the
-// selection's files, and fails when it still loads other files afterwards. An explicit COMPOSE_FILE turns off the
-// automatic override merge, so a selection without the override file also pins a project that has one.
 func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) error {
 	if slices.Equal(LoadedComposeFiles(ctx, LoadedComposeFilesOptions{GlobalEnvDirectory: selection.GlobalEnvDirectory, ProjectPath: selection.ProjectPath}), selection.Files) {
 		return nil
@@ -869,8 +863,6 @@ func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) err
 	return nil
 }
 
-// LoadedComposeFiles returns the files a project loads, relative to its directory, the way the loader picks them:
-// the COMPOSE_FILE selection, or else the base compose file and the standard override file merged over it.
 func LoadedComposeFiles(ctx context.Context, opts LoadedComposeFilesOptions) []string {
 	projectPath := opts.ProjectPath
 	if files, err := ComposeFileEnvSelection(ctx, opts.GlobalEnvDirectory, projectPath); err == nil && len(files) > 0 {

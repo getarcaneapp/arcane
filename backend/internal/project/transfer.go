@@ -1,7 +1,6 @@
 package project
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
@@ -31,14 +30,11 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
-		// VolumeLocks are the volumes' workspace locks, which restores, backups and file edits take.
-		VolumeLocks *concurrency.KeyedMutex
-		// RestoreVolume and CreateEmptyVolume report whether they created the volume, also when they fail.
-		RestoreVolume     func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error)
-		CreateEmptyVolume func(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error)
-		DeleteVolume      func(ctx context.Context, name string, force bool, user types.Actor) error
-		CreateVolume      func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
-		CreateNetwork     func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
+		VolumeLocks      *concurrency.KeyedMutex
+		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error)
+		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
+		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
@@ -134,11 +130,7 @@ func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID s
 }
 
 func (e localTransferEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
-	imported, err := e.projects.ImportProjectArchive(ctx, request, user)
-	if err != nil {
-		return "", err
-	}
-	return imported.ID, nil
+	return e.projects.ImportProjectArchive(ctx, request, user)
 }
 
 func (e localTransferEnvironment) CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error) {
@@ -196,7 +188,7 @@ func (e localTransferEnvironment) DownProject(ctx context.Context, projectID str
 }
 
 func (e localTransferEnvironment) DestroyProject(ctx context.Context, projectID string, user types.Actor) error {
-	return e.projects.DestroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
+	return e.projects.DestroyProject(ctx, projectID, types.ProjectDestroyOptions{RemoveFiles: true}, user)
 }
 
 func (e localTransferEnvironment) DeleteVolume(ctx context.Context, name string, user types.Actor) error {

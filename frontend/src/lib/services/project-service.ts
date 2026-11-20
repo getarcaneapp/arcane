@@ -296,8 +296,6 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
 	}
 
-	// Packages the project, and the requested volumes' data, then lets the browser stream the resulting archive to disk.
-	// No probe request first: the server deletes the session once it has sent the whole file.
 	async exportProject(projectId: string, request: ExportProjectArchiveRequest, environmentId: string): Promise<void> {
 		const session = await this.handleResponse<UploadSession>(
 			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
@@ -319,7 +317,6 @@ class ProjectService extends BaseAPIService {
 			this.handleResponse<Project>(this.api.post(`/agents/${environmentId}/projects/import`, { ...request, uploadId }))
 		);
 		if (result.error === null) return result.data;
-		// The import removes the upload once it reads it; one rejected earlier must not linger.
 		await tryCatch(uploadService.deleteSession(environmentId, 'project-archive', uploadId));
 		throw result.error;
 	}

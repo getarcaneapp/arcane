@@ -7,6 +7,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -18,7 +19,7 @@ type (
 		service  *ProjectService
 		activity *activity.ActivityService
 		transfer *transfer.Service
-		bundles  projectBundles
+		bundles  *bundle.Service
 	}
 
 	ModuleParams struct {
@@ -36,7 +37,24 @@ func New(p ModuleParams) *Module {
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  projectBundles{local: local},
+		bundles: bundle.New(bundle.Dependencies{
+			Docker:         p.Service.dockerService,
+			Uploads:        p.Service.uploads,
+			VolumeLocks:    p.Transfer.VolumeLocks,
+			Project:        p.Service.GetProjectDetails,
+			ComposeFiles:   p.Service.loadedComposeFiles,
+			ComposeProject: p.Service.composeProject,
+			Lock:           p.Service.LockProject,
+			ExportProject:  p.Service.ExportProjectArchive,
+			Import:         p.Service.importArchive,
+			Deploy:         p.Service.deployProject,
+			Destroy:        p.Service.destroyProject,
+			Volume:         local.Volume,
+			ExportVolume:   p.Transfer.ExportVolume,
+			RestoreVolume:  p.Transfer.RestoreVolume,
+			DeleteVolume:   p.Transfer.DeleteVolume,
+			DeleteUpload:   local.DeleteUpload,
+		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,

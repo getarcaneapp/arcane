@@ -549,7 +549,6 @@ func TestSelectComposeFiles(t *testing.T) {
 
 	t.Run("leaves a project that already loads the files alone", func(t *testing.T) {
 		t.Parallel()
-		// Setting COMPOSE_FILE here would stop the override file from merging.
 		projectsDir, dir := setup(t, "", "compose.yaml", "compose.override.yaml")
 
 		require.NoError(t, SelectComposeFiles(t.Context(), selection(projectsDir, dir, "compose.yaml", "compose.override.yaml")))
@@ -558,7 +557,6 @@ func TestSelectComposeFiles(t *testing.T) {
 
 	t.Run("pins a single file so an unused override does not merge", func(t *testing.T) {
 		t.Parallel()
-		// The source selected only compose.yaml, e.g. through its global .env, so its override never loaded.
 		projectsDir, dir := setup(t, "", "compose.yaml", "compose.override.yaml")
 
 		require.NoError(t, SelectComposeFiles(t.Context(), selection(projectsDir, dir, "compose.yaml")))
@@ -569,7 +567,6 @@ func TestSelectComposeFiles(t *testing.T) {
 		t.Parallel()
 		projectsDir, dir := setup(t, "", "compose.yaml", "compose.override.yaml", "prod.yaml")
 
-		// The override merges only over a standard compose file name.
 		loaded := LoadedComposeFiles(t.Context(), LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: dir, ComposeFile: filepath.Join(dir, "prod.yaml")})
 		assert.Equal(t, []string{"prod.yaml"}, loaded)
 		assert.Equal(t, []string{"compose.yaml", "compose.override.yaml"}, LoadedComposeFiles(t.Context(), LoadedComposeFilesOptions{GlobalEnvDirectory: projectsDir, ProjectPath: dir}))
