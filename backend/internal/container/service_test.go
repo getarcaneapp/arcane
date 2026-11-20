@@ -717,13 +717,14 @@ func TestRetainedVolumeMountPoints(t *testing.T) {
 
 func TestContainerServiceCreateExec(t *testing.T) {
 	db := setupProjectTestDB(t)
+	var gotPath string
 	var got struct {
 		User string
 		Cmd  []string
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "POST /containers/c1/exec", r.Method+" "+dockerTestPath(r.URL.Path))
-		require.NoError(t, json.UnmarshalRead(r.Body, &got))
+		gotPath = r.Method + " " + dockerTestPath(r.URL.Path)
+		_ = json.UnmarshalRead(r.Body, &got)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"Id":"exec-1"}`))
@@ -736,9 +737,9 @@ func TestContainerServiceCreateExec(t *testing.T) {
 	})
 
 	tests := []struct {
+		wantCmd []string
 		name    string
 		opts    ExecOptions
-		wantCmd []string
 	}{
 		{name: "default shell", wantCmd: []string{"/bin/sh"}},
 		{name: "explicit shell and user", opts: ExecOptions{Shell: "/bin/zsh", User: "www-data"}, wantCmd: []string{"/bin/zsh"}},
@@ -749,6 +750,7 @@ func TestContainerServiceCreateExec(t *testing.T) {
 			execID, err := svc.CreateExec(t.Context(), "c1", tt.opts)
 			require.NoError(t, err)
 			require.Equal(t, "exec-1", execID)
+			require.Equal(t, "POST /containers/c1/exec", gotPath)
 			require.Equal(t, tt.wantCmd, got.Cmd)
 			require.Equal(t, tt.opts.User, got.User)
 		})

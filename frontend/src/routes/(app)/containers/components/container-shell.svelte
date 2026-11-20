@@ -24,7 +24,14 @@
 		name: string | undefined;
 	} = $props();
 
+	const maxSavedChoices = 1000;
 	const preferences = $derived(userStore.current?.preferences ?? {});
+
+	function withSavedChoice(saved: Record<string, string> | undefined, key: string, value: string) {
+		const others = Object.entries(saved ?? {}).filter(([savedKey]) => savedKey !== key);
+		if (!value) return Object.fromEntries(others);
+		return Object.fromEntries([...others, [key, value]].slice(-maxSavedChoices));
+	}
 
 	// Keyed by compose service (or container name) so the choice survives container recreation.
 	const shellKey = $derived.by(() => {
@@ -56,15 +63,12 @@
 
 	function handleShellChange(shell: string) {
 		selectedShell = shell;
-		if (shellKey) void saveUserPreferences({ terminalShells: { ...preferences.terminalShells, [shellKey]: shell } });
+		if (shellKey) void saveUserPreferences({ terminalShells: withSavedChoice(preferences.terminalShells, shellKey, shell) });
 	}
 
 	function handleUserChange(user: string) {
 		selectedUser = user;
-		if (!shellKey) return;
-		const { [shellKey]: _previous, ...others } = preferences.terminalUsers ?? {};
-		const terminalUsers = user ? { ...others, [shellKey]: user } : others;
-		void saveUserPreferences({ terminalUsers });
+		if (shellKey) void saveUserPreferences({ terminalUsers: withSavedChoice(preferences.terminalUsers, shellKey, user) });
 	}
 
 	function handleConnected() {
