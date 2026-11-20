@@ -85,6 +85,7 @@ type (
 		PolicyOverridden error
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
+		StopHelper       func(ctx context.Context, volumeName string) error
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
@@ -196,6 +197,7 @@ func NewService(deps Dependencies) *Service {
 		HelperImage:     deps.HelperImage,
 		StorageMount:    deps.Repository.StorageMount,
 		AcquireHelper:   deps.AcquireHelper,
+		StopHelper:      deps.StopHelper,
 		Exec:            deps.Exec,
 	})
 	return s
@@ -986,16 +988,12 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ExportVolumeArchive packs the volume under the lock restores and file edits take, so they wait until it is read; a
-// caller that already holds it, such as a project export, isn't made to wait for it again.
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
-	if !volumes.Locked(ctx, volumeName) {
-		unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
-		if err != nil {
-			return nil, err
-		}
-		defer unlock()
+	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1031,11 +1029,10 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 	return session, nil
 }
 
-// RestoreUpload restores an upload session into a volume and reports whether it created the volume.
-func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
+func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer cleanup()
 	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)

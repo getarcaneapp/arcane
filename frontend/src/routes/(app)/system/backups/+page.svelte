@@ -132,7 +132,10 @@
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
-	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
+	// Saving sends a whole list of schedules, which only loads with system-backups:read.
+	const canUpdateBackupPolicies = $derived(
+		hasPermission('system-backups:update', GLOBAL_SCOPE) && hasPermission('system-backups:read', GLOBAL_SCOPE)
+	);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	const canDiscoverBackups = $derived(isGlobalAdmin());
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));

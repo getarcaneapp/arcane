@@ -127,6 +127,8 @@
 	const scheduleFollowsProject = $derived(scheduleBaseVolumes === undefined && Object.keys(scheduleOverrides).length === 0);
 	const policiesQuery = createQuery(() => projectBackupPoliciesQuery(environmentId, projectId));
 	const policies = $derived<ProjectBackupPolicy[]>(policiesQuery.data?.policies ?? []);
+	// Saving sends the whole list, so schedules are only edited once the current list has loaded.
+	const policiesLoaded = $derived(policiesQuery.isSuccess);
 
 	const selectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
@@ -355,6 +357,7 @@
 	}
 
 	function openSchedule(policy?: ProjectBackupPolicy) {
+		if (!policiesLoaded) return;
 		editingPolicyId = policy?.id;
 		scheduleBaseVolumes = policy?.volumes;
 		scheduleOverrides = {};
@@ -603,6 +606,7 @@
 					size="sm"
 					customLabel={m.volume_backup_add_schedule()}
 					icon={AddIcon}
+					disabled={!policiesLoaded}
 					onclick={() => openSchedule()}
 					data-testid="project-backup-add-schedule"
 				/>
@@ -778,7 +782,7 @@
 	{/if}
 {/snippet}
 
-{#if scheduleSession > 0}
+{#if scheduleSession > 0 && policiesLoaded}
 	{#key scheduleSession}
 		<BackupPolicyDialog
 			bind:open={scheduleOpen}
@@ -800,7 +804,10 @@
 				volumes: policy.volumes
 			})}
 			extendUpdate={(update): UpdateProjectBackupPolicy => ({ ...update, volumes: scheduleVolumes() })}
-			updatePolicies={async (next) => (await projectService.updateBackupPolicies(projectId, next, environmentId)).policies}
+			updatePolicies={async (next) => {
+				if (!policiesLoaded) throw new Error(m.failed_to_save_backup_schedules());
+				return (await projectService.updateBackupPolicies(projectId, next, environmentId)).policies;
+			}}
 			messages={{
 				saved: m.backup_schedules_saved(),
 				saveFailed: m.failed_to_save_backup_schedules(),

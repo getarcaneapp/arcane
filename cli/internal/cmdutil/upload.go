@@ -2,7 +2,9 @@ package cmdutil
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,9 +24,11 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// DownloadOptions says where DownloadFileInChunks saves a session and whether it shows progress.
 type DownloadOptions struct {
-	OutputPath   string
+	OutputPath string
+	// Path downloads from another endpoint than the upload session's own, such as a project export's.
+	Path         string
+	Special      bool
 	ShowProgress bool
 }
 
@@ -109,17 +113,25 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 	}
 }
 
-// DownloadFileInChunks saves a complete upload session to OutputPath chunk by chunk, then deletes the session. A
-// regular file is replaced only once the download is complete; a special file such as /dev/stdout is written directly.
-func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
+func DownloadUploadSession(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
 	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
 
+	resp, err := c.RequestRaw(ctx, http.MethodGet, cmp.Or(opts.Path, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID)), nil, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to download file: %w", err)
+	}
+	defer func() {
+		// The body is read to the end or the download already failed; closing it can't change the file written.
+		_ = resp.Body.Close()
+	}()
+	if statusErr := EnsureSuccessStatus(resp); statusErr != nil {
+		return 0, fmt.Errorf("failed to download file: %w", statusErr)
+	}
 	absPath, err := filepath.Abs(opts.OutputPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create output file: %w", err)
 	}
-	// os.Stat follows /dev/stdout to a pipe, which resolving the symlink path cannot.
-	if info, statErr := os.Stat(absPath); statErr == nil && !info.Mode().IsRegular() {
+	if opts.Special {
 		file, openErr := acfs.Host{Special: true}.OpenFile(ctx, absPath, acfs.OpenOptions{Write: true})
 		if openErr != nil {
 			return 0, fmt.Errorf("failed to open output file: %w", openErr)
@@ -129,10 +141,9 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 				err = fmt.Errorf("failed to write output file: %w", closeErr)
 			}
 		}()
-		return downloadChunks(ctx, c, session, file, opts.ShowProgress)
+		return copyUploadSession(ctx, file, resp.Body, session, opts.ShowProgress)
 	}
 	if entry, statErr := (acfs.Host{}).Stat(ctx, absPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
-		// A symbolic link keeps pointing at the replaced file.
 		absPath = entry.Path
 	}
 	file, tempPath, err := acfs.Host{}.CreateTemp(ctx, filepath.Dir(absPath), "."+filepath.Base(absPath)+".*.part")
@@ -146,55 +157,27 @@ func DownloadFileInChunks(ctx context.Context, c *client.Client, session types.U
 		if err == nil {
 			err = acfs.Host{}.Rename(ctx, tempPath, absPath)
 		}
+		// A partial file left behind is reported along with the failure.
 		if err != nil {
-			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), tempPath)
+			if removeErr := (acfs.Host{}).Remove(context.WithoutCancel(ctx), tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("remove partial download %s: %w", tempPath, removeErr))
+			}
 		}
 	}()
-	return downloadChunks(ctx, c, session, file, opts.ShowProgress)
+	return copyUploadSession(ctx, file, resp.Body, session, opts.ShowProgress)
 }
 
-func downloadChunks(ctx context.Context, c *client.Client, session types.UploadSession, file io.Writer, showProgress bool) (written int64, err error) {
-	loading := output.StartTracker(ctx, output.Stderr(), showProgress, "Downloading chunks")
-	loading.NextStep()
-	defer loading.Stop()
-	loading.SetProgress("", "Downloading", 0, session.Size, true)
-	for index := range session.TotalChunks {
-		var chunk []byte
-		for attempt := 1; ; attempt++ {
-			chunk, err = readChunk(ctx, c, clitypes.UploadSessionChunk(c.EnvID(), session.Kind, session.ID, index), session.ChunkSize)
-			if err == nil {
-				break
-			}
-			if attempt >= uploadChunkAttempts {
-				return written, fmt.Errorf("failed to download file: %w", err)
-			}
-			charmLog.Default().Debugf("Retrying chunk %d after error: %v", index, err)
-		}
-		if _, err = file.Write(chunk); err != nil {
-			return written, fmt.Errorf("failed to write output file: %w", err)
-		}
-		written += int64(len(chunk))
-		loading.SetProgress("", "Downloading", written, session.Size, true)
+func copyUploadSession(ctx context.Context, file io.Writer, body io.Reader, session types.UploadSession, showProgress bool) (int64, error) {
+	written, err := output.Copy(ctx, file, body, output.TransferOptions{
+		Total:        session.Size,
+		Label:        "Downloading",
+		ShowProgress: showProgress,
+	})
+	if err != nil {
+		return written, fmt.Errorf("failed to download file: %w", err)
 	}
 	if written != session.Size {
 		return written, fmt.Errorf("downloaded %d of %d bytes", written, session.Size)
 	}
-	loading.Finish("", nil)
 	return written, nil
-}
-
-func readChunk(ctx context.Context, c *client.Client, chunkPath string, chunkSize int64) ([]byte, error) {
-	resp, err := c.RequestRaw(ctx, http.MethodGet, chunkPath, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if statusErr := EnsureSuccessStatus(resp); statusErr != nil {
-		return nil, statusErr
-	}
-	chunk, err := io.ReadAll(io.LimitReader(resp.Body, chunkSize+1))
-	if err == nil && int64(len(chunk)) > chunkSize {
-		err = fmt.Errorf("chunk is larger than %d bytes", chunkSize)
-	}
-	return chunk, err
 }

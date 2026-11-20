@@ -209,7 +209,8 @@ func (js *jobScheduler) Stop(ctx context.Context) error {
 	var err error
 	for _, w := range watchers {
 		if stopErr := w.supervisor.Stop(ctx); stopErr != nil {
-			return errors.Join(err, stopErr)
+			err = errors.Join(err, stopErr)
+			continue
 		}
 		if stop, ok := w.watcher.(types.StoppableBusWatcher); ok {
 			err = errors.Join(err, stop.Stop(ctx))

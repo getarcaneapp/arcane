@@ -126,7 +126,8 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Path:          "/agents/{id}/projects/{projectId}/backups/{backupId}/restore",
 		Summary:       "Restore project backup",
 		Description: "Put the project's files and the data of the selected volumes back to the backup's point in time, after a local safety backup that a " +
-			"failed restore is rolled back to. Stopping a running project requires projects:down and projects:deploy; progress is reported through the returned activity",
+			"failed restore is rolled back to. Stopping a running project requires projects:down and projects:deploy; a stopped project's containers are removed so " +
+			"none can start during the restore, which requires projects:down, and projects:deploy too with redeploy. Progress is reported through the returned activity",
 		Tags:     []string{"Project Backup"},
 		Security: handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsRestore, h.Restore)

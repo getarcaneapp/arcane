@@ -386,7 +386,6 @@ func newExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Exporting volume data can take a long time
 			c.SetTimeout(30 * time.Minute)
 
 			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], cmdutil.AllowPrompt(cmd))
@@ -412,7 +411,6 @@ func newExportCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to export project: %w", err)
 			}
-			// Servers without volume export ignore the request body and return a plain project archive.
 			if len(volumes) > 0 && !strings.HasSuffix(exported.Data.Filename, types.ProjectBundleExtension) {
 				cmdutil.AbortUploadSession(cmd.Context(), c, exported.Data.Kind, exported.Data.ID)
 				return errors.New("the server does not support exporting volumes; upgrade Arcane")
@@ -422,12 +420,18 @@ func newExportCmd() *cobra.Command {
 			if len(args) == 2 {
 				outputFile = args[1]
 			}
-			written, err := cmdutil.DownloadFileInChunks(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{OutputPath: outputFile, ShowProgress: !cmdutil.JSONOutputEnabled(cmd)})
+			info, statErr := os.Stat(outputFile)
+			special := statErr == nil && !info.Mode().IsRegular()
+			written, err := cmdutil.DownloadUploadSession(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{
+				OutputPath:   outputFile,
+				Path:         clitypes.ProjectExportDownload(c.EnvID(), resolved.ID, exported.Data.ID),
+				Special:      special,
+				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+			})
 			if err != nil {
 				return fmt.Errorf("failed to download project archive: %w", err)
 			}
-			// Output after an archive written to stdout or another special file would corrupt it.
-			if info, statErr := os.Stat(outputFile); statErr == nil && !info.Mode().IsRegular() {
+			if special {
 				return nil
 			}
 
@@ -436,7 +440,11 @@ func newExportCmd() *cobra.Command {
 					Path    string   `json:"path"`
 					Volumes []string `json:"volumes"`
 					Bytes   int64    `json:"bytes"`
-				}{Path: outputFile, Volumes: volumes, Bytes: written})
+				}{
+					Path:    outputFile,
+					Volumes: volumes,
+					Bytes:   written,
+				})
 			}
 			output.Success("Saved %s (%s)", outputFile, output.Bytes(written))
 			return nil
@@ -463,7 +471,6 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Restoring volume data can take a long time
 			c.SetTimeout(30 * time.Minute)
 
 			name := filepath.Base(args[0])
@@ -480,9 +487,13 @@ func newImportCmd() *cobra.Command {
 				return err
 			}
 			importErr := cmdutil.Run(cmd, c, cmdutil.Spec[types.CreateProjectResponse]{
-				Method:         http.MethodPost,
-				Path:           clitypes.ProjectImport(c.EnvID()),
-				Body:           types.ImportProjectArchive{UploadID: sessionID, Name: name, Start: opts.start},
+				Method: http.MethodPost,
+				Path:   clitypes.ProjectImport(c.EnvID()),
+				Body: types.ImportProjectArchive{
+					UploadID: sessionID,
+					Name:     name,
+					Start:    opts.start,
+				},
 				FailureMessage: "failed to import project",
 				Render: func(data types.CreateProjectResponse) error {
 					output.Success("Project %s imported%s", data.Name, kit.Ternary(opts.start, " and started", ""))

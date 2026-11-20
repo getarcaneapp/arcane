@@ -236,10 +236,16 @@ func TestCheckScheduledRemoteCountsEveryTableOfTheRepository(t *testing.T) {
 	require.NoError(t, db.Create(destination).Error)
 	destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
 	check := func(root string, tables []string) error {
-		return CheckScheduledRemote(t.Context(), db, destinations, ScheduledRemoteRequest{DestinationID: destination.ID, Root: root, Tables: tables})
+		return CheckScheduledRemote(t.Context(), db, destinations, ScheduledRemoteRequest{DestinationID: destination.ID, Root: root, InstanceID: "instance", Tables: tables})
 	}
 
 	// Without a retained snapshot the missing repository is a first backup.
+	require.NoError(t, check(VolumeRoot+"/instance", VolumeRepositoryTables))
+	// Snapshots discovered from another instance live in that instance's repository, so this one is still new.
+	require.NoError(t, db.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, status, s3_destination_id, remote_snapshot_id, remote_instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		"foreign-backup", "data", 0, time.Now(), types.VolumeBackupStatusSucceeded, destination.ID, "remote", "other-instance",
+	).Error)
 	require.NoError(t, check(VolumeRoot+"/instance", VolumeRepositoryTables))
 	// Project and volume backups share the repository, so a retained project snapshot means it was lost.
 	require.NoError(t, db.Exec(
