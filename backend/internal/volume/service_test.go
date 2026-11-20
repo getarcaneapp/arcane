@@ -663,29 +663,31 @@ func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
 }
 
 func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
-	behind := time.Now().Add(-time.Hour)
 	for _, test := range []struct {
-		dockerNow time.Time
-		createdAt time.Time
-		name      string
-		created   bool
+		name    string
+		created bool
 	}{
-		{name: "a volume created now is the import's", dockerNow: time.Now(), createdAt: time.Now(), created: true},
-		{name: "a daemon whose clock is behind Arcane's still counts its new volume", dockerNow: behind, createdAt: behind, created: true},
-		{name: "a volume someone made earlier is refused", dockerNow: time.Now(), createdAt: time.Now().Add(-time.Hour)},
+		{name: "the volume this call created is the import's", created: true},
+		{name: "a volume made by someone else after the check is refused"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// The volume is missing when checked; Docker then hands back whatever volume has the name.
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/info"):
-					_ = json.MarshalWrite(w, map[string]string{"SystemTime": test.dockerNow.Format(time.RFC3339Nano)})
-				case strings.HasSuffix(r.URL.Path, "/volumes/create"):
-					_ = json.MarshalWrite(w, volume.Volume{Name: "data", Driver: "local", CreatedAt: test.createdAt.Format(time.RFC3339)})
-				default:
+				if !strings.HasSuffix(r.URL.Path, "/volumes/create") {
 					http.NotFound(w, r)
+					return
 				}
+				var request client.VolumeCreateOptions
+				if err := json.UnmarshalRead(r.Body, &request); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				labels := map[string]string{"owner": "someone-else"}
+				if test.created {
+					labels = request.Labels
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.MarshalWrite(w, volume.Volume{Name: "data", Driver: "local", Labels: labels})
 			}))
 			t.Cleanup(server.Close)
 			dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
@@ -693,13 +695,15 @@ func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
 			t.Cleanup(func() { _ = dockerClient.Close() })
 			service := &VolumeService{dockerService: newVolumeTestDockerService(t, dockerClient)}
 
-			created, err := service.CreateEmptyVolume(t.Context(), client.VolumeCreateOptions{Name: "data"}, nil)
+			labels := map[string]string{"com.docker.compose.project": "copy"}
+			created, err := service.CreateEmptyVolume(t.Context(), client.VolumeCreateOptions{Name: "data", Labels: labels}, nil)
 			require.Equal(t, test.created, created)
 			if test.created {
 				require.NoError(t, err)
 			} else {
 				require.ErrorIs(t, err, common.ErrConflict)
 			}
+			require.Equal(t, map[string]string{"com.docker.compose.project": "copy"}, labels, "the caller's labels are left as they were")
 		})
 	}
 }
