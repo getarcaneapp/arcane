@@ -104,6 +104,8 @@ type (
 		// Projects lists every project, archived ones included.
 		Projects   func(ctx context.Context) ([]types.ProjectRecord, error)
 		Activities activity.MessageAppender
+		// Activity reads an activity and its latest messages.
+		Activity func(ctx context.Context, environmentID, activityID string, limit int) (*types.ActivityDetail, error)
 		// Config tells a manager, which runs the global policies, from an agent.
 		Config *config.Config
 		// Ctx, Scheduler and Admission register the policies' scheduled jobs.
@@ -3152,6 +3154,16 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	var input restoreRun
 	if err := t.Payload(&input); err != nil {
 		return nil, err
+	}
+	if t.Recovered() {
+		// A system restore fails the restores its backup caught running; resuming one would roll back the live project.
+		detail, err := s.deps.Activity(ctx, cmp.Or(input.Requester.EnvironmentID, "0"), t.ActivityID(), 1)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
+		}
+		if detail == nil || detail.Activity.Status != types.ActivityStatusRunning {
+			return nil, fmt.Errorf("%w: interrupted by a system restore; the project was left as it is", actor.ErrJobPermanentFailure)
+		}
 	}
 	p := input.Plan
 	previous, _ := jobcontext.Run(ctx)

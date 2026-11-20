@@ -118,6 +118,7 @@ func New(p ModuleParams) *Module {
 			return projectRecords(all), nil
 		},
 		Activities: p.Activity,
+		Activity:   p.Activity.GetActivityDetail,
 		Config:     p.Service.config,
 		Ctx:        p.Backups.Ctx,
 		Scheduler:  p.Backups.Scheduler,

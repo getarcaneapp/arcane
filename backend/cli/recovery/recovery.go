@@ -237,6 +237,9 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if finalizeRestoredActivityErr := finalizeRestoredActivity(db, manifestActivityID); finalizeRestoredActivityErr != nil {
 		return finalizeRestoredActivityErr
 	}
+	if failRestoredProjectRestoresErr := failRestoredProjectRestores(db); failRestoredProjectRestoresErr != nil {
+		return failRestoredProjectRestoresErr
+	}
 	return francis.ClearRestoredHosts(ctx, databaseURL)
 }
 
@@ -323,6 +326,29 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 		"latest_message": "Arcane system backup created successfully", "error": nil,
 		"ended_at": now, "duration_ms": now.Sub(entry.StartedAt).Milliseconds(),
 	}).Error
+}
+
+// failRestoredProjectRestores fails the project restores the system backup caught running, so they never resume over
+// the live project.
+func failRestoredProjectRestores(db *gorm.DB) error {
+	var entries []activity.Activity
+	if err := db.Where("status = ?", types.ActivityStatusRunning).Find(&entries).Error; err != nil {
+		return err
+	}
+	const message = "Interrupted by a system restore; the project was left as it is"
+	for _, entry := range entries {
+		if action, _ := entry.Metadata["action"].(string); action != "restore_project_backup" {
+			continue
+		}
+		now := time.Now().UTC()
+		if err := db.Model(&activity.Activity{}).Where("id = ?", entry.ID).Updates(map[string]any{
+			"status": types.ActivityStatusFailed, "latest_message": message, "error": message,
+			"ended_at": now, "duration_ms": now.Sub(entry.StartedAt).Milliseconds(),
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // restoreData applies the restore stages. A failure before live data changed restarts Arcane as it was; a later one
