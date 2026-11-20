@@ -439,7 +439,8 @@ func TestStartRestoreRefusesRestoresThatReachBeyondTheProject(t *testing.T) {
 		// Past the checks, the restore lists every running container to find the project's.
 		if !strings.Contains(r.URL.Query().Get("filters"), "com.docker.compose.project=web") {
 			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"message":"past the checks"}`))
+			_, writeErr := w.Write([]byte(`{"message":"past the checks"}`))
+			assert.NoError(t, writeErr)
 			return
 		}
 		assert.NoError(t, json.MarshalWrite(w, containers))
@@ -754,9 +755,10 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		case path == "/volumes/create":
 			assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "meta"}))
 		case path == "/containers/json":
-			_, _ = w.Write([]byte("[]"))
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
 		case strings.HasPrefix(path, "/images/"):
-			_, _ = w.Write([]byte("{}"))
+			_, writeErr := w.Write([]byte("{}"))
+			assert.NoError(t, writeErr)
 		case path == "/containers/create":
 			w.WriteHeader(http.StatusCreated)
 			assert.NoError(t, json.MarshalWrite(w, container.CreateResponse{ID: "holder"}))
