@@ -69,7 +69,16 @@
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	let { projectId, environmentId }: { projectId: string; environmentId: string } = $props();
+	let {
+		projectId,
+		environmentId,
+		onRestored
+	}: {
+		projectId: string;
+		environmentId: string;
+		// Called when a restore ends, so the page reloads what it shows; files says the project files were restored.
+		onRestored?: (restored: { files: boolean }) => Promise<unknown>;
+	} = $props();
 
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
 	const canRestore = $derived(hasPermission('projects:restore', environmentId));
@@ -147,11 +156,6 @@
 		backupsQuery.data ?? { data: [], pagination: { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 } }
 	);
 
-	$effect(() => {
-		const error = backupsQuery.error;
-		if (error) toast.error(m.failed_to_load_project_backups(), { description: extractApiErrorMessage(error) });
-	});
-
 	function invalidateBackups() {
 		return Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) }),
@@ -191,6 +195,19 @@
 		invalidateBackups,
 		() => `project-restore:${projectId}`
 	);
+
+	// Plain variables, so the effect only reads state: it notices a restore that was running and no longer is. Only a
+	// restore started here is known to have restored the project files.
+	let restoreWasRunning = false;
+	let restoringFiles = false;
+	$effect(() => {
+		const running = restoreActivity.activeIds.length > 0;
+		if (restoreWasRunning && !running) {
+			void onRestored?.({ files: restoringFiles });
+			restoringFiles = false;
+		}
+		restoreWasRunning = running;
+	});
 
 	onMount(async () => {
 		if (!canBackup || !canListS3Destinations) return;
@@ -302,6 +319,7 @@
 			setLoadingState: (value) => (restoring = value),
 			onSuccess: (data) => {
 				restoreOpen = false;
+				restoringFiles = restoreFiles;
 				// Only activities say when a restore ends; without them the server still refuses a second one.
 				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
@@ -616,6 +634,8 @@
 		{mobileFields}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCard}
+		onRetry={() => backupsQuery.refetch()}
+		refreshError={backupsQuery.error}
 	/>
 </div>
 

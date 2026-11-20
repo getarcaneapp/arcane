@@ -2278,6 +2278,7 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 			ResourceType:      entry.ResourceType,
 			ResourceName:      entry.ResourceName,
 			ResourceID:        entry.ResourceID,
+			ResourceMissing:   entry.ResourceMissing,
 		})
 	}
 	return decorated, pagination.Response{

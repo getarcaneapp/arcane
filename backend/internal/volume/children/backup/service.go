@@ -154,8 +154,8 @@ func NewService(deps Dependencies) *Service {
 			}
 			return new(entry.Entry()), nil
 		},
-		CreateBackup: func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error) {
-			return s.CreateBackup(ctx, volumeName, types.SystemUser, types.VolumeBackupTriggerScheduled, types.CreateVolumeBackupRequest{PolicyID: policyID})
+		CreateBackup: func(ctx context.Context, volumeName, policyID string, admitted func(context.Context) error) (*types.VolumeBackup, error) {
+			return s.createBackup(ctx, volumeName, types.SystemUser, types.VolumeBackupTriggerScheduled, types.CreateVolumeBackupRequest{PolicyID: policyID}, admitted)
 		},
 		Reconcile: s.ReconcileBackup,
 	})
@@ -185,7 +185,7 @@ func NewService(deps Dependencies) *Service {
 		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
 			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
 			request := types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationLocal}
-			entry, err := s.CreateBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request)
+			entry, err := s.createBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request, nil)
 			if err != nil {
 				return "", err
 			}
@@ -305,9 +305,18 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	return plan, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest) (*types.VolumeBackup, error) {
+// createBackup runs admitted, when set, once the run is admitted and before its plan resolves, so checks made there
+// see the same settings the backup runs with.
+func (s *Service) createBackup(
+	ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest, admitted func(context.Context) error,
+) (*types.VolumeBackup, error) {
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, request.PolicyID, func() (backupPlan, error) {
+		if admitted != nil {
+			if err := admitted(ctx); err != nil {
+				return backupPlan{}, err
+			}
+		}
 		return s.resolveBackupPlan(ctx, volumeName, trigger, request, nil)
 	})
 	if err != nil {
@@ -493,7 +502,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	source := mount.Mount{Type: mount.TypeVolume, Source: entry.VolumeName, Target: "/volume", ReadOnly: true}
 	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
-		repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if err != nil {
 			return err
 		}
@@ -533,7 +542,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	}
 	var snapshot backup.Snapshot
 	if plan.LocalEnabled {
-		localRepository, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
+		localRepository, localErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		if localErr != nil {
 			return localErr
 		}
@@ -582,7 +591,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if err != nil {
 		return nil, err
 	}
-	localRepository, err := s.deps.Repository.Local(ctx, dockerClient, true)
+	localRepository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -817,7 +826,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	}
 	var deleteErr error
 	if len(localSnapshotIDs) > 0 {
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localSnapshotIDs)
 		}
@@ -888,7 +897,7 @@ func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 	if !s.deps.Repository.LocalInitialized(ctx, dockerClient) {
 		return nil
 	}
-	repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
+	repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 	if err != nil {
 		return err
 	}
@@ -927,7 +936,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		containerID, cleanup, err = s.createBackupTempContainer(ctx, "/volume", true)
 	} else {
 		archivePath = "/tmp/" + entry.ID + ".tar.gz"
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, true)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		if repoErr != nil {
 			return nil, 0, repoErr
 		}
@@ -977,13 +986,16 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ExportVolumeArchive packs the volume under the lock restores and file edits take, so they wait until it is read.
+// ExportVolumeArchive packs the volume under the lock restores and file edits take, so they wait until it is read; a
+// caller that already holds it, such as a project export, isn't made to wait for it again.
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
-	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
-	if err != nil {
-		return nil, err
+	if !volumes.Locked(ctx, volumeName) {
+		unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
 	}
-	defer unlock()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1275,7 +1287,7 @@ func (s *Service) resumeBackup(ctx context.Context, previous types.SchedulerRun,
 	var local, remote backup.Repository
 	var repositories []backup.Repository
 	if checkpoint.LocalEnabled {
-		if local, err = s.deps.Repository.Local(ctx, dockerClient, false); err != nil {
+		if local, err = s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{}); err != nil {
 			return err
 		}
 		repositories = append(repositories, local)

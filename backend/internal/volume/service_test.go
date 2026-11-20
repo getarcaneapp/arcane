@@ -662,3 +662,49 @@ func TestVolumePaginationConfig_FiltersByLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateEmptyVolumeClaimsOnlyAVolumeItCreated(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		created bool
+	}{
+		{name: "the volume this call created is the import's", created: true},
+		{name: "a volume made by someone else after the check is refused"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// The volume is missing when checked; Docker then hands back whatever volume has the name.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/volumes/create") {
+					http.NotFound(w, r)
+					return
+				}
+				var request client.VolumeCreateOptions
+				if err := json.UnmarshalRead(r.Body, &request); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				labels := map[string]string{"owner": "someone-else"}
+				if test.created {
+					labels = request.Labels
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.MarshalWrite(w, volume.Volume{Name: "data", Driver: "local", Labels: labels})
+			}))
+			t.Cleanup(server.Close)
+			dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = dockerClient.Close() })
+			service := &VolumeService{dockerService: newVolumeTestDockerService(t, dockerClient)}
+
+			labels := map[string]string{"com.docker.compose.project": "copy"}
+			created, err := service.CreateEmptyVolume(t.Context(), client.VolumeCreateOptions{Name: "data", Labels: labels}, nil)
+			require.Equal(t, test.created, created)
+			if test.created {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, common.ErrConflict)
+			}
+			require.Equal(t, map[string]string{"com.docker.compose.project": "copy"}, labels, "the caller's labels are left as they were")
+		})
+	}
+}

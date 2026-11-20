@@ -157,6 +157,7 @@ export type SystemVolumeBackupHistoryEntry = {
 	resourceType: string;
 	resourceName: string;
 	resourceId?: string;
+	resourceMissing?: boolean;
 	size: number;
 };
 

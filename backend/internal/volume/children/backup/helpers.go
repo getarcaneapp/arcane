@@ -56,7 +56,7 @@ func backupArchiveFilename(backupID string) (string, error) {
 
 func (s *Service) snapshotRepository(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
 	if entry.LocalSnapshotID != "" {
-		local, err := s.deps.Repository.Local(ctx, dockerClient, true)
+		local, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		return local, entry.LocalSnapshotID, err
 	}
 	if entry.RemoteSnapshotID != "" {

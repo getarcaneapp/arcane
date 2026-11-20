@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -220,10 +222,22 @@ func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.Vo
 	case !errdefs.IsNotFound(err):
 		return false, fmt.Errorf("inspect volume %s: %w", name, err)
 	}
-	if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+	// Docker returns a volume that already exists instead of failing, so this attempt marks the volume it creates and
+	// refuses one without its mark: made since the check above outside Arcane, it is not claimed, changed or removed.
+	claim := uuid.New().String()
+	options.Labels = maps.Clone(options.Labels)
+	if options.Labels == nil {
+		options.Labels = map[string]string{}
+	}
+	options.Labels[volumes.ClaimLabel] = claim
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
 		return dockerClient.VolumeCreate(ctx, options)
-	}); err != nil {
+	})
+	if err != nil {
 		return false, fmt.Errorf("create volume %s: %w", name, err)
+	}
+	if result.Volume.Labels[volumes.ClaimLabel] != claim {
+		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
 	}
 	if root == nil {
 		return true, nil
@@ -469,8 +483,8 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	if strings.TrimSpace(options.Name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
 	}
-	// A restore checks that its volumes are missing, then creates them, under this lock; a long backup or restore
-	// holding it makes the create fail rather than wait.
+	// An import or restore checks that its volumes are missing, then creates them, under this lock; a long backup or
+	// restore holding it makes the create fail rather than wait.
 	waitCtx, cancel := context.WithTimeout(ctx, volumeLockWait)
 	unlock, err := s.workspaceLocks.LockContext(waitCtx, options.Name)
 	cancel()

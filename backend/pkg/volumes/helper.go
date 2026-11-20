@@ -30,11 +30,16 @@ type (
 		Entrypoint []string
 		Command    []string
 	}
+
+	// lockedKey marks the volumes whose workspace locks the caller already holds.
+	lockedKey struct{}
 )
 
 const (
 	toolsRepoPath  = "getarcaneapp/tools"
 	ContainerLabel = "com.getarcaneapp.volume-helper"
+	// ClaimLabel marks the attempt that created a volume, since Docker returns an existing volume instead of failing.
+	ClaimLabel = "com.getarcaneapp.volume-claim"
 )
 
 func ToolsImage(registrySetting string) string {
@@ -172,4 +177,16 @@ func buildRuntimeImage(image string, entrypoint, command []string, source string
 func isArcaneFallbackImage(helperImage string) bool {
 	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
 	return err != nil || ref.Path(named) != toolsRepoPath
+}
+
+// WithLocked records that the caller holds the workspace locks of these volumes, so work done under them doesn't wait
+// for them again.
+func WithLocked(ctx context.Context, names []string) context.Context {
+	return context.WithValue(ctx, lockedKey{}, slices.Clone(names))
+}
+
+// Locked reports whether the caller holds the volume's workspace lock.
+func Locked(ctx context.Context, name string) bool {
+	names, _ := ctx.Value(lockedKey{}).([]string)
+	return slices.Contains(names, name)
 }

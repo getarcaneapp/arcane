@@ -2599,7 +2599,14 @@
 			{@render projectBackupTab(project)}
 
 			<Tabs.Content value="backups" class="h-full min-h-0 overflow-y-auto">
-				<ProjectBackupsPanel projectId={project.id} environmentId={envId} />
+				<ProjectBackupsPanel
+					projectId={project.id}
+					environmentId={envId}
+					onRestored={({ files }) =>
+						files
+							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })
+							: refreshProjectDetails()}
+				/>
 			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>

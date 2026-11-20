@@ -10,6 +10,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/mapping"
 
@@ -30,6 +31,8 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
+		// VolumeLocks are the volumes' workspace locks, which restores, backups and file edits take.
+		VolumeLocks *concurrency.KeyedMutex
 		// RestoreVolume and CreateEmptyVolume report whether they created the volume, also when they fail.
 		RestoreVolume     func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error)
 		CreateEmptyVolume func(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error)

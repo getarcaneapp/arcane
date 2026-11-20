@@ -4730,7 +4730,6 @@
   "project_backup": "Project backup",
   "remove_this_backup": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
   "failed_to_start_project_backup": "Failed to start the project backup",
-  "failed_to_load_project_backups": "Failed to load project backups",
   "restore_backup_description": "Put the project's files and the data of the selected volumes back to the time of this backup.",
   "restore_replaces_current_data": "The project's current files and the data of the selected volumes are replaced. A safety backup is taken first, and the project is rolled back to it if the restore fails.",
   "what_to_restore": "What to restore",
@@ -4774,5 +4773,6 @@
   "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
   "restore_leaves_projects_description": "System backups cover Arcane only, so this restore leaves project folders as they are; restore projects from their project backups. Older backups that include projects still restore them.",
   "found_project_backups": "Found {count} project backup(s).",
-  "failed_to_discover_project_backups": "Failed to discover project backups."
+  "failed_to_discover_project_backups": "Failed to discover project backups.",
+  "restore_backup_as_new_project_description": "Create a project from this backup's files and the data of every volume it includes, restored into new volumes."
 }

@@ -46,6 +46,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -11151,7 +11152,7 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
 }
 
-func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *testing.T) {
+func TestProjectBundlesImportRefusesExistingVolumesAndLeavesNothingBehind(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	db := setupProjectTestDB(t)
@@ -11177,6 +11178,7 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 	svc := NewProjectService(ProjectServiceParams{
 		DB:                          db,
 		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
 		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
 		BuildService:                testBuildBuilder{},
 		Uploads:                     uploads,
@@ -11197,14 +11199,17 @@ func TestProjectBundlesImportRefusesExistingVolumesBeforeCreatingProject(t *test
 		FormatVersion: types.ProjectManifestFormatVersion,
 	})
 	require.NoError(t, err)
-	project := "services:\n  app:\n    image: nginx\n"
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(len(project)), strings.NewReader(project)))
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  app:\n    image: nginx\n    volumes:\n      - data:/data\nvolumes:\n  data:\n"), 0o600))
+	var project strings.Builder
+	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
+	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
 	require.NoError(t, writer.Add(dataArchive, 4, strings.NewReader("data")))
 	require.NoError(t, writer.Close())
 	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
 	require.NoError(t, err)
 
-	// web_data becomes copy_data under the new name, which already exists, so the import must stop before creating anything.
+	// web_data becomes copy_data under the new name, which already exists; the import stops and removes what it wrote.
 	_, err = projectBundles{local: localTransferEnvironment{projects: svc}}.Import(ctx, ImportBundleOptions{
 		EnvironmentID: "0",
 		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
@@ -11285,6 +11290,7 @@ func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
 		lockErr error
 	)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
 			created = append(created, options)
 			roots = append(roots, *root)
@@ -11387,6 +11393,7 @@ func TestProjectBundlesImportSelectsTheExportedComposeFiles(t *testing.T) {
 
 	var created []string
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
 			created = append(created, options.Name)
 			return true, nil
@@ -11478,6 +11485,7 @@ func TestProjectBundlesImportChecksTheImportedProjectsVolumeNames(t *testing.T) 
 
 	var restored, deleted []string
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		// Like the real restore, fail on the archive before any conflict check.
 		RestoreVolume: func(_ context.Context, name string, _ types.RestoreVolumeUploadRequest, _ types.Actor) (bool, error) {
 			restored = append(restored, name)
@@ -11578,13 +11586,21 @@ func TestProjectBundlesExportStopsAndRestartsActiveContainers(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
 
+	locks := &concurrency.KeyedMutex{}
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: locks,
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			mu.Lock()
 			web, database := states["web-1"], states["db-1"]
 			mu.Unlock()
 			assert.Equal(t, container.StateExited, web, "the volume is copied while the project is stopped")
 			assert.Equal(t, container.StateExited, database, "a restarting container is stopped too")
+			// No volume backup can start or stop the project's containers until the export ends.
+			if unlock, free := locks.TryLock(name); free {
+				unlock()
+				t.Errorf("volume %s is not held during the export", name)
+			}
+			assert.True(t, volumes.Locked(ctx, name), "the export knows it holds the volume")
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
 	}}}
@@ -11875,6 +11891,7 @@ func TestProjectBundlesExportIncludesLocalExternalVolumes(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
@@ -11958,6 +11975,7 @@ func TestProjectBundlesExportCountsRestartingContainersAsRunning(t *testing.T) {
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
 		},
@@ -12090,6 +12108,7 @@ func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
 				names, deleted []string
 			)
 			bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+				VolumeLocks: &concurrency.KeyedMutex{},
 				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
 					mu.Lock()
 					defer mu.Unlock()
@@ -12305,8 +12324,11 @@ func TestProjectBundlesRestoreAsNew(t *testing.T) {
 				entries, readErr := os.ReadDir(projectsDir)
 				require.NoError(t, readErr)
 				assert.Empty(t, entries)
+				// The new project's files may be restored before its volume names are known; no volume data is.
 				if tt.conflict && tt.failCreate == "" {
-					assert.Empty(t, snapshots.restores, "nothing is restored when the new project is refused")
+					for _, restore := range snapshots.restores {
+						assert.Empty(t, restore.Volumes, "no volume data is restored when the new project is refused")
+					}
 				}
 				return
 			}
@@ -12382,6 +12404,7 @@ func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
 		created []client.VolumeCreateOptions
 	)
 	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
+		VolumeLocks: &concurrency.KeyedMutex{},
 		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 			exports = append(exports, name)
 			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(empty.Len()), strings.NewReader(empty.String()))
@@ -12524,4 +12547,47 @@ func (r *bundleActivityRecorder) AppendMessage(_ context.Context, _ string, req 
 
 func (r *bundleActivityRecorder) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
 	return nil, nil
+}
+
+func TestStopRunningContainersLeavesSelfRemovingOneOffsAlone(t *testing.T) {
+	var mu sync.Mutex
+	var stopped, started []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{
+				{ID: "web-1", Names: []string{"/demo-web-1"}, State: container.StateRunning, Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web"}},
+				{ID: "run-1", Names: []string{"/demo-web-run-1"}, State: container.StateRunning, Labels: map[string]string{
+					api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True",
+				}},
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/run-1/json"):
+			_, _ = io.WriteString(w, `{"Id":"run-1","State":{"Status":"running"},"HostConfig":{"AutoRemove":true}}`)
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			stopped = append(stopped, filepath.Base(filepath.Dir(r.URL.Path)))
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
+			http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	svc := &ProjectService{dockerService: newSettingsDockerService(t, newTestDockerClient(t, server))}
+
+	// docker compose run --rm deletes its container on stop, so nothing is stopped while one runs.
+	_, err := svc.stopRunningContainers(t.Context(), "demo")
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "demo-web-run-1")
+	require.Empty(t, stopped)
+
+	// A container removed since it was stopped has nothing to start, which is not a failure.
+	require.NoError(t, svc.startContainers(t.Context(), &composetypes.Project{Name: "demo"}, []container.Summary{
+		{ID: "gone-1", Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True"}},
+	}))
+	require.Equal(t, []string{"gone-1"}, started)
 }

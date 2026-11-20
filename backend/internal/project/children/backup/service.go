@@ -104,6 +104,8 @@ type (
 		restores  *flow.Workflow
 		scheduled *flow.Workflow
 		global    *flow.Workflow
+		// policyLocks serializes saving a project's policies with updating their jobs.
+		policyLocks concurrency.KeyedMutex
 		// globalConfig serializes every read-modify-save of the global policies' setting.
 		globalConfig sync.Mutex
 	}
@@ -428,9 +430,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		s.watch(background, entry.ID, activityID)
 		releaseHeld(background)
 	}()
-	dto := entry.DTO()
-	dto.ActivityID = &activityID
-	return dto, nil
+	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
 // resolvePlan validates the request against the project; by default it captures every volume that exists and keeps its
@@ -517,6 +517,20 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		}
 	}
 	return inspected, nil
+}
+
+// mountedVolumeNames are every volume of the project, captured or not. A volume backup stops and starts the containers
+// mounting its volume under that volume's lock, so holding them all keeps any of the project's containers from being
+// started or stopped by another backup.
+func (p plan) mountedVolumeNames() []string {
+	var names []string
+	for _, volume := range p.Volumes {
+		if volume.Name != "" {
+			names = append(names, volume.Name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 func (p plan) volumeNames() []string {
@@ -671,7 +685,14 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		if lockErr != nil {
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
+		// A restore of any of the project's volumes finishes before its containers start again.
+		unlockVolumes, lockErr := s.lockVolumes(ctx, recorded.mountedVolumeNames())
+		if lockErr != nil {
+			unlockProject()
+			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+		}
 		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		unlockVolumes()
 		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
@@ -748,7 +769,7 @@ func (s *Service) repository(ctx context.Context, dockerClient *client.Client, p
 	if remote {
 		return s.deps.Repository.Remote(ctx, p.S3DestinationID, "")
 	}
-	return s.deps.Repository.Local(ctx, dockerClient, false)
+	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
 
 // execute takes the snapshot unless it already exists, then replicates a local snapshot to S3 when both are enabled.
@@ -766,7 +787,7 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	local, err := s.deps.Repository.Local(ctx, dockerClient, true)
+	local, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
@@ -802,16 +823,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) err
 		}
 		defer unlockProject()
 	}
-	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
-	// the project is held: none of its containers is started or stopped by another backup while this one runs.
-	var mounted []string
-	for _, volume := range p.Volumes {
-		if volume.Name != "" {
-			mounted = append(mounted, volume.Name)
-		}
-	}
-	slices.Sort(mounted)
-	unlock, err := s.lockVolumes(ctx, slices.Compact(mounted))
+	unlock, err := s.lockVolumes(ctx, p.mountedVolumeNames())
 	if err != nil {
 		return err
 	}
@@ -1164,9 +1176,7 @@ func (s *Service) List(ctx context.Context, projectID string, params pagination.
 	}
 	backups := make([]types.ProjectBackup, 0, len(entries))
 	for i := range entries {
-		dto := entries[i].DTO()
-		dto.S3DestinationName = destinations[dto.S3DestinationID].Name
-		backups = append(backups, dto)
+		backups = append(backups, entries[i].DTO(DTOOptions{S3DestinationName: destinations[entries[i].S3DestinationID].Name}))
 	}
 	return backups, page, nil
 }
@@ -1179,7 +1189,7 @@ func (s *Service) Get(ctx context.Context, projectID, backupID string) (types.Pr
 	if entry.ProjectID != projectID {
 		return types.ProjectBackup{}, common.Classify(common.ErrNotFound, errors.New("project backup not found"))
 	}
-	return entry.DTO(), nil
+	return entry.DTO(DTOOptions{}), nil
 }
 
 // Delete forgets the backup's snapshots and removes its row; it shares the project's admission with running backups.
@@ -1229,7 +1239,7 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 	var removeErr error
 	changed := make(map[string]bool)
 	if len(localIDs) > 0 {
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localIDs)
 		}
@@ -1335,7 +1345,7 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 		}
 		var lastRun *types.ProjectBackup
 		if len(latest) > 0 {
-			lastRun = new(latest[0].DTO())
+			lastRun = new(latest[0].DTO(DTOOptions{}))
 		}
 		dtos = append(dtos, policies[i].DTO(lastRun, destinations[policies[i].S3DestinationID].Name))
 	}
@@ -1344,6 +1354,8 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 
 // UpdatePolicies replaces the project's backup policies, schedules the enabled ones and unschedules the rest.
 func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
+	// Two saves for the same project must not register jobs in a different order from their commits.
+	defer s.policyLocks.Lock(projectID)()
 	project, err := s.deps.Project(ctx, projectID)
 	if err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
@@ -1388,7 +1400,10 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			}
 			return nil
 		},
-		Unregister: s.jobs.Unregister,
+		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
+		Unregister: func(ctx context.Context, policyID string) {
+			s.reschedule(ctx, &ProjectBackupPolicy{BaseModel: database.BaseModel{ID: policyID}, ProjectID: projectID})
+		},
 		Reschedule: s.reschedule,
 	}
 	if runErr := reconcile.Run(ctx, updates); runErr != nil {
@@ -1397,11 +1412,26 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 	return s.Policies(ctx, projectID)
 }
 
-// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy.
+// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy, and keeps the
+// job of a disabled or deleted per-project policy whose backup was interrupted, so the run can resume and start the
+// containers it stopped.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
+	db := s.deps.DB.WithContext(ctx)
+	unfinished := db.Model(&ProjectBackup{}).Select("policy_id").
+		Where("status = ? AND trigger = ? AND policy_id <> ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled)
 	var policies []ProjectBackupPolicy
-	if err := s.deps.DB.WithContext(ctx).Where("enabled = ?", true).Find(&policies).Error; err != nil {
+	if err := db.Where("enabled = ? OR id IN (?)", true, unfinished).Find(&policies).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load scheduled project backups", "error", err)
+	}
+	var orphaned []ProjectBackup
+	if err := db.Where("status = ? AND trigger = ? AND policy_id <> '' AND policy_id NOT LIKE ? AND policy_id NOT IN (?)",
+		types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%",
+		db.Model(&ProjectBackupPolicy{}).Select("id"),
+	).Find(&orphaned).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to load interrupted project backups of deleted policies", "error", err)
+	}
+	for _, entry := range orphaned {
+		policies = append(policies, ProjectBackupPolicy{BaseModel: database.BaseModel{ID: entry.PolicyID}, ProjectID: entry.ProjectID})
 	}
 	for i := range policies {
 		s.reschedule(ctx, &policies[i])
@@ -1409,6 +1439,19 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	globals, err := s.globalPolicies()
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load global project backup policies", "error", err)
+	}
+	// A deleted global policy's interrupted run resumes through its job as well.
+	var series []string
+	if seriesErr := db.Model(&ProjectBackup{}).Distinct("policy_id").
+		Where("status = ? AND trigger = ? AND policy_id LIKE ?", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%").
+		Pluck("policy_id", &series).Error; seriesErr != nil {
+		slog.ErrorContext(ctx, "Failed to load interrupted global project backups", "error", seriesErr)
+	}
+	for _, seriesID := range series {
+		policyID, _, _ := strings.Cut(strings.TrimPrefix(seriesID, types.GlobalProjectPolicyPrefix), ":")
+		if !slices.ContainsFunc(globals, func(policy types.GlobalProjectBackupPolicy) bool { return policy.ID == policyID }) {
+			globals = append(globals, types.GlobalProjectBackupPolicy{ID: policyID})
+		}
 	}
 	for i := range globals {
 		s.rescheduleGlobal(ctx, &globals[i])
@@ -1418,6 +1461,7 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 
 // RemovePolicies unschedules and deletes a deleted project's backup policies, which leaves their backups unmanaged.
 func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
+	defer s.policyLocks.Lock(projectID)()
 	policies, err := s.policies(ctx, projectID)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load the backup policies of a deleted project", "projectId", projectID, "error", err)
@@ -1433,8 +1477,17 @@ func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
 	}
 }
 
+// unfinished reports whether a scheduled backup of the job's policy is still running, matching a global policy's
+// per-project series too; a failed check counts as running, so its job is kept.
+func (s *Service) unfinished(ctx context.Context, jobID string) bool {
+	var count int64
+	err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
+		Where("(policy_id = ? OR policy_id LIKE ?) AND status = ?", jobID, jobID+":%", types.VolumeBackupStatusRunning).Count(&count).Error
+	return err != nil || count > 0
+}
+
 func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
-	if !policy.Enabled {
+	if !policy.Enabled && !s.unfinished(ctx, policy.ID) {
 		s.jobs.Unregister(ctx, policy.ID)
 		return
 	}
@@ -1462,6 +1515,13 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 				return defaultSchedule
 			}
 			return current.Schedule
+		},
+		// A disabled or deleted policy's job only finishes an interrupted backup; a run it starts finds the policy off
+		// and cancels.
+		ShouldRunFn: func(ctx context.Context) bool {
+			var current ProjectBackupPolicy
+			loadErr := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error
+			return (loadErr == nil && current.Enabled) || s.unfinished(ctx, policyID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and finishes its backup. Nothing
 		// retries a fallback, so it waits for a busy admission instead of handing the run back.
@@ -1853,7 +1913,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 		var destinationIDs []string
 		var listErr error
 		if opts.Local {
-			local, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
+			local, localErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 			if localErr != nil {
 				listErr = fmt.Errorf("open the local repository: %w", localErr)
 			} else {
@@ -2208,7 +2268,7 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 		}
 		var lastRun *types.ProjectBackup
 		if len(latest) > 0 {
-			lastRun = new(latest[0].DTO())
+			lastRun = new(latest[0].DTO(DTOOptions{}))
 		}
 		dtos = append(dtos, types.GlobalProjectBackupPolicy{ //exhaustruct:enforce
 			LastRun:           lastRun,
@@ -2275,8 +2335,9 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 			return nil
 		},
 		Persist: s.saveGlobalPolicies,
+		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
 		Unregister: func(ctx context.Context, policyID string) {
-			s.jobs.Unregister(ctx, types.GlobalProjectPolicyPrefix+policyID)
+			s.rescheduleGlobal(ctx, &types.GlobalProjectBackupPolicy{ID: policyID})
 		},
 		Reschedule: s.rescheduleGlobal,
 	}
@@ -2356,7 +2417,7 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 		return
 	}
 	jobID := types.GlobalProjectPolicyPrefix + policy.ID
-	if !policy.Enabled {
+	if !policy.Enabled && !s.unfinished(ctx, jobID) {
 		s.jobs.Unregister(ctx, jobID)
 		return
 	}
@@ -2375,6 +2436,11 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 				return defaultSchedule
 			}
 			return current.Schedule
+		},
+		// A disabled or deleted policy's job only finishes an interrupted run; a run it starts finds the policy off.
+		ShouldRunFn: func(ctx context.Context) bool {
+			current, err := s.globalPolicy(policyID)
+			return (err == nil && current != nil && current.Enabled) || s.unfinished(ctx, jobID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and backs up the rest of its
 		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back.
@@ -2722,20 +2788,6 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
-	var required []string
-	switch {
-	case len(active) > 0:
-		required = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
-	case kit.FromPtr(opts.Request.Redeploy):
-		required = []string{authz.PermProjectsDeploy}
-	}
-	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, required...); permissionErr != nil {
-		return "", permissionErr
-	}
-	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
-	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
-		return "", authorizeErr
-	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
 		ID:        uuid.New().String(),
@@ -2744,6 +2796,13 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		Volumes:   targets,
 		Files:     files,
 		MayStop:   len(active) > 0,
+	}
+	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()...); permissionErr != nil {
+		return "", permissionErr
+	}
+	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
+	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+		return "", authorizeErr
 	}
 	keysToAdmit := admissions(p.ProjectID, p.volumeNames())
 	leases, err := s.admit(ctx, keysToAdmit, "")
@@ -2804,6 +2863,18 @@ func restoreTargets(project types.Project, captured []types.ProjectBackupVolume,
 	return targets, nil
 }
 
+// extraPermissions are the rights a restore needs besides projects:restore: stopping and deploying a running project,
+// or deploying one it was asked to redeploy.
+func (p restorePlan) extraPermissions() []string {
+	switch {
+	case p.MayStop:
+		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
+	case kit.FromPtr(p.Redeploy):
+		return []string{authz.PermProjectsDeploy}
+	}
+	return nil
+}
+
 func (p restorePlan) volumeNames() []string {
 	names := make([]string, 0, len(p.Volumes))
 	for _, volume := range p.Volumes {
@@ -2852,8 +2923,15 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	}
 	defer unlock()
 	if !resumed {
-		if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
-			return nil, authorizeErr
+		// Rights can be revoked while a restore waits for its turn, so each one it needs is checked again before the
+		// first change; a resumed restore must finish or roll back regardless.
+		for _, permission := range append([]string{input.Requester.Permission}, p.extraPermissions()...) {
+			requester := types.BackupRequester{
+				UserID: input.Requester.UserID, APIKeyID: input.Requester.APIKeyID, EnvironmentID: input.Requester.EnvironmentID, Permission: permission,
+			}
+			if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+				return nil, authorizeErr
+			}
 		}
 		if p, err = s.prepareRestore(ctx, p); err != nil {
 			return nil, err

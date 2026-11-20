@@ -1959,7 +1959,9 @@ func (b projectBundles) exportManifest(ctx context.Context, project types.Projec
 			case !projects.LocalVolume(existing.Driver, existing.Options):
 				outside = append(outside, volume.Key)
 			default:
-				dockerLabels = existing.Labels
+				// The claim mark belongs to the volume's own creation, so another system recreates it without one.
+				dockerLabels = maps.Clone(existing.Labels)
+				delete(dockerLabels, volumes.ClaimLabel)
 			}
 			if err = projects.ValidateVolumeLabels(dockerLabels); err != nil {
 				return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, err))
@@ -2039,6 +2041,29 @@ func (b projectBundles) writeBundle(ctx context.Context, w io.Writer, opts Expor
 		return appendErr
 	}
 	name := manifest.Project.Name
+	// A volume backup stops and starts the containers mounting its volume under that volume's lock, so every volume of
+	// the project is held from before the stop until after the restart; nothing starts them during the copy.
+	var held []string
+	for _, volume := range manifest.Volumes {
+		if volume.Name != "" {
+			held = append(held, volume.Name)
+		}
+	}
+	held = slices.Compact(slices.Sorted(slices.Values(held)))
+	unlocks := make([]func(), 0, len(held))
+	defer func() {
+		for _, unlock := range slices.Backward(unlocks) {
+			unlock()
+		}
+	}()
+	for _, volumeName := range held {
+		unlock, lockErr := b.local.deps.VolumeLocks.LockContext(ctx, volumeName)
+		if lockErr != nil {
+			return lockErr
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	ctx = volumes.WithLocked(ctx, held)
 	if restart != nil {
 		stopped, stopErr := b.local.projects.stopRunningContainers(ctx, manifest.Project.ComposeName)
 		defer func() {
@@ -2167,6 +2192,23 @@ func (s *ProjectService) stopRunningContainers(ctx context.Context, composeName 
 		case pass > 0:
 			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
+		// A one-off started to remove itself (docker compose run --rm) is deleted by the stop and can't be started again,
+		// so nothing is stopped while one runs.
+		for _, c := range running {
+			if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
+				continue
+			}
+			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
+			if inspectErr != nil {
+				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
+			}
+			if inspected.Container.HostConfig != nil && inspected.Container.HostConfig.AutoRemove {
+				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
+					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
+					docker.ContainerNameFromNames(c.Names),
+				))
+			}
+		}
 		for _, c := range running {
 			// Each stop runs to completion so the deferred restart never races a stop still in progress.
 			stopped = append(stopped, c)
@@ -2266,7 +2308,8 @@ func (s *ProjectService) startContainers(ctx context.Context, compose *composety
 		}
 	}
 	for _, id := range containerIDs {
-		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil {
+		// A container removed since it was stopped has nothing left to start.
+		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
 			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
 		}
 	}
@@ -2533,18 +2576,19 @@ func (b projectBundles) checkNewProject(ctx context.Context, manifest types.Proj
 	if stackExists {
 		return common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; use another name for the project", composeName))
 	}
-	predicted := make([]types.ProjectVolume, 0, len(included))
+	// As in an import, only names that can't change are checked before the project exists; the rest are checked with
+	// the new project's real names, and a conflict there rolls it back.
+	var certain, predicted []types.ProjectVolume
 	for _, volume := range included {
 		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
 			SourceProject: manifest.Project.ComposeName, Key: volume.Key, SourceName: volume.Name, TargetProject: name,
 		})
-		predicted = append(predicted, types.ProjectVolume{
-			Key:  volume.Key,
-			Name: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, volume.Name, targetName),
-			Kind: volume.Kind,
-		})
+		if volume.Kind == types.ProjectVolumeExternal || targetName == volume.Name {
+			certain = append(certain, volume)
+			predicted = append(predicted, types.ProjectVolume{Key: volume.Key, Name: volume.Name, Kind: volume.Kind})
+		}
 	}
-	_, err := b.checkVolumeTargets(ctx, included, predicted)
+	_, err := b.checkVolumeTargets(ctx, certain, predicted)
 	return err
 }
 
