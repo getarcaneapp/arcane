@@ -335,3 +335,39 @@ func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.ErrorContains(t, err, "runs Arcane itself, so it cannot be stopped for the export")
 }
+
+func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
+	generated := strings.Repeat("ab", 32)
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
+			http.NotFound(w, r)
+			return
+		}
+		// Stopping removes stopped containers too, so they are listed and checked as well.
+		if r.URL.Query().Get("all") != "1" {
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+			return
+		}
+		assert.NoError(t, json.MarshalWrite(w, []container.Summary{{
+			Names:  []string{"/demo-db-1"},
+			State:  container.StateExited,
+			Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: generated, Destination: "/var/lib/data"}},
+		}}))
+	}))
+	uploads := upload.NewUploadService(nil)
+	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
+	service := New(Dependencies{
+		Environment: environment,
+		Docker:      dockerService,
+		Uploads:     uploads,
+		LockProject: func(context.Context, string) (func(), error) { return func() {}, nil },
+		StopProject: func(context.Context, string, types.Actor) error {
+			t.Fatal("the project was stopped although that would detach an unnamed volume")
+			return nil
+		},
+	})
+	_, err := service.Export(t.Context(), ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "container demo-db-1 keeps data at /var/lib/data in an unnamed volume")
+}
