@@ -122,15 +122,18 @@ type (
 
 	// plan is a run's frozen settings; it doubles as its recovery checkpoint.
 	plan struct {
-		BackupID        string                `json:"backupId"`
-		ProjectID       string                `json:"projectId"`
-		PolicyID        string                `json:"policyId,omitempty"`
-		S3DestinationID string                `json:"s3DestinationId,omitempty"`
-		Volumes         []types.ProjectVolume `json:"volumes"`
-		Stopped         []container.Summary   `json:"stopped,omitempty"`
-		LocalEnabled    bool                  `json:"localEnabled"`
-		S3Enabled       bool                  `json:"s3Enabled"`
-		StopContainers  bool                  `json:"stopContainers"`
+		BackupID        string `json:"backupId"`
+		ProjectID       string `json:"projectId"`
+		PolicyID        string `json:"policyId,omitempty"`
+		S3DestinationID string `json:"s3DestinationId,omitempty"`
+		// Rejected is why the snapshot was rejected after the copy. The backup stays running until the containers it
+		// stopped start again, then fails with it, so a retry never completes the rejected snapshot.
+		Rejected       string                `json:"rejected,omitempty"`
+		Volumes        []types.ProjectVolume `json:"volumes"`
+		Stopped        []container.Summary   `json:"stopped,omitempty"`
+		LocalEnabled   bool                  `json:"localEnabled"`
+		S3Enabled      bool                  `json:"s3Enabled"`
+		StopContainers bool                  `json:"stopContainers"`
 	}
 
 	runInput struct {
@@ -660,6 +663,10 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 			return recordErr
 		}
 	}
+	if recorded.Rejected != "" {
+		// The interrupted attempt rejected its snapshot after the copy; with the project running again, the backup fails.
+		return errors.New(recorded.Rejected)
+	}
 	entry, err := s.load(ctx, recorded.BackupID)
 	if err != nil {
 		return err
@@ -877,8 +884,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
 	if err != nil {
-		// Recorded now, so a retry that only restarts the containers can't complete the rejected snapshot.
-		return errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
+		p.Rejected = err.Error()
 	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
@@ -887,13 +893,22 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 			p.Stopped = nil
 		}
 		recordErr := s.record(ctx, p)
-		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes.
+		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes
+		// it, or fails it when the checkpoint holds its rejection. The backup stays running until then, since a running
+		// backup is what keeps a disabled schedule's recovery.
 		if restartErr != nil {
-			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(restartErr, recordErr))
+			if err != nil && recordErr != nil {
+				// Without the rejection in the checkpoint a retry could complete the snapshot, so it fails now.
+				recordErr = errors.Join(recordErr, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
+			}
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(err, restartErr, recordErr))
 		}
 		if recordErr != nil {
-			return recordErr
+			return errors.Join(err, recordErr)
 		}
+	}
+	if err != nil {
+		return errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
 }
