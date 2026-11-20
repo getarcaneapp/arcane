@@ -3574,7 +3574,7 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 			return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: restoreTargetType, ID: p.ID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 		},
 		report: func(ctx context.Context, message string) {
-			activity.AppendOrWarn(ctx, s.deps.Activities, activityID, types.ActivityMessageLevelInfo, message)
+			activity.AppendOrWarn(ctx, s.deps.Activities, activityID, activity.AppendMessageRequest{Level: types.ActivityMessageLevelInfo, Message: message})
 		},
 		down: func(ctx context.Context) error {
 			return s.deps.Down(ctx, projectID, input.User)
