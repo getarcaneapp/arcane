@@ -19,8 +19,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/workspace"
@@ -32,7 +35,7 @@ type (
 		projectService  *ProjectService
 		activityService *activity.ActivityService
 		appCtx          context.Context
-		bundles         projectBundles
+		bundles         *bundle.Service
 	}
 
 	ListProjectsDirectoriesInput struct {
@@ -559,6 +562,10 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 	if err != nil {
 		return nil, err
 	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	if input.Body.Start && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
+	}
 
 	var proj *Project
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
@@ -574,12 +581,15 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		SuccessMessage: "Project imported successfully",
 		Metadata:       database.JSON{"action": "import_project", "uploadId": input.Body.UploadID},
 	}, func(runtimeCtx context.Context) error {
-		var importErr error
-		proj, importErr = h.bundles.Import(runtimeCtx, ImportBundleOptions{
-			User:          *user,
-			EnvironmentID: input.EnvironmentID,
-			Request:       input.Body,
+		projectID, importErr := h.bundles.Import(runtimeCtx, bundle.ImportOptions{
+			User:           *user,
+			Request:        input.Body,
+			RestoreVolumes: permissions.Allows(authz.PermVolumesCreate, input.EnvironmentID) && permissions.Allows(authz.PermVolumesUpload, input.EnvironmentID),
 		})
+		if importErr != nil {
+			return importErr
+		}
+		proj, importErr = h.projectService.GetProjectFromDatabaseByID(runtimeCtx, projectID)
 		return importErr
 	})
 	if err != nil {
@@ -596,6 +606,14 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 	if err != nil {
 		return nil, err
 	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	// The new project holds the backed up project's files, so reading that project is required too.
+	if !permissions.Allows(authz.PermProjectsRead, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsRead)
+	}
+	if input.Body.Start && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
+	}
 
 	var proj *Project
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
@@ -611,14 +629,17 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 		SuccessMessage: "Project restored from backup successfully",
 		Metadata:       database.JSON{"action": "restore_project_backup_as_new", "sourceProjectId": input.ProjectID, "backupId": input.BackupID},
 	}, func(runtimeCtx context.Context) error {
-		var restoreErr error
-		proj, restoreErr = h.bundles.RestoreAsNew(runtimeCtx, RestoreAsNewOptions{
-			User:          *user,
-			EnvironmentID: input.EnvironmentID,
-			ProjectID:     input.ProjectID,
-			BackupID:      input.BackupID,
-			Request:       input.Body,
+		projectID, restoreErr := h.bundles.RestoreAsNew(runtimeCtx, bundle.RestoreAsNewOptions{
+			User:           *user,
+			ProjectID:      input.ProjectID,
+			BackupID:       input.BackupID,
+			Request:        input.Body,
+			RestoreVolumes: permissions.Allows(authz.PermVolumesCreate, input.EnvironmentID),
 		})
+		if restoreErr != nil {
+			return restoreErr
+		}
+		proj, restoreErr = h.projectService.GetProjectFromDatabaseByID(runtimeCtx, projectID)
 		return restoreErr
 	})
 	if err != nil {
@@ -635,17 +656,16 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 	if err != nil {
 		return nil, err
 	}
-	if input.Body == nil || len(input.Body.Volumes) == 0 {
-		session, exportErr := h.projectService.ExportProjectArchive(ctx, input.ProjectID)
-		if exportErr != nil {
-			return nil, huma.NewError(common.ToAPIError(exportErr).HTTPStatus(), exportErr.Error())
-		}
-		return &handlerutil.Out[types.UploadSession]{
-			Body: types.ApiResponse[types.UploadSession]{
-				Success: true,
-				Data:    *session,
-			},
-		}, nil
+	request := kit.FromPtr(input.Body)
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	if len(request.Volumes) > 0 && !permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
+	}
+	if request.StopProject && !permissions.Allows(authz.PermProjectsDown, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDown)
+	}
+	if request.StopProject && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
 	}
 
 	var session *types.UploadSession
@@ -660,13 +680,13 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 		Step:           "Exporting project",
 		Message:        "Exporting project",
 		SuccessMessage: "Project exported successfully",
-		Metadata:       database.JSON{"action": "export_project", "volumes": input.Body.Volumes, "stopProject": input.Body.StopProject},
+		Metadata:       database.JSON{"action": "export_project", "volumes": request.Volumes, "stopProject": request.StopProject},
 	}, func(runtimeCtx context.Context) error {
 		var exportErr error
-		session, exportErr = h.bundles.Export(runtimeCtx, ExportBundleOptions{
-			EnvironmentID: input.EnvironmentID,
-			ProjectID:     input.ProjectID,
-			Request:       *input.Body,
+		session, exportErr = h.bundles.Export(runtimeCtx, bundle.ExportOptions{
+			User:      *user,
+			ProjectID: input.ProjectID,
+			Request:   request,
 		})
 		return exportErr
 	})
@@ -685,7 +705,7 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 }
 
 func (h *ProjectHandler) GetProjectExportOptions(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.ProjectExportOptions], error) {
-	options, err := h.bundles.ExportOptions(ctx, input.ProjectID)
+	options, err := h.bundles.Options(ctx, input.ProjectID)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}

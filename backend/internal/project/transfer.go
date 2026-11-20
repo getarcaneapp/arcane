@@ -1,7 +1,6 @@
 package project
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/mapping"
 
@@ -31,14 +29,10 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
-		// VolumeLocks are the volumes' workspace locks, which restores, backups and file edits take.
-		VolumeLocks *concurrency.KeyedMutex
-		// RestoreVolume and CreateEmptyVolume report whether they created the volume, also when they fail.
-		RestoreVolume     func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error)
-		CreateEmptyVolume func(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error)
-		DeleteVolume      func(ctx context.Context, name string, force bool, user types.Actor) error
-		CreateVolume      func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
-		CreateNetwork     func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
+		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
+		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
@@ -183,8 +177,7 @@ func (e localTransferEnvironment) ExportVolume(ctx context.Context, name string)
 }
 
 func (e localTransferEnvironment) RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
-	_, err := e.deps.RestoreVolume(ctx, name, request, user)
-	return err
+	return e.deps.RestoreVolume(ctx, name, request, user)
 }
 
 func (e localTransferEnvironment) DeployProject(ctx context.Context, projectID string, user types.Actor) error {

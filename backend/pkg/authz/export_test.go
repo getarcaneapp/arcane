@@ -8,6 +8,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/stretchr/testify/require"
+
+	"getarcane.dev/types/v3"
 )
 
 func TestBuildPermissionExport(t *testing.T) {
@@ -260,6 +262,13 @@ func TestPermissionConditionsRequired(t *testing.T) {
 	require.Equal(t, []string{PermImagesPush}, BuildPushConditions.Required("push", "true"))
 	require.Empty(t, BuildPushConditions.Required("push", "false"))
 	require.Empty(t, UploadKindConditions.Required("kind", "unknown"))
+	reader := NewPermissionSet()
+	reader.AddEnv("0", PermProjectsRead)
+	exported := UploadSessionAccess{Kind: types.UploadKindProjectArchive, EnvironmentID: "0", Read: true}
+	require.True(t, UploadSessionPermitted(reader, exported), "a project export is downloadable with projects:read")
+	require.False(t, UploadSessionPermitted(reader, UploadSessionAccess{Kind: types.UploadKindProjectArchive, EnvironmentID: "0", Read: false}),
+		"creating or filling a project-archive upload still requires projects:create")
+	require.False(t, UploadSessionPermitted(reader, UploadSessionAccess{Kind: "unknown", EnvironmentID: "0", Read: true}))
 	require.Equal(t, []string{PermGitOpsBackup}, GitOpsSyncModeConditions.Required("mode", "backup"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsSyncModeConditions.Required("mode", "bidirectional"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsModeConditions.Required("mode", "bidirectional"))

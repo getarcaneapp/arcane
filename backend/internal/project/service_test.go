@@ -19,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,7 +32,6 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -46,7 +44,6 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -60,8 +57,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
-	"getarcane.dev/arcane/v3/internal/middleware"
-	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/listing"
@@ -72,8 +68,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
-	activitylib "getarcane.dev/arcane/v3/pkg/activity"
-	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -101,22 +95,6 @@ type (
 	serviceTagTransport struct {
 		tags  []string
 		calls int
-	}
-
-	bundleActivityRecorder struct {
-		messages []string
-	}
-
-	// fakeBackupSnapshots serves a backup's manifest and restores its project files by writing their compose file; it
-	// counts the reads made without the source project's admission.
-	fakeBackupSnapshots struct {
-		fail     error
-		busy     error
-		compose  string
-		restores []projectbackup.RestoreToOptions
-		manifest types.ProjectManifest
-		unheld   int
-		held     bool
 	}
 )
 
@@ -11152,541 +11130,8 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
 }
 
-func TestProjectBundlesImportRefusesExistingVolumesAndLeavesNothingBehind(t *testing.T) {
+func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/volumes/copy_data"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "copy_data", Driver: "local"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-
-	dataArchive, err := projects.ProjectBundleVolumeArchive("data")
-	require.NoError(t, err)
-	var bundle strings.Builder
-	writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-		Project: types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-		Volumes: []types.ProjectVolume{
-			{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true},
-			{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed},
-		},
-		FormatVersion: types.ProjectManifestFormatVersion,
-	})
-	require.NoError(t, err)
-	source := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  app:\n    image: nginx\n    volumes:\n      - data:/data\nvolumes:\n  data:\n"), 0o600))
-	var project strings.Builder
-	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
-	require.NoError(t, writer.Add(dataArchive, 4, strings.NewReader("data")))
-	require.NoError(t, writer.Close())
-	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-	require.NoError(t, err)
-
-	// web_data becomes copy_data under the new name, which already exists; the import stops and removes what it wrote.
-	_, err = projectBundles{local: localTransferEnvironment{projects: svc}}.Import(ctx, ImportBundleOptions{
-		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
-	})
-	require.ErrorIs(t, err, common.ErrConflict)
-	require.ErrorContains(t, err, "copy_data")
-	var count int64
-	require.NoError(t, db.Model(&Project{}).Count(&count).Error)
-	assert.Zero(t, count)
-	entries, err := os.ReadDir(projectsDir)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
-}
-
-func TestProjectBundlesImportCreatesEmptyVolumesWithoutRestore(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-
-	source := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - cache:/cache\nvolumes:\n  cache:\n",
-	), 0o644))
-	var project strings.Builder
-	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
-	// tar -czf - -C /volume . of an empty volume holds only the root directory.
-	var volumeArchive strings.Builder
-	gzipWriter := gzip.NewWriter(&volumeArchive)
-	tarWriter := tar.NewWriter(gzipWriter)
-	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o750, Uid: 1000, Gid: 1001}))
-	require.NoError(t, tarWriter.Close())
-	require.NoError(t, gzipWriter.Close())
-	cacheArchive, err := projects.ProjectBundleVolumeArchive("cache")
-	require.NoError(t, err)
-	var bundle strings.Builder
-	writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-		Project:       types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-		Volumes:       []types.ProjectVolume{{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true}},
-		FormatVersion: types.ProjectManifestFormatVersion,
-	})
-	require.NoError(t, err)
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
-	require.NoError(t, writer.Add(cacheArchive, int64(volumeArchive.Len()), strings.NewReader(volumeArchive.String())))
-	require.NoError(t, writer.Close())
-	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-	require.NoError(t, err)
-
-	const projectID = "5f0d3c8e-2b7a-4c1d-9e6f-8a4b2c1d0e3f"
-	var (
-		created []client.VolumeCreateOptions
-		roots   []tar.Header
-		lockErr error
-	)
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
-			created = append(created, options)
-			roots = append(roots, *root)
-			// Nothing may deploy the imported project while its volumes are restored.
-			lockCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-			defer cancel()
-			_, lockErr = svc.LockProject(lockCtx, "deploy project", projectID)
-			return true, nil
-		},
-		RestoreVolume: func(context.Context, string, types.RestoreVolumeUploadRequest, types.Actor) (bool, error) {
-			return false, errors.New("an empty volume must not be restored")
-		},
-	}}}
-	imported, err := bundles.Import(ctx, ImportBundleOptions{
-		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy", ProjectID: projectID},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "copy", imported.Name)
-	assert.Equal(t, projectID, imported.ID)
-	require.ErrorIs(t, lockErr, context.DeadlineExceeded)
-	unlock, err := svc.LockProject(ctx, "deploy project", projectID)
-	require.NoError(t, err)
-	unlock()
-	require.Len(t, created, 1)
-	assert.Equal(t, "copy_cache", created[0].Name)
-	assert.Equal(t, "copy", created[0].Labels[api.ProjectLabel])
-	assert.Equal(t, "cache", created[0].Labels[api.VolumeLabel])
-	assert.NotEmpty(t, created[0].Labels[api.ConfigHashLabel])
-	// The empty volume keeps the owner and mode of the exported volume's root.
-	require.Len(t, roots, 1)
-	assert.Equal(t, 1000, roots[0].Uid)
-	assert.Equal(t, 1001, roots[0].Gid)
-	assert.Equal(t, int64(0o750), roots[0].Mode)
-}
-
-func TestProjectBundlesImportSelectsTheExportedComposeFiles(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-
-	// The source selected stack.yaml through COMPOSE_FILE in its .env.global, which the archive does not hold.
-	source := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(source, "stack.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - cache:/cache\nvolumes:\n  cache:\n",
-	), 0o644))
-	var project strings.Builder
-	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
-	var volumeArchive strings.Builder
-	gzipWriter := gzip.NewWriter(&volumeArchive)
-	tarWriter := tar.NewWriter(gzipWriter)
-	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
-	require.NoError(t, tarWriter.Close())
-	require.NoError(t, gzipWriter.Close())
-	cacheArchive, err := projects.ProjectBundleVolumeArchive("cache")
-	require.NoError(t, err)
-	ingest := func(composeFiles ...string) string {
-		var bundle strings.Builder
-		writer, writerErr := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-			Project:       types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-			ComposeFiles:  composeFiles,
-			Volumes:       []types.ProjectVolume{{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true}},
-			FormatVersion: types.ProjectManifestFormatVersion,
-		})
-		require.NoError(t, writerErr)
-		require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
-		require.NoError(t, writer.Add(cacheArchive, int64(volumeArchive.Len()), strings.NewReader(volumeArchive.String())))
-		require.NoError(t, writer.Close())
-		session, ingestErr := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-		require.NoError(t, ingestErr)
-		return session.ID
-	}
-
-	var created []string
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
-			created = append(created, options.Name)
-			return true, nil
-		},
-	}}}
-
-	// A recorded file the archive lacks is refused before anything is created.
-	_, err = bundles.Import(ctx, ImportBundleOptions{
-		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: ingest("missing.yaml"), Name: "copy"},
-	})
-	require.ErrorIs(t, err, common.ErrValidation)
-	require.ErrorContains(t, err, "missing.yaml")
-	var count int64
-	require.NoError(t, db.Model(&Project{}).Count(&count).Error)
-	assert.Zero(t, count)
-	entries, err := os.ReadDir(projectsDir)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
-
-	imported, err := bundles.Import(ctx, ImportBundleOptions{
-		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: ingest("stack.yaml"), Name: "copy"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"copy_cache"}, created)
-	selected, err := projects.ComposeFileEnvSelection(ctx, projectsDir, imported.Path)
-	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(imported.Path, "stack.yaml")}, selected)
-}
-
-func TestProjectBundlesImportChecksTheImportedProjectsVolumeNames(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	// shared-cache existed before the import and even carries the new project's Compose label.
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/volumes/shared-cache"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-cache", Driver: "local", Labels: map[string]string{api.ProjectLabel: "copy"}})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-
-	source := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - cache:/cache\nvolumes:\n  cache:\n    name: shared-cache\n",
-	), 0o644))
-	var project strings.Builder
-	require.NoError(t, projects.PackProjectDirectory(ctx, source, &project))
-	cacheArchive, err := projects.ProjectBundleVolumeArchive("cache")
-	require.NoError(t, err)
-	var bundle strings.Builder
-	// The manifest predicts copy_cache, but the imported compose file names the volume shared-cache.
-	writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-		Project:       types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-		Volumes:       []types.ProjectVolume{{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true}},
-		FormatVersion: types.ProjectManifestFormatVersion,
-	})
-	require.NoError(t, err)
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
-	require.NoError(t, writer.Add(cacheArchive, 4, strings.NewReader("data")))
-	require.NoError(t, writer.Close())
-	session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-	require.NoError(t, err)
-
-	var restored, deleted []string
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		// Like the real restore, fail on the archive before any conflict check.
-		RestoreVolume: func(_ context.Context, name string, _ types.RestoreVolumeUploadRequest, _ types.Actor) (bool, error) {
-			restored = append(restored, name)
-			return false, errors.New("invalid archive")
-		},
-		DeleteVolume: func(_ context.Context, name string, _ bool, _ types.Actor) error {
-			deleted = append(deleted, name)
-			return nil
-		},
-	}}}
-	_, err = bundles.Import(ctx, ImportBundleOptions{
-		EnvironmentID: "0",
-		Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
-	})
-	require.ErrorIs(t, err, common.ErrConflict)
-	require.ErrorContains(t, err, "shared-cache")
-	assert.Empty(t, restored)
-	assert.Empty(t, deleted)
-	var count int64
-	require.NoError(t, db.Model(&Project{}).Count(&count).Error)
-	assert.Zero(t, count)
-}
-
-func TestProjectBundlesExportStopsAndRestartsActiveContainers(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	composeLabels := func(service string) map[string]string {
-		return map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: service}
-	}
-	var (
-		mu               sync.Mutex
-		stopped, started []string
-		composeStarted   []types.ComposeTarget
-	)
-	// db sits in a restart loop, which can write to the volume as soon as it comes up.
-	states := map[string]container.ContainerState{"web-1": container.StateRunning, "db-1": container.StateRestarting, "worker-1": container.StateExited}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{
-				{ID: "web-1", Names: []string{"/demo-web-1"}, Labels: composeLabels("web"), State: states["web-1"]},
-				{ID: "db-1", Names: []string{"/demo-db-1"}, Labels: composeLabels("db"), State: states["db-1"]},
-				{ID: "worker-1", Names: []string{"/demo-worker-1"}, Labels: composeLabels("worker"), State: states["worker-1"]},
-			})
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			id := filepath.Base(filepath.Dir(r.URL.Path))
-			stopped = append(stopped, id)
-			states[id] = container.StateExited
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			id := filepath.Base(filepath.Dir(r.URL.Path))
-			started = append(started, id)
-			states[id] = container.StateRunning
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	originalComposeStart := composeStartProjectServices
-	t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
-	composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
-		mu.Lock()
-		defer mu.Unlock()
-		composeStarted = append(composeStarted, target)
-		for _, service := range target.Services {
-			states[service+"-1"] = container.StateRunning
-		}
-		return nil
-	}
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	projectPath := createComposeProjectDir(t, projectsDir, "demo")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  web:\n    image: nginx:alpine\n    depends_on:\n      db:\n        condition: service_healthy\n    volumes:\n      - data:/data\n"+
-			"  db:\n    image: postgres:alpine\n    volumes:\n      - data:/var/lib/postgresql/data\n  worker:\n    image: nginx:alpine\nvolumes:\n  data:\n",
-	), 0o644))
-	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
-
-	locks := &concurrency.KeyedMutex{}
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: locks,
-		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-			mu.Lock()
-			web, database := states["web-1"], states["db-1"]
-			mu.Unlock()
-			assert.Equal(t, container.StateExited, web, "the volume is copied while the project is stopped")
-			assert.Equal(t, container.StateExited, database, "a restarting container is stopped too")
-			// No volume backup can start or stop the project's containers until the export ends.
-			if unlock, free := locks.TryLock(name); free {
-				unlock()
-				t.Errorf("volume %s is not held during the export", name)
-			}
-			assert.True(t, volumes.Locked(ctx, name), "the export knows it holds the volume")
-			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
-		},
-	}}}
-	_, err = bundles.Export(ctx, ExportBundleOptions{
-		EnvironmentID: "0",
-		ProjectID:     "proj-demo",
-		Request:       types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true},
-	})
-	require.NoError(t, err)
-	// The stopped worker stays stopped; web and the restarting db are stopped and started again through Compose,
-	// which starts db before web and waits for it to be healthy.
-	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
-	assert.Empty(t, started)
-	require.Len(t, composeStarted, 1)
-	assert.Equal(t, []string{"web", "db"}, composeStarted[0].Services)
-	assert.Equal(t, composetypes.ServiceConditionHealthy, composeStarted[0].Project.Services["web"].DependsOn["db"].Condition)
-	assert.Equal(t, container.StateExited, states["worker-1"])
-}
-
-func TestProjectServiceStartContainersStartsOnlyTheStoppedOnes(t *testing.T) {
-	composeLabels := func(service string) map[string]string {
-		return map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: service}
-	}
-	oneOff := composeLabels("web")
-	oneOff[api.OneoffLabel] = "True"
-	stopped := []container.Summary{
-		{ID: "web-1", Labels: composeLabels("web")},
-		{ID: "api-1", Labels: composeLabels("api")},
-		{ID: "web-run", Labels: oneOff},
-	}
-	compose := &composetypes.Project{Name: "demo", Services: composetypes.Services{
-		"web": {Name: "web"},
-		"api": {Name: "api"},
-	}}
-	for _, tc := range []struct {
-		name       string
-		composeErr error
-		started    []string
-	}{
-		// api-2 was already stopped, so Compose must not start api; the one-off has no service to start.
-		{name: "compose", started: []string{"api-1", "web-run"}},
-		// A failing Compose start must not leave the project down.
-		{name: "compose fails", composeErr: errors.New("db is unhealthy"), started: []string{"api-1", "web-run", "web-1"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var (
-				mu       sync.Mutex
-				started  []string
-				services [][]string
-			)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				defer mu.Unlock()
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, append(slices.Clone(stopped), container.Summary{ID: "api-2", Labels: composeLabels("api"), State: container.StateExited}))
-				case strings.HasSuffix(r.URL.Path, "/start"):
-					started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
-					w.WriteHeader(http.StatusNoContent)
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(server.Close)
-			originalComposeStart := composeStartProjectServices
-			t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
-			composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
-				services = append(services, target.Services)
-				return tc.composeErr
-			}
-			svc := &ProjectService{dockerService: newSettingsDockerService(t, newTestDockerClient(t, server))}
-
-			err := svc.startContainers(t.Context(), compose, stopped)
-			if tc.composeErr != nil {
-				require.ErrorIs(t, err, tc.composeErr)
-			} else {
-				require.NoError(t, err)
-			}
-			assert.Equal(t, [][]string{{"web"}}, services)
-			assert.Equal(t, tc.started, started)
-		})
-	}
-}
-
-func TestProjectServiceBackupStopsAndRestartsOnlyThisProject(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
@@ -11694,672 +11139,6 @@ func TestProjectServiceBackupStopsAndRestartsOnlyThisProject(t *testing.T) {
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
-	labelsFor := func(project, service string) map[string]string {
-		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
-	}
-	arcane := labelsFor("demo", "arcane")
-	arcane["com.getarcaneapp.arcane"] = "true"
-	var (
-		mu             sync.Mutex
-		stopped        []string
-		composeStarted []types.ComposeTarget
-	)
-	states := map[string]container.ContainerState{
-		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
-		"arcane-1": container.StateRunning, "other-1": container.StateRunning,
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			all := []container.Summary{
-				{ID: "web-1", Labels: labelsFor("demo", "web"), State: states["web-1"]},
-				{ID: "db-1", Labels: labelsFor("demo", "db"), State: states["db-1"]},
-				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
-				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"]},
-				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
-				{ID: "helper-1", Labels: volumes.Labels(), State: container.StateRunning, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "browsed_data"}}},
-			}
-			// The project label filter is what keeps other projects out.
-			if filter := r.URL.Query().Get("filters"); filter != "" {
-				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, `"`+api.ProjectLabel+"="+c.Labels[api.ProjectLabel]+`"`)
-				})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, all)
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			id := filepath.Base(filepath.Dir(r.URL.Path))
-			stopped = append(stopped, id)
-			states[id] = container.StateExited
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	originalComposeStart := composeStartProjectServices
-	t.Cleanup(func() { composeStartProjectServices = originalComposeStart })
-	composeStartProjectServices = func(_ context.Context, target types.ComposeTarget) error {
-		mu.Lock()
-		defer mu.Unlock()
-		composeStarted = append(composeStarted, target)
-		return nil
-	}
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	projectPath := createComposeProjectDir(t, projectsDir, "demo")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  web:\n    image: nginx:alpine\n    depends_on:\n      db:\n        condition: service_healthy\n    volumes:\n      - data:/data\n"+
-			"  db:\n    image: postgres:alpine\n  cache:\n    image: redis:alpine\nvolumes:\n  data:\n",
-	), 0o644))
-	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusRunning}).Error)
-
-	inUse, err := svc.volumesInUseOutside(ctx, "demo")
-	require.NoError(t, err)
-	assert.True(t, inUse["demo_data"], "another project's running container mounts the volume")
-	assert.False(t, inUse["browsed_data"], "an idle file-browser helper writes nothing")
-
-	summaries, err := svc.stopRunningContainers(ctx, "demo")
-	require.NoError(t, err)
-	// The paused cache, Arcane itself, and the other project keep their state.
-	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
-	assert.Equal(t, container.StatePaused, states["cache-1"])
-
-	require.NoError(t, svc.restartContainers(ctx, "proj-demo", summaries))
-	require.Len(t, composeStarted, 1)
-	assert.Equal(t, []string{"web", "db"}, composeStarted[0].Services)
-	assert.Equal(t, composetypes.ServiceConditionHealthy, composeStarted[0].Project.Services["web"].DependsOn["db"].Condition)
-}
-
-func TestProjectBundlesExportSkipsVolumesNotCreatedYet(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	projectPath := createComposeProjectDir(t, projectsDir, "demo")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\n      - cache:/cache\nvolumes:\n  data:\n  cache:\n",
-	), 0o644))
-	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc}}
-
-	options, err := bundles.ExportOptions(ctx, "proj-demo")
-	require.NoError(t, err)
-	require.Len(t, options.Volumes, 2)
-	assert.Equal(t, "cache", options.Volumes[0].Key)
-	assert.True(t, options.Volumes[0].Missing)
-	assert.False(t, options.Volumes[0].Included)
-	assert.Equal(t, "data", options.Volumes[1].Key)
-	assert.False(t, options.Volumes[1].Missing)
-	assert.True(t, options.Volumes[1].Included)
-
-	// Asking for a volume that has no data fails before anything is written.
-	_, err = bundles.Export(ctx, ExportBundleOptions{
-		EnvironmentID: "0",
-		ProjectID:     "proj-demo",
-		Request:       types.ExportProjectArchive{Volumes: []string{"data", "cache"}},
-	})
-	require.ErrorIs(t, err, common.ErrValidation)
-	require.ErrorContains(t, err, "cache")
-	_, err = os.Stat(filepath.Join(os.TempDir(), "arcane-uploads"))
-	assert.ErrorIs(t, err, os.ErrNotExist)
-}
-
-func TestProjectBundlesExportIncludesLocalExternalVolumes(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json") && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
-			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			// A running container of another project mounts both external volumes; stopping demo does not stop it.
-			_ = json.MarshalWrite(w, []container.Summary{{
-				ID:     "other-1",
-				Labels: map[string]string{api.ProjectLabel: "other"},
-				State:  container.StateRunning,
-				Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "shared-data"}, {Type: mount.TypeVolume, Name: "nfs-data"}},
-			}})
-		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data"):
-			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local"})
-		case strings.HasSuffix(r.URL.Path, "/volumes/nfs-data"):
-			_ = json.MarshalWrite(w, volume.Volume{Name: "nfs-data", Driver: "local", Options: map[string]string{"type": "nfs"}})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	projectPath := createComposeProjectDir(t, projectsDir, "demo")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - shared:/shared\n      - nfs:/nfs\n"+
-			"volumes:\n  shared:\n    external: true\n    name: shared-data\n  nfs:\n    external: true\n    name: nfs-data\n",
-	), 0o644))
-	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
-		},
-	}}}
-
-	// The compose file states no driver, so the inspected volume decides: nfs-data keeps its data outside Docker.
-	options, err := bundles.ExportOptions(ctx, "proj-demo")
-	require.NoError(t, err)
-	require.Len(t, options.Volumes, 2)
-	assert.Equal(t, "nfs", options.Volumes[0].Key)
-	assert.False(t, options.Volumes[0].Included)
-	assert.False(t, options.Volumes[0].Missing)
-	assert.False(t, options.Volumes[0].InUse)
-	assert.Equal(t, "shared", options.Volumes[1].Key)
-	assert.True(t, options.Volumes[1].Included)
-	assert.True(t, options.Volumes[1].InUse)
-
-	_, err = bundles.Export(ctx, ExportBundleOptions{EnvironmentID: "0", ProjectID: "proj-demo", Request: types.ExportProjectArchive{Volumes: []string{"nfs"}}})
-	require.ErrorIs(t, err, common.ErrValidation)
-	require.ErrorContains(t, err, "nfs")
-
-	session, err := bundles.Export(ctx, ExportBundleOptions{EnvironmentID: "0", ProjectID: "proj-demo", Request: types.ExportProjectArchive{Volumes: []string{"shared"}, StopProject: true}})
-	require.NoError(t, err)
-	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
-	manifest, bundle, err := projects.ReadProjectBundle(file, nil)
-	require.NoError(t, err)
-	require.True(t, bundle)
-	require.Len(t, manifest.Volumes, 2)
-	assert.Equal(t, types.ProjectVolumeExternal, manifest.Volumes[1].Kind)
-	assert.Equal(t, "shared-data", manifest.Volumes[1].Name)
-	assert.True(t, manifest.Volumes[1].Included)
-	assert.True(t, manifest.Volumes[1].InUse)
-	assert.False(t, manifest.Volumes[0].Included)
-	assert.False(t, manifest.Consistent, "another project may write the shared volume during the export")
-}
-
-func TestProjectBundlesExportCountsRestartingContainersAsRunning(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json") && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
-			// The project's only container is in a restart loop, which the running count leaves out.
-			_ = json.MarshalWrite(w, []container.Summary{{
-				ID:     "app-1",
-				Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "app"},
-				State:  container.StateRestarting,
-			}})
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
-			_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	uploads := upload.NewUploadService(settingsService)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     uploads,
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	projectPath := createComposeProjectDir(t, projectsDir, "demo")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n",
-	), 0o644))
-	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
-		},
-	}}}
-
-	options, err := bundles.ExportOptions(ctx, "proj-demo")
-	require.NoError(t, err)
-	assert.True(t, options.Running, "a restarting container can write its volumes, so stopping must be offered")
-
-	session, err := bundles.Export(ctx, ExportBundleOptions{EnvironmentID: "0", ProjectID: "proj-demo", Request: types.ExportProjectArchive{Volumes: []string{"data"}}})
-	require.NoError(t, err)
-	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
-	manifest, bundle, err := projects.ReadProjectBundle(file, nil)
-	require.NoError(t, err)
-	require.True(t, bundle)
-	assert.False(t, manifest.Consistent, "the restarting container was not stopped")
-}
-
-func TestProjectBundlesImportRecreatesExternalVolumes(t *testing.T) {
-	source := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(source, "compose.yaml"), []byte(
-		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - shared:/shared\n      - cache:/cache\n"+
-			"volumes:\n  shared:\n    external: true\n    name: shared-data\n  cache:\n",
-	), 0o644))
-	var project strings.Builder
-	require.NoError(t, projects.PackProjectDirectory(t.Context(), source, &project))
-	var empty strings.Builder
-	gzipWriter := gzip.NewWriter(&empty)
-	tarWriter := tar.NewWriter(gzipWriter)
-	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
-	require.NoError(t, tarWriter.Close())
-	require.NoError(t, gzipWriter.Close())
-	sharedArchive, bundleErr := projects.ProjectBundleVolumeArchive("shared")
-	require.NoError(t, bundleErr)
-	cacheArchive, bundleErr := projects.ProjectBundleVolumeArchive("cache")
-	require.NoError(t, bundleErr)
-	var bundle strings.Builder
-	writer, bundleErr := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-		Project: types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-		Volumes: []types.ProjectVolume{
-			{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed, Archive: cacheArchive, Included: true},
-			{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: sharedArchive, Included: true},
-		},
-		FormatVersion: types.ProjectManifestFormatVersion,
-	})
-	require.NoError(t, bundleErr)
-	require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(project.Len()), strings.NewReader(project.String())))
-	require.NoError(t, writer.Add(sharedArchive, int64(empty.Len()), strings.NewReader(empty.String())))
-	require.NoError(t, writer.Add(cacheArchive, int64(empty.Len()), strings.NewReader(empty.String())))
-	require.NoError(t, writer.Close())
-
-	tests := []struct {
-		name         string
-		wantErr      string
-		failCreate   string
-		existing     []string
-		wantCreated  []string
-		wantDeleted  []string
-		wantMessages []string
-		failCreated  bool
-		conflict     bool
-		stack        bool
-	}{
-		{name: "creates", wantCreated: []string{"shared-data", "copy_cache"}},
-		// A Compose stack named copy that Arcane does not manage would lose its containers to a rollback.
-		{name: "refuses a running Compose stack of the same name", stack: true, conflict: true, wantErr: "docker already runs a Compose stack named copy"},
-		{name: "refuses existing external", existing: []string{"shared-data"}, conflict: true, wantErr: "these volumes already exist: shared-data"},
-		{name: "refuses existing named", existing: []string{"copy_cache"}, conflict: true, wantErr: "these volumes already exist: copy_cache"},
-		// copy_cache exists after the failure, made by someone else, so only shared-data is removed.
-		{name: "removes only what it created", failCreate: "copy_cache", wantErr: "disk full", wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"}},
-		{
-			name: "removes a volume created before failing", failCreate: "copy_cache", failCreated: true, wantErr: "disk full",
-			wantCreated: []string{"shared-data", "copy_cache"}, wantDeleted: []string{"shared-data", "copy_cache"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("TMPDIR", t.TempDir())
-			recorder := &bundleActivityRecorder{}
-			_, ctx := activitylib.StartHandlerActivity(context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet()), recorder, activitylib.HandlerOptions{})
-			db := setupProjectTestDB(t)
-			settingsService, err := newSettingsServiceForTest(t, ctx, db)
-			require.NoError(t, err)
-			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", t.TempDir()))
-
-			var mu sync.Mutex
-			existing := map[string]map[string]string{}
-			for _, name := range tt.existing {
-				existing[name] = nil
-			}
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				defer mu.Unlock()
-				name := filepath.Base(r.URL.Path)
-				labels, exists := existing[name]
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/containers/json") && tt.stack && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, []container.Summary{{ID: "app-1", Labels: map[string]string{api.ProjectLabel: "copy"}, State: container.StateRunning}})
-				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, []container.Summary{})
-				case strings.Contains(r.URL.Path, "/volumes/") && exists:
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, volume.Volume{Name: name, Driver: "local", Labels: labels})
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(server.Close)
-			uploads := upload.NewUploadService(settingsService)
-			svc := NewProjectService(ProjectServiceParams{
-				DB:                          db,
-				SettingsService:             settingsService,
-				EventService:                event.NewEventService(db, &config.Config{}, nil),
-				DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-				BuildService:                testBuildBuilder{},
-				Uploads:                     uploads,
-				Config:                      loadTestConfig(t),
-				KVService:                   kv.NewKVService(db),
-				RegistryCredentialsProvider: testRegistryCredentials,
-			})
-			session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-			require.NoError(t, err)
-
-			var (
-				created        []client.VolumeCreateOptions
-				names, deleted []string
-			)
-			bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-				VolumeLocks: &concurrency.KeyedMutex{},
-				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
-					mu.Lock()
-					defer mu.Unlock()
-					// Another creator wins the race unless the failing create made the volume itself; either way it exists now.
-					existing[options.Name] = options.Labels
-					if options.Name == tt.failCreate {
-						if tt.failCreated {
-							names = append(names, options.Name)
-						}
-						return tt.failCreated, errors.New("disk full")
-					}
-					created = append(created, options)
-					names = append(names, options.Name)
-					return true, nil
-				},
-				DeleteVolume: func(_ context.Context, name string, _ bool, _ types.Actor) error {
-					deleted = append(deleted, name)
-					return nil
-				},
-			}}}
-			_, err = bundles.Import(ctx, ImportBundleOptions{
-				EnvironmentID: "0",
-				Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
-			})
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, tt.wantErr)
-			}
-			assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
-			if tt.failCreate != "" {
-				// The rollback runs under the import's project lock.
-				require.ErrorContains(t, err, "the new project and its volumes were removed")
-			}
-			// An existing volume refuses the import before anything is created, restored, or removed.
-			assert.Equal(t, tt.wantCreated, names)
-			assert.Equal(t, tt.wantDeleted, deleted)
-			assert.Equal(t, tt.wantMessages, recorder.messages)
-			if len(created) > 0 && created[0].Name == "shared-data" {
-				// Compose expects an external volume to exist outside the project, so it gets no Compose labels.
-				assert.Equal(t, client.VolumeCreateOptions{Name: "shared-data"}, created[0])
-			}
-			if index := slices.IndexFunc(created, func(options client.VolumeCreateOptions) bool { return options.Name == "copy_cache" }); index >= 0 {
-				assert.Equal(t, "copy", created[index].Labels[api.ProjectLabel])
-			}
-		})
-	}
-}
-
-func (f *fakeBackupSnapshots) HoldBackups(context.Context, string) (func(context.Context), error) {
-	if f.busy != nil {
-		return nil, f.busy
-	}
-	f.held = true
-	return func(context.Context) { f.held = false }, nil
-}
-
-func (f *fakeBackupSnapshots) Manifest(context.Context, string, string) (types.ProjectManifest, error) {
-	if !f.held {
-		f.unheld++
-	}
-	return f.manifest, nil
-}
-
-func (f *fakeBackupSnapshots) RestoreTo(_ context.Context, opts projectbackup.RestoreToOptions) error {
-	if !f.held {
-		f.unheld++
-	}
-	f.restores = append(f.restores, opts)
-	if opts.ProjectPath != "" {
-		return os.WriteFile(filepath.Join(opts.ProjectPath, "compose.yaml"), []byte(f.compose), 0o644)
-	}
-	return f.fail
-}
-
-func TestProjectBundlesRestoreAsNew(t *testing.T) {
-	compose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\n      - shared:/shared\n" +
-		"volumes:\n  data:\n  logs:\n  shared:\n    external: true\n    name: shared-data\n"
-	manifest := types.ProjectManifest{
-		Kind:         types.ProjectManifestKindBackup,
-		Project:      types.ProjectManifestProject{ID: "p1", Name: "web", ComposeName: "web"},
-		ComposeFiles: []string{"compose.yaml"},
-		Volumes: []types.ProjectVolume{
-			{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true},
-			{Key: "logs", Name: "web_logs", Kind: types.ProjectVolumeNamed},
-			{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeExternal, DockerLabels: map[string]string{"owner": "ops"}, Included: true},
-		},
-		FormatVersion: types.ProjectManifestFormatVersion,
-	}
-	tests := []struct {
-		name        string
-		wantErr     string
-		failCreate  string
-		existing    []string
-		wantCreated []string
-		wantDeleted []string
-		failRestore bool
-		conflict    bool
-		stack       bool
-		busy        bool
-	}{
-		{name: "restores", wantCreated: []string{"shared-data", "copy_data"}},
-		// A backup or restore of the source holds its admission, so retention could remove the backup mid-restore.
-		{name: "fails fast while the source project is busy", busy: true, conflict: true, wantErr: "already running"},
-		// Both refusals come before the project or any volume is created.
-		{name: "refuses a running Compose stack of the same name", stack: true, conflict: true, wantErr: "docker already runs a Compose stack named copy"},
-		{name: "refuses an existing volume", existing: []string{"copy_data"}, conflict: true, wantErr: "these volumes already exist: copy_data"},
-		{
-			name: "removes what it created when the restore fails", failRestore: true, wantErr: "rustic failed",
-			wantCreated: []string{"shared-data", "copy_data"}, wantDeleted: []string{"shared-data", "copy_data"},
-		},
-		// Someone else made copy_data after the check, so it is refused and only shared-data is removed.
-		{
-			name: "removes only what it created", failCreate: "copy_data", wantErr: "volume copy_data already exists", conflict: true,
-			wantCreated: []string{"shared-data"}, wantDeleted: []string{"shared-data"},
-		},
-		// An external volume made by someone else after the check is refused, not taken over and later removed.
-		{name: "refuses an external volume made after the check", failCreate: "shared-data", wantErr: "volume shared-data already exists", conflict: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("TMPDIR", t.TempDir())
-			ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-			db := setupProjectTestDB(t)
-			settingsService, err := newSettingsServiceForTest(t, ctx, db)
-			require.NoError(t, err)
-			projectsDir := t.TempDir()
-			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-			var mu sync.Mutex
-			existing := map[string]map[string]string{}
-			for _, name := range tt.existing {
-				existing[name] = nil
-			}
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				defer mu.Unlock()
-				name := filepath.Base(r.URL.Path)
-				labels, exists := existing[name]
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/containers/json") && tt.stack && strings.Contains(r.URL.Query().Get("filters"), api.ProjectLabel):
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, []container.Summary{{ID: "app-1", Labels: map[string]string{api.ProjectLabel: "copy"}, State: container.StateRunning}})
-				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, []container.Summary{})
-				case strings.Contains(r.URL.Path, "/volumes/") && exists:
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.MarshalWrite(w, volume.Volume{Name: name, Driver: "local", Labels: labels})
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(server.Close)
-			svc := NewProjectService(ProjectServiceParams{
-				DB:                          db,
-				SettingsService:             settingsService,
-				EventService:                event.NewEventService(db, &config.Config{}, nil),
-				DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-				BuildService:                testBuildBuilder{},
-				Uploads:                     upload.NewUploadService(settingsService),
-				Config:                      loadTestConfig(t),
-				KVService:                   kv.NewKVService(db),
-				RegistryCredentialsProvider: testRegistryCredentials,
-			})
-			snapshots := &fakeBackupSnapshots{
-				compose:  compose,
-				manifest: manifest,
-				fail:     kit.Ternary(tt.failRestore, errors.New("rustic failed"), nil),
-				busy:     kit.Ternary(tt.busy, common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running")), nil),
-			}
-			var (
-				created        []client.VolumeCreateOptions
-				names, deleted []string
-			)
-			bundles := projectBundles{backups: snapshots, local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-				CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, root *tar.Header) (bool, error) {
-					mu.Lock()
-					defer mu.Unlock()
-					assert.Nil(t, root)
-					if options.Name == tt.failCreate {
-						existing[options.Name] = nil
-						return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
-					}
-					existing[options.Name] = options.Labels
-					created = append(created, options)
-					names = append(names, options.Name)
-					return true, nil
-				},
-				DeleteVolume: func(_ context.Context, name string, _ bool, _ types.Actor) error {
-					deleted = append(deleted, name)
-					return nil
-				},
-			}}}
-
-			restored, err := bundles.RestoreAsNew(ctx, RestoreAsNewOptions{
-				EnvironmentID: "0",
-				ProjectID:     "p1",
-				BackupID:      "b1",
-				Request:       types.RestoreProjectBackupAsNewRequest{Name: "copy"},
-			})
-			assert.Equal(t, tt.wantCreated, names)
-			assert.Equal(t, tt.wantDeleted, deleted)
-			// Every read of the backup holds the source's admission, which is released on every path.
-			assert.Zero(t, snapshots.unheld)
-			assert.False(t, snapshots.held)
-			var projectCount int64
-			require.NoError(t, db.Model(&Project{}).Count(&projectCount).Error)
-			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
-				assert.Equal(t, tt.conflict, errors.Is(err, common.ErrConflict))
-				assert.Zero(t, projectCount)
-				entries, readErr := os.ReadDir(projectsDir)
-				require.NoError(t, readErr)
-				assert.Empty(t, entries)
-				// The new project's files may be restored before its volume names are known; no volume data is.
-				if tt.conflict && tt.failCreate == "" {
-					for _, restore := range snapshots.restores {
-						assert.Empty(t, restore.Volumes, "no volume data is restored when the new project is refused")
-					}
-				}
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, "copy", restored.Name)
-			assert.Equal(t, int64(1), projectCount)
-			// The files restore into the new project directory, then the volumes into the volumes it created.
-			require.Len(t, snapshots.restores, 2)
-			assert.Equal(t, restored.Path, snapshots.restores[0].ProjectPath)
-			assert.Equal(t, []projectbackup.RestoreVolume{
-				{Key: "shared", Snapshot: "shared-data", Name: "shared-data"},
-				{Key: "data", Snapshot: "web_data", Name: "copy_data"},
-			}, snapshots.restores[1].Volumes)
-			// An external volume gets its recorded Docker labels and no Compose labels.
-			assert.Equal(t, client.VolumeCreateOptions{Name: "shared-data", Labels: map[string]string{"owner": "ops"}}, created[0])
-			assert.Equal(t, "copy", created[1].Labels[api.ProjectLabel])
-			assert.Equal(t, "data", created[1].Labels[api.VolumeLabel])
-		})
-	}
-}
-
-func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-	// shared-data carries labels of its own and is gone after the export, as on another environment.
 	sourceLabels := map[string]string{"backup.schedule": "nightly", "owner": "ops"}
 	var exported atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -12392,33 +11171,43 @@ func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
 			"volumes:\n  first:\n    external: true\n    name: shared-data\n  second:\n    external: true\n    name: shared-data\n",
 	), 0o644))
 	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
-	var empty strings.Builder
-	gzipWriter := gzip.NewWriter(&empty)
+	var data strings.Builder
+	gzipWriter := gzip.NewWriter(&data)
 	tarWriter := tar.NewWriter(gzipWriter)
 	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
 	require.NoError(t, tarWriter.Close())
 	require.NoError(t, gzipWriter.Close())
 
 	var (
-		exports []string
-		created []client.VolumeCreateOptions
+		exports  []string
+		restored []string
+		targets  []types.ComposeVolumeTarget
 	)
-	bundles := projectBundles{local: localTransferEnvironment{projects: svc, deps: TransferDependencies{
-		VolumeLocks: &concurrency.KeyedMutex{},
-		ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-			exports = append(exports, name)
-			return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(empty.Len()), strings.NewReader(empty.String()))
+	module := New(ModuleParams{
+		Service: svc,
+		Transfer: TransferDependencies{
+			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
+				exports = append(exports, name)
+				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
+			},
+			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
+				restored = append(restored, name)
+				targets = append(targets, *request.ComposeVolume)
+				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
+			},
 		},
-		CreateEmptyVolume: func(_ context.Context, options client.VolumeCreateOptions, _ *tar.Header) (bool, error) {
-			created = append(created, options)
-			return true, nil
-		},
-		RestoreVolume: func(context.Context, string, types.RestoreVolumeUploadRequest, types.Actor) (bool, error) {
-			return false, errors.New("an empty volume must not be restored")
-		},
-	}}}
+	})
 
-	session, err := bundles.Export(ctx, ExportBundleOptions{EnvironmentID: "0", ProjectID: "proj-demo", Request: types.ExportProjectArchive{Volumes: []string{"first", "second"}}})
+	options, err := module.bundles.Options(ctx, "proj-demo")
+	require.NoError(t, err)
+	require.Len(t, options.Volumes, 2)
+	assert.True(t, options.Volumes[0].Included)
+	assert.False(t, options.Running)
+
+	session, err := module.bundles.Export(ctx, bundle.ExportOptions{
+		ProjectID: "proj-demo",
+		Request:   types.ExportProjectArchive{Volumes: []string{"first", "second"}},
+	})
 	require.NoError(t, err)
 	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
 	require.NoError(t, err)
@@ -12431,7 +11220,6 @@ func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	// The one Docker volume is exported and archived once, and both keys point at its archive and labels.
 	assert.Equal(t, []string{"shared-data"}, exports)
 	assert.Equal(t, []string{projects.ProjectBundleProject, "volumes/first.tar.gz"}, visited)
 	require.Len(t, manifest.Volumes, 2)
@@ -12441,153 +11229,73 @@ func TestProjectBundlesRoundTripExternalVolumesSharingAName(t *testing.T) {
 	}
 
 	exported.Store(true)
-	imported, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
+	uploaded, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
 	require.NoError(t, err)
-	_, err = bundles.Import(ctx, ImportBundleOptions{EnvironmentID: "0", Request: types.ImportProjectArchive{UploadID: imported.ID, Name: "copy"}})
+	_, err = module.bundles.Import(ctx, bundle.ImportOptions{
+		Request: types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+	})
+	require.ErrorIs(t, err, common.ErrForbidden)
+
+	uploaded, err = uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
 	require.NoError(t, err)
-	// The external volume is created once with its own labels and no Compose labels.
-	assert.Equal(t, []client.VolumeCreateOptions{{Name: "shared-data", Labels: sourceLabels}}, created)
+	projectID, err := module.bundles.Import(ctx, bundle.ImportOptions{
+		Request:        types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+		RestoreVolumes: true,
+	})
+	require.NoError(t, err)
+	imported, err := svc.GetProjectFromDatabaseByID(ctx, projectID)
+	require.NoError(t, err)
+	assert.Equal(t, "copy", imported.Name)
+	assert.Equal(t, []string{"shared-data"}, restored)
+	require.Len(t, targets, 1)
+	assert.NotEmpty(t, targets[0].Claim, "the restore claims the volume it creates for this import")
+	assert.Equal(t, types.ComposeVolumeTarget{Labels: sourceLabels, Project: "copy", Key: "first", Claim: targets[0].Claim, External: true}, targets[0])
 }
 
-func TestProjectBundlesImportRejectsVolumesSharingADockerName(t *testing.T) {
-	firstArchive, firstErr := projects.ProjectBundleVolumeArchive("first")
-	require.NoError(t, firstErr)
-	secondArchive, secondErr := projects.ProjectBundleVolumeArchive("second")
-	require.NoError(t, secondErr)
-	for _, tt := range []struct {
-		name    string
-		wantErr string
-		second  types.ProjectVolume
-	}{
-		{
-			name:    "separate archives",
-			second:  types.ProjectVolume{Key: "second", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: secondArchive, Included: true},
-			wantErr: "volumes first and second both resolve to the Docker volume shared-data",
-		},
-		{
-			name:    "different kinds",
-			second:  types.ProjectVolume{Key: "second", Name: "shared-data", Kind: types.ProjectVolumeNamed, Archive: firstArchive, Included: true},
-			wantErr: "volumes first and second both resolve to the Docker volume shared-data but are external and named volumes",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("TMPDIR", t.TempDir())
-			ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-			db := setupProjectTestDB(t)
-			settingsService, err := newSettingsServiceForTest(t, ctx, db)
-			require.NoError(t, err)
-			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", t.TempDir()))
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if !strings.HasSuffix(r.URL.Path, "/containers/json") {
-					http.NotFound(w, r)
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.MarshalWrite(w, []container.Summary{})
-			}))
-			t.Cleanup(server.Close)
-			uploads := upload.NewUploadService(settingsService)
-			svc := NewProjectService(ProjectServiceParams{
-				DB:                          db,
-				SettingsService:             settingsService,
-				DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-				BuildService:                testBuildBuilder{},
-				Uploads:                     uploads,
-				Config:                      loadTestConfig(t),
-				KVService:                   kv.NewKVService(db),
-				RegistryCredentialsProvider: testRegistryCredentials,
-			})
-
-			var bundle strings.Builder
-			writer, err := projects.NewProjectBundleWriter(&bundle, types.ProjectManifest{
-				Project: types.ProjectManifestProject{ID: "source", Name: "web", ComposeName: "web"},
-				Volumes: []types.ProjectVolume{
-					{Key: "first", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: firstArchive, Included: true},
-					tt.second,
-				},
-				FormatVersion: types.ProjectManifestFormatVersion,
-			})
-			require.NoError(t, err)
-			project := "services:\n  app:\n    image: nginx\n"
-			require.NoError(t, writer.Add(projects.ProjectBundleProject, int64(len(project)), strings.NewReader(project)))
-			require.NoError(t, writer.Add(firstArchive, 4, strings.NewReader("data")))
-			if tt.second.Archive == secondArchive {
-				require.NoError(t, writer.Add(secondArchive, 4, strings.NewReader("data")))
-			}
-			require.NoError(t, writer.Close())
-			session, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "web.arcane.tar.gz", int64(bundle.Len()), strings.NewReader(bundle.String()))
-			require.NoError(t, err)
-
-			// Both volumes would restore into shared-data, so the import stops before creating anything.
-			_, err = projectBundles{local: localTransferEnvironment{projects: svc}}.Import(ctx, ImportBundleOptions{
-				EnvironmentID: "0",
-				Request:       types.ImportProjectArchive{UploadID: session.ID, Name: "copy"},
-			})
-			require.ErrorIs(t, err, common.ErrValidation)
-			require.ErrorContains(t, err, tt.wantErr)
-			var count int64
-			require.NoError(t, db.Model(&Project{}).Count(&count).Error)
-			assert.Zero(t, count)
-		})
-	}
-}
-
-func (r *bundleActivityRecorder) StartActivity(context.Context, activitylib.StartRequest) (*types.Activity, error) {
-	return &types.Activity{ID: "import"}, nil
-}
-
-func (r *bundleActivityRecorder) CompleteActivity(context.Context, string, types.ActivityStatus, string, *string, ...string) (*types.Activity, error) {
-	return &types.Activity{ID: "import"}, nil
-}
-
-func (r *bundleActivityRecorder) AppendMessage(_ context.Context, _ string, req activitylib.AppendMessageRequest) (*types.ActivityMessage, error) {
-	r.messages = append(r.messages, req.Message)
-	return &types.ActivityMessage{}, nil
-}
-
-func (r *bundleActivityRecorder) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
-	return nil, nil
-}
-
-func TestStopRunningContainersLeavesSelfRemovingOneOffsAlone(t *testing.T) {
-	var mu sync.Mutex
-	var stopped, started []string
+func TestProjectServiceCreatesARestoredProject(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, []container.Summary{
-				{ID: "web-1", Names: []string{"/demo-web-1"}, State: container.StateRunning, Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web"}},
-				{ID: "run-1", Names: []string{"/demo-web-run-1"}, State: container.StateRunning, Labels: map[string]string{
-					api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True",
-				}},
-			})
-		case strings.HasSuffix(r.URL.Path, "/containers/run-1/json"):
-			_, _ = io.WriteString(w, `{"Id":"run-1","State":{"Status":"running"},"HostConfig":{"AutoRemove":true}}`)
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			stopped = append(stopped, filepath.Base(filepath.Dir(r.URL.Path)))
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
-			http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)
-		default:
-			http.NotFound(w, r)
-		}
+		_ = json.MarshalWrite(w, []container.Summary{})
 	}))
 	t.Cleanup(server.Close)
-	svc := &ProjectService{dockerService: newSettingsDockerService(t, newTestDockerClient(t, server))}
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     upload.NewUploadService(settingsService),
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	// The backed up project's files name its own Compose project.
+	restore := func(_ context.Context, projectPath string) error {
+		return os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("name: web\nservices:\n  app:\n    image: nginx:alpine\n"), 0o644)
+	}
 
-	// docker compose run --rm deletes its container on stop, so nothing is stopped while one runs.
-	_, err := svc.stopRunningContainers(t.Context(), "demo")
-	require.ErrorIs(t, err, common.ErrConflict)
-	require.ErrorContains(t, err, "demo-web-run-1")
-	require.Empty(t, stopped)
+	_, err = svc.importArchive(ctx, CreateProjectOptions{
+		Restore:   func(context.Context, string) error { return errors.New("rustic failed") },
+		Name:      "copy",
+		ExactName: true,
+	})
+	require.ErrorContains(t, err, "restore the project files: rustic failed")
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "a failed restore leaves no project directory")
 
-	// A container removed since it was stopped has nothing to start, which is not a failure.
-	require.NoError(t, svc.startContainers(t.Context(), &composetypes.Project{Name: "demo"}, []container.Summary{
-		{ID: "gone-1", Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True"}},
-	}))
-	require.Equal(t, []string{"gone-1"}, started)
+	proj, err := svc.importArchive(ctx, CreateProjectOptions{Restore: restore, Name: "copy", ExactName: true})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(projectsDir, "copy"), proj.Path)
+	// The restored files deploy under the new project's name, as imported ones do.
+	content, err := os.ReadFile(filepath.Join(proj.Path, "compose.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "name: copy")
 }

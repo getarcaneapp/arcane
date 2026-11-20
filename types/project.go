@@ -36,11 +36,12 @@ type (
 	}
 
 	ImportProjectArchive struct {
-		UploadID  string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
-		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
-		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
-		Start     bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
+		UploadID     string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
+		Name         string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		ProjectID    string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
+		Tags         []string `json:"tags,omitempty" doc:"Project tags"`
+		ComposeFiles []string `json:"composeFiles,omitempty" doc:"Compose files the imported project loads, relative to its directory, the base file first"`
+		Start        bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
 	}
 
 	ExportProjectArchive struct {
@@ -81,7 +82,6 @@ type (
 		ArcaneVersion string                 `json:"arcaneVersion"`
 		Project       ProjectManifestProject `json:"project"`
 		ComposeFiles  []string               `json:"composeFiles,omitempty"`
-		IncludeFiles  []string               `json:"includeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
 		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
@@ -163,6 +163,25 @@ type (
 		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
 		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
 		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
+	}
+
+	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
+	// the ones the backup was taken from.
+	ProjectBackupRestore struct {
+		ProjectID string
+		BackupID  string
+		// ProjectPath receives the project files; empty leaves them out.
+		ProjectPath string
+		Volumes     []ProjectBackupRestoreVolume
+		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
+		LockVolumes bool
+	}
+
+	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
+	ProjectBackupRestoreVolume struct {
+		Key      string `json:"key"`
+		Snapshot string `json:"snapshot"`
+		Name     string `json:"name"`
 	}
 
 	ProjectTransferMode string

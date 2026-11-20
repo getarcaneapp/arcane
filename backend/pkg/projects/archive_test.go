@@ -177,7 +177,6 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	manifest := testProjectManifest(
 		types.ProjectVolume{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true},
 		types.ProjectVolume{Key: "cache", Name: "web_cache", Kind: types.ProjectVolumeNamed},
-		// Volumes naming one Docker volume share its archive, which the bundle holds once.
 		types.ProjectVolume{
 			Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: "volumes/other.tar.gz", Included: true,
 			DockerLabels: map[string]string{"owner": "ops"},
@@ -187,7 +186,6 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	entries := map[string]string{ProjectBundleProject: "project files", dataArchive: "volume data", "volumes/other.tar.gz": "shared data"}
 	bundle := writeTestBundle(t, manifest, entries, ProjectBundleProject, dataArchive, "volumes/other.tar.gz")
 
-	// The manifest must be the first entry, because import detects bundles by it.
 	gzipReader, err := gzip.NewReader(bytes.NewReader(bundle.Bytes()))
 	require.NoError(t, err)
 	first, err := tar.NewReader(gzipReader).Next()
@@ -208,7 +206,6 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	assert.Equal(t, manifest.Volumes, got.Volumes)
 	assert.Equal(t, []string{ProjectBundleProject, dataArchive, "volumes/other.tar.gz"}, visited)
 
-	// A writer never emits entries a reader would reject.
 	writer, err := NewProjectBundleWriter(io.Discard, manifest)
 	require.NoError(t, err)
 	for _, name := range []string{"../escape.tar.gz", "volumes/../x.tar.gz", "/abs.tar.gz", "volumes/a/b.tar.gz", "notes.txt"} {
@@ -216,39 +213,7 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPeekEmptyVolumeArchive(t *testing.T) {
-	root := archiveTestEntry{header: tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}}
-	file := archiveTestEntry{header: tar.Header{Typeflag: tar.TypeReg, Name: "./index.html", Mode: 0o644}, body: "<h1>hi</h1>"}
-	for _, tt := range []struct {
-		name  string
-		data  []byte
-		empty bool
-	}{
-		// tar -czf - -C /volume . of an empty volume holds only the root directory.
-		{name: "root only", data: buildTestArchive(t, []archiveTestEntry{root}).Bytes(), empty: true},
-		{name: "root and file", data: buildTestArchive(t, []archiveTestEntry{root, file}).Bytes()},
-		{name: "file only", data: buildTestArchive(t, []archiveTestEntry{file}).Bytes()},
-		{name: "root twice", data: buildTestArchive(t, []archiveTestEntry{root, root}).Bytes()},
-		{name: "not gzip", data: []byte("volume data")},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			empty, rootHeader, replay := PeekEmptyVolumeArchive(bytes.NewReader(tt.data))
-			assert.Equal(t, tt.empty, empty)
-			if tt.empty {
-				require.NotNil(t, rootHeader)
-				assert.Equal(t, int64(0o755), rootHeader.Mode)
-			} else {
-				assert.Nil(t, rootHeader)
-			}
-			replayed, err := io.ReadAll(replay)
-			require.NoError(t, err)
-			assert.Equal(t, tt.data, replayed)
-		})
-	}
-}
-
 func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
-	// A plain project archive must keep importing as before instead of failing bundle validation.
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
 	_, ok, err := ReadProjectBundle(plain, nil)
 	require.NoError(t, err)
@@ -360,4 +325,17 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 			require.ErrorContains(t, readErr, tt.wantErr)
 		})
 	}
+}
+
+func TestSelectBackupVolumes(t *testing.T) {
+	keys, err := SelectBackupVolumes([]string{"data", "shared"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"data", "shared"}, keys)
+	_, err = SelectBackupVolumes([]string{"data", "shared"}, []string{"cache"})
+	require.ErrorContains(t, err, "does not include the data of volume cache")
+	_, err = SelectBackupVolumes([]string{"data"}, []string{"unknown"})
+	require.Error(t, err)
+	none, err := SelectBackupVolumes([]string{"data"}, []string{})
+	require.NoError(t, err)
+	require.Empty(t, none)
 }
