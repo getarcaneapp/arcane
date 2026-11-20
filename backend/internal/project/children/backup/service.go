@@ -45,6 +45,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -134,7 +135,9 @@ type (
 		Created []string `json:"created,omitempty"`
 		Files   bool     `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
-		MayStop     bool `json:"mayStop"`
+		MayStop bool `json:"mayStop"`
+		// Stopped records that the project had stopped containers, which the restore removes; projects:down was checked.
+		Stopped     bool `json:"stopped,omitempty"`
 		Running     bool `json:"running"`
 		Started     bool `json:"started"`
 		Restored    bool `json:"restored"`
@@ -153,6 +156,7 @@ type (
 		record  func(ctx context.Context, p restorePlan) error
 		report  func(ctx context.Context, message string)
 		down    func(ctx context.Context) error
+		clear   func(ctx context.Context, p restorePlan) error
 		deploy  func(ctx context.Context) error
 		safety  func(ctx context.Context, p restorePlan) (string, error)
 		inUse   func(ctx context.Context, p restorePlan) error
@@ -170,6 +174,9 @@ type (
 )
 
 const (
+	// restoreOwner and the restore's ID label its Rustic containers, the same for the restore and its rollback, so
+	// either finds one the other left.
+	restoreOwner      = "project-restore:"
 	admissionScope    = "project-backup"
 	snapshotRoot      = "/snapshot"
 	restoreRoot       = "/dest"
@@ -1297,6 +1304,10 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
+	stopped, _, err := s.projectContainers(ctx, project.ComposeName)
+	if err != nil {
+		return "", err
+	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
 		ID:        uuid.New().String(),
@@ -1305,6 +1316,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		Volumes:   targets,
 		Files:     files,
 		MayStop:   len(active) > 0,
+		Stopped:   len(stopped) > 0,
 	}
 	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()...); permissionErr != nil {
 		return "", permissionErr
@@ -1359,11 +1371,15 @@ func restoreTargets(project types.Project, captured []types.ProjectBackupVolume,
 }
 
 // extraPermissions are the rights a restore needs besides projects:restore: stopping and deploying a running project,
-// or deploying one it was asked to redeploy.
+// removing a stopped one's containers, or deploying one it was asked to redeploy.
 func (p restorePlan) extraPermissions() []string {
 	switch {
 	case p.MayStop:
 		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
+	case p.Stopped && kit.FromPtr(p.Redeploy):
+		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
+	case p.Stopped:
+		return []string{authz.PermProjectsDown}
 	case kit.FromPtr(p.Redeploy):
 		return []string{authz.PermProjectsDeploy}
 	}
@@ -1487,6 +1503,10 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if err != nil {
 		return restorePlan{}, err
 	}
+	// Without its Compose name the project's containers can't be found, so none could be stopped or removed.
+	if project.ComposeName == "" {
+		return restorePlan{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before restoring it", project.Name))
+	}
 	keys := make([]string, 0, len(p.Volumes))
 	for _, volume := range p.Volumes {
 		keys = append(keys, volume.Key)
@@ -1528,6 +1548,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 		Create:      create,
 		Files:       p.Files,
 		MayStop:     p.MayStop,
+		Stopped:     p.Stopped,
 		Running:     len(active) > 0,
 	}, nil
 }
@@ -1653,6 +1674,13 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 			return r.rollback(ctx, p, fmt.Errorf("stop the project: %w", err))
 		}
 	}
+	// A stopped container can be started on its own, without the project lock the restore holds, so none is left.
+	if p.Stopped {
+		r.report(ctx, "Removing the project's stopped containers")
+	}
+	if err := r.clear(ctx, p); err != nil {
+		return r.rollback(ctx, p, fmt.Errorf("remove the project's stopped containers: %w", err))
+	}
 	r.report(ctx, "Taking a safety backup")
 	safetyID, err := r.safety(ctx, p)
 	if err != nil {
@@ -1689,7 +1717,7 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 }
 
 func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
-	if err := r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes}); err != nil {
+	if err := r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID}); err != nil {
 		return err
 	}
 	return r.verify(ctx, p)
@@ -1725,7 +1753,7 @@ func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) 
 			downErr = r.down(ctx)
 		}
 		if downErr == nil {
-			undoErr = r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes()})
+			undoErr = r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID})
 			cleanup = append(cleanup, r.remove(ctx, p.Created))
 		}
 	}
@@ -1789,6 +1817,7 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 		down: func(ctx context.Context) error {
 			return s.deps.Down(ctx, projectID, input.User)
 		},
+		clear: s.removeStoppedContainers,
 		deploy: func(ctx context.Context) error {
 			return s.deps.Deploy(ctx, projectID, input.User, nil)
 		},
@@ -1846,6 +1875,81 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 		return "", completeErr
 	}
 	return entry.ID, nil
+}
+
+// removeStoppedContainers removes the project's stopped containers, which a deploy creates again. The project is
+// stopped by now, so a running container is refused, and so is a stopped one the request did not check for.
+func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) error {
+	stopped, active, err := s.projectContainers(ctx, p.ComposeName)
+	switch {
+	case err != nil:
+		return err
+	case len(active) > 0:
+		return common.Classify(common.ErrConflict, fmt.Errorf("container %s was started during the restore", docker.ContainerNameFromNames(active[0].Names)))
+	case len(stopped) > 0 && !p.Stopped && !p.MayStop:
+		return common.Classify(common.ErrConflict, errors.New("the project's containers changed after the restore was requested; start it again"))
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, c := range stopped {
+		if _, removeErr := dockerClient.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
+			errs = append(errs, fmt.Errorf("remove container %s: %w", docker.ContainerNameFromNames(c.Names), removeErr))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// projectContainers lists the project's own containers, leaving out Arcane's and its helpers as containerUse does.
+func (s *Service) projectContainers(ctx context.Context, composeName string) (stopped, active []container.Summary, err error) {
+	if composeName == "" {
+		return nil, nil, errors.New("the project's Compose name is unknown, so its containers can't be found")
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range found.Items {
+		switch {
+		case volumes.IsHelperContainer(c) || labels.IsArcaneContainer(c.Labels):
+		case c.State == container.StateRunning || c.State == container.StateRestarting || c.State == container.StatePaused:
+			active = append(active, c)
+		default:
+			stopped = append(stopped, c)
+		}
+	}
+	return stopped, active, nil
+}
+
+// removeLeftovers removes the Rustic containers of an earlier run of this restore, left by an Arcane that stopped
+// mid-restore; writing alongside one would mix two restores, so the restore stops if one can't be removed.
+func removeLeftovers(ctx context.Context, dockerClient *client.Client, owner string) error {
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", rustic.OwnerLabel+"="+owner),
+	})
+	if err != nil {
+		return fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range found.Items {
+		slog.WarnContext(ctx, "Removing a Rustic container left over from an earlier run of this restore", "containerId", c.ID)
+		if _, removeErr := dockerClient.ContainerRemove(ctx, c.ID, volumes.RemoveOptions()); removeErr != nil && !errdefs.IsNotFound(removeErr) {
+			return common.Classify(common.ErrConflict, fmt.Errorf(
+				"a Rustic container left over from an earlier run of this restore (%s) could not be removed, so nothing was written; remove it and try again: %w",
+				c.ID, removeErr,
+			))
+		}
+	}
+	return nil
 }
 
 // createVolume creates a missing target volume; one someone else created since the restore was checked is refused, so
@@ -1947,6 +2051,17 @@ func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (typ
 // RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
 // volumes it names; the caller holds the locks they need, or asks for the volumes' with LockVolumes.
 func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore) error {
+	// Checked even with nothing to restore, since a leftover may still write to a volume a rollback is about to remove.
+	if opts.Owner != "" {
+		dockerClient, err := s.deps.Docker.GetClient(ctx)
+		if err != nil {
+			return err
+		}
+		if leftoverErr := removeLeftovers(ctx, dockerClient, opts.Owner); leftoverErr != nil {
+			return leftoverErr
+		}
+		ctx = rustic.WithOwner(ctx, opts.Owner)
+	}
 	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
 		return nil
 	}

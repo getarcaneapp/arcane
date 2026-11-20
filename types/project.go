@@ -141,7 +141,10 @@ type (
 		BackupID  string
 		// ProjectPath receives the project files; empty leaves them out.
 		ProjectPath string
-		Volumes     []ProjectBackupRestoreVolume
+		// Owner labels the restore's Rustic containers; one left over from an earlier run with the same owner is removed
+		// before anything is written.
+		Owner   string
+		Volumes []ProjectBackupRestoreVolume
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
 	}
