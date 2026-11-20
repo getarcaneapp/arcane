@@ -1456,11 +1456,10 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 		"could not log project deployment action",
 	)
 
-	err = s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", err)
+	if statusErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); statusErr != nil {
+		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", statusErr)
 	}
-	return err
+	return nil
 }
 
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user types.Actor) error {

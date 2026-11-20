@@ -74,6 +74,8 @@
 	let pending: LogViewerEntry[] = [];
 	let flushFrame: number | null = null;
 	let seq = 0;
+	let lastTimestamp = '';
+	let resumeTimestamp = '';
 	let lastAppend: { from: LogViewerEntry[]; to: LogViewerEntry[]; batch: LogViewerEntry[] } | null = null;
 	let filterCache: { term: string; source: LogViewerEntry[]; result: LogViewerEntry[] } | null = null;
 
@@ -141,6 +143,8 @@
 	function resetLogState() {
 		clearBuffer();
 		seq = 0;
+		lastTimestamp = '';
+		resumeTimestamp = '';
 		expandedGroups.clear();
 		hasAutoEnabledStructuredView = false;
 	}
@@ -206,6 +210,12 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
+		resumeTimestamp = lastTimestamp;
+		if (lastTimestamp) {
+			return buildWebSocketEndpoint(
+				`${logWsBasePath}?follow=true&tail=all&since=${encodeURIComponent(lastTimestamp)}&timestamps=true&format=json&batched=true`
+			);
+		}
 		return buildWebSocketEndpoint(`${logWsBasePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
 	}
 
@@ -303,10 +313,16 @@
 
 	function processLogObject(obj: unknown) {
 		if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+		const timestamp = 'timestamp' in obj && typeof obj.timestamp === 'string' ? obj.timestamp : '';
+		if (timestamp && !('level' in obj && obj.level === 'error')) {
+			if (timestamp === resumeTimestamp) return;
+			resumeTimestamp = '';
+			lastTimestamp = timestamp;
+		}
 		addLogEntry({
 			level: 'level' in obj && typeof obj.level === 'string' ? obj.level : 'stdout',
 			message: 'message' in obj && typeof obj.message === 'string' ? obj.message : '',
-			timestamp: 'timestamp' in obj && typeof obj.timestamp === 'string' ? obj.timestamp : nowInstantString(),
+			timestamp: timestamp || nowInstantString(),
 			service: 'service' in obj && typeof obj.service === 'string' ? obj.service : undefined,
 			containerId: 'containerId' in obj && typeof obj.containerId === 'string' ? obj.containerId : undefined
 		});

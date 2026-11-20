@@ -32,6 +32,15 @@ type (
 		Status int
 	}
 
+	ListWebhooksInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Search        string `query:"search" doc:"Search query"`
+		Sort          string `query:"sort" default:"createdAt" doc:"Column to sort by"`
+		Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
+		Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+		Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	}
+
 	CreateWebhookInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		types.Create[types.Webhook]
@@ -75,23 +84,27 @@ func (h *WebhookHandler) TriggerWebhook(ctx context.Context, input *TriggerWebho
 	}
 }
 
-func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {
+func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksInput) (*handlerutil.Page[types.Webhook], error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.webhookService.AggregateWebhookSummaries(ctx)
+		body, err := h.webhookService.AggregateWebhookSummaries(ctx, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list webhooks")
 		}
-		return &handlerutil.Out[[]types.Webhook]{Body: body}, nil
+		return &handlerutil.Page[types.Webhook]{Body: body}, nil
 	}
-	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
+
+	webhooks, paginationResp, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")
 	}
 
-	return &handlerutil.Out[[]types.Webhook]{
-		Body: types.ApiResponse[[]types.Webhook]{
-			Success: true,
-			Data:    webhooks,
+	return &handlerutil.Page[types.Webhook]{
+		Body: types.Paginated[types.Webhook]{
+			Success:    true,
+			Data:       webhooks,
+			Pagination: handlerutil.PaginationResponse(paginationResp),
 		},
 	}, nil
 }

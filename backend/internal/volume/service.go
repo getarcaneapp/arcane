@@ -138,6 +138,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		PolicyOverridden: ErrVolumeBackupPolicyOverridden,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
+		StopHelper:       service.StopHelper,
 		Exec:             service.execInContainer,
 		BackupVolumeName: backupVolumeName,
 		EncryptionKey:    cmp.Or(p.Config.EncryptionKey, legacyDefaultEncryptionKey),
