@@ -11403,6 +11403,7 @@ func TestProjectBundleExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testin
 			require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
 			module := New(ModuleParams{
 				Service: svc,
+				Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
 				Transfer: TransferDependencies{
 					ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 						return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
