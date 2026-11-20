@@ -170,7 +170,13 @@
 			{:else}
 				<div class="border-t border-border/60 pt-3 text-sm">
 					<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
-					<p class="mt-1 text-muted-foreground">{m.dashboard_all_environment_unavailable_description()}</p>
+					<p class="mt-1 text-muted-foreground">
+						{#if environment.dockerHost?.trim()}
+							{m.dashboard_docker_host_unreachable_description({ host: environment.dockerHost.trim() })}
+						{:else}
+							{m.dashboard_all_environment_unavailable_description()}
+						{/if}
+					</p>
 				</div>
 			{/if}
 

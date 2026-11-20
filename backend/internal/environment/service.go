@@ -1132,13 +1132,18 @@ func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (
 	status, err := s.TestConnection(ctx, envID)
 	switch {
 	case err != nil:
-		slog.WarnContext(ctx, "environment health check failed", "environmentId", envID, "status", status, "error", err)
+		slog.WarnContext(ctx, "environment health check failed", "environmentId", envID, "status", status, "dockerHost", localEnvironment.DockerHostURL(), "error", err)
 		return types.SchedulerOutcome{Status: types.RunStatusRetrying}, err
 	case status != "online":
 		return types.SchedulerOutcome{Status: types.RunStatusRetrying, Message: "Environment is offline"}, errors.New("environment is offline")
 	}
 
 	if envID == LocalEnvironmentID {
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
+	}
+	// A docker-host environment is served in-process against its own daemon: there is no agent to
+	// push settings, registries or variables to, so a passing probe is the whole health check.
+	if localEnvironment.IsDockerHost() {
 		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	}
 
