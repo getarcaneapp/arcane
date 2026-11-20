@@ -225,6 +225,7 @@ var (
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
+	fallbackBackoff       = concurrency.Backoff{Base: 5 * time.Second, Max: 5 * time.Minute}
 	projectDetails        = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
@@ -569,9 +570,10 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
 // lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
-	// A resume that ends for good fails its backup, as a first attempt does; shutdown and busy admissions retry it.
+	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown and busy
+	// admissions retry it.
 	defer func() {
-		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) && !errors.Is(err, backup.ErrBackupSettled) {
+		if err != nil && !handedBack(ctx, err) && !errors.Is(err, backup.ErrBackupSettled) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
 		}
 	}()
@@ -1191,6 +1193,15 @@ func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error)
 	return err
 }
 
+// handedBack reports whether a failed attempt leaves its backup running for a retry to resume. A shutdown cancel and a
+// rejected run that nobody cancelled are retried; a user cancel never is, so its backup must be failed now.
+func handedBack(ctx context.Context, err error) bool {
+	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
+		return true
+	}
+	return ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)
+}
+
 func (s *Service) fail(ctx context.Context, backupID, message string) error {
 	return s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).Where("id = ? AND status = ?", backupID, types.VolumeBackupStatusRunning).
 		Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": message, "completed_at": time.Now()}).Error
@@ -1579,11 +1590,17 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 			return (loadErr == nil && current.Enabled) || s.unfinished(ctx, policyID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and finishes its backup. Nothing
-		// retries a fallback, so it waits for a busy admission instead of handing the run back.
+		// retries a fallback, so it waits for a busy admission instead of handing the run back. A failed container restart
+		// is rejected too but leaves the admissions free, so attempts back off until the containers start.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous)
-			for errors.Is(resumeErr, actor.ErrJobRejected) {
-				if waitErr := s.awaitCheckpointAdmissions(ctx, previous); waitErr != nil {
+			for attempt := 0; errors.Is(resumeErr, actor.ErrJobRejected); attempt++ {
+				slog.WarnContext(ctx, "Retrying an interrupted scheduled project backup", "policyId", policyID, "error", resumeErr)
+				waitErr := fallbackBackoff.Sleep(ctx, attempt)
+				if waitErr == nil {
+					waitErr = s.awaitCheckpointAdmissions(ctx, previous)
+				}
+				if waitErr != nil {
 					return types.SchedulerOutcome{}, waitErr
 				}
 				outcome, resumed, resumeErr = s.resumeScheduled(ctx, previous)
@@ -1799,8 +1816,8 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 		return fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	defer func() {
-		// A run handed back stays running, so its retry resumes it from the checkpoint.
-		if err != nil && ctx.Err() == nil && !errors.Is(err, actor.ErrJobRejected) {
+		// A run handed back stays running, so its retry resumes it from the checkpoint; a user cancel fails it.
+		if err != nil && !handedBack(ctx, err) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
