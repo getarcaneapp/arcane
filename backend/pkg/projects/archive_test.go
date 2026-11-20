@@ -191,6 +191,7 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	first, err := tar.NewReader(gzipReader).Next()
 	require.NoError(t, err)
 	assert.Equal(t, ProjectBundleManifest, first.Name)
+	assert.True(t, IsProjectBundle(bytes.NewReader(bundle.Bytes())))
 
 	var visited []string
 	got, ok, err := ReadProjectBundle(bytes.NewReader(bundle.Bytes()), func(name string, size int64, body io.Reader) error {
@@ -215,15 +216,18 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 
 func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
-	_, ok, err := ReadProjectBundle(plain, nil)
+	plainBytes, err := io.ReadAll(plain)
+	require.NoError(t, err)
+	_, ok, err := ReadProjectBundle(bytes.NewReader(plainBytes), nil)
 	require.NoError(t, err)
 	assert.False(t, ok)
+	assert.False(t, IsProjectBundle(bytes.NewReader(plainBytes)))
+	assert.False(t, IsProjectBundle(strings.NewReader("not gzip")))
 
 	_, ok, err = ReadProjectBundle(strings.NewReader("not gzip"), nil)
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	// A project's own file named like the manifest leaves its archive plain.
 	for _, body := range []string{`{"name":"mine"}`, strings.Repeat(" ", maxProjectManifestBytes+1)} {
 		own := buildTestArchive(t, []archiveTestEntry{
 			{header: tar.Header{Typeflag: tar.TypeReg, Name: ProjectBundleManifest, Mode: 0o644}, body: body},
@@ -326,9 +330,11 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, ok, readErr := ReadProjectBundle(buildTestArchive(t, tt.entries), nil)
+			archive := buildTestArchive(t, tt.entries).Bytes()
+			_, ok, readErr := ReadProjectBundle(bytes.NewReader(archive), nil)
 			assert.True(t, ok)
 			require.ErrorContains(t, readErr, tt.wantErr)
+			assert.True(t, IsProjectBundle(bytes.NewReader(archive)))
 		})
 	}
 }

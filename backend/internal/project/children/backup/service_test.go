@@ -271,7 +271,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 		DB:          db,
 		Docker:      dockerService,
 		Engine:      engine,
-		VolumeLocks: &concurrency.KeyedMutex{},
+		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
 			return &composetypes.Project{}, nil
@@ -291,7 +291,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{VolumeLocks: locks})
+	service := NewService(Dependencies{LockVolumes: lockingWith(locks)})
 	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Included: true},
 		{Key: "cache", Name: "web_cache", Included: false},
@@ -318,7 +318,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 		DB:          db,
 		Docker:      dockerService,
 		Engine:      engine,
-		VolumeLocks: locks,
+		LockVolumes: lockingWith(locks),
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
 			return &composetypes.Project{}, nil
@@ -374,7 +374,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 		DB:          db,
 		Docker:      dockerService,
 		Engine:      engine,
-		VolumeLocks: &concurrency.KeyedMutex{},
+		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
 			locked = true
@@ -527,3 +527,24 @@ func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
 
 // noBackupStore is a Docker host without a backup volume.
 func noBackupStore(context.Context) string { return "" }
+
+// lockingWith stands in for the volume service's LockVolumes, taking each volume's lock from locks.
+func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) (func(), error) {
+	return func(ctx context.Context, names []string) (func(), error) {
+		var unlocks []func()
+		release := func() {
+			for _, unlock := range slices.Backward(unlocks) {
+				unlock()
+			}
+		}
+		for _, name := range names {
+			unlock, err := locks.LockContext(ctx, name)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			unlocks = append(unlocks, unlock)
+		}
+		return release, nil
+	}
+}

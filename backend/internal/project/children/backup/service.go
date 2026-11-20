@@ -57,8 +57,9 @@ type (
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		VolumeLocks    *concurrency.KeyedMutex
-		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
+		LockVolumes func(ctx context.Context, names []string) (func(), error)
+		Project     func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
 		// BackupStore names the volume holding local backup storage, which a backup never copies.
@@ -336,24 +337,6 @@ func release(ctx context.Context, leases []*runs.Lease) {
 	}
 }
 
-func (s *Service) lockVolumes(ctx context.Context, names []string) (func(), error) {
-	unlocks := make([]func(), 0, len(names))
-	unlockAll := func() {
-		for _, unlock := range slices.Backward(unlocks) {
-			unlock()
-		}
-	}
-	for _, name := range names {
-		unlock, err := s.deps.VolumeLocks.LockContext(ctx, name)
-		if err != nil {
-			unlockAll()
-			return nil, err
-		}
-		unlocks = append(unlocks, unlock)
-	}
-	return unlockAll, nil
-}
-
 // run executes an accepted backup, or resumes one whose checkpoint an earlier attempt recorded.
 func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	var input runInput
@@ -423,7 +406,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
 		// A restore of any of the project's volumes finishes before its containers start again.
-		unlockVolumes, lockErr := s.lockVolumes(ctx, recorded.mountedVolumeNames())
+		unlockVolumes, lockErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
 		if lockErr != nil {
 			unlockProject()
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
@@ -558,7 +541,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		}
 		defer unlockProject()
 	}
-	unlock, err := s.lockVolumes(ctx, p.mountedVolumeNames())
+	unlock, err := s.deps.LockVolumes(ctx, p.mountedVolumeNames())
 	if err != nil {
 		return err
 	}

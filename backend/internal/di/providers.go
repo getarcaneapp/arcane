@@ -198,7 +198,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			S3Destinations: p.S3Destinations,
-			VolumeLocks:    p.Volumes.WorkspaceLocks(),
+			LockVolumes:    p.Volumes.LockVolumes,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

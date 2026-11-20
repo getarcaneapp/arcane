@@ -122,7 +122,6 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			return err
 		}
 		defer func() {
-			// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 			_ = reader.Close()
 		}()
 		if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -149,21 +148,26 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
+func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
+	usage, err := disk.UsageWithContext(ctx, dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	reserve = max(unpackReserveBytes, int64(usage.Total/20))
+	return int64(usage.Free) - reserve, reserve, nil
+}
+
 func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error {
 	destination := acfs.Root{Path: root}
-	usage, err := disk.UsageWithContext(ctx, root)
+	budget, reserve, err := FreeSpaceBudget(ctx, root)
 	if err != nil {
 		return fmt.Errorf("check free space for the project archive: %w", err)
 	}
-	reserve := max(unpackReserveBytes, int64(usage.Total/20))
-	budget := int64(usage.Free) - reserve
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("open project archive: %w", err)
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 
@@ -352,17 +356,19 @@ func isProjectBundleVolumeArchive(name string) bool {
 	return ok && err == nil && archive == name
 }
 
-func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+func IsProjectBundle(r io.Reader) bool {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
-		return types.ProjectManifest{}, false, nil
+		return false
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
-	tarReader := tar.NewReader(gzipReader)
+	_, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
+	return bundled
+}
+
+func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {
 	header, err := tarReader.Next()
 	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
 		return types.ProjectManifest{}, false, nil
@@ -371,8 +377,6 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	if err != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
 	}
-	// A plain archive may hold its own file of this name; only an export's manifest makes a bundle, so one that fails
-	// to decode as such is a project file.
 	var probe struct {
 		Kind          string `json:"kind"`
 		FormatVersion int    `json:"formatVersion"`
@@ -384,18 +388,34 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
 	}
+	return manifest, true, nil
+}
+
+func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return types.ProjectManifest{}, false, nil
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+	tarReader := tar.NewReader(gzipReader)
+	manifest, bundled, err := readProjectBundleManifest(tarReader)
+	if !bundled || err != nil {
+		return manifest, bundled, err
+	}
 	expected, err := projectBundleVolumeArchives(manifest)
 	if err != nil {
 		return manifest, true, err
 	}
 	projectSeen := false
 	for {
-		header, err = tarReader.Next()
-		if errors.Is(err, io.EOF) {
+		header, nextErr := tarReader.Next()
+		if errors.Is(nextErr, io.EOF) {
 			break
 		}
-		if err != nil {
-			return manifest, true, fmt.Errorf("read project bundle: %w", err)
+		if nextErr != nil {
+			return manifest, true, fmt.Errorf("read project bundle: %w", nextErr)
 		}
 		name, pathErr := archiveEntryPath(header)
 		if pathErr != nil {
