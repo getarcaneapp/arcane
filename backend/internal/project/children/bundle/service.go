@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -319,9 +318,9 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	// A stopped project must stay stopped while its volumes are copied. Something else, such as a volume backup that
-	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent. Its
-	// containers' start times are compared across the copy, so even a start that stops again before the end is seen.
-	var started map[string]string
+	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent. Docker's
+	// start events across the copy are checked, so even a container that started and was removed again is seen.
+	var since string
 	if opts.Request.StopProject {
 		current, currentErr := s.deps.Environment.Project(ctx, opts.ProjectID)
 		if currentErr != nil {
@@ -330,7 +329,7 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		if current.RunningCount > 0 {
 			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
 		}
-		if started, err = s.containerStarts(ctx, manifest.Project.ComposeName); err != nil {
+		if since, err = s.dockerNow(ctx); err != nil {
 			return err
 		}
 	}
@@ -349,50 +348,58 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	if opts.Request.StopProject {
-		after, startsErr := s.containerStarts(ctx, manifest.Project.ComposeName)
-		if startsErr != nil {
-			return startsErr
-		}
-		for id, startedAt := range after {
-			if startedAt != started[id] {
-				return common.Classify(common.ErrConflict, fmt.Errorf(
-					"project %s was started while its volumes were copied; export it again", manifest.Project.Name,
-				))
-			}
+		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, since); startErr != nil {
+			return startErr
 		}
 	}
 	return writer.Close()
 }
 
-// containerStarts returns when each container of the Compose project last started, keyed by ID; one that never
-// started is left out, so a container created but not started between two reads doesn't count.
-func (s *Service) containerStarts(ctx context.Context, composeName string) (map[string]string, error) {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+// dockerNow is the Docker daemon's clock as an events timestamp, so event windows don't depend on Arcane's clock.
+func (s *Service) dockerNow(ctx context.Context) (string, error) {
+	info, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
+		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
 	}
-	starts := make(map[string]string, len(found.Items))
-	for _, c := range found.Items {
-		inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
-		if errdefs.IsNotFound(inspectErr) {
-			continue
-		}
-		if inspectErr != nil {
-			return nil, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
-		}
-		startedAt := kit.FromPtr(inspected.Container.State).StartedAt
-		if at, parseErr := time.Parse(time.RFC3339Nano, startedAt); parseErr == nil && !at.IsZero() {
-			starts[c.ID] = startedAt
+	now, err := time.Parse(time.RFC3339Nano, info.Info.SystemTime)
+	if err != nil {
+		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
+	}
+	return fmt.Sprintf("%d.%09d", now.Unix(), now.Nanosecond()), nil
+}
+
+// checkNoStarts fails when any container of the Compose project started since the given daemon time, including one
+// removed again since; events that can't be read fail it too, as the copy can't be shown to be consistent.
+func (s *Service) checkNoStarts(ctx context.Context, composeName, since string) error {
+	until, err := s.dockerNow(ctx)
+	if err != nil {
+		return err
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	result := dockerClient.Events(ctx, client.EventsListOptions{
+		Since: since,
+		Until: until,
+		Filters: make(client.Filters).Add("type", "container").Add("event", "start").
+			Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+	})
+	for {
+		select {
+		case <-result.Messages:
+			return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
+		case streamErr := <-result.Err:
+			if errors.Is(streamErr, io.EOF) || streamErr == nil {
+				return nil
+			}
+			return fmt.Errorf("check that project %s stayed stopped: %w", composeName, streamErr)
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	return starts, nil
 }
 
 func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {

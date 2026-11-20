@@ -7,11 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -76,31 +75,33 @@ func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 		FormatVersion: types.ProjectManifestFormatVersion,
 	}
 	opts := ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}}
-	const before = "2026-11-20T01:00:00Z"
 	for _, test := range []struct {
 		name     string
-		after    string
-		running  bool
+		events   []events.Message
 		conflict bool
 	}{
-		{name: "a project that stays stopped is exported", after: before},
-		{name: "a project started during the copy fails the export", after: "2026-11-20T01:05:00Z", running: true, conflict: true},
-		// A volume backup that had stopped the project starts it and stops it again before the copy ends.
-		{name: "a start that stops again before the end fails the export", after: "2026-11-20T01:05:00Z", conflict: true},
+		{name: "a project that stays stopped is exported"},
+		// A volume backup that had stopped the project starts it again during the copy.
+		{name: "a project started during the copy fails the export", events: []events.Message{
+			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "web-1"}},
+		}, conflict: true},
+		// The container that started is gone again before the copy ends, so only its start event shows it.
+		{name: "a container started and removed during the copy fails the export", events: []events.Message{
+			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "job-1"}},
+		}, conflict: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var inspections atomic.Int32
+			var since, until string
 			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
-				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					_ = json.MarshalWrite(w, []container.Summary{{ID: "web-1", Names: []string{"/demo-web-1"}}})
-				case strings.HasSuffix(r.URL.Path, "/containers/web-1/json"):
-					startedAt := before
-					if inspections.Add(1) > 1 {
-						startedAt = test.after
+				case strings.HasSuffix(r.URL.Path, "/info"):
+					_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"})
+				case strings.HasSuffix(r.URL.Path, "/events"):
+					since, until = r.URL.Query().Get("since"), r.URL.Query().Get("until")
+					for _, message := range test.events {
+						_ = json.MarshalWrite(w, message)
 					}
-					_ = json.MarshalWrite(w, container.InspectResponse{ID: "web-1", State: &container.State{StartedAt: startedAt, Running: test.running && inspections.Load() > 1}})
 				default:
 					http.NotFound(w, r)
 				}
@@ -108,6 +109,9 @@ func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 			uploads := upload.NewUploadService(nil)
 			service := &Service{deps: Dependencies{Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
 			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
+			// The window is the daemon's own clock from before the copy to after it.
+			require.Equal(t, "1795136400.500000000", since)
+			require.Equal(t, since, until)
 			if test.conflict {
 				require.ErrorIs(t, writeErr, common.ErrConflict)
 				require.ErrorContains(t, writeErr, "started while its volumes were copied")
