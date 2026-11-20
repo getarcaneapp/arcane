@@ -364,14 +364,24 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	}()
 	tarReader := tar.NewReader(gzipReader)
 	header, err := tarReader.Next()
-	if err != nil || header.Name != ProjectBundleManifest {
+	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
 		return types.ProjectManifest{}, false, nil
 	}
-	if header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
-		return types.ProjectManifest{}, true, fmt.Errorf("%s must be a file of at most %d bytes", ProjectBundleManifest, maxProjectManifestBytes)
+	content, err := io.ReadAll(tarReader)
+	if err != nil {
+		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
+	}
+	// A plain archive may hold its own file of this name; only an export's manifest makes a bundle, so one that fails
+	// to decode as such is a project file.
+	var probe struct {
+		Kind          string `json:"kind"`
+		FormatVersion int    `json:"formatVersion"`
+	}
+	if json.Unmarshal(content, &probe) != nil || probe.Kind != types.ProjectManifestKindExport || probe.FormatVersion == 0 {
+		return types.ProjectManifest{}, false, nil
 	}
 	var manifest types.ProjectManifest
-	if decodeErr := json.UnmarshalRead(io.LimitReader(tarReader, maxProjectManifestBytes), &manifest); decodeErr != nil {
+	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
 	}
 	expected, err := projectBundleVolumeArchives(manifest)

@@ -62,7 +62,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
-	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -182,8 +181,6 @@ type (
 	OpenExportOptions struct {
 		ProjectID string
 		UploadID  string
-		// VolumeData allows a bundle with volume data, which needs volumes:backup.
-		VolumeData bool
 	}
 
 	DestroyOptions struct {
@@ -1791,19 +1788,10 @@ func (s *ProjectService) OpenExport(ctx context.Context, opts OpenExportOptions)
 	if err != nil {
 		return nil, nil, err
 	}
-	exported := session.OriginID == opts.ProjectID && (session.Origin == types.UploadOriginProjectExport || session.Origin == types.UploadOriginProjectBundle)
-	var refusal error
-	switch {
-	case !exported:
-		refusal = common.Classify(common.ErrNotFound, errors.New("no export of this project has that ID"))
-	case session.Origin == types.UploadOriginProjectBundle && !opts.VolumeData:
-		// The bundle holds volume data, which exporting needed volumes:backup for.
-		refusal = common.Classify(common.ErrForbidden, errors.New("permission denied: "+authz.PermVolumesBackup))
-	}
-	if refusal != nil {
+	if session.OriginID != opts.ProjectID || session.Origin != types.UploadOriginProjectExport && session.Origin != types.UploadOriginProjectBundle {
 		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
 		_ = reader.Close()
-		return nil, nil, refusal
+		return nil, nil, common.Classify(common.ErrNotFound, errors.New("no export of this project has that ID"))
 	}
 	return reader, session, nil
 }
