@@ -3,148 +3,49 @@ package notifications
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildSlackURL(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  SlackConfig
-		wantURL string
-		wantErr string
-	}{
-		{
-			name: "basic config with bot token and channel",
-			config: SlackConfig{
-				Token:   "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-				Channel: "general",
-			},
-			wantURL: "slack://xoxb:123456789012-123456789012-abcdefghijklmnopqrstuvwx@general",
-		},
-		{
-			name: "config with user token",
-			config: SlackConfig{
-				Token:   "xoxp-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-				Channel: "alerts",
-			},
-			wantURL: "slack://xoxp:123456789012-123456789012-abcdefghijklmnopqrstuvwx@alerts",
-		},
-		{
-			name: "config with all optional fields",
-			config: SlackConfig{
-				Token:    "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-				Channel:  "notifications",
-				BotName:  "Arcane Bot",
-				Icon:     ":robot:",
-				Color:    "#FF0000",
-				Title:    "Container Update",
-				ThreadTS: "1234567890.123456",
-			},
-			wantURL: "slack://xoxb:123456789012-123456789012-abcdefghijklmnopqrstuvwx@notifications?botname=Arcane+Bot&col" +
-				"or=%23FF0000&icon=%3Arobot%3A&thread_ts=1234567890.123456&title=Container+Update",
-		},
-		{
-			name: "empty token",
-			config: SlackConfig{
-				Channel: "general",
-			},
-			wantErr: "slack token is required",
-		},
-		{
-			name: "invalid token format",
-			config: SlackConfig{
-				Token:   "invalid-token",
-				Channel: "general",
-			},
-			wantErr: "invalid Slack token format (expected format: xoxb-... or xoxp-...)",
-		},
-		{
-			name: "token without prefix",
-			config: SlackConfig{
-				Token:   "1234-5678-abcd",
-				Channel: "general",
-			},
-			wantErr: "invalid Slack token format (expected format: xoxb-... or xoxp-...)",
-		},
-		{
-			name: "short invalid token",
-			config: SlackConfig{
-				Token:   "xoxb-1234-5678-abcd",
-				Channel: "general",
-			},
-			wantErr: "invalid Slack token format (expected format: xoxb-... or xoxp-...)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotURL, err := BuildSlackURL(tt.config)
-
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantURL, gotURL)
-		})
-	}
-}
-
-func TestBuildSlackURL_TokenParsing(t *testing.T) {
+func TestSendSlack_RejectsInvalidToken(t *testing.T) {
 	tests := []struct {
 		name    string
 		token   string
-		wantErr bool
+		wantErr string
 	}{
 		{
-			name:    "valid bot token",
-			token:   "xoxb-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-			wantErr: false,
+			name:    "empty token",
+			wantErr: "slack token is empty",
 		},
 		{
-			name:    "valid user token",
-			token:   "xoxp-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-			wantErr: false,
+			name:    "invalid token format",
+			token:   "invalid-token",
+			wantErr: "invalid Slack token format",
 		},
 		{
-			name:    "token with xoxa prefix is also accepted",
-			token:   "xoxa-123456789012-123456789012-abcdefghijklmnopqrstuvwx",
-			wantErr: false,
+			name:    "token without prefix",
+			token:   "1234-5678-abcd",
+			wantErr: "invalid Slack token format",
+		},
+		{
+			name:    "short invalid token",
+			token:   "xoxb-1234-5678-abcd",
+			wantErr: "invalid Slack token format",
 		},
 		{
 			name:    "token without dashes",
 			token:   "xoxb1234567890",
-			wantErr: true,
-		},
-		{
-			name:    "short token",
-			token:   "xoxb-1234-5678-abcd",
-			wantErr: true,
-		},
-		{
-			name:    "empty token",
-			token:   "",
-			wantErr: true,
+			wantErr: "invalid Slack token format",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := SlackConfig{
+			err := SendSlack(t.Context(), SlackConfig{
 				Token:   tt.token,
-				Channel: "test",
-			}
+				Channel: "#general",
+			}, "message")
 
-			_, err := BuildSlackURL(config)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }
