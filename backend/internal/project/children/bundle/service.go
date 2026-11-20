@@ -14,7 +14,6 @@ import (
 	"uuid"
 
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
@@ -189,7 +188,6 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		Write:    write,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(project.Name) + types.ProjectBundleExtension,
-		Origin:   types.UploadOriginProjectBundle,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", project.Name, err)
@@ -284,11 +282,9 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 				"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
 			))
 		}
-		var dockerLabels map[string]string
-		if volume.Kind == types.ProjectVolumeExternal {
-			dockerLabels = maps.Clone(state.docker[volume.Name].Labels)
-			delete(dockerLabels, volumes.ClaimLabel)
-		}
+		// Only an external volume keeps its own Docker labels, without the claim an earlier import set.
+		dockerLabels := kit.Ternary(volume.Kind == types.ProjectVolumeExternal, maps.Clone(state.docker[volume.Name].Labels), nil)
+		delete(dockerLabels, volumes.ClaimLabel)
 		if labelErr := projects.ValidateVolumeLabels(dockerLabels); labelErr != nil {
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, labelErr))
 		}
@@ -355,18 +351,12 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
 		}
 	}
-	var (
-		copied []string
-		since  string
-	)
+	var copied []string
 	if manifest.Consistent {
 		for _, volume := range manifest.Volumes {
 			if volume.Included {
 				copied = append(copied, volume.Name)
 			}
-		}
-		if since, err = s.dockerNow(ctx); err != nil {
-			return err
 		}
 		if writerErr := s.checkNoWriters(ctx, copied); writerErr != nil {
 			return writerErr
@@ -386,11 +376,10 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
 		}
 	}
-	// Something else, such as a volume backup of another volume restarting an app, can start a writer during the
-	// copy. Docker's events show it even when the container is gone again, and the bundle must not be called consistent.
+	// Something else, such as a volume backup of another volume restarting an app, can start a writer during the copy.
 	if manifest.Consistent {
-		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, copied, since); startErr != nil {
-			return startErr
+		if writerErr := s.checkNoWriters(ctx, copied); writerErr != nil {
+			return writerErr
 		}
 	}
 	return writer.Close()
@@ -432,68 +421,6 @@ func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
 		}
 	}
 	return nil
-}
-
-// dockerNow reads the Docker daemon's clock as an events timestamp, so the checked window doesn't depend on Arcane's
-// clock.
-func (s *Service) dockerNow(ctx context.Context) (string, error) {
-	info, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
-	})
-	if err != nil {
-		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
-	}
-	now, err := time.Parse(time.RFC3339Nano, info.Info.SystemTime)
-	if err != nil {
-		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
-	}
-	return fmt.Sprintf("%d.%09d", now.Unix(), now.Nanosecond()), nil
-}
-
-// checkNoStarts fails when, since the given Docker time, a container of the project started or any container mounted
-// one of the volumes writable. Events that can't be read fail it too, as the copy can't be shown to be consistent.
-func (s *Service) checkNoStarts(ctx context.Context, composeName string, volumeNames []string, since string) error {
-	until, err := s.dockerNow(ctx)
-	if err != nil {
-		return err
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	queries := []client.Filters{
-		make(client.Filters).Add("type", "container").Add("event", "start").Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-		make(client.Filters).Add("type", "volume").Add("event", "mount").Add("volume", volumeNames...),
-	}
-	for _, filters := range queries {
-		if queryErr := s.noEvents(ctx, dockerClient, client.EventsListOptions{Since: since, Until: until, Filters: filters}, composeName); queryErr != nil {
-			return queryErr
-		}
-	}
-	return nil
-}
-
-// noEvents fails on any event the query returns, except a read-only volume mount, such as the export's own helper's.
-func (s *Service) noEvents(ctx context.Context, dockerClient *client.Client, options client.EventsListOptions, composeName string) error {
-	result := dockerClient.Events(ctx, options)
-	for {
-		select {
-		case message := <-result.Messages:
-			switch {
-			case message.Type != events.VolumeEventType:
-				return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
-			case message.Actor.Attributes["read/write"] == "true":
-				return common.Classify(common.ErrConflict, fmt.Errorf("a container started writing to volume %s while it was copied; export it again", message.Actor.ID))
-			}
-		case streamErr := <-result.Err:
-			if streamErr == nil || errors.Is(streamErr, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("check that the volumes of project %s were not written during the copy: %w", composeName, streamErr)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 }
 
 func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {

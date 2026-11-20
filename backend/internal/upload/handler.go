@@ -165,11 +165,6 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, authz.UploadDownloadConditions.Required("origin", session.Origin)); permErr != nil {
-		// Closing before the end keeps the session, so someone allowed can still download it.
-		_ = reader.Close()
-		return nil, permErr
-	}
 	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
 

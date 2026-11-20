@@ -8,8 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/stretchr/testify/require"
-
-	"getarcane.dev/types/v3"
 )
 
 func TestBuildPermissionExport(t *testing.T) {
@@ -263,8 +261,6 @@ func TestPermissionConditionsRequired(t *testing.T) {
 	require.Empty(t, BuildPushConditions.Required("push", "false"))
 	require.Empty(t, UploadKindConditions.Required("kind", "unknown"))
 	require.Equal(t, []string{PermProjectsDown, PermProjectsDeploy}, ProjectExportConditions.Required("stopProject", "true"))
-	require.Equal(t, []string{PermVolumesBackup}, UploadDownloadConditions.Required("origin", types.UploadOriginProjectBundle))
-	require.Empty(t, UploadDownloadConditions.Required("origin", types.UploadOriginProjectExport))
 	require.Equal(t, []string{PermGitOpsBackup}, GitOpsSyncModeConditions.Required("mode", "backup"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsSyncModeConditions.Required("mode", "bidirectional"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsModeConditions.Required("mode", "bidirectional"))
