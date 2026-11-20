@@ -36,8 +36,10 @@ type (
 		// Inspect returns the named Docker volume and whether it exists.
 		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
 		// InUse names the volumes containers outside the project mount.
-		InUse   map[string]bool
-		Project types.Project
+		InUse map[string]bool
+		// BackupStore names the volume holding Arcane's local backups. It is never included, so no copy reads it.
+		BackupStore string
+		Project     types.Project
 	}
 
 	ComposeVolumeTargetNameOptions struct {
@@ -180,13 +182,26 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	return classified
 }
 
-// ResolveProjectVolumes classifies the project's volumes and includes each one that exists and keeps its data in Docker.
+// ResolveProjectVolumes classifies the project's volumes and includes each one that exists and keeps its data in Docker,
+// except the backup store.
 // It also returns the Docker volumes it inspected, by name.
 func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
 	classified := ClassifyProjectVolumes(opts.Project)
 	resolved := make([]types.ProjectVolume, 0, len(classified))
 	inspected := map[string]types.Volume{}
 	for _, volume := range classified {
+		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
+			resolved = append(resolved, types.ProjectVolume{
+				Labels:      volume.Labels,
+				DriverOpts:  volume.DriverOpts,
+				Key:         volume.Key,
+				Name:        volume.Name,
+				Kind:        volume.Kind,
+				Driver:      volume.Driver,
+				BackupStore: true,
+			})
+			continue
+		}
 		if !volume.Included {
 			resolved = append(resolved, volume)
 			continue

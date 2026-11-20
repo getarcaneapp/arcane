@@ -131,7 +131,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: existingVolumes("web_data", "web_nfs", "shared")})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
@@ -176,8 +176,24 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	}
 }
 
+// A backup of the volume holding Arcane's backups would read the repository it writes into, copying it into itself.
+func TestResolvePlanLeavesOutTheBackupStore(t *testing.T) {
+	service := NewService(Dependencies{
+		BackupStore: func(context.Context) string { return "shared" },
+		Volume:      existingVolumes("web_data", "web_nfs", "shared"),
+	})
+
+	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"web_data"}, p.volumeNames())
+
+	_, err = service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{Volumes: []string{"data", "shared"}})
+	require.ErrorContains(t, err, "volume shared holds Arcane's backups")
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
 func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
-	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: existingVolumes("web_data", "web_nfs", "shared")})
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
 	require.NoError(t, checkPlanVolumes(testProject(), p))
@@ -218,9 +234,10 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewService(Dependencies{
-		DB:     db,
-		Engine: engine,
-		Volume: existingVolumes("web_data"),
+		BackupStore: noBackupStore,
+		DB:          db,
+		Engine:      engine,
+		Volume:      existingVolumes("web_data"),
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
@@ -776,9 +793,10 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		}
 	}))
 	service := NewService(Dependencies{
-		DB:       db,
-		Docker:   dockerService,
-		Settings: settingsService,
+		BackupStore: noBackupStore,
+		DB:          db,
+		Docker:      dockerService,
+		Settings:    settingsService,
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
@@ -1239,7 +1257,7 @@ func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
 
 func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
 	created := map[string]string{"web_data": "2026-11-20T09:00:00Z"}
-	service := NewService(Dependencies{Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
 		at, exists := created[name]
 		return types.Volume{Name: name, CreatedAt: at}, exists, nil
 	}})
@@ -1257,3 +1275,6 @@ func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, before, after)
 }
+
+// noBackupStore is a Docker host without a backup volume.
+func noBackupStore(context.Context) string { return "" }

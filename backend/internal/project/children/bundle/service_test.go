@@ -240,7 +240,7 @@ func TestExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
 				}
 			}))
 			uploads := upload.NewUploadService(nil)
-			service := &Service{deps: Dependencies{Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
+			service := &Service{deps: Dependencies{BackupStore: noBackupStore, Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
 			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
 			if test.wantMessage != "" {
 				require.ErrorIs(t, writeErr, common.ErrConflict)
@@ -354,6 +354,7 @@ func TestRestoreAsNew(t *testing.T) {
 			backups := &fakeBackups{manifest: manifest, fail: kit.Ternary(test.failRestore, errors.New("rustic failed"), nil)}
 			var filled, locked string
 			service := New(Dependencies{
+				BackupStore: noBackupStore,
 				Environment: environment,
 				Backups:     backups,
 				Docker:      dockerService,
@@ -473,6 +474,7 @@ func TestExportHoldsTheProjectLockUntilTheCopyEnds(t *testing.T) {
 	uploads := upload.NewUploadService(nil)
 	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		Docker:      dockerService,
 		Uploads:     uploads,
@@ -502,6 +504,7 @@ func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
 		"shared":     {Name: "shared"},
 	}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		RemoveProject: func(context.Context, string, types.Actor) error {
 			return nil
@@ -567,6 +570,7 @@ func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
 	uploads := upload.NewUploadService(nil)
 	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		Docker:      dockerService,
 		Uploads:     uploads,
@@ -618,6 +622,7 @@ func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
 			uploads := upload.NewUploadService(nil)
 			environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 			service := New(Dependencies{
+				BackupStore:  noBackupStore,
 				Environment:  environment,
 				Docker:       dockerService,
 				Uploads:      uploads,
@@ -638,3 +643,6 @@ func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
 		})
 	}
 }
+
+// noBackupStore is a Docker host without a backup volume.
+func noBackupStore(context.Context) string { return "" }

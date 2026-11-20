@@ -62,6 +62,8 @@ type (
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
+		// BackupStore names the volume holding local backup storage, which a backup never copies.
+		BackupStore func(ctx context.Context) string
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// ComposeProject loads the project's Compose model, which restarts stopped containers in Compose order.
@@ -321,9 +323,13 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 }
 
 // inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
-// and keep their data in Docker; requesting any other volume fails.
+// and keep their data in Docker, except the backup store; requesting any other volume fails.
 func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
-	resolved, dockerVolumes, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{Project: project, Inspect: s.deps.Volume})
+	resolved, dockerVolumes, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
+		Project:     project,
+		Inspect:     s.deps.Volume,
+		BackupStore: s.deps.BackupStore(ctx),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +337,9 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 	for _, volume := range resolved {
 		wanted := requested == nil || slices.Contains(requested, volume.Key)
 		switch {
+		case wanted && requested != nil && volume.BackupStore:
+			// A backup of the store would read the repository it writes into, copying it into itself on every run.
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be backed up", volume.Key))
 		case wanted && requested != nil && volume.Missing:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
 		case wanted && requested != nil && !volume.Included:
@@ -347,6 +356,7 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 			Driver:       volume.Driver,
 			Included:     volume.Included && wanted,
 			Missing:      volume.Missing,
+			BackupStore:  volume.BackupStore,
 		})
 	}
 	for _, key := range requested {
@@ -967,6 +977,7 @@ func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.Pro
 			Included:     volume.Included,
 			Missing:      volume.Missing,
 			InUse:        volume.Included && inUse[volume.Name],
+			BackupStore:  volume.BackupStore,
 		})
 	}
 	return marked

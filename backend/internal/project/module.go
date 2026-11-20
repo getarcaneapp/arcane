@@ -61,6 +61,7 @@ func New(p ModuleParams) *Module {
 		VolumeLocks:    p.Backups.VolumeLocks,
 		Project:        p.Service.GetProjectDetails,
 		Volume:         local.Volume,
+		BackupStore:    p.Backups.Repository.StorageVolume,
 		ComposeProject: p.Service.composeProject,
 		ComposeFiles:   p.Service.LoadedComposeFiles,
 		LockProject:    p.Service.LockProject,
@@ -94,6 +95,7 @@ func New(p ModuleParams) *Module {
 			Docker:       p.Service.dockerService,
 			Uploads:      p.Service.uploads,
 			ComposeFiles: p.Service.LoadedComposeFiles,
+			BackupStore:  p.Backups.Repository.StorageVolume,
 			// A restore as a new project fills the project directory from the backup's snapshot.
 			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{

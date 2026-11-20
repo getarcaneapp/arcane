@@ -58,6 +58,8 @@ type (
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// CreateProject creates a project as an import does, with files that fill writes into its directory.
 		CreateProject func(ctx context.Context, project NewProject) (string, error)
+		// BackupStore names the volume holding Arcane's local backups, which an export never copies.
+		BackupStore func(ctx context.Context) string
 		// LockProject holds the project's operation lock; StopProject, StartProject and RemoveProject expect it held.
 		LockProject   func(ctx context.Context, projectID string) (func(), error)
 		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
@@ -215,9 +217,10 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
 	})
 	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
-		Project: project,
-		Inspect: s.deps.Environment.Volume,
-		InUse:   inUse,
+		Project:     project,
+		Inspect:     s.deps.Environment.Volume,
+		InUse:       inUse,
+		BackupStore: s.deps.BackupStore(ctx),
 	})
 	if err != nil {
 		return exportState{}, err
@@ -248,6 +251,8 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 		switch {
 		case !known:
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
+		case volume.BackupStore:
+			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be exported", key))
 		case volume.Missing:
 			missing = append(missing, key)
 		case !volume.Included:

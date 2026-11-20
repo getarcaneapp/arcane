@@ -1130,6 +1130,21 @@ func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *clien
 	return mount.Mount{Type: mount.TypeVolume, Source: r.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
+// StorageVolume names the Docker volume StorageMount mounts: the volume at Arcane's own /backups, or the backup volume
+// when /backups is not mounted. It is empty when /backups is a bind mount, which no Docker volume holds.
+func (r *VolumeRepository) StorageVolume(ctx context.Context) string {
+	inspect, err := r.deps.Docker.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
+	if err == nil {
+		if mirrored := docker.MountForDestination(inspect.Mounts, "/backups", "/backups"); mirrored != nil {
+			if mirrored.Type != mount.TypeVolume {
+				return ""
+			}
+			return mirrored.Source
+		}
+	}
+	return r.deps.BackupVolumeName
+}
+
 func storageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
