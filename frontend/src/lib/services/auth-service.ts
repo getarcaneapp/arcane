@@ -107,21 +107,21 @@ class AuthService extends BaseAPIService {
 		const expiryTime = parseInstant(expiresAt);
 		if (!expiryTime) return;
 		const timeUntilExpiry = Temporal.Now.instant().until(expiryTime).total('milliseconds');
-		const refreshTime = Math.max(0, timeUntilExpiry - REFRESH_BUFFER_MS - Math.random() * REFRESH_JITTER_MS);
+		if (timeUntilExpiry <= REFRESH_JITTER_MS * 2) return;
+		const bufferedTime = timeUntilExpiry - REFRESH_BUFFER_MS - Math.random() * REFRESH_JITTER_MS;
+		const refreshTime = bufferedTime > 0 ? bufferedTime : timeUntilExpiry / 2;
 
-		if (refreshTime > 0) {
-			this.refreshTimer = setTimeout(() => {
-				void tryCatch(this.refreshAccessToken()).then((result) => {
-					if (result.error !== null) {
-						const err = result.error;
+		this.refreshTimer = setTimeout(() => {
+			void tryCatch(this.refreshAccessToken()).then((result) => {
+				if (result.error !== null) {
+					const err = result.error;
 
-						console.error('Background token refresh failed:', err);
-					} else {
-						return result.data;
-					}
-				});
-			}, refreshTime);
-		}
+					console.error('Background token refresh failed:', err);
+				} else {
+					return result.data;
+				}
+			});
+		}, refreshTime);
 	}
 
 	private refreshedElsewhere(expiryBefore: string | null): boolean {

@@ -26,7 +26,7 @@
 	import type { ProjectPreStartHook, ProjectRuntimeService } from '#lib/types/project.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions.js';
 	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
@@ -139,7 +139,7 @@
 		);
 		if (handled.error !== null) {
 			console.error('Service restart failed:', handled.error);
-			toast.error(m.containers_action_error());
+			toast.error(m.containers_action_error(), { description: extractApiErrorMessage(handled.error) });
 			actionStatus[id] = '';
 		}
 	}

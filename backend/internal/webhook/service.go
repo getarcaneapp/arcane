@@ -34,7 +34,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
 
@@ -82,6 +84,79 @@ const (
 )
 
 var (
+	webhookPagination = pagination.Config[types.Webhook]{
+		SearchAccessors: []pagination.SearchAccessor[types.Webhook]{
+			func(wh types.Webhook) (string, error) {
+				return wh.ID, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.Name, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TargetName, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TargetType, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.ActionType, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TokenPrefix, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[types.Webhook]{
+			{
+				Key: "createdAt",
+				Fn: func(a, b types.Webhook) int {
+					return a.CreatedAt.Compare(b.CreatedAt)
+				},
+			},
+			{
+				Key: "name",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.Name, b.Name)
+				},
+			},
+			{
+				Key: "enabled",
+				Fn: func(a, b types.Webhook) int {
+					return cmp.Compare(kit.Ternary(a.Enabled, 1, 0), kit.Ternary(b.Enabled, 1, 0))
+				},
+			},
+			{
+				Key: "tokenPrefix",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TokenPrefix, b.TokenPrefix)
+				},
+			},
+			{
+				Key: "targetType",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TargetType, b.TargetType)
+				},
+			},
+			{
+				Key: "actionType",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.ActionType, b.ActionType)
+				},
+			},
+			{
+				Key: "targetName",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TargetName, b.TargetName)
+				},
+			},
+			{
+				Key: "lastTriggeredAt",
+				Fn: func(a, b types.Webhook) int {
+					return kit.FromPtr(a.LastTriggeredAt).Compare(kit.FromPtr(b.LastTriggeredAt))
+				},
+			},
+		},
+	}
+
 	ErrWebhookNotFound           = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
 	ErrWebhookInvalid            = errors.New("invalid webhook token")
 	ErrWebhookDisabled           = errors.New("webhook is disabled")
@@ -394,10 +469,10 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, environmentID string)
 	return webhooks, nil
 }
 
-func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID string) ([]types.Webhook, error) {
+func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Webhook, pagination.Response, error) {
 	webhooks, err := s.ListWebhooks(ctx, environmentID)
 	if err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 
 	remoteNames := s.remoteWebhookTargetNames(ctx, environmentID, webhooks)
@@ -423,27 +498,30 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 		}
 	}
 
-	return summaries, nil
+	result := webhookPagination.SearchOrderAndPaginate(summaries, params)
+	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.ApiResponse[[]types.Webhook], error) {
-	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.Webhook]](ctx, nil)
+func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Webhook], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.Webhook]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return types.ApiResponse[[]types.Webhook]{}, err
+		return types.Paginated[types.Webhook]{}, err
 	}
-	webhooks := make([]types.Webhook, 0)
+
+	pages := make([]pagination.EnvironmentPage[types.Webhook], 0, len(collection.Results))
 	for _, result := range collection.Results {
-		for _, webhook := range result.Value.Data {
-			webhook.SetEnvironment(result.Environment)
-			webhooks = append(webhooks, webhook)
-		}
+		pages = append(pages, pagination.EnvironmentPage[types.Webhook]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
 	}
-	slices.SortStableFunc(webhooks, func(a, b types.Webhook) int {
-		return b.CreatedAt.Compare(a.CreatedAt)
-	})
-	return types.ApiResponse[[]types.Webhook]{
+	data, resp := pagination.MergeEnvironmentPages(webhookPagination, pages, params)
+
+	return types.Paginated[types.Webhook]{
 		Success:            true,
-		Data:               webhooks,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
 		FailedEnvironments: collection.Failures,
 	}, nil
 }
