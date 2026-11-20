@@ -1878,6 +1878,39 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 	return s.stats.Collect(ctx, matched, maxAge, false)
 }
 
+// TotalContainerCPUPercent sums the CPU percentage of every running container.
+// Each sample is already normalized against the host's total CPU time, so the
+// sum estimates the host CPU utilization from container activity.
+func (s *ContainerService) TotalContainerCPUPercent(ctx context.Context) (float64, error) {
+	dockerContainers, err := s.dockerService.ListContainers(ctx, false)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers for CPU usage: %w", err)
+	}
+
+	matched := make([]types.ContainerSummary, 0, len(dockerContainers))
+	for _, dc := range dockerContainers {
+		if dc.State == container.StateRunning {
+			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
+		}
+	}
+	if len(matched) == 0 {
+		return 0, nil
+	}
+
+	samples, err := s.stats.Collect(ctx, matched, stats.ContainerResourceSampleTTL, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to collect container CPU usage: %w", err)
+	}
+
+	var total float64
+	for _, sample := range samples {
+		if sample != nil {
+			total += sample.CPUPercent
+		}
+	}
+	return total, nil
+}
+
 func (s *ContainerService) ListContainersPaginated(
 	ctx context.Context,
 	params pagination.QueryParams,

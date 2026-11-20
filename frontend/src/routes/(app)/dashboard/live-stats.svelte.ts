@@ -16,12 +16,8 @@ export type EnvironmentLiveStatsState = {
 
 const LIVE_STATS_DEADLINE_MS = 10_000;
 
-export function supportsLiveStats(environment: Environment): boolean {
-	return !environment.dockerHost?.trim();
-}
-
 export function canLoadLiveStats(environment: Environment): boolean {
-	return supportsLiveStats(environment) && shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
+	return shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
 }
 
 function clearLiveStatsDeadline(liveStatsState: EnvironmentLiveStatsState) {
@@ -75,9 +71,6 @@ export class DashboardLiveStats {
 	status(environment: Environment): DashboardLiveStatsStatus {
 		if (!shouldLoadEnvironment(environment)) {
 			return 'live';
-		}
-		if (!supportsLiveStats(environment)) {
-			return 'unavailable';
 		}
 		if (!hasPermission('system:read', environment.id)) {
 			return 'denied';

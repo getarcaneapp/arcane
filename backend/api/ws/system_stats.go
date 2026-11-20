@@ -20,6 +20,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/sys/cgroup"
 
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
@@ -181,6 +182,14 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 }
 
 func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemStats {
+	if envcontext.IsDockerHostTarget(ctx) {
+		stats, ok := h.collectDockerHostStats(ctx)
+		if !ok {
+			return types.SystemStats{}
+		}
+		return stats
+	}
+
 	cpuUsage, _ := h.cpuCache.Load()
 
 	h.systemStaticInfo.once.Do(func() {
@@ -229,6 +238,66 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 		Hostname:     h.systemStaticInfo.hostname,
 		GPUCount:     len(gpuStats),
 		GPUs:         gpuStats,
+	}
+}
+
+// collectDockerHostStats reports the CPU usage of running containers on a
+// docker-host environment. The Docker API does not expose host CPU counters,
+// so memory and disk stay unavailable while CPU is derived from container stats.
+func (h *WebSocketHandler) collectDockerHostStats(ctx context.Context) (types.SystemStats, bool) {
+	info, err := h.systemService.GetDockerInfo(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Failed to read docker-host system info", "error", err)
+		return types.SystemStats{}, false
+	}
+	cpuCount := max(info.NCPU, 1)
+
+	totalCPUPercent, err := h.containerService.TotalContainerCPUPercent(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Failed to read docker-host container CPU usage", "error", err)
+		return types.SystemStats{}, false
+	}
+
+	return types.SystemStats{
+		CPUUsage:     min(totalCPUPercent, 100),
+		CPUCount:     cpuCount,
+		Architecture: info.Arch,
+		Platform:     info.Os,
+		Hostname:     info.Name,
+	}, true
+}
+
+func (h *WebSocketHandler) streamDockerHostStats(ctx context.Context, conn *websocket.Conn, interval time.Duration) {
+	interval = max(interval, 5*time.Second)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	send := func() bool {
+		stats, ok := h.collectDockerHostStats(ctx)
+		if !ok {
+			return true
+		}
+		payload, err := json.Marshal(stats)
+		if err != nil {
+			return false
+		}
+		writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return conn.Write(writeCtx, websocket.MessageText, payload) == nil
+	}
+
+	if !send() {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !send() {
+				return
+			}
+		}
 	}
 }
 
@@ -319,6 +388,19 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
+	if envcontext.IsDockerHostTarget(ctx) {
+		go func() {
+			for {
+				if _, _, err := conn.Read(ctx); err != nil {
+					cancel()
+					return
+				}
+			}
+		}()
+		go wshub.KeepAlive(ctx, cancel, conn)
+		h.streamDockerHostStats(ctx, conn, sampleInterval)
+		return nil
+	}
 	if !h.acquireSystemStatsSampler(ctx, sampleInterval) {
 		h.releaseSystemStatsSampler(sampleInterval)
 		return nil
