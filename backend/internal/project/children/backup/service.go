@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -2226,6 +2227,10 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 // settings. The manifest doesn't record the original's directory, so it comes from the original's current record; an
 // original that, or whose directory, no longer exists has no files the link could reach.
 func (s *Service) ownEnvLink(ctx context.Context, opts types.ProjectBackupRestore) error {
+	// Only a link can lead back into the original; a regular .env is already the copy's own.
+	if info, statErr := os.Lstat(filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return nil
+	}
 	all, err := s.deps.Projects(ctx)
 	if err != nil {
 		return err
