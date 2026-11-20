@@ -532,16 +532,11 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		return "", err
 	}
 	defer cleanupSession()
-	// Each entry is staged before it is restored, so the bundle may not expand to more than the upload space holds.
-	// Checked from the declared sizes before an entry is read, so a small upload can't make this pass expand gigabytes.
-	var expanded int64
+	// Each entry is staged, then restored and removed before the next, so each must fit the upload space. Checked from
+	// the declared size before the entry is read, so a small upload can't make this pass expand gigabytes; the manifest
+	// limits how many entries there are.
 	manifest, _, err := projects.ReadProjectBundle(archive, func(_ string, size int64, _ io.Reader) error {
-		// The entry alone is checked first, so a huge declared size can't wrap the running total.
-		if sizeErr := s.deps.Uploads.CheckFreeSpace(ctx, size); sizeErr != nil {
-			return sizeErr
-		}
-		expanded += size
-		return s.deps.Uploads.CheckFreeSpace(ctx, expanded)
+		return s.deps.Uploads.CheckFreeSpace(ctx, size)
 	})
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
