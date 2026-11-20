@@ -64,6 +64,22 @@ func TestProjectDirectoryArchive(t *testing.T) {
 	require.NoError(t, os.Symlink("nested/sub", filepath.Join(source, "alias")))
 	require.NoError(t, os.Symlink("alias/../settings.json", filepath.Join(source, "alias-parent")))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret"), filepath.Join(source, "outside-link")))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "env"), []byte("TOKEN=outside"), 0o640))
+	require.NoError(t, os.Chmod(filepath.Join(outside, "env"), 0o640))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "env"), filepath.Join(source, EffectiveEnvFileName)))
+
+	// Only the outside .env is read; a regular one or a link inside the project is copied with the directory.
+	envContent, envPerm, external, envErr := ReadExternalEnvFile(t.Context(), source)
+	require.NoError(t, envErr)
+	assert.True(t, external)
+	assert.Equal(t, "TOKEN=outside", string(envContent))
+	assert.Equal(t, os.FileMode(0o640), envPerm)
+	inside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(inside, "values.env"), []byte("TOKEN=inside"), 0o600))
+	require.NoError(t, os.Symlink("values.env", filepath.Join(inside, EffectiveEnvFileName)))
+	_, _, external, envErr = ReadExternalEnvFile(t.Context(), inside)
+	require.NoError(t, envErr)
+	assert.False(t, external)
 
 	var archive bytes.Buffer
 	require.NoError(t, PackProjectDirectory(t.Context(), source, &archive))
@@ -83,9 +99,14 @@ func TestProjectDirectoryArchive(t *testing.T) {
 		// The kernel applies ".." after following alias, so this is nested/settings.json.
 		{name: "alias-parent", link: "alias/../settings.json", content: "content of nested/settings.json"},
 		{name: "outside-link", absent: true},
+		// The outside .env is packed as a regular file with its target's contents and mode.
+		{name: EffectiveEnvFileName, mode: 0o640, content: "TOKEN=outside"},
 		{name: ".project-update-backup-1", absent: true},
 		{name: GitSourceEnvFileName, absent: true},
 	}
+	_, _, external, envErr = ReadExternalEnvFile(t.Context(), destination)
+	require.NoError(t, envErr)
+	assert.False(t, external)
 	for _, want := range unpacked {
 		fullPath := filepath.Join(destination, want.name)
 		info, err := os.Lstat(fullPath)
@@ -191,6 +212,7 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	first, err := tar.NewReader(gzipReader).Next()
 	require.NoError(t, err)
 	assert.Equal(t, ProjectBundleManifest, first.Name)
+	assert.True(t, IsProjectBundle(bytes.NewReader(bundle.Bytes())))
 
 	var visited []string
 	got, ok, err := ReadProjectBundle(bytes.NewReader(bundle.Bytes()), func(name string, size int64, body io.Reader) error {
@@ -215,15 +237,18 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 
 func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
-	_, ok, err := ReadProjectBundle(plain, nil)
+	plainBytes, err := io.ReadAll(plain)
+	require.NoError(t, err)
+	_, ok, err := ReadProjectBundle(bytes.NewReader(plainBytes), nil)
 	require.NoError(t, err)
 	assert.False(t, ok)
+	assert.False(t, IsProjectBundle(bytes.NewReader(plainBytes)))
+	assert.False(t, IsProjectBundle(strings.NewReader("not gzip")))
 
 	_, ok, err = ReadProjectBundle(strings.NewReader("not gzip"), nil)
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	// A project's own file named like the manifest leaves its archive plain.
 	for _, body := range []string{`{"name":"mine"}`, strings.Repeat(" ", maxProjectManifestBytes+1)} {
 		own := buildTestArchive(t, []archiveTestEntry{
 			{header: tar.Header{Typeflag: tar.TypeReg, Name: ProjectBundleManifest, Mode: 0o644}, body: body},
@@ -326,9 +351,11 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, ok, readErr := ReadProjectBundle(buildTestArchive(t, tt.entries), nil)
+			archive := buildTestArchive(t, tt.entries).Bytes()
+			_, ok, readErr := ReadProjectBundle(bytes.NewReader(archive), nil)
 			assert.True(t, ok)
 			require.ErrorContains(t, readErr, tt.wantErr)
+			assert.True(t, IsProjectBundle(bytes.NewReader(archive)))
 		})
 	}
 }

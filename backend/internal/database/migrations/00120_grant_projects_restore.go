@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v119SQLiteUp = `
+	v120SQLiteUp = `
 UPDATE roles
 SET permissions = json_insert(roles.permissions, '$[#]', 'projects:restore')
 WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = 'volumes:backup')
@@ -37,7 +37,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
 );
 `
-	v119PostgresUp = `
+	v120PostgresUp = `
 UPDATE roles SET permissions = permissions || '["projects:restore"]'::jsonb
 WHERE permissions @> '["volumes:backup"]'::jsonb AND permissions @> '["projects:read"]'::jsonb
     AND NOT permissions @> '["projects:restore"]'::jsonb;
@@ -61,7 +61,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
 );
 `
-	v119SQLiteDown = `
+	v120SQLiteDown = `
 UPDATE roles
 SET permissions = (
     SELECT json_group_array(value) FROM json_each(roles.permissions) WHERE value <> 'projects:restore'
@@ -69,12 +69,12 @@ SET permissions = (
 WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = 'projects:restore');
 DELETE FROM api_key_permissions WHERE permission = 'projects:restore';
 `
-	v119PostgresDown = `
+	v120PostgresDown = `
 UPDATE roles SET permissions = permissions - 'projects:restore' WHERE permissions @> '["projects:restore"]'::jsonb;
 DELETE FROM api_key_permissions WHERE permission = 'projects:restore';
 `
 )
 
 func init() {
-	goose.AddMigrationContext(run(v119SQLiteUp, v119PostgresUp), run(v119SQLiteDown, v119PostgresDown))
+	goose.AddMigrationContext(run(v120SQLiteUp, v120PostgresUp), run(v120SQLiteDown, v120PostgresDown))
 }

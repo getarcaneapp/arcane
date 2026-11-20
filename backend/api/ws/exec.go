@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -17,6 +16,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 
+	"getarcane.dev/arcane/v3/internal/container"
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
 )
@@ -27,7 +27,6 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(c.QueryParam("rows"), 10, 16)
 
@@ -47,14 +46,19 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	// The pong is serviced by the concurrent stdin reader.
 	go wshub.KeepAlive(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn)
 
-	h.runContainerExec(ctx, cancel, conn, containerID, shell, uint(cols), uint(rows))
+	h.runContainerExec(ctx, cancel, conn, containerID, container.ExecOptions{
+		Shell: c.QueryParam("shell"),
+		User:  c.QueryParam("user"),
+		Cols:  uint(cols),
+		Rows:  uint(rows),
+	})
 	return nil
 }
 
-func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, containerID, shell string, cols, rows uint) {
+func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, containerID string, opts container.ExecOptions) {
 	started := time.Now()
 
-	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell}, cols, rows)
+	execID, err := h.containerService.CreateExec(ctx, containerID, opts)
 	if err != nil {
 		h.writeExecError(ctx, conn, fmt.Errorf("Error creating exec: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 		closeExec(ctx, conn, containerID, "", started, fmt.Errorf("create exec: %w", err))

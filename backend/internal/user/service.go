@@ -314,6 +314,12 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	if err := validateCustomThemes(kit.FromPtr(localUser.Preferences.CustomThemes)); err != nil {
 		return nil, err
 	}
+	if err := validateTerminalChoices("terminalShells", kit.FromPtr(localUser.Preferences.TerminalShells)); err != nil {
+		return nil, err
+	}
+	if err := validateTerminalChoices("terminalUsers", kit.FromPtr(localUser.Preferences.TerminalUsers)); err != nil {
+		return nil, err
+	}
 	if layout := localUser.Preferences.DashboardLayout; layout != nil {
 		localUser.Preferences.DashboardLayout = new(normalizeDashboardLayout(*layout))
 	}

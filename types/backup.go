@@ -288,6 +288,16 @@ const (
 	VolumeBackupTriggerSafety    = "safety"
 )
 
+// Valid reports whether m is all, allowlist or blocklist.
+func (m SystemVolumeSelectionMode) Valid() bool {
+	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist
+}
+
+// Selects reports whether a resource is selected, given whether it is listed.
+func (m SystemVolumeSelectionMode) Selects(listed bool) bool {
+	return m == SystemVolumeSelectionAll || (m == SystemVolumeSelectionAllowlist && listed) || (m == SystemVolumeSelectionBlocklist && !listed)
+}
+
 // BackupManagementTypeForPolicy is the kind of a volume or project backup with the policy ID; the global volume policies'
 // backups are volume backups too.
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {

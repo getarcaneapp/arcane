@@ -6,8 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"kit.getarcane.app/concurrency"
+	"github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -41,13 +40,17 @@ type (
 
 	// BackupDependencies are the shared backup plumbing project backups run on.
 	BackupDependencies struct {
+		// Ctx is Arcane's context, which the policies' scheduled jobs and the recovery of projects a backup left
+		// stopped run on.
 		Ctx            context.Context
 		Scheduler      types.DynamicScheduler
 		Admission      *runs.Admission
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
-		VolumeLocks    *concurrency.KeyedMutex
+		LockVolumes    func(ctx context.Context, names []string) (func(), error)
+		// TryLockVolumes takes the volume locks the recovery of projects a backup left stopped needs.
+		TryLockVolumes func(names []string) (func(), error)
 	}
 )
 
@@ -64,14 +67,22 @@ func New(p ModuleParams) *Module {
 		ForgetSnapshots: p.Backups.Engine.ForgetSnapshots,
 		S3Destinations:  p.Backups.S3Destinations,
 		Settings:        p.Service.settingsService,
-		VolumeLocks:     p.Backups.VolumeLocks,
+		LockVolumes:     p.Backups.LockVolumes,
 		Project:         p.Service.GetProjectDetails,
 		Volume:          local.Volume,
 		BackupStore:     p.Backups.Repository.StorageVolume,
-		ComposeProject:  p.Service.composeProject,
+		StartContainers: p.Service.startStoppedContainers,
 		ComposeFiles:    p.Service.LoadedComposeFiles,
 		LockProject:     p.Service.LockProject,
-		SoleDirectory:   p.Service.soleDirectory,
+		NoteStopped: func(ctx context.Context, projectID string, stopped []container.Summary) error {
+			return p.Service.noteStopped(ctx, projectID, types.SystemUser, stopped)
+		},
+		ForgetStopped: p.Service.forgetStopped,
+		NotedStopped:  p.Service.notedStopped,
+		RecoverStopped: func() {
+			p.Service.RecoverStoppedProjects(p.Backups.Ctx, p.Backups.TryLockVolumes)
+		},
+		SoleDirectory: p.Service.soleDirectory,
 		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
 			if err != nil {
@@ -96,14 +107,21 @@ func New(p ModuleParams) *Module {
 			}
 			return proj.Name, nil
 		},
-		ListProjects:     p.Service.ListProjectReferences,
-		SyncProjects:     p.Service.SyncProjectsFromFileSystem,
-		ForgetExportStop: p.Service.forgetExportStop,
-		Activities:       p.Activity,
-		Config:           p.Service.config,
-		Ctx:              p.Backups.Ctx,
-		Scheduler:        p.Backups.Scheduler,
-		Admission:        p.Backups.Admission,
+		ListProjects: p.Service.ListProjectReferences,
+		SyncProjects: p.Service.SyncProjectsFromFileSystem,
+		ProjectRoot:  p.Service.ProjectRootDirectory,
+		Projects: func(ctx context.Context) ([]types.ProjectRecord, error) {
+			all, err := p.Service.ListAllProjects(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return projectRecords(all), nil
+		},
+		Activities: p.Activity,
+		Config:     p.Service.config,
+		Ctx:        p.Backups.Ctx,
+		Scheduler:  p.Backups.Scheduler,
+		Admission:  p.Backups.Admission,
 	})
 	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
@@ -132,16 +150,10 @@ func New(p ModuleParams) *Module {
 				}
 				return proj.ID, nil
 			},
-			LockProject: func(ctx context.Context, projectID string) (func(), error) {
-				return p.Service.LockProject(ctx, "export or import project", projectID)
-			},
-			StopProject: p.Service.stopForExport,
-			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				return p.Service.deployProject(ctx, projectID, user, nil)
-			},
-			RemoveProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				return p.Service.destroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
-			},
+			LockProject:   p.Service.LockProject,
+			StopProject:   p.Service.stopForExport,
+			StartProject:  p.Service.deployProject,
+			RemoveProject: p.Service.destroyProject,
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
@@ -405,7 +417,18 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Description: "List the project's volumes, which of them an export includes by default, and whether the project is running",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.GetProjectExportOptions)
+	}, authz.PermProjectsExport, h.GetProjectExportOptions)
+
+	// A backup picks its volumes from the same options, under the backup permission rather than the export one.
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-backup-options",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/backup-options",
+		Summary:     "Get project backup options",
+		Description: "List the project's volumes, which of them a backup includes by default, and whether the project is running",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsBackup, h.GetProjectExportOptions)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-project-archive",
@@ -417,19 +440,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
 		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectExportConditions},
-	}, authz.PermProjectsRead, h.ExportProjectArchive)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "download-project-export",
-		Method:      http.MethodGet,
-		Path:        "/agents/{id}/projects/{projectId}/export/{uploadId}/download",
-		Summary:     "Download a project export",
-		Description: "Stream the archive an export of this project wrote; the session is deleted once the whole file was sent. " +
-			"An archive that holds volume data also requires volumes:backup.",
-		Tags:     []string{"Projects"},
-		Security: handlerutil.DefaultOperationSecurity(),
-		Metadata: map[string]any{authz.MetaPermissionConditions: authz.UploadOriginConditions},
-	}, authz.PermProjectsRead, h.DownloadProjectExport)
+	}, authz.PermProjectsExport, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",

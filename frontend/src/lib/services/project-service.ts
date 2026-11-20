@@ -19,6 +19,7 @@ import type {
 	ProjectTransferResource,
 	ProjectTransferStarted,
 	ProjectUpdateInfo,
+	ProjectUrl,
 	RestoreProjectBackupAsNewRequest,
 	RestoreProjectBackupRequest,
 	UpdateProjectBackupPolicy
@@ -141,10 +142,11 @@ class ProjectService extends BaseAPIService {
 			this.getProjectSection(`${basePath}/updates`)
 		]);
 
+		const project = { ...summary, ...compose, ...runtime };
+
 		return {
-			...summary,
-			...compose,
-			...runtime,
+			...project,
+			urls: project.urls?.map((entry: ProjectUrl | string) => (typeof entry === 'string' ? { url: entry } : entry)),
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
 	}
@@ -302,6 +304,10 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
 	}
 
+	async getBackupOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backup-options`));
+	}
+
 	async listBackups(
 		projectId: string,
 		options: SearchPaginationSortRequest | undefined,
@@ -360,7 +366,7 @@ class ProjectService extends BaseAPIService {
 			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
 		);
 		downloadFromUrl(
-			`${this.api.defaults.baseURL}/agents/${environmentId}/projects/${projectId}/export/${session.id}/download`,
+			`${this.api.defaults.baseURL}/agents/${environmentId}/uploads/${session.kind}/${session.id}/download`,
 			session.filename
 		);
 	}

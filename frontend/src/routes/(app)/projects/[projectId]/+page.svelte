@@ -420,15 +420,15 @@
 		...overrideWorkspaceRows,
 		...envWorkspaceRows
 	]);
-	let archiveRequiresStopped = $derived(
+	let projectRunning = $derived(
 		!!project &&
-			!project.isArchived &&
 			(Number(project.runningCount) > 0 ||
 				project.status === 'running' ||
 				project.status === 'partially running' ||
 				project.status === 'deploying' ||
 				project.status === 'restarting')
 	);
+	let archiveRequiresStopped = $derived(!!project && !project.isArchived && projectRunning);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -1706,7 +1706,7 @@
 				onclick: () => (transferOpen = true)
 			});
 		}
-		if (!project?.isDiscovered && hasPermission('projects:read', envId)) {
+		if (!project?.isDiscovered && hasPermission('projects:export', envId)) {
 			list.push({
 				id: 'export',
 				action: 'base',
@@ -2496,7 +2496,7 @@
 
 			{#if project.urls && project.urls.length > 0}
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-					{#each project.urls as url (url)}
+					{#each project.urls as { url, label } (url)}
 						<a
 							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
 							href={toSafeHref(url)}
@@ -2505,7 +2505,7 @@
 							title={url}
 						>
 							<GlobeIcon class="size-3 text-info" />
-							<span class="truncate">{formatUrlLabel(url)}</span>
+							<span class="truncate">{label || formatUrlLabel(url)}</span>
 						</a>
 					{/each}
 				</div>
@@ -2601,6 +2601,7 @@
 				<ProjectBackupsPanel
 					projectId={project.id}
 					environmentId={envId}
+					running={projectRunning}
 					onRestored={({ files }) =>
 						files
 							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })

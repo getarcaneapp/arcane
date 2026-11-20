@@ -52,11 +52,9 @@
 			/>
 		{:else}
 			<Tooltip.Root>
-				<Tooltip.Trigger>
+				<Tooltip.Trigger onclick={upgradeCheck.openDialog} disabled={upgradeCheck.checkingUpgrade}>
 					{#snippet child({ props })}
 						<button
-							onclick={upgradeCheck.openDialog}
-							disabled={upgradeCheck.checkingUpgrade}
 							class="relative mx-auto flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-60"
 							{...props}
 						>

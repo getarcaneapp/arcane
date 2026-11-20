@@ -14,11 +14,14 @@ type (
 		KeyboardShortcutsEnabled   *bool   `json:"keyboardShortcutsEnabled,omitempty" doc:"Enable keyboard shortcuts and shortcut hints"`
 		MobileNavigationShowLabels *bool   `json:"mobileNavigationShowLabels,omitempty" doc:"Show text labels in mobile navigation"`
 		DefaultLandingPage         *string `json:"defaultLandingPage,omitempty" doc:"Route opened after signing in"`
+		DefaultShell               *string `json:"defaultShell,omitempty" maxLength:"255" doc:"Shell opened in container terminals: a path, 'auto', or empty for the environment default"`
 		DefaultProjectEditorLayout *string `json:"defaultProjectEditorLayout,omitempty" enum:"auto,classic,tree" doc:"Initial layout of the project editor; auto keeps workspace detection"`
 		EditorTabWidth             *int    `json:"editorTabWidth,omitempty" enum:"2,4,8" doc:"Spaces per indentation level in code editors and when formatting documents"`
 		ToastPosition              *string `json:"toastPosition,omitempty" enum:"auto,top-left,top-right,top-center,bottom-left,bottom-right,bottom-center" doc:"Toast notification position"`
 		// A pointer so the merge-only preferences update replaces the whole map.
 		EnvironmentColors     *map[string]string       `json:"environmentColors,omitempty" doc:"Environment label color by environment ID"`
+		TerminalShells        *map[string]string       `json:"terminalShells,omitempty" doc:"Shell last used in a container terminal, by environment and compose service or container name"`
+		TerminalUsers         *map[string]string       `json:"terminalUsers,omitempty" doc:"User last used in a container terminal, by environment and compose service or container name"`
 		EnvironmentLabelStyle *string                  `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
 		DashboardLayout       *[]DashboardWidgetLayout `json:"dashboardLayout,omitempty" doc:"Dashboard widgets with their grid position, size, and visibility"`
 		CustomThemes          *[]CustomTheme           `json:"customThemes,omitempty" maxItems:"20" doc:"Imported custom color themes"`

@@ -81,11 +81,13 @@ type (
 		CreatedAt     time.Time              `json:"createdAt"`
 		Kind          string                 `json:"kind"`
 		ArcaneVersion string                 `json:"arcaneVersion"`
+		EnvLink       string                 `json:"envLink,omitempty" doc:"Target of the .env link, relative to the project directory, when it leads to a file inside it"`
 		Project       ProjectManifestProject `json:"project"`
 		ComposeFiles  []string               `json:"composeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
 		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
+		ExternalEnv   bool                   `json:"externalEnv,omitempty" doc:"True when the .env links outside the project directory and the backup stored its contents"`
 	}
 
 	CreateProjectBackupRequest struct {
@@ -216,6 +218,9 @@ type (
 	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
 	// the ones the backup was taken from.
 	ProjectBackupRestore struct {
+		// Report tells the user what the restore left as it is, such as an outside .env another project shares; an
+		// in-place restore of the project files must set it.
+		Report    func(ctx context.Context, message string)
 		ProjectID string
 		BackupID  string
 		// ProjectPath receives the project files; empty leaves them out.
@@ -226,6 +231,9 @@ type (
 		Volumes []ProjectBackupRestoreVolume
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
+		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
+		// file in place of the link, so a new project neither shares nor changes the original's file.
+		OwnEnv bool
 	}
 
 	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
@@ -309,6 +317,11 @@ type (
 	ProjectTagOption struct {
 		Name  string          `json:"name"`
 		Color ProjectTagColor `json:"color"`
+	}
+
+	ProjectURL struct {
+		URL   string `json:"url"`
+		Label string `json:"label,omitempty"`
 	}
 
 	ProjectReference struct {
@@ -469,7 +482,7 @@ type (
 		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
 		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
 		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
-		URLs            []string                     `json:"urls,omitempty" readOnly:"true"`
+		URLs            []ProjectURL                 `json:"urls,omitempty" readOnly:"true"`
 		IncludeFiles    []ProjectIncludeFile         `json:"includeFiles,omitempty" readOnly:"true"`
 		RunningCount    int                          `json:"runningCount" readOnly:"true"`
 		ServiceCount    int                          `json:"serviceCount" readOnly:"true"`
@@ -479,6 +492,12 @@ type (
 		HasBuildDirective bool `json:"hasBuildDirective,omitzero" readOnly:"true"`
 		RedeployDisabled  bool `json:"redeployDisabled,omitzero" readOnly:"true"`
 		EnvFileExists     bool `json:"envFileExists,omitzero" readOnly:"true"`
+	}
+
+	ProjectDestroyOptions struct {
+		RemoveFiles    bool
+		RemoveVolumes  bool
+		KeepContainers bool
 	}
 
 	ProjectDestroy struct {

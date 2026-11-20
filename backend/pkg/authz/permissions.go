@@ -117,6 +117,7 @@ const (
 	PermProjectsRestart           = "projects:restart"
 	PermProjectsDelete            = "projects:delete"
 	PermProjectsArchive           = "projects:archive"
+	PermProjectsExport            = "projects:export"
 	PermImagesList                = "images:list"
 	PermImagesRead                = "images:read"
 	PermImagesPull                = "images:pull"
@@ -379,7 +380,7 @@ func BuiltInEditorPermissions() []string {
 		PermContainersAutoUpdate,
 
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsJobsRun,
-		PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive, PermProjectsBackup, PermProjectsRestore,
+		PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive, PermProjectsExport, PermProjectsBackup, PermProjectsRestore,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload, PermImagesPatch,
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
@@ -427,7 +428,7 @@ func BuiltInDeployerPermissions() []string {
 		PermContainersPause,
 		PermContainersAutoUpdate,
 
-		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsJobsRun, PermProjectsDown, PermProjectsRestart,
+		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsJobsRun, PermProjectsDown, PermProjectsRestart, PermProjectsExport,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
 		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,

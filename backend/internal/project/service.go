@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,8 @@ import (
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
@@ -106,6 +109,9 @@ type (
 		FilesChanged                *concurrency.Signal[string]
 		// Deleted publishes the ID of each project removed from the database.
 		Deleted *concurrency.Signal[string]
+		// recoverStopped holds a recovery request made while a recovery runs, so it checks once more, at once even
+		// while it waits out a failure.
+		recoverStopped chan struct{}
 
 		opLock concurrency.KeyedMutex
 
@@ -113,6 +119,18 @@ type (
 
 		// syncMu keeps one sync's discovery walk and cleanup pass from interleaving with another's.
 		syncMu sync.Mutex
+
+		// stoppedRecovery guards recoveringStopped, set while a recovery of stopped projects runs, so a request either
+		// reaches the running recovery or starts a new one.
+		stoppedRecovery   sync.Mutex
+		recoveringStopped bool
+	}
+
+	// stoppedNote is the value of a stop note. A backup lists the containers it stopped, so recovery starts only those;
+	// an export lists none, since it took the whole project down, so recovery deploys the project.
+	stoppedNote struct {
+		UserID     string              `json:"userId"`
+		Containers []container.Summary `json:"containers,omitempty"`
 	}
 
 	CreateProjectOptions struct {
@@ -184,16 +202,6 @@ type (
 		ImageService    *image.ImageService
 	}
 
-	OpenExportOptions struct {
-		ProjectID string
-		UploadID  string
-	}
-
-	DestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
-	}
-
 	ServiceUpdateOptions struct {
 		PinnedImages map[string]string
 		User         types.Actor
@@ -209,8 +217,9 @@ type (
 )
 
 const (
-	// exportStoppedKeyPrefix and a project ID note that an export stopped the project and has not started it again.
-	exportStoppedKeyPrefix    = "project-export-stopped:"
+	// stoppedKeyPrefix notes a project Arcane stopped for an export or a backup, so it is started again if Arcane
+	// stops before it does.
+	stoppedKeyPrefix          = "project-stopped:"
 	maxConcurrentComposeReads = 8
 	// inferredServiceCountBatchSize stays under SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
@@ -471,6 +480,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
 		FilesChanged:                concurrency.NewSignal[string](),
 		Deleted:                     concurrency.NewSignal[string](),
+		recoverStopped:              make(chan struct{}, 1),
 	}
 	return s
 }
@@ -619,47 +629,104 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-// stopForExport takes a project down for an export, first noting it, so Arcane starts it again if it stops before the
-// export does. The caller holds the project's lock.
 func (s *ProjectService) stopForExport(ctx context.Context, projectID string, user types.Actor) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if noteErr := s.kv.Set(ctx, exportStoppedKeyPrefix+projectID, user.ID); noteErr != nil {
+	if noteErr := s.noteStopped(ctx, projectID, user, nil); noteErr != nil {
 		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
 	}
 	return s.downProject(ctx, proj, user)
 }
 
-// RecoverExportStoppedProjects starts the projects an export stopped when Arcane stopped before the export did. It
-// runs in the background, retrying with growing waits until each has started or ctx ends. volumeLocks are the
-// per-volume locks volume backups and restores hold.
-func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context, volumeLocks *concurrency.KeyedMutex) {
-	for wait := time.Minute; ; wait = min(2*wait, 30*time.Minute) {
-		err := s.startExportStoppedProjects(ctx, volumeLocks)
-		if err == nil {
-			return
+// noteStopped records that Arcane is stopping the project, before it does, with the containers to start again: the
+// ones a backup stops, or none when an export takes the whole project down.
+func (s *ProjectService) noteStopped(ctx context.Context, projectID string, user types.Actor, stopped []container.Summary) error {
+	note, err := json.Marshal(stoppedNote{UserID: user.ID, Containers: stopped})
+	if err != nil {
+		return err
+	}
+	return s.kv.Set(ctx, stoppedKeyPrefix+projectID, string(note))
+}
+
+// forgetStopped drops the note once the project runs again, or a person decides whether it runs.
+func (s *ProjectService) forgetStopped(ctx context.Context, projectID string) error {
+	return s.kv.Delete(ctx, stoppedKeyPrefix+projectID)
+}
+
+// notedStopped reports whether the project's stop note remains, so a backup restarts containers only while no person
+// has decided whether the project runs.
+func (s *ProjectService) notedStopped(ctx context.Context, projectID string) (bool, error) {
+	_, noted, err := s.kv.Get(ctx, stoppedKeyPrefix+projectID)
+	return noted, err
+}
+
+// RecoverStoppedProjects starts, in the background, the projects Arcane stopped and could not start again, retrying
+// until every one runs. It runs at startup and when a backup leaves a project down; a call while it runs makes it
+// check once more, without waiting out the backoff of an earlier failure.
+func (s *ProjectService) RecoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
+	s.stoppedRecovery.Lock()
+	defer s.stoppedRecovery.Unlock()
+	select {
+	case s.recoverStopped <- struct{}{}:
+	default:
+		// A request is already waiting, and one more pass covers both.
+	}
+	if s.recoveringStopped {
+		return
+	}
+	s.recoveringStopped = true
+	go s.recoverStoppedProjects(ctx, lockVolumes)
+}
+
+func (s *ProjectService) recoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
+	// finished ends the recovery after a pass succeeded, unless a request came in since it started.
+	finished := func() bool {
+		s.stoppedRecovery.Lock()
+		defer s.stoppedRecovery.Unlock()
+		if len(s.recoverStopped) > 0 {
+			return false
 		}
-		slog.WarnContext(ctx, "Failed to start projects an interrupted export stopped; retrying", "error", err, "retryIn", wait)
+		s.recoveringStopped = false
+		return true
+	}
+	for wait := time.Minute; ; {
+		// This pass covers every request made so far.
+		select {
+		case <-s.recoverStopped:
+		default:
+		}
+		err := s.startStoppedProjects(ctx, lockVolumes)
+		if err == nil {
+			if finished() {
+				return
+			}
+			continue
+		}
+		slog.WarnContext(ctx, "Failed to start projects Arcane stopped; retrying", "error", err, "retryIn", wait)
 		select {
 		case <-ctx.Done():
+			s.stoppedRecovery.Lock()
+			s.recoveringStopped = false
+			s.stoppedRecovery.Unlock()
 			return
+		case <-s.recoverStopped:
+			// A new request, for example from a backup that just left a project down, is checked at once.
 		case <-time.After(wait):
+			wait = min(2*wait, 30*time.Minute)
 		}
 	}
 }
 
-// startExportStoppedProjects starts every project an export noted as stopped. A project that fails to start keeps its
-// note; a deleted one loses it.
-func (s *ProjectService) startExportStoppedProjects(ctx context.Context, volumeLocks *concurrency.KeyedMutex) error {
-	entries, err := s.kv.ListByPrefix(ctx, exportStoppedKeyPrefix)
+func (s *ProjectService) startStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) error {
+	entries, err := s.kv.ListByPrefix(ctx, stoppedKeyPrefix)
 	if err != nil {
-		return fmt.Errorf("list projects stopped for an export: %w", err)
+		return fmt.Errorf("list projects Arcane stopped: %w", err)
 	}
 	var errs []error
 	for _, entry := range entries {
-		projectID := strings.TrimPrefix(entry.Key, exportStoppedKeyPrefix)
+		projectID := strings.TrimPrefix(entry.Key, stoppedKeyPrefix)
 		_, found, findErr := s.FindProjectByID(ctx, projectID)
 		switch {
 		case findErr != nil:
@@ -669,27 +736,28 @@ func (s *ProjectService) startExportStoppedProjects(ctx context.Context, volumeL
 			errs = append(errs, s.kv.Delete(ctx, entry.Key))
 			continue
 		}
-		unlock, lockErr := s.LockProject(ctx, "start project after an interrupted export", projectID)
+		unlock, lockErr := s.LockProject(ctx, "start a project Arcane stopped", projectID)
 		if lockErr != nil {
 			errs = append(errs, lockErr)
 			continue
 		}
-		// Read again under the lock: a deploy or a deliberate stop since the list was read drops the note.
-		_, noted, getErr := s.kv.Get(ctx, entry.Key)
+		value, noted, getErr := s.kv.Get(ctx, entry.Key)
 		switch {
 		case getErr != nil:
 			errs = append(errs, getErr)
 		case noted:
-			errs = append(errs, s.startUnderVolumeLocks(ctx, volumeLocks, projectID))
+			errs = append(errs, s.startUnderVolumeLocks(ctx, lockVolumes, projectID, value))
 		}
 		unlock()
 	}
 	return errors.Join(errs...)
 }
 
-// startUnderVolumeLocks deploys a project whose lock the caller holds while no backup or restore holds its volumes, so it
-// never starts on a volume a restore is rewriting.
-func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks *concurrency.KeyedMutex, projectID string) error {
+func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes func(names []string) (func(), error), projectID, value string) error {
+	var note stoppedNote
+	if err := json.Unmarshal([]byte(value), &note); err != nil {
+		return fmt.Errorf("read the stop note of project %s: %w", projectID, err)
+	}
 	project, err := s.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
 	if err != nil {
 		return err
@@ -700,32 +768,93 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks 
 			names = append(names, volume.Name)
 		}
 	}
-	slices.Sort(names)
-	var unlocks []func()
-	defer func() {
-		for _, unlock := range slices.Backward(unlocks) {
-			unlock()
+	// The noted containers may still mount volumes the Compose files no longer name, after an edit not yet deployed;
+	// a restore holding one of those finishes before they start.
+	for _, c := range note.Containers {
+		for _, m := range c.Mounts {
+			if m.Type == mounttypes.TypeVolume && m.Name != "" {
+				names = append(names, m.Name)
+			}
 		}
-	}()
-	// A backup can hold a volume for hours, so a busy one is skipped and retried later instead of waited for while the
-	// project lock blocks the user and the other projects.
-	for _, name := range slices.Compact(names) {
-		unlock, locked := volumeLocks.TryLock(name)
-		if !locked {
-			return common.Classify(common.ErrConflict, fmt.Errorf("volume %s is busy with a backup or restore; the project starts on a later attempt", name))
+	}
+	unlock, err := lockVolumes(names)
+	if err != nil {
+		return fmt.Errorf("the project starts on a later attempt: %w", err)
+	}
+	defer unlock()
+	// A backup stopped only the containers it lists, so only those start again, leaving a service someone stopped,
+	// or a Compose edit not yet deployed, as it was.
+	if len(note.Containers) > 0 {
+		if startErr := s.startStoppedContainers(ctx, projectID, note.Containers); startErr != nil {
+			return startErr
 		}
-		unlocks = append(unlocks, unlock)
+		return s.forgetStopped(ctx, projectID)
 	}
 	return s.deployProject(ctx, projectID, types.SystemUser, nil)
 }
 
-// forgetExportStop drops the note of an export that stopped the project, for an operation that decides itself whether
-// the project runs.
-func (s *ProjectService) forgetExportStop(ctx context.Context, projectID string) error {
-	if err := s.kv.Delete(ctx, exportStoppedKeyPrefix+projectID); err != nil {
-		return fmt.Errorf("drop the export stop note of project %s: %w", projectID, err)
+// startStoppedContainers starts containers Arcane stopped again in Compose order; when the project's Compose files no
+// longer load, or a service was replaced or dropped, it starts the containers directly.
+func (s *ProjectService) startStoppedContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
+	if len(stopped) == 0 {
+		return nil
 	}
-	return nil
+	compose, err := s.composeProject(ctx, projectID)
+	if err != nil {
+		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
+		compose = &composetypes.Project{Name: docker.ComposeProjectLabel(stopped[0].Labels)}
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	found, listErr := projects.ListComposeProjectContainers(ctx, dockerClient, compose.Name)
+	if listErr != nil {
+		errs = append(errs, listErr)
+	}
+	wasStopped := map[string]bool{}
+	for _, c := range stopped {
+		wasStopped[c.ID] = true
+	}
+	direct := map[string]bool{}
+	for _, c := range found {
+		if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" && !wasStopped[c.ID] && c.State != container.StateRunning {
+			direct[c.Labels[composeapi.ServiceLabel]] = true
+		}
+	}
+	var services, containerIDs, serviceContainerIDs []string
+	for _, c := range stopped {
+		service := c.Labels[composeapi.ServiceLabel]
+		_, enabled := compose.Services[service]
+		_, disabled := compose.DisabledServices[service]
+		switch {
+		case listErr != nil || direct[service] || (!enabled && !disabled) || c.Labels[composeapi.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
+			containerIDs = append(containerIDs, c.ID)
+		default:
+			serviceContainerIDs = append(serviceContainerIDs, c.ID)
+			if !slices.Contains(services, service) {
+				services = append(services, service)
+			}
+		}
+	}
+	if len(services) > 0 {
+		if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+			Project:    compose,
+			DockerHost: s.dockerService.DockerHost(),
+			Services:   services,
+		}); startErr != nil {
+			errs = append(errs, fmt.Errorf("start services %s: %w", strings.Join(services, ", "), startErr))
+			containerIDs = append(containerIDs, serviceContainerIDs...)
+		}
+	}
+	// A container removed since the stop, for example by a redeploy, has nothing to start.
+	for _, id := range containerIDs {
+		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
+			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1443,6 +1572,10 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 	}).Error; archiveProjectErr != nil {
 		return fmt.Errorf("failed to archive project: %w", archiveProjectErr)
 	}
+	// Archiving decides the project stays down, so a stop note left by an export or a backup no longer applies.
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after archiving the project", "projectId", projectID, "error", noteErr)
+	}
 
 	s.logProjectEvent(
 		ctx, event.EventTypeProjectUpdate, projectID, proj.Name, user,
@@ -1566,9 +1699,8 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	if statusErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); statusErr != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", statusErr)
 	}
-	// The project runs again, so an export that stopped it has nothing left to restart.
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after deploy", "projectId", projectID, "error", noteErr)
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after deploy", "projectId", projectID, "error", noteErr)
 	}
 	return nil
 }
@@ -1587,9 +1719,8 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	if downErr := s.downProject(ctx, projectFromDb, user); downErr != nil {
 		return downErr
 	}
-	// Stopped on purpose, so the project is not started again for an export that stopped it before.
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after stopping the project", "projectId", projectID, "error", noteErr)
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after stopping the project", "projectId", projectID, "error", noteErr)
 	}
 	return nil
 }
@@ -1943,21 +2074,6 @@ func (s *ProjectService) rewriteComposeName(ctx context.Context, projectID, name
 	})
 }
 
-// OpenExport opens a session written by an export of the project, and nothing else, so reading project archives
-// uploaded for an import still needs projects:create.
-func (s *ProjectService) OpenExport(ctx context.Context, opts OpenExportOptions) (io.ReadCloser, *types.UploadSession, error) {
-	reader, session, err := s.uploads.DownloadSession(ctx, types.UploadKindProjectArchive, opts.UploadID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if session.OriginID != opts.ProjectID || session.Origin != types.UploadOriginProjectExport && session.Origin != types.UploadOriginProjectBundle {
-		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
-		_ = reader.Close()
-		return nil, nil, common.Classify(common.ErrNotFound, errors.New("no export of this project has that ID"))
-	}
-	return reader, session, nil
-}
-
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -1970,8 +2086,6 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		Write:    pack,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
-		Origin:   types.UploadOriginProjectExport,
-		OriginID: proj.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -1998,7 +2112,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -2014,8 +2128,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	return s.destroyProject(ctx, projectID, opts, user)
 }
 
-// destroyProject removes a project whose lock the caller holds.
-func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -2029,8 +2142,10 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {

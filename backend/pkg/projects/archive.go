@@ -66,15 +66,11 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		mode := os.FileMode(entry.UnixMode)
 		switch {
 		case entry.IsSymlink:
-			resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(projectPath, relativePath))
-			if resolveErr == nil && IsSafeSubdirectory(resolvedRoot, resolvedPath) {
-				linkTarget, err := root.Readlink(ctx, entry.Path)
-				if err == nil && filepath.IsAbs(linkTarget) {
-					linkTarget, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, relativePath)), resolvedPath)
-				}
-				if err != nil {
-					return err
-				}
+			linkTarget, inside, err := LinkTargetInside(ctx, root, entry.Path, resolvedRoot)
+			if err != nil {
+				return err
+			}
+			if inside {
 				return tarWriter.WriteHeader(&tar.Header{
 					Typeflag: tar.TypeSymlink,
 					Name:     relativePath,
@@ -86,12 +82,8 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			if relativePath != EffectiveEnvFileName {
 				return nil
 			}
-			envPath, perm, _, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, relativePath))
-			if err != nil {
-				return err
-			}
-			content, err := acfs.Host{}.ReadFile(ctx, envPath)
-			if err != nil {
+			content, perm, external, err := ReadExternalEnvFile(ctx, projectPath)
+			if err != nil || !external {
 				return err
 			}
 			if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -122,7 +114,6 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			return err
 		}
 		defer func() {
-			// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 			_ = reader.Close()
 		}()
 		if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -149,21 +140,84 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
+// LinkTargetInside reports whether the link at logicalPath in root leads into the directory resolvedRoot, and returns
+// the target a copy of that directory keeps for it. A target that leaves root on the way, absolute or through "..",
+// becomes the relative path to the same file, so the copy's link leads to the copy's file, not the original's.
+func LinkTargetInside(ctx context.Context, root acfs.Root, logicalPath, resolvedRoot string) (target string, inside bool, err error) {
+	// A link that doesn't resolve leads to no file to keep.
+	resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(root.Path, logicalPath))
+	if resolveErr != nil || !IsSafeSubdirectory(resolvedRoot, resolvedPath) {
+		return "", false, nil
+	}
+	target, err = root.Readlink(ctx, logicalPath)
+	if err != nil {
+		return "", false, err
+	}
+	if filepath.IsAbs(target) || !IsSafeSubdirectory(root.Path, filepath.Join(root.Path, path.Dir(logicalPath), target)) {
+		target, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, logicalPath)), resolvedPath)
+	}
+	return target, err == nil, err
+}
+
+// ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside
+// the project directory, so a copy of the directory alone would keep only the link. external is false for a regular
+// .env, a link inside the directory, or no .env at all.
+func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
+	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
+	if err != nil || !isSymlink {
+		return nil, 0, false, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("resolve project directory: %w", err)
+	}
+	if IsSafeSubdirectory(resolvedRoot, envPath) {
+		return nil, 0, false, nil
+	}
+	content, err = acfs.Host{}.ReadFile(ctx, envPath)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return content, perm, true, nil
+}
+
+// EnvLinkInside returns the target of the project's .env link, relative to the project directory, when it leads to a
+// file inside the directory; it is empty for a regular .env, a link leading outside, or no .env at all.
+func EnvLinkInside(ctx context.Context, projectPath string) (string, error) {
+	if info, statErr := os.Lstat(filepath.Join(projectPath, EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return "", nil
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve project directory: %w", err)
+	}
+	target, inside, err := LinkTargetInside(ctx, acfs.Root{Path: projectPath}, "/"+EffectiveEnvFileName, resolvedRoot)
+	if err != nil || !inside {
+		return "", err
+	}
+	return target, nil
+}
+
+func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
+	usage, err := disk.UsageWithContext(ctx, dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	reserve = max(unpackReserveBytes, int64(usage.Total/20))
+	return int64(usage.Free) - reserve, reserve, nil
+}
+
 func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error {
 	destination := acfs.Root{Path: root}
-	usage, err := disk.UsageWithContext(ctx, root)
+	budget, reserve, err := FreeSpaceBudget(ctx, root)
 	if err != nil {
 		return fmt.Errorf("check free space for the project archive: %w", err)
 	}
-	reserve := max(unpackReserveBytes, int64(usage.Total/20))
-	budget := int64(usage.Free) - reserve
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("open project archive: %w", err)
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 
@@ -352,17 +406,19 @@ func isProjectBundleVolumeArchive(name string) bool {
 	return ok && err == nil && archive == name
 }
 
-func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+func IsProjectBundle(r io.Reader) bool {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
-		return types.ProjectManifest{}, false, nil
+		return false
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
-	tarReader := tar.NewReader(gzipReader)
+	_, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
+	return bundled
+}
+
+func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {
 	header, err := tarReader.Next()
 	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
 		return types.ProjectManifest{}, false, nil
@@ -371,8 +427,6 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	if err != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
 	}
-	// A plain archive may hold its own file of this name; only an export's manifest makes a bundle, so one that fails
-	// to decode as such is a project file.
 	var probe struct {
 		Kind          string `json:"kind"`
 		FormatVersion int    `json:"formatVersion"`
@@ -384,18 +438,34 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
 	}
+	return manifest, true, nil
+}
+
+func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return types.ProjectManifest{}, false, nil
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+	tarReader := tar.NewReader(gzipReader)
+	manifest, bundled, err := readProjectBundleManifest(tarReader)
+	if !bundled || err != nil {
+		return manifest, bundled, err
+	}
 	expected, err := projectBundleVolumeArchives(manifest)
 	if err != nil {
 		return manifest, true, err
 	}
 	projectSeen := false
 	for {
-		header, err = tarReader.Next()
-		if errors.Is(err, io.EOF) {
+		header, nextErr := tarReader.Next()
+		if errors.Is(nextErr, io.EOF) {
 			break
 		}
-		if err != nil {
-			return manifest, true, fmt.Errorf("read project bundle: %w", err)
+		if nextErr != nil {
+			return manifest, true, fmt.Errorf("read project bundle: %w", nextErr)
 		}
 		name, pathErr := archiveEntryPath(header)
 		if pathErr != nil {
