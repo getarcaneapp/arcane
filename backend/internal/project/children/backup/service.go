@@ -830,8 +830,9 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if saveErr := s.deps.DB.WithContext(ctx).Save(entry).Error; saveErr != nil {
 		return saveErr
 	}
-	// Saved first, so retention removes the snapshot of a backup that fails here.
-	after, err := s.volumeIdentities(ctx, p.volumeNames())
+	// Saved first, so retention removes the snapshot of a backup that fails here. A shutdown can't cut the check short:
+	// a cancelled check would reject a snapshot the copy finished, which a retry would otherwise complete.
+	after, err := s.volumeIdentities(context.WithoutCancel(ctx), p.volumeNames())
 	if err == nil && !maps.Equal(captured, after) {
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
