@@ -40,6 +40,7 @@
 		es: 'Español',
 		fr: 'Français',
 		hu: 'Magyar',
+		id: 'Bahasa Indonesia',
 		it: 'Italiano',
 		ja: '日本語',
 		ko: '한국어',

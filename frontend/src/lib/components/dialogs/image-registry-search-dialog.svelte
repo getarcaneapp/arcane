@@ -10,6 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ImageSearchResult } from '#lib/types/image.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -62,7 +63,7 @@
 			const found = await tryCatch(imageService.searchImages(term, environmentId));
 			if (found.error !== null) {
 				console.error('Failed to search images:', found.error);
-				toast.error(m.images_search_failed());
+				toast.error(m.images_search_failed(), { description: extractApiErrorMessage(found.error) });
 				return;
 			}
 			results = found.data;
