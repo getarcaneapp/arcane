@@ -176,9 +176,9 @@ test.describe('Volumes Page', () => {
 		await page.goto('/volumes');
 		await page.waitForLoadState('load');
 
-		// The stat card renders the value and its label as separate elements, so assert on the card
-		// that carries the label rather than on one concatenated string.
-		const totalCard = page.getByText('Total Volumes', { exact: true }).locator('..');
+		// The stat card renders the value and its label as separate elements, and the label is
+		// singular when there is exactly one volume, so match the card by label and read its value.
+		const totalCard = page.getByText(/^Total Volumes?$/).locator('..');
 		await expect(totalCard).toContainText(String(volumeCount.total));
 	});
 
