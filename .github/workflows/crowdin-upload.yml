@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository

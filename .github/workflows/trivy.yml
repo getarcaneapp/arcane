@@ -19,7 +19,7 @@ concurrency:
 jobs:
   scan:
     name: Scan (${{ matrix.image.name }})
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       actions: read

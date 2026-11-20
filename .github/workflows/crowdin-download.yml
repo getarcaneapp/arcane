@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   download:
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     concurrency:
       group: crowdin-download
       cancel-in-progress: false
