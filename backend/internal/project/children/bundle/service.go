@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -38,8 +39,6 @@ type (
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
 		ExportVolume(ctx context.Context, name string) (types.UploadSession, error)
 		RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
-		DeployProject(ctx context.Context, projectID string, user types.Actor) error
-		DestroyProject(ctx context.Context, projectID string, user types.Actor) error
 		DeleteVolume(ctx context.Context, name string, user types.Actor) error
 		DeleteUpload(ctx context.Context, kind, uploadID string) error
 	}
@@ -49,10 +48,11 @@ type (
 		Docker       *dockerInternal.DockerClientService
 		Uploads      *upload.UploadService
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
-		// LockProject holds the project's operation lock; StopProject and StartProject expect it held.
-		LockProject  func(ctx context.Context, projectID string) (func(), error)
-		StopProject  func(ctx context.Context, projectID string, user types.Actor) error
-		StartProject func(ctx context.Context, projectID string, user types.Actor) error
+		// LockProject holds the project's operation lock; StopProject, StartProject and RemoveProject expect it held.
+		LockProject   func(ctx context.Context, projectID string) (func(), error)
+		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
+		StartProject  func(ctx context.Context, projectID string, user types.Actor) error
+		RemoveProject func(ctx context.Context, projectID string, user types.Actor) error
 	}
 
 	Service struct {
@@ -427,12 +427,31 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		return "", err
 	}
 	_, bundled, _ := projects.ReadProjectBundle(bytes.NewReader(head), nil)
-	projectID, err := s.importProject(ctx, opts, bundled)
-	if err != nil || !opts.Request.Start {
+	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
+	// being copied.
+	request := types.ImportProjectArchive{
+		UploadID:     opts.Request.UploadID,
+		Name:         opts.Request.Name,
+		ProjectID:    cmp.Or(opts.Request.ProjectID, uuid.New().String()),
+		Tags:         opts.Request.Tags,
+		ComposeFiles: opts.Request.ComposeFiles,
+		Start:        opts.Request.Start,
+	}
+	unlock, err := s.deps.LockProject(ctx, request.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	projectID, err := s.importProject(ctx, ImportOptions{
+		User:           opts.User,
+		Request:        request,
+		RestoreVolumes: opts.RestoreVolumes,
+	}, bundled)
+	if err != nil || !request.Start {
 		return projectID, err
 	}
-	if deployErr := s.deps.Environment.DeployProject(ctx, projectID, opts.User); deployErr != nil {
-		return "", fmt.Errorf("project %s was imported but could not be started: %w", opts.Request.Name, deployErr)
+	if deployErr := s.deps.StartProject(ctx, projectID, opts.User); deployErr != nil {
+		return "", fmt.Errorf("project %s was imported but could not be started: %w", request.Name, deployErr)
 	}
 	return projectID, nil
 }
@@ -636,7 +655,7 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	if err := s.deps.Environment.DestroyProject(ctx, rollback.ProjectID, rollback.User); err != nil {
+	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
 	for _, volume := range rollback.Attempted {

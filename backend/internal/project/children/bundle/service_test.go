@@ -158,10 +158,6 @@ func (e *claimEnvironment) ExportVolume(ctx context.Context, name string) (types
 	return *session, err
 }
 
-func (e *claimEnvironment) DestroyProject(context.Context, string, types.Actor) error {
-	return nil
-}
-
 func (e *claimEnvironment) DeleteVolume(_ context.Context, name string, _ types.Actor) error {
 	e.calls = append(e.calls, "delete "+name)
 	delete(e.volumes, name)
@@ -212,7 +208,12 @@ func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
 		"demo_cache": {Name: "demo_cache", Labels: map[string]string{volumes.ClaimLabel: "someone-else"}},
 		"shared":     {Name: "shared"},
 	}}
-	service := New(Dependencies{Environment: environment})
+	service := New(Dependencies{
+		Environment: environment,
+		RemoveProject: func(context.Context, string, types.Actor) error {
+			return nil
+		},
+	})
 	err := service.rollback(t.Context(), errors.New("restore failed"), importRollback{
 		ProjectID:   "p1",
 		ProjectName: "demo",

@@ -45,7 +45,7 @@ func New(p ModuleParams) *Module {
 			Uploads:      p.Service.uploads,
 			ComposeFiles: p.Service.LoadedComposeFiles,
 			LockProject: func(ctx context.Context, projectID string) (func(), error) {
-				return p.Service.LockProject(ctx, "export project", projectID)
+				return p.Service.LockProject(ctx, "export or import project", projectID)
 			},
 			StopProject: func(ctx context.Context, projectID string, user types.Actor) error {
 				project, err := p.Service.getMutableProject(ctx, projectID)
@@ -56,6 +56,9 @@ func New(p ModuleParams) *Module {
 			},
 			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
 				return p.Service.deployProject(ctx, projectID, user, nil)
+			},
+			RemoveProject: func(ctx context.Context, projectID string, user types.Actor) error {
+				return p.Service.destroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
 			},
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
