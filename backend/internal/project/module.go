@@ -62,13 +62,7 @@ func New(p ModuleParams) *Module {
 			LockProject: func(ctx context.Context, projectID string) (func(), error) {
 				return p.Service.LockProject(ctx, "export or import project", projectID)
 			},
-			StopProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				project, err := p.Service.getMutableProject(ctx, projectID)
-				if err != nil {
-					return err
-				}
-				return p.Service.downProject(ctx, project, user)
-			},
+			StopProject: p.Service.stopForExport,
 			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
 				return p.Service.deployProject(ctx, projectID, user, nil)
 			},

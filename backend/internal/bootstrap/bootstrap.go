@@ -387,6 +387,8 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		}
 		cancelTask()
 	}
+	// Deploys can outlast a startup task's deadline, so this runs in the background and retries until done.
+	go p.Project.RecoverExportStoppedProjects(p.AppCtx)
 
 	if !p.Config.AgentEnabled {
 		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {

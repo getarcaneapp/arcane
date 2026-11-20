@@ -100,6 +100,7 @@ type (
 		updates                     *update.Service
 		containerRegistryService    *registry.ContainerRegistryService
 		uploads                     *upload.UploadService
+		kv                          *kv.KVService
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
@@ -203,6 +204,8 @@ type (
 )
 
 const (
+	// exportStoppedKeyPrefix and a project ID note that an export stopped the project and has not started it again.
+	exportStoppedKeyPrefix    = "project-export-stopped:"
 	maxConcurrentComposeReads = 8
 	// inferredServiceCountBatchSize stays under SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
@@ -418,6 +421,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		eventService:       p.EventService,
 		imageService:       p.ImageService,
 		dockerService:      p.DockerService,
+		kv:                 p.KVService,
 		lifecycleService:   p.LifecycleService,
 		workspace:          workspace.New(p.SettingsService),
 		details:            projectdetails.New(p.DB, p.DockerService, p.ImageService, p.SettingsService),
@@ -607,6 +611,73 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
+}
+
+// stopForExport takes a project down for an export, first noting it, so Arcane starts it again if it stops before the
+// export does. The caller holds the project's lock.
+func (s *ProjectService) stopForExport(ctx context.Context, projectID string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if noteErr := s.kv.Set(ctx, exportStoppedKeyPrefix+projectID, user.ID); noteErr != nil {
+		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
+	}
+	return s.downProject(ctx, proj, user)
+}
+
+// RecoverExportStoppedProjects starts the projects an export stopped when Arcane stopped before the export did. It
+// runs in the background, retrying with growing waits until each has started or ctx ends.
+func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context) {
+	for wait := time.Minute; ; wait = min(2*wait, 30*time.Minute) {
+		err := s.startExportStoppedProjects(ctx)
+		if err == nil {
+			return
+		}
+		slog.WarnContext(ctx, "Failed to start projects an interrupted export stopped; retrying", "error", err, "retryIn", wait)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// startExportStoppedProjects starts every project an export noted as stopped. A project that fails to start keeps its
+// note; a deleted one loses it.
+func (s *ProjectService) startExportStoppedProjects(ctx context.Context) error {
+	entries, err := s.kv.ListByPrefix(ctx, exportStoppedKeyPrefix)
+	if err != nil {
+		return fmt.Errorf("list projects stopped for an export: %w", err)
+	}
+	var errs []error
+	for _, entry := range entries {
+		projectID := strings.TrimPrefix(entry.Key, exportStoppedKeyPrefix)
+		_, found, findErr := s.FindProjectByID(ctx, projectID)
+		switch {
+		case findErr != nil:
+			errs = append(errs, findErr)
+			continue
+		case !found:
+			errs = append(errs, s.kv.Delete(ctx, entry.Key))
+			continue
+		}
+		unlock, lockErr := s.LockProject(ctx, "start project after an interrupted export", projectID)
+		if lockErr != nil {
+			errs = append(errs, lockErr)
+			continue
+		}
+		// Read again under the lock: a deploy or a deliberate stop since the list was read drops the note.
+		_, noted, getErr := s.kv.Get(ctx, entry.Key)
+		switch {
+		case getErr != nil:
+			errs = append(errs, getErr)
+		case noted:
+			errs = append(errs, s.deployProject(ctx, projectID, types.SystemUser, nil))
+		}
+		unlock()
+	}
+	return errors.Join(errs...)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1447,6 +1518,10 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	if statusErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); statusErr != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", statusErr)
 	}
+	// The project runs again, so an export that stopped it has nothing left to restart.
+	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the export stop note after deploy", "projectId", projectID, "error", noteErr)
+	}
 	return nil
 }
 
@@ -1461,7 +1536,14 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	if err != nil {
 		return err
 	}
-	return s.downProject(ctx, projectFromDb, user)
+	if downErr := s.downProject(ctx, projectFromDb, user); downErr != nil {
+		return downErr
+	}
+	// Stopped on purpose, so the project is not started again for an export that stopped it before.
+	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the export stop note after stopping the project", "projectId", projectID, "error", noteErr)
+	}
+	return nil
 }
 
 func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user types.Actor) error {
