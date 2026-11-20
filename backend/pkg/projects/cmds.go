@@ -60,24 +60,6 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 	})
 }
 
-func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
-	enabled, err := target.Project.WithServicesEnabled(target.Services...)
-	if err != nil {
-		return err
-	}
-	selected, err := enabled.WithSelectedServices(target.Services, composetypes.IgnoreDependencies)
-	if err != nil {
-		return err
-	}
-	composeCtx, c, done, err := openCompose(ctx, ClientConfig{DockerHost: target.DockerHost})
-	if err != nil {
-		return err
-	}
-	defer done()
-
-	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected, Services: target.Services})
-}
-
 func ComposeStop(ctx context.Context, target types.ComposeTarget) error {
 	if len(target.Services) == 0 {
 		return nil

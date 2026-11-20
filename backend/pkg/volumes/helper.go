@@ -32,8 +32,6 @@ type (
 		Entrypoint []string
 		Command    []string
 	}
-
-	lockedKey struct{}
 )
 
 const (
@@ -177,15 +175,6 @@ func buildRuntimeImage(image string, entrypoint, command []string, source string
 func isArcaneFallbackImage(helperImage string) bool {
 	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
 	return err != nil || ref.Path(named) != toolsRepoPath
-}
-
-func WithLocked(ctx context.Context, names []string) context.Context {
-	return context.WithValue(ctx, lockedKey{}, slices.Clone(names))
-}
-
-func Locked(ctx context.Context, name string) bool {
-	names, _ := ctx.Value(lockedKey{}).([]string)
-	return slices.Contains(names, name)
 }
 
 func CreateClaimed(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) (bool, error) {

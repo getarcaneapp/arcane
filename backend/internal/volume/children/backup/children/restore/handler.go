@@ -163,8 +163,7 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 			"filename": session.Filename,
 		},
 	}, func(runtimeCtx context.Context) error {
-		_, restoreErr := h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, input.Body.ComposeVolume, *user)
-		return restoreErr
+		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, input.Body.ComposeVolume, *user)
 	})
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())

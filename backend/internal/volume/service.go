@@ -162,10 +162,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
-func (s *VolumeService) WorkspaceLocks() *concurrency.KeyedMutex {
-	return &s.workspaceLocks
-}
-
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	s.backup.RegisterJobsOnStartup(ctx)
 }
@@ -200,7 +196,7 @@ func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName stri
 	return s.backup.ExportVolumeArchive(ctx, volumeName)
 }
 
-func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
+func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	return s.backup.RestoreUpload(ctx, volumeName, request, user)
 }
 

@@ -627,6 +627,7 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 	}, func(runtimeCtx context.Context) error {
 		var exportErr error
 		session, exportErr = h.bundles.Export(runtimeCtx, bundle.ExportOptions{
+			User:      *user,
 			ProjectID: input.ProjectID,
 			Request:   request,
 		})
@@ -752,7 +753,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			"removeVolumes": kit.FromPtr(input.Body).RemoveVolumes,
 		},
 		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DestroyProject(runtimeCtx, projectID, types.ProjectDestroyOptions{
+			return h.projectService.DestroyProject(runtimeCtx, projectID, DestroyOptions{
 				RemoveFiles:   mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true),
 				RemoveVolumes: kit.FromPtr(input.Body).RemoveVolumes,
 			}, user)

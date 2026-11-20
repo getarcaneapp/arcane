@@ -44,7 +44,6 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -472,7 +471,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
 		RemoveFiles: true,
 	}, types.Actor{}))
 
@@ -499,7 +498,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{}, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -560,7 +559,7 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", types.ProjectDestroyOptions{
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
 		RemoveFiles:   true,
 		RemoveVolumes: true,
 	}, types.Actor{}))
@@ -11154,15 +11153,14 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	module := New(ModuleParams{
 		Service: svc,
 		Transfer: TransferDependencies{
-			VolumeLocks: &concurrency.KeyedMutex{},
 			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 				exports = append(exports, name)
 				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
 			},
-			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) (bool, error) {
+			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
 				restored = append(restored, name)
 				targets = append(targets, *request.ComposeVolume)
-				return true, uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
+				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
 			},
 		},
 	})
