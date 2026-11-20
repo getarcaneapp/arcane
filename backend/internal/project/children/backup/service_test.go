@@ -317,11 +317,16 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 		worker string
 		own    bool
 		shared bool
+		// inside links web's .env by absolute path to a file in web's own directory, which the backup holds itself, and
+		// restores into a new directory.
+		inside bool
 	}{
 		// In place, the restored link leads to the file the project uses, which keeps its mode.
 		{name: "in place", worker: "file", external: "TOKEN=restored"},
 		// A new project must not share or change the original's file.
 		{name: "as a new project", worker: "file", own: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+		// The new project's .env must lead to its own restored file, not the original's.
+		{name: "as a new project, linked into the original's directory", worker: "file", own: true, inside: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
 		// Another project's .env leads to the same file, so the restore must not change that project's values.
 		{name: "in place, shared with another project", worker: "link", shared: true, external: "TOKEN=current\n"},
 		// A link to a directory leads to no file this project's .env could be, so it doesn't block the restore.
@@ -346,9 +351,18 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 				external = workerEnv
 				link = filepath.Join("..", "worker", projects.EffectiveEnvFileName)
 			}
+			restored := projectPath
+			if test.inside {
+				external = filepath.Join(projectPath, "values.env")
+				link = external
+				restored = filepath.Join(projectsRoot, "shop")
+				require.NoError(t, os.Mkdir(restored, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(restored, "values.env"), []byte("TOKEN=restored"), 0o600))
+				require.NoError(t, os.Symlink(link, filepath.Join(restored, projects.EffectiveEnvFileName)))
+			}
 			require.NoError(t, os.WriteFile(external, []byte("TOKEN=current\n"), 0o600))
-			envPath := filepath.Join(projectPath, projects.EffectiveEnvFileName)
-			require.NoError(t, os.Symlink(link, envPath))
+			require.NoError(t, os.Symlink(link, filepath.Join(projectPath, projects.EffectiveEnvFileName)))
+			envPath := filepath.Join(restored, projects.EffectiveEnvFileName)
 			switch test.worker {
 			case "file":
 				require.NoError(t, os.WriteFile(workerEnv, []byte("TOKEN=worker\n"), 0o600))
@@ -365,7 +379,14 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			var reported []string
 			report := func(_ context.Context, message string) { reported = append(reported, message) }
 
-			require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: projectPath, OwnEnv: test.own, Report: report}, "TOKEN=restored"))
+			// As RestoreTo does: the backup stored contents only for a .env leading outside the project directory.
+			opts := types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: restored, OwnEnv: test.own, Report: report}
+			if test.own {
+				require.NoError(t, s.ownEnvLink(t.Context(), opts))
+			}
+			if !test.inside {
+				require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, opts, "TOKEN=restored"))
+			}
 			if test.shared {
 				resolved, err := filepath.EvalSymlinks(external)
 				require.NoError(t, err)
@@ -379,9 +400,15 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			info, err := os.Stat(external)
 			require.NoError(t, err)
 			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-			info, err = os.Lstat(envPath)
-			require.NoError(t, err)
-			assert.Equal(t, test.own, info.Mode().IsRegular())
+			if test.inside {
+				target, readlinkErr := os.Readlink(envPath)
+				require.NoError(t, readlinkErr)
+				assert.Equal(t, "values.env", target)
+			} else {
+				info, err = os.Lstat(envPath)
+				require.NoError(t, err)
+				assert.Equal(t, test.own, info.Mode().IsRegular())
+			}
 			if test.own {
 				content, err = os.ReadFile(envPath)
 				require.NoError(t, err)

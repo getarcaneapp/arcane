@@ -66,15 +66,11 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		mode := os.FileMode(entry.UnixMode)
 		switch {
 		case entry.IsSymlink:
-			resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(projectPath, relativePath))
-			if resolveErr == nil && IsSafeSubdirectory(resolvedRoot, resolvedPath) {
-				linkTarget, err := root.Readlink(ctx, entry.Path)
-				if err == nil && filepath.IsAbs(linkTarget) {
-					linkTarget, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, relativePath)), resolvedPath)
-				}
-				if err != nil {
-					return err
-				}
+			linkTarget, inside, err := LinkTargetInside(ctx, root, entry.Path, resolvedRoot)
+			if err != nil {
+				return err
+			}
+			if inside {
 				return tarWriter.WriteHeader(&tar.Header{
 					Typeflag: tar.TypeSymlink,
 					Name:     relativePath,
@@ -142,6 +138,25 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		return fmt.Errorf("finish project archive compression: %w", closeErr)
 	}
 	return nil
+}
+
+// LinkTargetInside reports whether the link at logicalPath in root leads into the directory resolvedRoot, and returns
+// the target a copy of that directory keeps for it. A target that leaves root on the way, absolute or through "..",
+// becomes the relative path to the same file, so the copy's link leads to the copy's file, not the original's.
+func LinkTargetInside(ctx context.Context, root acfs.Root, logicalPath, resolvedRoot string) (target string, inside bool, err error) {
+	// A link that doesn't resolve leads to no file to keep.
+	resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(root.Path, logicalPath))
+	if resolveErr != nil || !IsSafeSubdirectory(resolvedRoot, resolvedPath) {
+		return "", false, nil
+	}
+	target, err = root.Readlink(ctx, logicalPath)
+	if err != nil {
+		return "", false, err
+	}
+	if filepath.IsAbs(target) || !IsSafeSubdirectory(root.Path, filepath.Join(root.Path, path.Dir(logicalPath), target)) {
+		target, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, logicalPath)), resolvedPath)
+	}
+	return target, err == nil, err
 }
 
 // ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside

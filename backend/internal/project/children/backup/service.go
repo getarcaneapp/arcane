@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"path"
@@ -26,6 +27,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
@@ -2174,6 +2176,11 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.id, target, options); restoreErr != nil {
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
+	if opts.OwnEnv && opts.ProjectPath != "" {
+		if linkErr := s.ownEnvLink(ctx, opts); linkErr != nil {
+			return linkErr
+		}
+	}
 	// The snapshot holds only the link of a .env kept outside the project directory, so its contents come from beside
 	// the manifest. A rollback restores the safety backup through here too, which puts the earlier contents back.
 	if opts.ProjectPath == "" || !manifest.ExternalEnv {
@@ -2210,6 +2217,41 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 	}
 	if err := projects.WriteProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName, content); err != nil {
 		return fmt.Errorf("restore the .env file the backup stored: %w", err)
+	}
+	return nil
+}
+
+// ownEnvLink points a new project's .env, restored as a link into the original project's directory, at the new
+// project's restored copy of that file, as an export does, so the new project neither reads nor changes the original's
+// settings. The manifest doesn't record the original's directory, so it comes from the original's current record; an
+// original that, or whose directory, no longer exists has no files the link could reach.
+func (s *Service) ownEnvLink(ctx context.Context, opts types.ProjectBackupRestore) error {
+	all, err := s.deps.Projects(ctx)
+	if err != nil {
+		return err
+	}
+	index := slices.IndexFunc(all, func(project types.ProjectRecord) bool { return project.ID == opts.ProjectID })
+	if index < 0 {
+		return nil
+	}
+	sourceRoot, err := filepath.EvalSymlinks(all[index].Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve the directory of project %s: %w", all[index].Name, err)
+	}
+	root := acfs.Root{Path: opts.ProjectPath}
+	envLink := "/" + projects.EffectiveEnvFileName
+	target, inside, err := projects.LinkTargetInside(ctx, root, envLink, sourceRoot)
+	if err != nil || !inside {
+		return err
+	}
+	if removeErr := root.Remove(ctx, envLink); removeErr != nil {
+		return fmt.Errorf("replace the restored .env link: %w", removeErr)
+	}
+	if linkErr := root.Symlink(ctx, target, envLink); linkErr != nil {
+		return fmt.Errorf("replace the restored .env link: %w", linkErr)
 	}
 	return nil
 }
