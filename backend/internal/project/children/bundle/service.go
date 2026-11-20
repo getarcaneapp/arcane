@@ -128,6 +128,9 @@ func (s *Service) Options(ctx context.Context, projectID string) (types.ProjectE
 }
 
 func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.UploadSession, error) {
+	if len(opts.Request.Volumes) == 0 {
+		return s.deps.ExportProject(ctx, opts.ProjectID)
+	}
 	if opts.Request.StopProject {
 		unlock, lockErr := s.deps.Lock(ctx, "export project", opts.ProjectID)
 		if lockErr != nil {
