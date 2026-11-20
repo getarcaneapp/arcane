@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,7 +25,9 @@ import (
 )
 
 type DownloadOptions struct {
-	OutputPath   string
+	OutputPath string
+	// Path downloads from another endpoint than the upload session's own, such as a project export's.
+	Path         string
 	Special      bool
 	ShowProgress bool
 }
@@ -113,7 +116,7 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 func DownloadUploadSession(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
 	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
 
-	resp, err := c.RequestRaw(ctx, http.MethodGet, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID), nil, nil)
+	resp, err := c.RequestRaw(ctx, http.MethodGet, cmp.Or(opts.Path, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID)), nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to download file: %w", err)
 	}

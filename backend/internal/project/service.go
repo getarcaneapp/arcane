@@ -1819,7 +1819,13 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	pack := func(w io.Writer) error {
 		return projects.PackProjectDirectory(ctx, proj.Path, w)
 	}
-	session, err := s.uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", pack)
+	session, err := s.uploads.WriteSession(ctx, upload.WriteSessionOptions{
+		Write:    pack,
+		Kind:     types.UploadKindProjectArchive,
+		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+		Origin:   types.UploadOriginProjectExport,
+		OriginID: proj.ID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
 	}

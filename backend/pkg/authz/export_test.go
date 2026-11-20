@@ -8,8 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/stretchr/testify/require"
-
-	"getarcane.dev/types/v3"
 )
 
 func TestBuildPermissionExport(t *testing.T) {
@@ -257,56 +255,11 @@ func TestBuildPermissionExport(t *testing.T) {
 	require.NotContains(t, export.UnreferencedPermissions, PermDiagnosticsProfile)
 }
 
-func TestBuildPermissionExportListsAlternativePermissions(t *testing.T) {
-	_, testAPI := humatest.New(t)
-	api := &OperationRecorder{API: testAPI}
-	huma.Register(api, huma.Operation{
-		OperationID: "download-upload-session",
-		Method:      http.MethodGet,
-		Path:        "/uploads/{kind}/download",
-		Metadata: map[string]any{
-			MetaPermissionConditions:   UploadKindConditions,
-			MetaPermissionAlternatives: UploadKindReadConditions,
-		},
-	}, func(_ context.Context, _ *struct {
-		Kind string `path:"kind"`
-	},
-	) (*struct{}, error) {
-		return &struct{}{}, nil
-	})
-
-	export := BuildPermissionExport(api, nil)
-	require.Equal(t, UploadKindReadConditions, export.Endpoints[0].Alternatives)
-	var refs []PermissionExportEndpointRef
-	for _, resource := range export.Resources {
-		for _, action := range resource.Actions {
-			if action.Permission == PermProjectsRead {
-				refs = action.Endpoints
-			}
-		}
-	}
-	// A project export is downloadable with projects:read, so the permission guide lists the route under it.
-	require.Equal(t, []PermissionExportEndpointRef{{
-		Condition:   new(UploadKindReadConditions[0]),
-		Method:      http.MethodGet,
-		Path:        "/uploads/{kind}/download",
-		OperationID: "download-upload-session",
-		Alternative: true,
-	}}, refs)
-}
-
 func TestPermissionConditionsRequired(t *testing.T) {
 	require.Equal(t, []string{PermVolumesUpload, PermVolumesDelete}, VolumeWorkspaceConditions.Required("fileChanges.operation", "rename"))
 	require.Equal(t, []string{PermImagesPush}, BuildPushConditions.Required("push", "true"))
 	require.Empty(t, BuildPushConditions.Required("push", "false"))
 	require.Empty(t, UploadKindConditions.Required("kind", "unknown"))
-	reader := NewPermissionSet()
-	reader.AddEnv("0", PermProjectsRead)
-	exported := UploadSessionAccess{Kind: types.UploadKindProjectArchive, EnvironmentID: "0", Read: true}
-	require.True(t, UploadSessionPermitted(reader, exported), "a project export is downloadable with projects:read")
-	require.False(t, UploadSessionPermitted(reader, UploadSessionAccess{Kind: types.UploadKindProjectArchive, EnvironmentID: "0", Read: false}),
-		"creating or filling a project-archive upload still requires projects:create")
-	require.False(t, UploadSessionPermitted(reader, UploadSessionAccess{Kind: "unknown", EnvironmentID: "0", Read: true}))
 	require.Equal(t, []string{PermGitOpsBackup}, GitOpsSyncModeConditions.Required("mode", "backup"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsSyncModeConditions.Required("mode", "bidirectional"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsModeConditions.Required("mode", "bidirectional"))
