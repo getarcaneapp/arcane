@@ -202,7 +202,7 @@
 		() => {
 			void refreshAfterUpdate();
 		},
-		() => data.container.id
+		() => container?.id ?? ''
 	);
 
 	onMount(() => {

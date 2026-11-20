@@ -120,7 +120,7 @@
 	} from '../components/project-workspace-utils';
 
 	let { data } = $props();
-	let projectId = $derived(data.projectId);
+	const { envId, projectId, project: initialProject } = untrack(() => data);
 	const queryClient = useQueryClient();
 
 	const isLoading = $state({
@@ -137,7 +137,6 @@
 		archiving: false
 	});
 
-	const envId = $derived(data.envId);
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
@@ -161,7 +160,7 @@
 
 	const detailQuery = createQuery(() => ({
 		...projectDetailQuery(envId, projectId),
-		initialData: data.project,
+		initialData: initialProject,
 		refetchOnMount: (query) => query.state.isInvalidated
 	}));
 	const tagsQuery = createQuery(() => projectTagsQuery(envId, [{ id: envId, name: environmentName(envId) }]));
@@ -196,7 +195,7 @@
 	});
 
 	const lifecycleSyncQuery = createQuery(() => {
-		const syncId = data.project?.gitOpsManagedBy;
+		const syncId = detailQuery.data.gitOpsManagedBy;
 		return {
 			...gitOpsSyncDetailQuery(envId, syncId),
 			enabled: !!syncId,
@@ -245,7 +244,7 @@
 	}
 
 	const project = $derived.by(() => {
-		const detail = detailQuery.data ?? data.project;
+		const detail = detailQuery.data ?? initialProject;
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
