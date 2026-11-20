@@ -658,30 +658,19 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 	return h.createProjectResponse(ctx, proj, activityID)
 }
 
-// DownloadProjectExport streams a session written by an export of this project, and nothing else, so reading project
-// archives uploaded for an import still needs projects:create.
 func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *DownloadProjectExportInput) (*huma.StreamResponse, error) {
-	reader, session, err := h.projectService.uploads.DownloadSession(ctx, types.UploadKindProjectArchive, input.UploadID)
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	reader, session, err := h.projectService.OpenExport(ctx, OpenExportOptions{
+		ProjectID:  input.ProjectID,
+		UploadID:   input.UploadID,
+		VolumeData: permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID),
+	})
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	exported := session.OriginID == input.ProjectID && (session.Origin == types.UploadOriginProjectExport || session.Origin == types.UploadOriginProjectBundle)
-	permissions, _ := middleware.PermissionsFromContext(ctx)
-	var refusal error
-	switch {
-	case !exported:
-		refusal = huma.Error404NotFound("no export of this project has that ID")
-	case session.Origin == types.UploadOriginProjectBundle && !permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID):
-		// The bundle holds volume data, which exporting needed volumes:backup for.
-		refusal = huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
-	}
-	if refusal != nil {
-		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
-		_ = reader.Close()
-		return nil, refusal
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
