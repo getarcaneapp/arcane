@@ -116,6 +116,7 @@ type (
 	projectModuleParams struct {
 		fx.In
 
+		Ctx       context.Context
 		Service   *project.ProjectService
 		Activity  *activity.ActivityService
 		Engine    *flow.Engine
@@ -199,6 +200,8 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Repository:     p.Repository,
 			S3Destinations: p.S3Destinations,
 			LockVolumes:    p.Volumes.LockVolumes,
+			Ctx:            p.Ctx,
+			TryLockVolumes: p.Volumes.TryLockVolumes,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

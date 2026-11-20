@@ -59,7 +59,12 @@ type (
 		Settings       *settings.SettingsService
 		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
 		LockVolumes func(ctx context.Context, names []string) (func(), error)
-		Project     func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		// NoteStopped records that a backup is stopping the project's containers, and ForgetStopped drops the note once
+		// they run again; RecoverStopped starts the project's recovery when they could not be started.
+		NoteStopped    func(ctx context.Context, projectID string) error
+		ForgetStopped  func(ctx context.Context, projectID string) error
+		RecoverStopped func()
+		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
 		// BackupStore names the volume holding local backup storage, which a backup never copies.
@@ -412,6 +417,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
 		restartErr := s.startContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		s.afterRestart(ctx, recorded.ProjectID, restartErr)
 		unlockVolumes()
 		unlockProject()
 		if restartErr == nil {
@@ -593,13 +599,21 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	var stopped []container.Summary
+	var (
+		stopped []container.Summary
+		noted   bool
+	)
 	defer func() {
 		if len(stopped) == 0 {
+			if noted {
+				s.afterRestart(ctx, entry.ProjectID, nil)
+			}
 			return
 		}
-		// Left down, the project is restarted from the checkpoint when the run is tried again.
-		if restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); restartErr != nil {
+		// Left down, the project is restarted from the checkpoint when the run is tried again, or by recovery.
+		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
+		s.afterRestart(ctx, entry.ProjectID, restartErr)
+		if restartErr != nil {
 			err = fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(err, restartErr))
 		}
 	}()
@@ -609,6 +623,13 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		p.Stopped = checkpointContainers(active)
 		if recordErr := s.record(ctx, p); recordErr != nil {
 			return recordErr
+		}
+		// Noted before the stops too, so the project starts again even when this run can never be resumed.
+		if len(active) > 0 {
+			if noteErr := s.deps.NoteStopped(ctx, entry.ProjectID); noteErr != nil {
+				return fmt.Errorf("note that the backup stops project %s: %w", project.Name, noteErr)
+			}
+			noted = true
 		}
 		var stopErr error
 		stopped, stopErr = s.stopContainers(ctx, project.ComposeName)
@@ -645,7 +666,8 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
-		stopped = nil
+		s.afterRestart(ctx, entry.ProjectID, restartErr)
+		stopped, noted = nil, false
 		if restartErr == nil {
 			p.Stopped = nil
 		}
@@ -754,6 +776,18 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 		}
 	}
 	return stopped, nil
+}
+
+// afterRestart drops the project's stop note once its stopped containers run again, or hands them to recovery when they
+// could not be started, which keeps retrying even after this run ends.
+func (s *Service) afterRestart(ctx context.Context, projectID string, restartErr error) {
+	if restartErr != nil {
+		s.deps.RecoverStopped()
+		return
+	}
+	if err := s.deps.ForgetStopped(context.WithoutCancel(ctx), projectID); err != nil {
+		slog.WarnContext(ctx, "Failed to drop the stop note after restarting the project's containers", "projectId", projectID, "error", err)
+	}
 }
 
 // startContainers starts the project's stopped containers again in Compose order; when its Compose files no longer

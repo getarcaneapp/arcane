@@ -111,6 +111,12 @@ type (
 
 		// syncMu keeps one sync's discovery walk and cleanup pass from interleaving with another's.
 		syncMu sync.Mutex
+
+		// stoppedRecovery guards recoveringStopped, set while a recovery of stopped projects runs, and
+		// recoverStoppedAgain, set when a project is noted during a pass so the recovery checks once more.
+		stoppedRecovery     sync.Mutex
+		recoveringStopped   bool
+		recoverStoppedAgain bool
 	}
 
 	CreateProjectOptions struct {
@@ -194,7 +200,9 @@ type (
 )
 
 const (
-	exportStoppedKeyPrefix    = "project-export-stopped:"
+	// stoppedKeyPrefix notes a project Arcane stopped for an export or a backup, so it is started again if Arcane
+	// stops before it does.
+	stoppedKeyPrefix          = "project-stopped:"
 	maxConcurrentComposeReads = 8
 	// inferredServiceCountBatchSize stays under SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
@@ -607,35 +615,78 @@ func (s *ProjectService) stopForExport(ctx context.Context, projectID string, us
 	if err != nil {
 		return err
 	}
-	if noteErr := s.kv.Set(ctx, exportStoppedKeyPrefix+projectID, user.ID); noteErr != nil {
+	if noteErr := s.noteStopped(ctx, projectID, user); noteErr != nil {
 		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
 	}
 	return s.downProject(ctx, proj, user)
 }
 
-func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
-	for wait := time.Minute; ; wait = min(2*wait, 30*time.Minute) {
-		err := s.startExportStoppedProjects(ctx, lockVolumes)
-		if err == nil {
+// noteStopped records that Arcane is stopping the project, before it does.
+func (s *ProjectService) noteStopped(ctx context.Context, projectID string, user types.Actor) error {
+	return s.kv.Set(ctx, stoppedKeyPrefix+projectID, user.ID)
+}
+
+// forgetStopped drops the note once the project runs again, or a person decides whether it runs.
+func (s *ProjectService) forgetStopped(ctx context.Context, projectID string) error {
+	return s.kv.Delete(ctx, stoppedKeyPrefix+projectID)
+}
+
+// RecoverStoppedProjects starts, in the background, the projects Arcane stopped and could not start again, retrying
+// until every one runs. It runs at startup and when a backup leaves a project down; a call while it runs makes it
+// check once more.
+func (s *ProjectService) RecoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
+	s.stoppedRecovery.Lock()
+	defer s.stoppedRecovery.Unlock()
+	s.recoverStoppedAgain = true
+	if s.recoveringStopped {
+		return
+	}
+	s.recoveringStopped = true
+	go s.recoverStoppedProjects(ctx, lockVolumes)
+}
+
+func (s *ProjectService) recoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
+	finish := func(done bool) bool {
+		s.stoppedRecovery.Lock()
+		defer s.stoppedRecovery.Unlock()
+		if done && !s.recoverStoppedAgain {
+			s.recoveringStopped = false
+			return true
+		}
+		return false
+	}
+	for wait := time.Minute; ; {
+		s.stoppedRecovery.Lock()
+		s.recoverStoppedAgain = false
+		s.stoppedRecovery.Unlock()
+		err := s.startStoppedProjects(ctx, lockVolumes)
+		if finish(err == nil) {
 			return
 		}
-		slog.WarnContext(ctx, "Failed to start projects an interrupted export stopped; retrying", "error", err, "retryIn", wait)
+		if err == nil {
+			continue
+		}
+		slog.WarnContext(ctx, "Failed to start projects Arcane stopped; retrying", "error", err, "retryIn", wait)
 		select {
 		case <-ctx.Done():
+			s.stoppedRecovery.Lock()
+			s.recoveringStopped = false
+			s.stoppedRecovery.Unlock()
 			return
 		case <-time.After(wait):
 		}
+		wait = min(2*wait, 30*time.Minute)
 	}
 }
 
-func (s *ProjectService) startExportStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) error {
-	entries, err := s.kv.ListByPrefix(ctx, exportStoppedKeyPrefix)
+func (s *ProjectService) startStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) error {
+	entries, err := s.kv.ListByPrefix(ctx, stoppedKeyPrefix)
 	if err != nil {
-		return fmt.Errorf("list projects stopped for an export: %w", err)
+		return fmt.Errorf("list projects Arcane stopped: %w", err)
 	}
 	var errs []error
 	for _, entry := range entries {
-		projectID := strings.TrimPrefix(entry.Key, exportStoppedKeyPrefix)
+		projectID := strings.TrimPrefix(entry.Key, stoppedKeyPrefix)
 		_, found, findErr := s.FindProjectByID(ctx, projectID)
 		switch {
 		case findErr != nil:
@@ -645,7 +696,7 @@ func (s *ProjectService) startExportStoppedProjects(ctx context.Context, lockVol
 			errs = append(errs, s.kv.Delete(ctx, entry.Key))
 			continue
 		}
-		unlock, lockErr := s.LockProject(ctx, "start project after an interrupted export", projectID)
+		unlock, lockErr := s.LockProject(ctx, "start a project Arcane stopped", projectID)
 		if lockErr != nil {
 			errs = append(errs, lockErr)
 			continue
@@ -1519,8 +1570,8 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	if statusErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); statusErr != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", statusErr)
 	}
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after deploy", "projectId", projectID, "error", noteErr)
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after deploy", "projectId", projectID, "error", noteErr)
 	}
 	return nil
 }
@@ -1539,8 +1590,8 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	if downErr := s.downProject(ctx, projectFromDb, user); downErr != nil {
 		return downErr
 	}
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after stopping the project", "projectId", projectID, "error", noteErr)
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after stopping the project", "projectId", projectID, "error", noteErr)
 	}
 	return nil
 }

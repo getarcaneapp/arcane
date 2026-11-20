@@ -267,6 +267,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
 	dockerService, started := startServer(t, &fail)
+	var recoveries, forgotten atomic.Int32
 	service := NewService(Dependencies{
 		DB:          db,
 		Docker:      dockerService,
@@ -276,22 +277,33 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
 			return &composetypes.Project{}, nil
 		},
+		NoteStopped: noteNothing,
+		ForgetStopped: func(context.Context, string) error {
+			forgotten.Add(1)
+			return nil
+		},
+		RecoverStopped: func() { recoveries.Add(1) },
 	})
 	recorded := plan{
 		BackupID: "b1", ProjectID: "p1", StopContainers: true,
 		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
 	}
 
-	// A failed start hands the run back instead of ending it with the project down.
+	// A failed start hands the run back instead of ending it with the project down, and starts the project's recovery,
+	// which keeps trying even if this run never resumes.
 	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded), actor.ErrJobRejected)
+	require.EqualValues(t, 1, recoveries.Load())
+	require.Zero(t, forgotten.Load())
 	fail.Store(false)
 	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded))
 	require.Equal(t, []string{"web-1", "web-1"}, started())
+	// Running again, the project's stop note is dropped.
+	require.EqualValues(t, 1, forgotten.Load())
 }
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{LockVolumes: lockingWith(locks)})
+	service := NewService(Dependencies{LockVolumes: lockingWith(locks), NoteStopped: noteNothing, ForgetStopped: noteNothing, RecoverStopped: func() {}})
 	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Included: true},
 		{Key: "cache", Name: "web_cache", Included: false},
@@ -319,6 +331,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 		Docker:      dockerService,
 		Engine:      engine,
 		LockVolumes: lockingWith(locks),
+		NoteStopped: noteNothing, ForgetStopped: noteNothing, RecoverStopped: func() {},
 		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
 			return &composetypes.Project{}, nil
@@ -374,6 +387,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 		DB:          db,
 		Docker:      dockerService,
 		Engine:      engine,
+		NoteStopped: noteNothing, ForgetStopped: noteNothing, RecoverStopped: func() {},
 		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
@@ -548,3 +562,6 @@ func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) 
 		return release, nil
 	}
 }
+
+// noteNothing stands in for the project service's stop note.
+func noteNothing(context.Context, string) error { return nil }

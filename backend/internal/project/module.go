@@ -16,6 +16,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -40,6 +41,9 @@ type (
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
+		// Ctx and TryLockVolumes run the recovery of projects a backup left stopped.
+		Ctx            context.Context
+		TryLockVolumes func(names []string) (func(), error)
 	}
 )
 
@@ -87,6 +91,13 @@ func New(p ModuleParams) *Module {
 			ComposeProject: p.Service.composeProject,
 			ComposeFiles:   p.Service.LoadedComposeFiles,
 			LockProject:    p.Service.LockProject,
+			NoteStopped: func(ctx context.Context, projectID string) error {
+				return p.Service.noteStopped(ctx, projectID, types.SystemUser)
+			},
+			ForgetStopped: p.Service.forgetStopped,
+			RecoverStopped: func() {
+				p.Service.RecoverStoppedProjects(p.Backups.Ctx, p.Backups.TryLockVolumes)
+			},
 		}),
 	}
 }
