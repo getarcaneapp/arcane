@@ -44,6 +44,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -522,6 +523,7 @@ func (f *fakeRestore) steps() restoreSteps {
 		},
 		report: func(context.Context, string) {},
 		down:   func(context.Context) error { return f.step("down") },
+		clear:  func(context.Context, restorePlan) error { return f.step("clear") },
 		deploy: func(context.Context) error { return f.step("deploy") },
 		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
 		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
@@ -562,7 +564,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	// The volume the restore created is removed; the one that existed comes back from the safety backup.
 	require.Equal(t, []string{
-		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
 		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, running.calls)
 	require.Equal(t, err.Error(), running.plans[len(running.plans)-1].Failure)
@@ -581,7 +583,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1, but could not be deployed")
 	require.NotContains(t, err.Error(), "the rollback failed too")
 	require.Equal(t, []string{
-		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
 		"rolling back", "down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, redeploy.calls)
 
@@ -591,7 +593,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "the rollback failed too")
 	require.ErrorContains(t, err, "the project was left down; restore the safety backup s1")
 	require.Equal(t, []string{
-		"down", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
 		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache",
 	}, undoFailed.calls)
 
@@ -601,12 +603,19 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "nothing was restored")
 	// Nothing was written yet, so the volume a container now uses is left alone and the project is deployed again.
-	require.Equal(t, []string{"down", "safety", "in use", "rolling back", "save deploy", "deploy"}, inUse.calls)
+	require.Equal(t, []string{"down", "clear", "safety", "in use", "rolling back", "save deploy", "deploy"}, inUse.calls)
 
 	safetyFailed := &fakeRestore{fail: map[string]error{"safety": restoreErr}}
 	err = safetyFailed.steps().apply(t.Context(), plan(true))
 	require.ErrorContains(t, err, "nothing was restored")
-	require.Equal(t, []string{"down", "safety", "rolling back", "save deploy", "deploy"}, safetyFailed.calls)
+	require.Equal(t, []string{"down", "clear", "safety", "rolling back", "save deploy", "deploy"}, safetyFailed.calls)
+
+	// A stopped container that was started again stops the restore before anything is written.
+	started := &fakeRestore{fail: map[string]error{"clear": common.Classify(common.ErrConflict, errors.New("container web-app-1 was started during the restore"))}}
+	err = started.steps().apply(t.Context(), plan(false))
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "nothing was restored")
+	require.Equal(t, []string{"clear", "rolling back"}, started.calls)
 
 	// A redeploy that failed and cannot be stopped may still run on the restored data, so nothing is written under it.
 	stuck := &fakeRestore{fail: map[string]error{"deploy": restoreErr, "down": errors.New("compose down failed")}}
@@ -629,7 +638,7 @@ func TestRestoreRecordsEachCreatedVolumeBeforeTheNext(t *testing.T) {
 	err := failed.steps().apply(t.Context(), p)
 	require.ErrorIs(t, err, createErr)
 	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
-	require.Equal(t, []string{"safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
+	require.Equal(t, []string{"clear", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
 
 	// Arcane stops between the two creates: the checkpoint saved after the first already names it, so the resumed run
 	// removes it.
@@ -1724,9 +1733,119 @@ func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
 		{name: "a running project is stopped and deployed again", plan: restorePlan{MayStop: true}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
 		{name: "a stopped project asked to start is deployed", plan: restorePlan{Redeploy: new(true)}, want: []string{authz.PermProjectsDeploy}},
 		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{Redeploy: new(false)}},
+		// Removing a stopped project's containers takes them down as stopping it would.
+		{name: "a project with stopped containers needs the right to take it down", plan: restorePlan{Stopped: true}, want: []string{authz.PermProjectsDown}},
+		{
+			name: "a project with stopped containers asked to start", plan: restorePlan{Stopped: true, Redeploy: new(true)},
+			want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.want, test.plan.extraPermissions())
+		})
+	}
+}
+
+func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
+	exited := container.Summary{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateExited}
+	for _, test := range []struct {
+		name        string
+		wantMessage string
+		containers  []container.Summary
+		wantRemoved []string
+		stopped     bool
+	}{
+		{
+			name:        "stopped containers are removed",
+			containers:  []container.Summary{exited, {ID: "c2", Names: []string{"/web-db-1"}, State: container.StateCreated}},
+			wantRemoved: []string{"c1", "c2"},
+			stopped:     true,
+		},
+		// An agent the project runs is Arcane's, not the project's to remove or refuse on.
+		{
+			name:        "Arcane's own containers are left alone",
+			containers:  []container.Summary{exited, {ID: "agent", Names: []string{"/web-agent-1"}, State: container.StateRunning, Labels: map[string]string{"com.getarcaneapp.arcane.agent": "true"}}},
+			wantRemoved: []string{"c1"},
+			stopped:     true,
+		},
+		{
+			name:        "a container started again is refused",
+			containers:  []container.Summary{{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateRunning}},
+			wantMessage: "container web-app-1 was started during the restore",
+			stopped:     true,
+		},
+		// The request checked projects:down only when it found stopped containers.
+		{
+			name:        "stopped containers the request did not find are refused",
+			containers:  []container.Summary{exited},
+			wantMessage: "the project's containers changed after the restore was requested",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var removed []string
+			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodDelete:
+					removed = append(removed, path.Base(r.URL.Path))
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					assert.Equal(t, "1", r.URL.Query().Get("all"), "stopped containers are listed too")
+					assert.Contains(t, r.URL.Query().Get("filters"), "com.docker.compose.project=web")
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(t, json.MarshalWrite(w, test.containers))
+				}
+			}))
+			service := NewService(Dependencies{Docker: dockerService})
+			err := service.removeStoppedContainers(t.Context(), restorePlan{ComposeName: "web", Stopped: test.stopped})
+			if test.wantMessage != "" {
+				require.ErrorIs(t, err, common.ErrConflict)
+				require.ErrorContains(t, err, test.wantMessage)
+				require.Empty(t, removed)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.wantRemoved, removed)
+		})
+	}
+}
+
+func TestRestoreRemovesItsOwnLeftoverRusticContainers(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		removeErr bool
+	}{
+		{name: "a leftover of this restore is removed"},
+		{name: "a leftover that can't be removed stops the restore", removeErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var removed []string
+			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodDelete:
+					removed = append(removed, path.Base(r.URL.Path))
+					if test.removeErr {
+						http.Error(w, `{"message":"device busy"}`, http.StatusInternalServerError)
+						return
+					}
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					// Only this restore's own containers are listed, never another operation's.
+					assert.Contains(t, r.URL.Query().Get("filters"), rustic.OwnerLabel+"="+restoreOwner+"r1")
+					assert.Equal(t, "1", r.URL.Query().Get("all"), "an exited leftover still holds its volumes")
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "stale"}}))
+				}
+			}))
+			dockerClient, err := dockerService.GetClient(t.Context())
+			require.NoError(t, err)
+			err = removeLeftovers(t.Context(), dockerClient, restoreOwner+"r1")
+			require.Equal(t, []string{"stale"}, removed)
+			if test.removeErr {
+				require.ErrorIs(t, err, common.ErrConflict)
+				require.ErrorContains(t, err, "left over from an earlier run of this restore (stale)")
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
