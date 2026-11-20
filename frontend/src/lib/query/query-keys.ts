@@ -246,6 +246,7 @@ export const queryKeys = {
 			['projects', environmentId, 'directories', view] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
 		exportOptions: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'export-options'] as const,
+		backupOptions: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'backup-options'] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
 		workspaceFolder: (environmentId: string, projectId: string, path: string) =>
 			['project', environmentId, projectId, 'workspace', path] as const,

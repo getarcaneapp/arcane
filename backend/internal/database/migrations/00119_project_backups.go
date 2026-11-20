@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v118SQLiteUp = `
+	v119SQLiteUp = `
 CREATE TABLE IF NOT EXISTS project_backups (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -58,7 +58,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
 );
 `
-	v118PostgresUp = `
+	v119PostgresUp = `
 CREATE TABLE IF NOT EXISTS project_backups (
     id text PRIMARY KEY,
     project_id text NOT NULL,
@@ -103,7 +103,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = COALESCE(grants.environment_id, '')
 );
 `
-	v118SQLiteDown = `
+	v119SQLiteDown = `
 UPDATE roles
 SET permissions = (
     SELECT json_group_array(value) FROM json_each(roles.permissions) WHERE value <> 'projects:backup'
@@ -113,7 +113,7 @@ DELETE FROM api_key_permissions WHERE permission = 'projects:backup';
 DROP INDEX IF EXISTS idx_project_backups_project_id;
 DROP TABLE IF EXISTS project_backups;
 `
-	v118PostgresDown = `
+	v119PostgresDown = `
 UPDATE roles SET permissions = permissions - 'projects:backup' WHERE permissions @> '["projects:backup"]'::jsonb;
 DELETE FROM api_key_permissions WHERE permission = 'projects:backup';
 DROP INDEX IF EXISTS idx_project_backups_project_id;
@@ -122,5 +122,5 @@ DROP TABLE IF EXISTS project_backups;
 )
 
 func init() {
-	goose.AddMigrationContext(run(v118SQLiteUp, v118PostgresUp), run(v118SQLiteDown, v118PostgresDown))
+	goose.AddMigrationContext(run(v119SQLiteUp, v119PostgresUp), run(v119SQLiteDown, v119PostgresDown))
 }

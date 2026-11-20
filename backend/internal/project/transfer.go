@@ -9,7 +9,6 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"kit.getarcane.app/docker"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -18,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
@@ -112,11 +112,8 @@ func (e localTransferEnvironment) ComposeProjectInUse(ctx context.Context, name 
 	if err != nil {
 		return false, err
 	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+name),
-	})
-	return len(found.Items) > 0, err
+	found, err := projects.ListComposeProjectContainers(ctx, dockerClient, name)
+	return len(found) > 0, err
 }
 
 func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID string) (types.UploadSession, error) {
@@ -189,7 +186,7 @@ func (e localTransferEnvironment) DownProject(ctx context.Context, projectID str
 }
 
 func (e localTransferEnvironment) DestroyProject(ctx context.Context, projectID string, user types.Actor) error {
-	return e.projects.DestroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
+	return e.projects.DestroyProject(ctx, projectID, types.ProjectDestroyOptions{RemoveFiles: true}, user)
 }
 
 func (e localTransferEnvironment) DeleteVolume(ctx context.Context, name string, user types.Actor) error {

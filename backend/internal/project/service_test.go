@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -44,7 +46,6 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -473,7 +474,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{
 		RemoveFiles: true,
 	}, types.Actor{}))
 
@@ -500,7 +501,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -561,7 +562,7 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", types.ProjectDestroyOptions{
 		RemoveFiles:   true,
 		RemoveVolumes: true,
 	}, types.Actor{}))
@@ -5307,11 +5308,16 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	})
 	user := types.Actor{ID: "user-1", Username: "tester"}
 
+	// An export or a backup left the project stopped; archiving keeps it down, so recovery must not start it.
+	require.NoError(t, svc.noteStopped(ctx, "project-stopped", user, nil))
 	require.NoError(t, svc.ArchiveProject(ctx, "project-stopped", user))
 	var stored Project
 	require.NoError(t, db.First(&stored, "id = ?", "project-stopped").Error)
 	assert.True(t, stored.IsArchived)
 	assert.NotNil(t, stored.ArchivedAt)
+	_, noted, err := svc.kv.Get(ctx, stoppedKeyPrefix+"project-stopped")
+	require.NoError(t, err)
+	assert.False(t, noted)
 
 	require.NoError(t, svc.UnarchiveProject(ctx, "project-stopped", user))
 	var unarchived Project
@@ -5376,6 +5382,88 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	var archived Project
 	require.NoError(t, db.First(&archived, "id = ?", "project-no-compose").Error)
 	assert.True(t, archived.IsArchived)
+}
+
+func TestProjectService_RecoversABackupStopByStartingOnlyItsContainers(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := t.Context()
+
+	projectsRoot := t.TempDir()
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, db.Create(&Project{
+		ID:      "project-backed-up",
+		Name:    "backed-up",
+		DirName: new("backed-up"),
+		Path:    createComposeProjectDir(t, projectsRoot, "backed-up"),
+		Status:  ProjectStatusStopped,
+	}).Error)
+
+	labelsFor := func(service string) map[string]string {
+		return map[string]string{api.ProjectLabel: "backed-up", api.ServiceLabel: service}
+	}
+	// The backup stopped web-1, a service since dropped from compose.yaml; someone stopped app-1 on purpose.
+	containers := []container.Summary{
+		{
+			ID: "web-1", Names: []string{"/backed-up-web-1"}, Labels: labelsFor("web"), State: container.StateExited,
+			Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "backed-up_web-data"}},
+		},
+		{ID: "app-1", Names: []string{"/backed-up-app-1"}, Labels: labelsFor("app"), State: container.StateExited},
+	}
+	var (
+		mu      sync.Mutex
+		started []string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.MarshalWrite(w, containers)
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			mu.Lock()
+			started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
+	svc := NewProjectService(ProjectServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ImageService: image.NewImageService(image.ImageServiceParams{
+			DB: db,
+		}),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	var locked []string
+	unlocked := func(names []string) (func(), error) {
+		locked = slices.Clone(names)
+		return func() {}, nil
+	}
+
+	// Compose files that no longer load still get the stopped containers started.
+	require.NoError(t, svc.startStoppedContainers(ctx, "project-missing", containers[:1]))
+	assert.Equal(t, []string{"web-1"}, started)
+
+	// Recovery starts what the backup stopped instead of deploying the project, then drops the note.
+	require.NoError(t, svc.noteStopped(ctx, "project-backed-up", types.SystemUser, containers[:1]))
+	require.NoError(t, svc.startStoppedProjects(ctx, unlocked))
+	assert.Equal(t, []string{"web-1", "web-1"}, started)
+	// web-1 still mounts a volume compose.yaml no longer names, and a restore of it must finish before web-1 starts.
+	assert.Contains(t, locked, "backed-up_web-data")
+	_, noted, err := svc.kv.Get(ctx, stoppedKeyPrefix+"project-backed-up")
+	require.NoError(t, err)
+	assert.False(t, noted)
 }
 
 func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) {
@@ -11148,10 +11236,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/info"):
-			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
-		case strings.HasSuffix(r.URL.Path, "/events"):
-			// No container started or volume was mounted during the copy.
 		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
 			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
 		default:
@@ -11198,7 +11282,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
 			},
 			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
-				// The new project is locked while its volumes are restored, so nothing can start it on half-copied data.
 				var imported Project
 				require.NoError(t, svc.db.WithContext(ctx).Where("name = ?", "copy").First(&imported).Error)
 				unlock, free := svc.opLock.TryLock("0:project:" + imported.ID)
@@ -11313,89 +11396,4 @@ func TestProjectServiceCreatesARestoredProject(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(proj.Path, "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "name: copy")
-}
-
-func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	uploads := upload.NewUploadService(nil)
-	svc := &ProjectService{uploads: uploads}
-	write := func(origin, originID string) string {
-		session, err := uploads.WriteSession(t.Context(), upload.WriteSessionOptions{
-			Write: func(w io.Writer) error {
-				_, err := w.Write([]byte("archive"))
-				return err
-			},
-			Kind:     types.UploadKindProjectArchive,
-			Filename: "demo.tar.gz",
-			Origin:   origin,
-			OriginID: originID,
-		})
-		require.NoError(t, err)
-		return session.ID
-	}
-	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
-	require.NoError(t, err)
-	for _, test := range []struct {
-		wantErr  error
-		name     string
-		uploadID string
-	}{
-		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
-		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantErr: common.ErrNotFound},
-		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
-		{name: "an upload for an import", uploadID: imported.ID, wantErr: common.ErrNotFound},
-		{name: "the project's bundle", uploadID: write(types.UploadOriginProjectBundle, "p1")},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID})
-			if test.wantErr == nil {
-				require.NoError(t, openErr)
-				require.Equal(t, test.uploadID, session.ID)
-				require.NoError(t, reader.Close())
-				return
-			}
-			require.ErrorIs(t, openErr, test.wantErr)
-			// A refused download leaves the session for whoever may read it.
-			_, getErr := uploads.GetSession(t.Context(), types.UploadKindProjectArchive, test.uploadID)
-			require.NoError(t, getErr)
-		})
-	}
-}
-
-func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
-	ctx := t.Context()
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	store := kv.NewKVService(db)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newUnreachableDockerService(t),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   store,
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	require.NoError(t, db.Create(&Project{ID: "p1", Name: "web", Path: t.TempDir()}).Error)
-	noted := func(projectID string) bool {
-		_, found, getErr := store.Get(ctx, exportStoppedKeyPrefix+projectID)
-		require.NoError(t, getErr)
-		return found
-	}
-
-	// The note is written before the project goes down, so it survives Arcane stopping partway through the stop.
-	require.Error(t, svc.stopForExport(ctx, "p1", types.SystemUser))
-	require.True(t, noted("p1"))
-
-	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
-	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
-	require.Error(t, svc.startExportStoppedProjects(ctx, &concurrency.KeyedMutex{}))
-	require.True(t, noted("p1"))
-	require.False(t, noted("gone"))
-
-	// A restore that takes the project over decides itself whether it runs, so recovery must not start it.
-	require.NoError(t, svc.forgetExportStop(ctx, "p1"))
-	require.False(t, noted("p1"))
 }

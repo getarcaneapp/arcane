@@ -16,7 +16,6 @@ dist/
 .bin/
 
 # Claude
-CLAUDE.md
 /.tmp/
 
 # Deepsec scan artifacts
