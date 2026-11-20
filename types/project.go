@@ -81,9 +81,9 @@ type (
 		CreatedAt     time.Time              `json:"createdAt"`
 		Kind          string                 `json:"kind"`
 		ArcaneVersion string                 `json:"arcaneVersion"`
-		Links         map[string]string      `json:"links,omitempty" doc:"Links inside the project directory that lead to files in it, by path, with their targets relative to the link"`
 		Project       ProjectManifestProject `json:"project"`
 		ComposeFiles  []string               `json:"composeFiles,omitempty"`
+		ProjectDirs   []string               `json:"projectDirs,omitempty" doc:"The project directory as configured and fully resolved, which links into it may name"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
 		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
@@ -171,8 +171,8 @@ type (
 	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
 	// the ones the backup was taken from.
 	ProjectBackupRestore struct {
-		// Report tells the user what the restore left as it is, such as an outside .env another project shares; an
-		// in-place restore of the project files must set it.
+		// Report tells the user what the restore left as it is, such as an outside .env another project shares or a
+		// link in a read-only folder; a restore of the project files must set it.
 		Report    func(ctx context.Context, message string)
 		ProjectID string
 		BackupID  string
@@ -186,7 +186,7 @@ type (
 		LockVolumes bool
 		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
 		// file in place of the link, and points links into the original's directory at the copy's files, so a new
-		// project neither shares nor changes the original's files.
+		// project neither shares nor changes the original's files; a link in a read-only folder is reported instead.
 		OwnEnv bool
 	}
 
