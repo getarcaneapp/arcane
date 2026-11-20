@@ -94,7 +94,14 @@ func New(p ModuleParams) *Module {
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
 		ProjectRoot:        p.Service.ProjectRootDirectory,
-		Activities:         p.Activity,
+		Projects: func(ctx context.Context) ([]types.ProjectRecord, error) {
+			all, err := p.Service.ListAllProjects(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return projectRecords(all), nil
+		},
+		Activities: p.Activity,
 	})
 	return &Module{
 		service:  p.Service,

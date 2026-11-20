@@ -420,15 +420,15 @@
 		...overrideWorkspaceRows,
 		...envWorkspaceRows
 	]);
-	let archiveRequiresStopped = $derived(
+	let projectRunning = $derived(
 		!!project &&
-			!project.isArchived &&
 			(Number(project.runningCount) > 0 ||
 				project.status === 'running' ||
 				project.status === 'partially running' ||
 				project.status === 'deploying' ||
 				project.status === 'restarting')
 	);
+	let archiveRequiresStopped = $derived(!!project && !project.isArchived && projectRunning);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -2601,6 +2601,7 @@
 				<ProjectBackupsPanel
 					projectId={project.id}
 					environmentId={envId}
+					running={projectRunning}
 					onRestored={({ files }) =>
 						files
 							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })

@@ -152,6 +152,9 @@ type (
 		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
 		// file in place of the link, so a new project neither shares nor changes the original's file.
 		OwnEnv bool
+		// Report tells the user what the restore left as it is, such as an outside .env another project shares; an
+		// in-place restore of the project files must set it.
+		Report func(ctx context.Context, message string)
 	}
 
 	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.

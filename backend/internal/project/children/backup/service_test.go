@@ -312,23 +312,67 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 		name     string
 		external string
 		project  string
-		own      bool
+		// worker is what the other project's .env is: a regular file, a link to the file web's .env leads to, a link
+		// to a directory, or the file web's .env leads to.
+		worker string
+		own    bool
+		shared bool
 	}{
 		// In place, the restored link leads to the file the project uses, which keeps its mode.
-		{name: "in place", external: "TOKEN=restored"},
+		{name: "in place", worker: "file", external: "TOKEN=restored"},
 		// A new project must not share or change the original's file.
-		{name: "as a new project", own: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+		{name: "as a new project", worker: "file", own: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+		// Another project's .env leads to the same file, so the restore must not change that project's values.
+		{name: "in place, shared with another project", worker: "link", shared: true, external: "TOKEN=current\n"},
+		// A link to a directory leads to no file this project's .env could be, so it doesn't block the restore.
+		{name: "in place, another project links to a directory", worker: "directory", external: "TOKEN=restored"},
+		// Another project's .env that can't be resolved can't be this file, so it doesn't stop the restore.
+		{name: "in place, another project's link loops", worker: "loop", external: "TOKEN=restored"},
+		// web/.env -> ../worker/.env names worker's regular .env through the linked projects root.
+		{name: "in place, leading to another project's .env", worker: "target", shared: true, external: "TOKEN=current\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			projectsRoot := t.TempDir()
+			// The projects root is reached through a link, so paths that aren't fully resolved name files differently.
+			projectsRoot := filepath.Join(t.TempDir(), "projects")
+			require.NoError(t, os.Symlink(t.TempDir(), projectsRoot))
 			projectPath := filepath.Join(projectsRoot, "web")
+			workerPath := filepath.Join(projectsRoot, "worker")
 			require.NoError(t, os.Mkdir(projectPath, 0o755))
+			require.NoError(t, os.Mkdir(workerPath, 0o755))
+			workerEnv := filepath.Join(workerPath, projects.EffectiveEnvFileName)
 			external := filepath.Join(t.TempDir(), "web.env")
+			link := external
+			if test.worker == "target" {
+				external = workerEnv
+				link = filepath.Join("..", "worker", projects.EffectiveEnvFileName)
+			}
 			require.NoError(t, os.WriteFile(external, []byte("TOKEN=current\n"), 0o600))
 			envPath := filepath.Join(projectPath, projects.EffectiveEnvFileName)
-			require.NoError(t, os.Symlink(external, envPath))
+			require.NoError(t, os.Symlink(link, envPath))
+			switch test.worker {
+			case "file":
+				require.NoError(t, os.WriteFile(workerEnv, []byte("TOKEN=worker\n"), 0o600))
+			case "link":
+				require.NoError(t, os.Symlink(external, workerEnv))
+			case "directory":
+				require.NoError(t, os.Symlink(t.TempDir(), workerEnv))
+			case "loop":
+				require.NoError(t, os.Symlink(workerEnv, workerEnv))
+			}
+			s := &Service{deps: Dependencies{Projects: func(context.Context) ([]types.ProjectRecord, error) {
+				return []types.ProjectRecord{{ID: "p1", Name: "web", Path: projectPath}, {ID: "p2", Name: "worker", Path: workerPath}}, nil
+			}}}
+			var reported []string
+			report := func(_ context.Context, message string) { reported = append(reported, message) }
 
-			require.NoError(t, restoreEnv(t.Context(), projectsRoot, types.ProjectBackupRestore{ProjectPath: projectPath, OwnEnv: test.own}, "TOKEN=restored"))
+			require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: projectPath, OwnEnv: test.own, Report: report}, "TOKEN=restored"))
+			if test.shared {
+				resolved, err := filepath.EvalSymlinks(external)
+				require.NoError(t, err)
+				require.Equal(t, []string{"The .env file " + resolved + " was left as it is, since project worker uses it too; only the link to it was restored"}, reported)
+			} else {
+				require.Empty(t, reported)
+			}
 			content, err := os.ReadFile(external)
 			require.NoError(t, err)
 			assert.Equal(t, test.external, string(content))

@@ -37,7 +37,7 @@
 		VolumesIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectBackupListQuery, projectExportOptionsQuery } from '#lib/query/projects.js';
+	import { projectBackupListQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
@@ -63,10 +63,13 @@
 	let {
 		projectId,
 		environmentId,
+		running,
 		onRestored
 	}: {
 		projectId: string;
 		environmentId: string;
+		// Whether the project runs decides if the restore stops it and offers to deploy it again.
+		running: boolean;
 		// Called when a restore ends, so the page reloads what it shows; files says the project files were restored.
 		onRestored?: (restored: { files: boolean }) => Promise<unknown>;
 	} = $props();
@@ -111,16 +114,6 @@
 	const needsS3Destination = $derived(destination !== 'local');
 	const restoreVolumes = $derived((restoreItem?.volumes ?? []).filter((volume) => volume.included));
 	const selectedRestoreVolumes = $derived(restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? true));
-	// Whether the project runs decides if the restore stops it and offers to deploy it again.
-	const restoreOptionsQuery = createQuery(() => ({
-		...projectExportOptionsQuery(environmentId, projectId),
-		enabled: restoreOpen,
-		staleTime: 0
-	}));
-	// Only a finished, successful check counts; otherwise the server decides from the project's current state.
-	const projectRunning = $derived(
-		restoreOptionsQuery.isSuccess && !restoreOptionsQuery.isFetching && (restoreOptionsQuery.data?.running ?? false)
-	);
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -163,12 +156,12 @@
 	let restoreWasRunning = false;
 	let restoringFiles = false;
 	$effect(() => {
-		const running = restoreActivity.activeIds.length > 0;
-		if (restoreWasRunning && !running) {
+		const restoring = restoreActivity.activeIds.length > 0;
+		if (restoreWasRunning && !restoring) {
 			void onRestored?.({ files: restoringFiles });
 			restoringFiles = false;
 		}
-		restoreWasRunning = running;
+		restoreWasRunning = restoring;
 	});
 
 	onMount(async () => {
@@ -272,7 +265,7 @@
 					{
 						files: restoreFiles,
 						volumes: selectedRestoreVolumes.map((volume) => volume.key),
-						redeploy: projectRunning ? redeploy : undefined
+						redeploy: running ? redeploy : undefined
 					},
 					environmentId
 				)
@@ -662,17 +655,7 @@
 			<Alert.Description>{m.restore_replaces_current_data()}</Alert.Description>
 		</Alert.Root>
 		{@render RestoreParts(false)}
-		{#if restoreOptionsQuery.isFetching}
-			<div class="flex items-center gap-2 text-sm text-muted-foreground">
-				<Spinner class="size-4" />
-				<span>{m.common_loading()}</span>
-			</div>
-		{:else if restoreOptionsQuery.error}
-			<Alert.Root variant="destructive" size="sm">
-				<AlertIcon class="size-4" />
-				<Alert.Description>{extractApiErrorMessage(restoreOptionsQuery.error)}</Alert.Description>
-			</Alert.Root>
-		{:else if projectRunning}
+		{#if running}
 			<LabeledSwitch
 				id="project-restore-redeploy"
 				checked={redeploy}
@@ -691,7 +674,7 @@
 			customLabel={m.volumes_backups_restore()}
 			onclick={handleRestore}
 			loading={restoring}
-			disabled={restoring || restoreOptionsQuery.isFetching || (!restoreFiles && selectedRestoreVolumes.length === 0)}
+			disabled={restoring || (!restoreFiles && selectedRestoreVolumes.length === 0)}
 			data-testid="project-restore-submit"
 		/>
 	{/snippet}

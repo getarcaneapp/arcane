@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -89,7 +90,9 @@ type (
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
 		// ProjectRoot returns the projects directory holding the project directory, which project file writes stay in.
 		ProjectRoot func(ctx context.Context, projectPath string) (string, error)
-		Activities  activity.MessageAppender
+		// Projects lists every project, archived ones included.
+		Projects   func(ctx context.Context) ([]types.ProjectRecord, error)
+		Activities activity.MessageAppender
 	}
 
 	Service struct {
@@ -1748,7 +1751,9 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 }
 
 func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
-	if err := r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID}); err != nil {
+	if err := r.restore(ctx, types.ProjectBackupRestore{
+		ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID, Report: r.report,
+	}); err != nil {
 		return err
 	}
 	return r.verify(ctx, p)
@@ -1784,7 +1789,9 @@ func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) 
 			downErr = r.down(ctx)
 		}
 		if downErr == nil {
-			undoErr = r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID})
+			undoErr = r.restore(ctx, types.ProjectBackupRestore{
+				ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID, Report: r.report,
+			})
 			cleanup = append(cleanup, r.remove(ctx, p.Created))
 		}
 	}
@@ -2180,21 +2187,56 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	if err != nil {
 		return err
 	}
-	return restoreEnv(ctx, projectsRoot, opts, env)
+	return s.restoreEnv(ctx, projectsRoot, opts, env)
 }
 
 // restoreEnv writes a .env kept outside the project directory through the link the snapshot restored, as an edit of
-// the .env does; with OwnEnv it replaces the link with a file of its own, as an import of an export does.
-func restoreEnv(ctx context.Context, projectsRoot string, opts types.ProjectBackupRestore, content string) error {
+// the .env does; with OwnEnv it replaces the link with a file of its own, as an import of an export does. A file
+// another project's .env leads to keeps its contents, since the restore leaves other projects as they are.
+func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts types.ProjectBackupRestore, content string) error {
 	if opts.OwnEnv {
 		if err := projects.RemoveProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName); err != nil {
 			return err
+		}
+	} else {
+		file, sharer, err := s.envSharer(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if sharer != "" {
+			opts.Report(ctx, fmt.Sprintf("The .env file %s was left as it is, since project %s uses it too; only the link to it was restored", file, sharer))
+			return nil
 		}
 	}
 	if err := projects.WriteProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName, content); err != nil {
 		return fmt.Errorf("restore the .env file the backup stored: %w", err)
 	}
 	return nil
+}
+
+// envSharer returns the file the project's .env leads to and the name of another project whose .env leads to the same
+// file, if any. Both sides resolve every link on the way, since a path through a linked directory names the same file
+// differently.
+func (s *Service) envSharer(ctx context.Context, opts types.ProjectBackupRestore) (file, sharer string, err error) {
+	file, err = filepath.EvalSymlinks(filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve the restored .env file: %w", err)
+	}
+	all, err := s.deps.Projects(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	for _, other := range all {
+		if other.ID == opts.ProjectID {
+			continue
+		}
+		// A .env that doesn't resolve, such as a dangling link or a link loop, leads to no file, so it shares none.
+		target, resolveErr := filepath.EvalSymlinks(filepath.Join(other.Path, projects.EffectiveEnvFileName))
+		if resolveErr == nil && target == file {
+			return file, other.Name, nil
+		}
+	}
+	return file, "", nil
 }
 
 // restoreInput mounts the targets under /dest as the backup laid them out under /snapshot and restores the snapshot root,
