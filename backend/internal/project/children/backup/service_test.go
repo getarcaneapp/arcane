@@ -18,7 +18,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	composeapi "github.com/docker/compose/v5/pkg/api"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -1014,7 +1014,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 
 func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 	labelsFor := func(project, service string) map[string]string {
-		return map[string]string{composeapi.ProjectLabel: project, composeapi.ServiceLabel: service}
+		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
 	}
 	arcane := labelsFor("demo", "arcane")
 	arcane["com.getarcaneapp.arcane"] = "true"
@@ -1043,7 +1043,7 @@ func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 			// The project label filter is what keeps other projects out.
 			if filter := r.URL.Query().Get("filters"); filter != "" {
 				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, `"`+composeapi.ProjectLabel+"="+c.Labels[composeapi.ProjectLabel]+`"`)
+					return !strings.Contains(filter, `"`+api.ProjectLabel+"="+c.Labels[api.ProjectLabel]+`"`)
 				})
 			}
 			w.Header().Set("Content-Type", "application/json")
