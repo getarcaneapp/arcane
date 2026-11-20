@@ -177,11 +177,12 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	if err != nil {
 		return nil, err
 	}
-	// Stopping the project would stop Arcane too, and with it the export that starts the project again.
-	if opts.Request.StopProject && state.runsArcane {
-		return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
-	}
-	if opts.Request.StopProject {
+	// Only a running project is stopped for the export, as writeBundle does; a stopped one is left as it is.
+	if state.active && opts.Request.StopProject {
+		// Stopping the project would stop Arcane too, and with it the export that starts the project again.
+		if state.runsArcane {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
+		}
 		if unnamedErr := s.refuseUnnamedVolumes(ctx, project); unnamedErr != nil {
 			return nil, unnamedErr
 		}
