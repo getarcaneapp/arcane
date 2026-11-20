@@ -86,12 +86,8 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			if relativePath != EffectiveEnvFileName {
 				return nil
 			}
-			envPath, perm, _, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, relativePath))
-			if err != nil {
-				return err
-			}
-			content, err := acfs.Host{}.ReadFile(ctx, envPath)
-			if err != nil {
+			content, perm, external, err := ReadExternalEnvFile(ctx, projectPath)
+			if err != nil || !external {
 				return err
 			}
 			if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -146,6 +142,28 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		return fmt.Errorf("finish project archive compression: %w", closeErr)
 	}
 	return nil
+}
+
+// ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside
+// the project directory, so a copy of the directory alone would keep only the link. external is false for a regular
+// .env, a link inside the directory, or no .env at all.
+func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
+	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
+	if err != nil || !isSymlink {
+		return nil, 0, false, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("resolve project directory: %w", err)
+	}
+	if IsSafeSubdirectory(resolvedRoot, envPath) {
+		return nil, 0, false, nil
+	}
+	content, err = acfs.Host{}.ReadFile(ctx, envPath)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return content, perm, true, nil
 }
 
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {

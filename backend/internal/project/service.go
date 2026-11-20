@@ -652,6 +652,13 @@ func (s *ProjectService) forgetStopped(ctx context.Context, projectID string) er
 	return s.kv.Delete(ctx, stoppedKeyPrefix+projectID)
 }
 
+// notedStopped reports whether the project's stop note remains, so a backup restarts containers only while no person
+// has decided whether the project runs.
+func (s *ProjectService) notedStopped(ctx context.Context, projectID string) (bool, error) {
+	_, noted, err := s.kv.Get(ctx, stoppedKeyPrefix+projectID)
+	return noted, err
+}
+
 // RecoverStoppedProjects starts, in the background, the projects Arcane stopped and could not start again, retrying
 // until every one runs. It runs at startup and when a backup leaves a project down; a call while it runs makes it
 // check once more, without waiting out the backoff of an earlier failure.
