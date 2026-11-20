@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -186,6 +187,8 @@ const (
 )
 
 var (
+	// unnamedVolume matches the names Docker gives volumes created without one.
+	unnamedVolume     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 	projectDetails    = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
@@ -1308,6 +1311,9 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
+	if unnamedErr := refuseUnnamedVolumes(stopped); unnamedErr != nil {
+		return "", unnamedErr
+	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
 		ID:        uuid.New().String(),
@@ -1889,6 +1895,9 @@ func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) er
 	case len(stopped) > 0 && !p.Stopped && !p.MayStop:
 		return common.Classify(common.ErrConflict, errors.New("the project's containers changed after the restore was requested; start it again"))
 	}
+	if unnamedErr := refuseUnnamedVolumes(stopped); unnamedErr != nil {
+		return unnamedErr
+	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -1900,6 +1909,23 @@ func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) er
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// refuseUnnamedVolumes refuses stopped containers that keep data in an unnamed volume: only the container links the
+// volume to its service, so removing it would leave the data behind and the next deploy would start on an empty volume.
+func refuseUnnamedVolumes(stopped []container.Summary) error {
+	for _, c := range stopped {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) {
+				return common.Classify(common.ErrValidation, fmt.Errorf(
+					"stopped container %s keeps data at %s in an unnamed volume, which removing the container for the restore would lose; "+
+						"remove the container if that data is not needed, or move it to a named volume, then restore again",
+					docker.ContainerNameFromNames(c.Names), m.Destination,
+				))
+			}
+		}
+	}
+	return nil
 }
 
 // projectContainers lists the project's own containers, leaving out Arcane's and its helpers as containerUse does.
