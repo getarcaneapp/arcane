@@ -91,10 +91,11 @@ export class ReconnectingWebSocket<T = unknown> {
 		}
 
 		this.ws = socket;
+		let openedAt = 0;
 
 		socket.onopen = () => {
 			if (socket !== this.ws) return;
-			this.attempt = 0;
+			openedAt = Date.now();
 			this.connecting = false;
 			this.opts.onOpen?.();
 		};
@@ -122,6 +123,7 @@ export class ReconnectingWebSocket<T = unknown> {
 
 		socket.onclose = () => {
 			if (socket !== this.ws) return;
+			if (openedAt && Date.now() - openedAt >= 5000) this.attempt = 0;
 			this.opts.onClose?.();
 			this.ws = null;
 			this.connecting = false;

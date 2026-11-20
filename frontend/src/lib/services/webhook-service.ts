@@ -1,12 +1,20 @@
+import type { Paginated } from '#lib/types/base.js';
+import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { WebhookCreate, WebhookUpdate } from '#lib/types/ui/webhook.js';
 import type { Webhook, WebhookCreated } from '#lib/types/webhook.js';
+import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class WebhookAPIService extends BaseAPIService {
-	async getWebhooks(environmentId: string, config?: APIRequestConfig): Promise<Webhook[]> {
-		const res = await this.api.get<{ data: Webhook[] }>(`/agents/${environmentId}/webhooks`, config);
-		return res.data.data;
+	async getWebhooks(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<Webhook>> {
+		const params = transformPaginationParams(options);
+		const res = await this.api.get<Paginated<Webhook>>(`/agents/${environmentId}/webhooks`, { ...config, params });
+		return res.data;
 	}
 
 	async create(webhook: WebhookCreate, environmentId: string): Promise<WebhookCreated> {

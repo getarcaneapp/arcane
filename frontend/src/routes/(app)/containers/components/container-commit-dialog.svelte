@@ -10,6 +10,7 @@
 	import { InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -69,7 +70,9 @@
 			);
 			if (committed.error !== null) {
 				console.error('Failed to commit container:', committed.error);
-				toast.error(m.containers_commit_failed({ name: containerName }));
+				toast.error(m.containers_commit_failed({ name: containerName }), {
+					description: extractApiErrorMessage(committed.error)
+				});
 			} else {
 				toast.success(m.containers_commit_success({ imageId: committed.data.id }));
 				didCommit = true;

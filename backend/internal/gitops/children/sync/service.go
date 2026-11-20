@@ -366,23 +366,23 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	if pinned != "" && pinned != source.commitHash {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			return source, openErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to open repository", openErr)
 		}
 		tree, treeErr := repo.Worktree()
 		if treeErr != nil {
-			return source, treeErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to open repository worktree", treeErr)
 		}
 		if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(pinned)}); checkoutErr != nil {
-			return source, checkoutErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to check out revision "+pinned, checkoutErr)
 		}
 		source.commitHash = pinned
 	}
 	if source.commitHash == "" {
-		return source, errors.New("GitOps source revision is unavailable")
+		return source, s.failSync(ctx, result, sync, actor, "GitOps source revision is unavailable", errors.New("GitOps source revision is unavailable"))
 	}
 	revision, err := json.Marshal(syncRevision{Commit: source.commitHash})
 	if err != nil {
-		return source, err
+		return source, s.failSync(ctx, result, sync, actor, "Failed to record sync revision", err)
 	}
 	progress := types.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: types.RunStatusRunning, RecoveryData: revision}
 	if progressErr := jobcontext.Progress(ctx, progress); progressErr != nil {

@@ -359,7 +359,18 @@ function createActivityStore() {
 		if (!core.environmentState(environmentId)) {
 			return;
 		}
-		const normalizedActivities = sortActivities(activities.map((activity) => normalizeActivity(activity, environmentId)));
+		const existing = state.environmentActivities[environmentId] ?? [];
+		const normalizedActivities = sortActivities(
+			activities.map((activity) => {
+				const normalized = normalizeActivity(activity, environmentId);
+				const current = existing.find((item) => item.id === activity.id);
+				const currentTime = parseInstant(current?.updatedAt);
+				const incomingTime = parseInstant(normalized.updatedAt);
+				if (current && currentTime && incomingTime && currentTime.epochNanoseconds > incomingTime.epochNanoseconds)
+					return current;
+				return normalized;
+			})
+		);
 		let details = state.details;
 		for (const activity of normalizedActivities) {
 			noteActivityStatus(activity);
