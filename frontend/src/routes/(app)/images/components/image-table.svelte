@@ -133,21 +133,25 @@
 	}
 
 	let selectedPullTags = $state.raw(new Map<string, string>());
-	const pullableIds = $derived((selectedIds ?? []).filter((id) => selectedPullTags.has(id)));
+	const pagePullTags = $derived(new Map(images.data.map((image) => [rowKey(image), pullableTag(image)])));
 
-	function setSelectedIds(next: string[]) {
-		const pageTags = new Map(images.data.map((image) => [rowKey(image), pullableTag(image)]));
+	function resolvePullTags(ids: string[]) {
 		const tags = new Map<string, string>();
-		for (const id of next) {
-			const tag = pageTags.has(id) ? pageTags.get(id) : selectedPullTags.get(id);
+		for (const id of ids) {
+			const tag = pagePullTags.has(id) ? pagePullTags.get(id) : selectedPullTags.get(id);
 			if (tag) tags.set(id, tag);
 		}
-		selectedPullTags = tags;
+		return tags;
+	}
+
+	const pullTags = $derived(resolvePullTags(selectedIds ?? []));
+
+	function setSelectedIds(next: string[]) {
+		selectedPullTags = resolvePullTags(next);
 		selectedIds = next;
 	}
 
-	async function pullSelectedImage(id: string, environmentId: string) {
-		const repoTag = selectedPullTags.get(rowKey({ id, environmentId, environmentTagged: true })) ?? '';
+	async function pullSelectedImage(repoTag: string, environmentId: string) {
 		const pulled = await imageService.pullImageStream(repoTag, undefined, environmentId);
 		if (pulled.cancelled) throw new SessionCancelledError();
 		if (!pulled.success) throw new Error(pulled.error ?? m.images_pull_failed());
@@ -155,13 +159,14 @@
 	}
 
 	function handlePullSelected() {
-		const ids = pullableIds;
+		const tags = pullTags;
 		bulkConfirmAndRun({
-			ids,
-			title: m.pull_count_images({ count: ids.length }),
-			message: m.pull_images_confirm_message({ count: ids.length }),
+			ids: Array.from(tags.keys()),
+			title: m.pull_count_images({ count: tags.size }),
+			message: m.pull_images_confirm_message({ count: tags.size }),
 			confirmLabel: m.pull(),
-			runInEnvironment: pullSelectedImage,
+			runInEnvironment: (id, environmentId) =>
+				pullSelectedImage(tags.get(rowKey({ id, environmentId, environmentTagged: true })) ?? '', environmentId),
 			messages: {
 				success: (count) => m.pulled_count_images({ count }),
 				partial: (success, total, failed) => m.pulled_images_partial({ success, total, failed }),
@@ -360,12 +365,12 @@
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'pull',
-			label: m.pull_selected_count({ count: pullableIds.length }),
+			label: m.pull_selected_count({ count: pullTags.size }),
 			action: 'pull',
 			onclick: handlePullSelected,
 			loading: isLoading.pulling,
-			disabled: !canPullImage || isLoading.pulling || pullableIds.length === 0,
-			disabledReason: pullableIds.length === 0 ? m.images_pull_no_tag() : undefined,
+			disabled: !canPullImage || isLoading.pulling || pullTags.size === 0,
+			disabledReason: pullTags.size === 0 ? m.images_pull_no_tag() : undefined,
 			icon: DownloadIcon
 		},
 		{

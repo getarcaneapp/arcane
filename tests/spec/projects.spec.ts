@@ -402,6 +402,47 @@ test.describe('Projects Page', () => {
 		}
 	});
 
+	test('should destroy selected projects from the projects page', async ({ page }) => {
+		const projectName = `test-project-bulk-destroy-${Date.now()}`;
+
+		try {
+			await createProjectViaUI(page, projectName);
+			await navigateToProjects(page);
+
+			const rows = page
+				.getByRole('row')
+				.filter({ has: page.getByRole('checkbox', { name: 'Select row', exact: true }) });
+			await expect(rows.nth(1)).toBeVisible();
+			const destroyBodies: unknown[] = [];
+			await page.route('**/api/agents/0/projects/*', async (route) => {
+				if (route.request().method() !== 'DELETE') {
+					await route.continue();
+					return;
+				}
+				destroyBodies.push(route.request().postDataJSON());
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true, data: { message: 'Project removed' } })
+				});
+			});
+
+			await rows.nth(0).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+			await rows.nth(1).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+			await page.getByRole('button', { name: 'Destroy (2)', exact: true }).click();
+
+			const dialog = page.getByRole('dialog');
+			await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
+
+			await expect.poll(() => destroyBodies.length).toBe(2);
+			expect(destroyBodies).toEqual([{ removeVolumes: false }, { removeVolumes: false }]);
+			await expect(page.getByText('Successfully destroyed 2 project(s)')).toBeVisible();
+			await expect(page.getByRole('button', { name: /^Destroy \(/ })).toHaveCount(0);
+		} finally {
+			await destroyProjectByNameViaAPI(page, projectName);
+		}
+	});
+
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
 		expect(realProjects.length, 'No projects available for navigation test').toBeGreaterThan(0);
 
