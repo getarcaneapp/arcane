@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
-	"github.com/shirou/gopsutil/v4/disk"
 
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
@@ -25,6 +24,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
@@ -45,12 +45,8 @@ type (
 		Write    func(io.Writer) error
 		Kind     string
 		Filename string
-		// Origin and OriginID record what wrote the session, such as an export of a project.
-		Origin   string
-		OriginID string
 	}
 
-	// reserveWriter stops a written session before it eats into the reserve, checking again every reserveCheckBytes.
 	reserveWriter struct {
 		ctx       context.Context
 		w         io.Writer
@@ -62,9 +58,7 @@ type (
 const (
 	sessionMetaFilename = "meta.json"
 	sessionDataFilename = "data"
-	// uploadReserveBytes is the least free space a staged upload leaves on the upload filesystem.
-	uploadReserveBytes = 1 << 30
-	reserveCheckBytes  = 64 << 20
+	reserveCheckBytes   = 64 << 20
 )
 
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -125,9 +119,6 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 	return s.CheckFreeSpace(ctx, size)
 }
 
-// CheckFreeSpace refuses size bytes more when they would leave less than the reserve free. Staged uploads, including
-// the expanded entries of a project bundle, keep the same room free as unpacking a project archive does, so a large one
-// can't fill the disk other work needs.
 func (s *UploadService) CheckFreeSpace(ctx context.Context, size int64) error {
 	checked := s.root
 	for {
@@ -136,12 +127,11 @@ func (s *UploadService) CheckFreeSpace(ctx context.Context, size int64) error {
 		}
 		checked = filepath.Dir(checked)
 	}
-	usage, err := disk.UsageWithContext(ctx, checked)
+	budget, reserve, err := projects.FreeSpaceBudget(ctx, checked)
 	if err != nil {
 		return fmt.Errorf("check free space for the upload: %w", err)
 	}
-	reserve := max(uploadReserveBytes, int64(usage.Total/20))
-	if size > int64(usage.Free)-reserve {
+	if size > budget {
 		return fmt.Errorf("%w: the upload needs %s, more than can be stored while keeping %s free", common.ErrUploadSessionInvalid,
 			units.BytesSize(float64(size)), units.BytesSize(float64(reserve)))
 	}
@@ -281,7 +271,6 @@ func (s *UploadService) ReadChunk(ctx context.Context, kind, uploadID string, in
 	if err != nil {
 		return nil, fmt.Errorf("open upload session data: %w", err)
 	}
-	// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 	defer func() { _ = file.Close() }()
 	if _, seekErr := file.Seek(int64(index)*session.ChunkSize, io.SeekStart); seekErr != nil {
 		return nil, fmt.Errorf("seek chunk %d: %w", index, seekErr)
@@ -365,8 +354,6 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
-	// What the callback writes isn't known up front, and it may stage more files while writing, so free space is
-	// rechecked as the file grows.
 	if writeErr := opts.Write(&reserveWriter{
 		ctx:     ctx,
 		w:       file,
@@ -398,8 +385,6 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 		TotalChunks:    totalChunks,
 		ReceivedChunks: received,
 		CreatedAt:      time.Now().UTC(),
-		Origin:         opts.Origin,
-		OriginID:       opts.OriginID,
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 		return nil, writeMetaErr
@@ -426,7 +411,6 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 		return nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
-		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
@@ -475,17 +459,14 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 		return nil, nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
-		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
 	if removeErr := (acfs.Root{Path: s.root}).Remove(ctx, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
-		// Opened only for reading; the failed mark is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("mark upload session consumed: %w", removeErr)
 	}
 	cleanup := func() {
-		// Opened only for reading and fully consumed by the caller; closing it can't lose data.
 		_ = file.Close()
 		// context.WithoutCancel: the session must be removed even when the
 		// consuming request was cancelled mid-restore.

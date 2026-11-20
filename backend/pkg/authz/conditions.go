@@ -136,29 +136,6 @@ var (
 		},
 	}
 
-	// UploadOriginConditions make reading a session an export wrote take the export's rights.
-	UploadOriginConditions = PermissionConditions{
-		{
-			In:         ConditionInResource,
-			Field:      "origin",
-			Value:      types.UploadOriginProjectExport,
-			Permission: PermProjectsRead,
-		},
-		{
-			In:         ConditionInResource,
-			Field:      "origin",
-			Value:      types.UploadOriginProjectBundle,
-			Permission: PermProjectsRead,
-		},
-		{
-			In:         ConditionInResource,
-			Field:      "origin",
-			Value:      types.UploadOriginProjectBundle,
-			Permission: PermVolumesBackup,
-		},
-	}
-
-	// ProjectExportConditions match "volumes" as "true" when the request names any volume.
 	ProjectExportConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,

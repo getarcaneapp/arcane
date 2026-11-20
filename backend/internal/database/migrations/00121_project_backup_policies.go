@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v120SQLiteUp = `
+	v121SQLiteUp = `
 CREATE TABLE IF NOT EXISTS project_backup_policies (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_project_backup_policies_project_id ON project_bac
 ALTER TABLE project_backups ADD COLUMN policy_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_project_backups_policy_id ON project_backups(policy_id);
 `
-	v120PostgresUp = `
+	v121PostgresUp = `
 CREATE TABLE IF NOT EXISTS project_backup_policies (
     id text PRIMARY KEY,
     project_id text NOT NULL,
@@ -43,13 +43,13 @@ CREATE INDEX IF NOT EXISTS idx_project_backup_policies_project_id ON project_bac
 ALTER TABLE project_backups ADD COLUMN IF NOT EXISTS policy_id text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_project_backups_policy_id ON project_backups(policy_id);
 `
-	v120SQLiteDown = `
+	v121SQLiteDown = `
 DROP INDEX IF EXISTS idx_project_backups_policy_id;
 ALTER TABLE project_backups DROP COLUMN policy_id;
 DROP INDEX IF EXISTS idx_project_backup_policies_project_id;
 DROP TABLE IF EXISTS project_backup_policies;
 `
-	v120PostgresDown = `
+	v121PostgresDown = `
 DROP INDEX IF EXISTS idx_project_backups_policy_id;
 ALTER TABLE project_backups DROP COLUMN IF EXISTS policy_id;
 DROP INDEX IF EXISTS idx_project_backup_policies_project_id;
@@ -58,5 +58,5 @@ DROP TABLE IF EXISTS project_backup_policies;
 )
 
 func init() {
-	goose.AddMigrationContext(run(v120SQLiteUp, v120PostgresUp), run(v120SQLiteDown, v120PostgresDown))
+	goose.AddMigrationContext(run(v121SQLiteUp, v121PostgresUp), run(v121SQLiteDown, v121PostgresDown))
 }

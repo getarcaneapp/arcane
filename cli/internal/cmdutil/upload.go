@@ -24,9 +24,7 @@ import (
 )
 
 type DownloadOptions struct {
-	OutputPath string
-	// Path is the endpoint that streams the session's file, such as a project export's download.
-	Path         string
+	OutputPath   string
 	Special      bool
 	ShowProgress bool
 }
@@ -115,12 +113,11 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 func DownloadUploadSession(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
 	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
 
-	resp, err := c.RequestRaw(ctx, http.MethodGet, opts.Path, nil, nil)
+	resp, err := c.RequestRaw(ctx, http.MethodGet, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID), nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to download file: %w", err)
 	}
 	defer func() {
-		// The body is read to the end or the download already failed; closing it can't change the file written.
 		_ = resp.Body.Close()
 	}()
 	if statusErr := EnsureSuccessStatus(resp); statusErr != nil {
@@ -156,7 +153,6 @@ func DownloadUploadSession(ctx context.Context, c *client.Client, session types.
 		if err == nil {
 			err = acfs.Host{}.Rename(ctx, tempPath, absPath)
 		}
-		// A partial file left behind is reported along with the failure.
 		if err != nil {
 			if removeErr := (acfs.Host{}).Remove(context.WithoutCancel(ctx), tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				err = errors.Join(err, fmt.Errorf("remove partial download %s: %w", tempPath, removeErr))
