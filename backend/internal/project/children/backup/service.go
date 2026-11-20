@@ -2600,12 +2600,23 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and backs up the rest of its
 		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-			outcome, err := s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
+			// Each attempt goes on from what the one before it saved, so containers a later backup stopped are restarted
+			// rather than backed up again.
+			latest := previous
+			latest.Outcome.Targets = slices.Clone(previous.Outcome.Targets)
+			attempt := func() (types.SchedulerOutcome, error) {
+				tracked := jobcontext.WithExecution(ctx, latest, func(target types.TargetOutcome) error {
+					latest.Outcome.Targets = jobcontext.Merge(latest.Outcome.Targets, target)
+					return jobcontext.Progress(ctx, target)
+				})
+				return s.backUpGlobal(tracked, globalRun{PolicyID: policyID}, latest)
+			}
+			outcome, err := attempt()
 			for errors.Is(err, actor.ErrJobRejected) {
-				if waitErr := s.awaitCheckpointAdmissions(ctx, previous); waitErr != nil {
+				if waitErr := s.awaitCheckpointAdmissions(ctx, latest); waitErr != nil {
 					return types.SchedulerOutcome{}, waitErr
 				}
-				outcome, err = s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
+				outcome, err = attempt()
 			}
 			return outcome, err
 		},
@@ -2808,6 +2819,7 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
 			DestinationID: policy.S3DestinationID,
 			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+			InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
 			Tables:        backup.VolumeRepositoryTables,
 		})
 	}

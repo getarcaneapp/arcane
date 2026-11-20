@@ -92,6 +92,16 @@ func requireUploadPermission(ctx context.Context, kind, environmentID string) er
 	return nil
 }
 
+func requireOriginPermission(ctx context.Context, session *types.UploadSession, environmentID string) error {
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range authz.UploadOriginPermissions(session.Origin) {
+		if !ps.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
+}
+
 func sessionResponse(session *types.UploadSession) *handlerutil.Out[types.UploadSession] {
 	return &handlerutil.Out[types.UploadSession]{
 		Body: types.ApiResponse[types.UploadSession]{
@@ -133,12 +143,22 @@ func (h *UploadHandler) ReadChunk(ctx context.Context, input *ReadChunkInput) (*
 	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
+	sessionErr := func(err error) error {
+		if httpErr := SessionHTTPError(err); httpErr != nil {
+			return httpErr
+		}
+		return huma.Error500InternalServerError(err.Error())
+	}
+	session, err := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
+	if err != nil {
+		return nil, sessionErr(err)
+	}
+	if originErr := requireOriginPermission(ctx, session, input.EnvironmentID); originErr != nil {
+		return nil, originErr
+	}
 	data, err := h.uploadService.ReadChunk(ctx, input.Kind, input.UploadID, input.Index)
 	if err != nil {
-		if httpErr := SessionHTTPError(err); httpErr != nil {
-			return nil, httpErr
-		}
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, sessionErr(err)
 	}
 	return &ReadChunkOutput{
 		ContentType: "application/octet-stream",
@@ -157,6 +177,9 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
+	if originErr := requireOriginPermission(ctx, session, input.EnvironmentID); originErr != nil {
+		return nil, originErr
+	}
 	return sessionResponse(session), nil
 }
 
@@ -170,6 +193,11 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 			return nil, httpErr
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	if originErr := requireOriginPermission(ctx, session, input.EnvironmentID); originErr != nil {
+		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
+		_ = reader.Close()
+		return nil, originErr
 	}
 	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
