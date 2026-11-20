@@ -55,6 +55,8 @@ type (
 		Path        string                        `json:"path"`
 		OperationID string                        `json:"operationId,omitempty"`
 		Summary     string                        `json:"summary,omitempty"`
+		// Alternative marks a permission that allows the request on its own, instead of the endpoint's conditions.
+		Alternative bool `json:"alternative,omitzero"`
 	}
 
 	PermissionExportActionSelect struct {
@@ -73,6 +75,7 @@ type (
 		ActionParam       string               `json:"actionParam,omitempty"`
 		ActionPermissions map[string]string    `json:"actionPermissions,omitempty"`
 		Conditions        PermissionConditions `json:"conditionalPermissions,omitempty"`
+		Alternatives      PermissionConditions `json:"alternativePermissions,omitempty"`
 		GlobalAdmin       bool                 `json:"globalAdmin,omitzero"`
 	}
 )
@@ -159,6 +162,16 @@ func BuildPermissionExport(humaAPI *OperationRecorder, routes []PermissionRoute)
 				Condition:   new(condition),
 			})
 		}
+		for _, condition := range endpoint.Alternatives {
+			refs[condition.Permission] = append(refs[condition.Permission], PermissionExportEndpointRef{
+				Method:      endpoint.Method,
+				Path:        endpoint.Path,
+				OperationID: endpoint.OperationID,
+				Summary:     endpoint.Summary,
+				Condition:   new(condition),
+				Alternative: true,
+			})
+		}
 	}
 
 	catalog := PermissionCatalog()
@@ -205,6 +218,7 @@ func exportEndpoint(method, path string, op *huma.Operation) PermissionExportEnd
 	globalAdmin, _ := op.Metadata[MetaRequireGlobalAdmin].(bool)
 	sudo, _ := op.Metadata[MetaRequireSudo].(bool)
 	conditions, _ := op.Metadata[MetaPermissionConditions].(PermissionConditions)
+	alternatives, _ := op.Metadata[MetaPermissionAlternatives].(PermissionConditions)
 	access, _ := op.Metadata[MetaAccess].(string)
 
 	return PermissionExportEndpoint{
@@ -235,6 +249,7 @@ func exportEndpoint(method, path string, op *huma.Operation) PermissionExportEnd
 		ActionParam:       actionParam,
 		ActionPermissions: actionPerms,
 		Conditions:        conditions,
+		Alternatives:      alternatives,
 		GlobalAdmin:       globalAdmin && (len(actionPerms) > 0 || perm != ""),
 	}
 }
