@@ -667,7 +667,14 @@ func (s *ProjectService) startExportStoppedProjects(ctx context.Context) error {
 			errs = append(errs, lockErr)
 			continue
 		}
-		errs = append(errs, s.deployProject(ctx, projectID, types.SystemUser, nil))
+		// Read again under the lock: a deploy or a deliberate stop since the list was read drops the note.
+		_, noted, getErr := s.kv.Get(ctx, entry.Key)
+		switch {
+		case getErr != nil:
+			errs = append(errs, getErr)
+		case noted:
+			errs = append(errs, s.deployProject(ctx, projectID, types.SystemUser, nil))
+		}
 		unlock()
 	}
 	return errors.Join(errs...)
