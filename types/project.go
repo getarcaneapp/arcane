@@ -369,8 +369,9 @@ type (
 	}
 
 	ProjectDestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
+		RemoveFiles    bool
+		RemoveVolumes  bool
+		KeepContainers bool
 	}
 
 	ProjectDestroy struct {

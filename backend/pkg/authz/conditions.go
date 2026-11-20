@@ -157,6 +157,16 @@ var (
 		},
 	}
 
+	// UploadDownloadConditions make downloading an export's bundle take the same right as exporting its volumes.
+	UploadDownloadConditions = PermissionConditions{
+		{
+			In:         ConditionInResource,
+			Field:      "origin",
+			Value:      types.UploadOriginProjectBundle,
+			Permission: PermVolumesBackup,
+		},
+	}
+
 	ProjectImportConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,
