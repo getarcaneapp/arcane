@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -26,7 +27,7 @@ type (
 		activity *activity.ActivityService
 		transfer *transfer.Service
 		backups  *projectbackup.Service
-		bundles  projectBundles
+		bundles  *bundle.Service
 	}
 
 	ModuleParams struct {
@@ -36,7 +37,7 @@ type (
 		Backups  BackupDependencies
 	}
 
-	// BackupDependencies are the shared backup plumbing project backups run on; volume locks come from the volume domain.
+	// BackupDependencies are the shared backup plumbing project backups run on.
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
@@ -58,23 +59,17 @@ func New(p ModuleParams) *Module {
 		S3Destinations: p.Backups.S3Destinations,
 		Settings:       p.Service.settingsService,
 		VolumeLocks:    p.Backups.VolumeLocks,
-		// The containers are stopped and started again, and volumes in use outside the project found, as for an export.
-		StopContainers:   p.Service.stopRunningContainers,
-		StartContainers:  p.Service.restartContainers,
-		VolumesInUse:     p.Service.volumesInUseOutside,
-		ActiveContainers: p.Service.activeProjectContainers,
-		ComposeFiles:     p.Service.loadedComposeFiles,
-		LockProject:      p.Service.LockProject,
-		SoleDirectory:    p.Service.soleDirectory,
+		Project:        p.Service.GetProjectDetails,
+		ComposeProject: p.Service.composeProject,
+		ComposeFiles:   p.Service.LoadedComposeFiles,
+		LockProject:    p.Service.LockProject,
+		SoleDirectory:  p.Service.soleDirectory,
 		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
 			if err != nil {
 				return false, err
 			}
 			return p.Service.runsArcane(ctx, proj), nil
-		},
-		Project: func(ctx context.Context, projectID string) (types.Project, error) {
-			return p.Service.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeIncludeFiles: true})
 		},
 		// A restore holds the project lock, so it brings the project down and deploys it without taking it again.
 		Down: func(ctx context.Context, projectID string, user types.Actor) error {
@@ -91,7 +86,27 @@ func New(p ModuleParams) *Module {
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  projectBundles{local: local, backups: backups},
+		bundles: bundle.New(bundle.Dependencies{
+			Environment:  local,
+			Backups:      backups,
+			Docker:       p.Service.dockerService,
+			Uploads:      p.Service.uploads,
+			ComposeFiles: p.Service.LoadedComposeFiles,
+			// A restore as a new project fills the project directory from the backup's snapshot.
+			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
+				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
+					Restore:      project.Fill,
+					Actor:        project.User,
+					Name:         project.Name,
+					ComposeFiles: project.ComposeFiles,
+					ExactName:    true,
+				})
+				if err != nil {
+					return "", err
+				}
+				return proj.ID, nil
+			},
+		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,

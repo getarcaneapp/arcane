@@ -27,7 +27,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// ComposeVolumeTargetNameOptions identifies a project volume and the project it is recreated in.
 type ComposeVolumeTargetNameOptions struct {
 	SourceProject string
 	Key           string
@@ -136,13 +135,10 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-// LocalVolume reports whether a volume's data lives in Docker's own volume storage.
 func LocalVolume(driver string, options map[string]string) bool {
 	return cmp.Or(driver, "local") == "local" && len(options) == 0
 }
 
-// ClassifyProjectVolumes sorts a project's Compose volumes by key and includes named volumes and local external
-// volumes by default; driver_opts volumes and other external volumes keep their data outside Docker's volume storage.
 func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
@@ -167,8 +163,6 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	return classified
 }
 
-// ComposeVolumeTargetName names a volume of a project recreated as TargetProject: Compose's default
-// <project>_<key> name follows the project, while an explicit name is kept.
 func ComposeVolumeTargetName(opts ComposeVolumeTargetNameOptions) string {
 	if opts.SourceName == NormalizeProjectName(opts.SourceProject)+"_"+opts.Key {
 		return NormalizeProjectName(opts.TargetProject) + "_" + opts.Key
@@ -176,11 +170,13 @@ func ComposeVolumeTargetName(opts ComposeVolumeTargetNameOptions) string {
 	return opts.SourceName
 }
 
-// ComposeVolumeTargetCreateOptions creates a restore target's volume as Compose would; an external volume gets no
-// Compose labels, since Compose expects it to exist outside the project.
 func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
 	if target.External {
-		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+		return client.VolumeCreateOptions{
+			Name:   name,
+			Driver: target.Driver,
+			Labels: target.Labels,
+		}, nil
 	}
 	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composetypes.VolumeConfig{
 		Driver: target.Driver,

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,7 +174,6 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 		t.Fatalf("ReadChunk(1) = %d bytes, %v", len(tail), err)
 	}
 
-	// A partial download keeps the session for a retry; a complete one deletes it.
 	partial, _, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
 	if err != nil {
 		t.Fatalf("DownloadSession: %v", err)
@@ -181,7 +181,9 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	if _, readErr := partial.Read(make([]byte, 16)); readErr != nil {
 		t.Fatal(readErr)
 	}
-	_ = partial.Close()
+	if closeErr := partial.Close(); closeErr != nil {
+		t.Fatalf("close a partial download: %v", closeErr)
+	}
 	reader, downloaded, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
 	if err != nil {
 		t.Fatalf("DownloadSession after a partial read: %v", err)
@@ -193,7 +195,9 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatalf("downloaded %d bytes, %v", len(got), err)
 	}
-	_ = reader.Close()
+	if closeErr := reader.Close(); closeErr != nil {
+		t.Fatalf("close a complete download: %v", closeErr)
+	}
 	if _, getErr := service.GetSession(ctx, types.UploadKindProjectArchive, session.ID); !errors.Is(getErr, common.ErrUploadSessionNotFound) {
 		t.Fatalf("session after a complete download error = %v, want ErrUploadSessionNotFound", getErr)
 	}
@@ -207,5 +211,19 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	}
 	if entries, readDirErr := os.ReadDir(service.root); readDirErr != nil || len(entries) != 0 {
 		t.Fatalf("upload root after a failed write = %v, %v; want empty", entries, readDirErr)
+	}
+}
+
+func TestIngestSessionRefusesAnUploadThatWouldFillTheDisk(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "uploads")
+	service := &UploadService{root: root}
+
+	// A bundle entry can expand to far more than its compressed size; one larger than the disk is refused unwritten.
+	_, err := service.IngestSession(t.Context(), types.UploadKindVolumeBackup, "data.tar.gz", 1<<62, strings.NewReader("tiny"))
+	if !errors.Is(err, common.ErrUploadSessionInvalid) {
+		t.Fatalf("IngestSession error = %v, want ErrUploadSessionInvalid", err)
+	}
+	if _, statErr := os.Stat(root); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("upload root was created: %v", statErr)
 	}
 }

@@ -1,7 +1,6 @@
 package volume
 
 import (
-	"archive/tar"
 	"cmp"
 	"context"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -163,7 +161,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
-// WorkspaceLocks serializes changes to each volume's contents, including backups and restores.
 func (s *VolumeService) WorkspaceLocks() *concurrency.KeyedMutex {
 	return &s.workspaceLocks
 }
@@ -202,50 +199,8 @@ func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName stri
 	return s.backup.ExportVolumeArchive(ctx, volumeName)
 }
 
-func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) (bool, error) {
+func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
 	return s.backup.RestoreUpload(ctx, volumeName, request, user)
-}
-
-// CreateEmptyVolume creates a volume that does not exist yet, under the lock restores take, and gives its root
-// directory the owner and mode of an archive's root entry; created reports whether this call created the volume, also
-// when a later step fails.
-func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (created bool, err error) {
-	name := options.Name
-	defer s.workspaceLocks.Lock(name)()
-	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
-	})
-	switch {
-	case err == nil:
-		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
-	case !errdefs.IsNotFound(err):
-		return false, fmt.Errorf("inspect volume %s: %w", name, err)
-	}
-	// One made since the check above, outside Arcane, is refused rather than claimed, changed, or removed by a rollback.
-	created, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
-		return volumes.CreateClaimed(ctx, dockerClient, options)
-	})
-	if err != nil {
-		return false, err
-	}
-	if !created {
-		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
-	}
-	if root == nil {
-		return true, nil
-	}
-	containerID, cleanup, err := s.acquireVolumeHelper(ctx, name)
-	if err != nil {
-		return true, err
-	}
-	defer cleanup()
-	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", root.Uid, root.Gid), "/volume"}); err != nil {
-		return true, fmt.Errorf("failed to set volume %s root ownership: %w", name, err)
-	}
-	if _, _, err = s.execInContainer(ctx, containerID, "", []string{"chmod", strconv.FormatInt(root.Mode&0o7777, 8), "/volume"}); err != nil {
-		return true, fmt.Errorf("failed to set volume %s root mode: %w", name, err)
-	}
-	return true, nil
 }
 
 func (s *VolumeService) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {
@@ -491,8 +446,6 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	if strings.TrimSpace(options.Name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
 	}
-	// An import or restore checks that its volumes are missing, then creates them, under this lock; a long backup or
-	// restore holding it makes the create fail rather than wait.
 	waitCtx, cancel := context.WithTimeout(ctx, volumeLockWait)
 	unlock, err := s.workspaceLocks.LockContext(waitCtx, options.Name)
 	cancel()

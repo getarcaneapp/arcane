@@ -32,16 +32,12 @@ type (
 		Entrypoint []string
 		Command    []string
 	}
-
-	// lockedKey marks the volumes whose workspace locks the caller already holds.
-	lockedKey struct{}
 )
 
 const (
 	toolsRepoPath  = "getarcaneapp/tools"
 	ContainerLabel = "com.getarcaneapp.volume-helper"
-	// ClaimLabel marks the attempt that created a volume, since Docker returns an existing volume instead of failing.
-	ClaimLabel = "com.getarcaneapp.volume-claim"
+	ClaimLabel     = "com.getarcaneapp.volume-claim"
 )
 
 func ToolsImage(registrySetting string) string {
@@ -181,21 +177,6 @@ func isArcaneFallbackImage(helperImage string) bool {
 	return err != nil || ref.Path(named) != toolsRepoPath
 }
 
-// WithLocked records that the caller holds the workspace locks of these volumes, so work done under them doesn't wait
-// for them again.
-func WithLocked(ctx context.Context, names []string) context.Context {
-	return context.WithValue(ctx, lockedKey{}, slices.Clone(names))
-}
-
-// Locked reports whether the caller holds the volume's workspace lock.
-func Locked(ctx context.Context, name string) bool {
-	names, _ := ctx.Value(lockedKey{}).([]string)
-	return slices.Contains(names, name)
-}
-
-// CreateClaimed creates a volume marked with a claim unique to this call and reports whether this call created it.
-// Docker returns a volume that already exists instead of failing, so one without the claim was made by someone else
-// and must not be changed or removed by the caller.
 func CreateClaimed(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) (bool, error) {
 	claim := uuid.New().String()
 	labels := maps.Clone(options.Labels)
