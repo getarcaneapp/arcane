@@ -225,8 +225,10 @@ var (
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
-	fallbackBackoff       = concurrency.Backoff{Base: 5 * time.Second, Max: 5 * time.Minute}
-	projectDetails        = types.ProjectDetailsOptions{
+	// errContainersDown marks a failure that left the project's containers stopped; its checkpoint still lists them.
+	errContainersDown = errors.New("project containers left stopped")
+	fallbackBackoff   = concurrency.Backoff{Base: 5 * time.Second, Max: 5 * time.Minute}
+	projectDetails    = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
 	}
@@ -570,8 +572,8 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
 // lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
-	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown and busy
-	// admissions retry it.
+	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown, busy
+	// admissions and containers still stopped retry it.
 	defer func() {
 		if err != nil && !handedBack(ctx, err) && !errors.Is(err, backup.ErrBackupSettled) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
@@ -589,13 +591,13 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		unlockProject, lockErr := s.deps.LockProject(ctx, "back up project", recorded.ProjectID)
 		// The project is left stopped, so wait for its turn instead of failing.
 		if lockErr != nil {
-			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, lockErr)
 		}
 		// A restore of any of the project's volumes finishes before its containers start again.
 		unlockVolumes, lockErr := s.lockVolumes(ctx, recorded.mountedVolumeNames())
 		if lockErr != nil {
 			unlockProject()
-			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, lockErr)
 		}
 		restartErr := s.startContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
 		unlockVolumes()
@@ -607,7 +609,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		// The project stays down until its containers start, so try again later instead of failing; the checkpoint
 		// saved before still lists them.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(restartErr, recordErr))
 		}
 		if recordErr != nil {
 			return recordErr
@@ -794,7 +796,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		}
 		// Left down, the project is restarted from the checkpoint when the run is tried again.
 		if restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); restartErr != nil {
-			err = fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(err, restartErr))
+			err = fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(err, restartErr))
 		}
 	}()
 	if p.StopContainers {
@@ -842,7 +844,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		recordErr := s.record(ctx, p)
 		// The snapshot is saved; the retry restarts the project from the checkpoint saved after the stop, and finishes.
 		if restartErr != nil {
-			return fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(restartErr, recordErr))
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(restartErr, recordErr))
 		}
 		if recordErr != nil {
 			return recordErr
@@ -1194,8 +1196,12 @@ func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error)
 }
 
 // handedBack reports whether a failed attempt leaves its backup running for a retry to resume. A shutdown cancel and a
-// rejected run that nobody cancelled are retried; a user cancel never is, so its backup must be failed now.
+// rejected run that nobody cancelled are retried; a user cancel never is, so its backup is failed now, unless the
+// project's containers are still stopped: the running backup keeps their restart recoverable.
 func handedBack(ctx context.Context, err error) bool {
+	if errors.Is(err, errContainersDown) {
+		return true
+	}
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return true
 	}

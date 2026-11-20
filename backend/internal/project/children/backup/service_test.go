@@ -1588,6 +1588,18 @@ func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
 	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
 }
 
+// A user cancel fails its backup, except while the project's containers are still stopped: the running backup is what
+// keeps their restart recoverable.
+func TestUserCancelKeepsABackupRunningOnlyWhileContainersAreDown(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(errors.New("activity cancelled by user"))
+
+	require.False(t, handedBack(ctx, ctx.Err()))
+	require.False(t, handedBack(ctx, fmt.Errorf("%w: busy", actor.ErrJobRejected)))
+	require.True(t, handedBack(ctx, fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, ctx.Err())))
+	require.True(t, handedBack(t.Context(), fmt.Errorf("%w: busy", actor.ErrJobRejected)))
+}
+
 func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
