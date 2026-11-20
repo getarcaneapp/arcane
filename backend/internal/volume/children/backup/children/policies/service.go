@@ -231,6 +231,7 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
 				DestinationID: current.S3DestinationID,
 				Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+				InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
 				Tables:        backup.VolumeRepositoryTables,
 			})
 		}
