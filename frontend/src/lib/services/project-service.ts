@@ -12,7 +12,8 @@ import type {
 	ProjectTransferRequest,
 	ProjectTransferResource,
 	ProjectTransferStarted,
-	ProjectUpdateInfo
+	ProjectUpdateInfo,
+	ProjectUrl
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -127,10 +128,11 @@ class ProjectService extends BaseAPIService {
 			this.getProjectSection(`${basePath}/updates`)
 		]);
 
+		const project = { ...summary, ...compose, ...runtime };
+
 		return {
-			...summary,
-			...compose,
-			...runtime,
+			...project,
+			urls: project.urls?.map((entry: ProjectUrl | string) => (typeof entry === 'string' ? { url: entry } : entry)),
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
 	}
