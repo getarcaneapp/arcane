@@ -50,6 +50,7 @@ type (
 		HelperImage     func(ctx context.Context) (string, error)
 		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
+		StopHelper      func(ctx context.Context, volumeName string) error
 		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
@@ -156,6 +157,11 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		if err != nil {
 			return fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
+		defer func() {
+			if err != nil {
+				err = fmt.Errorf("volume restore failed; pre-restore backup %s holds the previous contents: %w", preBackupID, err)
+			}
+		}()
 	}
 	if entry.Format == types.VolumeBackupFormatArchive {
 		if restoreArchiveBackupErr := s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil); restoreArchiveBackupErr != nil {
@@ -508,6 +514,18 @@ func (s *Service) UploadAndRestore(
 			return false, createErr
 		}
 		created = true
+		defer func() {
+			if err == nil {
+				return
+			}
+			stopHelperErr := s.deps.StopHelper(context.WithoutCancel(ctx), volumeName)
+			_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{})
+			})
+			// Removed here, a failed restore leaves the caller nothing to roll back; otherwise the caller removes it.
+			created = removeErr != nil
+			err = errors.Join(err, stopHelperErr, removeErr)
+		}()
 	}
 	stopped, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}, RefuseArcaneWriters: true}, user)
 	containersStopped := len(stopped) > 0
@@ -526,6 +544,11 @@ func (s *Service) UploadAndRestore(
 		if err != nil {
 			return created, fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
+		defer func() {
+			if err != nil {
+				err = fmt.Errorf("volume restore failed; pre-restore backup %s holds the previous contents: %w", preBackupID, err)
+			}
+		}()
 	}
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)

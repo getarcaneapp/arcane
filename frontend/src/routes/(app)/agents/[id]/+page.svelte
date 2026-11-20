@@ -357,7 +357,7 @@
 			const synced = await tryCatch(environmentManagementService.sync(environment.id));
 			if (synced.error !== null) {
 				console.error('Failed to sync environment:', synced.error);
-				toast.error(m.sync_environment_failed());
+				toast.error(m.sync_environment_failed(), { description: extractApiErrorMessage(synced.error) });
 				return;
 			}
 			toast.success(m.sync_environment_success());
