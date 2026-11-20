@@ -369,6 +369,7 @@
 	}
 
 	function volumeNote(volume: ProjectVolume): string | null {
+		if (volume.backupStore) return m.backup_store_not_backed_up();
 		if (volume.missing) return m.not_created_yet_nothing_to_back_up();
 		if (volume.kind === 'driverOpts') return m.driver_options_not_backed_up();
 		if (volume.kind === 'external' && !volume.included) return m.external_volume_not_backed_up();

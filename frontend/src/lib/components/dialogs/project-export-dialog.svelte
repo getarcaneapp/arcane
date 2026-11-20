@@ -50,6 +50,7 @@
 	const stopProject = $derived(showStop && canStop && (stopOverride ?? true));
 
 	function volumeNote(volume: ProjectVolume): string | null {
+		if (volume.backupStore) return m.backup_store_not_exported();
 		if (volume.missing) return m.volume_not_created_yet();
 		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
 		if (volume.kind === 'external' && !volume.included) return m.volume_kind_external();

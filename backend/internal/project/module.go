@@ -65,6 +65,8 @@ func New(p ModuleParams) *Module {
 		Settings:        p.Service.settingsService,
 		VolumeLocks:     p.Backups.VolumeLocks,
 		Project:         p.Service.GetProjectDetails,
+		Volume:          local.Volume,
+		BackupStore:     p.Backups.Repository.StorageVolume,
 		ComposeProject:  p.Service.composeProject,
 		ComposeFiles:    p.Service.LoadedComposeFiles,
 		LockProject:     p.Service.LockProject,
@@ -93,10 +95,11 @@ func New(p ModuleParams) *Module {
 			}
 			return proj.Name, nil
 		},
-		Activities: p.Activity,
-		Ctx:        p.Backups.Ctx,
-		Scheduler:  p.Backups.Scheduler,
-		Admission:  p.Backups.Admission,
+		ForgetExportStop: p.Service.forgetExportStop,
+		Activities:       p.Activity,
+		Ctx:              p.Backups.Ctx,
+		Scheduler:        p.Backups.Scheduler,
+		Admission:        p.Backups.Admission,
 	})
 	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
@@ -109,6 +112,7 @@ func New(p ModuleParams) *Module {
 			Docker:       p.Service.dockerService,
 			Uploads:      p.Service.uploads,
 			ComposeFiles: p.Service.LoadedComposeFiles,
+			BackupStore:  p.Backups.Repository.StorageVolume,
 			// A restore as a new project fills the project directory from the backup's snapshot.
 			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
@@ -127,13 +131,7 @@ func New(p ModuleParams) *Module {
 			LockProject: func(ctx context.Context, projectID string) (func(), error) {
 				return p.Service.LockProject(ctx, "export or import project", projectID)
 			},
-			StopProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				project, err := p.Service.getMutableProject(ctx, projectID)
-				if err != nil {
-					return err
-				}
-				return p.Service.downProject(ctx, project, user)
-			},
+			StopProject: p.Service.stopForExport,
 			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
 				return p.Service.deployProject(ctx, projectID, user, nil)
 			},
@@ -371,6 +369,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 			"A bundle's volumes are restored too, which requires volumes:create and volumes:upload; start deploys the project and requires projects:deploy.",
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectImportConditions},
 	}, authz.PermProjectsCreate, h.ImportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -382,6 +381,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 			"Requires projects:read, and volumes:create when volumes are restored; start deploys the project and requires projects:deploy.",
 		Tags:     []string{"Project Backup"},
 		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectImportConditions},
 	}, authz.PermProjectsCreate, h.RestoreProjectBackupAsNew)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -403,6 +403,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 			"With volumes the session holds a project bundle with their data, which requires volumes:backup; stopProject also requires projects:down and projects:deploy.",
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectExportConditions},
 	}, authz.PermProjectsRead, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -414,6 +415,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 			"An archive that holds volume data also requires volumes:backup.",
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.UploadOriginConditions},
 	}, authz.PermProjectsRead, h.DownloadProjectExport)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

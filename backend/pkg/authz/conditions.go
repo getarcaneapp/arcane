@@ -136,6 +136,59 @@ var (
 		},
 	}
 
+	// UploadOriginConditions make reading a session an export wrote take the export's rights.
+	UploadOriginConditions = PermissionConditions{
+		{
+			In:         ConditionInResource,
+			Field:      "origin",
+			Value:      types.UploadOriginProjectExport,
+			Permission: PermProjectsRead,
+		},
+		{
+			In:         ConditionInResource,
+			Field:      "origin",
+			Value:      types.UploadOriginProjectBundle,
+			Permission: PermProjectsRead,
+		},
+		{
+			In:         ConditionInResource,
+			Field:      "origin",
+			Value:      types.UploadOriginProjectBundle,
+			Permission: PermVolumesBackup,
+		},
+	}
+
+	// ProjectExportConditions match "volumes" as "true" when the request names any volume.
+	ProjectExportConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "volumes",
+			Value:      "true",
+			Permission: PermVolumesBackup,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "stopProject",
+			Value:      "true",
+			Permission: PermProjectsDown,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "stopProject",
+			Value:      "true",
+			Permission: PermProjectsDeploy,
+		},
+	}
+
+	ProjectImportConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "start",
+			Value:      "true",
+			Permission: PermProjectsDeploy,
+		},
+	}
+
 	BuildWorkspaceConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,
@@ -253,16 +306,4 @@ func (c PermissionConditions) Required(field, value string) []string {
 		}
 	}
 	return perms
-}
-
-// UploadOriginPermissions are what reading a session written on the server takes besides its kind's permission: the
-// same as the export that wrote it, so a session can't be read with fewer rights than its route needs.
-func UploadOriginPermissions(origin string) []string {
-	switch origin {
-	case types.UploadOriginProjectExport:
-		return []string{PermProjectsRead}
-	case types.UploadOriginProjectBundle:
-		return []string{PermProjectsRead, PermVolumesBackup}
-	}
-	return nil
 }
