@@ -5,6 +5,7 @@ import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import type { AutoUpdateResourceType, UpdaterResult } from '#lib/types/updater.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
 import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
@@ -43,11 +44,20 @@ export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'i
 	return result;
 }
 
-export function summarizeUpdateResult(result: UpdaterResult) {
-	const options = activityToastOptions(result.activityId);
-	const updated = (result.updated ?? 0) + (result.restarted ?? 0);
-	const blocked = result.items?.find((item) => item.status === 'blocked');
-	const failed = Math.max(0, (result.failed ?? 0) - (result.items?.filter((item) => item.status === 'blocked').length ?? 0));
+export function summarizeUpdateResults(results: UpdaterResult[]) {
+	if (results.length === 0) return;
+	const activityOptions = results.flatMap((result) => activityToastOptions(result.activityId) ?? []);
+	let options = activityOptions[0];
+	if (activityOptions.length > 1) {
+		options = { action: { label: m.activity_view_activity(), onClick: () => activityStore.openCenter() } };
+	}
+	const items = results.flatMap((result) => result.items ?? []);
+	const updated = results.reduce((total, result) => total + (result.updated ?? 0) + (result.restarted ?? 0), 0);
+	const blocked = items.find((item) => item.status === 'blocked');
+	const failed = Math.max(
+		0,
+		results.reduce((total, result) => total + (result.failed ?? 0), 0) - items.filter((item) => item.status === 'blocked').length
+	);
 
 	if (failed > 0 && updated > 0) {
 		toast.warning(m.updates_apply_partial({ updated, failed }), options);
@@ -107,7 +117,7 @@ export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndA
 						toast.error(m.updates_apply_all_failed());
 						return;
 					}
-					for (const { value } of results.data) summarizeUpdateResult(value);
+					summarizeUpdateResults(results.data.map(({ value }) => value));
 					const refreshed = await tryCatch(Promise.resolve(onRefresh?.()));
 					if (refreshed.error !== null) {
 						console.error('Update all failed:', refreshed.error);
