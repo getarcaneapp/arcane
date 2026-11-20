@@ -17,7 +17,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
-	composeapi "github.com/docker/compose/v5/pkg/api"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
@@ -642,7 +642,8 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
 	if err != nil {
-		return err
+		// Recorded now, so a retry that only restarts the containers can't complete the rejected snapshot.
+		return errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
@@ -730,7 +731,7 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
 		for _, c := range running {
-			if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
+			if c.Labels[api.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
 				continue
 			}
 			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
@@ -783,17 +784,17 @@ func (s *Service) startContainers(ctx context.Context, projectID string, stopped
 	}
 	direct := map[string]bool{}
 	for _, c := range found {
-		if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" && !wasStopped[c.ID] && c.State != container.StateRunning {
-			direct[c.Labels[composeapi.ServiceLabel]] = true
+		if c.Labels[api.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" && !wasStopped[c.ID] && c.State != container.StateRunning {
+			direct[c.Labels[api.ServiceLabel]] = true
 		}
 	}
 	var services, containerIDs, serviceContainerIDs []string
 	for _, c := range stopped {
-		service := c.Labels[composeapi.ServiceLabel]
+		service := c.Labels[api.ServiceLabel]
 		_, enabled := compose.Services[service]
 		_, disabled := compose.DisabledServices[service]
 		switch {
-		case listErr != nil || direct[service] || (!enabled && !disabled) || c.Labels[composeapi.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
+		case listErr != nil || direct[service] || (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
 			containerIDs = append(containerIDs, c.ID)
 		default:
 			serviceContainerIDs = append(serviceContainerIDs, c.ID)
