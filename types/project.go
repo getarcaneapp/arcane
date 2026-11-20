@@ -139,6 +139,9 @@ type (
 	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
 	// the ones the backup was taken from.
 	ProjectBackupRestore struct {
+		// Report tells the user what the restore left as it is, such as an outside .env another project shares; an
+		// in-place restore of the project files must set it.
+		Report    func(ctx context.Context, message string)
 		ProjectID string
 		BackupID  string
 		// ProjectPath receives the project files; empty leaves them out.
@@ -147,9 +150,6 @@ type (
 		// before anything is written.
 		Owner   string
 		Volumes []ProjectBackupRestoreVolume
-		// Report tells the user what the restore left as it is, such as an outside .env another project shares; an
-		// in-place restore of the project files must set it.
-		Report func(ctx context.Context, message string)
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
 		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
