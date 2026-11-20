@@ -398,6 +398,13 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 				}
 			}
 		}
+		for _, v := range []*map[string]string{p.TerminalShells, p.TerminalUsers} {
+			for key, value := range kit.FromPtr(v) {
+				if len(*v) > 1000 || key == "" || len(key) > 512 || value == "" || len(value) > 255 {
+					return nil, huma.Error400BadRequest("invalid terminal preference value")
+				}
+			}
+		}
 		// Keep the landing page a same-origin relative path. The frontend
 		// additionally validates it against the known nav pages, falling back to
 		// /dashboard.

@@ -715,6 +715,46 @@ func TestRetainedVolumeMountPoints(t *testing.T) {
 	require.Equal(t, []string{"anon-cache", "anon-mount", "image-data"}, []string{retained[0].Name, retained[1].Name, retained[2].Name})
 }
 
+func TestContainerServiceCreateExec(t *testing.T) {
+	db := setupProjectTestDB(t)
+	var got struct {
+		User string
+		Cmd  []string
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "POST /containers/c1/exec", r.Method+" "+dockerTestPath(r.URL.Path))
+		require.NoError(t, json.UnmarshalRead(r.Body, &got))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"Id":"exec-1"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	svc := NewContainerService(ContainerServiceParams{
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
+
+	tests := []struct {
+		name    string
+		opts    ExecOptions
+		wantCmd []string
+	}{
+		{name: "default shell", wantCmd: []string{"/bin/sh"}},
+		{name: "explicit shell and user", opts: ExecOptions{Shell: "/bin/zsh", User: "www-data"}, wantCmd: []string{"/bin/zsh"}},
+		{name: "auto shell", opts: ExecOptions{Shell: AutoShell}, wantCmd: []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execID, err := svc.CreateExec(t.Context(), "c1", tt.opts)
+			require.NoError(t, err)
+			require.Equal(t, "exec-1", execID)
+			require.Equal(t, tt.wantCmd, got.Cmd)
+			require.Equal(t, tt.opts.User, got.User)
+		})
+	}
+}
+
 func TestContainerServiceResizeExec(t *testing.T) {
 	db := setupProjectTestDB(t)
 	var gotPath, gotHeight, gotWidth string

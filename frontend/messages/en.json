@@ -4712,5 +4712,9 @@
   "destroy_count_projects": "Destroy {count} Project(s)",
   "destroy_projects_confirm_message": "Are you sure you want to destroy {count} project(s)? This action cannot be undone.",
   "destroyed_count_projects": "Successfully destroyed {count} project(s)",
-  "destroyed_projects_partial": "Destroyed {success} of {total} project(s). {failed} failed."
+  "destroyed_projects_partial": "Destroyed {success} of {total} project(s). {failed} failed.",
+  "auto_shell_description": "bash when the container has it, otherwise sh",
+  "container_default_user": "Container default",
+  "environment_default": "Environment default",
+  "default_shell_preference_description": "Shell for container terminals. A shell picked on a container still wins."
 }

@@ -11,6 +11,7 @@
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
 	import TimeFormatPicker from '#lib/components/time-format-picker.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -73,6 +74,35 @@
 		{ value: 'bottom-center', label: m.toast_position_bottom_center() },
 		{ value: 'bottom-right', label: m.toast_position_bottom_right() }
 	]);
+	const presetShells = ['auto', '/bin/sh', '/bin/bash', '/bin/ash', '/bin/zsh'];
+	const defaultShellOptions = $derived([
+		{ value: 'environment', label: m.environment_default() },
+		{ value: 'auto', label: m.auto(), description: m.auto_shell_description() },
+		...presetShells.slice(1).map((shell) => ({ value: shell, label: shell })),
+		{ value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }
+	]);
+	let customDefaultShell = $state(false);
+	const defaultShellValue = $derived.by(() => {
+		const current = preferences.defaultShell ?? '';
+		if (customDefaultShell) return 'custom';
+		if (current === '') return 'environment';
+		if (presetShells.includes(current)) return current;
+		return 'custom';
+	});
+
+	function handleDefaultShellChange(value: string) {
+		customDefaultShell = value === 'custom';
+		if (customDefaultShell) return;
+		void saveUserPreferences({ defaultShell: value === 'environment' ? '' : value });
+	}
+
+	function handleCustomDefaultShellChange(value: string) {
+		const shell = value.trim();
+		if (!shell) return;
+		customDefaultShell = false;
+		void saveUserPreferences({ defaultShell: shell });
+	}
+
 	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
 	const landingValue = $derived.by(() => {
 		const current = preferences.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
@@ -324,6 +354,35 @@
 						onValueChange={(value) => void saveUserPreferences({ editorTabWidth: Number(value) as EditorTabWidth })}
 						aria-describedby={describedBy}
 					/>
+				</div>
+			{/snippet}
+		</SettingsRow>
+	</SettingsSection>
+
+	<SettingsSection title={m.containers()}>
+		<SettingsRow label={m.docker_default_shell_label()} description={m.default_shell_preference_description()} layout="switch">
+			{#snippet children({ describedBy })}
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-default-shell"
+						label={m.docker_default_shell_label()}
+						hideLabel
+						triggerSize="sm"
+						value={defaultShellValue}
+						options={defaultShellOptions}
+						onValueChange={handleDefaultShellChange}
+						aria-describedby={describedBy}
+					/>
+					{#if defaultShellValue === 'custom'}
+						<Input
+							class="mt-2"
+							value={presetShells.includes(preferences.defaultShell ?? '') ? '' : preferences.defaultShell}
+							placeholder={m.shell_custom_placeholder()}
+							aria-label={m.custom()}
+							aria-describedby={describedBy}
+							onchange={(e) => handleCustomDefaultShellChange(e.currentTarget.value)}
+						/>
+					{/if}
 				</div>
 			{/snippet}
 		</SettingsRow>

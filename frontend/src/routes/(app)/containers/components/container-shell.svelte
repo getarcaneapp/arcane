@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { PersistedState } from 'runed';
 
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
 	import Terminal from '#lib/components/terminal/terminal.svelte';
@@ -9,7 +8,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { COMPOSE_PROJECT_LABEL, COMPOSE_SERVICE_LABEL } from '#lib/utils/docker.js';
+	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 
 	let {
 		containerId,
@@ -23,7 +24,7 @@
 		name: string | undefined;
 	} = $props();
 
-	const savedShells = new PersistedState<Record<string, string>>('arcane_terminal_shells', {});
+	const preferences = $derived(userStore.current?.preferences ?? {});
 
 	// Keyed by compose service (or container name) so the choice survives container recreation.
 	const shellKey = $derived.by(() => {
@@ -36,18 +37,34 @@
 	});
 
 	let isConnected = $state(false);
-	let selectedShell = $derived((shellKey && savedShells.current[shellKey]) || settingsStore.current?.defaultShell || '/bin/sh');
+	let selectedShell = $derived(
+		(shellKey && preferences.terminalShells?.[shellKey]) ||
+			preferences.defaultShell ||
+			settingsStore.current?.defaultShell ||
+			'/bin/sh'
+	);
+	let selectedUser = $derived((shellKey && preferences.terminalUsers?.[shellKey]) || '');
 	let reconnectKey = $state(0);
 	const websocketUrl = $derived.by(() => {
 		if (!containerId || !selectedShell) return '';
 		let protocol = 'ws:';
 		if (page.url.protocol === 'https:') protocol = 'wss:';
-		return `${protocol}//${page.url.host}/api/agents/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
+		const query = new URLSearchParams({ shell: selectedShell });
+		if (selectedUser) query.set('user', selectedUser);
+		return `${protocol}//${page.url.host}/api/agents/${environmentId}/ws/containers/${containerId}/terminal?${query}`;
 	});
 
 	function handleShellChange(shell: string) {
 		selectedShell = shell;
-		if (shellKey) savedShells.current = { ...savedShells.current, [shellKey]: shell };
+		if (shellKey) void saveUserPreferences({ terminalShells: { ...preferences.terminalShells, [shellKey]: shell } });
+	}
+
+	function handleUserChange(user: string) {
+		selectedUser = user;
+		if (!shellKey) return;
+		const { [shellKey]: _previous, ...others } = preferences.terminalUsers ?? {};
+		const terminalUsers = user ? { ...others, [shellKey]: user } : others;
+		void saveUserPreferences({ terminalUsers });
 	}
 
 	function handleConnected() {
@@ -83,7 +100,13 @@
 				</div>
 				<Card.Description>{m.shell_interactive_access()}</Card.Description>
 			</div>
-			<TerminalControls bind:selectedShell onShellChange={handleShellChange} onReconnect={handleReconnect} />
+			<TerminalControls
+				bind:selectedShell
+				bind:selectedUser
+				onShellChange={handleShellChange}
+				onUserChange={handleUserChange}
+				onReconnect={handleReconnect}
+			/>
 		</div>
 	</Card.Header>
 	<div class="overflow-hidden p-2">
