@@ -662,7 +662,9 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		Fill: func(ctx context.Context, projectPath string) error {
 			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
 				Report: func(ctx context.Context, message string) {
-					activity.AppendOrWarn(ctx, s.deps.Activities, activity.IDFromContext(ctx), types.ActivityMessageLevelWarning, message)
+					activity.AppendOrWarn(ctx, s.deps.Activities, activity.IDFromContext(ctx), activity.AppendMessageRequest{
+						Level: types.ActivityMessageLevelWarning, Message: message,
+					})
 				},
 				ProjectID:   opts.ProjectID,
 				BackupID:    opts.BackupID,

@@ -188,14 +188,14 @@ func staysInside(logicalPath, target string) bool {
 }
 
 // OwnLinks points each link in the copy at projectPath that leads into one of sourceDirs, the directories the copy was
-// taken from, at the copy's own path for the same file. Targets are read lexically, since the original may be gone. A
-// link in a folder Arcane can't change keeps its target, and report names every such link once.
+// taken from, at the copy's own path for the same file. The part of a target inside the directory is kept as written, so
+// the system follows it through the copy as it did through the original, which may be gone. A link in a folder Arcane
+// can't change keeps its target, and report names every such link once.
 func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
 	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
 		return fmt.Errorf("resolve project directory: %w", err)
 	}
-	root := acfs.Root{Path: projectPath}
 	var readOnly []string
 	// A directory Arcane can't read, such as a database's data, keeps its links as they are rather than failing.
 	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
@@ -213,43 +213,29 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 		if relErr != nil {
 			return relErr
 		}
-		logicalPath := "/" + filepath.ToSlash(relative)
-		target, linkErr := root.Readlink(ctx, logicalPath)
+		target, linkErr := os.Readlink(hostPath)
 		if errors.Is(linkErr, fs.ErrPermission) {
 			readOnly = append(readOnly, relative)
 			return nil
 		}
-		if linkErr != nil || staysInside(logicalPath, target) {
+		if linkErr != nil || staysInside("/"+filepath.ToSlash(relative), target) {
 			return linkErr
 		}
-		linkDir := filepath.Dir(relative)
-		for index, dir := range sourceDirs {
-			named := target
-			if !filepath.IsAbs(target) {
-				// The system follows ".." from where the directory really is, the last of the recorded directories.
-				if index != len(sourceDirs)-1 {
-					continue
-				}
-				named = filepath.Join(dir, linkDir, target)
-			}
-			if !IsSafeSubdirectory(dir, named) {
-				continue
-			}
-			own, ownErr := filepath.Rel(filepath.Join(dir, linkDir), named)
-			if ownErr != nil {
-				return ownErr
-			}
-			linkErr = root.Remove(ctx, logicalPath)
-			if linkErr == nil {
-				linkErr = root.Symlink(ctx, own, logicalPath)
-			}
-			if errors.Is(linkErr, fs.ErrPermission) {
-				readOnly = append(readOnly, relative)
-				return nil
-			}
-			return linkErr
+		inside, found := insideSource(target, filepath.Dir(relative), sourceDirs)
+		if !found {
+			return nil
 		}
-		return nil
+		// WalkDir only enters real directories, so the link and its folders are the copy's own; replacing the link
+		// doesn't follow any target.
+		linkErr = os.Remove(hostPath)
+		if linkErr == nil {
+			linkErr = os.Symlink(strings.Repeat("../", depth(filepath.Dir(relative)))+inside, hostPath)
+		}
+		if errors.Is(linkErr, fs.ErrPermission) {
+			readOnly = append(readOnly, relative)
+			return nil
+		}
+		return linkErr
 	})
 	if walkErr != nil {
 		return fmt.Errorf("point the restored links at the project's own files: %w", walkErr)
@@ -258,6 +244,39 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 		report(ctx, "Arcane can't change links in read-only folders, so these still lead into the original project: "+strings.Join(readOnly, ", "))
 	}
 	return nil
+}
+
+// insideSource returns the part of a link's target past the source directory it leads into, as written. An absolute
+// target may name any of sourceDirs; a relative one is followed from the last, where the directory really is. A target
+// spelled some other way is read lexically.
+func insideSource(target, linkDir string, sourceDirs []string) (string, bool) {
+	for index, dir := range sourceDirs {
+		named := target
+		if !filepath.IsAbs(target) {
+			if index != len(sourceDirs)-1 {
+				continue
+			}
+			if rest, ok := strings.CutPrefix(target, strings.Repeat("../", depth(linkDir)+1)+filepath.Base(dir)+"/"); ok && filepath.IsLocal(rest) {
+				return rest, true
+			}
+			named = filepath.Join(dir, linkDir, target)
+		} else if rest, ok := strings.CutPrefix(target, dir+"/"); ok && filepath.IsLocal(rest) {
+			return rest, true
+		}
+		if IsSafeSubdirectory(dir, named) {
+			rest, err := filepath.Rel(dir, named)
+			return rest, err == nil
+		}
+	}
+	return "", false
+}
+
+// depth counts the folders in a path relative to the project directory.
+func depth(dir string) int {
+	if dir == "." {
+		return 0
+	}
+	return strings.Count(filepath.ToSlash(dir), "/") + 1
 }
 
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
