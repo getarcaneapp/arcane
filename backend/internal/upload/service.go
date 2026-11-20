@@ -40,6 +40,15 @@ type (
 		done func()
 		eof  bool
 	}
+
+	// reserveWriter stops a written session before it eats into the reserve, checking again every reserveCheckBytes.
+	reserveWriter struct {
+		ctx       context.Context
+		w         io.Writer
+		service   *UploadService
+		kind      string
+		unchecked int64
+	}
 )
 
 const (
@@ -47,6 +56,7 @@ const (
 	sessionDataFilename = "data"
 	// uploadReserveBytes is the least free space a staged upload leaves on the upload filesystem.
 	uploadReserveBytes = 1 << 30
+	reserveCheckBytes  = 64 << 20
 )
 
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -300,6 +310,18 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	return s.WriteSession(ctx, kind, filename, write)
 }
 
+func (w *reserveWriter) Write(p []byte) (int, error) {
+	if w.unchecked <= 0 {
+		if err := w.service.validateSize(w.ctx, w.kind, reserveCheckBytes); err != nil {
+			return 0, fmt.Errorf("stop writing the upload: %w", err)
+		}
+		w.unchecked = reserveCheckBytes
+	}
+	n, err := w.w.Write(p)
+	w.unchecked -= int64(n)
+	return n, err
+}
+
 func (s *UploadService) WriteSession(ctx context.Context, kind, filename string, write func(io.Writer) error) (session *types.UploadSession, err error) {
 	if filename, err = sessionFilename(kind, filename); err != nil {
 		return nil, err
@@ -324,7 +346,14 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
-	if writeErr := write(file); writeErr != nil {
+	// What the callback writes isn't known up front, and it may stage more files while writing, so free space is
+	// rechecked as the file grows.
+	if writeErr := write(&reserveWriter{
+		ctx:     ctx,
+		w:       file,
+		service: s,
+		kind:    kind,
+	}); writeErr != nil {
 		return nil, errors.Join(writeErr, file.Close())
 	}
 	info, err := file.Stat()

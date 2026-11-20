@@ -309,12 +309,21 @@ func TestRestoreAsNew(t *testing.T) {
 				assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: options.Name, Labels: labels}))
 			}))
 			backups := &fakeBackups{manifest: manifest, fail: kit.Ternary(test.failRestore, errors.New("rustic failed"), nil)}
-			var filled string
+			var filled, locked string
 			service := New(Dependencies{
 				Environment: environment,
 				Backups:     backups,
 				Docker:      dockerService,
+				LockProject: func(_ context.Context, projectID string) (func(), error) {
+					locked = projectID
+					return func() { locked = "" }, nil
+				},
+				StartProject:  environment.DeployProject,
+				RemoveProject: environment.DestroyProject,
 				CreateProject: func(ctx context.Context, project NewProject) (string, error) {
+					// The new project is created locked, so nothing starts it before its volumes are restored.
+					assert.NotEmpty(t, project.ID)
+					assert.Equal(t, project.ID, locked)
 					assert.Equal(t, "copy", project.Name)
 					assert.Equal(t, []string{"compose.yaml"}, project.ComposeFiles)
 					filled = t.TempDir()
@@ -324,6 +333,7 @@ func TestRestoreAsNew(t *testing.T) {
 			})
 
 			projectID, err := service.RestoreAsNew(t.Context(), RestoreAsNewOptions{ProjectID: "p1", BackupID: "b1", Request: test.request, RestoreVolumes: !test.noVolumeRights})
+			assert.Empty(t, locked, "the new project's lock is released")
 			names := make([]string, 0, len(created))
 			for _, options := range created {
 				names = append(names, options.Name)
@@ -396,10 +406,6 @@ func (e *claimEnvironment) ExportVolume(ctx context.Context, name string) (types
 	return *session, err
 }
 
-func (e *claimEnvironment) DestroyProject(context.Context, string, types.Actor) error {
-	return nil
-}
-
 func (e *claimEnvironment) DeleteVolume(_ context.Context, name string, _ types.Actor) error {
 	e.calls = append(e.calls, "delete "+name)
 	delete(e.volumes, name)
@@ -450,7 +456,12 @@ func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
 		"demo_cache": {Name: "demo_cache", Labels: map[string]string{volumes.ClaimLabel: "someone-else"}},
 		"shared":     {Name: "shared"},
 	}}
-	service := New(Dependencies{Environment: environment})
+	service := New(Dependencies{
+		Environment: environment,
+		RemoveProject: func(context.Context, string, types.Actor) error {
+			return nil
+		},
+	})
 	err := service.rollback(t.Context(), errors.New("restore failed"), importRollback{
 		ProjectID:   "p1",
 		ProjectName: "demo",

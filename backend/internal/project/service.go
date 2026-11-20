@@ -1858,7 +1858,11 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
+	return s.destroyProject(ctx, projectID, opts, user)
+}
 
+// destroyProject removes a project whose lock the caller holds.
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

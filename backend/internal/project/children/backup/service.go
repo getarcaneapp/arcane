@@ -1568,7 +1568,8 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, files
 	if len(mounts) > 1 {
 		return common.Classify(common.ErrValidation, fmt.Errorf(
 			"the folder of project %s holds other mounts in the Arcane container (%s), so its files cannot be restored in place; restore it as a new project instead",
-			project.Name, strings.Join(nestedTargets(mounts), ", ")))
+			project.Name, strings.Join(nestedTargets(mounts), ", "),
+		))
 	}
 	return s.deps.SoleDirectory(ctx, project)
 }
