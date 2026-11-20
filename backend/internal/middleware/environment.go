@@ -284,13 +284,15 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 
 	// Upload-session routes derive their permission from the {kind} segment; unknown kinds fail closed.
 	if len(segments) >= 2 && segments[0] == "uploads" && segments[1] != "" {
-		if len(segments) == 2 && method == http.MethodPost ||
+		write := len(segments) == 2 && method == http.MethodPost || len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks"
+		if write ||
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
 			len(segments) == 4 && method == http.MethodGet && segments[3] == "download" ||
-			len(segments) == 5 && (method == http.MethodPut || method == http.MethodGet) && segments[3] == "chunks" {
-			perms := authz.UploadKindConditions.Required("kind", segments[1])
-			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
-				return !ps.Allows(perm, envID)
+			len(segments) == 5 && method == http.MethodGet && segments[3] == "chunks" {
+			denied := !authz.UploadSessionPermitted(ps, authz.UploadSessionAccess{
+				Kind:          segments[1],
+				EnvironmentID: envID,
+				Read:          !write,
 			})
 			if denied {
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",

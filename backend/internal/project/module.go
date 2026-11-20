@@ -18,6 +18,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -58,6 +59,19 @@ func New(p ModuleParams) *Module {
 			Docker:       p.Service.dockerService,
 			Uploads:      p.Service.uploads,
 			ComposeFiles: p.Service.LoadedComposeFiles,
+			LockProject: func(ctx context.Context, projectID string) (func(), error) {
+				return p.Service.LockProject(ctx, "export project", projectID)
+			},
+			StopProject: func(ctx context.Context, projectID string, user types.Actor) error {
+				project, err := p.Service.getMutableProject(ctx, projectID)
+				if err != nil {
+					return err
+				}
+				return p.Service.downProject(ctx, project, user)
+			},
+			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
+				return p.Service.deployProject(ctx, projectID, user, nil)
+			},
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{

@@ -3,12 +3,14 @@ package bundle
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
@@ -24,15 +26,27 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-// stoppedEnvironment reports the project stopped and serves its files and volume data.
-type stoppedEnvironment struct {
-	Environment
+type (
+	// stoppedEnvironment reports the project stopped and serves its files and volume data.
+	stoppedEnvironment struct {
+		Environment
 
-	uploads *upload.UploadService
-}
+		uploads *upload.UploadService
+	}
+
+	// claimEnvironment holds Docker volumes by name and records what the export and rollback do.
+	claimEnvironment struct {
+		Environment
+
+		uploads *upload.UploadService
+		volumes map[string]types.Volume
+		calls   []string
+	}
+)
 
 func (e *stoppedEnvironment) Project(context.Context, string) (types.Project, error) {
 	return types.Project{ID: "p1", Name: "demo"}, nil
@@ -121,4 +135,99 @@ func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 			require.NoError(t, writeErr)
 		})
 	}
+}
+
+func (e *claimEnvironment) Project(context.Context, string) (types.Project, error) {
+	e.calls = append(e.calls, "project")
+	return types.Project{ID: "p1", Name: "demo", ComposeName: "demo", Volumes: composetypes.Volumes{"data": {Name: "demo_data"}}}, nil
+}
+
+func (e *claimEnvironment) Volume(_ context.Context, name string) (types.Volume, bool, error) {
+	volume, exists := e.volumes[name]
+	return volume, exists, nil
+}
+
+func (e *claimEnvironment) ExportProject(ctx context.Context, _ string) (types.UploadSession, error) {
+	session, err := e.uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.tar.gz", 5, strings.NewReader("files"))
+	return *session, err
+}
+
+func (e *claimEnvironment) ExportVolume(ctx context.Context, name string) (types.UploadSession, error) {
+	e.calls = append(e.calls, "copy "+name)
+	session, err := e.uploads.IngestSession(ctx, types.UploadKindVolumeBackup, "data.tar.gz", 4, strings.NewReader("data"))
+	return *session, err
+}
+
+func (e *claimEnvironment) DestroyProject(context.Context, string, types.Actor) error {
+	return nil
+}
+
+func (e *claimEnvironment) DeleteVolume(_ context.Context, name string, _ types.Actor) error {
+	e.calls = append(e.calls, "delete "+name)
+	delete(e.volumes, name)
+	return nil
+}
+
+func TestExportHoldsTheProjectLockUntilTheCopyEnds(t *testing.T) {
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_, _ = w.Write([]byte("[]"))
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
+		case strings.HasSuffix(r.URL.Path, "/events"):
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	uploads := upload.NewUploadService(nil)
+	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
+	service := New(Dependencies{
+		Environment: environment,
+		Docker:      dockerService,
+		Uploads:     uploads,
+		ComposeFiles: func(context.Context, string) ([]string, error) {
+			return []string{"compose.yaml"}, nil
+		},
+		LockProject: func(context.Context, string) (func(), error) {
+			environment.calls = append(environment.calls, "lock")
+			return func() { environment.calls = append(environment.calls, "unlock") }, nil
+		},
+	})
+	session, err := service.Export(t.Context(), ExportOptions{
+		ProjectID: "p1",
+		Request:   types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	// An edit or deploy waits on the lock, so it can't change the volumes between reading the project and the copy.
+	require.Equal(t, []string{"lock", "project", "project", "copy demo_data", "unlock"}, environment.calls)
+}
+
+func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
+	const claim = "import-claim"
+	environment := &claimEnvironment{volumes: map[string]types.Volume{
+		"demo_data":  {Name: "demo_data", Labels: map[string]string{volumes.ClaimLabel: claim}},
+		"demo_cache": {Name: "demo_cache", Labels: map[string]string{volumes.ClaimLabel: "someone-else"}},
+		"shared":     {Name: "shared"},
+	}}
+	service := New(Dependencies{Environment: environment})
+	err := service.rollback(t.Context(), errors.New("restore failed"), importRollback{
+		ProjectID:   "p1",
+		ProjectName: "demo",
+		Claim:       claim,
+		Attempted: []types.ProjectVolume{
+			{Key: "data", Name: "demo_data", Kind: types.ProjectVolumeNamed},
+			// Created by a deploy or another restore after the import's own check.
+			{Key: "cache", Name: "demo_cache", Kind: types.ProjectVolumeNamed},
+			// An external volume the restore failed before creating; another project created it meanwhile.
+			{Key: "shared", Name: "shared", Kind: types.ProjectVolumeExternal},
+			{Key: "logs", Name: "demo_logs", Kind: types.ProjectVolumeNamed},
+		},
+	})
+	require.ErrorContains(t, err, "restore failed")
+	require.Equal(t, []string{"delete demo_data"}, environment.calls)
+	require.Contains(t, environment.volumes, "demo_cache")
+	require.Contains(t, environment.volumes, "shared")
 }

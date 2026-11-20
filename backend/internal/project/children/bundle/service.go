@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -38,7 +39,6 @@ type (
 		ExportVolume(ctx context.Context, name string) (types.UploadSession, error)
 		RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeployProject(ctx context.Context, projectID string, user types.Actor) error
-		DownProject(ctx context.Context, projectID string, user types.Actor) error
 		DestroyProject(ctx context.Context, projectID string, user types.Actor) error
 		DeleteVolume(ctx context.Context, name string, user types.Actor) error
 		DeleteUpload(ctx context.Context, kind, uploadID string) error
@@ -49,6 +49,10 @@ type (
 		Docker       *dockerInternal.DockerClientService
 		Uploads      *upload.UploadService
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
+		// LockProject holds the project's operation lock; StopProject and StartProject expect it held.
+		LockProject  func(ctx context.Context, projectID string) (func(), error)
+		StopProject  func(ctx context.Context, projectID string, user types.Actor) error
+		StartProject func(ctx context.Context, projectID string, user types.Actor) error
 	}
 
 	Service struct {
@@ -91,8 +95,8 @@ type (
 		User        types.Actor
 		ProjectID   string
 		ProjectName string
-		ComposeName string
-		Created     []types.ProjectVolume
+		Claim       string
+		Attempted   []types.ProjectVolume
 	}
 )
 
@@ -123,6 +127,12 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		}
 		return &files, nil
 	}
+	// Held from reading the project until it runs again, so no edit or deploy lands between the volume list and the copy.
+	unlock, err := s.deps.LockProject(ctx, opts.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	project, err := s.deps.Environment.Project(ctx, opts.ProjectID)
 	if err != nil {
 		return nil, err
@@ -309,11 +319,11 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 	}
 	if restart {
 		defer func() {
-			if startErr := s.deps.Environment.DeployProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User); startErr != nil {
+			if startErr := s.deps.StartProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", manifest.Project.Name, startErr))
 			}
 		}()
-		if downErr := s.deps.Environment.DownProject(ctx, opts.ProjectID, opts.User); downErr != nil {
+		if downErr := s.deps.StopProject(ctx, opts.ProjectID, opts.User); downErr != nil {
 			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, downErr)
 		}
 	}
@@ -480,10 +490,12 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	if _, err = s.checkVolumeTargets(ctx, certain, predicted); err != nil {
 		return "", err
 	}
+	// Every volume this import creates carries its claim, so a rollback removes only those.
+	claim := uuid.New().String()
 	var (
 		projectID string
 		target    importTarget
-		created   []types.ProjectVolume
+		attempted []types.ProjectVolume
 	)
 	visit := func(name string, size int64, body io.Reader) error {
 		if name == projects.ProjectBundleProject {
@@ -516,13 +528,12 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 				Project:  target.composeName,
 				Key:      volume.Key,
 				Driver:   volume.Driver,
+				Claim:    claim,
 				External: external,
 			},
 			Size: size,
 		})
-		if !errors.Is(restoreErr, common.ErrConflict) {
-			created = append(created, volume)
-		}
+		attempted = append(attempted, volume)
 		return restoreErr
 	}
 	if _, _, err = projects.ReadProjectBundle(archive, visit); err != nil {
@@ -530,8 +541,8 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			User:        opts.User,
 			ProjectID:   projectID,
 			ProjectName: opts.Request.Name,
-			ComposeName: target.composeName,
-			Created:     created,
+			Claim:       claim,
+			Attempted:   attempted,
 		})
 	}
 	return projectID, nil
@@ -628,10 +639,9 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	if err := s.deps.Environment.DestroyProject(ctx, rollback.ProjectID, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
-	for _, volume := range rollback.Created {
+	for _, volume := range rollback.Attempted {
 		existing, exists, err := s.deps.Environment.Volume(ctx, volume.Name)
-		owned := volume.Kind == types.ProjectVolumeExternal || (rollback.ComposeName != "" && docker.ComposeProjectLabel(existing.Labels) == rollback.ComposeName)
-		if err == nil && exists && owned {
+		if err == nil && exists && existing.Labels[volumes.ClaimLabel] == rollback.Claim {
 			err = s.deps.Environment.DeleteVolume(ctx, volume.Name, rollback.User)
 		}
 		if err != nil {
