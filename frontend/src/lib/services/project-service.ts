@@ -301,7 +301,7 @@ class ProjectService extends BaseAPIService {
 			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
 		);
 		downloadFromUrl(
-			`${this.api.defaults.baseURL}/agents/${environmentId}/projects/${projectId}/export/${session.id}/download`,
+			`${this.api.defaults.baseURL}/agents/${environmentId}/uploads/${session.kind}/${session.id}/download`,
 			session.filename
 		);
 	}

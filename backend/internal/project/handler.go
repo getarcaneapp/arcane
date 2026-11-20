@@ -24,7 +24,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
-	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -95,12 +94,6 @@ type (
 		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
-	}
-
-	DownloadProjectExportInput struct {
-		EnvironmentID string `path:"id" doc:"Environment ID"`
-		ProjectID     string `path:"projectId" doc:"Project ID"`
-		UploadID      string `path:"uploadId" doc:"ID of the session an export of this project wrote"`
 	}
 
 	ImportProjectArchiveInput struct {
@@ -565,7 +558,7 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		return nil, err
 	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if permErr := requireConditions(permissions, input.EnvironmentID, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))); permErr != nil {
+	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))); permErr != nil {
 		return nil, permErr
 	}
 
@@ -603,49 +596,17 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 	return h.createProjectResponse(ctx, proj, activityID)
 }
 
-// requireConditions refuses with the first of perms the caller lacks in the environment.
-func requireConditions(permissions *authz.PermissionSet, environmentID string, perms []string) error {
-	for _, perm := range perms {
-		if !permissions.Allows(perm, environmentID) {
-			return huma.Error403Forbidden("permission denied: " + perm)
-		}
-	}
-	return nil
-}
-
-func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *DownloadProjectExportInput) (*huma.StreamResponse, error) {
-	reader, session, err := h.projectService.OpenExport(ctx, OpenExportOptions{
-		ProjectID: input.ProjectID,
-		UploadID:  input.UploadID,
-	})
-	if err != nil {
-		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
-			return nil, httpErr
-		}
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
-	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if permErr := requireConditions(permissions, input.EnvironmentID, authz.UploadOriginConditions.Required("origin", session.Origin)); permErr != nil {
-		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
-		_ = reader.Close()
-		return nil, permErr
-	}
-	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
-}
-
 func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 	request := kit.FromPtr(input.Body)
-	permissions, _ := middleware.PermissionsFromContext(ctx)
 	required := slices.Concat(
 		authz.ProjectExportConditions.Required("volumes", strconv.FormatBool(len(request.Volumes) > 0)),
 		authz.ProjectExportConditions.Required("stopProject", strconv.FormatBool(request.StopProject)),
 	)
-	if permErr := requireConditions(permissions, input.EnvironmentID, required); permErr != nil {
+	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
 		return nil, permErr
 	}
 
@@ -791,7 +752,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			"removeVolumes": kit.FromPtr(input.Body).RemoveVolumes,
 		},
 		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DestroyProject(runtimeCtx, projectID, DestroyOptions{
+			return h.projectService.DestroyProject(runtimeCtx, projectID, types.ProjectDestroyOptions{
 				RemoveFiles:   mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true),
 				RemoveVolumes: kit.FromPtr(input.Body).RemoveVolumes,
 			}, user)

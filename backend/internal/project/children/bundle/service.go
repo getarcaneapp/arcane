@@ -14,7 +14,6 @@ import (
 	"uuid"
 
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
@@ -45,15 +44,14 @@ type (
 	}
 
 	Dependencies struct {
-		Environment  Environment
-		Docker       *dockerInternal.DockerClientService
-		Uploads      *upload.UploadService
-		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
-		// LockProject holds the project's operation lock; StopProject, StartProject and RemoveProject expect it held.
-		LockProject   func(ctx context.Context, projectID string) (func(), error)
+		Environment   Environment
+		Docker        *dockerInternal.DockerClientService
+		Uploads       *upload.UploadService
+		ComposeFiles  func(ctx context.Context, projectID string) ([]string, error)
+		LockProject   func(ctx context.Context, op, projectID string) (func(), error)
 		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
-		StartProject  func(ctx context.Context, projectID string, user types.Actor) error
-		RemoveProject func(ctx context.Context, projectID string, user types.Actor) error
+		StartProject  func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
+		RemoveProject func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
 	}
 
 	Service struct {
@@ -73,10 +71,9 @@ type (
 	}
 
 	exportState struct {
-		docker  map[string]types.Volume
-		volumes []types.ProjectVolume
-		active  bool
-		// runsArcane is set when the project runs Arcane itself, which stopping the project would take down.
+		docker     map[string]types.Volume
+		volumes    []types.ProjectVolume
+		active     bool
 		runsArcane bool
 	}
 
@@ -130,8 +127,7 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		}
 		return &files, nil
 	}
-	// Held from reading the project until it runs again, so no edit or deploy lands between the volume list and the copy.
-	unlock, err := s.deps.LockProject(ctx, opts.ProjectID)
+	unlock, err := s.deps.LockProject(ctx, "export project", opts.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +140,7 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	if err != nil {
 		return nil, err
 	}
-	// Only a running project is stopped for the export, as writeBundle does; a stopped one is left as it is.
 	if state.active && opts.Request.StopProject {
-		// Stopping the project would stop Arcane too, and with it the export that starts the project again.
 		if state.runsArcane {
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
 		}
@@ -165,8 +159,6 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		Write:    write,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(project.Name) + types.ProjectBundleExtension,
-		Origin:   types.UploadOriginProjectBundle,
-		OriginID: project.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", project.Name, err)
@@ -184,9 +176,9 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		return exportState{}, fmt.Errorf("list containers: %w", err)
 	}
 	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running.Items)
-	runsArcane := slices.ContainsFunc(running.Items, func(c container.Summary) bool {
+	arcaneOfProject := func(c container.Summary) bool {
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
-	})
+	}
 	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project: project,
 		Inspect: s.deps.Environment.Volume,
@@ -199,7 +191,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		docker:     inspected,
 		volumes:    resolved,
 		active:     len(activeContainers) > 0,
-		runsArcane: runsArcane,
+		runsArcane: slices.ContainsFunc(running.Items, arcaneOfProject),
 	}, nil
 }
 
@@ -312,7 +304,7 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 	}
 	if restart {
 		defer func() {
-			if startErr := s.deps.StartProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User); startErr != nil {
+			if startErr := s.deps.StartProject(context.WithoutCancel(ctx), opts.ProjectID, opts.User, nil); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", manifest.Project.Name, startErr))
 			}
 		}()
@@ -329,23 +321,14 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
 		}
 	}
-	// A bundle marked consistent must not hold data written during the copy. Something else, such as a volume backup
-	// that stopped a writer and finishes, can start it again. Writers running now are refused, and Docker's events
-	// across the copy are checked, so even a container that started and was removed again is seen.
-	var (
-		since   string
-		watched []string
-	)
 	if manifest.Consistent {
+		var copied []string
 		for _, volume := range manifest.Volumes {
-			if volume.Included && !slices.Contains(watched, volume.Name) {
-				watched = append(watched, volume.Name)
+			if volume.Included {
+				copied = append(copied, volume.Name)
 			}
 		}
-		if since, err = s.dockerNow(ctx); err != nil {
-			return err
-		}
-		if writerErr := s.checkNoWriters(ctx, watched); writerErr != nil {
+		if writerErr := s.checkNoWriters(ctx, copied); writerErr != nil {
 			return writerErr
 		}
 	}
@@ -363,17 +346,9 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
 		}
 	}
-	if manifest.Consistent {
-		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, watched, since); startErr != nil {
-			return startErr
-		}
-	}
 	return writer.Close()
 }
 
-// refuseUnnamedVolumes refuses to stop a project whose containers keep data in an unnamed volume: stopping removes the
-// containers, which alone link such a volume to its service, so the project would start again on an empty one. A
-// volume the project declares by name, even a generated one, is attached again by Compose.
 func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Project) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -396,22 +371,6 @@ func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Projec
 	return nil
 }
 
-// dockerNow is the Docker daemon's clock as an events timestamp, so event windows don't depend on Arcane's clock.
-func (s *Service) dockerNow(ctx context.Context) (string, error) {
-	info, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
-	})
-	if err != nil {
-		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
-	}
-	now, err := time.Parse(time.RFC3339Nano, info.Info.SystemTime)
-	if err != nil {
-		return "", fmt.Errorf("read the Docker daemon's time: %w", err)
-	}
-	return fmt.Sprintf("%d.%09d", now.Unix(), now.Nanosecond()), nil
-}
-
-// checkNoWriters fails when a running container mounts one of the volumes writable.
 func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -431,55 +390,6 @@ func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
 	return nil
 }
 
-// checkNoStarts fails when, since the given daemon time, a container of the Compose project started or any container
-// mounted one of the volumes writable, including one removed again since; events that can't be read fail it too, as the
-// copy can't be shown to be consistent.
-func (s *Service) checkNoStarts(ctx context.Context, composeName string, volumeNames []string, since string) error {
-	until, err := s.dockerNow(ctx)
-	if err != nil {
-		return err
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	queries := []client.Filters{
-		make(client.Filters).Add("type", "container").Add("event", "start").Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	}
-	if len(volumeNames) > 0 {
-		queries = append(queries, make(client.Filters).Add("type", "volume").Add("event", "mount").Add("volume", volumeNames...))
-	}
-	for _, filters := range queries {
-		if queryErr := s.noEvents(ctx, dockerClient, client.EventsListOptions{Since: since, Until: until, Filters: filters}, composeName); queryErr != nil {
-			return queryErr
-		}
-	}
-	return nil
-}
-
-// noEvents fails on any event the query returns, except a read-only volume mount, such as the export's own helper's.
-func (s *Service) noEvents(ctx context.Context, dockerClient *client.Client, options client.EventsListOptions, composeName string) error {
-	result := dockerClient.Events(ctx, options)
-	for {
-		select {
-		case message := <-result.Messages:
-			switch {
-			case message.Type != events.VolumeEventType:
-				return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
-			case message.Actor.Attributes["read/write"] == "true":
-				return common.Classify(common.ErrConflict, fmt.Errorf("a container started writing to volume %s while it was copied; export it again", message.Actor.ID))
-			}
-		case streamErr := <-result.Err:
-			if errors.Is(streamErr, io.EOF) || streamErr == nil {
-				return nil
-			}
-			return fmt.Errorf("check that the volumes of project %s were not written during the copy: %w", composeName, streamErr)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-}
-
 func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {
 	file, consumed, cleanup, err := s.deps.Uploads.Consume(ctx, session.Kind, session.ID)
 	if err != nil {
@@ -494,10 +404,7 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 	if err != nil {
 		return "", err
 	}
-	// Only the first chunk's manifest is read here; the full bundle is validated on import, under its size checks.
 	bundled := projects.IsProjectBundle(bytes.NewReader(head))
-	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
-	// being copied.
 	request := types.ImportProjectArchive{
 		UploadID:     opts.Request.UploadID,
 		Name:         opts.Request.Name,
@@ -506,7 +413,7 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		ComposeFiles: opts.Request.ComposeFiles,
 		Start:        opts.Request.Start,
 	}
-	unlock, err := s.deps.LockProject(ctx, request.ProjectID)
+	unlock, err := s.deps.LockProject(ctx, "import project", request.ProjectID)
 	if err != nil {
 		return "", err
 	}
@@ -519,7 +426,7 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 	if err != nil || !request.Start {
 		return projectID, err
 	}
-	if deployErr := s.deps.StartProject(ctx, projectID, opts.User); deployErr != nil {
+	if deployErr := s.deps.StartProject(ctx, projectID, opts.User, nil); deployErr != nil {
 		return "", fmt.Errorf("project %s was imported but could not be started: %w", request.Name, deployErr)
 	}
 	return projectID, nil
@@ -534,12 +441,10 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		return "", err
 	}
 	defer cleanupSession()
-	// Each entry is staged, then restored and removed before the next, so each must fit the upload space. Checked from
-	// the declared size before the entry is read, so a small upload can't make this pass expand gigabytes; the manifest
-	// limits how many entries there are.
-	manifest, _, err := projects.ReadProjectBundle(archive, func(_ string, size int64, _ io.Reader) error {
+	checkSpace := func(_ string, size int64, _ io.Reader) error {
 		return s.deps.Uploads.CheckFreeSpace(ctx, size)
-	})
+	}
+	manifest, _, err := projects.ReadProjectBundle(archive, checkSpace)
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
 	}
@@ -583,7 +488,6 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	if _, err = s.checkVolumeTargets(ctx, certain, predicted); err != nil {
 		return "", err
 	}
-	// Every volume this import creates carries its claim, so a rollback removes only those.
 	claim := uuid.New().String()
 	var (
 		projectID string
@@ -729,7 +633,7 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, rollback.User); err != nil {
+	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, types.ProjectDestroyOptions{RemoveFiles: true}, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
 	for _, volume := range rollback.Attempted {

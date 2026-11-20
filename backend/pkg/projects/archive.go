@@ -122,7 +122,6 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			return err
 		}
 		defer func() {
-			// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 			_ = reader.Close()
 		}()
 		if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -149,21 +148,26 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
+func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
+	usage, err := disk.UsageWithContext(ctx, dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	reserve = max(unpackReserveBytes, int64(usage.Total/20))
+	return int64(usage.Free) - reserve, reserve, nil
+}
+
 func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error {
 	destination := acfs.Root{Path: root}
-	usage, err := disk.UsageWithContext(ctx, root)
+	budget, reserve, err := FreeSpaceBudget(ctx, root)
 	if err != nil {
 		return fmt.Errorf("check free space for the project archive: %w", err)
 	}
-	reserve := max(unpackReserveBytes, int64(usage.Total/20))
-	budget := int64(usage.Free) - reserve
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("open project archive: %w", err)
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 
@@ -352,8 +356,6 @@ func isProjectBundleVolumeArchive(name string) bool {
 	return ok && err == nil && archive == name
 }
 
-// IsProjectBundle reports whether r starts with an export's manifest. It reads only that bounded first entry, so it never
-// expands the rest of an untrusted archive; ReadProjectBundle validates the whole bundle.
 func IsProjectBundle(r io.Reader) bool {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
@@ -366,7 +368,6 @@ func IsProjectBundle(r io.Reader) bool {
 	return bundled
 }
 
-// readProjectBundleManifest reads the archive's first entry and reports whether it is an export's manifest.
 func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {
 	header, err := tarReader.Next()
 	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
@@ -376,8 +377,6 @@ func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bo
 	if err != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
 	}
-	// A plain archive may hold its own file of this name; only an export's manifest makes a bundle, so one that fails
-	// to decode as such is a project file.
 	var probe struct {
 		Kind          string `json:"kind"`
 		FormatVersion int    `json:"formatVersion"`
@@ -398,8 +397,6 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 		return types.ProjectManifest{}, false, nil
 	}
 	defer func() {
-		// A gzip reader's Close leaves the source open and says nothing about data already read, whose errors are
-		// returned as they happen.
 		_ = gzipReader.Close()
 	}()
 	tarReader := tar.NewReader(gzipReader)

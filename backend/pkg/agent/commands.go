@@ -63,6 +63,7 @@ var (
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}", CommandName: "upload.session.delete"},
 		{Method: http.MethodPut, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}", CommandName: "upload.session.chunk"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/chunks/{index}", CommandName: "upload.session.chunk.read"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/uploads/{kind}/{uploadId}/download", CommandName: "upload.session.download"},
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/images/updates/check", CommandName: "image_update.check"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/images/updates/check/{imageId}", CommandName: "image_update.check_one"},
@@ -102,7 +103,6 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/import", CommandName: "project.import"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export.options"},
-		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export/{uploadId}/download", CommandName: "project.export.download"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.inspect"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/compose", CommandName: "project.compose"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/workspace", CommandName: "project.workspace.list"},

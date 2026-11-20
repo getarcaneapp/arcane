@@ -189,7 +189,7 @@ func (e localTransferEnvironment) DownProject(ctx context.Context, projectID str
 }
 
 func (e localTransferEnvironment) DestroyProject(ctx context.Context, projectID string, user types.Actor) error {
-	return e.projects.DestroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
+	return e.projects.DestroyProject(ctx, projectID, types.ProjectDestroyOptions{RemoveFiles: true}, user)
 }
 
 func (e localTransferEnvironment) DeleteVolume(ctx context.Context, name string, user types.Actor) error {

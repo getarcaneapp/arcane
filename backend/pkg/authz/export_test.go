@@ -262,10 +262,8 @@ func TestPermissionConditionsRequired(t *testing.T) {
 	require.Equal(t, []string{PermImagesPush}, BuildPushConditions.Required("push", "true"))
 	require.Empty(t, BuildPushConditions.Required("push", "false"))
 	require.Empty(t, UploadKindConditions.Required("kind", "unknown"))
-	// A session an export wrote takes the export's rights to read, wherever it is read from.
-	require.Equal(t, []string{PermProjectsRead}, UploadOriginConditions.Required("origin", types.UploadOriginProjectExport))
-	require.Equal(t, []string{PermProjectsRead, PermVolumesBackup}, UploadOriginConditions.Required("origin", types.UploadOriginProjectBundle))
-	require.Empty(t, UploadOriginConditions.Required("origin", ""))
+	require.Equal(t, []string{PermProjectsExport}, UploadDownloadConditions.Required("kind", types.UploadKindProjectArchive))
+	require.Empty(t, UploadDownloadConditions.Required("kind", types.UploadKindVolumeBackup))
 	require.Equal(t, []string{PermProjectsDown, PermProjectsDeploy}, ProjectExportConditions.Required("stopProject", "true"))
 	require.Equal(t, []string{PermGitOpsBackup}, GitOpsSyncModeConditions.Required("mode", "backup"))
 	require.Equal(t, []string{PermGitOpsBidirectional}, GitOpsSyncModeConditions.Required("mode", "bidirectional"))

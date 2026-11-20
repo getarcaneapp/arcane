@@ -44,7 +44,6 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
-	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -472,7 +471,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{
 		RemoveFiles: true,
 	}, types.Actor{}))
 
@@ -499,7 +498,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -560,7 +559,7 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", types.ProjectDestroyOptions{
 		RemoveFiles:   true,
 		RemoveVolumes: true,
 	}, types.Actor{}))
@@ -11114,10 +11113,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_ = json.MarshalWrite(w, []container.Summary{})
-		case strings.HasSuffix(r.URL.Path, "/info"):
-			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
-		case strings.HasSuffix(r.URL.Path, "/events"):
-			// No container started or volume was mounted during the copy.
 		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
 			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
 		default:
@@ -11163,7 +11158,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
 			},
 			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
-				// The new project is locked while its volumes are restored, so nothing can start it on half-copied data.
 				var imported Project
 				require.NoError(t, svc.db.WithContext(ctx).Where("name = ?", "copy").First(&imported).Error)
 				unlock, free := svc.opLock.TryLock("0:project:" + imported.ID)
@@ -11230,85 +11224,4 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	require.Len(t, targets, 1)
 	assert.NotEmpty(t, targets[0].Claim, "the restore claims the volume it creates for this import")
 	assert.Equal(t, types.ComposeVolumeTarget{Labels: sourceLabels, Project: "copy", Key: "first", Claim: targets[0].Claim, External: true}, targets[0])
-}
-
-func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	uploads := upload.NewUploadService(nil)
-	svc := &ProjectService{uploads: uploads}
-	write := func(origin, originID string) string {
-		session, err := uploads.WriteSession(t.Context(), upload.WriteSessionOptions{
-			Write: func(w io.Writer) error {
-				_, err := w.Write([]byte("archive"))
-				return err
-			},
-			Kind:     types.UploadKindProjectArchive,
-			Filename: "demo.tar.gz",
-			Origin:   origin,
-			OriginID: originID,
-		})
-		require.NoError(t, err)
-		return session.ID
-	}
-	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
-	require.NoError(t, err)
-	for _, test := range []struct {
-		wantErr  error
-		name     string
-		uploadID string
-	}{
-		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
-		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantErr: common.ErrNotFound},
-		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
-		{name: "an upload for an import", uploadID: imported.ID, wantErr: common.ErrNotFound},
-		{name: "the project's bundle", uploadID: write(types.UploadOriginProjectBundle, "p1")},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID})
-			if test.wantErr == nil {
-				require.NoError(t, openErr)
-				require.Equal(t, test.uploadID, session.ID)
-				require.NoError(t, reader.Close())
-				return
-			}
-			require.ErrorIs(t, openErr, test.wantErr)
-			// A refused download leaves the session for whoever may read it.
-			_, getErr := uploads.GetSession(t.Context(), types.UploadKindProjectArchive, test.uploadID)
-			require.NoError(t, getErr)
-		})
-	}
-}
-
-func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
-	ctx := t.Context()
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	store := kv.NewKVService(db)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newUnreachableDockerService(t),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   store,
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	require.NoError(t, db.Create(&Project{ID: "p1", Name: "web", Path: t.TempDir()}).Error)
-	noted := func(projectID string) bool {
-		_, found, getErr := store.Get(ctx, exportStoppedKeyPrefix+projectID)
-		require.NoError(t, getErr)
-		return found
-	}
-
-	// The note is written before the project goes down, so it survives Arcane stopping partway through the stop.
-	require.Error(t, svc.stopForExport(ctx, "p1", types.SystemUser))
-	require.True(t, noted("p1"))
-
-	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
-	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
-	require.Error(t, svc.startExportStoppedProjects(ctx, &concurrency.KeyedMutex{}))
-	require.True(t, noted("p1"))
-	require.False(t, noted("gone"))
 }

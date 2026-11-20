@@ -1,7 +1,6 @@
 package project
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -13,7 +12,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -40,20 +38,14 @@ func New(p ModuleParams) *Module {
 		service:  p.Service,
 		activity: p.Activity,
 		bundles: bundle.New(bundle.Dependencies{
-			Environment:  local,
-			Docker:       p.Service.dockerService,
-			Uploads:      p.Service.uploads,
-			ComposeFiles: p.Service.LoadedComposeFiles,
-			LockProject: func(ctx context.Context, projectID string) (func(), error) {
-				return p.Service.LockProject(ctx, "export or import project", projectID)
-			},
-			StopProject: p.Service.stopForExport,
-			StartProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				return p.Service.deployProject(ctx, projectID, user, nil)
-			},
-			RemoveProject: func(ctx context.Context, projectID string, user types.Actor) error {
-				return p.Service.destroyProject(ctx, projectID, DestroyOptions{RemoveFiles: true}, user)
-			},
+			Environment:   local,
+			Docker:        p.Service.dockerService,
+			Uploads:       p.Service.uploads,
+			ComposeFiles:  p.Service.LoadedComposeFiles,
+			LockProject:   p.Service.LockProject,
+			StopProject:   p.Service.stopForExport,
+			StartProject:  p.Service.deployProject,
+			RemoveProject: p.Service.destroyProject,
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
@@ -275,7 +267,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Description: "List the project's volumes, which of them an export includes by default, and whether the project is running",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.GetProjectExportOptions)
+	}, authz.PermProjectsExport, h.GetProjectExportOptions)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-project-archive",
@@ -287,19 +279,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Tags:     []string{"Projects"},
 		Security: handlerutil.DefaultOperationSecurity(),
 		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectExportConditions},
-	}, authz.PermProjectsRead, h.ExportProjectArchive)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "download-project-export",
-		Method:      http.MethodGet,
-		Path:        "/agents/{id}/projects/{projectId}/export/{uploadId}/download",
-		Summary:     "Download a project export",
-		Description: "Stream the archive an export of this project wrote; the session is deleted once the whole file was sent. " +
-			"An archive that holds volume data also requires volumes:backup.",
-		Tags:     []string{"Projects"},
-		Security: handlerutil.DefaultOperationSecurity(),
-		Metadata: map[string]any{authz.MetaPermissionConditions: authz.UploadOriginConditions},
-	}, authz.PermProjectsRead, h.DownloadProjectExport)
+	}, authz.PermProjectsExport, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",

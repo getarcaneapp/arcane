@@ -33,9 +33,7 @@ import (
 
 type (
 	ResolveProjectVolumesOptions struct {
-		// Inspect returns the named Docker volume and whether it exists.
 		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		// InUse names the volumes containers outside the project mount.
 		InUse   map[string]bool
 		Project types.Project
 	}
@@ -48,7 +46,6 @@ type (
 	}
 )
 
-// unnamedVolumeName matches the names Docker gives volumes created without one.
 var unnamedVolumeName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
@@ -180,8 +177,6 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	return classified
 }
 
-// ResolveProjectVolumes classifies the project's volumes and includes each one that exists and keeps its data in Docker.
-// It also returns the Docker volumes it inspected, by name.
 func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
 	classified := ClassifyProjectVolumes(opts.Project)
 	resolved := make([]types.ProjectVolume, 0, len(classified))
@@ -212,8 +207,6 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	return resolved, inspected, nil
 }
 
-// ProjectContainerUse returns the Compose project's running and restarting containers, the ones a stop stops, and the
-// volumes every other container mounts. Arcane's own containers are never stopped, so they count as outside.
 func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
 	var active []container.Summary
 	inUse := map[string]bool{}
@@ -233,9 +226,6 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 	return active, inUse
 }
 
-// UnnamedVolumeMount finds a container mount that keeps data in an unnamed volume the project doesn't declare: only that
-// container links the volume to its service, so removing the container, as taking the project down does, leaves the
-// data behind. A volume the project declares by name, even a generated one, is attached again by Compose.
 func UnnamedVolumeMount(project types.Project, containers []container.Summary) (container.Summary, container.MountPoint, bool) {
 	declared := map[string]bool{}
 	for _, volume := range ClassifyProjectVolumes(project) {

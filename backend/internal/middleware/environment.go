@@ -286,8 +286,13 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 	if len(segments) >= 2 && segments[0] == "uploads" && segments[1] != "" {
 		if len(segments) == 2 && method == http.MethodPost ||
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
-			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
-			perms := authz.UploadKindConditions.Required("kind", segments[1])
+			len(segments) == 4 && method == http.MethodGet && segments[3] == "download" ||
+			len(segments) == 5 && (method == http.MethodPut || method == http.MethodGet) && segments[3] == "chunks" {
+			conditions := authz.UploadKindConditions
+			if len(segments) == 4 {
+				conditions = authz.UploadDownloadConditions
+			}
+			perms := conditions.Required("kind", segments[1])
 			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
 				return !ps.Allows(perm, envID)
 			})

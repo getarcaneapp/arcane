@@ -2,7 +2,6 @@ package upload
 
 import (
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -39,7 +38,6 @@ func (m *Module) RegisterRoutes(api huma.API) {
 
 func RegisterUploads(api huma.API, service *UploadService) {
 	h := &UploadHandler{uploadService: service}
-	readConditions := slices.Concat(authz.UploadKindConditions, authz.UploadOriginConditions)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "create-upload-session",
@@ -73,8 +71,19 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Download the bytes of one received chunk of an upload session",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: readConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.ReadChunk)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-upload-session",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}/download",
+		Summary:     "Download an upload session",
+		Description: "Stream the file of a complete upload session; the session is deleted once the whole file was sent",
+		Tags:        []string{"Uploads"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadDownloadConditions},
+	}, h.DownloadSession)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-upload-session",
@@ -84,7 +93,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Inspect an upload session to resume by re-sending only the missing chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: readConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.GetSession)
 
 	huma.Register(api, huma.Operation{

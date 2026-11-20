@@ -228,7 +228,6 @@ func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 
-	// A project's own file named like the manifest leaves its archive plain.
 	for _, body := range []string{`{"name":"mine"}`, strings.Repeat(" ", maxProjectManifestBytes+1)} {
 		own := buildTestArchive(t, []archiveTestEntry{
 			{header: tar.Header{Typeflag: tar.TypeReg, Name: ProjectBundleManifest, Mode: 0o644}, body: body},
@@ -335,7 +334,6 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 			_, ok, readErr := ReadProjectBundle(bytes.NewReader(archive), nil)
 			assert.True(t, ok)
 			require.ErrorContains(t, readErr, tt.wantErr)
-			// Detection reads only the manifest, so an export whose later entries are wrong is still an export.
 			assert.True(t, IsProjectBundle(bytes.NewReader(archive)))
 		})
 	}
