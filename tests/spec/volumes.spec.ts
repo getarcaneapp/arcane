@@ -176,9 +176,10 @@ test.describe('Volumes Page', () => {
 		await page.goto('/volumes');
 		await page.waitForLoadState('load');
 
-		// The stat card renders the value as a heading and its label beside it, not as one string.
-		const totalCard = page.getByRole('heading', { name: String(volumeCount.total) }).locator('..');
-		await expect(totalCard).toContainText(/Total Volume/);
+		// The stat card renders the value and its label as separate elements, so assert on the card
+		// that carries the label rather than on one concatenated string.
+		const totalCard = page.getByText('Total Volumes', { exact: true }).locator('..');
+		await expect(totalCard).toContainText(String(volumeCount.total));
 	});
 
 	test('Inspect Volume', async ({ page }) => {
