@@ -181,7 +181,9 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	if _, readErr := partial.Read(make([]byte, 16)); readErr != nil {
 		t.Fatal(readErr)
 	}
-	_ = partial.Close()
+	if closeErr := partial.Close(); closeErr != nil {
+		t.Fatalf("close a partial download: %v", closeErr)
+	}
 	reader, downloaded, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
 	if err != nil {
 		t.Fatalf("DownloadSession after a partial read: %v", err)
@@ -193,7 +195,9 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatalf("downloaded %d bytes, %v", len(got), err)
 	}
-	_ = reader.Close()
+	if closeErr := reader.Close(); closeErr != nil {
+		t.Fatalf("close a complete download: %v", closeErr)
+	}
 	if _, getErr := service.GetSession(ctx, types.UploadKindProjectArchive, session.ID); !errors.Is(getErr, common.ErrUploadSessionNotFound) {
 		t.Fatalf("session after a complete download error = %v, want ErrUploadSessionNotFound", getErr)
 	}
