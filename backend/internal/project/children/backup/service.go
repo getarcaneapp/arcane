@@ -77,7 +77,10 @@ type (
 		Deploy func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		// RewriteComposeName sets the Compose project name in the project's files, as an import does.
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
-		Activities         activity.MessageAppender
+		// ForgetExportStop drops the note of an interrupted export that stopped the project, so its recovery doesn't
+		// start a project a restore took over.
+		ForgetExportStop func(ctx context.Context, projectID string) error
+		Activities       activity.MessageAppender
 	}
 
 	Service struct {
@@ -1452,6 +1455,10 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 		if p, err = s.prepareRestore(ctx, p); err != nil {
 			return nil, err
 		}
+	}
+	// From here the restore decides whether the project runs, by redeploying it or not.
+	if forgetErr := s.deps.ForgetExportStop(ctx, p.ProjectID); forgetErr != nil {
+		return nil, forgetErr
 	}
 	if applyErr := s.restoreSteps(input, t.ActivityID()).apply(ctx, p); applyErr != nil {
 		return nil, applyErr

@@ -716,6 +716,15 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks 
 	return s.deployProject(ctx, projectID, types.SystemUser, nil)
 }
 
+// forgetExportStop drops the note of an export that stopped the project, for an operation that decides itself whether
+// the project runs.
+func (s *ProjectService) forgetExportStop(ctx context.Context, projectID string) error {
+	if err := s.kv.Delete(ctx, exportStoppedKeyPrefix+projectID); err != nil {
+		return fmt.Errorf("drop the export stop note of project %s: %w", projectID, err)
+	}
+	return nil
+}
+
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
 	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
 	defer cancel()

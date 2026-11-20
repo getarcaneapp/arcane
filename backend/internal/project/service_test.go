@@ -11392,4 +11392,8 @@ func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
 	require.Error(t, svc.startExportStoppedProjects(ctx, &concurrency.KeyedMutex{}))
 	require.True(t, noted("p1"))
 	require.False(t, noted("gone"))
+
+	// A restore that takes the project over decides itself whether it runs, so recovery must not start it.
+	require.NoError(t, svc.forgetExportStop(ctx, "p1"))
+	require.False(t, noted("p1"))
 }

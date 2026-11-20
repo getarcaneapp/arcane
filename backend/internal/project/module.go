@@ -82,6 +82,7 @@ func New(p ModuleParams) *Module {
 		},
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
+		ForgetExportStop:   p.Service.forgetExportStop,
 		Activities:         p.Activity,
 	})
 	return &Module{
