@@ -486,3 +486,24 @@ func containerIDs(summaries []container.Summary) []string {
 	}
 	return ids
 }
+
+func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
+	created := map[string]string{"web_data": "2026-11-20T09:00:00Z"}
+	service := NewService(Dependencies{Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+		at, exists := created[name]
+		return types.Volume{Name: name, CreatedAt: at}, exists, nil
+	}})
+	before, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+
+	// Mounting a volume removed while the backup waited would create it empty, so the backup stops instead.
+	_, err = service.volumeIdentities(t.Context(), []string{"web_data", "web_cache"})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "volume web_cache was removed after the backup was queued")
+
+	// A volume removed and created again during the copy is a different volume, which capture refuses to keep.
+	created["web_data"] = "2026-11-20T09:05:00Z"
+	after, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+	require.NotEqual(t, before, after)
+}

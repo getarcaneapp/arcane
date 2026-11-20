@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -570,6 +571,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		return err
 	}
 	p.Volumes = markInUse(p.Volumes, inUse)
+	// A volume removed while the backup waited would be mounted, and so created, empty; one replaced during the copy
+	// would be captured empty too. Each must exist now and be the same volume after the copy.
+	captured, err := s.volumeIdentities(ctx, p.volumeNames())
+	if err != nil {
+		return err
+	}
 	composeFiles, err := s.deps.ComposeFiles(ctx, entry.ProjectID)
 	if err != nil {
 		return err
@@ -629,6 +636,14 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if saveErr := s.deps.DB.WithContext(ctx).Save(entry).Error; saveErr != nil {
 		return saveErr
 	}
+	// Saved first, so retention removes the snapshot of a backup that fails here.
+	after, err := s.volumeIdentities(ctx, p.volumeNames())
+	if err == nil && !maps.Equal(captured, after) {
+		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
+	}
+	if err != nil {
+		return err
+	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
 		stopped = nil
@@ -645,6 +660,22 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 		}
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
+}
+
+// volumeIdentities returns when Docker created each volume, refusing one that no longer exists.
+func (s *Service) volumeIdentities(ctx context.Context, names []string) (map[string]string, error) {
+	created := make(map[string]string, len(names))
+	for _, name := range names {
+		found, exists, err := s.deps.Volume(ctx, name)
+		switch {
+		case err != nil:
+			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
+		case !exists:
+			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was removed after the backup was queued, so it was not backed up; start the backup again", name))
+		}
+		created[name] = found.CreatedAt
+	}
+	return created, nil
 }
 
 // containerUse lists the Compose project's running and restarting containers, the ones a stop stops, and the volumes
