@@ -681,7 +681,7 @@ func (s *ProjectService) startExportStoppedProjects(ctx context.Context, volumeL
 	return errors.Join(errs...)
 }
 
-// startUnderVolumeLocks deploys a project whose lock the caller holds once no backup or restore holds its volumes, so it
+// startUnderVolumeLocks deploys a project whose lock the caller holds while no backup or restore holds its volumes, so it
 // never starts on a volume a restore is rewriting.
 func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks *concurrency.KeyedMutex, projectID string) error {
 	project, err := s.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
@@ -701,10 +701,12 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks 
 			unlock()
 		}
 	}()
+	// A backup can hold a volume for hours, so a busy one is skipped and retried later instead of waited for while the
+	// project lock blocks the user and the other projects.
 	for _, name := range slices.Compact(names) {
-		unlock, lockErr := volumeLocks.LockContext(ctx, name)
-		if lockErr != nil {
-			return fmt.Errorf("wait for volume %s: %w", name, lockErr)
+		unlock, locked := volumeLocks.TryLock(name)
+		if !locked {
+			return common.Classify(common.ErrConflict, fmt.Errorf("volume %s is busy with a backup or restore; the project starts on a later attempt", name))
 		}
 		unlocks = append(unlocks, unlock)
 	}
