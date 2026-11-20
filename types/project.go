@@ -68,6 +68,7 @@ type (
 		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
 		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
 		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container that is not stopped mounts the volume, so its data may change during an export or backup"`
+		BackupStore  bool              `json:"backupStore,omitempty" doc:"True when the volume holds Arcane's local backups, which are never exported or backed up"`
 	}
 
 	ProjectManifestProject struct {

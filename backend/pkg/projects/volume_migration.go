@@ -25,17 +25,30 @@ import (
 
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
+	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-type ComposeVolumeTargetNameOptions struct {
-	SourceProject string
-	Key           string
-	SourceName    string
-	TargetProject string
-}
+type (
+	ResolveProjectVolumesOptions struct {
+		// Inspect returns the named Docker volume and whether it exists.
+		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
+		// InUse names the volumes containers outside the project mount.
+		InUse map[string]bool
+		// BackupStore names the volume holding Arcane's local backups. It is never included, so no copy reads it.
+		BackupStore string
+		Project     types.Project
+	}
+
+	ComposeVolumeTargetNameOptions struct {
+		SourceProject string
+		Key           string
+		SourceName    string
+		TargetProject string
+	}
+)
 
 // unnamedVolumeName matches the names Docker gives volumes created without one.
 var unnamedVolumeName = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -169,6 +182,72 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	return classified
 }
 
+// ResolveProjectVolumes classifies the project's volumes and includes each one that exists and keeps its data in Docker,
+// except the backup store.
+// It also returns the Docker volumes it inspected, by name.
+func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
+	classified := ClassifyProjectVolumes(opts.Project)
+	resolved := make([]types.ProjectVolume, 0, len(classified))
+	inspected := map[string]types.Volume{}
+	for _, volume := range classified {
+		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
+			resolved = append(resolved, types.ProjectVolume{
+				Labels:      volume.Labels,
+				DriverOpts:  volume.DriverOpts,
+				Key:         volume.Key,
+				Name:        volume.Name,
+				Kind:        volume.Kind,
+				Driver:      volume.Driver,
+				BackupStore: true,
+			})
+			continue
+		}
+		if !volume.Included {
+			resolved = append(resolved, volume)
+			continue
+		}
+		existing, exists, err := opts.Inspect(ctx, volume.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
+		}
+		included := exists && (volume.Kind == types.ProjectVolumeNamed || LocalVolume(existing.Driver, existing.Options))
+		inspected[volume.Name] = existing
+		resolved = append(resolved, types.ProjectVolume{
+			Labels:     volume.Labels,
+			DriverOpts: volume.DriverOpts,
+			Key:        volume.Key,
+			Name:       volume.Name,
+			Kind:       volume.Kind,
+			Driver:     volume.Driver,
+			Included:   included,
+			Missing:    !exists,
+			InUse:      included && opts.InUse[volume.Name],
+		})
+	}
+	return resolved, inspected, nil
+}
+
+// ProjectContainerUse returns the Compose project's running and restarting containers, the ones a stop stops, and the
+// volumes every other container mounts. Arcane's own containers are never stopped, so they count as outside.
+func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
+	var active []container.Summary
+	inUse := map[string]bool{}
+	for _, c := range containers {
+		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
+			if c.State == container.StateRunning || c.State == container.StateRestarting {
+				active = append(active, c)
+			}
+			continue
+		}
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume {
+				inUse[m.Name] = true
+			}
+		}
+	}
+	return active, inUse
+}
+
 // UnnamedVolumeMount finds a container mount that keeps data in an unnamed volume the project doesn't declare: only that
 // container links the volume to its service, so removing the container, as taking the project down does, leaves the
 // data behind. A volume the project declares by name, even a generated one, is attached again by Compose.
@@ -220,10 +299,10 @@ func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, n
 }
 
 func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
-	labels := map[string]string{}
-	maps.Copy(labels, oldLabels)
-	maps.Copy(labels, config.Labels)
-	maps.Copy(labels, config.CustomLabels)
+	volumeLabels := map[string]string{}
+	maps.Copy(volumeLabels, oldLabels)
+	maps.Copy(volumeLabels, config.Labels)
+	maps.Copy(volumeLabels, config.CustomLabels)
 	raw, err := json.Marshal(composetypes.VolumeConfig{
 		Name:       config.Name,
 		Driver:     cmp.Or(config.Driver, "local"),
@@ -234,8 +313,8 @@ func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[
 	if err != nil {
 		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
-	labels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
-	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
+	volumeLabels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
+	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: volumeLabels}, nil
 }
 
 func composeVolumeKeysWithExplicitName(ctx context.Context, composeFiles []string) (map[string]struct{}, error) {

@@ -32,7 +32,7 @@
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
+	import { projectBackupConfigQuery, systemBackupHistoryQuery } from '#lib/query/backups.js';
 	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -52,7 +52,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
@@ -79,7 +79,13 @@
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
 	let policyCollection = $derived(data.policyCollection);
-	let projectPolicyCollection = $derived(data.projectPolicyCollection);
+	// Observed rather than taken from the load: a global run can disable a schedule's S3 destination, and saving sends
+	// the whole list, so a stale copy would turn it back on.
+	const projectPolicyQuery = createQuery(() => ({
+		...projectBackupConfigQuery(),
+		enabled: hasPermission('system-backups:read', GLOBAL_SCOPE)
+	}));
+	const projectPolicyCollection = $derived(projectPolicyQuery.data ?? data.projectPolicyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
 	const systemVolumeOptionsQuery = createQuery(() => ({
 		...systemVolumeBackupOptionsQuery(),
@@ -436,29 +442,25 @@
 	// Restores the files and every volume the backup includes, as the project's own restore-as-new does by default.
 	async function restoreProjectAsNew() {
 		if (!restoreAsNewTarget || restoringAsNew || !restoreAsNewName.trim()) return;
+		const environmentId = restoreAsNewTarget.environmentId;
 		restoringAsNew = true;
-		try {
-			const environmentId = restoreAsNewTarget.environmentId;
-			const restored = await tryCatch(
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(
 				projectService.restoreBackupAsNew(
 					restoreAsNewTarget.resourceId ?? '',
 					restoreAsNewTarget.id,
 					{ name: restoreAsNewName.trim(), files: true, start: restoreAsNewStart && canStartRestoredAsNew },
 					environmentId
 				)
-			);
-			if (restored.error !== null) {
-				toast.error(m.failed_to_restore_backup(), { description: extractApiErrorMessage(restored.error) });
-				return;
+			),
+			message: m.failed_to_restore_backup(),
+			setLoadingState: (value) => (restoringAsNew = value),
+			onSuccess: async (restored) => {
+				restoreAsNewOpen = false;
+				toast.success(m.project_restored_from_backup({ name: restored.name }), activityToastOptions(restored.activityId));
+				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.id }));
 			}
-			restoreAsNewOpen = false;
-			toast.success(m.project_restored_from_backup({ name: restored.data.name }), activityToastOptions(restored.data.activityId));
-			await goto(
-				resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.data.id })
-			);
-		} finally {
-			restoringAsNew = false;
-		}
+		});
 	}
 
 	let autoDiscovered = false;
@@ -519,7 +521,12 @@
 		() => '0',
 		(activity) =>
 			activity.metadata?.['action'] === 'run_project_backups' || activity.metadata?.['action'] === 'scheduled_project_backups',
-		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+		// A run may disable a schedule's missing S3 destination, so the schedules reload with the history.
+		() =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() }, { throwOnError: true })
+			]),
 		() => 'projects'
 	);
 
@@ -1173,7 +1180,7 @@
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					}}
 					onProjectSaved={(policies) => {
-						projectPolicyCollection = { policies };
+						queryClient.setQueryData(projectBackupConfigQuery().queryKey, { policies });
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() });
 					}}
 					onVolumeSaved={(policies) => {
