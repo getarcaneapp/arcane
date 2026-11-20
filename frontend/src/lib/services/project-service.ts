@@ -18,6 +18,7 @@ import type {
 	ProjectTransferResource,
 	ProjectTransferStarted,
 	ProjectUpdateInfo,
+	ProjectUrl,
 	RestoreProjectBackupAsNewRequest,
 	RestoreProjectBackupRequest
 } from '#lib/types/project.js';
@@ -139,10 +140,11 @@ class ProjectService extends BaseAPIService {
 			this.getProjectSection(`${basePath}/updates`)
 		]);
 
+		const project = { ...summary, ...compose, ...runtime };
+
 		return {
-			...summary,
-			...compose,
-			...runtime,
+			...project,
+			urls: project.urls?.map((entry: ProjectUrl | string) => (typeof entry === 'string' ? { url: entry } : entry)),
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
 	}
@@ -298,6 +300,10 @@ class ProjectService extends BaseAPIService {
 
 	async getExportOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
+	}
+
+	async getBackupOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backup-options`));
 	}
 
 	async listBackups(

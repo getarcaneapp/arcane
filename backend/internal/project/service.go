@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
@@ -755,6 +756,15 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes 
 	for _, volume := range projects.ClassifyProjectVolumes(project) {
 		if volume.Name != "" {
 			names = append(names, volume.Name)
+		}
+	}
+	// The noted containers may still mount volumes the Compose files no longer name, after an edit not yet deployed;
+	// a restore holding one of those finishes before they start.
+	for _, c := range note.Containers {
+		for _, m := range c.Mounts {
+			if m.Type == mounttypes.TypeVolume && m.Name != "" {
+				names = append(names, m.Name)
+			}
 		}
 	}
 	unlock, err := lockVolumes(names)
@@ -2066,6 +2076,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		Write:    pack,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+		Origin:   types.UploadOriginProjectExport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -2122,8 +2133,10 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {

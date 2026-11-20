@@ -233,6 +233,11 @@ type (
 		Color ProjectTagColor `json:"color"`
 	}
 
+	ProjectURL struct {
+		URL   string `json:"url"`
+		Label string `json:"label,omitempty"`
+	}
+
 	ProjectReference struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -391,7 +396,7 @@ type (
 		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
 		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
 		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
-		URLs            []string                     `json:"urls,omitempty" readOnly:"true"`
+		URLs            []ProjectURL                 `json:"urls,omitempty" readOnly:"true"`
 		IncludeFiles    []ProjectIncludeFile         `json:"includeFiles,omitempty" readOnly:"true"`
 		RunningCount    int                          `json:"runningCount" readOnly:"true"`
 		ServiceCount    int                          `json:"serviceCount" readOnly:"true"`
@@ -404,8 +409,9 @@ type (
 	}
 
 	ProjectDestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
+		RemoveFiles    bool
+		RemoveVolumes  bool
+		KeepContainers bool
 	}
 
 	ProjectDestroy struct {

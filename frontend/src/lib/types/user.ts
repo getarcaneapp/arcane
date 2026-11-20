@@ -99,6 +99,9 @@ export type UserPreferences = {
 	keyboardShortcutsEnabled?: boolean;
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
+	defaultShell?: string;
+	terminalShells?: Record<string, string>;
+	terminalUsers?: Record<string, string>;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
 	editorTabWidth?: EditorTabWidth;
 	toastPosition?: ToastPosition;

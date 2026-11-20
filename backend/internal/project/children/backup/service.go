@@ -957,7 +957,8 @@ func mergeContainers(first, extra []container.Summary) []container.Summary {
 func checkpointContainers(stopped []container.Summary) []container.Summary {
 	kept := make([]container.Summary, 0, len(stopped))
 	for _, summary := range stopped {
-		kept = append(kept, container.Summary{ID: summary.ID, Names: summary.Names, Labels: summary.Labels})
+		// Mounts are kept so recovery locks the volumes these containers use, even after a Compose edit renames them.
+		kept = append(kept, container.Summary{ID: summary.ID, Names: summary.Names, Labels: summary.Labels, Mounts: summary.Mounts})
 	}
 	return kept
 }

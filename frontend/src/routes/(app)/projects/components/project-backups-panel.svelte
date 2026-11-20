@@ -186,7 +186,7 @@
 		stopContainers = true;
 		destination = 'local';
 		s3DestinationId = s3Destinations.length === 1 ? (s3Destinations[0]?.id ?? '') : '';
-		const result = await tryCatch(projectService.getExportOptions(projectId, environmentId));
+		const result = await tryCatch(projectService.getBackupOptions(projectId, environmentId));
 		if (result.error !== null) {
 			optionsError = extractApiErrorMessage(result.error);
 			return;
