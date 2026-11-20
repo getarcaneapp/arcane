@@ -689,7 +689,7 @@
   "containers_bulk_update_partial": "Mise à jour de {success} du ou des conteneurs {total} . {failed} a échoué.",
   "containers_bulk_update_failed": "Échec de la mise à jour des conteneurs",
   "containers_group_by_project": "Grouper par projet",
-  "containers_nav_metrics": "Metriques",
+  "containers_nav_metrics": "Métriques",
   "storage": "Stockage",
   "connection_agent": "Connexion et agent",
   "storage_limits": "Stockage et Limites",
