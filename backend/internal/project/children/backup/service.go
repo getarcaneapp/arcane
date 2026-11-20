@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
@@ -716,11 +715,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
 	}
-	links, err := projects.LinksInside(ctx, project.Path)
-	if err != nil {
-		return fmt.Errorf("read the links of project %s: %w", project.Name, err)
-	}
-	manifest := backupManifest(project, p, len(active) > 0, composeFiles, externalEnv, links)
+	manifest := backupManifest(project, p, len(active) > 0, composeFiles, externalEnv)
 	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, manifest, env)
 	if err != nil {
 		return err
@@ -1053,7 +1048,9 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool, links map[string]string) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool) types.ProjectManifest {
+	// A directory that doesn't resolve has only its configured path; the snapshot then fails to copy it anyway.
+	resolved, _ := filepath.EvalSymlinks(project.Path)
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -1064,11 +1061,11 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 			ComposeName: project.ComposeName,
 		},
 		ComposeFiles:  composeFiles,
+		ProjectDirs:   slices.Compact([]string{project.Path, cmp.Or(resolved, project.Path)}),
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 		ExternalEnv:   externalEnv,
-		Links:         links,
 	}
 }
 
@@ -1849,12 +1846,7 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 			return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: restoreTargetType, ID: p.ID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 		},
 		report: func(ctx context.Context, message string) {
-			if _, err := s.deps.Activities.AppendMessage(context.WithoutCancel(ctx), activityID, activity.AppendMessageRequest{
-				Level:   types.ActivityMessageLevelInfo,
-				Message: message,
-			}); err != nil {
-				slog.WarnContext(ctx, "Failed to append project restore activity message", "activityId", activityID, "error", err)
-			}
+			activity.AppendOrWarn(ctx, s.deps.Activities, activityID, types.ActivityMessageLevelInfo, message)
 		},
 		down: func(ctx context.Context) error {
 			return s.deps.Down(ctx, projectID, input.User)
@@ -2183,7 +2175,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
 	if opts.OwnEnv && opts.ProjectPath != "" {
-		if linkErr := ownLinks(ctx, opts.ProjectPath, manifest.Links); linkErr != nil {
+		if linkErr := projects.OwnLinks(ctx, opts.ProjectPath, manifest.ProjectDirs, opts.Report); linkErr != nil {
 			return linkErr
 		}
 	}
@@ -2223,21 +2215,6 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 	}
 	if err := projects.WriteProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName, content); err != nil {
 		return fmt.Errorf("restore the .env file the backup stored: %w", err)
-	}
-	return nil
-}
-
-// ownLinks replaces a new project's restored links with the targets the backup recorded, so each leads to the copy's
-// own file.
-func ownLinks(ctx context.Context, projectPath string, links map[string]string) error {
-	root := acfs.Root{Path: projectPath}
-	for _, link := range slices.Sorted(maps.Keys(links)) {
-		if removeErr := root.Remove(ctx, link); removeErr != nil {
-			return fmt.Errorf("replace the restored link %s: %w", link, removeErr)
-		}
-		if linkErr := root.Symlink(ctx, links[link], link); linkErr != nil {
-			return fmt.Errorf("replace the restored link %s: %w", link, linkErr)
-		}
 	}
 	return nil
 }

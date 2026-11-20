@@ -153,8 +153,7 @@ func LinkTargetInside(ctx context.Context, root acfs.Root, logicalPath, resolved
 	if err != nil {
 		return "", false, err
 	}
-	// Checked without root's own name, which a target like "../web/x" passes through on its way back in.
-	if filepath.IsAbs(target) || !filepath.IsLocal(filepath.Join(strings.TrimPrefix(path.Dir(logicalPath), "/"), target)) {
+	if !staysInside(logicalPath, target) {
 		target, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, logicalPath)), resolvedPath)
 	}
 	return target, err == nil, err
@@ -182,15 +181,22 @@ func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byt
 	return content, perm, true, nil
 }
 
-// LinksInside returns the links in the project directory that lead to files inside it, by logical path, with the
-// targets a copy keeps for them; a link whose target already stays inside the directory is left out.
-func LinksInside(ctx context.Context, projectPath string) (map[string]string, error) {
+// staysInside reports whether target, of the link at logicalPath, names a path in the link's root without leaving it.
+// It is checked without the root's own name, which a target like "../web/x" passes through on its way back in.
+func staysInside(logicalPath, target string) bool {
+	return !filepath.IsAbs(target) && filepath.IsLocal(filepath.Join(strings.TrimPrefix(path.Dir(logicalPath), "/"), target))
+}
+
+// OwnLinks points each link in the copy at projectPath that leads into one of sourceDirs, the directories the copy was
+// taken from, at the copy's own path for the same file. Targets are read lexically, since the original may be gone. A
+// link in a folder Arcane can't change keeps its target, and report names every such link once.
+func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
 	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve project directory: %w", err)
+		return fmt.Errorf("resolve project directory: %w", err)
 	}
 	root := acfs.Root{Path: projectPath}
-	links := map[string]string{}
+	var readOnly []string
 	// A directory Arcane can't read, such as a database's data, keeps its links as they are rather than failing.
 	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
 		switch {
@@ -208,23 +214,50 @@ func LinksInside(ctx context.Context, projectPath string) (map[string]string, er
 			return relErr
 		}
 		logicalPath := "/" + filepath.ToSlash(relative)
-		target, inside, linkErr := LinkTargetInside(ctx, root, logicalPath, resolvedRoot)
-		if linkErr != nil || !inside {
+		target, linkErr := root.Readlink(ctx, logicalPath)
+		if errors.Is(linkErr, fs.ErrPermission) {
+			readOnly = append(readOnly, relative)
+			return nil
+		}
+		if linkErr != nil || staysInside(logicalPath, target) {
 			return linkErr
 		}
-		current, linkErr := root.Readlink(ctx, logicalPath)
-		if linkErr != nil {
+		linkDir := filepath.Dir(relative)
+		for index, dir := range sourceDirs {
+			named := target
+			if !filepath.IsAbs(target) {
+				// The system follows ".." from where the directory really is, the last of the recorded directories.
+				if index != len(sourceDirs)-1 {
+					continue
+				}
+				named = filepath.Join(dir, linkDir, target)
+			}
+			if !IsSafeSubdirectory(dir, named) {
+				continue
+			}
+			own, ownErr := filepath.Rel(filepath.Join(dir, linkDir), named)
+			if ownErr != nil {
+				return ownErr
+			}
+			linkErr = root.Remove(ctx, logicalPath)
+			if linkErr == nil {
+				linkErr = root.Symlink(ctx, own, logicalPath)
+			}
+			if errors.Is(linkErr, fs.ErrPermission) {
+				readOnly = append(readOnly, relative)
+				return nil
+			}
 			return linkErr
-		}
-		if target != current {
-			links[logicalPath] = target
 		}
 		return nil
 	})
 	if walkErr != nil {
-		return nil, fmt.Errorf("read the links of the project directory: %w", walkErr)
+		return fmt.Errorf("point the restored links at the project's own files: %w", walkErr)
 	}
-	return links, nil
+	if len(readOnly) > 0 {
+		report(ctx, "Arcane can't change links in read-only folders, so these still lead into the original project: "+strings.Join(readOnly, ", "))
+	}
+	return nil
 }
 
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {

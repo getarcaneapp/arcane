@@ -179,3 +179,11 @@ func FlushWriter(writer io.Writer) {
 		flusher.Flush()
 	}
 }
+
+// AppendOrWarn adds a message to the activity and only logs a warning when it can't, for steps whose progress messages
+// must not fail them.
+func AppendOrWarn(ctx context.Context, appender MessageAppender, activityID string, level types.ActivityMessageLevel, message string) {
+	if _, err := appender.AppendMessage(context.WithoutCancel(ctx), activityID, AppendMessageRequest{Level: level, Message: message}); err != nil {
+		slog.WarnContext(ctx, "Failed to append activity message", "activityId", activityID, "level", level, "error", err)
+	}
+}

@@ -25,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -63,6 +64,8 @@ type (
 		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
 		StartProject  func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RemoveProject func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
+		// Activities receives what a restore as a new project left as it is, on the activity that runs it.
+		Activities activity.MessageAppender
 	}
 
 	// NewProject is a project created from files written into its directory.
@@ -657,7 +660,15 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		// The new project gets its own copy of a .env the original keeps outside its directory, so it never changes the
 		// original's file and the import can set the new Compose name in it.
 		Fill: func(ctx context.Context, projectPath string) error {
-			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: opts.ProjectID, BackupID: opts.BackupID, ProjectPath: projectPath, OwnEnv: true})
+			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
+				Report: func(ctx context.Context, message string) {
+					activity.AppendOrWarn(ctx, s.deps.Activities, activity.IDFromContext(ctx), types.ActivityMessageLevelWarning, message)
+				},
+				ProjectID:   opts.ProjectID,
+				BackupID:    opts.BackupID,
+				ProjectPath: projectPath,
+				OwnEnv:      true,
+			})
 		},
 		ID:           newID,
 		Name:         request.Name,
