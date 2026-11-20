@@ -4361,7 +4361,7 @@
   "generate_enrollment_token": "Generate Enrollment Token",
   "generate_enrollment_token_description": "Issue a single-use token to connect or replace this agent.",
   "generate_enrollment_token_dialog_message": "A new single-use enrollment token is issued and any unused one stops working. When an agent enrolls with it, it gets a new API key and the currently connected agent disconnects.",
-  "online_environments": "Online agents",
+  "online_environments": "Online hosts",
   "actions_for_name": "Actions for {name}",
   "show_all_attention_items": "Show all {count} issues",
   "show_less": "Show less",

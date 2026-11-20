@@ -483,7 +483,7 @@
 					updates: loadedItem.updates,
 					reclaimable: diskUsageEntry ? totalReclaimableBytes(diskUsageEntry) : null,
 					risk: risk ? { score: risk.riskScore, band: risk.riskBand, status: risk.scoreStatus } : null,
-					versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
+					versionText: vInfo?.displayVersion || vInfo?.currentTag || vInfo?.currentVersion || null,
 					updateAvailable: !!vInfo?.updateAvailable,
 					menuButtons: getEnvironmentActionButtons(loadedItem)
 				};
@@ -780,11 +780,9 @@
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<Alert.Description>
 						{#if failedEnvironments.length > 0}
-							<p>
+							<p title={failedEnvironments.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n')}>
 								{m.all_environments_unavailable({
-									environments: failedEnvironments
-										.map(({ environment, message }) => `${environment.name} (${message})`)
-										.join(', ')
+									environments: failedEnvironments.map(({ environment }) => environment.name).join(', ')
 								})}
 							</p>
 						{/if}

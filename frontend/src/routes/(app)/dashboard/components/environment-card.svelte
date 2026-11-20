@@ -81,14 +81,14 @@
 						{#if overview.podCount !== undefined}
 							<Badge variant="purple" size="sm">{m.podman()}</Badge>
 						{/if}
-						{#if versionInfo}
+						{#if versionInfo && (versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion)}
 							<div class="flex items-center">
 								{#if versionInfo.updateAvailable || debugUpgrade}
 									<ArcaneTooltip.Root>
 										<ArcaneTooltip.Trigger
 											class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
 										>
-											{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
+											{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion}
 											<span class="relative ml-1.5 flex h-2 w-2">
 												<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75"></span>
 												<span class="relative inline-flex h-2 w-2 rounded-full bg-warning"></span>
@@ -114,7 +114,7 @@
 									</ArcaneTooltip.Root>
 								{:else}
 									<Badge variant="gray" size="sm" mono>
-										{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
+										{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion}
 									</Badge>
 								{/if}
 							</div>
@@ -246,8 +246,11 @@
 			{/if}
 
 			{#if overview.error}
-				<div class="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-					{m.dashboard_all_summary_unavailable({ error: overview.error })}
+				<div
+					class="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+					title={overview.error}
+				>
+					{m.stats_unavailable()}
 				</div>
 			{/if}
 		</div>
