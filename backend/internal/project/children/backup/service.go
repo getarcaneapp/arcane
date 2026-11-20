@@ -1457,8 +1457,12 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 			return nil, err
 		}
 	}
-	// From here the restore decides whether the project runs, by redeploying it or not.
+	// From here the restore decides whether the project runs, by redeploying it or not. A resumed restore may have left
+	// the project down, so it retries instead of failing.
 	if forgetErr := s.deps.ForgetExportStop(ctx, p.ProjectID); forgetErr != nil {
+		if resumed {
+			return nil, fmt.Errorf("%w: %w", actor.ErrJobRejected, forgetErr)
+		}
 		return nil, forgetErr
 	}
 	if applyErr := s.restoreSteps(input, t.ActivityID()).apply(ctx, p); applyErr != nil {
