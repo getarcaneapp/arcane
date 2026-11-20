@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -212,17 +214,6 @@ func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName stri
 func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.VolumeCreateOptions, root *tar.Header) (created bool, err error) {
 	name := options.Name
 	defer s.workspaceLocks.Lock(name)()
-	// Docker's own clock, in seconds as it reports creation times: a volume created before this was not made by this
-	// call. Arcane's clock can differ from a remote daemon's, so it is not used; without the daemon's time the check below
-	// is skipped, and Arcane's own creators are still kept out by the lock.
-	var checked time.Time
-	if info, infoErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
-	}); infoErr == nil {
-		if now, parseErr := time.Parse(time.RFC3339Nano, info.Info.SystemTime); parseErr == nil {
-			checked = now.Truncate(time.Second)
-		}
-	}
 	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
 		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	})
@@ -232,15 +223,21 @@ func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.Vo
 	case !errdefs.IsNotFound(err):
 		return false, fmt.Errorf("inspect volume %s: %w", name, err)
 	}
+	// Docker returns a volume that already exists instead of failing, so this attempt marks the volume it creates and
+	// refuses one without its mark: made since the check above outside Arcane, it is not claimed, changed or removed.
+	claim := uuid.New().String()
+	options.Labels = maps.Clone(options.Labels)
+	if options.Labels == nil {
+		options.Labels = map[string]string{}
+	}
+	options.Labels[volumes.ClaimLabel] = claim
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
 		return dockerClient.VolumeCreate(ctx, options)
 	})
 	if err != nil {
 		return false, fmt.Errorf("create volume %s: %w", name, err)
 	}
-	// Docker returns a volume that already exists instead of failing, so one made since the check above, outside
-	// Arcane, is refused rather than claimed, changed, or removed by a rollback.
-	if createdAt, parseErr := time.Parse(time.RFC3339Nano, result.Volume.CreatedAt); parseErr == nil && !checked.IsZero() && createdAt.Before(checked) {
+	if result.Volume.Labels[volumes.ClaimLabel] != claim {
 		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
 	}
 	if root == nil {
