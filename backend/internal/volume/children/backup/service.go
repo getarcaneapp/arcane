@@ -502,7 +502,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	source := mount.Mount{Type: mount.TypeVolume, Source: entry.VolumeName, Target: "/volume", ReadOnly: true}
 	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
-		repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if err != nil {
 			return err
 		}
@@ -542,7 +542,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	}
 	var snapshot backup.Snapshot
 	if plan.LocalEnabled {
-		localRepository, localErr := s.deps.Repository.Local(ctx, dockerClient, true)
+		localRepository, localErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		if localErr != nil {
 			return localErr
 		}
@@ -591,7 +591,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if err != nil {
 		return nil, err
 	}
-	localRepository, err := s.deps.Repository.Local(ctx, dockerClient, true)
+	localRepository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -826,7 +826,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 	}
 	var deleteErr error
 	if len(localSnapshotIDs) > 0 {
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localSnapshotIDs)
 		}
@@ -897,7 +897,7 @@ func (s *Service) pruneDeletedLocalBackups(ctx context.Context) error {
 	if !s.deps.Repository.LocalInitialized(ctx, dockerClient) {
 		return nil
 	}
-	repository, err := s.deps.Repository.Local(ctx, dockerClient, false)
+	repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 	if err != nil {
 		return err
 	}
@@ -936,7 +936,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		containerID, cleanup, err = s.createBackupTempContainer(ctx, "/volume", true)
 	} else {
 		archivePath = "/tmp/" + entry.ID + ".tar.gz"
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, true)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		if repoErr != nil {
 			return nil, 0, repoErr
 		}
@@ -1287,7 +1287,7 @@ func (s *Service) resumeBackup(ctx context.Context, previous types.SchedulerRun,
 	var local, remote backup.Repository
 	var repositories []backup.Repository
 	if checkpoint.LocalEnabled {
-		if local, err = s.deps.Repository.Local(ctx, dockerClient, false); err != nil {
+		if local, err = s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{}); err != nil {
 			return err
 		}
 		repositories = append(repositories, local)
