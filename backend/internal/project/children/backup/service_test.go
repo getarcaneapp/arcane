@@ -2257,8 +2257,9 @@ func TestDiscoveryContinuesPastAFailingRepository(t *testing.T) {
 	recorded, err := f.service.DiscoverBackups(t.Context(), DiscoverOptions{S3DestinationIDs: []string{"missing", f.destination}, Local: false})
 	require.ErrorContains(t, err, "check S3 destination missing")
 	require.Zero(t, recorded)
-	// Both listings still checked the reachable destination after the failing one.
-	require.EqualValues(t, 2, f.s3Requests.Load())
+	// The listing still checked the reachable destination after the failing one, and found nothing to record, so it
+	// was not repeated.
+	require.EqualValues(t, 1, f.s3Requests.Load())
 }
 
 func TestDiscoveryAfterRestoreClearsItsRequestOnlyOnSuccess(t *testing.T) {

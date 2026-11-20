@@ -1543,7 +1543,7 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if remoteDisabled && !policy.LocalEnabled {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	// A projects folder at the data root is refused before a run is recorded, like a disabled remote.
+	// A projects layout a system restore would refuse is refused before a run is recorded, like a disabled remote.
 	dockerClient, refusal := s.dockerService.GetClient(ctx)
 	if refusal == nil {
 		refusal = s.snapshots.CheckProjectRoots(ctx, dockerClient)

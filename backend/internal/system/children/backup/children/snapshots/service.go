@@ -781,7 +781,31 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	}, nil
 }
 
-// CheckProjectRoots refuses system backups while a projects folder is Arcane's data folder.
+// dataMountsOutsideProjects returns, relative to the data directory, every mount inside it that is not within a project
+// root. It refuses a mount that contains a project root, because a system restore cannot replace that mount without
+// also replacing projects.
+func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory string, projectRoots []string) ([]string, error) {
+	data := path.Clean(filepath.ToSlash(dataDirectory))
+	var nested []string
+	for _, candidate := range mounts {
+		relative, inside := strings.CutPrefix(path.Clean(candidate.Destination), data+"/")
+		if !inside || slices.ContainsFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(relative, root) }) {
+			continue
+		}
+		if index := slices.IndexFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(root, relative) }); index >= 0 {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+				"%s is a separate mount that contains the projects folder %s; system backups cover Arcane only and a restore "+
+					"cannot replace that mount without touching projects, so mount the projects folder outside it first",
+				candidate.Destination, path.Join(data, projectRoots[index]),
+			))
+		}
+		nested = append(nested, relative)
+	}
+	return nested, nil
+}
+
+// CheckProjectRoots refuses system backups for a project layout that a system restore would refuse, so a backup
+// never succeeds where restoring it in place cannot.
 func (s *Service) CheckProjectRoots(ctx context.Context, dockerClient *client.Client) error {
 	databaseFile, err := s.databaseFile()
 	if err != nil {
@@ -795,7 +819,12 @@ func (s *Service) CheckProjectRoots(ctx context.Context, dockerClient *client.Cl
 	if err != nil {
 		return err
 	}
-	_, err = projectRootsInData(mounts, filepath.Dir(databaseFile), roots)
+	dataDirectory := filepath.Dir(databaseFile)
+	relatives, err := projectRootsInData(mounts, dataDirectory, roots)
+	if err != nil {
+		return err
+	}
+	_, err = dataMountsOutsideProjects(mounts, dataDirectory, relatives)
 	return err
 }
 
@@ -1185,20 +1214,9 @@ func stagedRestoreStages(
 	}
 	projectRoots := slices.Concat(layout.excludedRoots, current)
 	data := path.Clean(filepath.ToSlash(target.DataDirectory))
-	var nested []string
-	for _, candidate := range target.Mounts {
-		relative, inside := strings.CutPrefix(path.Clean(candidate.Destination), data+"/")
-		if !inside || slices.ContainsFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(relative, root) }) {
-			continue
-		}
-		if index := slices.IndexFunc(projectRoots, func(root string) bool { return kit.FilePathMatches(root, relative) }); index >= 0 {
-			return nil, fmt.Errorf(
-				"%s is a separate mount that contains the projects folder %s; a system restore cannot replace it without touching "+
-					"projects, so mount the projects folder outside it first",
-				candidate.Destination, path.Join(data, projectRoots[index]),
-			)
-		}
-		nested = append(nested, relative)
+	nested, err := dataMountsOutsideProjects(target.Mounts, data, projectRoots)
+	if err != nil {
+		return nil, err
 	}
 	slices.Sort(nested)
 	var outermost []string

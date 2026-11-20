@@ -2186,6 +2186,10 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 	if err != nil {
 		return 0, errors.Join(listErr, err)
 	}
+	// Nothing is missing, so listing every repository again would only repeat the S3 probes and Rustic runs.
+	if len(planned) == 0 {
+		return 0, listErr
+	}
 	projectIDs := make([]string, 0, len(planned))
 	for _, item := range planned {
 		projectIDs = append(projectIDs, item.project)
