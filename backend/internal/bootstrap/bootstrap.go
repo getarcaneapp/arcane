@@ -379,6 +379,7 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		{name: "recover interrupted project renames", run: p.Project.RecoverProjectRenameJournals},
 		{name: "recover interrupted container redeploys", run: p.Container.RecoverInterruptedRedeploys},
 		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
+		{name: "start projects an interrupted export stopped", run: p.Project.RecoverExportStoppedProjects},
 		{name: "fail interrupted image patches", run: p.Image.RecoverInterruptedPatches},
 	} {
 		taskCtx, cancelTask := context.WithTimeout(p.AppCtx, startupTaskTimeout)

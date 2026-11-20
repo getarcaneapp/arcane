@@ -11277,3 +11277,37 @@ func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
 		})
 	}
 }
+
+func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	store := kv.NewKVService(db)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newUnreachableDockerService(t),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   store,
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	require.NoError(t, db.Create(&Project{ID: "p1", Name: "web", Path: t.TempDir()}).Error)
+	noted := func(projectID string) bool {
+		_, found, getErr := store.Get(ctx, exportStoppedKeyPrefix+projectID)
+		require.NoError(t, getErr)
+		return found
+	}
+
+	// The note is written before the project goes down, so it survives Arcane stopping partway through the stop.
+	require.Error(t, svc.stopForExport(ctx, "p1", types.SystemUser))
+	require.True(t, noted("p1"))
+
+	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
+	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
+	require.Error(t, svc.RecoverExportStoppedProjects(ctx))
+	require.True(t, noted("p1"))
+	require.False(t, noted("gone"))
+}
