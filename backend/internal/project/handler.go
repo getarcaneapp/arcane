@@ -620,8 +620,8 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 	if !permissions.Allows(authz.PermProjectsRead, input.EnvironmentID) {
 		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsRead)
 	}
-	if input.Body.Start && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
+	if permErr := requireConditions(permissions, input.EnvironmentID, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))); permErr != nil {
+		return nil, permErr
 	}
 
 	var proj *Project

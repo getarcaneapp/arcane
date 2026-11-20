@@ -351,6 +351,7 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 			"Requires projects:read, and volumes:create when volumes are restored; start deploys the project and requires projects:deploy.",
 		Tags:     []string{"Project Backup"},
 		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectImportConditions},
 	}, authz.PermProjectsCreate, h.RestoreProjectBackupAsNew)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
