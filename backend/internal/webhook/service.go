@@ -75,79 +75,6 @@ type (
 	}
 )
 
-var webhookPagination = pagination.Config[types.Webhook]{
-	SearchAccessors: []pagination.SearchAccessor[types.Webhook]{
-		func(wh types.Webhook) (string, error) {
-			return wh.ID, nil
-		},
-		func(wh types.Webhook) (string, error) {
-			return wh.Name, nil
-		},
-		func(wh types.Webhook) (string, error) {
-			return wh.TargetName, nil
-		},
-		func(wh types.Webhook) (string, error) {
-			return wh.TargetType, nil
-		},
-		func(wh types.Webhook) (string, error) {
-			return wh.ActionType, nil
-		},
-		func(wh types.Webhook) (string, error) {
-			return wh.TokenPrefix, nil
-		},
-	},
-	SortBindings: []pagination.SortBinding[types.Webhook]{
-		{
-			Key: "createdAt",
-			Fn: func(a, b types.Webhook) int {
-				return a.CreatedAt.Compare(b.CreatedAt)
-			},
-		},
-		{
-			Key: "name",
-			Fn: func(a, b types.Webhook) int {
-				return strings.Compare(a.Name, b.Name)
-			},
-		},
-		{
-			Key: "enabled",
-			Fn: func(a, b types.Webhook) int {
-				return cmp.Compare(kit.Ternary(a.Enabled, 1, 0), kit.Ternary(b.Enabled, 1, 0))
-			},
-		},
-		{
-			Key: "tokenPrefix",
-			Fn: func(a, b types.Webhook) int {
-				return strings.Compare(a.TokenPrefix, b.TokenPrefix)
-			},
-		},
-		{
-			Key: "targetType",
-			Fn: func(a, b types.Webhook) int {
-				return strings.Compare(a.TargetType, b.TargetType)
-			},
-		},
-		{
-			Key: "actionType",
-			Fn: func(a, b types.Webhook) int {
-				return strings.Compare(a.ActionType, b.ActionType)
-			},
-		},
-		{
-			Key: "targetName",
-			Fn: func(a, b types.Webhook) int {
-				return strings.Compare(a.TargetName, b.TargetName)
-			},
-		},
-		{
-			Key: "lastTriggeredAt",
-			Fn: func(a, b types.Webhook) int {
-				return kit.FromPtr(a.LastTriggeredAt).Compare(kit.FromPtr(b.LastTriggeredAt))
-			},
-		},
-	},
-}
-
 const (
 	webhookTokenPrefix    = "arc_wh_"
 	webhookTokenLength    = 32 // raw bytes → 64 hex chars
@@ -157,6 +84,79 @@ const (
 )
 
 var (
+	webhookPagination = pagination.Config[types.Webhook]{
+		SearchAccessors: []pagination.SearchAccessor[types.Webhook]{
+			func(wh types.Webhook) (string, error) {
+				return wh.ID, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.Name, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TargetName, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TargetType, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.ActionType, nil
+			},
+			func(wh types.Webhook) (string, error) {
+				return wh.TokenPrefix, nil
+			},
+		},
+		SortBindings: []pagination.SortBinding[types.Webhook]{
+			{
+				Key: "createdAt",
+				Fn: func(a, b types.Webhook) int {
+					return a.CreatedAt.Compare(b.CreatedAt)
+				},
+			},
+			{
+				Key: "name",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.Name, b.Name)
+				},
+			},
+			{
+				Key: "enabled",
+				Fn: func(a, b types.Webhook) int {
+					return cmp.Compare(kit.Ternary(a.Enabled, 1, 0), kit.Ternary(b.Enabled, 1, 0))
+				},
+			},
+			{
+				Key: "tokenPrefix",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TokenPrefix, b.TokenPrefix)
+				},
+			},
+			{
+				Key: "targetType",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TargetType, b.TargetType)
+				},
+			},
+			{
+				Key: "actionType",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.ActionType, b.ActionType)
+				},
+			},
+			{
+				Key: "targetName",
+				Fn: func(a, b types.Webhook) int {
+					return strings.Compare(a.TargetName, b.TargetName)
+				},
+			},
+			{
+				Key: "lastTriggeredAt",
+				Fn: func(a, b types.Webhook) int {
+					return kit.FromPtr(a.LastTriggeredAt).Compare(kit.FromPtr(b.LastTriggeredAt))
+				},
+			},
+		},
+	}
+
 	ErrWebhookNotFound           = common.Classify(common.ErrNotFound, errors.New("webhook not found"))
 	ErrWebhookInvalid            = errors.New("invalid webhook token")
 	ErrWebhookDisabled           = errors.New("webhook is disabled")
