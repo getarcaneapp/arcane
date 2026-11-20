@@ -2,6 +2,7 @@ package backup
 
 import (
 	"archive/tar"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -1749,6 +1750,7 @@ func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
 func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
 	exited := container.Summary{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateExited}
 	for _, test := range []struct {
+		wantErr     error
 		name        string
 		wantMessage string
 		containers  []container.Summary
@@ -1772,6 +1774,16 @@ func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
 			name:        "a container started again is refused",
 			containers:  []container.Summary{{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateRunning}},
 			wantMessage: "container web-app-1 was started during the restore",
+			stopped:     true,
+		},
+		// Only the container links an unnamed volume to its service, so removing it would lose that data.
+		{
+			name: "a stopped container with an unnamed volume is refused",
+			containers: []container.Summary{{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{
+				{Type: mount.TypeVolume, Name: strings.Repeat("ab", 32), Destination: "/data"},
+			}}},
+			wantErr:     common.ErrValidation,
+			wantMessage: "stopped container web-app-1 keeps data at /data in an unnamed volume",
 			stopped:     true,
 		},
 		// The request checked projects:down only when it found stopped containers.
@@ -1798,7 +1810,7 @@ func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
 			service := NewService(Dependencies{Docker: dockerService})
 			err := service.removeStoppedContainers(t.Context(), restorePlan{ComposeName: "web", Stopped: test.stopped})
 			if test.wantMessage != "" {
-				require.ErrorIs(t, err, common.ErrConflict)
+				require.ErrorIs(t, err, cmp.Or(test.wantErr, common.ErrConflict))
 				require.ErrorContains(t, err, test.wantMessage)
 				require.Empty(t, removed)
 				return
