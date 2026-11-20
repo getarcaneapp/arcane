@@ -32,7 +32,7 @@
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
+	import { projectBackupConfigQuery, systemBackupHistoryQuery } from '#lib/query/backups.js';
 	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -79,7 +79,13 @@
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
 	let policyCollection = $derived(data.policyCollection);
-	let projectPolicyCollection = $derived(data.projectPolicyCollection);
+	// Observed rather than taken from the load: a global run can disable a schedule's S3 destination, and saving sends
+	// the whole list, so a stale copy would turn it back on.
+	const projectPolicyQuery = createQuery(() => ({
+		...projectBackupConfigQuery(),
+		enabled: hasPermission('system-backups:read', GLOBAL_SCOPE)
+	}));
+	const projectPolicyCollection = $derived(projectPolicyQuery.data ?? data.projectPolicyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
 	const systemVolumeOptionsQuery = createQuery(() => ({
 		...systemVolumeBackupOptionsQuery(),
@@ -519,7 +525,12 @@
 		() => '0',
 		(activity) =>
 			activity.metadata?.['action'] === 'run_project_backups' || activity.metadata?.['action'] === 'scheduled_project_backups',
-		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+		// A run may disable a schedule's missing S3 destination, so the schedules reload with the history.
+		() =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() }, { throwOnError: true })
+			]),
 		() => 'projects'
 	);
 
@@ -1167,7 +1178,7 @@
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					}}
 					onProjectSaved={(policies) => {
-						projectPolicyCollection = { policies };
+						queryClient.setQueryData(projectBackupConfigQuery().queryKey, { policies });
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() });
 					}}
 					onVolumeSaved={(policies) => {
