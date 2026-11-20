@@ -103,6 +103,7 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/import", CommandName: "project.import"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export", CommandName: "project.export.options"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backup-options", CommandName: "project.backup.options"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups", CommandName: "project.backup.list"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/backups", CommandName: "project.backup.create"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/policies", CommandName: "project.backup_policy.get"},

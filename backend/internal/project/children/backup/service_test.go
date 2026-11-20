@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -45,6 +47,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -237,20 +240,22 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"})
+	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}).Consistent, "nothing runs, so a live backup is consistent")
+	require.False(t, manifest.ExternalEnv)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
+	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
+	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -331,6 +336,117 @@ func TestRestoreToHoldsTheVolumesItWasAskedToLock(t *testing.T) {
 	require.True(t, admitted)
 	lease.Release(t.Context())
 	locks.Lock("new_data")()
+}
+
+func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		external string
+		project  string
+		// worker is what the other project's .env is: a regular file, a link to the file web's .env leads to, a link
+		// to a directory, or the file web's .env leads to.
+		worker string
+		own    bool
+		shared bool
+		// inside links web's .env by absolute path to a file in web's own directory, which the backup holds itself, and
+		// restores into a new directory.
+		inside bool
+	}{
+		// In place, the restored link leads to the file the project uses, which keeps its mode.
+		{name: "in place", worker: "file", external: "TOKEN=restored"},
+		// A new project must not share or change the original's file.
+		{name: "as a new project", worker: "file", own: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+		// The new project's .env must lead to its own restored file, not the original's.
+		{name: "as a new project, linked into the original's directory", worker: "file", own: true, inside: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+		// Another project's .env leads to the same file, so the restore must not change that project's values.
+		{name: "in place, shared with another project", worker: "link", shared: true, external: "TOKEN=current\n"},
+		// A link to a directory leads to no file this project's .env could be, so it doesn't block the restore.
+		{name: "in place, another project links to a directory", worker: "directory", external: "TOKEN=restored"},
+		// Another project's .env that can't be resolved can't be this file, so it doesn't stop the restore.
+		{name: "in place, another project's link loops", worker: "loop", external: "TOKEN=restored"},
+		// web/.env -> ../worker/.env names worker's regular .env through the linked projects root.
+		{name: "in place, leading to another project's .env", worker: "target", shared: true, external: "TOKEN=current\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// The projects root is reached through a link, so paths that aren't fully resolved name files differently.
+			projectsRoot := filepath.Join(t.TempDir(), "projects")
+			require.NoError(t, os.Symlink(t.TempDir(), projectsRoot))
+			projectPath := filepath.Join(projectsRoot, "web")
+			workerPath := filepath.Join(projectsRoot, "worker")
+			require.NoError(t, os.Mkdir(projectPath, 0o755))
+			require.NoError(t, os.Mkdir(workerPath, 0o755))
+			workerEnv := filepath.Join(workerPath, projects.EffectiveEnvFileName)
+			external := filepath.Join(t.TempDir(), "web.env")
+			link := external
+			if test.worker == "target" {
+				external = workerEnv
+				link = filepath.Join("..", "worker", projects.EffectiveEnvFileName)
+			}
+			restored := projectPath
+			if test.inside {
+				external = filepath.Join(projectPath, "values.env")
+				link = external
+				restored = filepath.Join(projectsRoot, "shop")
+				require.NoError(t, os.Mkdir(restored, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(restored, "values.env"), []byte("TOKEN=restored"), 0o600))
+				require.NoError(t, os.Symlink(link, filepath.Join(restored, projects.EffectiveEnvFileName)))
+			}
+			require.NoError(t, os.WriteFile(external, []byte("TOKEN=current\n"), 0o600))
+			require.NoError(t, os.Symlink(link, filepath.Join(projectPath, projects.EffectiveEnvFileName)))
+			envPath := filepath.Join(restored, projects.EffectiveEnvFileName)
+			switch test.worker {
+			case "file":
+				require.NoError(t, os.WriteFile(workerEnv, []byte("TOKEN=worker\n"), 0o600))
+			case "link":
+				require.NoError(t, os.Symlink(external, workerEnv))
+			case "directory":
+				require.NoError(t, os.Symlink(t.TempDir(), workerEnv))
+			case "loop":
+				require.NoError(t, os.Symlink(workerEnv, workerEnv))
+			}
+			s := &Service{deps: Dependencies{Projects: func(context.Context) ([]types.ProjectRecord, error) {
+				return []types.ProjectRecord{{ID: "p1", Name: "web", Path: projectPath}, {ID: "p2", Name: "worker", Path: workerPath}}, nil
+			}}}
+			var reported []string
+			report := func(_ context.Context, message string) { reported = append(reported, message) }
+
+			// As RestoreTo does: the backup stored contents only for a .env leading outside the project directory.
+			opts := types.ProjectBackupRestore{ProjectID: "p1", ProjectPath: restored, OwnEnv: test.own, Report: report}
+			if test.own {
+				require.NoError(t, s.ownEnvLink(t.Context(), opts))
+			}
+			if !test.inside {
+				require.NoError(t, s.restoreEnv(t.Context(), projectsRoot, opts, "TOKEN=restored"))
+			}
+			if test.shared {
+				resolved, err := filepath.EvalSymlinks(external)
+				require.NoError(t, err)
+				require.Equal(t, []string{"The .env file " + resolved + " was left as it is, since project worker uses it too; only the link to it was restored"}, reported)
+			} else {
+				require.Empty(t, reported)
+			}
+			content, err := os.ReadFile(external)
+			require.NoError(t, err)
+			assert.Equal(t, test.external, string(content))
+			info, err := os.Stat(external)
+			require.NoError(t, err)
+			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+			if test.inside {
+				target, readlinkErr := os.Readlink(envPath)
+				require.NoError(t, readlinkErr)
+				assert.Equal(t, "values.env", target)
+			} else {
+				info, err = os.Lstat(envPath)
+				require.NoError(t, err)
+				assert.Equal(t, test.own, info.Mode().IsRegular())
+			}
+			if test.own {
+				content, err = os.ReadFile(envPath)
+				require.NoError(t, err)
+				assert.Equal(t, test.project, string(content))
+			}
+		})
+	}
 }
 
 func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
@@ -1468,6 +1584,8 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	fail.Store(true)
 	start, started := startRecorder(&fail)
 	var recoveries, forgotten atomic.Int32
+	var noted atomic.Bool
+	noted.Store(true)
 	service := NewService(Dependencies{
 		DB:              db,
 		Engine:          engine,
@@ -1479,6 +1597,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 			forgotten.Add(1)
 			return nil
 		},
+		NotedStopped:   func(context.Context, string) (bool, error) { return noted.Load(), nil },
 		RecoverStopped: func() { recoveries.Add(1) },
 	})
 	recorded := plan{
@@ -1496,6 +1615,14 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	require.Equal(t, []string{"web-1", "web-1"}, started())
 	// Running again, the project's stop note is dropped.
 	require.EqualValues(t, 1, forgotten.Load())
+
+	// A deploy, down or archive dropped the note after a failed start; the person's choice stands, so the retry
+	// starts nothing and finishes the backup.
+	fail.Store(true)
+	noted.Store(false)
+	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded))
+	require.Equal(t, []string{"web-1", "web-1"}, started())
+	require.EqualValues(t, 1, recoveries.Load())
 }
 
 // A snapshot rejected after the copy keeps its backup running, with the rejection noted, while the containers stay
@@ -1523,6 +1650,7 @@ func TestResumeFailsARejectedSnapshotOnlyOnceTheContainersStart(t *testing.T) {
 		StartContainers: start,
 		NoteStopped:     noteNothing,
 		ForgetStopped:   forgetNothing,
+		NotedStopped:    stillNoted,
 		RecoverStopped:  func() {},
 	})
 	require.NoError(t, service.reject(t.Context(), "b1", "a volume was replaced while it was copied"))
@@ -1604,7 +1732,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 		DB:          db,
 		Engine:      engine,
 		LockVolumes: lockingWith(locks),
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
 		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		StartContainers: start,
 	})
@@ -1669,7 +1797,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:          db,
 		Engine:      engine,
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
 		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
@@ -1761,6 +1889,14 @@ func TestContainersStopOnlyThisProject(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			assert.NoError(t, json.MarshalWrite(w, all))
+		case strings.HasSuffix(r.URL.Path, "/json"):
+			// Each container is inspected for its stop grace, which bounds how long its stop may take.
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				ID:         path.Base(path.Dir(r.URL.Path)),
+				Config:     &container.Config{StopTimeout: new(30)},
+				HostConfig: &container.HostConfig{},
+			}))
 		case strings.HasSuffix(r.URL.Path, "/stop"):
 			id := path.Base(path.Dir(r.URL.Path))
 			stopped = append(stopped, id)
@@ -1982,7 +2118,9 @@ func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) 
 	}
 }
 
-// noteNothing and forgetNothing stand in for the project service's stop note.
+// noteNothing, forgetNothing and stillNoted stand in for the project service's stop note.
 func noteNothing(context.Context, string, []container.Summary) error { return nil }
 
 func forgetNothing(context.Context, string) error { return nil }
+
+func stillNoted(context.Context, string) (bool, error) { return true, nil }

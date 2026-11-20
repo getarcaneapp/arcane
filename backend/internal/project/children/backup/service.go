@@ -7,9 +7,12 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -25,6 +28,7 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
@@ -65,9 +69,10 @@ type (
 		LockVolumes func(ctx context.Context, names []string) (func(), error)
 		// NoteStopped records the project's containers a backup is stopping, and ForgetStopped drops the note once
 		// they run again; RecoverStopped starts the project's recovery, which starts the noted containers, when they
-		// could not be started.
+		// could not be started. NotedStopped reports whether the note remains; a deploy, down or archive drops it.
 		NoteStopped    func(ctx context.Context, projectID string, stopped []container.Summary) error
 		ForgetStopped  func(ctx context.Context, projectID string) error
+		NotedStopped   func(ctx context.Context, projectID string) (bool, error)
 		RecoverStopped func()
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
@@ -91,7 +96,11 @@ type (
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
 		// ProjectName returns the project's name without loading its compose files.
 		ProjectName func(ctx context.Context, projectID string) (string, error)
-		Activities  activity.MessageAppender
+		// ProjectRoot returns the projects directory holding the project directory, which project file writes stay in.
+		ProjectRoot func(ctx context.Context, projectPath string) (string, error)
+		// Projects lists every project, archived ones included.
+		Projects   func(ctx context.Context) ([]types.ProjectRecord, error)
+		Activities activity.MessageAppender
 		// Ctx, Scheduler and Admission register the policies' scheduled jobs.
 		Ctx       context.Context
 		Scheduler types.DynamicScheduler
@@ -214,15 +223,19 @@ type (
 const (
 	// restoreOwner and the restore's ID label its Rustic containers, the same for the restore and its rollback, so
 	// either finds one the other left.
-	restoreOwner      = "project-restore:"
-	admissionScope    = "project-backup"
-	snapshotRoot      = "/snapshot"
-	restoreRoot       = "/dest"
-	manifestName      = "arcane-project.json"
+	restoreOwner   = "project-restore:"
+	admissionScope = "project-backup"
+	snapshotRoot   = "/snapshot"
+	restoreRoot    = "/dest"
+	manifestName   = "arcane-project.json"
+	// envName holds, beside the manifest, the file a project's .env links to outside the project directory.
+	envName           = "project.env"
 	targetType        = "project_backup"
 	restoreTargetType = "project_restore"
 	defaultSchedule   = "0 2 * * *"
 	backupsTable      = "project_backups"
+	// dockerStopGraceSeconds is how long Docker waits for a container without its own stop grace to exit.
+	dockerStopGraceSeconds = 10
 )
 
 var (
@@ -556,7 +569,8 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 }
 
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
-// lock, then adopts the snapshots it already wrote and finishes the backup; a scheduled backup has no requester.
+// lock unless their stop note is gone, then adopts the snapshots it already wrote and finishes the backup; a scheduled
+// backup has no requester.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
 	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown, busy
 	// admissions and containers still stopped retry it.
@@ -579,15 +593,25 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		if lockErr != nil {
 			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, lockErr)
 		}
-		// A restore of any of the project's volumes finishes before its containers start again.
-		unlockVolumes, lockErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
-		if lockErr != nil {
+		// A deploy, down or archive since the stop dropped the project's stop note: a person decided whether it runs,
+		// so its containers are left as they are and the run goes on as if they had started.
+		noted, notedErr := s.deps.NotedStopped(ctx, recorded.ProjectID)
+		if notedErr != nil {
 			unlockProject()
-			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, lockErr)
+			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, notedErr)
 		}
-		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
-		s.afterRestart(ctx, recorded.ProjectID, restartErr)
-		unlockVolumes()
+		var restartErr error
+		if noted {
+			// A restore of any of the project's volumes finishes before its containers start again.
+			unlockVolumes, volumesErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
+			if volumesErr != nil {
+				unlockProject()
+				return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, volumesErr)
+			}
+			restartErr = s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+			s.afterRestart(ctx, recorded.ProjectID, restartErr)
+			unlockVolumes()
+		}
 		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
@@ -762,7 +786,12 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return err
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles))
+	// The snapshot copies the project directory, which holds only the link of a .env kept outside it.
+	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
+	if err != nil {
+		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
+	}
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles, externalEnv), env)
 	if err != nil {
 		return err
 	}
@@ -931,24 +960,32 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 		case pass > 0:
 			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
+		stopBounds := make(map[string]time.Duration, len(running))
 		for _, c := range running {
-			if c.Labels[api.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
-				continue
-			}
 			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
 			}
-			if kit.FromPtr(inspected.Container.HostConfig).AutoRemove {
+			oneOff := c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != ""
+			if oneOff && kit.FromPtr(inspected.Container.HostConfig).AutoRemove {
 				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
 					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
 					docker.ContainerNameFromNames(c.Names),
 				))
 			}
+			// Docker waits the container's stop grace before it kills it, so the bound only cuts off a daemon that
+			// stalls past that. A container told to wait forever is cut off too, since the run holds the project's locks.
+			grace := max(kit.FromPtr(kit.FromPtr(inspected.Container.Config).StopTimeout), dockerStopGraceSeconds)
+			stopBounds[c.ID] = time.Duration(grace)*time.Second + timeouts.DefaultDockerAPI
 		}
 		for _, c := range running {
 			stopped = append(stopped, c)
-			if _, err = dockerClient.ContainerStop(context.WithoutCancel(ctx), c.ID, client.ContainerStopOptions{}); err != nil {
+			// Not cancelled with the run, so a container is never left half stopped, but bounded, so a stalled daemon
+			// can't keep the earlier containers down and the locks held forever.
+			stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), stopBounds[c.ID])
+			_, err = dockerClient.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{})
+			cancelStop()
+			if err != nil {
 				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
 			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -1036,7 +1073,8 @@ func mergeContainers(first, extra []container.Summary) []container.Summary {
 func checkpointContainers(stopped []container.Summary) []container.Summary {
 	kept := make([]container.Summary, 0, len(stopped))
 	for _, summary := range stopped {
-		kept = append(kept, container.Summary{ID: summary.ID, Names: summary.Names, Labels: summary.Labels})
+		// Mounts are kept so recovery locks the volumes these containers use, even after a Compose edit renames them.
+		kept = append(kept, container.Summary{ID: summary.ID, Names: summary.Names, Labels: summary.Labels, Mounts: summary.Mounts})
 	}
 	return kept
 }
@@ -1092,7 +1130,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool) types.ProjectManifest {
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -1106,15 +1144,21 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
+		ExternalEnv:   externalEnv,
 	}
 }
 
-// writeManifest stores the manifest in a new volume. The holder that receives it mounts only that volume and never
-// starts, because Docker before 29.9 mishandles copies into stopped containers with other mounts (#4870).
-func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest) (string, func(), error) {
+// writeManifest stores the manifest in a new volume, with the external .env contents when the manifest records them.
+// The holder that receives it mounts only that volume and never starts, because Docker before 29.9 mishandles copies
+// into stopped containers with other mounts (#4870).
+func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return "", nil, fmt.Errorf("encode project backup manifest: %w", err)
+	}
+	files := map[string][]byte{manifestName: data}
+	if manifest.ExternalEnv {
+		files[envName] = env
 	}
 	name := "arcane-project-backup-" + uuid.New().String()
 	if _, createErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: volumes.Labels()}); createErr != nil {
@@ -1138,7 +1182,7 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 		remove()
 		return "", nil, fmt.Errorf("create project backup manifest holder: %w", err)
 	}
-	copyErr := docker.CopyToContainer(ctx, dockerClient, holder.ID, "/meta", map[string][]byte{manifestName: data})
+	copyErr := docker.CopyToContainer(ctx, dockerClient, holder.ID, "/meta", files)
 	_, removeHolderErr := dockerClient.ContainerRemove(context.WithoutCancel(ctx), holder.ID, volumes.RemoveOptions())
 	if err = errors.Join(copyErr, removeHolderErr); err != nil {
 		remove()
@@ -2398,7 +2442,9 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 }
 
 func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
-	if err := r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID}); err != nil {
+	if err := r.restore(ctx, types.ProjectBackupRestore{
+		ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID, Report: r.report,
+	}); err != nil {
 		return err
 	}
 	return r.verify(ctx, p)
@@ -2434,7 +2480,9 @@ func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) 
 			downErr = r.down(ctx)
 		}
 		if downErr == nil {
-			undoErr = r.restore(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID})
+			undoErr = r.restore(ctx, types.ProjectBackupRestore{
+				ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID, Report: r.report,
+			})
 			cleanup = append(cleanup, r.remove(ctx, p.Created))
 		}
 	}
@@ -2817,7 +2865,113 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.id, target, options); restoreErr != nil {
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
+	if opts.OwnEnv && opts.ProjectPath != "" {
+		if linkErr := s.ownEnvLink(ctx, opts); linkErr != nil {
+			return linkErr
+		}
+	}
+	// The snapshot holds only the link of a .env kept outside the project directory, so its contents come from beside
+	// the manifest. A rollback restores the safety backup through here too, which puts the earlier contents back.
+	if opts.ProjectPath == "" || !manifest.ExternalEnv {
+		return nil
+	}
+	env, err := s.deps.Engine.ReadSnapshotTextFile(ctx, dockerClient, source.repository, source.password, source.id, path.Join("meta", envName))
+	if err != nil {
+		return fmt.Errorf("read the .env file the backup stored: %w", err)
+	}
+	projectsRoot, err := s.deps.ProjectRoot(ctx, opts.ProjectPath)
+	if err != nil {
+		return err
+	}
+	return s.restoreEnv(ctx, projectsRoot, opts, env)
+}
+
+// restoreEnv writes a .env kept outside the project directory through the link the snapshot restored, as an edit of
+// the .env does; with OwnEnv it replaces the link with a file of its own, as an import of an export does. A file
+// another project's .env leads to keeps its contents, since the restore leaves other projects as they are.
+func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts types.ProjectBackupRestore, content string) error {
+	if opts.OwnEnv {
+		if err := projects.RemoveProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName); err != nil {
+			return err
+		}
+	} else {
+		file, sharer, err := s.envSharer(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if sharer != "" {
+			opts.Report(ctx, fmt.Sprintf("The .env file %s was left as it is, since project %s uses it too; only the link to it was restored", file, sharer))
+			return nil
+		}
+	}
+	if err := projects.WriteProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName, content); err != nil {
+		return fmt.Errorf("restore the .env file the backup stored: %w", err)
+	}
 	return nil
+}
+
+// ownEnvLink points a new project's .env, restored as a link into the original project's directory, at the new
+// project's restored copy of that file, as an export does, so the new project neither reads nor changes the original's
+// settings. The manifest doesn't record the original's directory, so it comes from the original's current record; an
+// original that, or whose directory, no longer exists has no files the link could reach.
+func (s *Service) ownEnvLink(ctx context.Context, opts types.ProjectBackupRestore) error {
+	// Only a link can lead back into the original; a regular .env is already the copy's own.
+	if info, statErr := os.Lstat(filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return nil
+	}
+	all, err := s.deps.Projects(ctx)
+	if err != nil {
+		return err
+	}
+	index := slices.IndexFunc(all, func(project types.ProjectRecord) bool { return project.ID == opts.ProjectID })
+	if index < 0 {
+		return nil
+	}
+	sourceRoot, err := filepath.EvalSymlinks(all[index].Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve the directory of project %s: %w", all[index].Name, err)
+	}
+	root := acfs.Root{Path: opts.ProjectPath}
+	envLink := "/" + projects.EffectiveEnvFileName
+	target, inside, err := projects.LinkTargetInside(ctx, root, envLink, sourceRoot)
+	if err != nil || !inside {
+		return err
+	}
+	if removeErr := root.Remove(ctx, envLink); removeErr != nil {
+		return fmt.Errorf("replace the restored .env link: %w", removeErr)
+	}
+	if linkErr := root.Symlink(ctx, target, envLink); linkErr != nil {
+		return fmt.Errorf("replace the restored .env link: %w", linkErr)
+	}
+	return nil
+}
+
+// envSharer returns the file the project's .env leads to and the name of another project whose .env leads to the same
+// file, if any. Both sides resolve every link on the way, since a path through a linked directory names the same file
+// differently.
+func (s *Service) envSharer(ctx context.Context, opts types.ProjectBackupRestore) (file, sharer string, err error) {
+	file, err = filepath.EvalSymlinks(filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve the restored .env file: %w", err)
+	}
+	all, err := s.deps.Projects(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	for _, other := range all {
+		if other.ID == opts.ProjectID {
+			continue
+		}
+		// A .env that doesn't resolve, such as a dangling link or a link loop, leads to no file, so it shares none.
+		target, resolveErr := filepath.EvalSymlinks(filepath.Join(other.Path, projects.EffectiveEnvFileName))
+		if resolveErr == nil && target == file {
+			return file, other.Name, nil
+		}
+	}
+	return file, "", nil
 }
 
 // restoreInput mounts the targets under /dest as the backup laid them out under /snapshot and restores the snapshot root,

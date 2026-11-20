@@ -284,11 +284,9 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 				"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
 			))
 		}
-		var dockerLabels map[string]string
-		if volume.Kind == types.ProjectVolumeExternal {
-			dockerLabels = maps.Clone(state.docker[volume.Name].Labels)
-			delete(dockerLabels, volumes.ClaimLabel)
-		}
+		// Only an external volume keeps its own Docker labels, without the claim an earlier import set.
+		dockerLabels := kit.Ternary(volume.Kind == types.ProjectVolumeExternal, maps.Clone(state.docker[volume.Name].Labels), nil)
+		delete(dockerLabels, volumes.ClaimLabel)
 		if labelErr := projects.ValidateVolumeLabels(dockerLabels); labelErr != nil {
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, labelErr))
 		}
@@ -355,8 +353,8 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
 		}
 	}
+	var copied []string
 	if manifest.Consistent {
-		var copied []string
 		for _, volume := range manifest.Volumes {
 			if volume.Included {
 				copied = append(copied, volume.Name)
@@ -378,6 +376,12 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 		if appendErr := s.appendUpload(ctx, writer, volume.Archive, session); appendErr != nil {
 			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
+		}
+	}
+	// Something else, such as a volume backup of another volume restarting an app, can start a writer during the copy.
+	if manifest.Consistent {
+		if writerErr := s.checkNoWriters(ctx, copied); writerErr != nil {
+			return writerErr
 		}
 	}
 	return writer.Close()
@@ -436,6 +440,11 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		return "", err
 	}
 	bundled := projects.IsProjectBundle(bytes.NewReader(head))
+	if bundled || opts.Request.Start {
+		if nameErr := s.checkComposeNameFree(ctx, opts.Request.Name); nameErr != nil {
+			return "", nameErr
+		}
+	}
 	request := types.ImportProjectArchive{
 		UploadID:     opts.Request.UploadID,
 		Name:         opts.Request.Name,
@@ -491,7 +500,7 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	if len(included) > 0 && !opts.RestoreVolumes {
 		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
 	}
-	if checkErr := s.checkNewProject(ctx, manifest, included, opts.Request.Name); checkErr != nil {
+	if checkErr := s.checkNewVolumeNames(ctx, manifest, included, opts.Request.Name); checkErr != nil {
 		return "", checkErr
 	}
 	claim := uuid.New().String()
@@ -551,10 +560,8 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	return projectID, nil
 }
 
-// checkNewProject refuses a name Docker already runs a Compose stack under, or whose volumes already exist. Only
-// names that can't change are checked before the project exists: an external volume's, and one the new project
-// doesn't rename; the rest are checked with its real names, and a conflict there rolls it back.
-func (s *Service) checkNewProject(ctx context.Context, manifest types.ProjectManifest, included []types.ProjectVolume, name string) error {
+// checkComposeNameFree refuses a new project's name when Docker already runs a Compose stack under it.
+func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 	composeName := projects.NormalizeProjectName(name)
 	stackExists, err := s.deps.Environment.ComposeProjectInUse(ctx, composeName)
 	if err != nil {
@@ -563,6 +570,13 @@ func (s *Service) checkNewProject(ctx context.Context, manifest types.ProjectMan
 	if stackExists {
 		return common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; use another name for the project", composeName))
 	}
+	return nil
+}
+
+// checkNewVolumeNames refuses a new project whose volumes already exist. Only names that can't change are checked
+// before the project exists: an external volume's, and one the new project doesn't rename; the rest are checked with
+// its real names, and a conflict there rolls it back.
+func (s *Service) checkNewVolumeNames(ctx context.Context, manifest types.ProjectManifest, included []types.ProjectVolume, name string) error {
 	var certain, predicted []types.ProjectVolume
 	for _, volume := range included {
 		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
@@ -580,7 +594,7 @@ func (s *Service) checkNewProject(ctx context.Context, manifest types.ProjectMan
 			})
 		}
 	}
-	_, err = s.checkVolumeTargets(ctx, certain, predicted)
+	_, err := s.checkVolumeTargets(ctx, certain, predicted)
 	return err
 }
 
@@ -632,8 +646,11 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if len(included) > 0 && !opts.RestoreVolumes {
 		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the backup's volumes requires volumes:create"))
 	}
-	if checkErr := s.checkNewProject(ctx, manifest, included, request.Name); checkErr != nil {
-		return "", checkErr
+	if nameErr := s.checkComposeNameFree(ctx, request.Name); nameErr != nil {
+		return "", nameErr
+	}
+	if volumeErr := s.checkNewVolumeNames(ctx, manifest, included, request.Name); volumeErr != nil {
+		return "", volumeErr
 	}
 	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
 	// being copied.
@@ -645,8 +662,10 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	defer unlock()
 	projectID, err := s.deps.CreateProject(ctx, NewProject{
 		User: opts.User,
+		// The new project gets its own copy of a .env the original keeps outside its directory, so it never changes the
+		// original's file and the import can set the new Compose name in it.
 		Fill: func(ctx context.Context, projectPath string) error {
-			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: opts.ProjectID, BackupID: opts.BackupID, ProjectPath: projectPath})
+			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: opts.ProjectID, BackupID: opts.BackupID, ProjectPath: projectPath, OwnEnv: true})
 		},
 		ID:           newID,
 		Name:         request.Name,
@@ -814,7 +833,10 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, types.ProjectDestroyOptions{RemoveFiles: true}, rollback.User); err != nil {
+	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, types.ProjectDestroyOptions{
+		RemoveFiles:    true,
+		KeepContainers: true,
+	}, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
 	for _, volume := range rollback.Attempted {

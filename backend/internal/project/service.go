@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
@@ -654,6 +655,13 @@ func (s *ProjectService) forgetStopped(ctx context.Context, projectID string) er
 	return s.kv.Delete(ctx, stoppedKeyPrefix+projectID)
 }
 
+// notedStopped reports whether the project's stop note remains, so a backup restarts containers only while no person
+// has decided whether the project runs.
+func (s *ProjectService) notedStopped(ctx context.Context, projectID string) (bool, error) {
+	_, noted, err := s.kv.Get(ctx, stoppedKeyPrefix+projectID)
+	return noted, err
+}
+
 // RecoverStoppedProjects starts, in the background, the projects Arcane stopped and could not start again, retrying
 // until every one runs. It runs at startup and when a backup leaves a project down; a call while it runs makes it
 // check once more, without waiting out the backoff of an earlier failure.
@@ -758,6 +766,15 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes 
 	for _, volume := range projects.ClassifyProjectVolumes(project) {
 		if volume.Name != "" {
 			names = append(names, volume.Name)
+		}
+	}
+	// The noted containers may still mount volumes the Compose files no longer name, after an edit not yet deployed;
+	// a restore holding one of those finishes before they start.
+	for _, c := range note.Containers {
+		for _, m := range c.Mounts {
+			if m.Type == mounttypes.TypeVolume && m.Name != "" {
+				names = append(names, m.Name)
+			}
 		}
 	}
 	unlock, err := lockVolumes(names)
@@ -2125,8 +2142,10 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {
