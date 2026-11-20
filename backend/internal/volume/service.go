@@ -162,6 +162,10 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
+func (s *VolumeService) WorkspaceLocks() *concurrency.KeyedMutex {
+	return &s.workspaceLocks
+}
+
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	s.backup.RegisterJobsOnStartup(ctx)
 }

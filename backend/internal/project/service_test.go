@@ -44,6 +44,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
@@ -11307,7 +11308,7 @@ func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
 
 	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
 	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
-	require.Error(t, svc.startExportStoppedProjects(ctx))
+	require.Error(t, svc.startExportStoppedProjects(ctx, &concurrency.KeyedMutex{}))
 	require.True(t, noted("p1"))
 	require.False(t, noted("gone"))
 }
