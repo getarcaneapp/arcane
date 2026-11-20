@@ -838,8 +838,13 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err == nil && !maps.Equal(captured, after) {
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
-	if err != nil {
+	if err != nil && len(stopped) > 0 {
+		// Saved before the restart, even during a shutdown, so a retry fails the backup instead of completing the
+		// rejected snapshot. Without it saved, the backup fails now; the deferred restart still starts the containers.
 		p.Rejected = err.Error()
+		if recordErr := s.record(context.WithoutCancel(ctx), p); recordErr != nil {
+			return errors.Join(err, recordErr, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
+		}
 	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
@@ -852,16 +857,13 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		// it, or fails it when the checkpoint holds its rejection. The backup stays running until then, since a running
 		// backup is what keeps a disabled schedule's recovery.
 		if restartErr != nil {
-			if err != nil && recordErr != nil {
-				// Without the rejection in the checkpoint a retry could complete the snapshot, so it fails now.
-				recordErr = errors.Join(recordErr, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
-			}
 			return fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, errors.Join(err, restartErr, recordErr))
 		}
-		if recordErr != nil {
-			return errors.Join(err, recordErr)
+		if recordErr != nil && err == nil {
+			return recordErr
 		}
 	}
+	// A rejected snapshot whose containers run again fails here, whether or not the checkpoint above was saved.
 	if err != nil {
 		return errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 	}
