@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -132,9 +131,6 @@ type (
 		Attempted   []types.ProjectVolume
 	}
 )
-
-// unnamedVolume matches the names Docker gives volumes created without one.
-var unnamedVolume = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func New(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -448,20 +444,12 @@ func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Projec
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
-	declared := map[string]bool{}
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
-		declared[volume.Name] = true
-	}
-	for _, c := range found.Items {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) && !declared[m.Name] {
-				return common.Classify(common.ErrValidation, fmt.Errorf(
-					"container %s keeps data at %s in an unnamed volume, which stopping the project for the export would detach; "+
-						"export it without stopping it, or move that data to a named volume",
-					docker.ContainerNameFromNames(c.Names), m.Destination,
-				))
-			}
-		}
+	if c, m, detached := projects.UnnamedVolumeMount(project, found.Items); detached {
+		return common.Classify(common.ErrValidation, fmt.Errorf(
+			"container %s keeps data at %s in an unnamed volume, which stopping the project for the export would detach; "+
+				"export it without stopping it, or move that data to a named volume",
+			docker.ContainerNameFromNames(c.Names), m.Destination,
+		))
 	}
 	return nil
 }

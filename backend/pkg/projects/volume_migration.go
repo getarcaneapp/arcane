@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -16,6 +17,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
@@ -33,6 +36,9 @@ type ComposeVolumeTargetNameOptions struct {
 	SourceName    string
 	TargetProject string
 }
+
+// unnamedVolumeName matches the names Docker gives volumes created without one.
+var unnamedVolumeName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
 	if composeProject == nil || len(composeProject.Volumes) == 0 {
@@ -161,6 +167,24 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 		})
 	}
 	return classified
+}
+
+// UnnamedVolumeMount finds a container mount that keeps data in an unnamed volume the project doesn't declare: only that
+// container links the volume to its service, so removing the container, as taking the project down does, leaves the
+// data behind. A volume the project declares by name, even a generated one, is attached again by Compose.
+func UnnamedVolumeMount(project types.Project, containers []container.Summary) (container.Summary, container.MountPoint, bool) {
+	declared := map[string]bool{}
+	for _, volume := range ClassifyProjectVolumes(project) {
+		declared[volume.Name] = true
+	}
+	for _, c := range containers {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && unnamedVolumeName.MatchString(m.Name) && !declared[m.Name] {
+				return c, m, true
+			}
+		}
+	}
+	return container.Summary{}, container.MountPoint{}, false
 }
 
 func ComposeVolumeTargetName(opts ComposeVolumeTargetNameOptions) string {
