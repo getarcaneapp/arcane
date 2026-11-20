@@ -22,6 +22,7 @@
 - migrate Playwright E2E tests to vite-plus test runner ([\#4896](https://github.com/getarcaneapp/arcane/pull/4896) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.1.0...v3.1.1
+
 ## v3.1.0
 
 ### New features
