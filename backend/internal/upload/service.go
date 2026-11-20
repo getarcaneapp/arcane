@@ -47,6 +47,8 @@ type (
 		Write    func(io.Writer) error
 		Kind     string
 		Filename string
+		// Origin names the export that writes the session; uploads leave it empty so they can't be downloaded.
+		Origin string
 	}
 
 	reserveWriter struct {
@@ -389,6 +391,7 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 		ID:             path.Base(sessionDir),
 		Kind:           kind,
 		Filename:       filename,
+		Origin:         opts.Origin,
 		Size:           info.Size(),
 		ChunkSize:      types.UploadDefaultChunkSize,
 		TotalChunks:    totalChunks,
@@ -412,6 +415,11 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 	session, err = s.loadMeta(ctx, kind, uploadID)
 	if err != nil {
 		return nil, nil, err
+	}
+	// An uploaded archive, such as one staged for an import, may hold volume data the caller could not export, and
+	// import activities show its ID; only what an export wrote is served.
+	if session.Origin == "" {
+		return nil, nil, fmt.Errorf("%w: %s", common.ErrUploadSessionNotFound, uploadID)
 	}
 	if !session.Complete {
 		return nil, nil, fmt.Errorf("%w: %d of %d chunks received", common.ErrUploadSessionIncomplete, len(session.ReceivedChunks), session.TotalChunks)

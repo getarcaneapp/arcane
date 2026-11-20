@@ -1866,6 +1866,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		Write:    pack,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+		Origin:   types.UploadOriginProjectExport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)

@@ -16,6 +16,7 @@ type (
 		ID             string    `json:"id"`
 		Kind           string    `json:"kind"`
 		Filename       string    `json:"filename"`
+		Origin         string    `json:"origin,omitempty" doc:"What wrote the session on the server: project-export or project-bundle; empty for an upload"`
 		ReceivedChunks []int     `json:"receivedChunks"`
 		Size           int64     `json:"size"`
 		ChunkSize      int64     `json:"chunkSize"`
@@ -33,6 +34,12 @@ const (
 	UploadKindVolumeBackup   = "volume-backup"
 	UploadKindBuildWorkspace = "build-workspace"
 	UploadKindProjectArchive = "project-archive"
+
+	// An export of a project writes its files as a project-export session, or its files with volume data as a
+	// project-bundle session. Only these can be downloaded, so an archive someone uploaded is never served back.
+
+	UploadOriginProjectExport = "project-export"
+	UploadOriginProjectBundle = "project-bundle"
 
 	// Chunk size bounds keep every chunk request safely under common reverse-proxy
 	// and WAF body limits (~100 MB).
