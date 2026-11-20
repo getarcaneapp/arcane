@@ -590,11 +590,10 @@ func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		assert.NoError(t, json.MarshalWrite(w, []container.Summary{{
-			Names:  []string{"/demo-arcane-1"},
-			State:  container.StateRunning,
-			Labels: map[string]string{"com.docker.compose.project": "demo", "com.getarcaneapp.arcane": "true"},
-		}}))
+		assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			{Names: []string{"/demo-arcane-1"}, State: container.StateRunning, Labels: map[string]string{"com.docker.compose.project": "demo", "com.getarcaneapp.arcane": "true"}},
+			{Names: []string{"/demo-web-1"}, State: container.StateRunning, Labels: map[string]string{"com.docker.compose.project": "demo"}},
+		}))
 	}))
 	uploads := upload.NewUploadService(nil)
 	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
@@ -615,36 +614,58 @@ func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
 
 func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
 	generated := strings.Repeat("ab", 32)
-	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
-			http.NotFound(w, r)
-			return
-		}
-		// Stopping removes stopped containers too, so they are listed and checked as well.
-		if r.URL.Query().Get("all") != "1" {
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
-			return
-		}
-		assert.NoError(t, json.MarshalWrite(w, []container.Summary{{
-			Names:  []string{"/demo-db-1"},
-			State:  container.StateExited,
-			Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: generated, Destination: "/var/lib/data"}},
-		}}))
-	}))
-	uploads := upload.NewUploadService(nil)
-	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
-	service := New(Dependencies{
-		Environment: environment,
-		Docker:      dockerService,
-		Uploads:     uploads,
-		LockProject: func(context.Context, string) (func(), error) { return func() {}, nil },
-		StopProject: func(context.Context, string, types.Actor) error {
-			t.Fatal("the project was stopped although that would detach an unnamed volume")
-			return nil
-		},
-	})
-	_, err := service.Export(t.Context(), ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}})
-	require.ErrorIs(t, err, common.ErrValidation)
-	require.ErrorContains(t, err, "container demo-db-1 keeps data at /var/lib/data in an unnamed volume")
+	stoppedDB := container.Summary{
+		Names:  []string{"/demo-db-1"},
+		State:  container.StateExited,
+		Labels: map[string]string{"com.docker.compose.project": "demo"},
+		Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: generated, Destination: "/var/lib/data"}},
+	}
+	runningWeb := container.Summary{Names: []string{"/demo-web-1"}, State: container.StateRunning, Labels: map[string]string{"com.docker.compose.project": "demo"}}
+	for _, test := range []struct {
+		name    string
+		running []container.Summary
+		refused bool
+	}{
+		// Stopping removes stopped containers too, so a stopped one's unnamed volume is checked as well.
+		{name: "a running project is not stopped", running: []container.Summary{runningWeb}, refused: true},
+		// A stopped project is left as it is, so its containers keep their volumes.
+		{name: "a stopped project is exported", running: []container.Summary{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json") && r.URL.Query().Get("all") == "1":
+					assert.NoError(t, json.MarshalWrite(w, []container.Summary{stoppedDB}))
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					assert.NoError(t, json.MarshalWrite(w, test.running))
+				case strings.HasSuffix(r.URL.Path, "/info"):
+					assert.NoError(t, json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"}))
+				case strings.HasSuffix(r.URL.Path, "/events"):
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			uploads := upload.NewUploadService(nil)
+			environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
+			service := New(Dependencies{
+				Environment:  environment,
+				Docker:       dockerService,
+				Uploads:      uploads,
+				ComposeFiles: func(context.Context, string) ([]string, error) { return []string{"compose.yaml"}, nil },
+				LockProject:  func(context.Context, string) (func(), error) { return func() {}, nil },
+				StopProject: func(context.Context, string, types.Actor) error {
+					t.Fatal("the project was stopped")
+					return nil
+				},
+			})
+			_, err := service.Export(t.Context(), ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}})
+			if !test.refused {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, common.ErrValidation)
+			require.ErrorContains(t, err, "container demo-db-1 keeps data at /var/lib/data in an unnamed volume")
+		})
+	}
 }
