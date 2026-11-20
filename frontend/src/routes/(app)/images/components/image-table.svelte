@@ -47,7 +47,13 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { environmentHref, type EnvironmentPage, type EnvironmentRow, hasShownPermission } from '#lib/utils/environments.js';
+	import {
+		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
+		hasShownPermission,
+		rowKey
+	} from '#lib/utils/environments.js';
 	import { bytes, formatDate, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { hardenedImageDisplay, hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { blockedUpdateTitle } from '#lib/utils/image-updates.js';
@@ -76,6 +82,7 @@
 
 	const isLoading = $state({
 		removing: false,
+		pulling: false,
 		checking: false
 	});
 
@@ -111,6 +118,42 @@
 				failure: () => (ids.length === 1 ? m.failed_to_remove_image() : m.images_remove_failed_many({ count: ids.length }))
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await invalidateImages();
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
+		});
+	}
+
+	function pullableTag(image: ImageSummary): string | undefined {
+		const tags = image.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? [];
+		return tags.find((tag) => !tag.includes('@')) ?? tags[0];
+	}
+
+	const pullTags = $derived(new Map(images.data.map((image) => [rowKey(image), pullableTag(image)])));
+	const pullableIds = $derived((selectedIds ?? []).filter((id) => pullTags.get(id)));
+
+	function handlePullSelected() {
+		const ids = pullableIds;
+		bulkConfirmAndRun({
+			ids,
+			title: m.pull_count_images({ count: ids.length }),
+			message: m.pull_images_confirm_message({ count: ids.length }),
+			confirmLabel: m.pull(),
+			runInEnvironment: (id, environmentId) =>
+				imageService.pullImage(
+					pullTags.get(rowKey({ id, environmentId, environmentTagged: true })) ?? '',
+					undefined,
+					undefined,
+					environmentId
+				),
+			messages: {
+				success: (count) => m.pulled_count_images({ count }),
+				partial: (success, total, failed) => m.pulled_images_partial({ success, total, failed }),
+				failure: () => m.images_pull_failed()
+			},
+			setLoading: (loading) => (isLoading.pulling = loading),
 			onComplete: async (result) => {
 				if (result.success > 0) await invalidateImages();
 			},
@@ -301,6 +344,16 @@
 	);
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'pull',
+			label: m.pull_selected_count({ count: pullableIds.length }),
+			action: 'pull',
+			onclick: handlePullSelected,
+			loading: isLoading.pulling,
+			disabled: !canPullImage || isLoading.pulling || pullableIds.length === 0,
+			disabledReason: pullableIds.length === 0 ? m.images_pull_no_tag() : undefined,
+			icon: DownloadIcon
+		},
 		{
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
@@ -599,9 +652,8 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{@const usableTags = item.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? []}
 		<!-- Prefer a real tag: a digest name kept beside it would pull the old pinned image. -->
-		{@const usableTag = usableTags.find((tag) => !tag.includes('@')) ?? usableTags[0]}
+		{@const usableTag = pullableTag(item)}
 		{#if canPullImage && hasPermission('images:pull', envId)}
 			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '', envId)} disabled={!usableTag}>
 				<DownloadIcon class="size-4" />
