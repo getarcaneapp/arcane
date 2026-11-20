@@ -1059,6 +1059,7 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 			ID:          project.ID,
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
+			Path:        project.Path,
 		},
 		ComposeFiles:  composeFiles,
 		Volumes:       p.Volumes,
@@ -2178,7 +2179,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
 	if opts.OwnEnv && opts.ProjectPath != "" {
-		if linkErr := s.ownEnvLink(ctx, opts); linkErr != nil {
+		if linkErr := ownEnvLink(ctx, opts.ProjectPath, manifest.Project.Path); linkErr != nil {
 			return linkErr
 		}
 	}
@@ -2222,40 +2223,32 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 	return nil
 }
 
-// ownEnvLink points a new project's .env, restored as a link into the original project's directory, at the new
-// project's restored copy of that file, as an export does, so the new project neither reads nor changes the original's
-// settings. The manifest doesn't record the original's directory, so it comes from the original's current record; an
-// original that, or whose directory, no longer exists has no files the link could reach.
-func (s *Service) ownEnvLink(ctx context.Context, opts types.ProjectBackupRestore) error {
+// ownEnvLink points a new project's .env, restored as an absolute link into the directory the backup was taken from,
+// at the new project's restored copy of that file, as an export does, so the new project neither reads nor changes the
+// original's settings. The link is compared by name, so it is repaired even once the original is gone.
+func ownEnvLink(ctx context.Context, projectPath, sourcePath string) error {
 	// Only a link can lead back into the original; a regular .env is already the copy's own.
-	if info, statErr := os.Lstat(filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+	if info, statErr := os.Lstat(filepath.Join(projectPath, projects.EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
 		return nil
 	}
-	all, err := s.deps.Projects(ctx)
+	root := acfs.Root{Path: projectPath}
+	envLink := "/" + projects.EffectiveEnvFileName
+	target, err := root.Readlink(ctx, envLink)
 	if err != nil {
 		return err
 	}
-	index := slices.IndexFunc(all, func(project types.ProjectRecord) bool { return project.ID == opts.ProjectID })
-	if index < 0 {
+	// A relative link stays inside the copy.
+	if sourcePath == "" || !filepath.IsAbs(target) || !projects.IsSafeSubdirectory(sourcePath, target) {
 		return nil
 	}
-	sourceRoot, err := filepath.EvalSymlinks(all[index].Path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+	relative, err := filepath.Rel(sourcePath, target)
 	if err != nil {
-		return fmt.Errorf("resolve the directory of project %s: %w", all[index].Name, err)
-	}
-	root := acfs.Root{Path: opts.ProjectPath}
-	envLink := "/" + projects.EffectiveEnvFileName
-	target, inside, err := projects.LinkTargetInside(ctx, root, envLink, sourceRoot)
-	if err != nil || !inside {
 		return err
 	}
 	if removeErr := root.Remove(ctx, envLink); removeErr != nil {
 		return fmt.Errorf("replace the restored .env link: %w", removeErr)
 	}
-	if linkErr := root.Symlink(ctx, target, envLink); linkErr != nil {
+	if linkErr := root.Symlink(ctx, relative, envLink); linkErr != nil {
 		return fmt.Errorf("replace the restored .env link: %w", linkErr)
 	}
 	return nil
