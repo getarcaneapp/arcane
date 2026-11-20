@@ -66,7 +66,7 @@ const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'urls',
 		detail: 'Arcane project URLs',
-		info: 'Additional project URLs (for example docs or homepage links).'
+		info: 'Additional project URLs (for example docs or homepage links). Each entry is a URL or a label/url object.'
 	},
 	{
 		label: 'tags',
@@ -138,6 +138,19 @@ const ARCANE_TAG_COMPLETIONS: ArcaneCompletionSpec[] = [
 		label: 'color',
 		detail: 'Arcane project tag color',
 		info: 'Tag color: gray, purple, blue, green, yellow, orange, red, or pink.'
+	}
+];
+
+const ARCANE_URL_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'label',
+		detail: 'Arcane project URL display name',
+		info: 'Display name shown for the link. Defaults to the URL host.'
+	},
+	{
+		label: 'url',
+		detail: 'Arcane project URL',
+		info: 'Link target.'
 	}
 ];
 
@@ -363,6 +376,8 @@ function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix 
 		specs = ARCANE_SERVICE_BLOCK_COMPLETIONS;
 	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number') {
 		specs = ARCANE_TAG_COMPLETIONS;
+	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'urls' && typeof path[2] === 'number') {
+		specs = ARCANE_URL_COMPLETIONS;
 	}
 
 	if (isRootArcanePath(path) || isServiceArcanePath(path)) {
@@ -406,7 +421,17 @@ const ARCANE_SCHEMA_DOCS: Record<string, SchemaDoc> = {
 	},
 	'x-arcane.urls': {
 		title: 'x-arcane.urls',
-		description: 'Additional project URLs (for example docs, homepage, or dashboards).'
+		description:
+			'Additional project URLs (for example docs, homepage, or dashboards). Each entry is a URL or an object with a label and url.',
+		examples: ['[{ label: Docs, url: https://example.com/docs }, https://example.com]']
+	},
+	'x-arcane.urls[].label': {
+		title: 'x-arcane.urls[].label',
+		description: 'Optional display name shown for the link. Defaults to the URL host.'
+	},
+	'x-arcane.urls[].url': {
+		title: 'x-arcane.urls[].url',
+		description: 'Required link target.'
 	},
 	'x-arcane.tags': {
 		title: 'x-arcane.tags',
@@ -471,8 +496,8 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 		['icon', 'icon-light', 'icon-dark', 'urls', 'tags', 'hidden', 'update-check'].includes(String(path[1]))
 	)
 		return ARCANE_SCHEMA_DOCS[`x-arcane.${path[1]}`] ?? null;
-	if (path.length === 4 && path[1] === 'tags' && typeof path[2] === 'number') {
-		return ARCANE_SCHEMA_DOCS[`x-arcane.tags[].${String(path[3])}`] ?? null;
+	if (path.length === 4 && (path[1] === 'tags' || path[1] === 'urls') && typeof path[2] === 'number') {
+		return ARCANE_SCHEMA_DOCS[`x-arcane.${path[1]}[].${String(path[3])}`] ?? null;
 	}
 	return null;
 }
