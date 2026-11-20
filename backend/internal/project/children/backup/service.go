@@ -1764,6 +1764,11 @@ func checkpointedPlan(previous types.SchedulerRun) (plan, bool, error) {
 	return recorded, true, err
 }
 
+// resumable reports whether the target is a backup an interrupted attempt checkpointed and left running.
+func resumable(target types.TargetOutcome) bool {
+	return target.ResourceType == targetType && target.Status == types.RunStatusRunning && len(target.RecoveryData) > 0
+}
+
 // resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
 // that backup already failed and a new one should run.
 func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
@@ -1790,7 +1795,7 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 // them go, so a resume can take them.
 func (s *Service) awaitCheckpointAdmissions(ctx context.Context, previous types.SchedulerRun) error {
 	for _, target := range previous.Outcome.Targets {
-		if target.ResourceType != targetType || target.Status != types.RunStatusRunning || len(target.RecoveryData) == 0 {
+		if !resumable(target) {
 			continue
 		}
 		var recorded plan
@@ -2105,10 +2110,7 @@ func (s *Service) saveGlobalPolicies(ctx context.Context, policies []types.Globa
 func selectProjects(policy types.GlobalProjectBackupPolicy, references []types.ProjectReference) []types.ProjectReference {
 	selected := make([]types.ProjectReference, 0, len(references))
 	for _, project := range references {
-		listed := slices.Contains(policy.ProjectIDs, project.ID)
-		if policy.SelectionMode == types.SystemVolumeSelectionAll ||
-			(policy.SelectionMode == types.SystemVolumeSelectionAllowlist && listed) ||
-			(policy.SelectionMode == types.SystemVolumeSelectionBlocklist && !listed) {
+		if policy.SelectionMode.Selects(slices.Contains(policy.ProjectIDs, project.ID)) {
 			selected = append(selected, project)
 		}
 	}
@@ -2169,10 +2171,7 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 			return types.GlobalProjectBackupPolicy{ID: uuid.New().String()}
 		},
 		Build: func(ctx context.Context, policy *types.GlobalProjectBackupPolicy, update types.UpdateGlobalProjectBackupPolicy) error {
-			if !slices.Contains(
-				[]types.SystemVolumeSelectionMode{types.SystemVolumeSelectionAll, types.SystemVolumeSelectionAllowlist, types.SystemVolumeSelectionBlocklist},
-				update.SelectionMode,
-			) {
+			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
 			}
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
@@ -2381,7 +2380,7 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			finished[target.ID] = target
 			continue
 		}
-		if len(target.RecoveryData) == 0 {
+		if !resumable(target) {
 			continue
 		}
 		var recorded plan
