@@ -405,6 +405,16 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		return "", err
 	}
 	bundled := projects.IsProjectBundle(bytes.NewReader(head))
+	if bundled || opts.Request.Start {
+		composeName := projects.NormalizeProjectName(opts.Request.Name)
+		stackExists, stackErr := s.deps.Environment.ComposeProjectInUse(ctx, composeName)
+		if stackErr != nil {
+			return "", fmt.Errorf("check Compose project %s: %w", composeName, stackErr)
+		}
+		if stackExists {
+			return "", common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
+		}
+	}
 	request := types.ImportProjectArchive{
 		UploadID:     opts.Request.UploadID,
 		Name:         opts.Request.Name,
@@ -459,14 +469,6 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	}
 	if len(included) > 0 && !opts.RestoreVolumes {
 		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
-	}
-	composeName := projects.NormalizeProjectName(opts.Request.Name)
-	stackExists, err := s.deps.Environment.ComposeProjectInUse(ctx, composeName)
-	if err != nil {
-		return "", fmt.Errorf("check Compose project %s: %w", composeName, err)
-	}
-	if stackExists {
-		return "", common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
 	}
 	var certain, predicted []types.ProjectVolume
 	for _, volume := range included {
@@ -633,7 +635,10 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	}
 	ctx = context.WithoutCancel(ctx)
 	var leftovers []string
-	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, types.ProjectDestroyOptions{RemoveFiles: true}, rollback.User); err != nil {
+	if err := s.deps.RemoveProject(ctx, rollback.ProjectID, types.ProjectDestroyOptions{
+		RemoveFiles:    true,
+		KeepContainers: true,
+	}, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
 	for _, volume := range rollback.Attempted {

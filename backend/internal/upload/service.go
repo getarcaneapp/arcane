@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/go-units"
@@ -37,8 +38,9 @@ type (
 
 	downloadReader struct {
 		io.ReadCloser
-		done func()
-		eof  bool
+		unlock func()
+		done   func()
+		eof    bool
 	}
 
 	WriteSessionOptions struct {
@@ -307,6 +309,9 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 		if _, err := io.CopyN(w, source, size); err != nil {
 			return fmt.Errorf("write uploaded file: %w", err)
 		}
+		if surplus, _ := source.Read(make([]byte, 1)); surplus > 0 {
+			return fmt.Errorf("%w: the file holds more than the declared %d bytes", common.ErrUploadSessionInvalid, size)
+		}
 		return nil
 	}
 	return s.WriteSession(ctx, WriteSessionOptions{
@@ -317,11 +322,15 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 }
 
 func (w *reserveWriter) Write(p []byte) (int, error) {
-	if w.unchecked <= 0 {
-		if err := w.service.CheckFreeSpace(w.ctx, reserveCheckBytes); err != nil {
-			return 0, fmt.Errorf("stop writing the upload: %w", err)
+	if pending := int64(len(p)); w.unchecked < pending {
+		allowance := max(reserveCheckBytes, pending)
+		if w.service.CheckFreeSpace(w.ctx, allowance) != nil {
+			allowance = pending
+			if err := w.service.CheckFreeSpace(w.ctx, allowance); err != nil {
+				return 0, fmt.Errorf("stop writing the upload: %w", err)
+			}
 		}
-		w.unchecked = reserveCheckBytes
+		w.unchecked = allowance
 	}
 	n, err := w.w.Write(p)
 	w.unchecked -= int64(n)
@@ -392,10 +401,15 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 	return session, nil
 }
 
-func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID string) (io.ReadCloser, *types.UploadSession, error) {
-	defer s.locks.RLock(uploadID)()
+func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID string) (reader io.ReadCloser, session *types.UploadSession, err error) {
+	unlock := sync.OnceFunc(s.locks.RLock(uploadID))
+	defer func() {
+		if err != nil {
+			unlock()
+		}
+	}()
 
-	session, err := s.loadMeta(ctx, kind, uploadID)
+	session, err = s.loadMeta(ctx, kind, uploadID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -414,13 +428,15 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 		_ = file.Close()
 		return nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
+	done := func() {
+		if deleteErr := s.DeleteSession(context.WithoutCancel(ctx), kind, uploadID); deleteErr != nil {
+			slog.WarnContext(ctx, "failed to delete downloaded upload session", "uploadId", uploadID, "error", deleteErr)
+		}
+	}
 	return &downloadReader{
 		ReadCloser: file,
-		done: func() {
-			if deleteErr := s.DeleteSession(context.WithoutCancel(ctx), kind, uploadID); deleteErr != nil {
-				slog.WarnContext(ctx, "failed to delete downloaded upload session", "uploadId", uploadID, "error", deleteErr)
-			}
-		},
+		unlock:     unlock,
+		done:       done,
 	}, session, nil
 }
 
@@ -434,6 +450,7 @@ func (r *downloadReader) Read(p []byte) (int, error) {
 
 func (r *downloadReader) Close() error {
 	err := r.ReadCloser.Close()
+	r.unlock()
 	if r.eof {
 		r.done()
 	}

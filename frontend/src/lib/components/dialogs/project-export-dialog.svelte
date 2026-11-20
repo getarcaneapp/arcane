@@ -72,7 +72,7 @@
 	}
 
 	async function handleExport() {
-		if (!project || !options || exporting) return;
+		if (!project || !options || optionsError || exporting) return;
 		exporting = true;
 		const result = await tryCatch(
 			projectService.exportProject(
@@ -170,7 +170,7 @@
 			icon={DownloadIcon}
 			onclick={handleExport}
 			loading={exporting}
-			disabled={!options || exporting}
+			disabled={!options || !!optionsError || exporting}
 		/>
 	{/snippet}
 </ResponsiveDialog>
