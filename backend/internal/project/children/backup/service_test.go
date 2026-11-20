@@ -68,13 +68,15 @@ type (
 	}
 
 	policyFixture struct {
-		db          *database.DB
-		engine      *backup.Engine
-		service     *Service
-		jobs        *fakeScheduler
-		forgets     *fakeForget
-		s3Requests  *atomic.Int64
-		available   *atomic.Bool
+		db         *database.DB
+		engine     *backup.Engine
+		service    *Service
+		jobs       *fakeScheduler
+		forgets    *fakeForget
+		s3Requests *atomic.Int64
+		available  *atomic.Bool
+		// onS3 runs once on the next S3 request, to change things while a check is in flight.
+		onS3        *atomic.Pointer[func()]
 		destination string
 		secondary   string
 	}
@@ -931,9 +933,12 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 
-	requests, available := &atomic.Int64{}, &atomic.Bool{}
+	requests, available, onS3 := &atomic.Int64{}, &atomic.Bool{}, &atomic.Pointer[func()]{}
 	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
+		if hook := onS3.Swap(nil); hook != nil {
+			(*hook)()
+		}
 		if available.Load() {
 			w.Header().Set("Content-Range", "bytes 0-0/1")
 			w.WriteHeader(http.StatusPartialContent)
@@ -981,7 +986,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	})
 	return policyFixture{
 		db: db, engine: engine, service: service, jobs: jobs, forgets: forgets, s3Requests: requests, available: available,
-		destination: destinations[0], secondary: destinations[1],
+		onS3: onS3, destination: destinations[0], secondary: destinations[1],
 	}
 }
 
@@ -1180,6 +1185,28 @@ func TestScheduledRemoteCheckRunsOnThePolicyReadUnderTheAdmission(t *testing.T) 
 	require.False(t, stored.Enabled)
 	require.False(t, f.jobs.HasJob("project-backup:"+policy.ID))
 	f.hold(t, admissionScope, "p1").Release(t.Context())
+}
+
+func TestScheduledRemoteCheckUsesThePolicyChangedDuringIt(t *testing.T) {
+	f := newPolicyFixture(t)
+	require.NoError(t, f.db.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"retained", "app-data", 0, time.Now(), types.VolumeBackupStatusSucceeded, f.destination, "remote",
+	).Error)
+	policy := f.policy(t, ProjectBackupPolicy{
+		ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, S3Enabled: true, S3DestinationID: f.destination,
+	})
+	// The user turns S3 off while the run finds its repository missing, so the guarded disable matches nothing.
+	turnOff := func() {
+		assert.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Where("id = ?", policy.ID).Update("s3_enabled", false).Error)
+	}
+	f.onS3.Store(&turnOff)
+
+	current, disabled, err := f.service.scheduledPolicy(t.Context(), policy.ID)
+	require.NoError(t, err)
+	require.False(t, disabled)
+	require.False(t, current.S3Enabled, "the run uses the policy as the user left it, so it never writes to the missing repository")
+	require.True(t, current.LocalEnabled)
 }
 
 // remoteBackup is a finished project backup whose only snapshot is in the fixture's missing S3 repository, so deleting

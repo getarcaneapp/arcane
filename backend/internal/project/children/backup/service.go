@@ -1597,6 +1597,11 @@ func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (Project
 			Field:         field,
 		})
 	})
+	// The repository is gone but the guarded save matched nothing: S3 was turned off or moved, or the policy changed,
+	// while it was checked, so the policy as it is now is checked instead.
+	if err == nil && !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing) {
+		return s.scheduledPolicy(ctx, policyID)
+	}
 	if err != nil || !disabled {
 		return policy, false, err
 	}
