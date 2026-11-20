@@ -12216,3 +12216,46 @@ func (r *bundleActivityRecorder) AppendMessage(_ context.Context, _ string, req 
 func (r *bundleActivityRecorder) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
 	return nil, nil
 }
+
+func TestStopRunningContainersLeavesSelfRemovingOneOffsAlone(t *testing.T) {
+	var mu sync.Mutex
+	var stopped, started []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{
+				{ID: "web-1", Names: []string{"/demo-web-1"}, State: container.StateRunning, Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web"}},
+				{ID: "run-1", Names: []string{"/demo-web-run-1"}, State: container.StateRunning, Labels: map[string]string{
+					api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True",
+				}},
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/run-1/json"):
+			_, _ = io.WriteString(w, `{"Id":"run-1","State":{"Status":"running"},"HostConfig":{"AutoRemove":true}}`)
+		case strings.HasSuffix(r.URL.Path, "/stop"):
+			stopped = append(stopped, filepath.Base(filepath.Dir(r.URL.Path)))
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/start"):
+			started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
+			http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	svc := &ProjectService{dockerService: newSettingsDockerService(t, newTestDockerClient(t, server))}
+
+	// docker compose run --rm deletes its container on stop, so nothing is stopped while one runs.
+	_, err := svc.stopRunningContainers(t.Context(), "demo")
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "demo-web-run-1")
+	require.Empty(t, stopped)
+
+	// A container removed since it was stopped has nothing to start, which is not a failure.
+	require.NoError(t, svc.startContainers(t.Context(), &composetypes.Project{Name: "demo"}, []container.Summary{
+		{ID: "gone-1", Labels: map[string]string{api.ProjectLabel: "demo", api.ServiceLabel: "web", api.OneoffLabel: "True"}},
+	}))
+	require.Equal(t, []string{"gone-1"}, started)
+}
