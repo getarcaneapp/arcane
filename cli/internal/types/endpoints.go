@@ -168,10 +168,6 @@ func UploadSession(envID, kind, uploadID string) string {
 	return pathf("/api/agents/%s/uploads/%s/%s", envID, kind, uploadID)
 }
 
-func UploadSessionDownload(envID, kind, uploadID string) string {
-	return pathf("/api/agents/%s/uploads/%s/%s/download", envID, kind, uploadID)
-}
-
 func UploadSessionChunk(envID, kind, uploadID string, index int) string {
 	return pathf("/api/agents/%s/uploads/%s/%s/chunks/%d", envID, kind, uploadID, index)
 }

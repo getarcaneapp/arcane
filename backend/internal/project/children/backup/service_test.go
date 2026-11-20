@@ -81,17 +81,11 @@ func newTestDB(t *testing.T) *database.DB {
 	return db
 }
 
-// volumeServer answers volume inspects for the existing volumes and 404 for the rest.
-func volumeServer(t *testing.T, existing ...string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name, found := strings.CutPrefix(r.URL.Path, "/v1.41/volumes/")
-		if !found || r.Method != http.MethodGet || !slices.Contains(existing, name) {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: name}))
-	})
+// existingVolumes inspects the existing volumes and reports the rest missing.
+func existingVolumes(existing ...string) func(context.Context, string) (types.Volume, bool, error) {
+	return func(_ context.Context, name string) (types.Volume, bool, error) {
+		return types.Volume{Name: name}, slices.Contains(existing, name), nil
+	}
 }
 
 // startServer lists no containers and records each container start; while fail is set, starts fail.
@@ -137,8 +131,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
@@ -184,8 +177,7 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 }
 
 func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
 	require.NoError(t, checkPlanVolumes(testProject(), p))
@@ -225,11 +217,10 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	require.NoError(t, gate.Register(harness.Runtime))
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data"))
 	service := NewService(Dependencies{
 		DB:     db,
-		Docker: dockerService,
 		Engine: engine,
+		Volume: existingVolumes("web_data"),
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
@@ -791,6 +782,10 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
+		Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+			found, ok := live[name]
+			return types.NewVolume(found), ok, nil
+		},
 		ComposeFiles: func(context.Context, string) ([]string, error) { return []string{"compose.yaml"}, nil },
 	})
 
@@ -1240,4 +1235,25 @@ func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
 	// A generated name the project adopts as an external volume is attached again by Compose.
 	project.Volumes["adopted"] = composetypes.VolumeConfig{Name: generated, External: true}
 	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{unnamed}}}))
+}
+
+func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
+	created := map[string]string{"web_data": "2026-11-20T09:00:00Z"}
+	service := NewService(Dependencies{Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+		at, exists := created[name]
+		return types.Volume{Name: name, CreatedAt: at}, exists, nil
+	}})
+	before, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+
+	// Mounting a volume removed while the backup waited would create it empty, so the backup stops instead.
+	_, err = service.volumeIdentities(t.Context(), []string{"web_data", "web_cache"})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "volume web_cache was removed after the backup was queued")
+
+	// A volume removed and created again during the copy is a different volume, which capture refuses to keep.
+	created["web_data"] = "2026-11-20T09:05:00Z"
+	after, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+	require.NotEqual(t, before, after)
 }

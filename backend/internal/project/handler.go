@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -570,8 +572,8 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		return nil, err
 	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if input.Body.Start && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
+	if permErr := requireConditions(permissions, input.EnvironmentID, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))); permErr != nil {
+		return nil, permErr
 	}
 
 	var proj *Project
@@ -658,12 +660,20 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 	return h.createProjectResponse(ctx, proj, activityID)
 }
 
+// requireConditions refuses with the first of perms the caller lacks in the environment.
+func requireConditions(permissions *authz.PermissionSet, environmentID string, perms []string) error {
+	for _, perm := range perms {
+		if !permissions.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
+}
+
 func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *DownloadProjectExportInput) (*huma.StreamResponse, error) {
-	permissions, _ := middleware.PermissionsFromContext(ctx)
 	reader, session, err := h.projectService.OpenExport(ctx, OpenExportOptions{
-		ProjectID:  input.ProjectID,
-		UploadID:   input.UploadID,
-		VolumeData: permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID),
+		ProjectID: input.ProjectID,
+		UploadID:  input.UploadID,
 	})
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
@@ -671,6 +681,12 @@ func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *Downl
 		}
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	if permErr := requireConditions(permissions, input.EnvironmentID, authz.UploadOriginConditions.Required("origin", session.Origin)); permErr != nil {
+		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
+		_ = reader.Close()
+		return nil, permErr
 	}
 	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
@@ -682,14 +698,12 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 	}
 	request := kit.FromPtr(input.Body)
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if len(request.Volumes) > 0 && !permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
-	}
-	if request.StopProject && !permissions.Allows(authz.PermProjectsDown, input.EnvironmentID) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDown)
-	}
-	if request.StopProject && !permissions.Allows(authz.PermProjectsDeploy, input.EnvironmentID) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermProjectsDeploy)
+	required := slices.Concat(
+		authz.ProjectExportConditions.Required("volumes", strconv.FormatBool(len(request.Volumes) > 0)),
+		authz.ProjectExportConditions.Required("stopProject", strconv.FormatBool(request.StopProject)),
+	)
+	if permErr := requireConditions(permissions, input.EnvironmentID, required); permErr != nil {
+		return nil, permErr
 	}
 
 	var session *types.UploadSession

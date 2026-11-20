@@ -60,6 +60,8 @@ type (
 		Settings       *settings.SettingsService
 		VolumeLocks    *concurrency.KeyedMutex
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		// Volume inspects a Docker volume and reports whether it exists.
+		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// ComposeProject loads the project's Compose model, which restarts stopped containers in Compose order.
@@ -318,50 +320,35 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 // inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
 // and keep their data in Docker; requesting any other volume fails.
 func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	resolved, dockerVolumes, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{Project: project, Inspect: s.deps.Volume})
 	if err != nil {
 		return nil, err
 	}
-	classified := projects.ClassifyProjectVolumes(project)
-	inspected := make([]types.ProjectVolume, 0, len(classified))
-	for _, volume := range classified {
-		if !volume.Included {
-			inspected = append(inspected, volume)
-			continue
-		}
-		found, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
-		if inspectErr != nil && !errdefs.IsNotFound(inspectErr) {
-			return nil, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
-		}
-		missing := inspectErr != nil
-		backable := !missing && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(found.Volume.Driver, found.Volume.Options))
+	inspected := make([]types.ProjectVolume, 0, len(resolved))
+	for _, volume := range resolved {
 		wanted := requested == nil || slices.Contains(requested, volume.Key)
 		switch {
-		case wanted && requested != nil && missing:
+		case wanted && requested != nil && volume.Missing:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
-		case wanted && requested != nil && !backable:
+		case wanted && requested != nil && !volume.Included:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", volume.Key, volume.Kind))
 		}
 		inspected = append(inspected, types.ProjectVolume{
 			Labels: volume.Labels,
 			// A restore recreates a missing external volume with its own labels, not Compose's.
-			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal && backable, found.Volume.Labels, nil),
+			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal && volume.Included, dockerVolumes[volume.Name].Labels, nil),
 			DriverOpts:   volume.DriverOpts,
 			Key:          volume.Key,
 			Name:         volume.Name,
 			Kind:         volume.Kind,
 			Driver:       volume.Driver,
-			Included:     backable && wanted,
-			Missing:      missing,
+			Included:     volume.Included && wanted,
+			Missing:      volume.Missing,
 		})
 	}
 	for _, key := range requested {
-		index := slices.IndexFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key })
-		switch {
-		case index < 0:
+		if !slices.ContainsFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key }) {
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
-		case !inspected[index].Included:
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", key, inspected[index].Kind))
 		}
 	}
 	return inspected, nil
@@ -693,6 +680,12 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		return err
 	}
 	p.Volumes = markInUse(p.Volumes, inUse)
+	// A volume removed while the backup waited would be mounted, and so created, empty; one replaced during the copy
+	// would be captured empty too. Each must exist now and be the same volume after the copy.
+	captured, err := s.volumeIdentities(ctx, p.volumeNames())
+	if err != nil {
+		return err
+	}
 	composeFiles, err := s.deps.ComposeFiles(ctx, entry.ProjectID)
 	if err != nil {
 		return err
@@ -752,6 +745,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if saveErr := s.deps.DB.WithContext(ctx).Save(entry).Error; saveErr != nil {
 		return saveErr
 	}
+	// Saved first, so retention removes the snapshot of a backup that fails here.
+	after, err := s.volumeIdentities(ctx, p.volumeNames())
+	if err == nil && !maps.Equal(captured, after) {
+		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
+	}
+	if err != nil {
+		return err
+	}
 	if len(stopped) > 0 {
 		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
 		stopped = nil
@@ -770,6 +771,22 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusSucceeded, Message: snapshot.ID})
 }
 
+// volumeIdentities returns when Docker created each volume, refusing one that no longer exists.
+func (s *Service) volumeIdentities(ctx context.Context, names []string) (map[string]string, error) {
+	created := make(map[string]string, len(names))
+	for _, name := range names {
+		found, exists, err := s.deps.Volume(ctx, name)
+		switch {
+		case err != nil:
+			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
+		case !exists:
+			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was removed after the backup was queued, so it was not backed up; start the backup again", name))
+		}
+		created[name] = found.CreatedAt
+	}
+	return created, nil
+}
+
 // containerUse lists the Compose project's running and restarting containers, the ones a stop stops, and the volumes
 // running containers outside it mount. Arcane's own containers are never stopped, so they count as outside; its
 // file-browser helpers only write while a file operation holds the volume's lock, so an idle one doesn't count.
@@ -782,23 +799,8 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	if err != nil {
 		return nil, nil, fmt.Errorf("list containers: %w", err)
 	}
-	inUse = map[string]bool{}
-	for _, c := range running.Items {
-		if volumes.IsHelperContainer(c) {
-			continue
-		}
-		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
-			if c.State == container.StateRunning || c.State == container.StateRestarting {
-				active = append(active, c)
-			}
-			continue
-		}
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume {
-				inUse[m.Name] = true
-			}
-		}
-	}
+	// An idle file-browser helper mounting a volume is not a writer.
+	active, inUse = projects.ProjectContainerUse(composeName, slices.DeleteFunc(running.Items, volumes.IsHelperContainer))
 	return active, inUse, nil
 }
 
