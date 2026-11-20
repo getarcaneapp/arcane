@@ -33,10 +33,8 @@ import (
 
 type (
 	ResolveProjectVolumesOptions struct {
-		// Inspect returns the named Docker volume and whether it exists.
 		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		// InUse names the volumes containers outside the project mount.
-		InUse map[string]bool
+		InUse   map[string]bool
 		// BackupStore names the volume holding Arcane's local backups. It is never included, so no copy reads it.
 		BackupStore string
 		Project     types.Project
@@ -50,7 +48,6 @@ type (
 	}
 )
 
-// unnamedVolumeName matches the names Docker gives volumes created without one.
 var unnamedVolumeName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
@@ -154,10 +151,6 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-func LocalVolume(driver string, options map[string]string) bool {
-	return cmp.Or(driver, "local") == "local" && len(options) == 0
-}
-
 func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
@@ -176,15 +169,12 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 			Name:       config.Name,
 			Kind:       kind,
 			Driver:     config.Driver,
-			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && LocalVolume(config.Driver, config.DriverOpts)),
+			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0),
 		})
 	}
 	return classified
 }
 
-// ResolveProjectVolumes classifies the project's volumes and includes each one that exists and keeps its data in Docker,
-// except the backup store.
-// It also returns the Docker volumes it inspected, by name.
 func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
 	classified := ClassifyProjectVolumes(opts.Project)
 	resolved := make([]types.ProjectVolume, 0, len(classified))
@@ -210,7 +200,7 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 		if err != nil {
 			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
 		}
-		included := exists && (volume.Kind == types.ProjectVolumeNamed || LocalVolume(existing.Driver, existing.Options))
+		included := exists && (volume.Kind == types.ProjectVolumeNamed || cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0)
 		inspected[volume.Name] = existing
 		resolved = append(resolved, types.ProjectVolume{
 			Labels:     volume.Labels,
@@ -227,8 +217,6 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	return resolved, inspected, nil
 }
 
-// ProjectContainerUse returns the Compose project's running and restarting containers, the ones a stop stops, and the
-// volumes every other container mounts. Arcane's own containers are never stopped, so they count as outside.
 func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
 	var active []container.Summary
 	inUse := map[string]bool{}
@@ -248,9 +236,6 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 	return active, inUse
 }
 
-// UnnamedVolumeMount finds a container mount that keeps data in an unnamed volume the project doesn't declare: only that
-// container links the volume to its service, so removing the container, as taking the project down does, leaves the
-// data behind. A volume the project declares by name, even a generated one, is attached again by Compose.
 func UnnamedVolumeMount(project types.Project, containers []container.Summary) (container.Summary, container.MountPoint, bool) {
 	declared := map[string]bool{}
 	for _, volume := range ClassifyProjectVolumes(project) {

@@ -15,7 +15,6 @@ import (
 	"time"
 	"uuid"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
@@ -59,7 +58,14 @@ type (
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		VolumeLocks    *concurrency.KeyedMutex
+		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
+		LockVolumes func(ctx context.Context, names []string) (func(), error)
+		// NoteStopped records the project's containers a backup is stopping, and ForgetStopped drops the note once
+		// they run again; RecoverStopped starts the project's recovery, which starts the noted containers, when they
+		// could not be started.
+		NoteStopped    func(ctx context.Context, projectID string, stopped []container.Summary) error
+		ForgetStopped  func(ctx context.Context, projectID string) error
+		RecoverStopped func()
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
@@ -67,8 +73,8 @@ type (
 		BackupStore func(ctx context.Context) string
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
-		// ComposeProject loads the project's Compose model, which restarts stopped containers in Compose order.
-		ComposeProject func(ctx context.Context, projectID string) (*composetypes.Project, error)
+		// StartContainers starts the project's stopped containers again; recovery starts a noted project's the same way.
+		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
 		// ComposeFiles returns the compose files the project loads, relative to its directory.
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// SoleDirectory refuses a project directory that is a projects directory or holds another project.
@@ -80,10 +86,7 @@ type (
 		Deploy func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		// RewriteComposeName sets the Compose project name in the project's files, as an import does.
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
-		// ForgetExportStop drops the note of an interrupted export that stopped the project, so its recovery doesn't
-		// start a project a restore took over.
-		ForgetExportStop func(ctx context.Context, projectID string) error
-		Activities       activity.MessageAppender
+		Activities         activity.MessageAppender
 	}
 
 	Service struct {
@@ -442,24 +445,6 @@ func release(ctx context.Context, leases []*runs.Lease) {
 	}
 }
 
-func (s *Service) lockVolumes(ctx context.Context, names []string) (func(), error) {
-	unlocks := make([]func(), 0, len(names))
-	unlockAll := func() {
-		for _, unlock := range slices.Backward(unlocks) {
-			unlock()
-		}
-	}
-	for _, name := range names {
-		unlock, err := s.deps.VolumeLocks.LockContext(ctx, name)
-		if err != nil {
-			unlockAll()
-			return nil, err
-		}
-		unlocks = append(unlocks, unlock)
-	}
-	return unlockAll, nil
-}
-
 // run executes an accepted backup, or resumes one whose checkpoint an earlier attempt recorded.
 func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	var input runInput
@@ -529,12 +514,13 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
 		// A restore of any of the project's volumes finishes before its containers start again.
-		unlockVolumes, lockErr := s.lockVolumes(ctx, recorded.mountedVolumeNames())
+		unlockVolumes, lockErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
 		if lockErr != nil {
 			unlockProject()
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
-		restartErr := s.startContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+		s.afterRestart(ctx, recorded.ProjectID, restartErr)
 		unlockVolumes()
 		unlockProject()
 		if restartErr == nil {
@@ -664,7 +650,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) err
 		}
 		defer unlockProject()
 	}
-	unlock, err := s.lockVolumes(ctx, p.mountedVolumeNames())
+	unlock, err := s.deps.LockVolumes(ctx, p.mountedVolumeNames())
 	if err != nil {
 		return err
 	}
@@ -722,13 +708,21 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return err
 	}
-	var stopped []container.Summary
+	var (
+		stopped []container.Summary
+		noted   bool
+	)
 	defer func() {
 		if len(stopped) == 0 {
+			if noted {
+				s.afterRestart(ctx, entry.ProjectID, nil)
+			}
 			return
 		}
-		// Left down, the project is restarted from the checkpoint when the run is tried again.
-		if restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); restartErr != nil {
+		// Left down, the project is restarted from the checkpoint when the run is tried again, or by recovery.
+		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
+		s.afterRestart(ctx, entry.ProjectID, restartErr)
+		if restartErr != nil {
 			err = fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.Join(err, restartErr))
 		}
 	}()
@@ -739,10 +733,19 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		if recordErr := s.record(ctx, p); recordErr != nil {
 			return recordErr
 		}
+		// Noted before the stops too, so the containers start again even when this run can never be resumed.
+		var noteErr error
+		if noted, noteErr = s.note(ctx, entry.ProjectID, p.Stopped); noteErr != nil {
+			return fmt.Errorf("note that the backup stops project %s: %w", project.Name, noteErr)
+		}
 		var stopErr error
 		stopped, stopErr = s.stopContainers(ctx, project.ComposeName)
 		p.Stopped = checkpointContainers(mergeContainers(active, stopped))
-		if recordErr := errors.Join(stopErr, s.record(ctx, p)); recordErr != nil {
+		// A container that started after the list was stopped too, so the note lists it as well.
+		if len(p.Stopped) > len(active) {
+			noted, noteErr = s.note(ctx, entry.ProjectID, p.Stopped)
+		}
+		if recordErr := errors.Join(stopErr, noteErr, s.record(ctx, p)); recordErr != nil {
 			return recordErr
 		}
 		entry.StoppedContainers = len(stopped) > 0
@@ -773,8 +776,9 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		return errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 	}
 	if len(stopped) > 0 {
-		restartErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
-		stopped = nil
+		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped)
+		s.afterRestart(ctx, entry.ProjectID, restartErr)
+		stopped, noted = nil, false
 		if restartErr == nil {
 			p.Stopped = nil
 		}
@@ -823,17 +827,6 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	return active, inUse, nil
 }
 
-func composeContainers(ctx context.Context, dockerClient *client.Client, composeName string) ([]container.Summary, error) {
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
-	}
-	return found.Items, nil
-}
-
 // stopContainers stops the Compose project's running and restarting containers, except Arcane's own, and returns
 // those it stopped, also when it fails.
 func (s *Service) stopContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
@@ -843,7 +836,7 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 	}
 	var stopped []container.Summary
 	for pass := range 2 {
-		found, listErr := composeContainers(ctx, dockerClient, composeName)
+		found, listErr := projects.ListComposeProjectContainers(ctx, dockerClient, composeName)
 		if listErr != nil {
 			return stopped, listErr
 		}
@@ -887,68 +880,29 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 	return stopped, nil
 }
 
-// startContainers starts the project's stopped containers again in Compose order; when its Compose files no longer
-// load, or a service was replaced or dropped, it starts the containers directly.
-func (s *Service) startContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
-	if len(stopped) == 0 {
-		return nil
+// note records the containers the backup stops before it stops them, so recovery starts them again if this run can't.
+// It never notes an empty list: a note without containers is an export's, which recovery answers by deploying the
+// whole project.
+func (s *Service) note(ctx context.Context, projectID string, stopping []container.Summary) (bool, error) {
+	if len(stopping) == 0 {
+		return false, nil
 	}
-	compose, err := s.deps.ComposeProject(ctx, projectID)
-	if err != nil {
-		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
-		compose = &composetypes.Project{Name: docker.ComposeProjectLabel(stopped[0].Labels)}
+	if err := s.deps.NoteStopped(ctx, projectID, stopping); err != nil {
+		return false, err
 	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
+	return true, nil
+}
+
+// afterRestart drops the project's stop note once its stopped containers run again, or hands them to recovery when they
+// could not be started, which keeps retrying even after this run ends.
+func (s *Service) afterRestart(ctx context.Context, projectID string, restartErr error) {
+	if restartErr != nil {
+		s.deps.RecoverStopped()
+		return
 	}
-	var errs []error
-	found, listErr := composeContainers(ctx, dockerClient, compose.Name)
-	if listErr != nil {
-		errs = append(errs, listErr)
+	if err := s.deps.ForgetStopped(context.WithoutCancel(ctx), projectID); err != nil {
+		slog.WarnContext(ctx, "Failed to drop the stop note after restarting the project's containers", "projectId", projectID, "error", err)
 	}
-	wasStopped := map[string]bool{}
-	for _, c := range stopped {
-		wasStopped[c.ID] = true
-	}
-	direct := map[string]bool{}
-	for _, c := range found {
-		if c.Labels[api.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" && !wasStopped[c.ID] && c.State != container.StateRunning {
-			direct[c.Labels[api.ServiceLabel]] = true
-		}
-	}
-	var services, containerIDs, serviceContainerIDs []string
-	for _, c := range stopped {
-		service := c.Labels[api.ServiceLabel]
-		_, enabled := compose.Services[service]
-		_, disabled := compose.DisabledServices[service]
-		switch {
-		case listErr != nil || direct[service] || (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
-			containerIDs = append(containerIDs, c.ID)
-		default:
-			serviceContainerIDs = append(serviceContainerIDs, c.ID)
-			if !slices.Contains(services, service) {
-				services = append(services, service)
-			}
-		}
-	}
-	if len(services) > 0 {
-		if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
-			Project:    compose,
-			DockerHost: s.deps.Docker.DockerHost(),
-			Services:   services,
-		}); startErr != nil {
-			errs = append(errs, fmt.Errorf("start services %s: %w", strings.Join(services, ", "), startErr))
-			containerIDs = append(containerIDs, serviceContainerIDs...)
-		}
-	}
-	// A container removed since the stop, for example by a redeploy, has nothing to start.
-	for _, id := range containerIDs {
-		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
-			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
@@ -1343,7 +1297,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		MayStop:   len(active) > 0,
 		Stopped:   len(stopped) > 0,
 	}
-	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()...); permissionErr != nil {
+	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()); permissionErr != nil {
 		return "", permissionErr
 	}
 	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
@@ -1475,7 +1429,7 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	}
 	// From here the restore decides whether the project runs, by redeploying it or not. A resumed restore may have left
 	// the project down, so it retries instead of failing.
-	if forgetErr := s.deps.ForgetExportStop(ctx, p.ProjectID); forgetErr != nil {
+	if forgetErr := s.deps.ForgetStopped(ctx, p.ProjectID); forgetErr != nil {
 		if resumed {
 			return nil, fmt.Errorf("%w: %w", actor.ErrJobRejected, forgetErr)
 		}
@@ -1513,7 +1467,7 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 			locked = append(locked, volume.Name)
 		}
 	}
-	unlockVolumes, err := s.lockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
+	unlockVolumes, err := s.deps.LockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
 	if err != nil {
 		unlockProject()
 		release(context.WithoutCancel(ctx), leases)
@@ -1667,7 +1621,7 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 		switch {
 		// As when backing up: a named volume is restored whatever its driver; an external one only while Docker keeps
 		// its data.
-		case inspectErr == nil && current.Kind == types.ProjectVolumeExternal && !projects.LocalVolume(found.Volume.Driver, found.Volume.Options):
+		case inspectErr == nil && current.Kind == types.ProjectVolumeExternal && (cmp.Or(found.Volume.Driver, "local") != "local" || len(found.Volume.Options) > 0):
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
 		case inspectErr == nil:
 			continue
@@ -2134,7 +2088,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 			return admitErr
 		}
 		defer release(context.WithoutCancel(ctx), leases)
-		unlock, lockErr := s.lockVolumes(ctx, names)
+		unlock, lockErr := s.deps.LockVolumes(ctx, names)
 		if lockErr != nil {
 			return lockErr
 		}

@@ -88,27 +88,23 @@ func existingVolumes(existing ...string) func(context.Context, string) (types.Vo
 	}
 }
 
-// startServer lists no containers and records each container start; while fail is set, starts fail.
-func startServer(t *testing.T, fail *atomic.Bool) (*docker.DockerClientService, func() []string) {
+// startRecorder stands in for the project service's container start and records each container it starts; while fail
+// is set, starts fail.
+func startRecorder(fail *atomic.Bool) (func(context.Context, string, []container.Summary) error, func() []string) {
 	var (
 		mu      sync.Mutex
 		started []string
 	)
-	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			mu.Lock()
-			started = append(started, path.Base(path.Dir(r.URL.Path)))
-			mu.Unlock()
-			w.WriteHeader(kit.Ternary(fail.Load(), http.StatusInternalServerError, http.StatusNoContent))
-		default:
-			http.NotFound(w, r)
+	start := func(_ context.Context, _ string, stopped []container.Summary) error {
+		mu.Lock()
+		defer mu.Unlock()
+		started = append(started, containerIDs(stopped)...)
+		if fail.Load() {
+			return errors.New("start failed")
 		}
-	}))
-	return dockerService, func() []string {
+		return nil
+	}
+	return start, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
 		return slices.Clone(started)
@@ -275,7 +271,7 @@ func TestRestoreToHoldsTheVolumesItWasAskedToLock(t *testing.T) {
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{DB: db, Engine: engine, VolumeLocks: locks})
+	service := NewService(Dependencies{DB: db, Engine: engine, LockVolumes: lockingWith(locks)})
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	opts := types.ProjectBackupRestore{
@@ -842,27 +838,36 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	}).Error)
 	var fail atomic.Bool
 	fail.Store(true)
-	dockerService, started := startServer(t, &fail)
+	start, started := startRecorder(&fail)
+	var recoveries, forgotten atomic.Int32
 	service := NewService(Dependencies{
-		DB:          db,
-		Docker:      dockerService,
-		Engine:      engine,
-		VolumeLocks: &concurrency.KeyedMutex{},
-		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
-			return &composetypes.Project{}, nil
+		DB:              db,
+		Engine:          engine,
+		LockVolumes:     lockingWith(&concurrency.KeyedMutex{}),
+		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		StartContainers: start,
+		NoteStopped:     noteNothing,
+		ForgetStopped: func(context.Context, string) error {
+			forgotten.Add(1)
+			return nil
 		},
+		RecoverStopped: func() { recoveries.Add(1) },
 	})
 	recorded := plan{
 		BackupID: "b1", ProjectID: "p1", StopContainers: true,
 		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
 	}
 
-	// A failed start hands the run back instead of ending it with the project down.
+	// A failed start hands the run back instead of ending it with the project down, and starts the project's recovery,
+	// which keeps trying even if this run never resumes.
 	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded), actor.ErrJobRejected)
+	require.EqualValues(t, 1, recoveries.Load())
+	require.Zero(t, forgotten.Load())
 	fail.Store(false)
 	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded))
 	require.Equal(t, []string{"web-1", "web-1"}, started())
+	// Running again, the project's stop note is dropped.
+	require.EqualValues(t, 1, forgotten.Load())
 }
 
 func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
@@ -875,7 +880,7 @@ func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	harness.Start(t)
 	locks := &concurrency.KeyedMutex{}
 	service := NewService(Dependencies{
-		DB: db, Engine: engine, VolumeLocks: locks,
+		DB: db, Engine: engine, LockVolumes: lockingWith(locks),
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
@@ -898,7 +903,7 @@ func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{VolumeLocks: locks})
+	service := NewService(Dependencies{LockVolumes: lockingWith(locks), NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {}})
 	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Included: true},
 		{Key: "cache", Name: "web_cache", Included: false},
@@ -920,16 +925,14 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	harness.Start(t)
 	locks := &concurrency.KeyedMutex{}
-	dockerService, started := startServer(t, &atomic.Bool{})
+	start, started := startRecorder(&atomic.Bool{})
 	service := NewService(Dependencies{
 		DB:          db,
-		Docker:      dockerService,
 		Engine:      engine,
-		VolumeLocks: locks,
-		LockProject: func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
-			return &composetypes.Project{}, nil
-		},
+		LockVolumes: lockingWith(locks),
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
+		StartContainers: start,
 	})
 	recorded := plan{
 		BackupID: "b1", ProjectID: "p1", StopContainers: true,
@@ -976,21 +979,21 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	}
 	require.NoError(t, db.Create(entry).Error)
 	locked := false
-	dockerService, started := startServer(t, &atomic.Bool{})
+	start, started := startRecorder(&atomic.Bool{})
 	service := NewService(Dependencies{
 		DB:          db,
-		Docker:      dockerService,
 		Engine:      engine,
-		VolumeLocks: &concurrency.KeyedMutex{},
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
 			locked = true
 			return func() { locked = false }, nil
 		},
-		ComposeProject: func(_ context.Context, projectID string) (*composetypes.Project, error) {
+		StartContainers: func(ctx context.Context, projectID string, stopped []container.Summary) error {
 			assert.Equal(t, "p1", projectID)
 			assert.True(t, locked, "the containers start under the project lock")
-			return &composetypes.Project{}, nil
+			return start(ctx, projectID, stopped)
 		},
 	})
 
@@ -1030,7 +1033,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	}
 }
 
-func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
+func TestContainersStopOnlyThisProject(t *testing.T) {
 	labelsFor := func(project, service string) map[string]string {
 		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
 	}
@@ -1039,7 +1042,6 @@ func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 	var (
 		mu      sync.Mutex
 		stopped []string
-		started []string
 	)
 	states := map[string]container.ContainerState{
 		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
@@ -1071,21 +1073,11 @@ func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 			stopped = append(stopped, id)
 			states[id] = container.StateExited
 			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			id := path.Base(path.Dir(r.URL.Path))
-			started = append(started, id)
-			states[id] = container.StateRunning
-			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
-	service := NewService(Dependencies{
-		Docker: dockerService,
-		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
-			return nil, errors.New("compose.yaml: invalid")
-		},
-	})
+	service := NewService(Dependencies{Docker: dockerService})
 
 	active, inUse, err := service.containerUse(t.Context(), "demo")
 	require.NoError(t, err)
@@ -1096,13 +1088,10 @@ func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 
 	summaries, err := service.stopContainers(t.Context(), "demo")
 	require.NoError(t, err)
+	assert.Equal(t, []string{"web-1", "db-1"}, containerIDs(summaries))
 	// The paused cache, Arcane itself, and the other project keep their state.
 	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
 	assert.Equal(t, container.StatePaused, states["cache-1"])
-
-	// Compose files that no longer load still get the stopped containers started.
-	require.NoError(t, service.startContainers(t.Context(), "p1", summaries))
-	assert.Equal(t, []string{"web-1", "db-1"}, started)
 }
 
 func containerIDs(summaries []container.Summary) []string {
@@ -1278,3 +1267,29 @@ func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
 
 // noBackupStore is a Docker host without a backup volume.
 func noBackupStore(context.Context) string { return "" }
+
+// lockingWith stands in for the volume service's LockVolumes, taking each volume's lock from locks.
+func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) (func(), error) {
+	return func(ctx context.Context, names []string) (func(), error) {
+		var unlocks []func()
+		release := func() {
+			for _, unlock := range slices.Backward(unlocks) {
+				unlock()
+			}
+		}
+		for _, name := range names {
+			unlock, err := locks.LockContext(ctx, name)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			unlocks = append(unlocks, unlock)
+		}
+		return release, nil
+	}
+}
+
+// noteNothing and forgetNothing stand in for the project service's stop note.
+func noteNothing(context.Context, string, []container.Summary) error { return nil }
+
+func forgetNothing(context.Context, string) error { return nil }

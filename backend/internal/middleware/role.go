@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -22,18 +21,6 @@ type EchoRoute struct {
 
 	Handler     echo.HandlerFunc
 	Middlewares []echo.MiddlewareFunc
-}
-
-// RequirePermissions fails with ErrForbidden unless the caller holds every permission in the environment, for permissions
-// an operation needs only for some of its inputs.
-func RequirePermissions(ctx context.Context, environmentID string, required ...string) error {
-	permissions, _ := PermissionsFromContext(ctx)
-	for _, perm := range required {
-		if !permissions.Allows(perm, environmentID) {
-			return common.Classify(common.ErrForbidden, errors.New("permission denied: "+perm))
-		}
-	}
-	return nil
 }
 
 func RegisterEchoRoutes(g *echo.Group, routes []EchoRoute, shared ...echo.MiddlewareFunc) {
@@ -115,6 +102,16 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 		}
 		next(ctx)
 	}}
+}
+
+func RequirePermissions(ctx context.Context, environmentID string, perms []string) error {
+	ps, _ := PermissionsFromContext(ctx)
+	for _, perm := range perms {
+		if !ps.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
 }
 
 func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {

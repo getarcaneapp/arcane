@@ -403,6 +403,11 @@ type (
 		EnvFileExists     bool `json:"envFileExists,omitzero" readOnly:"true"`
 	}
 
+	ProjectDestroyOptions struct {
+		RemoveFiles   bool
+		RemoveVolumes bool
+	}
+
 	ProjectDestroy struct {
 		RemoveFiles   *bool `json:"removeFiles,omitempty"`
 		RemoveVolumes bool  `json:"removeVolumes,omitempty"`

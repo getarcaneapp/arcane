@@ -12,19 +12,15 @@ type (
 	}
 
 	UploadSession struct {
-		CreatedAt time.Time `json:"createdAt"`
-		ID        string    `json:"id"`
-		Kind      string    `json:"kind"`
-		Filename  string    `json:"filename"`
-		// Origin and OriginID name what wrote the session on the server, such as an export of a project; both are
-		// empty for an upload.
-		Origin         string `json:"origin,omitempty" doc:"What wrote the session on the server: project-export or project-bundle; empty for an upload"`
-		OriginID       string `json:"originId,omitempty" doc:"ID of the resource the session was written from"`
-		ReceivedChunks []int  `json:"receivedChunks"`
-		Size           int64  `json:"size"`
-		ChunkSize      int64  `json:"chunkSize"`
-		TotalChunks    int    `json:"totalChunks"`
-		Complete       bool   `json:"complete"`
+		CreatedAt      time.Time `json:"createdAt"`
+		ID             string    `json:"id"`
+		Kind           string    `json:"kind"`
+		Filename       string    `json:"filename"`
+		ReceivedChunks []int     `json:"receivedChunks"`
+		Size           int64     `json:"size"`
+		ChunkSize      int64     `json:"chunkSize"`
+		TotalChunks    int       `json:"totalChunks"`
+		Complete       bool      `json:"complete"`
 	}
 
 	UploadConsumeRequest struct {
@@ -38,10 +34,6 @@ const (
 	UploadKindBuildWorkspace = "build-workspace"
 	UploadKindProjectArchive = "project-archive"
 
-	// UploadOriginProjectExport is a project's files and UploadOriginProjectBundle its files with volume data, written
-	// by an export of the project.
-	UploadOriginProjectExport = "project-export"
-	UploadOriginProjectBundle = "project-bundle"
 	// Chunk size bounds keep every chunk request safely under common reverse-proxy
 	// and WAF body limits (~100 MB).
 
