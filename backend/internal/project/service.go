@@ -627,10 +627,11 @@ func (s *ProjectService) stopForExport(ctx context.Context, projectID string, us
 }
 
 // RecoverExportStoppedProjects starts the projects an export stopped when Arcane stopped before the export did. It
-// runs in the background, retrying with growing waits until each has started or ctx ends.
-func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context) {
+// runs in the background, retrying with growing waits until each has started or ctx ends. volumeLocks are the
+// per-volume locks volume backups and restores hold.
+func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context, volumeLocks *concurrency.KeyedMutex) {
 	for wait := time.Minute; ; wait = min(2*wait, 30*time.Minute) {
-		err := s.startExportStoppedProjects(ctx)
+		err := s.startExportStoppedProjects(ctx, volumeLocks)
 		if err == nil {
 			return
 		}
@@ -645,7 +646,7 @@ func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context) {
 
 // startExportStoppedProjects starts every project an export noted as stopped. A project that fails to start keeps its
 // note; a deleted one loses it.
-func (s *ProjectService) startExportStoppedProjects(ctx context.Context) error {
+func (s *ProjectService) startExportStoppedProjects(ctx context.Context, volumeLocks *concurrency.KeyedMutex) error {
 	entries, err := s.kv.ListByPrefix(ctx, exportStoppedKeyPrefix)
 	if err != nil {
 		return fmt.Errorf("list projects stopped for an export: %w", err)
@@ -673,11 +674,43 @@ func (s *ProjectService) startExportStoppedProjects(ctx context.Context) error {
 		case getErr != nil:
 			errs = append(errs, getErr)
 		case noted:
-			errs = append(errs, s.deployProject(ctx, projectID, types.SystemUser, nil))
+			errs = append(errs, s.startUnderVolumeLocks(ctx, volumeLocks, projectID))
 		}
 		unlock()
 	}
 	return errors.Join(errs...)
+}
+
+// startUnderVolumeLocks deploys a project whose lock the caller holds while no backup or restore holds its volumes, so it
+// never starts on a volume a restore is rewriting.
+func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, volumeLocks *concurrency.KeyedMutex, projectID string) error {
+	project, err := s.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		if volume.Name != "" {
+			names = append(names, volume.Name)
+		}
+	}
+	slices.Sort(names)
+	var unlocks []func()
+	defer func() {
+		for _, unlock := range slices.Backward(unlocks) {
+			unlock()
+		}
+	}()
+	// A backup can hold a volume for hours, so a busy one is skipped and retried later instead of waited for while the
+	// project lock blocks the user and the other projects.
+	for _, name := range slices.Compact(names) {
+		unlock, locked := volumeLocks.TryLock(name)
+		if !locked {
+			return common.Classify(common.ErrConflict, fmt.Errorf("volume %s is busy with a backup or restore; the project starts on a later attempt", name))
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return s.deployProject(ctx, projectID, types.SystemUser, nil)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
