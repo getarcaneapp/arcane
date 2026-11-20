@@ -33,7 +33,7 @@ type (
 	ArcaneComposeMetadata struct {
 		ServiceIconSets          map[string]IconSet
 		ProjectIcon              IconSet
-		ProjectURLS              []string
+		ProjectURLS              []types.ProjectURL
 		ProjectTags              []types.ProjectTagOption
 		ComposeFiles             []string
 		EnvFiles                 []string
@@ -185,7 +185,7 @@ func extractArcaneComposeMetadata(ctx context.Context, project *composetypes.Pro
 	return meta
 }
 
-func parseArcaneBlock(ctx context.Context, block any) (IconSet, []string, []types.ProjectTagOption, bool) {
+func parseArcaneBlock(ctx context.Context, block any) (IconSet, []types.ProjectURL, []types.ProjectTagOption, bool) {
 	arcaneBlock, ok := kit.AsStringMap(block)
 	if !ok {
 		return IconSet{}, nil, nil, false
@@ -198,9 +198,33 @@ func parseArcaneBlock(ctx context.Context, block any) (IconSet, []string, []type
 		Light: cmp.Or(kit.Collect(arcaneBlock[arcaneIconLightKey], kit.ToString)...),
 		Dark:  cmp.Or(kit.Collect(arcaneBlock[arcaneIconDarkKey], kit.ToString)...),
 	}
-	urls := kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneBlock[arcaneURLsKey], kit.ToString)))
+	urls := uniqueProjectURLs(kit.Collect(arcaneBlock[arcaneURLsKey], toProjectURL))
 	tags, tagsAuthoritative := parseComposeTags(ctx, arcaneBlock[arcaneTagsKey])
 	return icon, urls, tags, tagsAuthoritative
+}
+
+func toProjectURL(value any) types.ProjectURL {
+	definition, ok := kit.AsStringMap(value)
+	if !ok {
+		return types.ProjectURL{URL: kit.ToString(value)}
+	}
+	return types.ProjectURL{
+		URL:   kit.ToString(definition["url"]),
+		Label: kit.ToString(definition["label"]),
+	}
+}
+
+func uniqueProjectURLs(urls []types.ProjectURL) []types.ProjectURL {
+	seen := make(map[string]struct{}, len(urls))
+	unique := make([]types.ProjectURL, 0, len(urls))
+	for _, link := range urls {
+		if _, exists := seen[link.URL]; exists || link.URL == "" {
+			continue
+		}
+		seen[link.URL] = struct{}{}
+		unique = append(unique, link)
+	}
+	return unique
 }
 
 func parseComposeTags(ctx context.Context, value any) ([]types.ProjectTagOption, bool) {
@@ -280,7 +304,7 @@ func mergeArcaneComposeMetadata(ctx context.Context, target *ArcaneComposeMetada
 
 	target.ProjectIcon = mergeIconSetFields(target.ProjectIcon, source.ProjectIcon)
 
-	target.ProjectURLS = kit.Unique(kit.TrimNonEmpty(append(target.ProjectURLS, source.ProjectURLS...)))
+	target.ProjectURLS = uniqueProjectURLs(append(target.ProjectURLS, source.ProjectURLS...))
 	target.ProjectTags = mergeComposeTags(ctx, target.ProjectTags, source.ProjectTags)
 	target.ProjectTagsAuthoritative = target.ProjectTagsAuthoritative && source.ProjectTagsAuthoritative
 	target.ComposeFiles = append(target.ComposeFiles, source.ComposeFiles...)
