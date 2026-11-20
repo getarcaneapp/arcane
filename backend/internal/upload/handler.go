@@ -86,15 +86,6 @@ func requireUploadPermission(ctx context.Context, kind, environmentID string) er
 	return middleware.RequirePermissions(ctx, environmentID, perms)
 }
 
-// requireExportPermission makes reading the bytes an export wrote take the export's rights, whichever route serves them:
-// projects:export, and volumes:backup for a bundle with volume data. Uploads have no origin and need nothing more.
-func requireExportPermission(ctx context.Context, environmentID, origin string) error {
-	if origin == "" {
-		return nil
-	}
-	return middleware.RequirePermissions(ctx, environmentID, append([]string{authz.PermProjectsExport}, authz.UploadDownloadConditions.Required("origin", origin)...))
-}
-
 func sessionResponse(session *types.UploadSession) *handlerutil.Out[types.UploadSession] {
 	return &handlerutil.Out[types.UploadSession]{
 		Body: types.ApiResponse[types.UploadSession]{
@@ -136,16 +127,6 @@ func (h *UploadHandler) ReadChunk(ctx context.Context, input *ReadChunkInput) (*
 	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
 		return nil, err
 	}
-	session, err := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
-	if err != nil {
-		if httpErr := SessionHTTPError(err); httpErr != nil {
-			return nil, httpErr
-		}
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	if permErr := requireExportPermission(ctx, input.EnvironmentID, session.Origin); permErr != nil {
-		return nil, permErr
-	}
 	data, err := h.uploadService.ReadChunk(ctx, input.Kind, input.UploadID, input.Index)
 	if err != nil {
 		if httpErr := SessionHTTPError(err); httpErr != nil {
@@ -183,11 +164,6 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 			return nil, httpErr
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	if permErr := requireExportPermission(ctx, input.EnvironmentID, session.Origin); permErr != nil {
-		// Closing before the end keeps the session, so someone allowed can still download it.
-		_ = reader.Close()
-		return nil, permErr
 	}
 	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }

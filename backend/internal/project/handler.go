@@ -574,7 +574,7 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		Step:           "Importing project",
 		Message:        "Importing project",
 		SuccessMessage: "Project imported successfully",
-		Metadata:       database.JSON{"action": "import_project", "uploadId": input.Body.UploadID},
+		Metadata:       database.JSON{"action": "import_project"},
 	}, func(runtimeCtx context.Context) error {
 		projectID, importErr := h.bundles.Import(runtimeCtx, bundle.ImportOptions{
 			User:           *user,
