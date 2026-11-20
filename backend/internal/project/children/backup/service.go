@@ -48,6 +48,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/rustic"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -916,8 +917,11 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		return saveErr
 	}
 	// Saved first, so retention removes the snapshot of a backup that fails here. A shutdown can't cut the check short:
-	// a cancelled check would reject a snapshot the copy finished, which a retry would otherwise complete.
-	after, err := s.volumeIdentities(context.WithoutCancel(ctx), p.volumeNames())
+	// a cancelled check would reject a snapshot the copy finished, which a retry would otherwise complete. It is still
+	// bounded, since the containers stay stopped and the locks held until it returns.
+	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+	after, err := s.volumeIdentities(checkCtx, p.volumeNames())
+	cancelCheck()
 	if err == nil && !maps.Equal(captured, after) {
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
