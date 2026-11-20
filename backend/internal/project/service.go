@@ -796,6 +796,9 @@ func (s *ProjectService) startStoppedContainers(ctx context.Context, projectID s
 	if len(stopped) == 0 {
 		return nil
 	}
+	// Callers start them under locks with an uncancelled context, so a Docker call that never answers can't hold them.
+	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultDeployWait)
+	defer cancel()
 	compose, err := s.composeProject(ctx, projectID)
 	if err != nil {
 		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
