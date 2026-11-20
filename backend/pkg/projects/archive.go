@@ -181,6 +181,23 @@ func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byt
 	return content, perm, true, nil
 }
 
+// EnvLinkInside returns the target of the project's .env link, relative to the project directory, when it leads to a
+// file inside the directory; it is empty for a regular .env, a link leading outside, or no .env at all.
+func EnvLinkInside(ctx context.Context, projectPath string) (string, error) {
+	if info, statErr := os.Lstat(filepath.Join(projectPath, EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return "", nil
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve project directory: %w", err)
+	}
+	target, inside, err := LinkTargetInside(ctx, acfs.Root{Path: projectPath}, "/"+EffectiveEnvFileName, resolvedRoot)
+	if err != nil || !inside {
+		return "", err
+	}
+	return target, nil
+}
+
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
 	usage, err := disk.UsageWithContext(ctx, dir)
 	if err != nil {

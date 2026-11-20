@@ -75,13 +75,13 @@ type (
 		ID          string `json:"id"`
 		Name        string `json:"name"`
 		ComposeName string `json:"composeName"`
-		Path        string `json:"path,omitempty" doc:"Project directory the backup was taken from"`
 	}
 
 	ProjectManifest struct {
 		CreatedAt     time.Time              `json:"createdAt"`
 		Kind          string                 `json:"kind"`
 		ArcaneVersion string                 `json:"arcaneVersion"`
+		EnvLink       string                 `json:"envLink,omitempty" doc:"Target of the .env link, relative to the project directory, when it leads to a file inside it"`
 		Project       ProjectManifestProject `json:"project"`
 		ComposeFiles  []string               `json:"composeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`

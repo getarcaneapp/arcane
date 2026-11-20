@@ -7,10 +7,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -836,7 +834,12 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles, externalEnv), env)
+	envLink, err := projects.EnvLinkInside(ctx, project.Path)
+	if err != nil {
+		return fmt.Errorf("read the .env link of project %s: %w", project.Name, err)
+	}
+	manifest := backupManifest(project, p, len(active) > 0, composeFiles, externalEnv, envLink)
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, manifest, env)
 	if err != nil {
 		return err
 	}
@@ -1175,7 +1178,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool, envLink string) types.ProjectManifest {
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -1184,13 +1187,13 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 			ID:          project.ID,
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
-			Path:        project.Path,
 		},
 		ComposeFiles:  composeFiles,
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 		ExternalEnv:   externalEnv,
+		EnvLink:       envLink,
 	}
 }
 
@@ -3528,7 +3531,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
 	if opts.OwnEnv && opts.ProjectPath != "" {
-		if linkErr := ownEnvLink(ctx, opts.ProjectPath, manifest.Project.Path); linkErr != nil {
+		if linkErr := ownEnvLink(ctx, opts.ProjectPath, manifest.EnvLink); linkErr != nil {
 			return linkErr
 		}
 	}
@@ -3572,32 +3575,18 @@ func (s *Service) restoreEnv(ctx context.Context, projectsRoot string, opts type
 	return nil
 }
 
-// ownEnvLink points a new project's .env, restored as an absolute link into the directory the backup was taken from,
-// at the new project's restored copy of that file, as an export does, so the new project neither reads nor changes the
-// original's settings. The link is compared by name, so it is repaired even once the original is gone.
-func ownEnvLink(ctx context.Context, projectPath, sourcePath string) error {
-	// Only a link can lead back into the original; a regular .env is already the copy's own.
-	if info, statErr := os.Lstat(filepath.Join(projectPath, projects.EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
+// ownEnvLink replaces a new project's restored .env link with the target the backup recorded, so it leads to the copy's
+// own file.
+func ownEnvLink(ctx context.Context, projectPath, target string) error {
+	if target == "" {
 		return nil
 	}
 	root := acfs.Root{Path: projectPath}
 	envLink := "/" + projects.EffectiveEnvFileName
-	target, err := root.Readlink(ctx, envLink)
-	if err != nil {
-		return err
-	}
-	// A relative link stays inside the copy.
-	if sourcePath == "" || !filepath.IsAbs(target) || !projects.IsSafeSubdirectory(sourcePath, target) {
-		return nil
-	}
-	relative, err := filepath.Rel(sourcePath, target)
-	if err != nil {
-		return err
-	}
 	if removeErr := root.Remove(ctx, envLink); removeErr != nil {
 		return fmt.Errorf("replace the restored .env link: %w", removeErr)
 	}
-	if linkErr := root.Symlink(ctx, relative, envLink); linkErr != nil {
+	if linkErr := root.Symlink(ctx, target, envLink); linkErr != nil {
 		return fmt.Errorf("replace the restored .env link: %w", linkErr)
 	}
 	return nil
