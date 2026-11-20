@@ -102,7 +102,8 @@
 		up: false,
 		down: false,
 		redeploy: false,
-		archive: false
+		archive: false,
+		destroy: false
 	});
 
 	const queryClient = useQueryClient();
@@ -166,6 +167,7 @@
 	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
 	const canDownProject = $derived(hasShownPermission('projects:down'));
 	const canArchiveProject = $derived(hasShownPermission('projects:archive'));
+	const canDeleteProject = $derived(hasShownPermission('projects:delete'));
 
 	const {
 		performProjectAction,
@@ -174,7 +176,8 @@
 		handleBulkUp,
 		handleBulkDown,
 		handleBulkRedeploy,
-		handleBulkArchive
+		handleBulkArchive,
+		handleBulkDestroy
 	} = createProjectActions({
 		getRequestOptions: () => requestOptions,
 		refreshProjects,
@@ -304,6 +307,15 @@
 			loading: isBulkLoading.archive,
 			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
 			disabledReason: archiveDisabledReason
+		},
+		{
+			id: 'destroy',
+			label: m.destroy_count({ count: selectedIds?.length ?? 0 }),
+			action: 'remove',
+			onclick: handleBulkDestroy,
+			loading: isBulkLoading.destroy,
+			disabled: !canDeleteProject || isAnyLoading,
+			icon: TrashIcon
 		}
 	]);
 
