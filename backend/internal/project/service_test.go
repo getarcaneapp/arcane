@@ -11307,7 +11307,7 @@ func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
 
 	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
 	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
-	require.Error(t, svc.RecoverExportStoppedProjects(ctx))
+	require.Error(t, svc.startExportStoppedProjects(ctx))
 	require.True(t, noted("p1"))
 	require.False(t, noted("gone"))
 }
