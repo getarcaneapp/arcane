@@ -93,6 +93,13 @@ type (
 
 	containerNameContextKey struct{}
 
+	ExecOptions struct {
+		Shell string
+		User  string
+		Cols  uint
+		Rows  uint
+	}
+
 	ExecSession struct {
 		hijackedResp client.HijackedResponse
 		dockerClient *client.Client
@@ -139,6 +146,8 @@ type (
 )
 
 const (
+	AutoShell = "auto"
+
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
 	containerIconMetadataTTL = 5 * time.Second
@@ -2474,19 +2483,28 @@ func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary)
 	}
 }
 
-func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
+func (s *ContainerService) CreateExec(ctx context.Context, containerID string, opts ExecOptions) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	cmd := []string{cmp.Or(opts.Shell, "/bin/sh")}
+	if opts.Shell == AutoShell {
+		cmd = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}
+	}
+
 	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		User:         opts.User,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		ConsoleSize:  client.ConsoleSize{Height: rows, Width: cols},
-		Cmd:          cmd,
+		ConsoleSize: client.ConsoleSize{
+			Height: opts.Rows,
+			Width:  opts.Cols,
+		},
+		Cmd: cmd,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec: %w", err)
