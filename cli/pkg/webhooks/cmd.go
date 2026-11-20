@@ -48,6 +48,11 @@ func Command() *cobra.Command {
 }
 
 func newListCmd() *cobra.Command {
+	var opts struct {
+		limitFlag int
+		startFlag int
+		allFlag   bool
+	}
 	command := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
@@ -60,40 +65,46 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.Webhook]{
-				Method:         http.MethodGet,
-				Path:           clitypes.Webhooks(c.EnvID()),
-				FailureMessage: "failed to list webhooks",
-				Render: func(data []types.Webhook) error {
-					headers := []string{"ID", "NAME", "ACTION", "TARGET", "TOKEN", "ENABLED", "LAST TRIGGERED"}
-					rows := make([][]string, len(data))
-					for i, item := range data {
-						lastTriggered := "-"
-						if item.LastTriggeredAt != nil {
-							lastTriggered = item.LastTriggeredAt.Format(time.RFC3339)
-						}
-						target := item.TargetType
-						if name := cmp.Or(item.TargetName, item.TargetID); name != "" {
-							target += "/" + name
-						}
-						rows[i] = []string{
-							item.ID,
-							item.Name,
-							item.ActionType,
-							target,
-							item.TokenPrefix,
-							kit.Ternary(item.Enabled, "Yes", "No"),
-							lastTriggered,
-						}
-					}
-
-					return cmdutil.PrintTable(cmd, headers, rows, cmdutil.TableSummary{Resource: "webhooks", Total: int64(len(data)), Paginated: true})
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Webhook]{
+				Resource: "webhooks",
+				Endpoint: clitypes.Webhooks(c.EnvID()),
+				Params: cmdutil.ListParams{
+					Resource:        "webhooks",
+					Limit:           opts.limitFlag,
+					FallbackDefault: 20,
+					Start:           opts.startFlag,
+					All:             opts.allFlag,
 				},
+				Headers: []string{"ID", "NAME", "ACTION", "TARGET", "TOKEN", "ENABLED", "LAST TRIGGERED"},
+				Row:     webhookRow,
 			})
 		},
 	}
+	command.Flags().IntVarP(&opts.limitFlag, "limit", "n", 20, "Number of webhooks to show")
+	command.Flags().IntVar(&opts.startFlag, "start", 0, cmdutil.StartFlagUsage)
+	command.Flags().BoolVarP(&opts.allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	cmdutil.SetScope(cmdutil.ScopeRead, command)
 	return command
+}
+
+func webhookRow(item types.Webhook) []string {
+	lastTriggered := "-"
+	if item.LastTriggeredAt != nil {
+		lastTriggered = item.LastTriggeredAt.Format(time.RFC3339)
+	}
+	target := item.TargetType
+	if name := cmp.Or(item.TargetName, item.TargetID); name != "" {
+		target += "/" + name
+	}
+	return []string{
+		item.ID,
+		item.Name,
+		item.ActionType,
+		target,
+		item.TokenPrefix,
+		kit.Ternary(item.Enabled, "Yes", "No"),
+		lastTriggered,
+	}
 }
 
 func newCreateCmd() *cobra.Command {

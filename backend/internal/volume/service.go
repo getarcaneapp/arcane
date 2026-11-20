@@ -141,6 +141,7 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		PolicyOverridden: ErrVolumeBackupPolicyOverridden,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
+		StopHelper:       service.StopHelper,
 		Exec:             service.execInContainer,
 		Ctx:              p.Ctx,
 		Scheduler:        p.Scheduler,
