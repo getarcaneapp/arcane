@@ -1493,8 +1493,9 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	require.Equal(t, []string{"web-1", "web-1"}, started())
 }
 
-// A snapshot rejected after the copy keeps its backup running while the containers stay down, since a running backup
-// keeps a disabled schedule's recovery; once they start, the backup fails instead of completing the snapshot.
+// A snapshot rejected after the copy keeps its backup running, with the rejection noted, while the containers stay
+// down, since a running backup keeps a disabled schedule's recovery; once they start, the backup fails instead of
+// completing the snapshot.
 func TestResumeFailsARejectedSnapshotOnlyOnceTheContainersStart(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
@@ -1519,8 +1520,9 @@ func TestResumeFailsARejectedSnapshotOnlyOnceTheContainersStart(t *testing.T) {
 			return &composetypes.Project{}, nil
 		},
 	})
+	require.NoError(t, service.reject(t.Context(), "b1", "a volume was replaced while it was copied"))
 	recorded := plan{
-		BackupID: "b1", ProjectID: "p1", StopContainers: true, Rejected: "a volume was replaced while it was copied",
+		BackupID: "b1", ProjectID: "p1", StopContainers: true,
 		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
 	}
 	status := func() string {
