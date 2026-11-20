@@ -164,7 +164,10 @@ type (
 	ScheduledRemoteRequest struct {
 		DestinationID string
 		Root          string
-		Tables        []string
+		// InstanceID owns the repository at Root. Snapshots of other instances, discovered from the same destination,
+		// are in their own repositories, so they don't make a missing one look lost.
+		InstanceID string
+		Tables     []string
 	}
 
 	// VolumeRepository is the volumes data repository that volume and project backups share.
@@ -1040,10 +1043,13 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	if result.Reason == s3util.RepositoryReasonMissingRepository {
 		var retained int64
 		for _, table := range req.Tables {
+			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
+			// Only tables that record discovered snapshots of other instances have the column.
+			if req.InstanceID != "" && db.WithContext(ctx).Migrator().HasColumn(table, "remote_instance_id") {
+				query = query.Where("COALESCE(remote_instance_id, '') IN ('', ?)", req.InstanceID)
+			}
 			var count int64
-			if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
-				Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID).
-				Count(&count).Error; countRetainedSnapshotsErr != nil {
+			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
 				return countRetainedSnapshotsErr
 			}
 			retained += count

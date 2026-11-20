@@ -1737,6 +1737,7 @@ func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (Project
 		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
 			DestinationID: policy.S3DestinationID,
 			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+			InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
 			Tables:        backup.VolumeRepositoryTables,
 		})
 	}
