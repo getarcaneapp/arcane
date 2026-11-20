@@ -250,11 +250,9 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 				"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
 			))
 		}
-		var dockerLabels map[string]string
-		if volume.Kind == types.ProjectVolumeExternal {
-			dockerLabels = maps.Clone(state.docker[volume.Name].Labels)
-			delete(dockerLabels, volumes.ClaimLabel)
-		}
+		// Only an external volume keeps its own Docker labels, without the claim an earlier import set.
+		dockerLabels := kit.Ternary(volume.Kind == types.ProjectVolumeExternal, maps.Clone(state.docker[volume.Name].Labels), nil)
+		delete(dockerLabels, volumes.ClaimLabel)
 		if labelErr := projects.ValidateVolumeLabels(dockerLabels); labelErr != nil {
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, labelErr))
 		}
