@@ -126,6 +126,11 @@ export type ProjectConfigurationError = {
 	blocksOperations: boolean;
 };
 
+export interface ProjectUrl {
+	url: string;
+	label?: string;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -135,7 +140,7 @@ export interface Project {
 	path: string;
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
-	urls?: string[];
+	urls?: ProjectUrl[];
 	tags: ProjectTag[];
 	runningCount: number;
 	serviceCount: number;
