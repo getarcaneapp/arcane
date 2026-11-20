@@ -20,10 +20,10 @@ upstream's and lives at [getarcane.app](https://getarcane.app).
 | Image                         | Tags                       |
 | ----------------------------- | -------------------------- |
 | `ghcr.io/viogus/arcane`       | `latest`, `3.1.0-cdf.1`, … |
-| `ghcr.io/viogus/arcane-agent` | `latest`, `3.1.0-cdf.1`, … |
+| `ghcr.io/viogus/arcane-agent` | `latest`, `3.1.1-cdf.1`, … |
 
-- `+` is not valid in a Docker tag, so a build labelled `3.1.0+cdf.1` is published as
-  `3.1.0-cdf.1`; the version embedded in the binary keeps the `+`.
+- `+` is not valid in a Docker tag, so a build labelled `3.1.1+cdf.1` is published as
+  `3.1.1-cdf.1`; the version embedded in the binary keeps the `+`.
 - Images are the **lean** variant: the same static binary on `scratch`, with the CA bundle
   and zoneinfo (`timetzdata`) inside the image. They are about 34 MB smaller than the
   distroless build.
@@ -31,7 +31,7 @@ upstream's and lives at [getarcane.app](https://getarcane.app).
   `.github/workflows/publish.yml` on GitHub-hosted runners:
 
   ```bash
-  gh workflow run publish.yml -f version=3.1.0+cdf.2 -f move_latest=true
+  gh workflow run publish.yml -f version=3.1.1+cdf.1 -f move_latest=true
   ```
 
   `--ref` defaults to `main`; pass `--ref 2.x` to build the frozen 2.x line.
@@ -100,7 +100,7 @@ Upstream v3 is a breaking release; the parts that bite a deployment:
    database restored, not just the old image.
 3. **The agent was renamed** and enrollment replaced the shared registration flow:
    re-enroll agents from the manager rather than reusing old tokens.
-4. Image tags are unchanged in shape (`3.1.0-cdf.1`), but `latest` now points at 3.x.
+4. Image tags are unchanged in shape (`3.1.1-cdf.1`), but `latest` now points at 3.x.
 
 ## Local development
 
