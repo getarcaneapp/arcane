@@ -122,13 +122,13 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
 	}
-	return s.checkFreeSpace(ctx, size)
+	return s.CheckFreeSpace(ctx, size)
 }
 
-// checkFreeSpace refuses size bytes more when they would leave less than the reserve free. Staged uploads, including
+// CheckFreeSpace refuses size bytes more when they would leave less than the reserve free. Staged uploads, including
 // the expanded entries of a project bundle, keep the same room free as unpacking a project archive does, so a large one
 // can't fill the disk other work needs.
-func (s *UploadService) checkFreeSpace(ctx context.Context, size int64) error {
+func (s *UploadService) CheckFreeSpace(ctx context.Context, size int64) error {
 	checked := s.root
 	for {
 		if _, statErr := os.Stat(checked); statErr == nil || filepath.Dir(checked) == checked {
@@ -329,7 +329,7 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 
 func (w *reserveWriter) Write(p []byte) (int, error) {
 	if w.unchecked <= 0 {
-		if err := w.service.checkFreeSpace(w.ctx, reserveCheckBytes); err != nil {
+		if err := w.service.CheckFreeSpace(w.ctx, reserveCheckBytes); err != nil {
 			return 0, fmt.Errorf("stop writing the upload: %w", err)
 		}
 		w.unchecked = reserveCheckBytes

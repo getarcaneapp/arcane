@@ -2446,7 +2446,7 @@ func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
 				{Type: mount.TypeVolume, Name: strings.Repeat("ab", 32), Destination: "/data"},
 			}}},
 			wantErr:     common.ErrValidation,
-			wantMessage: "stopped container web-app-1 keeps data at /data in an unnamed volume",
+			wantMessage: "container web-app-1 keeps data at /data in an unnamed volume",
 			stopped:     true,
 		},
 		// The request checked projects:down only when it found stopped containers.
@@ -2523,4 +2523,14 @@ func TestRestoreRemovesItsOwnLeftoverRusticContainers(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
+	unnamed := container.MountPoint{Type: mount.TypeVolume, Name: strings.Repeat("ab", 32), Destination: "/data"}
+	named := container.MountPoint{Type: mount.TypeVolume, Name: "web_data", Destination: "/data"}
+	// Taking a running project down removes its containers too, so their unnamed volumes are refused as well.
+	err := refuseUnnamedVolumes([]container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named, unnamed}}})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "container web-app-1 keeps data at /data in an unnamed volume")
+	require.NoError(t, refuseUnnamedVolumes([]container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named}}}))
 }
