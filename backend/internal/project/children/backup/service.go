@@ -1682,20 +1682,30 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, nil
 }
 
-// resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
-// that backup already failed and a new one should run.
-func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
+// checkpointedPlan decodes the plan an interrupted scheduled attempt checkpointed; it reports false when there is none.
+func checkpointedPlan(previous types.SchedulerRun) (plan, bool, error) {
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ResourceType == targetType && len(target.RecoveryData) > 0
 	})
 	if index < 0 {
-		return types.SchedulerOutcome{}, false, nil
+		return plan{}, false, nil
 	}
 	var recorded plan
-	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
+	err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded)
+	return recorded, true, err
+}
+
+// resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
+// that backup already failed and a new one should run.
+func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
+	recorded, found, err := checkpointedPlan(previous)
+	if !found {
+		return types.SchedulerOutcome{}, false, nil
+	}
+	if err != nil {
 		return types.SchedulerOutcome{}, true, err
 	}
-	err := s.resume(ctx, previous, nil, recorded)
+	err = s.resume(ctx, previous, nil, recorded)
 	if errors.Is(err, backup.ErrBackupSettled) {
 		return types.SchedulerOutcome{}, false, nil
 	}
@@ -1710,20 +1720,14 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 // awaitCheckpointAdmissions waits until every admission the checkpointed backup needs is free, then lets them go, so a
 // resume can take them.
 func (s *Service) awaitCheckpointAdmissions(ctx context.Context, previous types.SchedulerRun) error {
-	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
-		return target.ResourceType == targetType && len(target.RecoveryData) > 0
-	})
-	if index < 0 {
-		return nil
-	}
-	var recorded plan
-	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
+	recorded, found, err := checkpointedPlan(previous)
+	if !found || err != nil {
 		return err
 	}
 	for _, key := range admissions(recorded.ProjectID, recorded.volumeNames()) {
-		lease, err := s.deps.Engine.AwaitRun(ctx, key.Scope, key.ID)
-		if err != nil {
-			return err
+		lease, leaseErr := s.deps.Engine.AwaitRun(ctx, key.Scope, key.ID)
+		if leaseErr != nil {
+			return leaseErr
 		}
 		lease.Release(context.WithoutCancel(ctx))
 	}
