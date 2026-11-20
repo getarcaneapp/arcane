@@ -191,7 +191,16 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	inspected := map[string]types.Volume{}
 	for _, volume := range classified {
 		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
-			volume.BackupStore, volume.Included = true, false
+			resolved = append(resolved, types.ProjectVolume{
+				Labels:      volume.Labels,
+				DriverOpts:  volume.DriverOpts,
+				Key:         volume.Key,
+				Name:        volume.Name,
+				Kind:        volume.Kind,
+				Driver:      volume.Driver,
+				BackupStore: true,
+			})
+			continue
 		}
 		if !volume.Included {
 			resolved = append(resolved, volume)
