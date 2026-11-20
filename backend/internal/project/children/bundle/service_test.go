@@ -1,6 +1,9 @@
 package bundle
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -275,4 +278,60 @@ func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
 	require.Equal(t, []string{"delete demo_data"}, environment.calls)
 	require.Contains(t, environment.volumes, "demo_cache")
 	require.Contains(t, environment.volumes, "shared")
+}
+
+func TestImportRefusesABundleThatExpandsBeyondTheUploadSpace(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	var bundle bytes.Buffer
+	gzipWriter := gzip.NewWriter(&bundle)
+	tarWriter := tar.NewWriter(gzipWriter)
+	manifest, err := json.Marshal(types.ProjectManifest{FormatVersion: types.ProjectManifestFormatVersion, Kind: types.ProjectManifestKindExport})
+	require.NoError(t, err)
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Name: projects.ProjectBundleManifest, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(manifest))}))
+	_, err = tarWriter.Write(manifest)
+	require.NoError(t, err)
+	// The entry claims a terabyte; only its header is written, as a small upload that expands without end would be.
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Name: projects.ProjectBundleProject, Typeflag: tar.TypeReg, Mode: 0o644, Size: 1 << 40}))
+	require.NoError(t, gzipWriter.Close())
+
+	uploads := upload.NewUploadService(nil)
+	session, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(bundle.Len()), &bundle)
+	require.NoError(t, err)
+	service := New(Dependencies{
+		Uploads:     uploads,
+		LockProject: func(context.Context, string) (func(), error) { return func() {}, nil },
+	})
+	_, err = service.Import(t.Context(), ImportOptions{Request: types.ImportProjectArchive{UploadID: session.ID, Name: "copy"}, RestoreVolumes: true})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "more than can be stored")
+}
+
+func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
+	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
+			http.NotFound(w, r)
+			return
+		}
+		assert.NoError(t, json.MarshalWrite(w, []container.Summary{{
+			Names:  []string{"/demo-arcane-1"},
+			State:  container.StateRunning,
+			Labels: map[string]string{"com.docker.compose.project": "demo", "com.getarcaneapp.arcane": "true"},
+		}}))
+	}))
+	uploads := upload.NewUploadService(nil)
+	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
+	service := New(Dependencies{
+		Environment: environment,
+		Docker:      dockerService,
+		Uploads:     uploads,
+		LockProject: func(context.Context, string) (func(), error) { return func() {}, nil },
+		StopProject: func(context.Context, string, types.Actor) error {
+			t.Fatal("the project running Arcane was stopped")
+			return nil
+		},
+	})
+	_, err := service.Export(t.Context(), ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}})
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.ErrorContains(t, err, "runs Arcane itself, so it cannot be stopped for the export")
 }

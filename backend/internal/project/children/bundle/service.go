@@ -76,6 +76,8 @@ type (
 		docker  map[string]types.Volume
 		volumes []types.ProjectVolume
 		active  bool
+		// runsArcane is set when the project runs Arcane itself, which stopping the project would take down.
+		runsArcane bool
 	}
 
 	importTarget struct {
@@ -142,6 +144,10 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	if err != nil {
 		return nil, err
 	}
+	// Stopping the project would stop Arcane too, and with it the export that starts the project again.
+	if opts.Request.StopProject && state.runsArcane {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
+	}
 	manifest, err := s.manifest(ctx, project, opts.Request, state)
 	if err != nil {
 		return nil, err
@@ -172,9 +178,11 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		return exportState{}, fmt.Errorf("list containers: %w", err)
 	}
 	inUse := map[string]bool{}
-	active := false
+	active, runsArcane := false, false
 	for _, c := range running.Items {
-		if project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && !labels.IsArcaneContainer(c.Labels) {
+		inProject := project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName
+		runsArcane = runsArcane || (inProject && labels.IsArcaneContainer(c.Labels))
+		if inProject && !labels.IsArcaneContainer(c.Labels) {
 			active = active || c.State == container.StateRunning || c.State == container.StateRestarting
 			continue
 		}
@@ -211,9 +219,10 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		})
 	}
 	return exportState{
-		docker:  inspected,
-		volumes: resolved,
-		active:  active,
+		docker:     inspected,
+		volumes:    resolved,
+		active:     active,
+		runsArcane: runsArcane,
 	}, nil
 }
 
@@ -523,7 +532,17 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		return "", err
 	}
 	defer cleanupSession()
-	manifest, _, err := projects.ReadProjectBundle(archive, nil)
+	// Each entry is staged before it is restored, so the bundle may not expand to more than the upload space holds.
+	// Checked from the declared sizes before an entry is read, so a small upload can't make this pass expand gigabytes.
+	var expanded int64
+	manifest, _, err := projects.ReadProjectBundle(archive, func(_ string, size int64, _ io.Reader) error {
+		// The entry alone is checked first, so a huge declared size can't wrap the running total.
+		if sizeErr := s.deps.Uploads.CheckFreeSpace(ctx, size); sizeErr != nil {
+			return sizeErr
+		}
+		expanded += size
+		return s.deps.Uploads.CheckFreeSpace(ctx, expanded)
+	})
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
 	}
