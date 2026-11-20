@@ -14,7 +14,16 @@
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { BackupIcon, RestartIcon, UploadIcon, ClockIcon, VolumesIcon, FileTextIcon, ProjectsIcon } from '#lib/icons/index.js';
+	import {
+		BackupIcon,
+		RestartIcon,
+		UploadIcon,
+		ClockIcon,
+		VolumesIcon,
+		FileTextIcon,
+		ProjectsIcon,
+		CopyIcon
+	} from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
@@ -44,6 +53,7 @@
 		onDelete,
 		onOpenVolume,
 		onOpenProject,
+		onRestoreProjectAsNew,
 		emptyState
 	}: {
 		backups: EnvironmentPage<Paginated<SystemVolumeBackupHistoryEntry>>;
@@ -56,6 +66,7 @@
 		onDelete: (backup: BackupRow) => void;
 		onOpenVolume: (backup: BackupRow) => void;
 		onOpenProject: (backup: BackupRow) => void;
+		onRestoreProjectAsNew: (backup: BackupRow) => void;
 		emptyState?: Snippet;
 	} = $props();
 
@@ -111,6 +122,22 @@
 			{/if}
 			{#if canDeleteBackups}
 				<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
+			{/if}
+		{:else if item.resourceType === 'project' && item.resourceMissing}
+			{@const canRestoreAsNew = hasPermission('projects:create', item.environmentId)}
+			<!-- A deleted project's page is gone, so its retained backups are restored or deleted from here. -->
+			{#if canRestoreAsNew}
+				<DropdownMenu.Item onclick={() => onRestoreProjectAsNew(item)} disabled={item.status !== 'succeeded'}
+					><CopyIcon class="size-4" />{m.restore_as_new_project()}</DropdownMenu.Item
+				>
+			{/if}
+			{#if hasPermission('projects:backup', item.environmentId)}
+				<RemoveMenuItem
+					onclick={() => onDelete(item)}
+					disabled={item.status === 'running'}
+					withSeparator={canRestoreAsNew}
+					label={m.common_delete()}
+				/>
 			{/if}
 		{:else if item.resourceType === 'project'}
 			<DropdownMenu.Item onclick={() => onOpenProject(item)}
