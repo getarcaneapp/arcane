@@ -14,6 +14,7 @@ import (
 	"uuid"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
@@ -148,7 +149,13 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	write := func(w io.Writer) error {
 		return s.writeBundle(ctx, w, opts, manifest, state.active && opts.Request.StopProject)
 	}
-	session, err := s.deps.Uploads.WriteSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(project.Name)+types.ProjectBundleExtension, write)
+	session, err := s.deps.Uploads.WriteSession(ctx, upload.WriteSessionOptions{
+		Write:    write,
+		Kind:     types.UploadKindProjectArchive,
+		Filename: projects.SanitizeProjectName(project.Name) + types.ProjectBundleExtension,
+		Origin:   types.UploadOriginProjectBundle,
+		OriginID: project.ID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", project.Name, err)
 	}
@@ -327,10 +334,6 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, downErr)
 		}
 	}
-	// A stopped project must stay stopped while its volumes are copied. Something else, such as a volume backup that
-	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent. Docker's
-	// start events across the copy are checked, so even a container that started and was removed again is seen.
-	var since string
 	if opts.Request.StopProject {
 		current, currentErr := s.deps.Environment.Project(ctx, opts.ProjectID)
 		if currentErr != nil {
@@ -339,8 +342,25 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		if current.RunningCount > 0 {
 			return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; volume data was not copied", current.RunningCount, current.Name))
 		}
+	}
+	// A bundle marked consistent must not hold data written during the copy. Something else, such as a volume backup
+	// that stopped a writer and finishes, can start it again. Writers running now are refused, and Docker's events
+	// across the copy are checked, so even a container that started and was removed again is seen.
+	var (
+		since   string
+		watched []string
+	)
+	if manifest.Consistent {
+		for _, volume := range manifest.Volumes {
+			if volume.Included && !slices.Contains(watched, volume.Name) {
+				watched = append(watched, volume.Name)
+			}
+		}
 		if since, err = s.dockerNow(ctx); err != nil {
 			return err
+		}
+		if writerErr := s.checkNoWriters(ctx, watched); writerErr != nil {
+			return writerErr
 		}
 	}
 	written := map[string]bool{}
@@ -357,8 +377,8 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
 		}
 	}
-	if opts.Request.StopProject {
-		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, since); startErr != nil {
+	if manifest.Consistent {
+		if startErr := s.checkNoStarts(ctx, manifest.Project.ComposeName, watched, since); startErr != nil {
 			return startErr
 		}
 	}
@@ -380,9 +400,30 @@ func (s *Service) dockerNow(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%d.%09d", now.Unix(), now.Nanosecond()), nil
 }
 
-// checkNoStarts fails when any container of the Compose project started since the given daemon time, including one
-// removed again since; events that can't be read fail it too, as the copy can't be shown to be consistent.
-func (s *Service) checkNoStarts(ctx context.Context, composeName, since string) error {
+// checkNoWriters fails when a running container mounts one of the volumes writable.
+func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range running.Items {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
+				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it or export again", docker.ContainerNameFromNames(c.Names), m.Name))
+			}
+		}
+	}
+	return nil
+}
+
+// checkNoStarts fails when, since the given daemon time, a container of the Compose project started or any container
+// mounted one of the volumes writable, including one removed again since; events that can't be read fail it too, as the
+// copy can't be shown to be consistent.
+func (s *Service) checkNoStarts(ctx context.Context, composeName string, volumeNames []string, since string) error {
 	until, err := s.dockerNow(ctx)
 	if err != nil {
 		return err
@@ -391,21 +432,37 @@ func (s *Service) checkNoStarts(ctx context.Context, composeName, since string) 
 	if err != nil {
 		return err
 	}
-	result := dockerClient.Events(ctx, client.EventsListOptions{
-		Since: since,
-		Until: until,
-		Filters: make(client.Filters).Add("type", "container").Add("event", "start").
-			Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
+	queries := []client.Filters{
+		make(client.Filters).Add("type", "container").Add("event", "start").Add("label", docker.ComposeProjectLabelKey+"="+composeName),
+	}
+	if len(volumeNames) > 0 {
+		queries = append(queries, make(client.Filters).Add("type", "volume").Add("event", "mount").Add("volume", volumeNames...))
+	}
+	for _, filters := range queries {
+		if queryErr := s.noEvents(ctx, dockerClient, client.EventsListOptions{Since: since, Until: until, Filters: filters}, composeName); queryErr != nil {
+			return queryErr
+		}
+	}
+	return nil
+}
+
+// noEvents fails on any event the query returns, except a read-only volume mount, such as the export's own helper's.
+func (s *Service) noEvents(ctx context.Context, dockerClient *client.Client, options client.EventsListOptions, composeName string) error {
+	result := dockerClient.Events(ctx, options)
 	for {
 		select {
-		case <-result.Messages:
-			return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
+		case message := <-result.Messages:
+			switch {
+			case message.Type != events.VolumeEventType:
+				return common.Classify(common.ErrConflict, fmt.Errorf("project %s was started while its volumes were copied; export it again", composeName))
+			case message.Actor.Attributes["read/write"] == "true":
+				return common.Classify(common.ErrConflict, fmt.Errorf("a container started writing to volume %s while it was copied; export it again", message.Actor.ID))
+			}
 		case streamErr := <-result.Err:
 			if errors.Is(streamErr, io.EOF) || streamErr == nil {
 				return nil
 			}
-			return fmt.Errorf("check that project %s stayed stopped: %w", composeName, streamErr)
+			return fmt.Errorf("check that the volumes of project %s were not written during the copy: %w", composeName, streamErr)
 		case <-ctx.Done():
 			return ctx.Err()
 		}

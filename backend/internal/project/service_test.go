@@ -26,6 +26,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
@@ -57,6 +58,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
@@ -68,6 +70,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -11113,6 +11116,10 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			// No container started or volume was mounted during the copy.
 		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
 			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
 		default:
@@ -11225,4 +11232,60 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	require.Len(t, targets, 1)
 	assert.NotEmpty(t, targets[0].Claim, "the restore claims the volume it creates for this import")
 	assert.Equal(t, types.ComposeVolumeTarget{Labels: sourceLabels, Project: "copy", Key: "first", Claim: targets[0].Claim, External: true}, targets[0])
+}
+
+func TestDownloadProjectExportServesOnlyThisProjectsExports(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	uploads := upload.NewUploadService(nil)
+	handler := &ProjectHandler{projectService: &ProjectService{uploads: uploads}}
+	write := func(origin, originID string) string {
+		session, err := uploads.WriteSession(t.Context(), upload.WriteSessionOptions{
+			Write: func(w io.Writer) error {
+				_, err := w.Write([]byte("archive"))
+				return err
+			},
+			Kind:     types.UploadKindProjectArchive,
+			Filename: "demo.tar.gz",
+			Origin:   origin,
+			OriginID: originID,
+		})
+		require.NoError(t, err)
+		return session.ID
+	}
+	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
+	require.NoError(t, err)
+	for _, test := range []struct {
+		name       string
+		uploadID   string
+		wantStatus int
+		volumes    bool
+	}{
+		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
+		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantStatus: http.StatusNotFound},
+		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
+		{name: "an upload for an import", uploadID: imported.ID, wantStatus: http.StatusNotFound},
+		{name: "a bundle without volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), wantStatus: http.StatusForbidden},
+		{name: "a bundle with volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), volumes: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			permissions := authz.NewPermissionSet()
+			permissions.AddEnv("0", authz.PermProjectsRead)
+			if test.volumes {
+				permissions.AddEnv("0", authz.PermVolumesBackup)
+			}
+			ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
+			response, downloadErr := handler.DownloadProjectExport(ctx, &DownloadProjectExportInput{EnvironmentID: "0", ProjectID: "p1", UploadID: test.uploadID})
+			if test.wantStatus == 0 {
+				require.NoError(t, downloadErr)
+				require.NotNil(t, response)
+				return
+			}
+			var statusErr huma.StatusError
+			require.ErrorAs(t, downloadErr, &statusErr)
+			require.Equal(t, test.wantStatus, statusErr.GetStatus())
+			// A refused download leaves the session for whoever may read it.
+			_, getErr := uploads.GetSession(t.Context(), types.UploadKindProjectArchive, test.uploadID)
+			require.NoError(t, getErr)
+		})
+	}
 }

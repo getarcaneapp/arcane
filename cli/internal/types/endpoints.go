@@ -320,6 +320,10 @@ func ProjectExport(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/export", envID, projectID)
 }
 
+func ProjectExportDownload(envID, projectID, uploadID string) string {
+	return pathf("/api/agents/%s/projects/%s/export/%s/download", envID, projectID, uploadID)
+}
+
 func ProjectImport(envID string) string {
 	return pathf("/api/agents/%s/projects/import", envID)
 }

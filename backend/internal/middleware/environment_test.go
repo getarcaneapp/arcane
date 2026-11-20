@@ -597,29 +597,16 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 		"expected denial: permission is scoped to a different environment")
 }
 
-func TestProxyPermissionUploadSessionReadsUseKindReadPermission(t *testing.T) {
+func TestProxyPermissionUploadSessionReadsUseKindPermission(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
-	readOnly := authz.NewPermissionSet()
-	readOnly.AddEnv(proxyTestEnvID, authz.PermProjectsRead)
-	creator := authz.NewPermissionSet()
-	creator.AddEnv(proxyTestEnvID, authz.PermProjectsCreate)
-	for _, tc := range []struct {
-		method  string
-		suffix  string
-		reader  bool
-		creator bool
-	}{
-		{method: http.MethodGet, suffix: "/uploads/volume-backup/0123456789abcdef/download", reader: false, creator: false},
-		{method: http.MethodGet, suffix: "/uploads/project-archive/0123456789abcdef/download", reader: true, creator: true},
-		{method: http.MethodGet, suffix: "/uploads/project-archive/0123456789abcdef/chunks/0", reader: true, creator: true},
-		{method: http.MethodGet, suffix: "/uploads/project-archive/0123456789abcdef", reader: true, creator: true},
-		{method: http.MethodDelete, suffix: "/uploads/project-archive/0123456789abcdef", reader: true, creator: true},
-		{method: http.MethodPost, suffix: "/uploads/project-archive", reader: false, creator: true},
-		{method: http.MethodPut, suffix: "/uploads/project-archive/0123456789abcdef/chunks/0", reader: false, creator: true},
-	} {
-		c := newProxyRequestContext(tc.method, "/api/agents/"+proxyTestEnvID+tc.suffix)
-		require.Equal(t, tc.reader, m.proxyPermitted(c, readOnly, proxyTestEnvID, tc.suffix), "%s %s with projects:read", tc.method, tc.suffix)
-		require.Equal(t, tc.creator, m.proxyPermitted(c, creator, proxyTestEnvID, tc.suffix), "%s %s with projects:create", tc.method, tc.suffix)
+	for _, suffix := range []string{"/uploads/project-archive/0123456789abcdef/download", "/uploads/project-archive/0123456789abcdef/chunks/0"} {
+		c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+suffix)
+		permitted := authz.NewPermissionSet()
+		permitted.AddEnv(proxyTestEnvID, authz.PermProjectsCreate)
+		require.True(t, m.proxyPermitted(c, permitted, proxyTestEnvID, suffix), "expected %s to be allowed with projects:create", suffix)
+		readOnly := authz.NewPermissionSet()
+		readOnly.AddEnv(proxyTestEnvID, authz.PermProjectsRead)
+		require.False(t, m.proxyPermitted(c, readOnly, proxyTestEnvID, suffix), "expected %s to be denied without projects:create", suffix)
 	}
 }
 

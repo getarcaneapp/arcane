@@ -23,9 +23,6 @@ const (
 
 	MetaPermissionConditions = "arcane:permissionConditions"
 
-	// MetaPermissionAlternatives lists conditions under which one other permission also allows the request.
-	MetaPermissionAlternatives = "arcane:permissionAlternatives"
-
 	MetaAccess = "arcane:access"
 
 	envPathPrefix = "/agents/{id}"
