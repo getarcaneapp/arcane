@@ -311,8 +311,13 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 		if _, err := io.CopyN(w, source, size); err != nil {
 			return fmt.Errorf("write uploaded file: %w", err)
 		}
-		if surplus, _ := source.Read(make([]byte, 1)); surplus > 0 {
+		surplus, readErr := source.Read(make([]byte, 1))
+		if surplus > 0 {
 			return fmt.Errorf("%w: the file holds more than the declared %d bytes", common.ErrUploadSessionInvalid, size)
+		}
+		// The end of the file is the expected answer; any other failure means the upload can't be shown to be complete.
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return fmt.Errorf("check the file ends at the declared %d bytes: %w", size, readErr)
 		}
 		return nil
 	}
