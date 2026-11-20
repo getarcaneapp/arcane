@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
+	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -92,6 +93,12 @@ type (
 		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
+	}
+
+	DownloadProjectExportInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"Project ID"`
+		UploadID      string `path:"uploadId" doc:"ID of the session an export of this project wrote"`
 	}
 
 	ImportProjectArchiveInput struct {
@@ -592,6 +599,34 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		return nil, huma.Error500InternalServerError("Failed to import project: " + err.Error())
 	}
 	return h.createProjectResponse(ctx, proj, activityID)
+}
+
+// DownloadProjectExport streams a session written by an export of this project, and nothing else, so reading project
+// archives uploaded for an import still needs projects:create.
+func (h *ProjectHandler) DownloadProjectExport(ctx context.Context, input *DownloadProjectExportInput) (*huma.StreamResponse, error) {
+	reader, session, err := h.projectService.uploads.DownloadSession(ctx, types.UploadKindProjectArchive, input.UploadID)
+	if err != nil {
+		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	exported := session.OriginID == input.ProjectID && (session.Origin == types.UploadOriginProjectExport || session.Origin == types.UploadOriginProjectBundle)
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	var refusal error
+	switch {
+	case !exported:
+		refusal = huma.Error404NotFound("no export of this project has that ID")
+	case session.Origin == types.UploadOriginProjectBundle && !permissions.Allows(authz.PermVolumesBackup, input.EnvironmentID):
+		// The bundle holds volume data, which exporting needed volumes:backup for.
+		refusal = huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
+	}
+	if refusal != nil {
+		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
+		_ = reader.Close()
+		return nil, refusal
+	}
+	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
 
 func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {

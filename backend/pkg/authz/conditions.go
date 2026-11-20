@@ -15,12 +15,6 @@ type (
 	}
 
 	PermissionConditions []PermissionCondition
-
-	UploadSessionAccess struct {
-		Kind          string
-		EnvironmentID string
-		Read          bool
-	}
 )
 
 const (
@@ -142,17 +136,6 @@ var (
 		},
 	}
 
-	// UploadKindReadConditions also allow reading and removing a session: a project export is downloaded by callers
-	// with projects:read, which may already export any project's files.
-	UploadKindReadConditions = PermissionConditions{
-		{
-			In:         ConditionInPath,
-			Field:      "kind",
-			Value:      types.UploadKindProjectArchive,
-			Permission: PermProjectsRead,
-		},
-	}
-
 	BuildWorkspaceConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,
@@ -270,15 +253,4 @@ func (c PermissionConditions) Required(field, value string) []string {
 		}
 	}
 	return perms
-}
-
-// UploadSessionPermitted reports whether ps may use an upload session of a kind; unknown kinds are refused.
-func UploadSessionPermitted(ps *PermissionSet, access UploadSessionAccess) bool {
-	allows := func(conditions PermissionConditions) bool {
-		perms := conditions.Required("kind", access.Kind)
-		return len(perms) > 0 && !slices.ContainsFunc(perms, func(perm string) bool {
-			return !ps.Allows(perm, access.EnvironmentID)
-		})
-	}
-	return allows(UploadKindConditions) || access.Read && allows(UploadKindReadConditions)
 }

@@ -71,7 +71,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Download the bytes of one received chunk of an upload session",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions, authz.MetaPermissionAlternatives: authz.UploadKindReadConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.ReadChunk)
 
 	huma.Register(api, huma.Operation{
@@ -82,7 +82,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Stream the file of a complete upload session; the session is deleted once the whole file was sent",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions, authz.MetaPermissionAlternatives: authz.UploadKindReadConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.DownloadSession)
 
 	huma.Register(api, huma.Operation{
@@ -93,7 +93,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Inspect an upload session to resume by re-sending only the missing chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions, authz.MetaPermissionAlternatives: authz.UploadKindReadConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.GetSession)
 
 	huma.Register(api, huma.Operation{
@@ -104,6 +104,6 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description: "Abort an upload session and discard its received chunks",
 		Tags:        []string{"Uploads"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions, authz.MetaPermissionAlternatives: authz.UploadKindReadConditions},
+		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.DeleteSession)
 }

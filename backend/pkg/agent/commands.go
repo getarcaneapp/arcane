@@ -107,6 +107,7 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/projects/{projectId}/backups", CommandName: "project.backup.create"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/{backupId}", CommandName: "project.backup.inspect"},
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/projects/{projectId}/backups/{backupId}", CommandName: "project.backup.delete"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/export/{uploadId}/download", CommandName: "project.export.download"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}", CommandName: "project.inspect"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/compose", CommandName: "project.compose"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/projects/{projectId}/workspace", CommandName: "project.workspace.list"},

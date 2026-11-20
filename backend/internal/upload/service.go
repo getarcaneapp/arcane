@@ -41,6 +41,15 @@ type (
 		eof  bool
 	}
 
+	WriteSessionOptions struct {
+		Write    func(io.Writer) error
+		Kind     string
+		Filename string
+		// Origin and OriginID record what wrote the session, such as an export of a project.
+		Origin   string
+		OriginID string
+	}
+
 	// reserveWriter stops a written session before it eats into the reserve, checking again every reserveCheckBytes.
 	reserveWriter struct {
 		ctx       context.Context
@@ -311,7 +320,11 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 		}
 		return nil
 	}
-	return s.WriteSession(ctx, kind, filename, write)
+	return s.WriteSession(ctx, WriteSessionOptions{
+		Kind:     kind,
+		Filename: filename,
+		Write:    write,
+	})
 }
 
 func (w *reserveWriter) Write(p []byte) (int, error) {
@@ -326,8 +339,10 @@ func (w *reserveWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (s *UploadService) WriteSession(ctx context.Context, kind, filename string, write func(io.Writer) error) (session *types.UploadSession, err error) {
-	if filename, err = sessionFilename(kind, filename); err != nil {
+func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
+	kind := opts.Kind
+	filename, err := sessionFilename(kind, opts.Filename)
+	if err != nil {
 		return nil, err
 	}
 	sessionDir, err := s.createSessionDir(ctx)
@@ -352,7 +367,7 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	}
 	// What the callback writes isn't known up front, and it may stage more files while writing, so free space is
 	// rechecked as the file grows.
-	if writeErr := write(&reserveWriter{
+	if writeErr := opts.Write(&reserveWriter{
 		ctx:     ctx,
 		w:       file,
 		service: s,
@@ -383,6 +398,8 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 		TotalChunks:    totalChunks,
 		ReceivedChunks: received,
 		CreatedAt:      time.Now().UTC(),
+		Origin:         opts.Origin,
+		OriginID:       opts.OriginID,
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 		return nil, writeMetaErr

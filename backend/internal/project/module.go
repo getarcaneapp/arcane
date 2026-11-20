@@ -332,6 +332,17 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 	}, authz.PermProjectsRead, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "download-project-export",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/export/{uploadId}/download",
+		Summary:     "Download a project export",
+		Description: "Stream the archive an export of this project wrote; the session is deleted once the whole file was sent. " +
+			"An archive that holds volume data also requires volumes:backup.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsRead, h.DownloadProjectExport)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/projects/{projectId}",

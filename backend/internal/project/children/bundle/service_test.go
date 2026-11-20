@@ -12,11 +12,15 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -81,41 +85,73 @@ func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.Do
 	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
 }
 
-func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
+func TestExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
 	archive, err := projects.ProjectBundleVolumeArchive("data")
 	require.NoError(t, err)
 	manifest := types.ProjectManifest{
 		Project:       types.ProjectManifestProject{ID: "p1", Name: "demo", ComposeName: "demo"},
 		Volumes:       []types.ProjectVolume{{Key: "data", Name: "demo_data", Kind: types.ProjectVolumeNamed, Archive: archive, Included: true}},
 		FormatVersion: types.ProjectManifestFormatVersion,
+		Consistent:    true,
 	}
 	opts := ExportOptions{ProjectID: "p1", Request: types.ExportProjectArchive{Volumes: []string{"data"}, StopProject: true}}
+	mounted := func(readWrite string) events.Message {
+		return events.Message{
+			Type:   events.VolumeEventType,
+			Action: events.ActionMount,
+			Actor:  events.Actor{ID: "demo_data", Attributes: map[string]string{"container": "c1", "read/write": readWrite}},
+		}
+	}
 	for _, test := range []struct {
-		name     string
-		events   []events.Message
-		conflict bool
+		name            string
+		wantMessage     string
+		containerEvents []events.Message
+		volumeEvents    []events.Message
+		running         []container.Summary
 	}{
 		{name: "a project that stays stopped is exported"},
+		// The export's own helper mounts each volume read-only.
+		{name: "a read-only mount during the copy is fine", volumeEvents: []events.Message{mounted("false")}},
 		// A volume backup that had stopped the project starts it again during the copy.
-		{name: "a project started during the copy fails the export", events: []events.Message{
-			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "web-1"}},
-		}, conflict: true},
-		// The container that started is gone again before the copy ends, so only its start event shows it.
-		{name: "a container started and removed during the copy fails the export", events: []events.Message{
-			{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "job-1"}},
-		}, conflict: true},
+		{
+			name:            "a project started during the copy fails the export",
+			containerEvents: []events.Message{{Type: events.ContainerEventType, Action: events.ActionStart, Actor: events.Actor{ID: "web-1"}}},
+			wantMessage:     "started while its volumes were copied",
+		},
+		// A volume backup of another project that shares the volume starts that project's writer again during the copy;
+		// the container may be gone again before the copy ends, so only its mount event shows it.
+		{
+			name:         "another project's writer started during the copy fails the export",
+			volumeEvents: []events.Message{mounted("true")},
+			wantMessage:  "started writing to volume demo_data",
+		},
+		{
+			name: "a writer running when the copy starts fails the export",
+			running: []container.Summary{{
+				Names:  []string{"/other-app-1"},
+				Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data", RW: true}},
+			}},
+			wantMessage: "container other-app-1 writes to volume demo_data",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var since, until string
+			var windows [][2]string
 			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
+				// The handler runs on the server's goroutine, so a failed response write is reported with assert.
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/info"):
-					_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"})
+					assert.NoError(t, json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"}))
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					assert.NoError(t, json.MarshalWrite(w, kit.Ternary(test.running == nil, []container.Summary{}, test.running)))
 				case strings.HasSuffix(r.URL.Path, "/events"):
-					since, until = r.URL.Query().Get("since"), r.URL.Query().Get("until")
-					for _, message := range test.events {
-						_ = json.MarshalWrite(w, message)
+					windows = append(windows, [2]string{r.URL.Query().Get("since"), r.URL.Query().Get("until")})
+					served := test.containerEvents
+					if strings.Contains(r.URL.Query().Get("filters"), "volume") {
+						served = test.volumeEvents
+					}
+					for _, message := range served {
+						assert.NoError(t, json.MarshalWrite(w, message))
 					}
 				default:
 					http.NotFound(w, r)
@@ -124,15 +160,21 @@ func TestExportFailsWhenTheProjectStartsDuringTheCopy(t *testing.T) {
 			uploads := upload.NewUploadService(nil)
 			service := &Service{deps: Dependencies{Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
 			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
-			// The window is the daemon's own clock from before the copy to after it.
-			require.Equal(t, "1795136400.500000000", since)
-			require.Equal(t, since, until)
-			if test.conflict {
+			if test.wantMessage != "" {
 				require.ErrorIs(t, writeErr, common.ErrConflict)
-				require.ErrorContains(t, writeErr, "started while its volumes were copied")
+				require.ErrorContains(t, writeErr, test.wantMessage)
+			} else {
+				require.NoError(t, writeErr)
+			}
+			if test.running != nil {
+				require.Empty(t, windows, "a running writer is refused before anything is copied")
 				return
 			}
-			require.NoError(t, writeErr)
+			// Both checks read the daemon's own clock from before the copy to after it.
+			for _, window := range windows {
+				require.Equal(t, [2]string{"1795136400.500000000", "1795136400.500000000"}, window)
+			}
+			require.NotEmpty(t, windows)
 		})
 	}
 }
@@ -168,10 +210,12 @@ func TestExportHoldsTheProjectLockUntilTheCopyEnds(t *testing.T) {
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		// The handler runs on the server's goroutine, so a failed response write is reported with assert.
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_, _ = w.Write([]byte("[]"))
+			_, writeErr := w.Write([]byte("[]"))
+			assert.NoError(t, writeErr)
 		case strings.HasSuffix(r.URL.Path, "/info"):
-			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"})
+			assert.NoError(t, json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00Z"}))
 		case strings.HasSuffix(r.URL.Path, "/events"):
 		default:
 			http.NotFound(w, r)
