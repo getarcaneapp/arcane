@@ -309,6 +309,7 @@ function createActivityStore() {
 			environmentIds.map((id) => ({ id, name: core.environmentState(id)?.name ?? id }))
 		);
 		let reported: EnvironmentFailure[] = [];
+		const knownBefore = new Set(_activities.map((activity) => activity.id));
 		const result = await tryCatch(
 			readAcrossEnvironments(
 				included,
@@ -339,7 +340,10 @@ function createActivityStore() {
 					continue;
 				}
 				const environmentRows = included.length > 1 ? rows.filter((row) => row.environmentId === environment.id) : rows;
-				replaceEnvironmentSnapshot(environment.id, environmentRows);
+				const arrivedLive = (state.environmentActivities[environment.id] ?? []).filter(
+					(activity) => !knownBefore.has(activity.id) && !environmentRows.some((row) => row.id === activity.id)
+				);
+				replaceEnvironmentSnapshot(environment.id, [...arrivedLive, ...environmentRows]);
 			}
 		}
 

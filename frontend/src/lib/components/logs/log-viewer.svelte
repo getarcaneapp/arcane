@@ -314,7 +314,7 @@
 	function processLogObject(obj: unknown) {
 		if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
 		const timestamp = 'timestamp' in obj && typeof obj.timestamp === 'string' ? obj.timestamp : '';
-		if (timestamp) {
+		if (timestamp && !('level' in obj && obj.level === 'error')) {
 			if (timestamp === resumeTimestamp) return;
 			resumeTimestamp = '';
 			lastTimestamp = timestamp;

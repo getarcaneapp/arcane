@@ -78,6 +78,9 @@ type (
 var webhookPagination = pagination.Config[types.Webhook]{
 	SearchAccessors: []pagination.SearchAccessor[types.Webhook]{
 		func(wh types.Webhook) (string, error) {
+			return wh.ID, nil
+		},
+		func(wh types.Webhook) (string, error) {
 			return wh.Name, nil
 		},
 		func(wh types.Webhook) (string, error) {
