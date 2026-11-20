@@ -655,7 +655,10 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 		return err
 	}
 	created, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
-		return volumes.CreateClaimed(ctx, dockerClient, createOptions)
+		return volumes.CreateClaimed(ctx, dockerClient, volumes.ClaimedVolume{
+			Options: createOptions,
+			Claim:   target.Claim,
+		})
 	})
 	if createErr != nil {
 		return fmt.Errorf("failed to create compose volume %s: %w", volumeName, createErr)
