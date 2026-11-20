@@ -81,7 +81,7 @@ type (
 		CreatedAt     time.Time              `json:"createdAt"`
 		Kind          string                 `json:"kind"`
 		ArcaneVersion string                 `json:"arcaneVersion"`
-		EnvLink       string                 `json:"envLink,omitempty" doc:"Target of the .env link, relative to the project directory, when it leads to a file inside it"`
+		Links         map[string]string      `json:"links,omitempty" doc:"Links inside the project directory that lead to files in it, by path, with their targets relative to the link"`
 		Project       ProjectManifestProject `json:"project"`
 		ComposeFiles  []string               `json:"composeFiles,omitempty"`
 		Volumes       []ProjectVolume        `json:"volumes"`
@@ -185,7 +185,8 @@ type (
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
 		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
-		// file in place of the link, so a new project neither shares nor changes the original's file.
+		// file in place of the link, and points links into the original's directory at the copy's files, so a new
+		// project neither shares nor changes the original's files.
 		OwnEnv bool
 	}
 

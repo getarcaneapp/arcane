@@ -153,7 +153,8 @@ func LinkTargetInside(ctx context.Context, root acfs.Root, logicalPath, resolved
 	if err != nil {
 		return "", false, err
 	}
-	if filepath.IsAbs(target) || !IsSafeSubdirectory(root.Path, filepath.Join(root.Path, path.Dir(logicalPath), target)) {
+	// Checked without root's own name, which a target like "../web/x" passes through on its way back in.
+	if filepath.IsAbs(target) || !filepath.IsLocal(filepath.Join(strings.TrimPrefix(path.Dir(logicalPath), "/"), target)) {
 		target, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, logicalPath)), resolvedPath)
 	}
 	return target, err == nil, err
@@ -181,21 +182,49 @@ func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byt
 	return content, perm, true, nil
 }
 
-// EnvLinkInside returns the target of the project's .env link, relative to the project directory, when it leads to a
-// file inside the directory; it is empty for a regular .env, a link leading outside, or no .env at all.
-func EnvLinkInside(ctx context.Context, projectPath string) (string, error) {
-	if info, statErr := os.Lstat(filepath.Join(projectPath, EffectiveEnvFileName)); statErr != nil || info.Mode()&fs.ModeSymlink == 0 {
-		return "", nil
-	}
+// LinksInside returns the links in the project directory that lead to files inside it, by logical path, with the
+// targets a copy keeps for them; a link whose target already stays inside the directory is left out.
+func LinksInside(ctx context.Context, projectPath string) (map[string]string, error) {
 	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
-		return "", fmt.Errorf("resolve project directory: %w", err)
+		return nil, fmt.Errorf("resolve project directory: %w", err)
 	}
-	target, inside, err := LinkTargetInside(ctx, acfs.Root{Path: projectPath}, "/"+EffectiveEnvFileName, resolvedRoot)
-	if err != nil || !inside {
-		return "", err
+	root := acfs.Root{Path: projectPath}
+	links := map[string]string{}
+	// A directory Arcane can't read, such as a database's data, keeps its links as they are rather than failing.
+	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			return fs.SkipDir
+		case err != nil:
+			return err
+		case entry.IsDir() && IsInternalScratchDirName(entry.Name()):
+			return fs.SkipDir
+		case entry.Type()&fs.ModeSymlink == 0:
+			return nil
+		}
+		relative, relErr := filepath.Rel(resolvedRoot, hostPath)
+		if relErr != nil {
+			return relErr
+		}
+		logicalPath := "/" + filepath.ToSlash(relative)
+		target, inside, linkErr := LinkTargetInside(ctx, root, logicalPath, resolvedRoot)
+		if linkErr != nil || !inside {
+			return linkErr
+		}
+		current, linkErr := root.Readlink(ctx, logicalPath)
+		if linkErr != nil {
+			return linkErr
+		}
+		if target != current {
+			links[logicalPath] = target
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("read the links of the project directory: %w", walkErr)
 	}
-	return target, nil
+	return links, nil
 }
 
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
