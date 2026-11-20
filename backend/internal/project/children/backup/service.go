@@ -1661,6 +1661,11 @@ func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (types.C
 			Field:         field,
 		})
 	})
+	// The repository is gone but the guarded save matched nothing: S3 was turned off or moved, or the policy changed,
+	// while it was checked, so the policy as it is now is checked instead.
+	if err == nil && !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing) {
+		return s.scheduledPolicy(ctx, policyID)
+	}
 	if err != nil {
 		return types.CreateProjectBackupRequest{}, false, err
 	}
@@ -2325,6 +2330,11 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 		}
 		return true, s.saveGlobalPolicies(ctx, policies)
 	})
+	// The repository is gone but the guarded save matched nothing: S3 was turned off or moved, or the policy changed,
+	// while it was checked, so the policy as it is now is checked instead.
+	if err == nil && !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing) {
+		return s.globalSettings(ctx, input, projectID)
+	}
 	if err != nil {
 		return types.CreateProjectBackupRequest{}, false, err
 	}
@@ -2732,16 +2742,18 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 		if slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }) {
 			continue
 		}
+		current := classified[slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
 		found, inspectErr := dockerClient.VolumeInspect(ctx, target.Name, client.VolumeInspectOptions{})
 		switch {
-		case inspectErr == nil && !projects.LocalVolume(found.Volume.Driver, found.Volume.Options):
+		// As when backing up: a named volume is restored whatever its driver; an external one only while Docker keeps
+		// its data.
+		case inspectErr == nil && current.Kind == types.ProjectVolumeExternal && !projects.LocalVolume(found.Volume.Driver, found.Volume.Options):
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
 		case inspectErr == nil:
 			continue
 		case !errdefs.IsNotFound(inspectErr):
 			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, inspectErr)
 		}
-		current := classified[slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
 		recorded := slices.IndexFunc(manifest.Volumes, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })
 		external := current.Kind == types.ProjectVolumeExternal
 		options, optionsErr := projects.ComposeVolumeTargetCreateOptions(target.Name, types.ComposeVolumeTarget{
@@ -2991,8 +3003,14 @@ func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateO
 	case !errdefs.IsNotFound(inspectErr):
 		return fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
 	}
-	if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
-		return fmt.Errorf("create volume %s: %w", options.Name, createErr)
+	// Docker hands back a volume made between the check above and this create, so only one carrying this call's claim
+	// is the restore's.
+	created, createErr := volumes.CreateClaimed(ctx, dockerClient, options)
+	if createErr != nil {
+		return createErr
+	}
+	if !created {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created after the restore was checked", options.Name))
 	}
 	return nil
 }

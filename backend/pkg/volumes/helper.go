@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"runtime"
 	"slices"
 	"strings"
+	"uuid"
 
 	ref "github.com/distribution/reference"
 	"github.com/moby/moby/api/types/container"
@@ -189,4 +191,27 @@ func WithLocked(ctx context.Context, names []string) context.Context {
 func Locked(ctx context.Context, name string) bool {
 	names, _ := ctx.Value(lockedKey{}).([]string)
 	return slices.Contains(names, name)
+}
+
+// CreateClaimed creates a volume marked with a claim unique to this call and reports whether this call created it.
+// Docker returns a volume that already exists instead of failing, so one without the claim was made by someone else
+// and must not be changed or removed by the caller.
+func CreateClaimed(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) (bool, error) {
+	claim := uuid.New().String()
+	labels := maps.Clone(options.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[ClaimLabel] = claim
+	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
+		Name:              options.Name,
+		Driver:            options.Driver,
+		DriverOpts:        options.DriverOpts,
+		Labels:            labels,
+		ClusterVolumeSpec: options.ClusterVolumeSpec,
+	})
+	if err != nil {
+		return false, fmt.Errorf("create volume %s: %w", options.Name, err)
+	}
+	return created.Volume.Labels[ClaimLabel] == claim, nil
 }

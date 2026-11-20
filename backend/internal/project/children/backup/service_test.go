@@ -77,9 +77,11 @@ type (
 		forgets  *fakeForget
 		projects *[]types.ProjectReference
 		// started records the containers resumed backups start again.
-		started     *[]container.Summary
-		s3Requests  *atomic.Int64
-		available   *atomic.Bool
+		started    *[]container.Summary
+		s3Requests *atomic.Int64
+		available  *atomic.Bool
+		// onS3 runs once on the next S3 request, to change things while a check is in flight.
+		onS3        *atomic.Pointer[func()]
 		destination string
 		secondary   string
 	}
@@ -791,8 +793,9 @@ func TestVerifyRestoreKeepsTheComposeName(t *testing.T) {
 
 func TestMissingVolumesRefusesTargetsOutsideDocker(t *testing.T) {
 	live := map[string]volume.Volume{
-		"web_data": {Name: "web_data", Driver: "local"},
-		"shared":   {Name: "shared", Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/mnt/nas/shared"}},
+		"web_data":  {Name: "web_data", Driver: "local"},
+		"web_cache": {Name: "web_cache", Driver: "rexray/ebs"},
+		"shared":    {Name: "shared", Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/mnt/nas/shared"}},
 	}
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		found, ok := live[strings.TrimPrefix(r.URL.Path, "/v1.41/volumes/")]
@@ -806,6 +809,11 @@ func TestMissingVolumesRefusesTargetsOutsideDocker(t *testing.T) {
 	service := NewService(Dependencies{Docker: dockerService})
 
 	create, err := service.missingVolumes(t.Context(), testProject(), types.ProjectManifest{}, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}})
+	require.NoError(t, err)
+	require.Empty(t, create)
+
+	// A named volume on a storage plugin is backed up through its mount, so it restores the same way.
+	create, err = service.missingVolumes(t.Context(), testProject(), types.ProjectManifest{}, []RestoreVolume{{Key: "cache", Snapshot: "web_cache", Name: "web_cache"}})
 	require.NoError(t, err)
 	require.Empty(t, create)
 
@@ -935,9 +943,12 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 
-	requests, available := &atomic.Int64{}, &atomic.Bool{}
+	requests, available, onS3 := &atomic.Int64{}, &atomic.Bool{}, &atomic.Pointer[func()]{}
 	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
+		if hook := onS3.Swap(nil); hook != nil {
+			(*hook)()
+		}
 		if available.Load() {
 			w.Header().Set("Content-Range", "bytes 0-0/1")
 			w.WriteHeader(http.StatusPartialContent)
@@ -1002,7 +1013,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	harness.Start(t)
 	return policyFixture{
 		db: db, engine: engine, service: service, jobs: jobs, forgets: forgets, projects: projects, started: started,
-		s3Requests: requests, available: available, destination: destinations[0], secondary: destinations[1],
+		s3Requests: requests, available: available, onS3: onS3, destination: destinations[0], secondary: destinations[1],
 	}
 }
 
@@ -1203,6 +1214,27 @@ func TestScheduledRemoteCheckRunsOnThePolicyReadUnderTheAdmission(t *testing.T) 
 	require.False(t, stored.Enabled)
 	require.False(t, f.jobs.HasJob("project-backup:"+policy.ID))
 	f.hold(t, admissionScope, "p1").Release(t.Context())
+}
+
+func TestScheduledRemoteCheckUsesThePolicyChangedDuringIt(t *testing.T) {
+	f := newPolicyFixture(t)
+	require.NoError(t, f.db.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"retained", "app-data", 0, time.Now(), types.VolumeBackupStatusSucceeded, f.destination, "remote",
+	).Error)
+	policy := f.policy(t, ProjectBackupPolicy{
+		ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, S3Enabled: true, S3DestinationID: f.destination,
+	})
+	// The user turns S3 off while the run finds its repository missing, so the guarded disable matches nothing.
+	turnOff := func() {
+		assert.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Where("id = ?", policy.ID).Update("s3_enabled", false).Error)
+	}
+	f.onS3.Store(&turnOff)
+
+	current, disabled, err := f.service.scheduledPolicy(t.Context(), policy.ID)
+	require.NoError(t, err)
+	require.False(t, disabled)
+	require.Equal(t, types.VolumeBackupDestinationLocal, current.Destination, "the run uses the policy as the user left it, so it never writes to the missing repository")
 }
 
 // remoteBackup is a finished project backup whose only snapshot is in the fixture's missing S3 repository, so deleting
@@ -1479,6 +1511,34 @@ func TestGlobalBackupRereadsThePolicyUnderEachAdmission(t *testing.T) {
 	for _, key := range admissions("p1", nil) {
 		f.hold(t, key.Scope, key.ID).Release(t.Context())
 	}
+}
+
+func TestGlobalRemoteCheckUsesThePolicyChangedDuringIt(t *testing.T) {
+	f := newPolicyFixture(t)
+	require.NoError(t, f.db.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"retained", "app-data", 0, time.Now(), types.VolumeBackupStatusSucceeded, f.destination, "remote",
+	).Error)
+	policy := f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{
+			Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true, S3Enabled: true, S3DestinationID: f.destination,
+		},
+		SelectionMode: types.SystemVolumeSelectionAll,
+	})[0]
+	// The user turns S3 off while the run finds its repository missing, so the guarded disable matches nothing.
+	turnOff := func() {
+		stored, err := f.service.globalPolicies()
+		assert.NoError(t, err)
+		assert.NoError(t, f.service.saveGlobalPolicies(t.Context(), []types.GlobalProjectBackupPolicy{{
+			ID: stored[0].ID, Schedule: stored[0].Schedule, SelectionMode: stored[0].SelectionMode, Enabled: true, LocalEnabled: true,
+		}}))
+	}
+	f.onS3.Store(&turnOff)
+
+	request, disabled, err := f.service.globalSettings(t.Context(), globalRun{PolicyID: policy.ID}, "p1")
+	require.NoError(t, err)
+	require.False(t, disabled)
+	require.Equal(t, types.VolumeBackupDestinationLocal, request.Destination, "the run uses the policy as the user left it")
 }
 
 func TestGlobalBackupResumesWithoutLeavingContainersStopped(t *testing.T) {
