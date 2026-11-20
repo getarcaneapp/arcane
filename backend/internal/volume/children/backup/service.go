@@ -86,6 +86,7 @@ type (
 		StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
+		StopHelper       func(ctx context.Context, volumeName string) error
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
@@ -201,6 +202,7 @@ func NewService(deps Dependencies) *Service {
 		HelperImage:     deps.HelperImage,
 		StorageMount:    s.StorageMount,
 		AcquireHelper:   deps.AcquireHelper,
+		StopHelper:      deps.StopHelper,
 		Exec:            deps.Exec,
 	})
 	return s
