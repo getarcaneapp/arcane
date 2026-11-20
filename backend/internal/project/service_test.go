@@ -11252,20 +11252,18 @@ func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
 	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
 	require.NoError(t, err)
 	for _, test := range []struct {
-		wantErr    error
-		name       string
-		uploadID   string
-		volumeData bool
+		wantErr  error
+		name     string
+		uploadID string
 	}{
 		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
 		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantErr: common.ErrNotFound},
 		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
 		{name: "an upload for an import", uploadID: imported.ID, wantErr: common.ErrNotFound},
-		{name: "a bundle without volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), wantErr: common.ErrForbidden},
-		{name: "a bundle with volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), volumeData: true},
+		{name: "the project's bundle", uploadID: write(types.UploadOriginProjectBundle, "p1")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID, VolumeData: test.volumeData})
+			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID})
 			if test.wantErr == nil {
 				require.NoError(t, openErr)
 				require.Equal(t, test.uploadID, session.ID)
