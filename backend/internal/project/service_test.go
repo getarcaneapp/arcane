@@ -44,11 +44,13 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
+	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -11189,6 +11191,7 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	)
 	module := New(ModuleParams{
 		Service: svc,
+		Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
 		Transfer: TransferDependencies{
 			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 				exports = append(exports, name)
@@ -11333,20 +11336,18 @@ func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
 	imported, err := uploads.IngestSession(t.Context(), types.UploadKindProjectArchive, "demo.tar.gz", 7, strings.NewReader("archive"))
 	require.NoError(t, err)
 	for _, test := range []struct {
-		wantErr    error
-		name       string
-		uploadID   string
-		volumeData bool
+		wantErr  error
+		name     string
+		uploadID string
 	}{
 		{name: "the project's file export", uploadID: write(types.UploadOriginProjectExport, "p1")},
 		{name: "another project's export", uploadID: write(types.UploadOriginProjectExport, "p2"), wantErr: common.ErrNotFound},
 		// A reader must not read an archive uploaded for an import, which may hold another user's volume data.
 		{name: "an upload for an import", uploadID: imported.ID, wantErr: common.ErrNotFound},
-		{name: "a bundle without volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), wantErr: common.ErrForbidden},
-		{name: "a bundle with volumes:backup", uploadID: write(types.UploadOriginProjectBundle, "p1"), volumeData: true},
+		{name: "the project's bundle", uploadID: write(types.UploadOriginProjectBundle, "p1")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID, VolumeData: test.volumeData})
+			reader, session, openErr := svc.OpenExport(t.Context(), OpenExportOptions{ProjectID: "p1", UploadID: test.uploadID})
 			if test.wantErr == nil {
 				require.NoError(t, openErr)
 				require.Equal(t, test.uploadID, session.ID)
@@ -11359,4 +11360,42 @@ func TestOpenExportServesOnlyThisProjectsExports(t *testing.T) {
 			require.NoError(t, getErr)
 		})
 	}
+}
+
+func TestExportStopIsNotedUntilTheProjectStartsAgain(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	store := kv.NewKVService(db)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newUnreachableDockerService(t),
+		BuildService:                testBuildBuilder{},
+		Config:                      loadTestConfig(t),
+		KVService:                   store,
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	require.NoError(t, db.Create(&Project{ID: "p1", Name: "web", Path: t.TempDir()}).Error)
+	noted := func(projectID string) bool {
+		_, found, getErr := store.Get(ctx, exportStoppedKeyPrefix+projectID)
+		require.NoError(t, getErr)
+		return found
+	}
+
+	// The note is written before the project goes down, so it survives Arcane stopping partway through the stop.
+	require.Error(t, svc.stopForExport(ctx, "p1", types.SystemUser))
+	require.True(t, noted("p1"))
+
+	// A project that can't start yet keeps its note for the next start of Arcane; a deleted one loses it.
+	require.NoError(t, store.Set(ctx, exportStoppedKeyPrefix+"gone", "u1"))
+	require.Error(t, svc.startExportStoppedProjects(ctx, &concurrency.KeyedMutex{}))
+	require.True(t, noted("p1"))
+	require.False(t, noted("gone"))
+
+	// A restore that takes the project over decides itself whether it runs, so recovery must not start it.
+	require.NoError(t, svc.forgetExportStop(ctx, "p1"))
+	require.False(t, noted("p1"))
 }

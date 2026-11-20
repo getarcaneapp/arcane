@@ -33,7 +33,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -166,7 +166,7 @@ func (f *fakeBackups) RestoreTo(_ context.Context, opts types.ProjectBackupResto
 	return nil
 }
 
-func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.DockerClientService {
+func newTestDockerService(t *testing.T, handler http.Handler) *docker.DockerClientService {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -182,7 +182,7 @@ func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.Do
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(dockerClient)
 }
 
 func TestExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
@@ -258,7 +258,7 @@ func TestExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
 				}
 			}))
 			uploads := upload.NewUploadService(nil)
-			service := &Service{deps: Dependencies{Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
+			service := &Service{deps: Dependencies{BackupStore: noBackupStore, Uploads: uploads, Docker: dockerService, Environment: &stoppedEnvironment{uploads: uploads}}}
 			writeErr := service.writeBundle(t.Context(), io.Discard, opts, manifest, false)
 			if test.wantMessage != "" {
 				require.ErrorIs(t, writeErr, common.ErrConflict)
@@ -382,6 +382,7 @@ func TestRestoreAsNew(t *testing.T) {
 			}
 			var filled, locked string
 			service := New(Dependencies{
+				BackupStore: noBackupStore,
 				Environment: environment,
 				Backups:     backups,
 				Docker:      dockerService,
@@ -504,6 +505,7 @@ func TestExportHoldsTheProjectLockUntilTheCopyEnds(t *testing.T) {
 	uploads := upload.NewUploadService(nil)
 	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		Docker:      dockerService,
 		Uploads:     uploads,
@@ -533,6 +535,7 @@ func TestImportRollbackRemovesOnlyVolumesItCreated(t *testing.T) {
 		"shared":     {Name: "shared"},
 	}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		RemoveProject: func(context.Context, string, types.Actor) error {
 			return nil
@@ -598,6 +601,7 @@ func TestExportRefusesToStopAProjectThatRunsArcane(t *testing.T) {
 	uploads := upload.NewUploadService(nil)
 	environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 	service := New(Dependencies{
+		BackupStore: noBackupStore,
 		Environment: environment,
 		Docker:      dockerService,
 		Uploads:     uploads,
@@ -649,6 +653,7 @@ func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
 			uploads := upload.NewUploadService(nil)
 			environment := &claimEnvironment{uploads: uploads, volumes: map[string]types.Volume{"demo_data": {Name: "demo_data", Driver: "local"}}}
 			service := New(Dependencies{
+				BackupStore:  noBackupStore,
 				Environment:  environment,
 				Docker:       dockerService,
 				Uploads:      uploads,
@@ -669,3 +674,6 @@ func TestExportRefusesToStopAProjectWithUnnamedVolumes(t *testing.T) {
 		})
 	}
 }
+
+// noBackupStore is a Docker host without a backup volume.
+func noBackupStore(context.Context) string { return "" }

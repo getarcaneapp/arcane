@@ -60,6 +60,8 @@ type (
 		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 		// CreateProject creates a project as an import does, with files that fill writes into its directory.
 		CreateProject func(ctx context.Context, project NewProject) (string, error)
+		// BackupStore names the volume holding Arcane's local backups, which an export never copies.
+		BackupStore func(ctx context.Context) string
 		// LockProject holds the project's operation lock; StopProject, StartProject and RemoveProject expect it held.
 		LockProject   func(ctx context.Context, projectID string) (func(), error)
 		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
@@ -212,51 +214,23 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	if err != nil {
 		return exportState{}, fmt.Errorf("list containers: %w", err)
 	}
-	inUse := map[string]bool{}
-	active, runsArcane := false, false
-	for _, c := range running.Items {
-		inProject := project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName
-		runsArcane = runsArcane || (inProject && labels.IsArcaneContainer(c.Labels))
-		if inProject && !labels.IsArcaneContainer(c.Labels) {
-			active = active || c.State == container.StateRunning || c.State == container.StateRestarting
-			continue
-		}
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume {
-				inUse[m.Name] = true
-			}
-		}
-	}
-	classified := projects.ClassifyProjectVolumes(project)
-	resolved := make([]types.ProjectVolume, 0, len(classified))
-	inspected := map[string]types.Volume{}
-	for _, volume := range classified {
-		if !volume.Included {
-			resolved = append(resolved, volume)
-			continue
-		}
-		existing, exists, inspectErr := s.deps.Environment.Volume(ctx, volume.Name)
-		if inspectErr != nil {
-			return exportState{}, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
-		}
-		included := exists && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(existing.Driver, existing.Options))
-		inspected[volume.Name] = existing
-		resolved = append(resolved, types.ProjectVolume{
-			Labels:     volume.Labels,
-			DriverOpts: volume.DriverOpts,
-			Key:        volume.Key,
-			Name:       volume.Name,
-			Kind:       volume.Kind,
-			Driver:     volume.Driver,
-			Included:   included,
-			Missing:    !exists,
-			InUse:      included && inUse[volume.Name],
-		})
+	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running.Items)
+	runsArcane := slices.ContainsFunc(running.Items, func(c container.Summary) bool {
+		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
+	})
+	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
+		Project:     project,
+		Inspect:     s.deps.Environment.Volume,
+		InUse:       inUse,
+		BackupStore: s.deps.BackupStore(ctx),
+	})
+	if err != nil {
+		return exportState{}, err
 	}
 	return exportState{
 		docker:     inspected,
 		volumes:    resolved,
-		active:     active,
+		active:     len(activeContainers) > 0,
 		runsArcane: runsArcane,
 	}, nil
 }
@@ -279,6 +253,8 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 		switch {
 		case !known:
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
+		case volume.BackupStore:
+			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be exported", key))
 		case volume.Missing:
 			missing = append(missing, key)
 		case !volume.Included:

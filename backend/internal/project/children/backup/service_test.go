@@ -18,7 +18,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	composeapi "github.com/docker/compose/v5/pkg/api"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -117,17 +117,11 @@ func newTestDB(t *testing.T) *database.DB {
 	return db
 }
 
-// volumeServer answers volume inspects for the existing volumes and 404 for the rest.
-func volumeServer(t *testing.T, existing ...string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name, found := strings.CutPrefix(r.URL.Path, "/v1.41/volumes/")
-		if !found || r.Method != http.MethodGet || !slices.Contains(existing, name) {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: name}))
-	})
+// existingVolumes inspects the existing volumes and reports the rest missing.
+func existingVolumes(existing ...string) func(context.Context, string) (types.Volume, bool, error) {
+	return func(_ context.Context, name string) (types.Volume, bool, error) {
+		return types.Volume{Name: name}, slices.Contains(existing, name), nil
+	}
 }
 
 // startServer lists no containers and records each container start; while fail is set, starts fail.
@@ -173,8 +167,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: existingVolumes("web_data", "web_nfs", "shared")})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
@@ -219,9 +212,24 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	}
 }
 
+// A backup of the volume holding Arcane's backups would read the repository it writes into, copying it into itself.
+func TestResolvePlanLeavesOutTheBackupStore(t *testing.T) {
+	service := NewService(Dependencies{
+		BackupStore: func(context.Context) string { return "shared" },
+		Volume:      existingVolumes("web_data", "web_nfs", "shared"),
+	})
+
+	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"web_data"}, p.volumeNames())
+
+	_, err = service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{Volumes: []string{"data", "shared"}})
+	require.ErrorContains(t, err, "volume shared holds Arcane's backups")
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
 func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: existingVolumes("web_data", "web_nfs", "shared")})
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
 	require.NoError(t, checkPlanVolumes(testProject(), p))
@@ -261,11 +269,11 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	require.NoError(t, gate.Register(harness.Runtime))
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data"))
 	service := NewService(Dependencies{
-		DB:     db,
-		Docker: dockerService,
-		Engine: engine,
+		BackupStore: noBackupStore,
+		DB:          db,
+		Engine:      engine,
+		Volume:      existingVolumes("web_data"),
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},
@@ -821,11 +829,16 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 		}
 	}))
 	service := NewService(Dependencies{
-		DB:       db,
-		Docker:   dockerService,
-		Settings: settingsService,
+		BackupStore: noBackupStore,
+		DB:          db,
+		Docker:      dockerService,
+		Settings:    settingsService,
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
+		},
+		Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+			found, ok := live[name]
+			return types.NewVolume(found), ok, nil
 		},
 		ComposeFiles: func(context.Context, string) ([]string, error) { return []string{"compose.yaml"}, nil },
 	})
@@ -937,7 +950,6 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		startedIDs []string
 	)
 	forgets := &fakeForget{calls: map[string][][]string{}, failing: map[string]bool{}}
-	volumeHandler := volumeServer(t, "web_data", "web_nfs", "shared", "arcane-backups")
 	// A new snapshot fails once it starts, when it lists the running containers that use its volumes; restarting stopped
 	// containers lists all of the project's containers and starts them, which is recorded.
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -952,8 +964,12 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
 			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+		// The local repository mounts the backup volume, the only volume Docker serves.
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/arcane-backups"):
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: "arcane-backups"}))
 		default:
-			volumeHandler.ServeHTTP(w, r)
+			http.NotFound(w, r)
 		}
 	}))
 	started := func() []string {
@@ -978,6 +994,8 @@ func newPolicyFixture(t *testing.T) policyFixture {
 			project := testProject()
 			return types.Project{ID: projectID, Name: project.Name, ComposeName: project.ComposeName, Path: project.Path, Volumes: project.Volumes}, nil
 		},
+		Volume:      existingVolumes("web_data", "web_nfs", "shared"),
+		BackupStore: noBackupStore,
 		// Without a Compose model the stopped containers are started one by one, which the Docker fake records.
 		ComposeProject: func(context.Context, string) (*composetypes.Project, error) {
 			return nil, errors.New("no compose files")
@@ -2228,6 +2246,18 @@ func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
 	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
 }
 
+// A user cancel fails its backup, except while the project's containers are still stopped: the running backup is what
+// keeps their restart recoverable.
+func TestUserCancelKeepsABackupRunningOnlyWhileContainersAreDown(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(errors.New("activity cancelled by user"))
+
+	require.False(t, handedBack(ctx, ctx.Err()))
+	require.False(t, handedBack(ctx, fmt.Errorf("%w: busy", actor.ErrJobRejected)))
+	require.True(t, handedBack(ctx, fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, ctx.Err())))
+	require.True(t, handedBack(t.Context(), fmt.Errorf("%w: busy", actor.ErrJobRejected)))
+}
+
 func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
@@ -2307,7 +2337,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 
 func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 	labelsFor := func(project, service string) map[string]string {
-		return map[string]string{composeapi.ProjectLabel: project, composeapi.ServiceLabel: service}
+		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
 	}
 	arcane := labelsFor("demo", "arcane")
 	arcane["com.getarcaneapp.arcane"] = "true"
@@ -2336,7 +2366,7 @@ func TestContainersStopAndStartOnlyThisProject(t *testing.T) {
 			// The project label filter is what keeps other projects out.
 			if filter := r.URL.Query().Get("filters"); filter != "" {
 				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, `"`+composeapi.ProjectLabel+"="+c.Labels[composeapi.ProjectLabel]+`"`)
+					return !strings.Contains(filter, `"`+api.ProjectLabel+"="+c.Labels[api.ProjectLabel]+`"`)
 				})
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -2529,3 +2559,27 @@ func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
 	project.Volumes["adopted"] = composetypes.VolumeConfig{Name: generated, External: true}
 	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{unnamed}}}))
 }
+
+func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
+	created := map[string]string{"web_data": "2026-11-20T09:00:00Z"}
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+		at, exists := created[name]
+		return types.Volume{Name: name, CreatedAt: at}, exists, nil
+	}})
+	before, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+
+	// Mounting a volume removed while the backup waited would create it empty, so the backup stops instead.
+	_, err = service.volumeIdentities(t.Context(), []string{"web_data", "web_cache"})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorContains(t, err, "volume web_cache was removed after the backup was queued")
+
+	// A volume removed and created again during the copy is a different volume, which capture refuses to keep.
+	created["web_data"] = "2026-11-20T09:05:00Z"
+	after, err := service.volumeIdentities(t.Context(), []string{"web_data"})
+	require.NoError(t, err)
+	require.NotEqual(t, before, after)
+}
+
+// noBackupStore is a Docker host without a backup volume.
+func noBackupStore(context.Context) string { return "" }

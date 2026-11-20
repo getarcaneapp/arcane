@@ -222,6 +222,17 @@ func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	_, ok, err = ReadProjectBundle(strings.NewReader("not gzip"), nil)
 	require.NoError(t, err)
 	assert.False(t, ok)
+
+	// A project's own file named like the manifest leaves its archive plain.
+	for _, body := range []string{`{"name":"mine"}`, strings.Repeat(" ", maxProjectManifestBytes+1)} {
+		own := buildTestArchive(t, []archiveTestEntry{
+			{header: tar.Header{Typeflag: tar.TypeReg, Name: ProjectBundleManifest, Mode: 0o644}, body: body},
+			{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"},
+		})
+		_, ok, err = ReadProjectBundle(own, nil)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	}
 }
 
 func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
@@ -290,7 +301,7 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		},
 		{
 			name:    "docker label that is not a string",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"formatVersion":1,"volumes":[{"key":"data","dockerLabels":{"a":1}}]}`), regular(ProjectBundleProject, "p")},
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"kind":"export","formatVersion":1,"volumes":[{"key":"data","dockerLabels":{"a":1}}]}`), regular(ProjectBundleProject, "p")},
 			wantErr: "dockerLabels",
 		},
 		{
@@ -310,13 +321,8 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		},
 		{
 			name:    "unsupported format version",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"formatVersion":2}`), regular(ProjectBundleProject, "p")},
+			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"kind":"export","formatVersion":2}`), regular(ProjectBundleProject, "p")},
 			wantErr: "unsupported project bundle format version 2",
-		},
-		{
-			name:    "oversized manifest",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, strings.Repeat(" ", maxProjectManifestBytes+1))},
-			wantErr: "at most",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

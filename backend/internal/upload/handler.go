@@ -94,7 +94,7 @@ func requireUploadPermission(ctx context.Context, kind, environmentID string) er
 
 func requireOriginPermission(ctx context.Context, session *types.UploadSession, environmentID string) error {
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	for _, perm := range authz.UploadOriginPermissions(session.Origin) {
+	for _, perm := range authz.UploadOriginConditions.Required("origin", session.Origin) {
 		if !ps.Allows(perm, environmentID) {
 			return huma.Error403Forbidden("permission denied: " + perm)
 		}
@@ -181,25 +181,6 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 		return nil, originErr
 	}
 	return sessionResponse(session), nil
-}
-
-func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSessionInput) (*huma.StreamResponse, error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
-		return nil, err
-	}
-	reader, session, err := h.uploadService.DownloadSession(ctx, input.Kind, input.UploadID)
-	if err != nil {
-		if httpErr := SessionHTTPError(err); httpErr != nil {
-			return nil, httpErr
-		}
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	if originErr := requireOriginPermission(ctx, session, input.EnvironmentID); originErr != nil {
-		// Nothing was read, so closing leaves the session as it was; the refusal is what the caller needs.
-		_ = reader.Close()
-		return nil, originErr
-	}
-	return handlerutil.DownloadResponse(reader, session.Size, session.Filename), nil
 }
 
 func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[types.MessageResponse], error) {
