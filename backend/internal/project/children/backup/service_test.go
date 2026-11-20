@@ -788,8 +788,9 @@ func TestVerifyRestoreKeepsTheComposeName(t *testing.T) {
 
 func TestMissingVolumesRefusesTargetsOutsideDocker(t *testing.T) {
 	live := map[string]volume.Volume{
-		"web_data": {Name: "web_data", Driver: "local"},
-		"shared":   {Name: "shared", Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/mnt/nas/shared"}},
+		"web_data":  {Name: "web_data", Driver: "local"},
+		"web_cache": {Name: "web_cache", Driver: "rexray/ebs"},
+		"shared":    {Name: "shared", Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/mnt/nas/shared"}},
 	}
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		found, ok := live[strings.TrimPrefix(r.URL.Path, "/v1.41/volumes/")]
@@ -803,6 +804,11 @@ func TestMissingVolumesRefusesTargetsOutsideDocker(t *testing.T) {
 	service := NewService(Dependencies{Docker: dockerService})
 
 	create, err := service.missingVolumes(t.Context(), testProject(), types.ProjectManifest{}, []RestoreVolume{{Key: "data", Snapshot: "web_data", Name: "web_data"}})
+	require.NoError(t, err)
+	require.Empty(t, create)
+
+	// A named volume on a storage plugin is backed up through its mount, so it restores the same way.
+	create, err = service.missingVolumes(t.Context(), testProject(), types.ProjectManifest{}, []RestoreVolume{{Key: "cache", Snapshot: "web_cache", Name: "web_cache"}})
 	require.NoError(t, err)
 	require.Empty(t, create)
 
