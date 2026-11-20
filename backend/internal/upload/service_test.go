@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,5 +207,19 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	}
 	if entries, readDirErr := os.ReadDir(service.root); readDirErr != nil || len(entries) != 0 {
 		t.Fatalf("upload root after a failed write = %v, %v; want empty", entries, readDirErr)
+	}
+}
+
+func TestIngestSessionRefusesAnUploadThatWouldFillTheDisk(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "uploads")
+	service := &UploadService{root: root}
+
+	// A bundle entry can expand to far more than its compressed size; one larger than the disk is refused unwritten.
+	_, err := service.IngestSession(t.Context(), types.UploadKindVolumeBackup, "data.tar.gz", 1<<62, strings.NewReader("tiny"))
+	if !errors.Is(err, common.ErrUploadSessionInvalid) {
+		t.Fatalf("IngestSession error = %v, want ErrUploadSessionInvalid", err)
+	}
+	if _, statErr := os.Stat(root); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("upload root was created: %v", statErr)
 	}
 }

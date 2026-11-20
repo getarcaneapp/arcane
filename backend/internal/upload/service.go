@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/go-units"
+	"github.com/shirou/gopsutil/v4/disk"
+
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
@@ -42,6 +45,8 @@ type (
 const (
 	sessionMetaFilename = "meta.json"
 	sessionDataFilename = "data"
+	// uploadReserveBytes is the least free space a staged upload leaves on the upload filesystem.
+	uploadReserveBytes = 1 << 30
 )
 
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -98,6 +103,24 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; size > maxSizeBytes {
 			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
+	}
+	// Staged uploads, including the expanded entries of a project bundle, keep the same room free as unpacking a
+	// project archive does, so a large one can't fill the disk other work needs.
+	checked := s.root
+	for {
+		if _, statErr := os.Stat(checked); statErr == nil || filepath.Dir(checked) == checked {
+			break
+		}
+		checked = filepath.Dir(checked)
+	}
+	usage, err := disk.UsageWithContext(ctx, checked)
+	if err != nil {
+		return fmt.Errorf("check free space for the upload: %w", err)
+	}
+	reserve := max(uploadReserveBytes, int64(usage.Total/20))
+	if size > int64(usage.Free)-reserve {
+		return fmt.Errorf("%w: the upload needs %s, more than can be stored while keeping %s free", common.ErrUploadSessionInvalid,
+			units.BytesSize(float64(size)), units.BytesSize(float64(reserve)))
 	}
 	return nil
 }

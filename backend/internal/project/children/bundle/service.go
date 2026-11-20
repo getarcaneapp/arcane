@@ -316,12 +316,12 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		if downErr := s.deps.Environment.DownProject(ctx, opts.ProjectID, opts.User); downErr != nil {
 			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, downErr)
 		}
-		current, currentErr := s.deps.Environment.Project(ctx, opts.ProjectID)
-		if currentErr != nil {
-			return fmt.Errorf("check project %s: %w", manifest.Project.Name, currentErr)
-		}
-		if current.RunningCount > 0 {
-			return fmt.Errorf("%d container(s) are still running; volume data was not copied", current.RunningCount)
+	}
+	// A stopped project must stay stopped while its volumes are copied. Something else, such as a volume backup that
+	// stopped it and finishes, can start it again, and the bundle would then hold live data marked consistent.
+	if opts.Request.StopProject {
+		if stoppedErr := s.checkStopped(ctx, opts.ProjectID, "volume data was not copied"); stoppedErr != nil {
+			return stoppedErr
 		}
 	}
 	written := map[string]bool{}
@@ -338,7 +338,24 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			return fmt.Errorf("add volume %s: %w", volume.Name, appendErr)
 		}
 	}
+	if opts.Request.StopProject {
+		if stoppedErr := s.checkStopped(ctx, opts.ProjectID, "it was started while its volumes were copied; export it again"); stoppedErr != nil {
+			return stoppedErr
+		}
+	}
 	return writer.Close()
+}
+
+// checkStopped fails when any of the project's containers runs, which would make a consistent bundle hold live data.
+func (s *Service) checkStopped(ctx context.Context, projectID, consequence string) error {
+	current, err := s.deps.Environment.Project(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("check project %s: %w", projectID, err)
+	}
+	if current.RunningCount > 0 {
+		return common.Classify(common.ErrConflict, fmt.Errorf("%d container(s) of project %s are running; %s", current.RunningCount, current.Name, consequence))
+	}
+	return nil
 }
 
 func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {
