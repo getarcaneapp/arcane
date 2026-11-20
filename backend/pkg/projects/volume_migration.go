@@ -149,10 +149,6 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-func LocalVolume(driver string, options map[string]string) bool {
-	return cmp.Or(driver, "local") == "local" && len(options) == 0
-}
-
 func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
@@ -171,7 +167,7 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 			Name:       config.Name,
 			Kind:       kind,
 			Driver:     config.Driver,
-			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && LocalVolume(config.Driver, config.DriverOpts)),
+			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0),
 		})
 	}
 	return classified
@@ -190,7 +186,7 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 		if err != nil {
 			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
 		}
-		included := exists && (volume.Kind == types.ProjectVolumeNamed || LocalVolume(existing.Driver, existing.Options))
+		included := exists && (volume.Kind == types.ProjectVolumeNamed || cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0)
 		inspected[volume.Name] = existing
 		resolved = append(resolved, types.ProjectVolume{
 			Labels:     volume.Labels,

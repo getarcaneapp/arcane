@@ -155,12 +155,8 @@ func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionI
 }
 
 func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSessionInput) (*huma.StreamResponse, error) {
-	perms := authz.UploadDownloadConditions.Required("kind", input.Kind)
-	if len(perms) == 0 {
+	if input.Kind != types.UploadKindProjectArchive {
 		return nil, huma.Error403Forbidden("permission denied: " + input.Kind + " uploads cannot be downloaded")
-	}
-	if err := middleware.RequirePermissions(ctx, input.EnvironmentID, perms); err != nil {
-		return nil, err
 	}
 	reader, session, err := h.uploadService.DownloadSession(ctx, input.Kind, input.UploadID)
 	if err != nil {

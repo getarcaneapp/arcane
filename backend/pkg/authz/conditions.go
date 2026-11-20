@@ -136,15 +136,6 @@ var (
 		},
 	}
 
-	UploadDownloadConditions = PermissionConditions{
-		{
-			In:         ConditionInPath,
-			Field:      "kind",
-			Value:      types.UploadKindProjectArchive,
-			Permission: PermProjectsExport,
-		},
-	}
-
 	ProjectExportConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,
