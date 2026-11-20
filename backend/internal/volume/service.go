@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -223,21 +221,14 @@ func (s *VolumeService) CreateEmptyVolume(ctx context.Context, options client.Vo
 	case !errdefs.IsNotFound(err):
 		return false, fmt.Errorf("inspect volume %s: %w", name, err)
 	}
-	// Docker returns a volume that already exists instead of failing, so this attempt marks the volume it creates and
-	// refuses one without its mark: made since the check above outside Arcane, it is not claimed, changed or removed.
-	claim := uuid.New().String()
-	options.Labels = maps.Clone(options.Labels)
-	if options.Labels == nil {
-		options.Labels = map[string]string{}
-	}
-	options.Labels[volumes.ClaimLabel] = claim
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-		return dockerClient.VolumeCreate(ctx, options)
+	// One made since the check above, outside Arcane, is refused rather than claimed, changed, or removed by a rollback.
+	created, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
+		return volumes.CreateClaimed(ctx, dockerClient, options)
 	})
 	if err != nil {
-		return false, fmt.Errorf("create volume %s: %w", name, err)
+		return false, err
 	}
-	if result.Volume.Labels[volumes.ClaimLabel] != claim {
+	if !created {
 		return false, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", name))
 	}
 	if root == nil {
