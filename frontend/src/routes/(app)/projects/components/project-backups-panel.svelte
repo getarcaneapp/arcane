@@ -76,8 +76,8 @@
 	}: {
 		projectId: string;
 		environmentId: string;
-		// Called when a restore ends, so the page reloads the files it shows.
-		onRestored?: () => Promise<unknown>;
+		// Called when a restore ends, so the page reloads what it shows; files says the project files were restored.
+		onRestored?: (restored: { files: boolean }) => Promise<unknown>;
 	} = $props();
 
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
@@ -196,11 +196,16 @@
 		() => `project-restore:${projectId}`
 	);
 
-	// A plain variable, so the effect only reads state: it notices a restore that was running and no longer is.
+	// Plain variables, so the effect only reads state: it notices a restore that was running and no longer is. Only a
+	// restore started here is known to have restored the project files.
 	let restoreWasRunning = false;
+	let restoringFiles = false;
 	$effect(() => {
 		const running = restoreActivity.activeIds.length > 0;
-		if (restoreWasRunning && !running) void onRestored?.();
+		if (restoreWasRunning && !running) {
+			void onRestored?.({ files: restoringFiles });
+			restoringFiles = false;
+		}
 		restoreWasRunning = running;
 	});
 
@@ -314,6 +319,7 @@
 			setLoadingState: (value) => (restoring = value),
 			onSuccess: (data) => {
 				restoreOpen = false;
+				restoringFiles = restoreFiles;
 				// Only activities say when a restore ends; without them the server still refuses a second one.
 				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
