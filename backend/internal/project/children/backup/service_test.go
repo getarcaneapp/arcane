@@ -1776,16 +1776,6 @@ func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
 			wantMessage: "container web-app-1 was started during the restore",
 			stopped:     true,
 		},
-		// Only the container links an unnamed volume to its service, so removing it would lose that data.
-		{
-			name: "a stopped container with an unnamed volume is refused",
-			containers: []container.Summary{{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: strings.Repeat("ab", 32), Destination: "/data"},
-			}}},
-			wantErr:     common.ErrValidation,
-			wantMessage: "container web-app-1 keeps data at /data in an unnamed volume",
-			stopped:     true,
-		},
 		// The request checked projects:down only when it found stopped containers.
 		{
 			name:        "stopped containers the request did not find are refused",
@@ -1863,11 +1853,16 @@ func TestRestoreRemovesItsOwnLeftoverRusticContainers(t *testing.T) {
 }
 
 func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
-	unnamed := container.MountPoint{Type: mount.TypeVolume, Name: strings.Repeat("ab", 32), Destination: "/data"}
+	generated := strings.Repeat("ab", 32)
+	unnamed := container.MountPoint{Type: mount.TypeVolume, Name: generated, Destination: "/data"}
 	named := container.MountPoint{Type: mount.TypeVolume, Name: "web_data", Destination: "/data"}
+	project := testProject()
 	// Taking a running project down removes its containers too, so their unnamed volumes are refused as well.
-	err := refuseUnnamedVolumes([]container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named, unnamed}}})
+	err := refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named, unnamed}}})
 	require.ErrorIs(t, err, common.ErrValidation)
 	require.ErrorContains(t, err, "container web-app-1 keeps data at /data in an unnamed volume")
-	require.NoError(t, refuseUnnamedVolumes([]container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named}}}))
+	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{named}}}))
+	// A generated name the project adopts as an external volume is attached again by Compose.
+	project.Volumes["adopted"] = composetypes.VolumeConfig{Name: generated, External: true}
+	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{unnamed}}}))
 }
