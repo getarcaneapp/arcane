@@ -19,7 +19,7 @@ upstream's and lives at [getarcane.app](https://getarcane.app).
 
 | Image                         | Tags                       |
 | ----------------------------- | -------------------------- |
-| `ghcr.io/viogus/arcane`       | `latest`, `3.1.0-cdf.1`, … |
+| `ghcr.io/viogus/arcane`       | `latest`, `3.1.1-cdf.1`, … |
 | `ghcr.io/viogus/arcane-agent` | `latest`, `3.1.1-cdf.1`, … |
 
 - `+` is not valid in a Docker tag, so a build labelled `3.1.1+cdf.1` is published as
