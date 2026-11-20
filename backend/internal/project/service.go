@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
@@ -104,6 +106,9 @@ type (
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
+		// recoverStopped holds a recovery request made while a recovery runs, so it checks once more, at once even
+		// while it waits out a failure.
+		recoverStopped chan struct{}
 
 		opLock concurrency.KeyedMutex
 
@@ -112,11 +117,17 @@ type (
 		// syncMu keeps one sync's discovery walk and cleanup pass from interleaving with another's.
 		syncMu sync.Mutex
 
-		// stoppedRecovery guards recoveringStopped, set while a recovery of stopped projects runs, and
-		// recoverStoppedAgain, set when a project is noted during a pass so the recovery checks once more.
-		stoppedRecovery     sync.Mutex
-		recoveringStopped   bool
-		recoverStoppedAgain bool
+		// stoppedRecovery guards recoveringStopped, set while a recovery of stopped projects runs, so a request either
+		// reaches the running recovery or starts a new one.
+		stoppedRecovery   sync.Mutex
+		recoveringStopped bool
+	}
+
+	// stoppedNote is the value of a stop note. A backup lists the containers it stopped, so recovery starts only those;
+	// an export lists none, since it took the whole project down, so recovery deploys the project.
+	stoppedNote struct {
+		UserID     string              `json:"userId"`
+		Containers []container.Summary `json:"containers,omitempty"`
 	}
 
 	CreateProjectOptions struct {
@@ -462,6 +473,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
 		FilesChanged:                concurrency.NewSignal[string](),
+		recoverStopped:              make(chan struct{}, 1),
 	}
 	return s
 }
@@ -615,15 +627,20 @@ func (s *ProjectService) stopForExport(ctx context.Context, projectID string, us
 	if err != nil {
 		return err
 	}
-	if noteErr := s.noteStopped(ctx, projectID, user); noteErr != nil {
+	if noteErr := s.noteStopped(ctx, projectID, user, nil); noteErr != nil {
 		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
 	}
 	return s.downProject(ctx, proj, user)
 }
 
-// noteStopped records that Arcane is stopping the project, before it does.
-func (s *ProjectService) noteStopped(ctx context.Context, projectID string, user types.Actor) error {
-	return s.kv.Set(ctx, stoppedKeyPrefix+projectID, user.ID)
+// noteStopped records that Arcane is stopping the project, before it does, with the containers to start again: the
+// ones a backup stops, or none when an export takes the whole project down.
+func (s *ProjectService) noteStopped(ctx context.Context, projectID string, user types.Actor, stopped []container.Summary) error {
+	note, err := json.Marshal(stoppedNote{UserID: user.ID, Containers: stopped})
+	if err != nil {
+		return err
+	}
+	return s.kv.Set(ctx, stoppedKeyPrefix+projectID, string(note))
 }
 
 // forgetStopped drops the note once the project runs again, or a person decides whether it runs.
@@ -633,11 +650,15 @@ func (s *ProjectService) forgetStopped(ctx context.Context, projectID string) er
 
 // RecoverStoppedProjects starts, in the background, the projects Arcane stopped and could not start again, retrying
 // until every one runs. It runs at startup and when a backup leaves a project down; a call while it runs makes it
-// check once more.
+// check once more, without waiting out the backoff of an earlier failure.
 func (s *ProjectService) RecoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
 	s.stoppedRecovery.Lock()
 	defer s.stoppedRecovery.Unlock()
-	s.recoverStoppedAgain = true
+	select {
+	case s.recoverStopped <- struct{}{}:
+	default:
+		// A request is already waiting, and one more pass covers both.
+	}
 	if s.recoveringStopped {
 		return
 	}
@@ -646,24 +667,27 @@ func (s *ProjectService) RecoverStoppedProjects(ctx context.Context, lockVolumes
 }
 
 func (s *ProjectService) recoverStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
-	finish := func(done bool) bool {
+	// finished ends the recovery after a pass succeeded, unless a request came in since it started.
+	finished := func() bool {
 		s.stoppedRecovery.Lock()
 		defer s.stoppedRecovery.Unlock()
-		if done && !s.recoverStoppedAgain {
-			s.recoveringStopped = false
-			return true
+		if len(s.recoverStopped) > 0 {
+			return false
 		}
-		return false
+		s.recoveringStopped = false
+		return true
 	}
 	for wait := time.Minute; ; {
-		s.stoppedRecovery.Lock()
-		s.recoverStoppedAgain = false
-		s.stoppedRecovery.Unlock()
-		err := s.startStoppedProjects(ctx, lockVolumes)
-		if finish(err == nil) {
-			return
+		// This pass covers every request made so far.
+		select {
+		case <-s.recoverStopped:
+		default:
 		}
+		err := s.startStoppedProjects(ctx, lockVolumes)
 		if err == nil {
+			if finished() {
+				return
+			}
 			continue
 		}
 		slog.WarnContext(ctx, "Failed to start projects Arcane stopped; retrying", "error", err, "retryIn", wait)
@@ -673,9 +697,11 @@ func (s *ProjectService) recoverStoppedProjects(ctx context.Context, lockVolumes
 			s.recoveringStopped = false
 			s.stoppedRecovery.Unlock()
 			return
+		case <-s.recoverStopped:
+			// A new request, for example from a backup that just left a project down, is checked at once.
 		case <-time.After(wait):
+			wait = min(2*wait, 30*time.Minute)
 		}
-		wait = min(2*wait, 30*time.Minute)
 	}
 }
 
@@ -701,19 +727,23 @@ func (s *ProjectService) startStoppedProjects(ctx context.Context, lockVolumes f
 			errs = append(errs, lockErr)
 			continue
 		}
-		_, noted, getErr := s.kv.Get(ctx, entry.Key)
+		value, noted, getErr := s.kv.Get(ctx, entry.Key)
 		switch {
 		case getErr != nil:
 			errs = append(errs, getErr)
 		case noted:
-			errs = append(errs, s.startUnderVolumeLocks(ctx, lockVolumes, projectID))
+			errs = append(errs, s.startUnderVolumeLocks(ctx, lockVolumes, projectID, value))
 		}
 		unlock()
 	}
 	return errors.Join(errs...)
 }
 
-func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes func(names []string) (func(), error), projectID string) error {
+func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes func(names []string) (func(), error), projectID, value string) error {
+	var note stoppedNote
+	if err := json.Unmarshal([]byte(value), &note); err != nil {
+		return fmt.Errorf("read the stop note of project %s: %w", projectID, err)
+	}
 	project, err := s.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
 	if err != nil {
 		return err
@@ -729,7 +759,79 @@ func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes 
 		return fmt.Errorf("the project starts on a later attempt: %w", err)
 	}
 	defer unlock()
+	// A backup stopped only the containers it lists, so only those start again, leaving a service someone stopped,
+	// or a Compose edit not yet deployed, as it was.
+	if len(note.Containers) > 0 {
+		if startErr := s.startStoppedContainers(ctx, projectID, note.Containers); startErr != nil {
+			return startErr
+		}
+		return s.forgetStopped(ctx, projectID)
+	}
 	return s.deployProject(ctx, projectID, types.SystemUser, nil)
+}
+
+// startStoppedContainers starts containers Arcane stopped again in Compose order; when the project's Compose files no
+// longer load, or a service was replaced or dropped, it starts the containers directly.
+func (s *ProjectService) startStoppedContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
+	if len(stopped) == 0 {
+		return nil
+	}
+	compose, err := s.composeProject(ctx, projectID)
+	if err != nil {
+		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", err)
+		compose = &composetypes.Project{Name: docker.ComposeProjectLabel(stopped[0].Labels)}
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	found, listErr := projects.ListComposeProjectContainers(ctx, dockerClient, compose.Name)
+	if listErr != nil {
+		errs = append(errs, listErr)
+	}
+	wasStopped := map[string]bool{}
+	for _, c := range stopped {
+		wasStopped[c.ID] = true
+	}
+	direct := map[string]bool{}
+	for _, c := range found {
+		if c.Labels[composeapi.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" && !wasStopped[c.ID] && c.State != container.StateRunning {
+			direct[c.Labels[composeapi.ServiceLabel]] = true
+		}
+	}
+	var services, containerIDs, serviceContainerIDs []string
+	for _, c := range stopped {
+		service := c.Labels[composeapi.ServiceLabel]
+		_, enabled := compose.Services[service]
+		_, disabled := compose.DisabledServices[service]
+		switch {
+		case listErr != nil || direct[service] || (!enabled && !disabled) || c.Labels[composeapi.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
+			containerIDs = append(containerIDs, c.ID)
+		default:
+			serviceContainerIDs = append(serviceContainerIDs, c.ID)
+			if !slices.Contains(services, service) {
+				services = append(services, service)
+			}
+		}
+	}
+	if len(services) > 0 {
+		if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+			Project:    compose,
+			DockerHost: s.dockerService.DockerHost(),
+			Services:   services,
+		}); startErr != nil {
+			errs = append(errs, fmt.Errorf("start services %s: %w", strings.Join(services, ", "), startErr))
+			containerIDs = append(containerIDs, serviceContainerIDs...)
+		}
+	}
+	// A container removed since the stop, for example by a redeploy, has nothing to start.
+	for _, id := range containerIDs {
+		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil && !errdefs.IsNotFound(startErr) {
+			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1446,6 +1548,10 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 		"archived_at": time.Now(),
 	}).Error; archiveProjectErr != nil {
 		return fmt.Errorf("failed to archive project: %w", archiveProjectErr)
+	}
+	// Archiving decides the project stays down, so a stop note left by an export or a backup no longer applies.
+	if noteErr := s.forgetStopped(context.WithoutCancel(ctx), projectID); noteErr != nil {
+		slog.WarnContext(ctx, "failed to drop the stop note after archiving the project", "projectId", projectID, "error", noteErr)
 	}
 
 	s.logProjectEvent(

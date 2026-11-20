@@ -359,14 +359,11 @@ func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Projec
 	if err != nil {
 		return err
 	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+project.ComposeName),
-	})
+	found, err := projects.ListComposeProjectContainers(ctx, dockerClient, project.ComposeName)
 	if err != nil {
-		return fmt.Errorf("list containers: %w", err)
+		return err
 	}
-	if c, m, detached := projects.UnnamedVolumeMount(project, found.Items); detached {
+	if c, m, detached := projects.UnnamedVolumeMount(project, found); detached {
 		return common.Classify(common.ErrValidation, fmt.Errorf(
 			"container %s keeps data at %s in an unnamed volume, which stopping the project for the export would detach; "+
 				"export it without stopping it, or move that data to a named volume",
