@@ -21,7 +21,6 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,17 +67,11 @@ func newTestDB(t *testing.T) *database.DB {
 	return db
 }
 
-// volumeServer answers volume inspects for the existing volumes and 404 for the rest.
-func volumeServer(t *testing.T, existing ...string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name, found := strings.CutPrefix(r.URL.Path, "/v1.41/volumes/")
-		if !found || r.Method != http.MethodGet || !slices.Contains(existing, name) {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: name}))
-	})
+// existingVolumes inspects the existing volumes and reports the rest missing.
+func existingVolumes(existing ...string) func(context.Context, string) (types.Volume, bool, error) {
+	return func(_ context.Context, name string) (types.Volume, bool, error) {
+		return types.Volume{Name: name}, slices.Contains(existing, name), nil
+	}
 }
 
 // startServer lists no containers and records each container start; while fail is set, starts fail.
@@ -124,8 +117,7 @@ func testProject() types.Project {
 }
 
 func TestResolvePlanAndSnapshotInput(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
 
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
@@ -171,8 +163,7 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 }
 
 func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data", "web_nfs", "shared"))
-	service := NewService(Dependencies{Docker: dockerService})
+	service := NewService(Dependencies{Volume: existingVolumes("web_data", "web_nfs", "shared")})
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
 	require.NoError(t, checkPlanVolumes(testProject(), p))
@@ -212,11 +203,10 @@ func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
 	require.NoError(t, gate.Register(harness.Runtime))
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	dockerService := newTestDockerService(t, volumeServer(t, "web_data"))
 	service := NewService(Dependencies{
 		DB:     db,
-		Docker: dockerService,
 		Engine: engine,
+		Volume: existingVolumes("web_data"),
 		Project: func(context.Context, string, types.ProjectDetailsOptions) (types.Project, error) {
 			return testProject(), nil
 		},

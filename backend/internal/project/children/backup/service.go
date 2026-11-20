@@ -57,6 +57,8 @@ type (
 		Settings       *settings.SettingsService
 		VolumeLocks    *concurrency.KeyedMutex
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		// Volume inspects a Docker volume and reports whether it exists.
+		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// ComposeProject loads the project's Compose model, which restarts stopped containers in Compose order.
@@ -229,28 +231,17 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 // inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
 // and keep their data in Docker; requesting any other volume fails.
 func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{Project: project, Inspect: s.deps.Volume})
 	if err != nil {
 		return nil, err
 	}
-	classified := projects.ClassifyProjectVolumes(project)
-	inspected := make([]types.ProjectVolume, 0, len(classified))
-	for _, volume := range classified {
-		if !volume.Included {
-			inspected = append(inspected, volume)
-			continue
-		}
-		found, inspectErr := dockerClient.VolumeInspect(ctx, volume.Name, client.VolumeInspectOptions{})
-		if inspectErr != nil && !errdefs.IsNotFound(inspectErr) {
-			return nil, fmt.Errorf("inspect volume %s: %w", volume.Name, inspectErr)
-		}
-		missing := inspectErr != nil
-		backable := !missing && (volume.Kind == types.ProjectVolumeNamed || projects.LocalVolume(found.Volume.Driver, found.Volume.Options))
+	inspected := make([]types.ProjectVolume, 0, len(resolved))
+	for _, volume := range resolved {
 		wanted := requested == nil || slices.Contains(requested, volume.Key)
 		switch {
-		case wanted && requested != nil && missing:
+		case wanted && requested != nil && volume.Missing:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
-		case wanted && requested != nil && !backable:
+		case wanted && requested != nil && !volume.Included:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", volume.Key, volume.Kind))
 		}
 		inspected = append(inspected, types.ProjectVolume{
@@ -260,17 +251,13 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 			Name:       volume.Name,
 			Kind:       volume.Kind,
 			Driver:     volume.Driver,
-			Included:   backable && wanted,
-			Missing:    missing,
+			Included:   volume.Included && wanted,
+			Missing:    volume.Missing,
 		})
 	}
 	for _, key := range requested {
-		index := slices.IndexFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key })
-		switch {
-		case index < 0:
+		if !slices.ContainsFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key }) {
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
-		case !inspected[index].Included:
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", key, inspected[index].Kind))
 		}
 	}
 	return inspected, nil
@@ -671,20 +658,7 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	if err != nil {
 		return nil, nil, fmt.Errorf("list containers: %w", err)
 	}
-	inUse = map[string]bool{}
-	for _, c := range running.Items {
-		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
-			if c.State == container.StateRunning || c.State == container.StateRestarting {
-				active = append(active, c)
-			}
-			continue
-		}
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume {
-				inUse[m.Name] = true
-			}
-		}
-	}
+	active, inUse = projects.ProjectContainerUse(composeName, running.Items)
 	return active, inUse, nil
 }
 

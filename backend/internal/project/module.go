@@ -96,6 +96,7 @@ func New(p ModuleParams) *Module {
 			Settings:       p.Service.settingsService,
 			VolumeLocks:    p.Backups.VolumeLocks,
 			Project:        p.Service.GetProjectDetails,
+			Volume:         local.Volume,
 			ComposeProject: p.Service.composeProject,
 			ComposeFiles:   p.Service.LoadedComposeFiles,
 			LockProject:    p.Service.LockProject,

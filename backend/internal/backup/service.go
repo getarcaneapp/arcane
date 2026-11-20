@@ -180,9 +180,8 @@ type (
 		Start  func(ctx context.Context, containerID string, user types.Actor) error
 	}
 
-	// ContainerScope selects the containers of a Compose project and those mounting any of the volumes.
+	// ContainerScope selects the containers mounting any of the volumes.
 	ContainerScope struct {
-		Project string
 		Volumes []string
 		// RefuseArcaneWriters fails instead when an Arcane container mounts one of the volumes.
 		RefuseArcaneWriters bool
@@ -1272,8 +1271,7 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 	}
 	stopped := make([]container.Summary, 0, len(selected))
 	for _, candidate := range eligible {
-		inProject := scope.Project != "" && candidate.Labels[docker.ComposeProjectLabelKey] == scope.Project
-		if !inProject && !slices.Contains(selected, candidate.ID) {
+		if !slices.Contains(selected, candidate.ID) {
 			continue
 		}
 		if stopErr := c.Stop(ctx, candidate.ID, user); stopErr != nil {
