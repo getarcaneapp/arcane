@@ -1706,8 +1706,7 @@
 				onclick: () => (transferOpen = true)
 			});
 		}
-		// Downloading the exported archive reads a project-archive upload, which requires projects:create.
-		if (!project?.isDiscovered && hasPermission('projects:create', envId)) {
+		if (!project?.isDiscovered && hasPermission('projects:read', envId)) {
 			list.push({
 				id: 'export',
 				action: 'base',

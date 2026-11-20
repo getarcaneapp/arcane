@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/go-units"
+	"github.com/shirou/gopsutil/v4/disk"
+
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
@@ -32,17 +35,36 @@ type (
 		root            string
 	}
 
-	// downloadReader calls done on Close once the session's data was read to the end.
 	downloadReader struct {
 		io.ReadCloser
 		done func()
 		eof  bool
+	}
+
+	WriteSessionOptions struct {
+		Write    func(io.Writer) error
+		Kind     string
+		Filename string
+		// Origin and OriginID record what wrote the session, such as an export of a project.
+		Origin   string
+		OriginID string
+	}
+
+	// reserveWriter stops a written session before it eats into the reserve, checking again every reserveCheckBytes.
+	reserveWriter struct {
+		ctx       context.Context
+		w         io.Writer
+		service   *UploadService
+		unchecked int64
 	}
 )
 
 const (
 	sessionMetaFilename = "meta.json"
 	sessionDataFilename = "data"
+	// uploadReserveBytes is the least free space a staged upload leaves on the upload filesystem.
+	uploadReserveBytes = 1 << 30
+	reserveCheckBytes  = 64 << 20
 )
 
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -90,19 +112,49 @@ func (s *UploadService) createSessionDir(ctx context.Context) (string, error) {
 	return sessionDir, nil
 }
 
+func (s *UploadService) validateSize(ctx context.Context, kind string, size int64) error {
+	if size <= 0 {
+		return fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
+	}
+	if kind == types.UploadKindImage {
+		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
+		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; size > maxSizeBytes {
+			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
+		}
+	}
+	return s.checkFreeSpace(ctx, size)
+}
+
+// checkFreeSpace refuses size bytes more when they would leave less than the reserve free. Staged uploads, including
+// the expanded entries of a project bundle, keep the same room free as unpacking a project archive does, so a large one
+// can't fill the disk other work needs.
+func (s *UploadService) checkFreeSpace(ctx context.Context, size int64) error {
+	checked := s.root
+	for {
+		if _, statErr := os.Stat(checked); statErr == nil || filepath.Dir(checked) == checked {
+			break
+		}
+		checked = filepath.Dir(checked)
+	}
+	usage, err := disk.UsageWithContext(ctx, checked)
+	if err != nil {
+		return fmt.Errorf("check free space for the upload: %w", err)
+	}
+	reserve := max(uploadReserveBytes, int64(usage.Total/20))
+	if size > int64(usage.Free)-reserve {
+		return fmt.Errorf("%w: the upload needs %s, more than can be stored while keeping %s free", common.ErrUploadSessionInvalid,
+			units.BytesSize(float64(size)), units.BytesSize(float64(reserve)))
+	}
+	return nil
+}
+
 func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
 	filename, err := sessionFilename(kind, request.Filename)
 	if err != nil {
 		return nil, err
 	}
-	if request.Size <= 0 {
-		return nil, fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
-	}
-	if kind == types.UploadKindImage {
-		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
-		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; request.Size > maxSizeBytes {
-			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
-		}
+	if sizeErr := s.validateSize(ctx, kind, request.Size); sizeErr != nil {
+		return nil, sizeErr
 	}
 	chunkSize := cmp.Or(request.ChunkSize, types.UploadDefaultChunkSize)
 	if chunkSize < types.UploadMinChunkSize || chunkSize > types.UploadMaxChunkSize {
@@ -229,6 +281,7 @@ func (s *UploadService) ReadChunk(ctx context.Context, kind, uploadID string, in
 	if err != nil {
 		return nil, fmt.Errorf("open upload session data: %w", err)
 	}
+	// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 	defer func() { _ = file.Close() }()
 	if _, seekErr := file.Seek(int64(index)*session.ChunkSize, io.SeekStart); seekErr != nil {
 		return nil, fmt.Errorf("seek chunk %d: %w", index, seekErr)
@@ -258,28 +311,38 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 }
 
 func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*types.UploadSession, error) {
-	session, err := s.CreateSession(ctx, kind, types.CreateUploadSessionRequest{Filename: filename, Size: size})
-	if err != nil {
+	if err := s.validateSize(ctx, kind, size); err != nil {
 		return nil, err
 	}
-	if _, writeFromErr := (acfs.Root{Path: s.root}).WriteFrom(ctx, path.Join("/", session.ID, sessionDataFilename), source, acfs.WriteFromOptions{Size: size, Mode: 0o600}); writeFromErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
-		return nil, fmt.Errorf("write uploaded file: %w", writeFromErr)
+	write := func(w io.Writer) error {
+		if _, err := io.CopyN(w, source, size); err != nil {
+			return fmt.Errorf("write uploaded file: %w", err)
+		}
+		return nil
 	}
-	for index := range session.TotalChunks {
-		session.ReceivedChunks = append(session.ReceivedChunks, index)
-	}
-	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
-		return nil, writeMetaErr
-	}
-	return session, nil
+	return s.WriteSession(ctx, WriteSessionOptions{
+		Kind:     kind,
+		Filename: filename,
+		Write:    write,
+	})
 }
 
-// WriteSession creates a complete session holding what write produces, streamed straight into the session's data
-// file; the session is removed when write fails.
-func (s *UploadService) WriteSession(ctx context.Context, kind, filename string, write func(io.Writer) error) (session *types.UploadSession, err error) {
-	if filename, err = sessionFilename(kind, filename); err != nil {
+func (w *reserveWriter) Write(p []byte) (int, error) {
+	if w.unchecked <= 0 {
+		if err := w.service.checkFreeSpace(w.ctx, reserveCheckBytes); err != nil {
+			return 0, fmt.Errorf("stop writing the upload: %w", err)
+		}
+		w.unchecked = reserveCheckBytes
+	}
+	n, err := w.w.Write(p)
+	w.unchecked -= int64(n)
+	return n, err
+}
+
+func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
+	kind := opts.Kind
+	filename, err := sessionFilename(kind, opts.Filename)
+	if err != nil {
 		return nil, err
 	}
 	sessionDir, err := s.createSessionDir(ctx)
@@ -288,16 +351,28 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	}
 	defer func() {
 		if err != nil {
-			_ = acfs.Root{Path: s.root}.RemoveAll(context.WithoutCancel(ctx), sessionDir)
+			if removeErr := (acfs.Root{Path: s.root}).RemoveAll(context.WithoutCancel(ctx), sessionDir); removeErr != nil {
+				err = errors.Join(err, fmt.Errorf("remove the partial upload session: %w", removeErr))
+			}
 		}
 	}()
-	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{Mode: 0o600, Write: true, Create: true, Exclusive: true})
+	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{
+		Mode:      0o600,
+		Write:     true,
+		Create:    true,
+		Exclusive: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
-	if writeErr := write(file); writeErr != nil {
-		_ = file.Close()
-		return nil, writeErr
+	// What the callback writes isn't known up front, and it may stage more files while writing, so free space is
+	// rechecked as the file grows.
+	if writeErr := opts.Write(&reserveWriter{
+		ctx:     ctx,
+		w:       file,
+		service: s,
+	}); writeErr != nil {
+		return nil, errors.Join(writeErr, file.Close())
 	}
 	info, err := file.Stat()
 	if closeErr := file.Close(); err == nil && closeErr != nil {
@@ -323,6 +398,8 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 		TotalChunks:    totalChunks,
 		ReceivedChunks: received,
 		CreatedAt:      time.Now().UTC(),
+		Origin:         opts.Origin,
+		OriginID:       opts.OriginID,
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 		return nil, writeMetaErr
@@ -330,8 +407,6 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 	return session, nil
 }
 
-// DownloadSession opens the data of a complete session for streaming. Closing the reader after it was read to the
-// end deletes the session; after a partial read the session stays for a retry until it expires.
 func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID string) (io.ReadCloser, *types.UploadSession, error) {
 	defer s.locks.RLock(uploadID)()
 
@@ -351,6 +426,7 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 		return nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
+		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
@@ -399,14 +475,17 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 		return nil, nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
+		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
 	if removeErr := (acfs.Root{Path: s.root}).Remove(ctx, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
+		// Opened only for reading; the failed mark is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("mark upload session consumed: %w", removeErr)
 	}
 	cleanup := func() {
+		// Opened only for reading and fully consumed by the caller; closing it can't lose data.
 		_ = file.Close()
 		// context.WithoutCancel: the session must be removed even when the
 		// consuming request was cancelled mid-restore.
