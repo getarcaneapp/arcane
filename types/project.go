@@ -86,6 +86,7 @@ type (
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
 		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
+		ExternalEnv   bool                   `json:"externalEnv,omitempty" doc:"True when the project's .env links to a file outside the project directory and a backup stored that file's contents beside the manifest"`
 	}
 
 	CreateProjectBackupRequest struct {

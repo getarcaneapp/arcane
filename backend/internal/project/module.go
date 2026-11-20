@@ -96,6 +96,7 @@ func New(p ModuleParams) *Module {
 				return p.Service.noteStopped(ctx, projectID, types.SystemUser, stopped)
 			},
 			ForgetStopped: p.Service.forgetStopped,
+			NotedStopped:  p.Service.notedStopped,
 			RecoverStopped: func() {
 				p.Service.RecoverStoppedProjects(p.Backups.Ctx, p.Backups.TryLockVolumes)
 			},

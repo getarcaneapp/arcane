@@ -59,9 +59,10 @@ type (
 		LockVolumes func(ctx context.Context, names []string) (func(), error)
 		// NoteStopped records the project's containers a backup is stopping, and ForgetStopped drops the note once
 		// they run again; RecoverStopped starts the project's recovery, which starts the noted containers, when they
-		// could not be started.
+		// could not be started. NotedStopped reports whether the note remains; a deploy, down or archive drops it.
 		NoteStopped    func(ctx context.Context, projectID string, stopped []container.Summary) error
 		ForgetStopped  func(ctx context.Context, projectID string) error
+		NotedStopped   func(ctx context.Context, projectID string) (bool, error)
 		RecoverStopped func()
 		Project        func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
@@ -111,7 +112,11 @@ const (
 	admissionScope = "project-backup"
 	snapshotRoot   = "/snapshot"
 	manifestName   = "arcane-project.json"
-	targetType     = "project_backup"
+	// envName holds, beside the manifest, the file a project's .env links to outside the project directory.
+	envName    = "project.env"
+	targetType = "project_backup"
+	// dockerStopGraceSeconds is how long Docker waits for a container without its own stop grace to exit.
+	dockerStopGraceSeconds = 10
 )
 
 var (
@@ -393,7 +398,7 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 }
 
 // resume takes the admissions again, restarts the containers an interrupted attempt left stopped under the project
-// lock, then adopts the snapshots it already wrote and finishes the backup.
+// lock unless their stop note is gone, then adopts the snapshots it already wrote and finishes the backup.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input runInput, recorded plan) error {
 	// The admissions and project lock died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, recorded, "")
@@ -409,15 +414,25 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input
 		if lockErr != nil {
 			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
 		}
-		// A restore of any of the project's volumes finishes before its containers start again.
-		unlockVolumes, lockErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
-		if lockErr != nil {
+		// A deploy, down or archive since the stop dropped the project's stop note: a person decided whether it runs,
+		// so its containers are left as they are and the run goes on as if they had started.
+		noted, notedErr := s.deps.NotedStopped(ctx, recorded.ProjectID)
+		if notedErr != nil {
 			unlockProject()
-			return fmt.Errorf("%w: %w", actor.ErrJobRejected, lockErr)
+			return fmt.Errorf("%w: %w", actor.ErrJobRejected, notedErr)
 		}
-		restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
-		s.afterRestart(ctx, recorded.ProjectID, restartErr)
-		unlockVolumes()
+		var restartErr error
+		if noted {
+			// A restore of any of the project's volumes finishes before its containers start again.
+			unlockVolumes, volumesErr := s.deps.LockVolumes(ctx, recorded.mountedVolumeNames())
+			if volumesErr != nil {
+				unlockProject()
+				return fmt.Errorf("%w: %w", actor.ErrJobRejected, volumesErr)
+			}
+			restartErr = s.deps.StartContainers(context.WithoutCancel(ctx), recorded.ProjectID, recorded.Stopped)
+			s.afterRestart(ctx, recorded.ProjectID, restartErr)
+			unlockVolumes()
+		}
 		unlockProject()
 		if restartErr == nil {
 			recorded.Stopped = nil
@@ -580,7 +595,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles))
+	// The snapshot copies the project directory, which holds only the link of a .env kept outside it.
+	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
+	if err != nil {
+		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
+	}
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles, externalEnv), env)
 	if err != nil {
 		return err
 	}
@@ -740,24 +760,32 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 		case pass > 0:
 			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
 		}
+		stopBounds := make(map[string]time.Duration, len(running))
 		for _, c := range running {
-			if c.Labels[api.OneoffLabel] != "True" && c.Labels[projects.JobRunLabel] == "" {
-				continue
-			}
 			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
 			}
-			if kit.FromPtr(inspected.Container.HostConfig).AutoRemove {
+			oneOff := c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != ""
+			if oneOff && kit.FromPtr(inspected.Container.HostConfig).AutoRemove {
 				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
 					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
 					docker.ContainerNameFromNames(c.Names),
 				))
 			}
+			// Docker waits the container's stop grace before it kills it, so the bound only cuts off a daemon that
+			// stalls past that. A container told to wait forever is cut off too, since the run holds the project's locks.
+			grace := max(kit.FromPtr(kit.FromPtr(inspected.Container.Config).StopTimeout), dockerStopGraceSeconds)
+			stopBounds[c.ID] = time.Duration(grace)*time.Second + timeouts.DefaultDockerAPI
 		}
 		for _, c := range running {
 			stopped = append(stopped, c)
-			if _, err = dockerClient.ContainerStop(context.WithoutCancel(ctx), c.ID, client.ContainerStopOptions{}); err != nil {
+			// Not cancelled with the run, so a container is never left half stopped, but bounded, so a stalled daemon
+			// can't keep the earlier containers down and the locks held forever.
+			stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), stopBounds[c.ID])
+			_, err = dockerClient.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{})
+			cancelStop()
+			if err != nil {
 				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
 			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -886,7 +914,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, proje
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool) types.ProjectManifest {
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -900,15 +928,21 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
+		ExternalEnv:   externalEnv,
 	}
 }
 
-// writeManifest stores the manifest in a new volume. The holder that receives it mounts only that volume and never
-// starts, because Docker before 29.9 mishandles copies into stopped containers with other mounts (#4870).
-func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest) (string, func(), error) {
+// writeManifest stores the manifest in a new volume, with the external .env contents when the manifest records them.
+// The holder that receives it mounts only that volume and never starts, because Docker before 29.9 mishandles copies
+// into stopped containers with other mounts (#4870).
+func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return "", nil, fmt.Errorf("encode project backup manifest: %w", err)
+	}
+	files := map[string][]byte{manifestName: data}
+	if manifest.ExternalEnv {
+		files[envName] = env
 	}
 	name := "arcane-project-backup-" + uuid.New().String()
 	if _, createErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: volumes.Labels()}); createErr != nil {
@@ -932,7 +966,7 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 		remove()
 		return "", nil, fmt.Errorf("create project backup manifest holder: %w", err)
 	}
-	copyErr := docker.CopyToContainer(ctx, dockerClient, holder.ID, "/meta", map[string][]byte{manifestName: data})
+	copyErr := docker.CopyToContainer(ctx, dockerClient, holder.ID, "/meta", files)
 	_, removeHolderErr := dockerClient.ContainerRemove(context.WithoutCancel(ctx), holder.ID, volumes.RemoveOptions())
 	if err = errors.Join(copyErr, removeHolderErr); err != nil {
 		remove()

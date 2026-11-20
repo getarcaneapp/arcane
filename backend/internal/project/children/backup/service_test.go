@@ -191,20 +191,22 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"})
+	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}).Consistent, "nothing runs, so a live backup is consistent")
+	require.False(t, manifest.ExternalEnv)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
+	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
+	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}).Consistent)
+	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -263,6 +265,8 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	fail.Store(true)
 	start, started := startRecorder(&fail)
 	var recoveries, forgotten atomic.Int32
+	var noted atomic.Bool
+	noted.Store(true)
 	service := NewService(Dependencies{
 		DB:              db,
 		Engine:          engine,
@@ -274,6 +278,7 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 			forgotten.Add(1)
 			return nil
 		},
+		NotedStopped:   func(context.Context, string) (bool, error) { return noted.Load(), nil },
 		RecoverStopped: func() { recoveries.Add(1) },
 	})
 	recorded := plan{
@@ -291,6 +296,14 @@ func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
 	require.Equal(t, []string{"web-1", "web-1"}, started())
 	// Running again, the project's stop note is dropped.
 	require.EqualValues(t, 1, forgotten.Load())
+
+	// A deploy, down or archive dropped the note after a failed start; the person's choice stands, so the retry
+	// starts nothing and finishes the backup.
+	fail.Store(true)
+	noted.Store(false)
+	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, runInput{}, recorded))
+	require.Equal(t, []string{"web-1", "web-1"}, started())
+	require.EqualValues(t, 1, recoveries.Load())
 }
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
@@ -322,7 +335,7 @@ func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
 		DB:          db,
 		Engine:      engine,
 		LockVolumes: lockingWith(locks),
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
 		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
 		StartContainers: start,
 	})
@@ -375,7 +388,7 @@ func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:          db,
 		Engine:      engine,
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {},
+		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
 		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
 		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
 			assert.Equal(t, "p1", projectID)
@@ -459,6 +472,14 @@ func TestContainersStopOnlyThisProject(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			assert.NoError(t, json.MarshalWrite(w, all))
+		case strings.HasSuffix(r.URL.Path, "/json"):
+			// Each container is inspected for its stop grace, which bounds how long its stop may take.
+			w.Header().Set("Content-Type", "application/json")
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				ID:         path.Base(path.Dir(r.URL.Path)),
+				Config:     &container.Config{StopTimeout: new(30)},
+				HostConfig: &container.HostConfig{},
+			}))
 		case strings.HasSuffix(r.URL.Path, "/stop"):
 			id := path.Base(path.Dir(r.URL.Path))
 			stopped = append(stopped, id)
@@ -537,7 +558,9 @@ func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) 
 	}
 }
 
-// noteNothing and forgetNothing stand in for the project service's stop note.
+// noteNothing, forgetNothing and stillNoted stand in for the project service's stop note.
 func noteNothing(context.Context, string, []container.Summary) error { return nil }
 
 func forgetNothing(context.Context, string) error { return nil }
+
+func stillNoted(context.Context, string) (bool, error) { return true, nil }
