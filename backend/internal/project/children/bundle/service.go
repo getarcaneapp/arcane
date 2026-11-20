@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -130,6 +131,9 @@ type (
 	}
 )
 
+// unnamedVolume matches the names Docker gives volumes created without one.
+var unnamedVolume = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 func New(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
@@ -174,6 +178,11 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	// Stopping the project would stop Arcane too, and with it the export that starts the project again.
 	if opts.Request.StopProject && state.runsArcane {
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
+	}
+	if opts.Request.StopProject {
+		if unnamedErr := s.refuseUnnamedVolumes(ctx, project); unnamedErr != nil {
+			return nil, unnamedErr
+		}
 	}
 	manifest, err := s.manifest(ctx, project, opts.Request, state)
 	if err != nil {
@@ -419,6 +428,39 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	return writer.Close()
+}
+
+// refuseUnnamedVolumes refuses to stop a project whose containers keep data in an unnamed volume: stopping removes the
+// containers, which alone link such a volume to its service, so the project would start again on an empty one. A
+// volume the project declares by name, even a generated one, is attached again by Compose.
+func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Project) error {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+project.ComposeName),
+	})
+	if err != nil {
+		return fmt.Errorf("list containers: %w", err)
+	}
+	declared := map[string]bool{}
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		declared[volume.Name] = true
+	}
+	for _, c := range found.Items {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) && !declared[m.Name] {
+				return common.Classify(common.ErrValidation, fmt.Errorf(
+					"container %s keeps data at %s in an unnamed volume, which stopping the project for the export would detach; "+
+						"export it without stopping it, or move that data to a named volume",
+					docker.ContainerNameFromNames(c.Names), m.Destination,
+				))
+			}
+		}
+	}
+	return nil
 }
 
 // dockerNow is the Docker daemon's clock as an events timestamp, so event windows don't depend on Arcane's clock.
