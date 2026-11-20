@@ -147,7 +147,8 @@ export type BulkAction = {
 		| 'down'
 		| 'prune'
 		| 'archive'
-		| 'update';
+		| 'update'
+		| 'pull';
 	onclick: (ids: string[]) => void;
 	disabled?: boolean;
 	disabledReason?: string;
