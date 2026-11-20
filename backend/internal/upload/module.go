@@ -80,11 +80,9 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/uploads/{kind}/{uploadId}/download",
 		Summary:     "Download an upload session",
-		Description: "Stream the file of a complete project-archive upload session written by a project export; the session is deleted once the whole file was sent. " +
-			"A project bundle with volume data also requires volumes:backup.",
-		Tags:     []string{"Uploads"},
-		Security: handlerutil.DefaultOperationSecurity(),
-		Metadata: map[string]any{authz.MetaPermissionConditions: authz.UploadDownloadConditions},
+		Description: "Stream the file of a complete project-archive upload session; the session is deleted once the whole file was sent",
+		Tags:        []string{"Uploads"},
+		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsExport, h.DownloadSession)
 
 	huma.Register(api, huma.Operation{

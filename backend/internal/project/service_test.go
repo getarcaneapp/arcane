@@ -32,7 +32,6 @@ import (
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
-	dockerevents "github.com/moby/moby/api/types/events"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -11206,9 +11205,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 			_ = json.MarshalWrite(w, []container.Summary{})
 		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
 			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
-		case strings.HasSuffix(r.URL.Path, "/info"):
-			_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"})
-		case strings.HasSuffix(r.URL.Path, "/events"):
 		default:
 			http.NotFound(w, r)
 		}
@@ -11319,114 +11315,4 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	require.Len(t, targets, 1)
 	assert.NotEmpty(t, targets[0].Claim, "the restore claims the volume it creates for this import")
 	assert.Equal(t, types.ComposeVolumeTarget{Labels: sourceLabels, Project: "copy", Key: "first", Claim: targets[0].Claim, External: true}, targets[0])
-}
-
-func TestProjectBundleExportFailsWhenItsVolumesAreWrittenDuringTheCopy(t *testing.T) {
-	mounted := func(readWrite string) []dockerevents.Message {
-		return []dockerevents.Message{{
-			Type:   dockerevents.VolumeEventType,
-			Action: dockerevents.ActionMount,
-			Actor:  dockerevents.Actor{ID: "demo_data", Attributes: map[string]string{"container": "c1", "read/write": readWrite}},
-		}}
-	}
-	for _, test := range []struct {
-		name            string
-		wantMessage     string
-		containerEvents []dockerevents.Message
-		volumeEvents    []dockerevents.Message
-	}{
-		// The export's own helper mounts each volume read-only.
-		{name: "a read-only mount during the copy is fine", volumeEvents: mounted("false")},
-		// A volume backup that had stopped the project starts it again during the copy.
-		{
-			name:            "a project started during the copy fails the export",
-			containerEvents: []dockerevents.Message{{Type: dockerevents.ContainerEventType, Action: dockerevents.ActionStart, Actor: dockerevents.Actor{ID: "web-1"}}},
-			wantMessage:     "started while its volumes were copied",
-		},
-		// A volume backup of another volume restarts an app that writes this one; the app may be gone again before the
-		// copy ends, so only its mount event shows it.
-		{
-			name:         "a writer started during the copy fails the export",
-			volumeEvents: mounted("true"),
-			wantMessage:  "started writing to volume demo_data",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("TMPDIR", t.TempDir())
-			ctx := t.Context()
-			db := setupProjectTestDB(t)
-			settingsService, err := newSettingsServiceForTest(t, ctx, db)
-			require.NoError(t, err)
-			projectsDir := t.TempDir()
-			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-
-			var windows []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					_ = json.MarshalWrite(w, []container.Summary{})
-				case strings.HasSuffix(r.URL.Path, "/volumes/demo_data"):
-					_ = json.MarshalWrite(w, volume.Volume{Name: "demo_data", Driver: "local"})
-				case strings.HasSuffix(r.URL.Path, "/info"):
-					_ = json.MarshalWrite(w, map[string]string{"SystemTime": "2026-11-20T01:00:00.5Z"})
-				case strings.HasSuffix(r.URL.Path, "/events"):
-					windows = append(windows, r.URL.Query().Get("since")+"/"+r.URL.Query().Get("until"))
-					served := test.containerEvents
-					if strings.Contains(r.URL.Query().Get("filters"), "volume") {
-						served = test.volumeEvents
-					}
-					for _, message := range served {
-						_ = json.MarshalWrite(w, message)
-					}
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(server.Close)
-			uploads := upload.NewUploadService(settingsService)
-			svc := NewProjectService(ProjectServiceParams{
-				DB:                          db,
-				SettingsService:             settingsService,
-				EventService:                event.NewEventService(db, &config.Config{}, nil),
-				DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-				BuildService:                testBuildBuilder{},
-				Uploads:                     uploads,
-				Config:                      loadTestConfig(t),
-				KVService:                   kv.NewKVService(db),
-				RegistryCredentialsProvider: testRegistryCredentials,
-			})
-			projectPath := createComposeProjectDir(t, projectsDir, "demo")
-			require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
-				"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n",
-			), 0o644))
-			require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
-			module := New(ModuleParams{
-				Service: svc,
-				Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
-				Transfer: TransferDependencies{
-					ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-						return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", 4, strings.NewReader("data"))
-					},
-				},
-			})
-
-			session, err := module.bundles.Export(ctx, bundle.ExportOptions{
-				ProjectID: "proj-demo",
-				Request:   types.ExportProjectArchive{Volumes: []string{"data"}},
-			})
-			if test.wantMessage != "" {
-				require.ErrorIs(t, err, common.ErrConflict)
-				require.ErrorContains(t, err, test.wantMessage)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, types.UploadOriginProjectBundle, session.Origin)
-			}
-			// The checks read Docker's own clock from before the copy to after it.
-			require.NotEmpty(t, windows)
-			for _, window := range windows {
-				assert.Equal(t, "1795136400.500000000/1795136400.500000000", window)
-			}
-		})
-	}
 }

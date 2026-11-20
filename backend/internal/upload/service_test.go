@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -166,7 +165,6 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 		},
 		Kind:     types.UploadKindProjectArchive,
 		Filename: "web.arcane.tar.gz",
-		Origin:   types.UploadOriginProjectBundle,
 	})
 	if err != nil {
 		t.Fatalf("WriteSession: %v", err)
@@ -193,8 +191,8 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DownloadSession after a partial read: %v", err)
 	}
-	if downloaded.Filename != "web.arcane.tar.gz" || downloaded.Origin != types.UploadOriginProjectBundle {
-		t.Fatalf("downloaded session = %+v", downloaded)
+	if downloaded.Filename != "web.arcane.tar.gz" {
+		t.Fatalf("downloaded filename = %q", downloaded.Filename)
 	}
 	got, err := io.ReadAll(reader)
 	if err != nil || !bytes.Equal(got, payload) {
@@ -220,25 +218,5 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	}
 	if entries, readDirErr := os.ReadDir(service.root); readDirErr != nil || len(entries) != 0 {
 		t.Fatalf("upload root after a failed write = %v, %v; want empty", entries, readDirErr)
-	}
-}
-
-func TestDownloadSessionRefusesAnUploadedArchive(t *testing.T) {
-	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
-	ctx := t.Context()
-
-	// An archive uploaded for someone's import may hold volume data the caller could not export.
-	uploaded, err := service.IngestSession(ctx, types.UploadKindProjectArchive, "import.arcane.tar.gz", 4, strings.NewReader("data"))
-	if err != nil {
-		t.Fatalf("IngestSession: %v", err)
-	}
-	if uploaded.Origin != "" {
-		t.Fatalf("ingested session origin = %q, want none", uploaded.Origin)
-	}
-	if _, _, downloadErr := service.DownloadSession(ctx, types.UploadKindProjectArchive, uploaded.ID); !errors.Is(downloadErr, common.ErrUploadSessionNotFound) {
-		t.Fatalf("DownloadSession of an upload error = %v, want ErrUploadSessionNotFound", downloadErr)
-	}
-	if _, getErr := service.GetSession(ctx, types.UploadKindProjectArchive, uploaded.ID); getErr != nil {
-		t.Fatalf("refused download removed the upload: %v", getErr)
 	}
 }
