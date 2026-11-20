@@ -132,7 +132,12 @@ export function getCpuMetricLabel(stats: SystemStats | null): string {
 }
 
 export function getCapacityLabel(used: number | undefined, total: number | undefined): string {
-	if (used === undefined || total === undefined || total <= 0) return '--';
+	if (used === undefined) return '--';
+	if (total === undefined || total <= 0) {
+		// A docker-host environment reports only what its daemon accounts for, so there is no
+		// capacity to divide by: show the used figure on its own.
+		return used > 0 ? m.dashboard_capacity_used_only({ used: bytes.format(used, { unitSeparator: ' ' }) ?? '-' }) : '--';
+	}
 	return `${bytes.format(used, { unitSeparator: ' ' }) ?? '-'} / ${bytes.format(total, { unitSeparator: ' ' }) ?? '-'}`;
 }
 

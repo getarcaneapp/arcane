@@ -350,6 +350,18 @@ func (s *SystemService) PingDocker(ctx context.Context) error {
 	return err
 }
 
+// GetDockerObjectsDiskUsage reports the bytes a daemon's images, containers, volumes and build
+// cache occupy. It is the disk figure a docker-host environment can offer: the Docker API exposes
+// no host filesystem counters.
+func (s *SystemService) GetDockerObjectsDiskUsage(ctx context.Context) (uint64, error) {
+	usage, err := s.dockerService.GetDiskUsage(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read Docker disk usage: %w", err)
+	}
+	return uint64(max(usage.Images.TotalSize, 0) + max(usage.Containers.TotalSize, 0) +
+		max(usage.Volumes.TotalSize, 0) + max(usage.BuildCache.TotalSize, 0)), nil
+}
+
 func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, error) {
 	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServerVersionResult, error) {
 		return cli.ServerVersion(ctx, client.ServerVersionOptions{})

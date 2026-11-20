@@ -1878,13 +1878,14 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 	return s.stats.Collect(ctx, matched, maxAge, false)
 }
 
-// TotalContainerCPUPercent sums the CPU percentage of every running container.
-// Each sample is already normalized against the host's total CPU time, so the
-// sum estimates the host CPU utilization from container activity.
-func (s *ContainerService) TotalContainerCPUPercent(ctx context.Context) (float64, error) {
+// TotalContainerResources sums the CPU percentage and memory usage of every running container.
+// Each sample is already normalized against the host's total CPU time, so the CPU sum estimates
+// the host utilisation from container activity; the memory sum is what those containers hold.
+// It is the only daemon-reported load a docker-host environment can offer.
+func (s *ContainerService) TotalContainerResources(ctx context.Context) (cpuPercent float64, memoryUsed uint64, err error) {
 	dockerContainers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
-		return 0, fmt.Errorf("failed to list containers for CPU usage: %w", err)
+		return 0, 0, fmt.Errorf("failed to list containers for resource usage: %w", err)
 	}
 
 	matched := make([]types.ContainerSummary, 0, len(dockerContainers))
@@ -1894,21 +1895,21 @@ func (s *ContainerService) TotalContainerCPUPercent(ctx context.Context) (float6
 		}
 	}
 	if len(matched) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	samples, err := s.stats.Collect(ctx, matched, stats.ContainerResourceSampleTTL, true)
 	if err != nil {
-		return 0, fmt.Errorf("failed to collect container CPU usage: %w", err)
+		return 0, 0, fmt.Errorf("failed to collect container resource usage: %w", err)
 	}
 
-	var total float64
 	for _, sample := range samples {
 		if sample != nil {
-			total += sample.CPUPercent
+			cpuPercent += sample.CPUPercent
+			memoryUsed += sample.MemoryUsageBytes
 		}
 	}
-	return total, nil
+	return cpuPercent, memoryUsed, nil
 }
 
 func (s *ContainerService) ListContainersPaginated(

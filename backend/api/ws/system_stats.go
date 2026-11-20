@@ -241,9 +241,10 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 	}
 }
 
-// collectDockerHostStats reports the CPU usage of running containers on a
-// docker-host environment. The Docker API does not expose host CPU counters,
-// so memory and disk stay unavailable while CPU is derived from container stats.
+// collectDockerHostStats reports the load a docker-host environment's daemon can describe: the
+// CPU and memory its running containers use, the daemon's host memory total, and the disk its
+// Docker objects occupy. The Docker API exposes no host CPU or filesystem counters, so host-wide
+// figures stay unavailable for an environment the manager reaches without an agent.
 func (h *WebSocketHandler) collectDockerHostStats(ctx context.Context) (types.SystemStats, bool) {
 	info, err := h.systemService.GetDockerInfo(ctx)
 	if err != nil {
@@ -252,15 +253,25 @@ func (h *WebSocketHandler) collectDockerHostStats(ctx context.Context) (types.Sy
 	}
 	cpuCount := max(info.NCPU, 1)
 
-	totalCPUPercent, err := h.containerService.TotalContainerCPUPercent(ctx)
+	cpuPercent, memoryUsed, err := h.containerService.TotalContainerResources(ctx)
 	if err != nil {
-		slog.DebugContext(ctx, "Failed to read docker-host container CPU usage", "error", err)
+		slog.DebugContext(ctx, "Failed to read docker-host container resource usage", "error", err)
 		return types.SystemStats{}, false
 	}
 
+	// Docker's own accounting is the closest disk figure a remote daemon can give: the bytes its
+	// images, containers, volumes and build cache occupy.
+	diskUsed, diskErr := h.systemService.GetDockerObjectsDiskUsage(ctx)
+	if diskErr != nil {
+		slog.DebugContext(ctx, "Failed to read docker-host disk usage", "error", diskErr)
+	}
+
 	return types.SystemStats{
-		CPUUsage:     min(totalCPUPercent, 100),
+		CPUUsage:     min(cpuPercent, 100),
 		CPUCount:     cpuCount,
+		MemoryUsage:  memoryUsed,
+		MemoryTotal:  uint64(max(info.MemTotal, 0)),
+		DiskUsage:    diskUsed,
 		Architecture: info.Arch,
 		Platform:     info.Os,
 		Hostname:     info.Name,

@@ -593,6 +593,7 @@
 	"dashboard_all_environment_unavailable_title": "Environment unavailable",
 	"dashboard_all_environment_unavailable_description": "This environment is offline, pending, or otherwise unreachable right now.",
 	"dashboard_docker_host_unreachable_description": "The manager could not reach the Docker API for this environment at {host}. Check the endpoint and that it accepts connections from the manager.",
+	"dashboard_capacity_used_only": "{used} used",
 	"dashboard_all_summary_unavailable": "Agent summary unavailable. {error}",
 	"dashboard_all_agent_incompatible": "Agent is running an older Arcane version and can't report dashboard data — upgrade the agent.",
 	"stats_unavailable": "Live stats unavailable",
