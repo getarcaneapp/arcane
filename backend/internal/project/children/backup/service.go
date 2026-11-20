@@ -1002,6 +1002,15 @@ func snapshotInput(projectMounts []mount.Mount, metaVolume, backupID string, p p
 	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(p.ProjectID, backupID)}
 }
 
+// nestedTargets names the mounts inside a project folder, given the folder's own mount first.
+func nestedTargets(mounts []mount.Mount) []string {
+	targets := make([]string, 0, len(mounts)-1)
+	for _, nested := range mounts[1:] {
+		targets = append(targets, nested.Target)
+	}
+	return targets
+}
+
 // projectSourceMounts resolves the host mounts behind the project directory source names.
 func projectSourceMounts(ctx context.Context, dockerClient *client.Client, source backup.SourceMountOptions) ([]mount.Mount, error) {
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
@@ -1551,6 +1560,16 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, files
 	if !files {
 		return nil
 	}
+	// A mount inside the project folder, such as a volume another project shares, would be rewritten with the files.
+	mounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: "/project"})
+	if err != nil {
+		return err
+	}
+	if len(mounts) > 1 {
+		return common.Classify(common.ErrValidation, fmt.Errorf(
+			"the folder of project %s holds other mounts in the Arcane container (%s), so its files cannot be restored in place; restore it as a new project instead",
+			project.Name, strings.Join(nestedTargets(mounts), ", ")))
+	}
 	return s.deps.SoleDirectory(ctx, project)
 }
 
@@ -1972,6 +1991,11 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		projectMounts, err = projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: opts.ProjectPath, Target: path.Join(restoreRoot, "project"), Writable: true})
 		if err != nil {
 			return err
+		}
+		// Checked again here, since every mount inside the folder would be written to.
+		if len(projectMounts) > 1 {
+			return common.Classify(common.ErrValidation, fmt.Errorf("the project folder holds other mounts in the Arcane container (%s); its files were not restored",
+				strings.Join(nestedTargets(projectMounts), ", ")))
 		}
 	}
 	target, options, err := restoreInput(projectMounts, opts.Volumes, plan{Volumes: manifest.Volumes}.volumeNames())
