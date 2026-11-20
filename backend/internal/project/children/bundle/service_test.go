@@ -54,6 +54,7 @@ func newTestDockerService(t *testing.T, handler http.Handler) *dockerInternal.Do
 	t.Cleanup(server.Close)
 	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
+	// The test server is gone by cleanup time; a failed close of its client changes nothing.
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

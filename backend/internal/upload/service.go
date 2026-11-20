@@ -258,6 +258,7 @@ func (s *UploadService) ReadChunk(ctx context.Context, kind, uploadID string, in
 	if err != nil {
 		return nil, fmt.Errorf("open upload session data: %w", err)
 	}
+	// Opened only for reading; closing it can't lose data, and read errors are returned as they happen.
 	defer func() { _ = file.Close() }()
 	if _, seekErr := file.Seek(int64(index)*session.ChunkSize, io.SeekStart); seekErr != nil {
 		return nil, fmt.Errorf("seek chunk %d: %w", index, seekErr)
@@ -322,8 +323,7 @@ func (s *UploadService) WriteSession(ctx context.Context, kind, filename string,
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
 	if writeErr := write(file); writeErr != nil {
-		_ = file.Close()
-		return nil, writeErr
+		return nil, errors.Join(writeErr, file.Close())
 	}
 	info, err := file.Stat()
 	if closeErr := file.Close(); err == nil && closeErr != nil {
@@ -375,6 +375,7 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 		return nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
+		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
@@ -423,14 +424,17 @@ func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.
 		return nil, nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
+		// Opened only for reading and refused; the size mismatch is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
 	}
 	if removeErr := (acfs.Root{Path: s.root}).Remove(ctx, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
+		// Opened only for reading; the failed mark is the error that matters.
 		_ = file.Close()
 		return nil, nil, nil, fmt.Errorf("mark upload session consumed: %w", removeErr)
 	}
 	cleanup := func() {
+		// Opened only for reading and fully consumed by the caller; closing it can't lose data.
 		_ = file.Close()
 		// context.WithoutCancel: the session must be removed even when the
 		// consuming request was cancelled mid-restore.
