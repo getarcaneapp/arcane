@@ -7,6 +7,8 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -208,4 +210,27 @@ func TestClassifyProjectVolumes(t *testing.T) {
 
 	assert.Equal(t, "copy_data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "data", SourceName: "web_data", TargetProject: "Copy"}))
 	assert.Equal(t, "shared-data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "shared", SourceName: "shared-data", TargetProject: "Copy"}))
+}
+
+func TestUnnamedVolumeMount(t *testing.T) {
+	generated := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	unnamed := container.MountPoint{Type: mount.TypeVolume, Name: generated, Destination: "/data"}
+	named := container.MountPoint{Type: mount.TypeVolume, Name: "web_data", Destination: "/data"}
+	project := types.Project{ComposeName: "web", Volumes: composetypes.Volumes{"data": {Name: "web_data"}}}
+
+	c, m, found := UnnamedVolumeMount(project, []container.Summary{
+		{Names: []string{"/web-app-1"}, Mounts: []container.MountPoint{named}},
+		{Names: []string{"/web-db-1"}, Mounts: []container.MountPoint{named, unnamed}},
+	})
+	require.True(t, found)
+	assert.Equal(t, []string{"/web-db-1"}, c.Names)
+	assert.Equal(t, "/data", m.Destination)
+
+	_, _, found = UnnamedVolumeMount(project, []container.Summary{{Mounts: []container.MountPoint{named}}})
+	assert.False(t, found)
+
+	// A generated name the project adopts as an external volume is attached again by Compose.
+	project.Volumes["adopted"] = composetypes.VolumeConfig{Name: generated, External: true}
+	_, _, found = UnnamedVolumeMount(project, []container.Summary{{Mounts: []container.MountPoint{unnamed}}})
+	assert.False(t, found)
 }

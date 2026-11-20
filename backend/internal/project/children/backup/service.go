@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"maps"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -283,8 +282,6 @@ const (
 )
 
 var (
-	// unnamedVolume matches the names Docker gives volumes created without one.
-	unnamedVolume         = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 	errGlobalRunning      = common.Classify(common.ErrConflict, errors.New("this backup policy is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
@@ -3564,20 +3561,12 @@ func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) er
 // would start on an empty volume that no safety backup holds. A volume the project declares by name, even a generated
 // one, is attached again by Compose.
 func refuseUnnamedVolumes(project types.Project, containers []container.Summary) error {
-	declared := map[string]bool{}
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
-		declared[volume.Name] = true
-	}
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) && !declared[m.Name] {
-				return common.Classify(common.ErrValidation, fmt.Errorf(
-					"container %s keeps data at %s in an unnamed volume, which taking the project down for the restore would lose; "+
-						"remove the container if that data is not needed, or move it to a named volume, then restore again",
-					docker.ContainerNameFromNames(c.Names), m.Destination,
-				))
-			}
-		}
+	if c, m, detached := projects.UnnamedVolumeMount(project, containers); detached {
+		return common.Classify(common.ErrValidation, fmt.Errorf(
+			"container %s keeps data at %s in an unnamed volume, which taking the project down for the restore would lose; "+
+				"remove the container if that data is not needed, or move it to a named volume, then restore again",
+			docker.ContainerNameFromNames(c.Names), m.Destination,
+		))
 	}
 	return nil
 }
