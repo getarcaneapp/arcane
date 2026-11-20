@@ -1311,7 +1311,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
-	if unnamedErr := refuseUnnamedVolumes(slices.Concat(running, stopped)); unnamedErr != nil {
+	if unnamedErr := refuseUnnamedVolumes(project, slices.Concat(running, stopped)); unnamedErr != nil {
 		return "", unnamedErr
 	}
 	p := restorePlan{
@@ -1533,7 +1533,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if err != nil {
 		return restorePlan{}, err
 	}
-	if checkErr := refuseUnnamedVolumes(slices.Concat(running, stopped)); checkErr != nil {
+	if checkErr := refuseUnnamedVolumes(project, slices.Concat(running, stopped)); checkErr != nil {
 		return restorePlan{}, checkErr
 	}
 	if freeErr := s.volumesFree(ctx, project, p.volumeNames()); freeErr != nil {
@@ -1902,9 +1902,6 @@ func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) er
 	case len(stopped) > 0 && !p.Stopped && !p.MayStop:
 		return common.Classify(common.ErrConflict, errors.New("the project's containers changed after the restore was requested; start it again"))
 	}
-	if unnamedErr := refuseUnnamedVolumes(stopped); unnamedErr != nil {
-		return unnamedErr
-	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -1920,11 +1917,16 @@ func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) er
 
 // refuseUnnamedVolumes refuses containers that keep data in an unnamed volume: only the container links the volume to
 // its service, so taking the project down or removing the container would leave the data behind, and the next deploy
-// would start on an empty volume that no safety backup holds.
-func refuseUnnamedVolumes(containers []container.Summary) error {
+// would start on an empty volume that no safety backup holds. A volume the project declares by name, even a generated
+// one, is attached again by Compose.
+func refuseUnnamedVolumes(project types.Project, containers []container.Summary) error {
+	declared := map[string]bool{}
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		declared[volume.Name] = true
+	}
 	for _, c := range containers {
 		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) {
+			if m.Type == mount.TypeVolume && unnamedVolume.MatchString(m.Name) && !declared[m.Name] {
 				return common.Classify(common.ErrValidation, fmt.Errorf(
 					"container %s keeps data at %s in an unnamed volume, which taking the project down for the restore would lose; "+
 						"remove the container if that data is not needed, or move it to a named volume, then restore again",
